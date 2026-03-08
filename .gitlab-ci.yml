@@ -33,21 +33,7 @@ deploy:
 
     # 3. Validate frontend and backend are up (use "docker" host when using dind)
     - export SERVICE_HOST=${DOCKER_HOST#tcp://}; export SERVICE_HOST=${SERVICE_HOST%:*}; echo "Service host: $SERVICE_HOST"
-    - |
-      echo "Waiting for backend and frontend to be ready..."
-      for i in $(seq 1 30); do
-        if curl -sf "http://${SERVICE_HOST}:9000/" >/dev/null 2>&1 && curl -sf -o /dev/null -w "%{http_code}" "http://${SERVICE_HOST}:9001/" 2>/dev/null | grep -qE '200|301|302'; then
-          echo "Services are up."
-          break
-        fi
-        if [ "$i" -eq 30 ]; then
-          echo "Timeout waiting for services."
-          docker-compose -f $COMPOSE_FILE ps
-          docker-compose -f $COMPOSE_FILE logs --tail=50
-          exit 1
-        fi
-        sleep 2
-      done
+    - for i in $(seq 1 30); do if curl -sf "http://${SERVICE_HOST}:9000/" >/dev/null 2>&1 && curl -sf -o /dev/null -w "%{http_code}" "http://${SERVICE_HOST}:9001/" 2>/dev/null | grep -qE '200|301|302'; then echo "Services are up."; break; fi; if [ "$i" -eq 30 ]; then echo "Timeout waiting for services."; docker-compose -f $COMPOSE_FILE ps; docker-compose -f $COMPOSE_FILE logs --tail=50; exit 1; fi; sleep 2; done
     - echo "Backend root:"
     - curl -s "http://${SERVICE_HOST}:9000/"
     - echo "Frontend (HTTP status):"
