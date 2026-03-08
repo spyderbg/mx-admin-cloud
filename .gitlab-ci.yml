@@ -1,20 +1,11 @@
 # GitLab CI/CD for mx-admin — runs only on main branch
-# Builds and deploys frontend/backend with Docker, validates services, installs kiddo-cli
 
 default:
   image: docker:24
-  before_script:
-    - apk add --no-cache curl docker-compose
 
 stages:
   - deploy
 
-variables:
-  COMPOSE_FILE: docker/docker-compose.yml
-  # Optional: pass for backend (compose uses OPENAI_API_KEY from env)
-  # OPENAI_API_KEY: $OPENAI_API_KEY
-
-# Single deploy job: build images, up containers, validate, install kiddo-cli
 deploy:
   stage: deploy
   rules:
@@ -22,29 +13,13 @@ deploy:
   services:
     - docker:24-dind
   variables:
-    DOCKER_HOST: tcp://docker:2375
+    DOCKER_HOST: "tcp://docker:2375"
     DOCKER_TLS_CERTDIR: ""
-  script:
-    # 1. Build Docker images for frontend and backend
-    - docker-compose -f $COMPOSE_FILE build
-
-    # 2. Create or update project containers
-    - docker-compose -f $COMPOSE_FILE up -d
-
-    # 3. Validate frontend and backend are up (use "docker" host when using dind)
-    - export SERVICE_HOST=${DOCKER_HOST#tcp://}; export SERVICE_HOST=${SERVICE_HOST%:*}; echo "Service host: $SERVICE_HOST"
-    - for i in $(seq 1 30); do if curl -sf "http://${SERVICE_HOST}:9000/" >/dev/null 2>&1 && curl -sf -o /dev/null -w "%{http_code}" "http://${SERVICE_HOST}:9001/" 2>/dev/null | grep -qE '200|301|302'; then echo "Services are up."; break; fi; if [ "$i" -eq 30 ]; then echo "Timeout waiting for services."; docker-compose -f $COMPOSE_FILE ps; docker-compose -f $COMPOSE_FILE logs --tail=50; exit 1; fi; sleep 2; done
-    - echo "Backend root:"
-    - curl -s "http://${SERVICE_HOST}:9000/"
-    - echo "Frontend (HTTP status):"
-    - curl -s -o /dev/null -w "%{http_code}\n" "http://${SERVICE_HOST}:9001/"
-
-    # 4. Install kiddo-cli (reuse scripts/cli.sh; on host server run the same script)
-    - apk add --no-cache py3-pip bash
+    COMPOSE_FILE: "docker/docker-compose.yml"
+  before_script:
+    - apk add --no-cache curl docker-compose bash py3-pip
     - ln -sf "$(which pip3)" /usr/local/bin/pip 2>/dev/null || true
-    - bash scripts/cli.sh install
-    - kiddo-cli --help
+  script:
+    - bash scripts/deploy.sh
   after_script:
-    # Leave containers running for deployment; uncomment to tear down after job
-    # - docker-compose -f $COMPOSE_FILE down
-    - true
+    - "true"
