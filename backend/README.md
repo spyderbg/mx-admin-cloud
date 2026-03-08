@@ -1,0 +1,99 @@
+# Kiddo Backend
+
+FastAPI backend for Kiddo content management. All API routes are under `/api/v1`. Protected endpoints require a Bearer token (obtained via `/login` or `/cli-login`).
+
+## Run the backend
+
+From the backend directory:
+
+```bash
+./uvicorn_start.sh
+```
+
+This starts the HTTP server and the CLI Unix socket. To stop:
+
+```bash
+./uvicorn_stop.sh
+```
+
+## Auth
+
+- **HTTP login:** `POST /api/v1/login` with `application/x-www-form-urlencoded` body `username` and `password` (default `admin` / `admin`). Returns `access_token`; use as `Authorization: Bearer <token>`.
+- **CLI login:** `POST /api/v1/cli-login` is allowed only when the request is made over the backend’s Unix socket (e.g. by the CLI). Returns a short-lived token.
+
+Env (see `src/core/config.py`):
+
+- `SECRET_KEY`, `ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES`, `CLI_TOKEN_EXPIRE_SECONDS` – JWT settings
+- `AUTH_DISABLED` – if true, auth checks are skipped
+- `CONTENT_DIR` – content data path
+- `ARCHIVE_DIR` – directory for archived (removed) categories. If empty, remove deletes categories permanently instead of archiving.
+- `OPENAI_API_KEY` – required for TTS, translation, and category icon generation (create/rename category, create object).
+
+## Endpoints
+
+Base URL for all routes below: `/api/v1`. Protected routes require `Authorization: Bearer <token>`.
+
+### Auth
+
+| Method | Path         | Auth | Description |
+|--------|--------------|------|-------------|
+| `POST` | `/login`     | No   | Login with username/password; returns JWT. |
+| `POST` | `/cli-login` | No   | CLI-only login over Unix socket; returns short-lived JWT. |
+
+### Tasks
+
+| Method | Path           | Auth | Description |
+|--------|----------------|------|-------------|
+| `GET`  | `/ping`        | No   | Health check; returns PONG. |
+| `GET`  | `/status`      | Yes  | Service status. |
+| `POST` | `/operation`   | Yes  | Perform a service operation. Query param: `name`. |
+| `POST` | `/list-files`  | Yes  | List files in the configured directory. Body: `{"depth": int}` (depth &lt; 1 treated as 1). |
+
+### Content
+
+| Method | Path                             | Auth | Description |
+|--------|----------------------------------|------|-------------|
+| `GET`  | `/content/categories`            | Yes  | List content categories. Query: `include_archived`, `archived_only` (bool) to include or list only archived categories. |
+| `POST` | `/content/categories`            | Yes  | Create a category. Body: `{"name": "<category_name>"}`. Creates folder, voice files per language, and category icon. Returns 201. |
+| `POST` | `/content/categories/restore`    | Yes  | Restore a category from archive. Body: `{"name": "<category_name_or_archive_folder>"}` (e.g. `foods` or `foods_1738456789`). |
+| `GET`  | `/content/categories/{name}`     | Yes  | Category details by name. |
+| `PATCH`| `/content/categories/{name}`     | Yes  | Rename category. Body: `{"name": "<new_name>"}`. Renames folder and regenerates category voice files. |
+| `DELETE`| `/content/categories/{name}`    | Yes  | Remove category. If `ARCHIVE_DIR` is set, archives it (date suffix); otherwise deletes permanently. |
+| `POST` | `/content/objects`              | Yes  | Create a content object. Multipart: `image` (file), `category` (form), `object` (form, English word). Returns 201. |
+
+## Example requests
+
+```bash
+# Health check (no auth)
+curl http://localhost:8000/api/v1/ping
+
+# Login and use token
+TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/login -d "username=admin&password=admin" | jq -r .access_token)
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/v1/status
+
+# List categories
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/v1/content/categories
+
+# List categories including archived
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8000/api/v1/content/categories?include_archived=true"
+
+# Create category (creates folder, voices, icon)
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"name": "animals"}' http://localhost:8000/api/v1/content/categories
+
+# Rename category
+curl -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"name": "creatures"}' http://localhost:8000/api/v1/content/categories/animals
+
+# Remove category (archives if ARCHIVE_DIR set)
+curl -X DELETE -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/v1/content/categories/creatures
+
+# Restore category from archive
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"name": "creatures"}' http://localhost:8000/api/v1/content/categories/restore
+
+# Create object (multipart)
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -F "image=@./pic.png" -F "category=foods" -F "object=apple pie" \
+  http://localhost:8000/api/v1/content/objects
+```

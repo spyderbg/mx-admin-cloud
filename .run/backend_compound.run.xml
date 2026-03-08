@@ -1,0 +1,7 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="backend_compound" type="CompoundRunConfigurationType">
+    <toRun name="backend" type="PythonConfigurationType" />
+    <toRun name="backend_uds" type="PythonConfigurationType" />
+    <method v="2" />
+  </configuration>
+</component>

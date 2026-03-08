@@ -1,0 +1,19 @@
+[project]
+name = "kiddo_app"
+version = "0.1.0"
+description = "Backend for Kiddo content management (FastAPI)"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "python-multipart",
+    "python-jose[cryptography]",
+    "passlib[bcrypt]",
+    "pydantic-settings",
+    "python-dotenv",
+    "requests",
+    "openai",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

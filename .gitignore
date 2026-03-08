@@ -1,0 +1,15 @@
+# Python packaging
+*.egg-info/
+.eggs/
+
+# Build artifacts
+build/
+dist/
+
+# Bytecode
+__pycache__/
+*.pyc
+
+# Virtual environments
+venv/
+.env

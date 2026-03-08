@@ -1,0 +1,25 @@
+services:
+  backend:
+    container_name: kiddo-backend
+    build:
+      context: ..
+      dockerfile: docker/backend.Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../content:/app/content
+    environment:
+      - CONTENT_DIR=/app/content
+      - ARCHIVE_DIR=/app/archive
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+  frontend:
+    container_name: kiddo-frontend
+    build:
+      context: ..
+      dockerfile: docker/frontend.Dockerfile
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_BACKEND_URL=http://backend:8000
+    depends_on:
+      - backend
