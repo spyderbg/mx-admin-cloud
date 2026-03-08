@@ -1,15 +1,20 @@
-FROM node:20-alpine
+# Stage 1: Build the Vue 3 production bundle
+FROM node:20-alpine AS build
 
 WORKDIR /app
 
-# Install deps first (better layer caching)
-COPY frontend/package.json /app/package.json
-COPY frontend/vite.config.js /app/vite.config.js
-RUN npm install --silent
+COPY frontend/package.json frontend/package-lock.json* /app/
+RUN npm ci --silent
 
-# Copy source
 COPY frontend /app
+RUN npm run build
 
-EXPOSE 5173
+# Stage 2: Serve with nginx
+FROM nginx:stable-alpine
 
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
