@@ -83,6 +83,7 @@ start-core() {
 
 # ── Step 3: Start backend-cli container (optional) ───────────────────────────
 start-cli() {
+  echo "Start backend-cli: $START_BACKEND_CLI"
   if [[ "$START_BACKEND_CLI" == "true" ]]; then
     echo "==> Starting optional kiddo-backend-cli container..."
     docker compose -f "$COMPOSE_FILE" --profile cli up -d backend-cli
