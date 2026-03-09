@@ -90,6 +90,11 @@ start-cli() {
     echo "    Done: kiddo-backend-cli started."
   else
     echo "==> Skipping kiddo-backend-cli container (START_BACKEND_CLI != true)."
+    if docker ps --format '{{.Names}}' | grep -q "^kiddo-backend-cli$"; then
+      echo "==> Stopping existing kiddo-backend-cli container..."
+      docker compose -f "$COMPOSE_FILE" --profile cli stop backend-cli
+      echo "    Done: kiddo-backend-cli stopped."
+    fi
   fi
 }
 

@@ -12,4 +12,12 @@ __pycache__/
 
 # Virtual environments
 venv/
+.venv/
 .env
+
+# JetBrain Rider folder 
+.idea/
+
+# Visual Studio cache directory
+.vs/
+.vsconfig 

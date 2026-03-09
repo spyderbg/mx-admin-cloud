@@ -97,3 +97,9 @@ const logout = (): void => {
   router.push('/login')
 }
 </script>
+
+<style scoped>
+.navbar-brand-wrapper .brand-logo > img {
+  padding-top: 12px;
+}
+</style>
