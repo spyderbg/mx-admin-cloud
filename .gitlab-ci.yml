@@ -11,7 +11,7 @@ deploy:
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
   before_script:
-    - echo "before custom export START_BACKEND_CLI: $START_BACKEND_CLI"
+    - echo "before custom export START_BACKEND_CLI($START_BACKEND_CLI)"
     - export START_BACKEND_CLI="true"
   script:
     - bash scripts/deploy.sh build
