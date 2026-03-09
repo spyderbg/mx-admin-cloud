@@ -3,7 +3,17 @@
 # Builds Docker images, starts containers, validates services, installs kiddo-cli.
 # Designed to run directly on the Ubuntu 24.04 host (shell executor).
 #
+# Required Ubuntu 24.04 packages:
+#   - docker-ce: Docker engine for container management
+#   - docker-compose-v2: Docker Compose for multi-container orchestration (integrated as 'docker compose')
+#   - curl: HTTP client for service health checks
+#   - bash: Shell interpreter (usually pre-installed)
+#
+# Installation command:
+#   sudo apt-get update && sudo apt-get install -y docker-ce docker-compose-v2 curl
+#
 # Usage: deploy.sh [--compose-file <path>] [--backend-port <port>] [--frontend-port <port>]
+#
 
 set -euo pipefail
 
@@ -29,12 +39,12 @@ done
 # ── Step 1: Build Docker images ──────────────────────────────────────────────
 
 echo "==> Building Docker images..."
-docker-compose -f "$COMPOSE_FILE" build
+docker compose -f "$COMPOSE_FILE" build
 
 # ── Step 2: Create or update containers ──────────────────────────────────────
 
 echo "==> Starting containers..."
-docker-compose -f "$COMPOSE_FILE" up -d
+docker compose -f "$COMPOSE_FILE" up -d
 
 # ── Step 3: Validate services ────────────────────────────────────────────────
 
@@ -60,8 +70,8 @@ for i in $(seq 1 "$MAX_RETRIES"); do
 
   if [ "$i" -eq "$MAX_RETRIES" ]; then
     echo "    Timeout after $((MAX_RETRIES * RETRY_INTERVAL))s waiting for services." >&2
-    docker-compose -f "$COMPOSE_FILE" ps
-    docker-compose -f "$COMPOSE_FILE" logs --tail=50
+    docker compose -f "$COMPOSE_FILE" ps
+    docker compose -f "$COMPOSE_FILE" logs --tail=50
     exit 1
   fi
 
