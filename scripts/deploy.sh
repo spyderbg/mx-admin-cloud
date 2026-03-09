@@ -37,6 +37,7 @@ FRONTEND_PORT="9001"
 SERVICE_HOST="localhost"
 MAX_RETRIES=30
 RETRY_INTERVAL=2
+export DOCKER_API_VERSION="1.41"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in

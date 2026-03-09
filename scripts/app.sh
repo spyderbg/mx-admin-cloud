@@ -7,6 +7,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+export DOCKER_API_VERSION="1.41"
 COMPOSE_FILE="$REPO_ROOT/docker/docker-compose.yml"
 
 cd "$REPO_ROOT"
