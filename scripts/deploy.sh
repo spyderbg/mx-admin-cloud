@@ -9,8 +9,19 @@
 #   - curl: HTTP client for service health checks
 #   - bash: Shell interpreter (usually pre-installed)
 #
-# Installation command:
-#   sudo apt-get update && sudo apt-get install -y docker-ce docker-compose-v2 curl
+# Installation command Ubuntu 24.04 LTS:
+#   sudo install -m 0755 -d /etc/apt/keyrings
+#   curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+#   sudo chmod a+r /etc/apt/keyrings/docker.gpg
+#   echo \
+#     "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+#      https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" | \
+#   sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+#   sudo apt-get update && sudo apt-get install -y docker-ce docker-compose-plugin curl
+# or
+#   sudo apt remove docker docker-engine docker.io containerd runc
+#   sudo apt update
+#   sudo apt install docker-ce docker-ce-cli containerd.io docker-compose-plugin
 #
 # Usage: deploy.sh [--compose-file <path>] [--backend-port <port>] [--frontend-port <port>]
 #
