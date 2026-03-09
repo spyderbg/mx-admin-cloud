@@ -22,3 +22,20 @@ services:
       - "9001:80"
     depends_on:
       - backend
+
+  backend-cli:
+    container_name: kiddo-backend-cli
+    build:
+      context: ..
+      dockerfile: docker/backend.Dockerfile
+    volumes:
+      - ../content:/app/content
+      - ../archive:/app/archive
+      - /tmp:/tmp
+    environment:
+      - CONTENT_DIR=/app/content
+      - ARCHIVE_DIR=/app/archive
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    command: ["uvicorn", "src.main:app", "--uds", "/tmp/kiddo-backend.sock"]
+    profiles:
+      - cli

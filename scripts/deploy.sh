@@ -23,8 +23,10 @@
 #   sudo apt update
 #   sudo apt install docker-ce docker-ce-cli containerd.io docker-compose-plugin
 #
-# Usage: deploy.sh [--compose-file <path>] [--backend-port <port>] [--frontend-port <port>]
+# Usage: deploy.sh [--compose-file <path>] [--backend-port <port>] [--frontend-port <port>] [--start-backend-cli]
 #
+# Environment variables:
+#   START_BACKEND_CLI: If set to "true", starts the kiddo-backend-cli container.
 
 set -euo pipefail
 
@@ -34,6 +36,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 COMPOSE_FILE="$REPO_ROOT/docker/docker-compose.yml"
 BACKEND_PORT="9000"
 FRONTEND_PORT="9001"
+START_BACKEND_CLI="${START_BACKEND_CLI:-false}"
 SERVICE_HOST="localhost"
 MAX_RETRIES=30
 RETRY_INTERVAL=2
@@ -44,6 +47,7 @@ while [[ $# -gt 0 ]]; do
     --compose-file) COMPOSE_FILE="$2"; shift 2 ;;
     --backend-port) BACKEND_PORT="$2"; shift 2 ;;
     --frontend-port) FRONTEND_PORT="$2"; shift 2 ;;
+    --start-backend-cli) START_BACKEND_CLI="true"; shift ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
@@ -101,3 +105,11 @@ echo "==> Installing kiddo-cli..."
 bash "$SCRIPT_DIR/cli.sh" install
 kiddo-cli --help
 echo "==> Deployment complete."
+
+# ── Step 5: Start backend-cli container (optional) ───────────────────────────
+
+if [[ "$START_BACKEND_CLI" == "true" ]]; then
+  echo "==> Starting kiddo-backend-cli container..."
+  docker compose -f "$COMPOSE_FILE" --profile cli up -d backend-cli
+  echo "    kiddo-backend-cli is running."
+fi
