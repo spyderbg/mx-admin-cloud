@@ -2,6 +2,15 @@
 
 FastAPI backend for Kiddo content management. All API routes are under `/api/v1`. Protected endpoints require a Bearer token (obtained via `/login` or `/cli-login`).
 
+## Create .venv
+```bash
+python3.10 -m venv .venv
+```
+
+```batch
+py -3.10 -m venv .venv
+```
+
 ## Run the backend
 
 From the backend directory:
