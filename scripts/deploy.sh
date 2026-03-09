@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# CI/CD deployment script for mx-admin.
+# Builds Docker images, starts containers, validates services, installs kiddo-cli.
+# Designed to run directly on the Ubuntu 24.04 host (shell executor).
+#
+# Usage: deploy.sh [--compose-file <path>] [--backend-port <port>] [--frontend-port <port>]
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+COMPOSE_FILE="$REPO_ROOT/docker/docker-compose.yml"
+BACKEND_PORT="9000"
+FRONTEND_PORT="9001"
+SERVICE_HOST="localhost"
+MAX_RETRIES=30
+RETRY_INTERVAL=2
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --compose-file) COMPOSE_FILE="$2"; shift 2 ;;
+    --backend-port) BACKEND_PORT="$2"; shift 2 ;;
+    --frontend-port) FRONTEND_PORT="$2"; shift 2 ;;
+    *) echo "Unknown option: $1" >&2; exit 1 ;;
+  esac
+done
+
+# ── Step 1: Build Docker images ──────────────────────────────────────────────
+
+echo "==> Building Docker images..."
+docker-compose -f "$COMPOSE_FILE" build
+
+# ── Step 2: Create or update containers ──────────────────────────────────────
+
+echo "==> Starting containers..."
+docker-compose -f "$COMPOSE_FILE" up -d
+
+# ── Step 3: Validate services ────────────────────────────────────────────────
+
+echo "==> Waiting for services on ${SERVICE_HOST} (backend:${BACKEND_PORT}, frontend:${FRONTEND_PORT})..."
+
+for i in $(seq 1 "$MAX_RETRIES"); do
+  backend_ok=false
+  frontend_ok=false
+
+  if curl -sf "http://${SERVICE_HOST}:${BACKEND_PORT}/" >/dev/null 2>&1; then
+    backend_ok=true
+  fi
+
+  http_code=$(curl -sf -o /dev/null -w "%{http_code}" "http://${SERVICE_HOST}:${FRONTEND_PORT}/" 2>/dev/null || echo "000")
+  if echo "$http_code" | grep -qE '^(200|301|302)$'; then
+    frontend_ok=true
+  fi
+
+  if $backend_ok && $frontend_ok; then
+    echo "    Services are up."
+    break
+  fi
+
+  if [ "$i" -eq "$MAX_RETRIES" ]; then
+    echo "    Timeout after $((MAX_RETRIES * RETRY_INTERVAL))s waiting for services." >&2
+    docker-compose -f "$COMPOSE_FILE" ps
+    docker-compose -f "$COMPOSE_FILE" logs --tail=50
+    exit 1
+  fi
+
+  sleep "$RETRY_INTERVAL"
+done
+
+echo "    Backend response:"
+curl -s "http://${SERVICE_HOST}:${BACKEND_PORT}/"
+echo ""
+echo "    Frontend HTTP status: $(curl -s -o /dev/null -w '%{http_code}' "http://${SERVICE_HOST}:${FRONTEND_PORT}/")"
+
+# ── Step 4: Install kiddo-cli ────────────────────────────────────────────────
+
+echo "==> Installing kiddo-cli..."
+bash "$SCRIPT_DIR/cli.sh" install
+kiddo-cli --help
+echo "==> Deployment complete."
