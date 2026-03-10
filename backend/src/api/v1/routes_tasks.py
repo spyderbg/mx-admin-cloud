@@ -10,18 +10,18 @@ def get_ping():
     return ping()
 
 @router.get("/status")
-def get_status(user=Depends(get_current_user)):
+def get_status(user: dict = Depends(get_current_user)):
     return status()
 
 @router.post("/operation")
-def post_operation(name: str, user=Depends(get_current_user)):
+def post_operation(name: str, user: dict = Depends(get_current_user)):
     return operation(name)
 
 class ListFilesRequest(BaseModel):
     depth: int
 
 @router.post("/list-files")
-def post_list_files(data: ListFilesRequest, user=Depends(get_current_user)):
+def post_list_files(data: ListFilesRequest, user: dict = Depends(get_current_user)):
     if data.depth < 1:
         data.depth = 1
     return list_files(data.depth)

@@ -8,11 +8,10 @@ oauth2_scheme = OAuth2PasswordBearer(
     auto_error=False,
 )
 
-def verify_token(token: str | None = Depends(oauth2_scheme)):
+
+def verify_token(token: str | None = Depends(oauth2_scheme)) -> dict:
     if settings.AUTH_DISABLED:
-        # Auth bypass mode (useful for local dev/tests).
-        # Return a safe placeholder user identifier.
-        return "dev-user"
+        return {"username": "dev-user", "role": "admin"}
 
     if not token:
         raise HTTPException(
@@ -28,9 +27,10 @@ def verify_token(token: str | None = Depends(oauth2_scheme)):
     )
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
+        username: str | None = payload.get("sub")
+        role: str | None = payload.get("role")
+        if username is None or role is None:
             raise credentials_exception
     except JWTError:
         raise credentials_exception
-    return username
+    return {"username": username, "role": role}

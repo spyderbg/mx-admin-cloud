@@ -31,7 +31,7 @@ router = APIRouter()
 
 @router.get("/content/categories")
 def list_categories(
-        user: str = Depends(get_current_user),
+        user: dict = Depends(get_current_user),
         include_archived: bool = False,
         archived_only: bool = False,
 ):
@@ -42,7 +42,7 @@ def list_categories(
 
 
 @router.post("/content/categories", status_code=status.HTTP_201_CREATED)
-def create_category_endpoint(body: CreateCategoryBody, user: str = Depends(get_current_user)):
+def create_category_endpoint(body: CreateCategoryBody, user: dict = Depends(get_current_user)):
     result = svc_create_category(body.name.strip())
     if "error" in result:
         if result.get("error", "").startswith("Category already exists"):
@@ -52,7 +52,7 @@ def create_category_endpoint(body: CreateCategoryBody, user: str = Depends(get_c
 
 
 @router.post("/content/categories/restore")
-def restore_category_endpoint(body: RestoreCategoryBody, user: str = Depends(get_current_user)):
+def restore_category_endpoint(body: RestoreCategoryBody, user: dict = Depends(get_current_user)):
     result = svc_restore_category(body.name.strip())
     if "error" in result:
         if result.get("error") == "Archive directory does not exist":
@@ -67,7 +67,7 @@ def restore_category_endpoint(body: RestoreCategoryBody, user: str = Depends(get
 
 @router.patch("/content/categories/{category_name}")
 def rename_category_endpoint(
-        category_name: str, body: RenameCategoryBody, user: str = Depends(get_current_user)
+        category_name: str, body: RenameCategoryBody, user: dict = Depends(get_current_user)
 ):
     result = svc_rename_category(category_name, body.name.strip())
     if "error" in result:
@@ -80,7 +80,7 @@ def rename_category_endpoint(
 
 
 @router.delete("/content/categories/{category_name}")
-def remove_category(category_name: str, user: str = Depends(get_current_user)):
+def remove_category(category_name: str, user: dict = Depends(get_current_user)):
     result = svc_remove_category(category_name)
     if "error" in result:
         if result.get("error") == "Category not found":
@@ -92,7 +92,7 @@ def remove_category(category_name: str, user: str = Depends(get_current_user)):
 
 
 @router.get("/content/categories/{category_name}")
-def category_details(category_name: str, user: str = Depends(get_current_user)):
+def category_details(category_name: str, user: dict = Depends(get_current_user)):
     result = svc_category_details(category_name)
     if "error" in result and result.get("error") == "Category not found":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=result["error"])
@@ -103,7 +103,7 @@ def category_details(category_name: str, user: str = Depends(get_current_user)):
 
 @router.post("/content/objects", status_code=status.HTTP_201_CREATED)
 def create_object(
-        user: str = Depends(get_current_user),
+        user: dict = Depends(get_current_user),
         image: UploadFile = File(...),
         category: str = Form(...),
         object: str = Form(..., alias="object"),

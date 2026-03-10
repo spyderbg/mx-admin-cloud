@@ -9,9 +9,11 @@ services:
     volumes:
       - ../content:/app/content
       - ../archive:/app/archive
+      - backend-data:/app/data
     environment:
       - CONTENT_DIR=/app/content
       - ARCHIVE_DIR=/app/archive
+      - DB_PATH=/app/data/users.db
       - OPENAI_API_KEY=${OPENAI_API_KEY}
   frontend:
     container_name: kiddo-frontend
@@ -31,11 +33,16 @@ services:
     volumes:
       - ../content:/app/content
       - ../archive:/app/archive
+      - backend-data:/app/data
       - /tmp:/tmp
     environment:
       - CONTENT_DIR=/app/content
       - ARCHIVE_DIR=/app/archive
+      - DB_PATH=/app/data/users.db
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     command: ["uvicorn", "src.main:app", "--uds", "/tmp/kiddo-backend.sock"]
     profiles:
       - cli
+
+volumes:
+  backend-data:

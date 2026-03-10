@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     CLI_TOKEN_EXPIRE_SECONDS: int = 30
 
+    DB_PATH: str = "data/users.db"
+    DEFAULT_ADMIN_PASSWORD: str = "MarXman2025"
+
     CONTENT_DIR: str = "../content"
     ARCHIVE_DIR: str = "../archive"
 
