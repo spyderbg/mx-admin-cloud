@@ -1,0 +1,83 @@
+"""Generate commands: trigger TTS pipeline, list generators/translators via backend HTTP."""
+from pathlib import Path
+
+import typer
+
+from kiddo_cli.api.client import internal_get, internal_post
+from kiddo_cli.auth_flow import run_with_auth
+from kiddo_cli.output import print_json
+
+ALLOWED_EXTENSIONS = {".txt", ".csv", ".xlsx"}
+
+
+def register(app: typer.Typer) -> None:
+    """Register generate commands on the given Typer app."""
+
+    @app.command("run")
+    def run(
+        input_file: Path = typer.Argument(..., help="Input file (.csv, .xlsx, .txt)"),
+        lang: str = typer.Option("en", "-l", "--lang", help="Default language code"),
+        output_format: str = typer.Option("mp3", "-f", "--output-format"),
+        max_concurrency: int = typer.Option(5, "--max-concurrency"),
+        url: str = typer.Option(None, "--url", help="Backend base URL"),
+        token: str | None = typer.Option(None, "--token"),
+    ):
+        """Run the TTS pipeline (translate, generate, evaluate).
+
+        The input file is uploaded to the backend as-is; the backend's
+        input_loader handles parsing based on the file type (.txt, .csv, .xlsx).
+        """
+        if not input_file.exists() or not input_file.is_file():
+            typer.echo(f"Error: Input file not found: {input_file}", err=True)
+            raise typer.Exit(1)
+
+        suffix = input_file.suffix.lower()
+        if suffix not in ALLOWED_EXTENSIONS:
+            typer.echo(
+                f"Error: Unsupported file type '{suffix}'. "
+                f"Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
+                err=True,
+            )
+            raise typer.Exit(1)
+
+        def _run(t: str):
+            with open(input_file, "rb") as fh:
+                result = internal_post(
+                    "/voice/generate-sync",
+                    token=t,
+                    data={
+                        "language": lang,
+                        "output_format": output_format,
+                        "max_concurrency": str(max_concurrency),
+                    },
+                    files={"file": (input_file.name, fh)},
+                )
+            print_json(result)
+
+        run_with_auth(url, token, _run)
+
+    @app.command("list-generators")
+    def list_generators(
+        url: str = typer.Option(None, "--url"),
+        token: str | None = typer.Option(None, "--token"),
+    ):
+        """Show configured generators with activation states."""
+
+        def _run(t: str):
+            result = internal_get("/voice/generators", token=t)
+            print_json(result)
+
+        run_with_auth(url, token, _run)
+
+    @app.command("list-translators")
+    def list_translators(
+        url: str = typer.Option(None, "--url"),
+        token: str | None = typer.Option(None, "--token"),
+    ):
+        """Show configured translators with priority and states."""
+
+        def _run(t: str):
+            result = internal_get("/voice/translators", token=t)
+            print_json(result)
+
+        run_with_auth(url, token, _run)

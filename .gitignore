@@ -1,20 +1,14 @@
-# Python packaging
-*.egg-info/
-.eggs/
-
 # Build artifacts
 build/
 dist/
 
-# Bytecode
-__pycache__/
-*.pyc
+# Environment costants and secure keys
+.env
 
 # Virtual environments
 venv/
 .venv/
 .venv_wsl/
-.env
 
 # JetBrain Rider folder 
 .idea/
@@ -22,3 +16,12 @@ venv/
 # Visual Studio cache directory
 .vs/
 .vsconfig 
+
+# Python packaging
+*.egg-info/
+.eggs/
+
+# Bytecode
+__pycache__/
+*.pyc
+

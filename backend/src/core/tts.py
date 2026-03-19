@@ -1,30 +1,58 @@
+"""TTS service: delegates to multi-provider services.providers.
+
+Keeps the ``generate_audio()`` signature so ``content_service.py`` needs no changes.
 """
-TTS service: generate speech for a word in a given language via OpenAI Audio API.
-Ported from existing_scripts/generate.py logic.
-"""
-from openai import OpenAI
+
+import asyncio
+import importlib
+from pathlib import Path
 
 from src.core.config import settings
-
-VOICE = "alloy"
-MODEL = "tts-1-hd"
+from src.services.config_loader import load_provider_configs
+from src.services.providers import build_provider
 
 
 def generate_audio(word: str, lang: str) -> bytes:
-    """
-    Generate TTS audio for one word in the given language.
-    Returns MP3 bytes.
+    """Generate TTS audio for one word using the first active provider.
+
+    Returns raw audio bytes (format depends on provider config).
     """
     if not word or not word.strip():
         raise ValueError("Word must be non-empty for TTS.")
 
-    if not settings.OPENAI_API_KEY:
-        raise ValueError("OPENAI_API_KEY is not set; cannot call TTS.")
+    base_dir = Path(".")
+    configs = load_provider_configs(base_dir=base_dir, config_dir=Path(settings.TTS_CONFIG_DIR))
+    active = [c for c in configs if c.generate.get("active")]
+    if not active:
+        raise ValueError("No active TTS providers configured.")
 
-    client = OpenAI(api_key=settings.OPENAI_API_KEY)
-    response = client.audio.speech.create(
-        model=MODEL,
-        voice=VOICE,
-        input=word.strip(),
+    provider = build_provider(active[0], Path(settings.TTS_OUTPUT_DIR))
+
+    from src.services.models import TTSRequest
+    from src.services.languages import language_name, normalize_language_code
+    from src.services.output_paths import slugify_filename
+
+    lang_code = normalize_language_code(lang)
+    lang_full = language_name(lang_code)
+    safe_text = slugify_filename(word.strip(), "item")
+    request = TTSRequest(
+        request_id=f"sync-{safe_text}-{lang_code}",
+        text=word.strip(),
+        language_code=lang_code,
+        language_name=lang_full,
+        filename_text=word.strip(),
+        expected_text=word.strip(),
+        source_file="content_service",
+        source_type="inline",
+        row_index=0,
     )
-    return response.content
+
+    async def _generate() -> bytes:
+        httpx = importlib.import_module("httpx")
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            result = await provider.generate(request, "mp3", client)
+        if not result.success:
+            raise RuntimeError(result.error or "TTS generation failed.")
+        return result.raw_path.read_bytes()
+
+    return asyncio.run(_generate())

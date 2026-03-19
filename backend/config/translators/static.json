@@ -1,0 +1,10 @@
+{
+  "translator": "static",
+  "translate": {
+    "active": "yes",
+    "priority": 1,
+    "config": {
+      "content_dir": "content"
+    }
+  }
+}

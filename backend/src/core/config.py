@@ -35,5 +35,13 @@ class Settings(BaseSettings):
 
     AUTH_DISABLED: bool = False
 
+    ELEVENLABS_API_KEY: str | None = None
+    SPEAKTOR_API_KEY: str | None = None
+    INTERNAL_SERVICE_TOKEN: str = "change-me-in-production"
+    TTS_CONFIG_DIR: str = "config"
+    TTS_OUTPUT_DIR: str = "output"
+    TTS_MAX_CONCURRENCY: int = 5
+    TTS_LOG_PROFILE: str = "dev"
+
 
 settings = Settings()

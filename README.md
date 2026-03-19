@@ -6,22 +6,27 @@ Admin application for **Kiddo** content management: categories, content objects,
 
 ```
 mx-admin/
-├── backend/          # FastAPI API (auth, tasks, content)
+├── backend/          # FastAPI API (auth, tasks, content, internal voice generation)
+│   ├── config/       # TTS provider and translator JSON configs
+│   └── src/
+│       ├── api/      # v1/ (public routes) and internal/ (voice generation)
+│       ├── core/     # config, content_service, translation, TTS wrappers
+│       └── services/ # Multi-provider TTS, translation, evaluation, logging
 ├── frontend/         # Vue 3 + TypeScript + Vite SPA
 ├── cli/              # kiddo-cli (Typer) – HTTP client for the backend
 ├── docker/           # Dockerfiles and docker-compose
 ├── content/          # Content data (categories: drinks, foods, toys, etc.)
 ├── docs/             # Backend/CLI layout, game plugin generation
 ├── scripts/          # app.sh, cli.sh, setup.sh, export_env_variables.py
-├── existing_scripts/ # Legacy scripts (translate_csv, generate, export, etc.)
 └── README.md
 ```
 
 ### Backend (`backend/`)
 
-- **Stack:** Python 3.10+, FastAPI, Uvicorn, Pydantic Settings, python-jose, passlib, OpenAI (TTS/translation/icons).
-- **Layout:** `src/main.py`; `src/api/v1/` (auth, tasks, content); `src/core/` (config, content_service, translation, TTS, icon); `src/security/` (auth, tokens).
-- **API base:** `/api/v1` — auth (`/login`, `/cli-login`), tasks (`/ping`, `/status`, `/operation`, `/list-files`), content (categories CRUD, restore, objects).
+- **Stack:** Python 3.10+, FastAPI, Uvicorn, Pydantic Settings, python-jose, passlib, OpenAI (TTS/translation/icons), httpx, structlog.
+- **Layout:** `src/main.py`; `src/api/v1/` (auth, tasks, content, users); `src/api/internal/` (voice generation); `src/core/` (config, content_service, translation, TTS wrappers); `src/services/` (multi-provider TTS, translation, evaluation, logging); `src/security/` (auth, tokens).
+- **API base:** `/api/v1` -- auth, tasks, content; `/internal/voice/*` -- voice generation (dual-auth: service token or admin JWT).
+- **Services:** Multi-provider TTS (OpenAI, ElevenLabs, Speaktor), priority-based translation (static CSV + OpenAI fallback), evaluation engine (STT + Levenshtein scoring), structured logging (structlog, Seq, file rotation).
 - **Docs:** See [backend/README.md](backend/README.md) for endpoints and env vars.
 
 ### Frontend (`frontend/`)
@@ -34,19 +39,19 @@ mx-admin/
 ### CLI (`cli/`)
 
 - **Stack:** Python 3.10+, Typer, requests/httpx. No backend code; all calls over HTTP.
-- **Install:** `./scripts/cli.sh install` or `pip install -e cli/` → `kiddo-cli` command.
-- **Commands:** `tasks` (ping, status, operation, list-files), `content` (categories, create-category, rename-category, remove-category, restore-category, category-details, create-object).
+- **Install:** `./scripts/cli.sh install` or `pip install -e cli/` -> `kiddo-cli` command.
+- **Commands:** `tasks` (ping, status, operation, list-files), `content` (categories, create-category, rename-category, remove-category, restore-category, category-details, create-object), `generate` (run, list-generators, list-translators).
 - **Docs:** See [cli/README.md](cli/README.md) for auth and usage.
 
 ### Docker (`docker/`)
 
-- **Services:** `backend` (port 8000), `frontend` (port 5173). Content mounted at `/app/content`.
+- **Services:** `backend` (port 8000), `frontend` (port 5173), `backend-cli` (Unix socket). Content mounted at `/app/content`, TTS config at `/app/config`, TTS output at `/app/tts-output`.
 - **Compose:** `docker compose -f docker/docker-compose.yml up` (from repo root). Helper: `./scripts/app.sh start` or `./scripts/app.sh stop`.
 
 ### Docs (`docs/`)
 
-- [backend_first_build.md](docs/backend_first_build.md) — Backend/CLI layout, run instructions, dependencies.
-- [game_plugin_generate.md](docs/game_plugin_generate.md) — Mustache template and plugin CPP generation from merged config.
+- [backend_first_build.md](docs/backend_first_build.md) -- Backend/CLI layout, run instructions, dependencies.
+- [game_plugin_generate.md](docs/game_plugin_generate.md) -- Mustache template and plugin CPP generation from merged config.
 
 ---
 
@@ -99,6 +104,8 @@ Backend: `http://localhost:8000`. Frontend: `http://localhost:5173`. Stop: `./sc
 kiddo-cli --help
 kiddo-cli tasks ping
 kiddo-cli content categories
+kiddo-cli generate list-generators
+kiddo-cli generate run -l bg -f mp3 words.txt
 ```
 
 Use `BACKEND_URL` and `KIDDO_TOKEN` (or socket-based login) as in [cli/README.md](cli/README.md).
@@ -114,6 +121,13 @@ Key settings (see `backend/src/core/config.py`):
 | `CONTENT_DIR` | Content data directory (default `../content`) |
 | `ARCHIVE_DIR` | Archive directory for removed categories (optional) |
 | `OPENAI_API_KEY` | Required for TTS, translation, and category icon generation |
+| `ELEVENLABS_API_KEY` | ElevenLabs TTS provider (optional) |
+| `SPEAKTOR_API_KEY` | Speaktor TTS provider (optional) |
+| `INTERNAL_SERVICE_TOKEN` | Shared secret for service-to-service internal API calls |
+| `TTS_CONFIG_DIR` | Path to TTS config directory (default `config`) |
+| `TTS_OUTPUT_DIR` | Path to TTS output directory (default `output`) |
+| `TTS_MAX_CONCURRENCY` | Max parallel provider requests (default 5) |
+| `TTS_LOG_PROFILE` | Logging profile: `dev` or `prod` (default `dev`) |
 | `SECRET_KEY`, `ALGORITHM` | JWT auth |
 | `AUTH_DISABLED` | If true, skip auth checks |
 

@@ -1,1 +1,1 @@
-# Command groups: tasks, content
+# Command groups: tasks, content, generate

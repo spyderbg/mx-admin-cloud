@@ -5,6 +5,7 @@ import requests
 
 DEFAULT_BACKEND_URL = "http://localhost:8000"
 API_V1 = "/api/v1"
+INTERNAL_PREFIX = "/internal"
 
 
 def base_url() -> str:
@@ -71,6 +72,42 @@ def post(
         params=params,
         data=data,
         json=json,
+        files=files,
+        timeout=timeout,
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+def internal_get(
+    path: str,
+    token: str | None = None,
+    params: dict | None = None,
+    timeout: int = 30,
+) -> dict:
+    r = requests.get(
+        f"{base_url()}{INTERNAL_PREFIX}{path}",
+        headers=headers(token),
+        params=params,
+        timeout=timeout,
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+def internal_post(
+    path: str,
+    token: str | None = None,
+    json: dict | None = None,
+    data: dict | None = None,
+    files: dict | None = None,
+    timeout: int = 300,
+) -> dict:
+    r = requests.post(
+        f"{base_url()}{INTERNAL_PREFIX}{path}",
+        headers=headers(token),
+        json=json,
+        data=data,
         files=files,
         timeout=timeout,
     )

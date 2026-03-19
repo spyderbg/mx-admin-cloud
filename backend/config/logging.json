@@ -1,0 +1,60 @@
+{
+  "logging": {
+    "version": 1,
+    "disable_existing_loggers": false,
+    "formatters": {
+      "plain": {
+        "format": "%(message)s"
+      }
+    },
+    "handlers": {
+      "console": {
+        "active": true,
+        "level": "INFO",
+        "class": "logging.StreamHandler",
+        "formatter": "plain"
+      },
+      "file": {
+        "active": true,
+        "level": "INFO",
+        "class": "logging.handlers.RotatingFileHandler",
+        "filename": "${output_dir}/results/logs/app.log",
+        "maxBytes": 10485760,
+        "backupCount": 5,
+        "formatter": "plain"
+      },
+      "seq": {
+        "active": false,
+        "level": "INFO",
+        "class": "seqlog.structured_logging.SeqLogHandler",
+        "server_url": "http://localhost:5341",
+        "api_key": ""
+      }
+    },
+    "root": {
+      "handlers": [
+        "console",
+        "file",
+        "seq"
+      ],
+      "level": "INFO"
+    }
+  },
+  "structlog": {
+    "renderer": "console"
+  },
+  "request_logger": {
+    "path": "results/requests.log",
+    "fields": {
+      "provider": true,
+      "translator": true,
+      "model": true,
+      "actor": true,
+      "voice_id": true,
+      "language": true,
+      "input": true,
+      "response_duration": true,
+      "timestamp": true
+    }
+  }
+}

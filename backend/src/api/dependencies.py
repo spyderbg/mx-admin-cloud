@@ -1,5 +1,7 @@
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, Header, HTTPException, Request, status
+from jose import jwt, JWTError
 
+from src.core.config import settings
 from src.security.auth import verify_token
 
 
@@ -33,3 +35,32 @@ def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
             detail="Admin privileges required.",
         )
     return current_user
+
+
+def verify_internal_access(
+    request: Request,
+    x_internal_token: str | None = Header(None),
+) -> dict:
+    """Dual-auth: accepts EITHER X-Internal-Token header OR JWT with admin role."""
+    if x_internal_token and x_internal_token == settings.INTERNAL_SERVICE_TOKEN:
+        return {"sub": "internal_service", "role": "internal_service"}
+
+    if settings.AUTH_DISABLED:
+        return {"username": "dev-user", "role": "admin"}
+
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header.removeprefix("Bearer ").strip()
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+            username = payload.get("sub")
+            role = payload.get("role")
+            if username and role == "admin":
+                return {"username": username, "role": role}
+        except JWTError:
+            pass
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Internal access requires a valid service token or an admin JWT.",
+    )
