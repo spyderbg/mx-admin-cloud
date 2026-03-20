@@ -1,0 +1,14 @@
+{
+  "path": "results/requests.log",
+  "fields": {
+    "provider": true,
+    "translator": true,
+    "model": true,
+    "actor": true,
+    "voice_id": true,
+    "language": true,
+    "input": true,
+    "response_duration": true,
+    "timestamp": true
+  }
+}

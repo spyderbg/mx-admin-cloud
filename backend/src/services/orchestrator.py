@@ -8,10 +8,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .config_loader import load_provider_configs, load_translator_configs
+from .config_loader import load_optimizer_configs, load_provider_configs, load_translator_configs
 from .logging import get_logger, log_to_all_active_loggers, ensure_requests_log
 from .models import EvaluationResult, GeneratedAudio, ProviderConfig, ProviderRunRecord, RunSummary, TTSRequest
-from .output_paths import scores_dir
+from .optimization import AudioOptimizerBase, build_active_optimizers
+from .output_paths import optimized_output_dir, scores_dir
 from .providers import build_provider
 from .evaluation import EvaluationEngine, JsonScoreStore, MultiScoreStore, SQLiteScoreStore
 from .translation import build_translators, translate_with_fallback
@@ -107,7 +108,14 @@ async def run_pipeline(
             for request in requests
             for provider, config in providers
         ]
-        records = await asyncio.gather(*tasks)
+        records = list(await asyncio.gather(*tasks))
+
+    optimizer_configs = load_optimizer_configs(base_dir=base_dir, config_dir=config_dir)
+    optimizers = build_active_optimizers(optimizer_configs, output_root)
+    if optimizers:
+        await _run_optimizations(records, optimizers, output_root, semaphore)
+    else:
+        logger.info("optimization_skipped reason=no_active_optimizers")
 
     run_id = datetime.now().strftime("run_%Y%m%d_%H%M%S")
     summary = RunSummary(
@@ -233,3 +241,47 @@ def _build_record(
         success=generated_audio.success,
         error=generated_audio.error or generated_audio.normalization_error or evaluation_result.error,
     )
+
+
+async def _run_optimizations(
+    records: list[ProviderRunRecord],
+    optimizers: list[AudioOptimizerBase],
+    output_root: Path,
+    semaphore: asyncio.Semaphore,
+) -> None:
+    """Run every active optimizer on each successfully generated audio file."""
+    logger.info(
+        "optimization_started optimizer_count=%s record_count=%s",
+        len(optimizers),
+        len(records),
+    )
+    for record in records:
+        if not record.success or not record.raw_path:
+            continue
+        raw = Path(record.raw_path)
+        if not raw.exists():
+            continue
+
+        for optimizer in optimizers:
+            out_dir = optimized_output_dir(
+                output_root, optimizer.name, record.language_code, record.provider,
+            )
+            out_dir.mkdir(parents=True, exist_ok=True)
+            out_path = out_dir / raw.name
+
+            try:
+                async with semaphore:
+                    await optimizer.optimize(raw, out_path)
+                record.optimized_paths[optimizer.name] = str(out_path)
+                logger.info(
+                    "optimization_complete optimizer=%s path=%s",
+                    optimizer.name,
+                    str(out_path),
+                )
+            except Exception as exc:
+                logger.error(
+                    "optimization_failed optimizer=%s raw_path=%s error=%s",
+                    optimizer.name,
+                    str(raw),
+                    str(exc),
+                )

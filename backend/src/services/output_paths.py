@@ -21,6 +21,12 @@ def raw_output_dir(base_dir: Path, language_code: str, provider: str) -> Path:
     return base_dir / f"tts_audio_{language_code}" / provider
 
 
+def optimized_output_dir(
+    base_dir: Path, optimizer_name: str, language_code: str, provider: str,
+) -> Path:
+    return base_dir / f"optimized_{optimizer_name}" / f"tts_audio_{language_code}" / provider
+
+
 def normalized_output_dir(base_dir: Path, language_code: str, provider: str) -> Path:
     return base_dir / "results" / "normalized" / language_code / provider
 

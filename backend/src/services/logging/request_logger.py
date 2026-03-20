@@ -74,7 +74,7 @@ def _emit_request(event_name: str, payload: dict[str, Any]) -> None:
 
 
 def configure_request_logger(config: dict[str, Any] | None) -> None:
-    """Configure request log behavior from config/logging.json."""
+    """Configure request log behavior from config/loggers/request_logger.json."""
     global _REQUEST_LOG_REL_PATH
     global _REQUEST_FIELDS
 
