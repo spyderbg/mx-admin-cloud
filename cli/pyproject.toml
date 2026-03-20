@@ -1,6 +1,6 @@
 [project]
 name = "kiddo-cli"
-version = "0.1.0"
+version = "0.1.1"
 description = "CLI client for Kiddo content management backend (API-only)"
 requires-python = ">=3.10"
 dependencies = [

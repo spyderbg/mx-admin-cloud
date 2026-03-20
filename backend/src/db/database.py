@@ -1,12 +1,11 @@
+import hashlib
 import os
 import sqlite3
 from pathlib import Path
 
-from passlib.context import CryptContext
+import bcrypt
 
 from src.core.config import settings
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def _db_path() -> str:
@@ -29,11 +28,12 @@ def init_db() -> None:
     try:
         conn.execute(
             """
-            CREATE TABLE IF NOT EXISTS users (
+            CREATE TABLE IF NOT EXISTS users
+            (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                username        TEXT    UNIQUE NOT NULL,
-                role            TEXT    NOT NULL DEFAULT 'viewer',
-                hashed_password TEXT    NOT NULL
+                username        TEXT UNIQUE NOT NULL,
+                role            TEXT        NOT NULL DEFAULT 'viewer',
+                hashed_password TEXT        NOT NULL
             )
             """
         )
@@ -43,19 +43,23 @@ def init_db() -> None:
             "SELECT id FROM users WHERE username = ?", ("admin",)
         ).fetchone()
         if row is None:
-            hashed = pwd_context.hash(settings.DEFAULT_ADMIN_PASSWORD)
+            hashed = hash_password(settings.DEFAULT_ADMIN_PASSWORD)
             conn.execute(
                 "INSERT INTO users (username, role, hashed_password) VALUES (?, ?, ?)",
                 ("admin", "admin", hashed),
             )
             conn.commit()
+    except Exception as e:
+        print(f"Error initializing database: {e}")
     finally:
         conn.close()
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    prehashed = hashlib.sha256(plain.encode("utf-8")).hexdigest()
+    return bcrypt.checkpw(prehashed.encode("utf-8"), hashed.encode("utf-8"))
 
 
 def hash_password(plain: str) -> str:
-    return pwd_context.hash(plain)
+    prehashed = hashlib.sha256(plain.encode("utf-8")).hexdigest()
+    return bcrypt.hashpw(prehashed.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
