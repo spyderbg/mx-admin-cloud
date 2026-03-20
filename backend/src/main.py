@@ -13,10 +13,11 @@ from src.services.logging import LoggingSystem
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+async def lifespan(app_lifespan: FastAPI) -> AsyncIterator[None]:
+    """Initialize shared services during application startup."""
     await run_in_threadpool(init_db)
     log_config = Path(settings.CONFIG_DIR) / "logging.json"
-    app.state.logging_system = None
+    app_lifespan.state.logging_system = None
     if log_config.exists():
         logging_system = LoggingSystem(
             base_dir=Path("."),
@@ -25,7 +26,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             profile=settings.LOG_PROFILE,
         )
         await run_in_threadpool(logging_system.configure)
-        app.state.logging_system = logging_system
+        app_lifespan.state.logging_system = logging_system
     yield
 
 
@@ -40,4 +41,5 @@ app.include_router(routes_voice_gen.router, tags=["internal"])
 
 @app.get("/")
 def read_root():
+    """Read the root endpoint."""
     return {"message": f"Welcome to {settings.PROJECT_NAME}."}

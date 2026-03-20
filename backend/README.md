@@ -10,6 +10,19 @@ python3.10 -m venv .venv
 ```batch
 py -3.10 -m venv .venv
 ```
+## Activate .venv
+```bash
+source .venv/bin/activate
+```
+
+```batch
+.venv\Scripts\activate
+```
+
+## Install Python packages
+```
+pip install -r backend/requirements.txt
+```
 
 ## Run the backend
 
@@ -61,7 +74,7 @@ Base URL for all routes below: `/api/v1`. Protected routes require `Authorizatio
 
 | Method | Path           | Auth | Description |
 |--------|----------------|------|-------------|
-| `GET`  | `/ping`        | No   | Health check; returns PONG. |
+| `GET`  | `/ping`        | No   | Health check; returns PONG with backend platform info. |
 | `GET`  | `/status`      | Yes  | Service status. |
 | `POST` | `/operation`   | Yes  | Perform a service operation. Query param: `name`. |
 | `POST` | `/list-files`  | Yes  | List files in the configured directory. Body: `{"depth": int}` (depth < 1 treated as 1). |
