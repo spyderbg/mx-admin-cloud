@@ -21,12 +21,12 @@ def generate_audio(word: str, lang: str) -> bytes:
         raise ValueError("Word must be non-empty for TTS.")
 
     base_dir = Path(".")
-    configs = load_provider_configs(base_dir=base_dir, config_dir=Path(settings.TTS_CONFIG_DIR))
+    configs = load_provider_configs(base_dir=base_dir, config_dir=Path(settings.CONFIG_DIR))
     active = [c for c in configs if c.generate.get("active")]
     if not active:
         raise ValueError("No active TTS providers configured.")
 
-    provider = build_provider(active[0], Path(settings.TTS_OUTPUT_DIR))
+    provider = build_provider(active[0], Path(settings.OUTPUT_DIR))
 
     from src.services.models import TTSRequest
     from src.services.languages import language_name, normalize_language_code

@@ -41,10 +41,10 @@ Env (see `src/core/config.py`):
 - `ELEVENLABS_API_KEY` -- ElevenLabs TTS provider (optional)
 - `SPEAKTOR_API_KEY` -- Speaktor TTS provider (optional)
 - `INTERNAL_SERVICE_TOKEN` -- shared secret for service-to-service internal API calls
-- `TTS_CONFIG_DIR` -- path to TTS config directory (default `config`)
-- `TTS_OUTPUT_DIR` -- path to TTS output directory (default `output`)
+- `CONFIG_DIR` -- path to TTS config directory (default `config`)
+- `OUTPUT_DIR` -- path to TTS output directory (default `../output`)
 - `TTS_MAX_CONCURRENCY` -- max parallel provider requests (default 5)
-- `TTS_LOG_PROFILE` -- logging profile: `dev` or `prod` (default `dev`)
+- `LOG_PROFILE` -- logging profile: `dev` or `prod` (default `dev`)
 
 ## Endpoints
 
@@ -103,14 +103,14 @@ TTS providers and translators are configured via JSON files in `config/`:
 
 ```
 config/
-├── logging.json
-├── generators/
-│   ├── openai.json
-│   ├── elevenlabs.json
-│   └── speaktor.json
-└── translators/
-    ├── openai.json
-    └── static.json
+|-- logging.json
+|-- generators/
+|   |-- openai.json
+|   |-- elevenlabs.json
+|   `-- speaktor.json
+`-- translators/
+    |-- openai.json
+    `-- static.json
 ```
 
 Set `generate.active` to `"yes"` or `"no"` in each generator config to enable/disable providers.

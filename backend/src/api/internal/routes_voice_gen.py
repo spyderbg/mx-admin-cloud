@@ -40,14 +40,14 @@ class JobStatusResponse(BaseModel):
 
 
 async def _save_upload(upload: UploadFile, job_id: str) -> Path:
-    """Persist the uploaded file to TTS_OUTPUT_DIR, preserving its extension."""
+    """Persist the uploaded file to OUTPUT_DIR, preserving its extension."""
     suffix = Path(upload.filename or "input.txt").suffix.lower()
     if suffix not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
             detail=f"Unsupported file type '{suffix}'. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
         )
-    output_dir = Path(settings.TTS_OUTPUT_DIR)
+    output_dir = Path(settings.OUTPUT_DIR)
     output_dir.mkdir(parents=True, exist_ok=True)
     dest = output_dir / f"_input_{job_id}{suffix}"
     content = await upload.read()
@@ -69,9 +69,9 @@ async def _run_job(
             input_path=input_path,
             default_language=language,
             output_format=output_format,
-            config_dir=Path(settings.TTS_CONFIG_DIR),
+            config_dir=Path(settings.CONFIG_DIR),
             max_concurrency=max_concurrency,
-            output_dir=Path(settings.TTS_OUTPUT_DIR),
+            output_dir=Path(settings.OUTPUT_DIR),
         )
         _jobs[job_id]["status"] = "completed"
         _jobs[job_id]["result"] = summary.to_dict()
@@ -131,9 +131,9 @@ async def generate_sync(
             input_path=input_path,
             default_language=language,
             output_format=output_format,
-            config_dir=Path(settings.TTS_CONFIG_DIR),
+            config_dir=Path(settings.CONFIG_DIR),
             max_concurrency=max_concurrency,
-            output_dir=Path(settings.TTS_OUTPUT_DIR),
+            output_dir=Path(settings.OUTPUT_DIR),
         )
         input_path.unlink(missing_ok=True)
         return summary.to_dict()
@@ -149,7 +149,7 @@ async def list_generators(
     """Return configured generators with activation states."""
     configs = load_provider_configs(
         base_dir=Path("."),
-        config_dir=Path(settings.TTS_CONFIG_DIR),
+        config_dir=Path(settings.CONFIG_DIR),
     )
     return [
         {
@@ -170,7 +170,7 @@ async def list_translators(
     """Return configured translators with priority and activation states."""
     configs = load_translator_configs(
         base_dir=Path("."),
-        config_dir=Path(settings.TTS_CONFIG_DIR),
+        config_dir=Path(settings.CONFIG_DIR),
     )
     return [
         {

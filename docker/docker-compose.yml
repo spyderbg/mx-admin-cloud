@@ -20,8 +20,8 @@ services:
       - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
       - SPEAKTOR_API_KEY=${SPEAKTOR_API_KEY}
       - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN}
-      - TTS_CONFIG_DIR=/app/config
-      - TTS_OUTPUT_DIR=/app/tts-output
+      - CONFIG_DIR=/app/config
+      - OUTPUT_DIR=/app/tts-output
   frontend:
     container_name: kiddo-frontend
     build:
@@ -52,8 +52,8 @@ services:
       - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
       - SPEAKTOR_API_KEY=${SPEAKTOR_API_KEY}
       - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN}
-      - TTS_CONFIG_DIR=/app/config
-      - TTS_OUTPUT_DIR=/app/tts-output
+      - CONFIG_DIR=/app/config
+      - OUTPUT_DIR=/app/tts-output
     command: ["uvicorn", "src.main:app", "--uds", "/tmp/kiddo-backend.sock"]
     profiles:
       - cli

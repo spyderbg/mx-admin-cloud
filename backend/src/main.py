@@ -1,7 +1,9 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import AsyncIterator
 
 from fastapi import FastAPI
+from starlette.concurrency import run_in_threadpool
 
 from src.api.internal import routes_voice_gen
 from src.api.v1 import routes_auth, routes_tasks, routes_content, routes_users
@@ -11,17 +13,19 @@ from src.services.logging import LoggingSystem
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI):
-    init_db()
-    log_config = Path(settings.TTS_CONFIG_DIR) / "logging.json"
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    await run_in_threadpool(init_db)
+    log_config = Path(settings.CONFIG_DIR) / "logging.json"
+    app.state.logging_system = None
     if log_config.exists():
         logging_system = LoggingSystem(
             base_dir=Path("."),
-            output_dir=Path(settings.TTS_OUTPUT_DIR),
+            output_dir=Path(settings.OUTPUT_DIR),
             config_path=log_config,
-            profile=settings.TTS_LOG_PROFILE,
+            profile=settings.LOG_PROFILE,
         )
-        logging_system.configure()
+        await run_in_threadpool(logging_system.configure)
+        app.state.logging_system = logging_system
     yield
 
 

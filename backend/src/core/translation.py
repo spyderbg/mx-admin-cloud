@@ -17,7 +17,7 @@ def translate_word(text: str, target_lang_code: str, category: str | None = None
         return text.strip()
 
     base_dir = Path(".")
-    configs = load_translator_configs(base_dir=base_dir, config_dir=Path(settings.TTS_CONFIG_DIR))
+    configs = load_translator_configs(base_dir=base_dir, config_dir=Path(settings.CONFIG_DIR))
     translators = build_translators(configs, base_dir)
 
     if not translators:

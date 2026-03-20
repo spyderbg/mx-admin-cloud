@@ -6,19 +6,19 @@ Admin application for **Kiddo** content management: categories, content objects,
 
 ```
 mx-admin/
-├── backend/          # FastAPI API (auth, tasks, content, internal voice generation)
-│   ├── config/       # TTS provider and translator JSON configs
-│   └── src/
-│       ├── api/      # v1/ (public routes) and internal/ (voice generation)
-│       ├── core/     # config, content_service, translation, TTS wrappers
-│       └── services/ # Multi-provider TTS, translation, evaluation, logging
-├── frontend/         # Vue 3 + TypeScript + Vite SPA
-├── cli/              # kiddo-cli (Typer) – HTTP client for the backend
-├── docker/           # Dockerfiles and docker-compose
-├── content/          # Content data (categories: drinks, foods, toys, etc.)
-├── docs/             # Backend/CLI layout, game plugin generation
-├── scripts/          # app.sh, cli.sh, setup.sh, export_env_variables.py
-└── README.md
+|-- backend/          # FastAPI API (auth, tasks, content, internal voice generation)
+|   |-- config/       # TTS provider and translator JSON configs
+|   `-- src/
+|       |-- api/      # v1/ (public routes) and internal/ (voice generation)
+|       |-- core/     # config, content_service, translation, TTS wrappers
+|       `-- services/ # Multi-provider TTS, translation, evaluation, logging
+|-- frontend/         # Vue 3 + TypeScript + Vite SPA
+|-- cli/              # kiddo-cli (Typer) - HTTP client for the backend
+|-- docker/           # Dockerfiles and docker-compose
+|-- content/          # Content data (categories: drinks, foods, toys, etc.)
+|-- docs/             # Backend/CLI layout, game plugin generation
+|-- scripts/          # app.sh, cli.sh, setup.sh, export_env_variables.py
+`-- README.md
 ```
 
 ### Backend (`backend/`)
@@ -125,10 +125,10 @@ Key settings (see `backend/src/core/config.py`):
 | `ELEVENLABS_API_KEY` | ElevenLabs TTS provider (optional) |
 | `SPEAKTOR_API_KEY` | Speaktor TTS provider (optional) |
 | `INTERNAL_SERVICE_TOKEN` | Shared secret for service-to-service internal API calls |
-| `TTS_CONFIG_DIR` | Path to TTS config directory (default `config`) |
-| `TTS_OUTPUT_DIR` | Path to TTS output directory (default `output`) |
+| `CONFIG_DIR` | Path to TTS config directory (default `config`) |
+| `OUTPUT_DIR` | Path to TTS output directory (default `../output`) |
 | `TTS_MAX_CONCURRENCY` | Max parallel provider requests (default 5) |
-| `TTS_LOG_PROFILE` | Logging profile: `dev` or `prod` (default `dev`) |
+| `LOG_PROFILE` | Logging profile: `dev` or `prod` (default `dev`) |
 | `SECRET_KEY`, `ALGORITHM` | JWT auth |
 | `AUTH_DISABLED` | If true, skip auth checks |
 

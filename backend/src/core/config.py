@@ -16,32 +16,41 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    # Logging settings
+    LOG_PROFILE: str = "dev"
+
+    # Directories settings
+    CONFIG_DIR: str = "config"
+    CONTENT_DIR: str = "../content"
+    ARCHIVE_DIR: str = "../archive"
+    OUTPUT_DIR: str = "../output"
+
+    # API settings
     PROJECT_NAME: str = "FastAPI Backend"
     API_V1_STR: str = "/api/v1"
 
+    # Authentication settings
     SECRET_KEY: str = "your-secret-key"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     CLI_TOKEN_EXPIRE_SECONDS: int = 30
+    AUTH_DISABLED: bool = False
+    INTERNAL_SERVICE_TOKEN: str = "change-me-in-production"
 
+    # Database settings
     DB_PATH: str = "data/users.db"
     DEFAULT_ADMIN_PASSWORD: str = "MarXman2025"
 
-    CONTENT_DIR: str = "../content"
-    ARCHIVE_DIR: str = "../archive"
-
+    # Language settings
     SUPPORTED_LANGUAGES: List[str] = ["en", "fr", "es", "bg"]
+
+    # Provider API keys
     OPENAI_API_KEY: str | None = None
-
-    AUTH_DISABLED: bool = False
-
     ELEVENLABS_API_KEY: str | None = None
     SPEAKTOR_API_KEY: str | None = None
-    INTERNAL_SERVICE_TOKEN: str = "change-me-in-production"
-    TTS_CONFIG_DIR: str = "config"
-    TTS_OUTPUT_DIR: str = "output"
+
+    # TTS pipeline settings
     TTS_MAX_CONCURRENCY: int = 5
-    TTS_LOG_PROFILE: str = "dev"
 
 
 settings = Settings()

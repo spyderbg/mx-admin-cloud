@@ -9,10 +9,10 @@ dist/
 venv/
 .venv/
 .venv_wsl/
-.venv12/
 
 # JetBrain Rider folder 
 .idea/
+.run/
 
 # Visual Studio cache directory
 .vs/
