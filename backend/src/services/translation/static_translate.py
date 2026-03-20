@@ -5,6 +5,8 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
+from src.core.config import settings
+
 from .base import TTSTranslate
 
 
@@ -28,13 +30,19 @@ class StaticTTSTranslate(TTSTranslate):
         self._load()
 
     def _load(self) -> None:
-        content_dir = self.config.translate.get("config", {}).get("content_dir", "content")
-        root = Path(content_dir)
+        translate_config = self.config.translate.get("config", {})
+        content_dir = translate_config.get("content_dir")
+        root = Path(content_dir or settings.CONTENT_DIR)
         if not root.is_absolute():
             root = self.base_dir / root
 
         if not root.is_dir():
-            return
+            fallback_root = Path(settings.CONTENT_DIR)
+            if not fallback_root.is_absolute():
+                fallback_root = self.base_dir / fallback_root
+            if not fallback_root.is_dir():
+                return
+            root = fallback_root
 
         for category_dir in sorted(root.iterdir()):
             if not category_dir.is_dir():

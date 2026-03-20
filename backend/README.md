@@ -116,7 +116,13 @@ TTS providers and translators are configured via JSON files in `config/`:
 
 ```
 config/
-|-- logging.json
+|-- loggers/
+|   |-- logging.json
+|   |-- request_logger.json
+|   `-- structlog.json
+|-- optimizers/
+|   |-- ffmpeg_optimized.json
+|   `-- pydub_optimized.json
 |-- generators/
 |   |-- openai.json
 |   |-- elevenlabs.json
@@ -127,6 +133,49 @@ config/
 ```
 
 Set `generate.active` to `"yes"` or `"no"` in each generator config to enable/disable providers.
+For `config/translators/static.json`, `translate.config.content_dir` is optional. When it is
+missing or points to a non-existing directory, the static translator automatically falls back
+to `CONTENT_DIR` from `src/core/config.py`.
+
+### Audio optimizers
+
+Each optimizer is configured in its own JSON file under `config/optimizers/`.
+The optimizer name is taken from the filename (without `.json`), not from a `name` field in the file.
+
+| Field    | Type   | Description |
+|----------|--------|-------------|
+| `type`   | string | Implementation type: `ffmpeg` or `pydub`. |
+| `active` | bool   | Set `true` to enable. If no optimizer is active the stage is skipped. |
+| `params` | object | `sample_rate` (int), `mono` (bool), `vbr_quality` (int 0-9). |
+
+Example (`config/optimizers/voice_optimized.json`):
+
+```json
+{
+  "type": "ffmpeg",
+  "active": true,
+  "params": {
+    "sample_rate": 22050,
+    "mono": true,
+    "vbr_quality": 9
+  }
+}
+```
+
+`type` selects the implementation class. Multiple files can use the same `type` with different params
+(for example, two `ffmpeg` optimizer files with different quality settings).
+
+Optimized files are written alongside generator output, preserving the same hierarchy:
+
+```
+output/
+|-- tts_audio_en/openai/hello_en.mp3          # raw generator output
+|-- optimized_voice_optimized/
+|   `-- tts_audio_en/openai/hello_en.mp3      # optimized copy
+```
+
+Requirements: `ffmpeg` must be on PATH for the ffmpeg optimizer type. The pydub type additionally
+requires the `pydub` Python package (included in `requirements.txt`).
 
 ## Example requests
 

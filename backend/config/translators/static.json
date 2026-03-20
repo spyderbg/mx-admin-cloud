@@ -4,7 +4,7 @@
     "active": "yes",
     "priority": 1,
     "config": {
-      "content_dir": "content"
+      "content_dir": "../content"
     }
   }
 }

@@ -16,7 +16,7 @@ from src.services.logging import LoggingSystem
 async def lifespan(app_lifespan: FastAPI) -> AsyncIterator[None]:
     """Initialize shared services during application startup."""
     await run_in_threadpool(init_db)
-    log_config = Path(settings.CONFIG_DIR) / "logging.json"
+    log_config = Path(settings.CONFIG_DIR) / "loggers"
     app_lifespan.state.logging_system = None
     if log_config.exists():
         logging_system = LoggingSystem(

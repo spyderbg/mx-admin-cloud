@@ -38,6 +38,15 @@ class TranslatorConfig:
 
 
 @dataclass(slots=True)
+class OptimizerConfig:
+    name: str
+    type: str
+    active: bool
+    params: dict[str, Any]
+    config_path: Path
+
+
+@dataclass(slots=True)
 class GeneratedAudio:
     provider: str
     request_id: str
@@ -99,6 +108,7 @@ class ProviderRunRecord:
     transcription: str | None
     success: bool
     error: str | None
+    optimized_paths: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

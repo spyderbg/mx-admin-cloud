@@ -7,7 +7,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from .models import ProviderConfig, TranslatorConfig
+from .models import OptimizerConfig, ProviderConfig, TranslatorConfig
 
 
 def _boolish(value: object) -> bool:
@@ -101,4 +101,59 @@ def load_translator_configs(
         )
 
     configs.sort(key=lambda c: int(c.translate.get("priority", 999)))
+    return configs
+
+
+_OPTIMIZER_DEFAULT_PARAMS: dict[str, object] = {
+    "sample_rate": 22050,
+    "mono": True,
+    "vbr_quality": 9,
+}
+
+
+def load_optimizer_configs(
+    base_dir: Path,
+    config_dir: Path | None = None,
+) -> list[OptimizerConfig]:
+    config_root = (config_dir or base_dir / "config") / "optimizers"
+    if not config_root.exists():
+        return []
+
+    seen_names: set[str] = set()
+    configs: list[OptimizerConfig] = []
+
+    for config_file in sorted(config_root.glob("*.json")):
+        with config_file.open("r", encoding="utf-8") as handle:
+            entry = json.load(handle)
+
+        if not isinstance(entry, dict):
+            continue
+
+        name = config_file.stem.strip()
+        opt_type = str(entry.get("type", "")).strip().lower()
+        if not name or not opt_type:
+            continue
+        if name in seen_names:
+            raise ValueError(
+                f"Duplicate optimizer name '{name}' in {config_file}. "
+                "Each optimizer must have a unique name."
+            )
+        seen_names.add(name)
+
+        active = _boolish(entry.get("active", False))
+        raw_params = entry.get("params", {})
+        if not isinstance(raw_params, dict):
+            raw_params = {}
+        params = {**_OPTIMIZER_DEFAULT_PARAMS, **raw_params}
+
+        configs.append(
+            OptimizerConfig(
+                name=name,
+                type=opt_type,
+                active=active,
+                params=params,
+                config_path=config_file,
+            )
+        )
+
     return configs

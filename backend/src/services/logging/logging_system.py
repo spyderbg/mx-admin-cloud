@@ -25,7 +25,7 @@ structlog = _optional_import("structlog")
 
 
 class LoggingSystem:
-    """Configure stdlib logging and structlog from a JSON file."""
+    """Configure stdlib logging and structlog from JSON config files."""
 
     def __init__(self, *, base_dir: Path, output_dir: Path, config_path: Path, profile: str = "dev") -> None:
         self.base_dir = base_dir
@@ -34,12 +34,17 @@ class LoggingSystem:
         self.profile = profile
 
     def configure(self) -> None:
-        loaded = self._load_json(self.config_path)
+        loaded = self._load_config(self.config_path)
         logging_config, structlog_config, request_logger_config = self._split_config(loaded)
         configure_request_logger(request_logger_config)
         prepared = self._prepare_logging_config(logging_config)
         logging.config.dictConfig(prepared)
         self._configure_structlog(structlog_config)
+
+    def _load_config(self, path: Path) -> dict[str, Any]:
+        if path.is_dir():
+            return self._load_config_dir(path)
+        return self._load_json(path)
 
     def _load_json(self, path: Path) -> dict[str, Any]:
         if not path.exists():
@@ -49,6 +54,20 @@ class LoggingSystem:
         if not isinstance(loaded, dict):
             raise ValueError(f"Logging config must be a JSON object: {path}")
         return loaded
+
+    def _load_config_dir(self, config_dir: Path) -> dict[str, Any]:
+        if not config_dir.exists():
+            raise FileNotFoundError(f"Logging config directory not found: {config_dir}")
+
+        merged: dict[str, Any] = {}
+        for config_path in sorted(config_dir.glob("*.json")):
+            loaded = self._load_json(config_path)
+            section_name = config_path.stem.strip()
+            if section_name:
+                merged[section_name] = loaded
+        if not merged:
+            raise ValueError(f"No logging config JSON files found in: {config_dir}")
+        return merged
 
     def _split_config(self, loaded: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
         if "version" in loaded:
