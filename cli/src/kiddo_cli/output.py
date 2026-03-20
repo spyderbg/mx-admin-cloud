@@ -51,6 +51,12 @@ def print_json(data: object, file: object = None) -> None:
     """Print data as formatted JSON to stdout (or file)."""
     print(format_json(data), file=file or sys.stdout)
 
+def print_json_message(message: object, file: object = None) -> None:
+    """Print a message from JSON format to stdout (or file)."""
+    if isinstance(message, dict):
+        message = message.get("message")
+        print(message, file=file or sys.stdout)
+
 
 def _box(lines: list[str], file: object = sys.stderr) -> None:
     for line in lines:

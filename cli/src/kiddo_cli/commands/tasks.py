@@ -3,7 +3,7 @@ import typer
 
 from kiddo_cli.api.client import get, post
 from kiddo_cli.auth_flow import run_with_auth
-from kiddo_cli.output import print_json
+from kiddo_cli.output import print_json, print_json_message
 
 
 def register(app: typer.Typer) -> None:
@@ -14,7 +14,7 @@ def register(app: typer.Typer) -> None:
         """Run a PING from the CLI expected response PONG."""
 
         result = get("/ping")
-        print_json(result)
+        print_json_message(result)
 
     @app.command()
     def status(
