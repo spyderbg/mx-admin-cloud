@@ -33,7 +33,9 @@ def get_token_for_run(
     socket_path = api_auth.cli_socket_path()
 
     try:
-        return api_auth.login_via_uds(username, password)
+        if os.path.exists(socket_path):
+            return api_auth.login_via_uds(username, password)
+        return api_auth.login(username, password)
     except Exception as e:
         print_auth_failed(socket_path, str(e))
         raise typer.Exit(1)

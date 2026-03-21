@@ -1,17 +1,39 @@
 """Auth API: CLI login via Unix socket only."""
+
 import os
 
 import httpx
 
-from .client import API_V1
+from .client import API_V1  # pylint: disable=import-error
+
+DEFAULT_API_BASE_URL = "http://localhost:8000"
 
 DEFAULT_CLI_SOCKET = "/tmp/kiddo-backend.sock"
 
 
+def get_api_base_url() -> str:
+    """Get the API base URL from the environment variable KIDDO_API_BASE_URL."""
+    return os.getenv("KIDDO_API_BASE_URL", DEFAULT_API_BASE_URL)
+
+
 def cli_socket_path() -> str:
     """Get the CLI socket path from the environment variable KIDDO_CLI_SOCKET."""
-    print(f"KIDDO_CLI_SOCKET: {os.getenv('KIDDO_CLI_SOCKET')}")
     return os.getenv("KIDDO_CLI_SOCKET", DEFAULT_CLI_SOCKET)
+
+
+def login(username: str, password: str) -> str:
+    """Authenticate via HTTP request. Returns access_token. Raises on failure."""
+    base_url = get_api_base_url()
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            r = client.post(
+                f"{base_url}{API_V1}/login",
+                data={"username": username, "password": password},
+            )
+            r.raise_for_status()
+            return r.json()["access_token"]
+    except httpx.HTTPError as e:
+        raise RuntimeError(f"HTTP login failed: {e}") from e
 
 
 def login_via_uds(username: str, password: str) -> str:
@@ -19,8 +41,8 @@ def login_via_uds(username: str, password: str) -> str:
     socket_path = cli_socket_path()
     try:
         with httpx.Client(
-            transport=httpx.HTTPTransport(uds=socket_path),
-            timeout=5.0,
+                transport=httpx.HTTPTransport(uds=socket_path),
+                timeout=5.0,
         ) as client:
             r = client.post(
                 f"http://localhost{API_V1}/cli-login",

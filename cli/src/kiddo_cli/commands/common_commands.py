@@ -1,4 +1,4 @@
-"""Tasks commands (backend routes_tasks): ping, status, do-operation, list."""
+"""Common commands (backend routes_tasks): ping, status, do-operation, list."""
 
 import typer # pylint: disable=import-error
 
@@ -8,7 +8,7 @@ from kiddo_cli.output import print_json, print_json_message
 
 
 def register(app: typer.Typer) -> None:
-    """Register tasks commands on the given Typer app."""
+    """Register common commands on the given Typer app."""
 
     @app.command()
     def ping():
