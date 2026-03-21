@@ -9,6 +9,8 @@ DEFAULT_CLI_SOCKET = "/tmp/kiddo-backend.sock"
 
 
 def cli_socket_path() -> str:
+    """Get the CLI socket path from the environment variable KIDDO_CLI_SOCKET."""
+    print(f"KIDDO_CLI_SOCKET: {os.getenv('KIDDO_CLI_SOCKET')}")
     return os.getenv("KIDDO_CLI_SOCKET", DEFAULT_CLI_SOCKET)
 
 
