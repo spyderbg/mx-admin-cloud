@@ -2,7 +2,7 @@
 import os
 
 import requests
-import typer
+import typer # pylint: disable=import-error
 
 from kiddo_cli.api import auth as api_auth
 from kiddo_cli.output import print_auth_failed, print_request_error

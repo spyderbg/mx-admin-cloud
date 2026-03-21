@@ -9,10 +9,14 @@ INTERNAL_PREFIX = "/internal"
 
 
 def base_url() -> str:
+    """Get the base URL from the environment variable BACKEND_URL."""
+    print(f"BACKEND_URL: {os.getenv('BACKEND_URL')}")
     return os.getenv("BACKEND_URL", DEFAULT_BACKEND_URL).rstrip("/")
 
 
 def headers(token: str | None = None) -> dict:
+    """Get the headers for the API request."""
+    print(f"KIDDO_TOKEN: {os.getenv('KIDDO_TOKEN')}")
     h = {"Accept": "application/json"}
     t = token or os.getenv("KIDDO_TOKEN")
     if t:
@@ -26,6 +30,7 @@ def get(
     params: dict | None = None,
     timeout: int = 30,
 ) -> dict:
+    """Get the data from the API."""
     r = requests.get(
         f"{base_url()}{API_V1}{path}",
         headers=headers(token),
@@ -37,6 +42,7 @@ def get(
 
 
 def delete(path: str, token: str | None = None, timeout: int = 30) -> dict:
+    """Delete the data from the API."""
     r = requests.delete(
         f"{base_url()}{API_V1}{path}",
         headers=headers(token),
@@ -47,6 +53,7 @@ def delete(path: str, token: str | None = None, timeout: int = 30) -> dict:
 
 
 def patch(path: str, token: str | None = None, json: dict | None = None, timeout: int = 30) -> dict:
+    """Patch the data from the API."""
     r = requests.patch(
         f"{base_url()}{API_V1}{path}",
         headers=headers(token),
@@ -66,6 +73,7 @@ def post(
     files: dict | None = None,
     timeout: int = 30,
 ) -> dict:
+    """Post the data to the API."""
     r = requests.post(
         f"{base_url()}{API_V1}{path}",
         headers=headers(token),
@@ -85,6 +93,7 @@ def internal_get(
     params: dict | None = None,
     timeout: int = 30,
 ) -> dict:
+    """Get the data from the internal API."""
     r = requests.get(
         f"{base_url()}{INTERNAL_PREFIX}{path}",
         headers=headers(token),
@@ -103,6 +112,7 @@ def internal_post(
     files: dict | None = None,
     timeout: int = 300,
 ) -> dict:
+    """Post the data to the internal API."""
     r = requests.post(
         f"{base_url()}{INTERNAL_PREFIX}{path}",
         headers=headers(token),

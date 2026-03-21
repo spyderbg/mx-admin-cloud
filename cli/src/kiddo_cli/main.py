@@ -3,7 +3,7 @@ Kiddo CLI: all commands call the FastAPI backend over HTTP.
 Auth: use --token / KIDDO_TOKEN, or auto-login via Unix socket (cli-login) on startup.
 """
 
-import typer
+import typer # pylint: disable=import-error
 
 from kiddo_cli.commands import content as content_commands
 from kiddo_cli.commands import generate as generate_commands
