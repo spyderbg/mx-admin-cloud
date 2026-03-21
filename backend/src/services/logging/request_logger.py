@@ -13,7 +13,7 @@ from ..output_paths import requests_log_path as default_requests_log_path
 
 try:
     _structlog = importlib.import_module("structlog")
-except Exception:
+except Exception: # pylint: disable=broad-exception-caught - optional dependency fallback
     _structlog = None
 
 _requests_logger = (
@@ -96,6 +96,7 @@ def configure_request_logger(config: dict[str, Any] | None) -> None:
 
 
 def resolve_requests_log_path(base_dir: Path) -> Path:
+    """Resolve the requests log path."""
     rel_path = Path(_REQUEST_LOG_REL_PATH)
     if rel_path.is_absolute():
         return rel_path
@@ -104,7 +105,7 @@ def resolve_requests_log_path(base_dir: Path) -> Path:
     return base_dir / rel_path
 
 
-def ensure_requests_log(base_dir: Path) -> Path:
+def ensure_requests_log(base_dir: Path) -> Path:    
     log_path = resolve_requests_log_path(base_dir)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_path.touch(exist_ok=True)
@@ -122,6 +123,7 @@ def log_provider_request(
     input: Any | None = None,
     response_duration: float | None = None,
 ) -> None:
+    """Log a provider request."""
     ensure_requests_log(base_dir)
     payload: dict[str, Any] = {}
     if provider is not None and _enabled("provider"):
@@ -150,6 +152,7 @@ def log_translator_request(
     input: Any | None = None,
     response_duration: float | None = None,
 ) -> None:
+    """Log a translator request."""
     ensure_requests_log(base_dir)
     payload: dict[str, Any] = {}
     if translator is not None and _enabled("translator"):

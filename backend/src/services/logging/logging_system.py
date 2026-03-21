@@ -17,7 +17,7 @@ from .request_logger import configure_request_logger, resolve_requests_log_path
 def _optional_import(module_name: str) -> Any | None:
     try:
         return importlib.import_module(module_name)
-    except Exception:  # pragma: no cover - optional dependency fallback
+    except Exception: # pylint: disable=broad-exception-caught - optional dependency fallback
         return None
 
 
@@ -34,6 +34,7 @@ class LoggingSystem:
         self.profile = profile
 
     def configure(self) -> None:
+        """Configure the logging system."""
         loaded = self._load_config(self.config_path)
         logging_config, structlog_config, request_logger_config = self._split_config(loaded)
         configure_request_logger(request_logger_config)
@@ -243,7 +244,7 @@ class LoggingSystem:
     def _import_available(module_name: str) -> bool:
         try:
             importlib.import_module(module_name)
-        except Exception:
+        except Exception:  # pragma: no cover - optional dependency fallback
             return False
         return True
 
@@ -257,7 +258,7 @@ class LoggingSystem:
             req = urllib.request.Request(url, method="GET")
             urllib.request.urlopen(req, timeout=timeout)
             return True
-        except Exception:
+        except Exception:  # pragma: no cover - optional dependency fallback
             return False
 
     @staticmethod
@@ -268,23 +269,26 @@ class LoggingSystem:
             feature_flag = getattr(feature_flags, "FeatureFlag")
             enable_feature = getattr(feature_flags, "enable_feature")
             enable_feature(feature_flag.IGNORE_SEQ_SUBMISSION_ERRORS)
-        except Exception:
+        except Exception:  # pragma: no cover - optional dependency fallback
             pass
 
 
 def bind_request_id(request_id: str) -> None:
+    """Bind the request ID to the context."""
     if structlog is None:
         return
     structlog.contextvars.bind_contextvars(request_id=request_id)
 
 
 def clear_request_context() -> None:
+    """Clear the request context."""
     if structlog is None:
         return
     structlog.contextvars.clear_contextvars()
 
 
 def get_logger(name: str):
+    """Get a logger by name."""
     if structlog is None:
         return logging.getLogger(name)
     return structlog.get_logger(name)
