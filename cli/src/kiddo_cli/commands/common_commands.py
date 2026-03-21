@@ -57,4 +57,3 @@ def register(app: typer.Typer) -> None:
             print_json(result)
 
         run_with_auth(url, token, run)
-

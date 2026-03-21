@@ -10,25 +10,31 @@ INTERNAL_PREFIX = "/internal"
 
 def base_url() -> str:
     """Get the base URL from the environment variable BACKEND_URL."""
-    print(f"BACKEND_URL: {os.getenv('BACKEND_URL')}")
+    backend_url = os.getenv("BACKEND_URL")
+    if backend_url:
+        print(f"BACKEND_URL: {os.getenv('BACKEND_URL')}")
     return os.getenv("BACKEND_URL", DEFAULT_BACKEND_URL).rstrip("/")
 
 
 def headers(token: str | None = None) -> dict:
     """Get the headers for the API request."""
-    print(f"KIDDO_TOKEN: {os.getenv('KIDDO_TOKEN')}")
+    kiddo_token = token
+    env_token = os.getenv("KIDDO_TOKEN")
+    if env_token:
+        print(f"KIDDO_TOKEN: {env_token}")
+        kiddo_token = env_token
+
     h = {"Accept": "application/json"}
-    t = token or os.getenv("KIDDO_TOKEN")
-    if t:
-        h["Authorization"] = f"Bearer {t}"
+    if kiddo_token:
+        h["Authorization"] = f"Bearer {kiddo_token}"
     return h
 
 
 def get(
-    path: str,
-    token: str | None = None,
-    params: dict | None = None,
-    timeout: int = 30,
+        path: str,
+        token: str | None = None,
+        params: dict | None = None,
+        timeout: int = 30,
 ) -> dict:
     """Get the data from the API."""
     r = requests.get(
@@ -65,13 +71,13 @@ def patch(path: str, token: str | None = None, json: dict | None = None, timeout
 
 
 def post(
-    path: str,
-    token: str | None = None,
-    params: dict | None = None,
-    data: dict | None = None,
-    json: dict | None = None,
-    files: dict | None = None,
-    timeout: int = 30,
+        path: str,
+        token: str | None = None,
+        params: dict | None = None,
+        data: dict | None = None,
+        json: dict | None = None,
+        files: dict | None = None,
+        timeout: int = 30,
 ) -> dict:
     """Post the data to the API."""
     r = requests.post(
@@ -88,10 +94,10 @@ def post(
 
 
 def internal_get(
-    path: str,
-    token: str | None = None,
-    params: dict | None = None,
-    timeout: int = 30,
+        path: str,
+        token: str | None = None,
+        params: dict | None = None,
+        timeout: int = 30,
 ) -> dict:
     """Get the data from the internal API."""
     r = requests.get(
@@ -105,12 +111,12 @@ def internal_get(
 
 
 def internal_post(
-    path: str,
-    token: str | None = None,
-    json: dict | None = None,
-    data: dict | None = None,
-    files: dict | None = None,
-    timeout: int = 300,
+        path: str,
+        token: str | None = None,
+        json: dict | None = None,
+        data: dict | None = None,
+        files: dict | None = None,
+        timeout: int = 300,
 ) -> dict:
     """Post the data to the internal API."""
     r = requests.post(

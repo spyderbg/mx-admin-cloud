@@ -5,7 +5,7 @@ import requests
 import typer
 
 from kiddo_cli.api.client import delete, get, patch, post
-from kiddo_cli.auth_flow import get_token_for_run, run_with_auth
+from kiddo_cli.auth_flow import run_with_auth
 from kiddo_cli.output import print_error, print_json, print_request_error
 
 

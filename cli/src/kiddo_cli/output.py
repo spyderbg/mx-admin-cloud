@@ -1,7 +1,9 @@
 """Output formatting: JSON, auth error, and request error messages."""
 import json
+import re
 import sys
 import requests
+from typing import Optional, Dict
 
 # Box inner width (chars between the two vertical bars)
 _BOX_WIDTH = 80
@@ -22,6 +24,48 @@ HTTP_STATUS_DESCRIPTIONS: dict[int, str] = {
     503: "Service Unavailable",
     504: "Gateway Timeout",
 }
+
+
+def parse_http_error(error_text: str) -> Dict[str, Optional[str]]:
+    """
+    Parse an HTTP error string into structured components.
+
+    Returns:
+        dict with keys:
+        - message
+        - status_code
+        - status_text
+        - url
+        - docs_url
+    """
+    result = {
+        "message": None,
+        "status_code": None,
+        "status_text": None,
+        "url": None,
+        "docs_url": None,
+    }
+
+    # Main error line
+    main_pattern = re.search(
+        r"^(?P<message>.+?): Client error '(?P<status_code>\d+)\s+(?P<status_text>[^']+)' for url '(?P<url>[^']+)'",
+        error_text,
+        re.MULTILINE,
+    )
+
+    if main_pattern:
+        result.update(main_pattern.groupdict())
+
+    # Docs URL
+    docs_pattern = re.search(
+        r"For more information check:\s*(?P<docs_url>\S+)",
+        error_text,
+    )
+
+    if docs_pattern:
+        result["docs_url"] = docs_pattern.group("docs_url")
+
+    return result
 
 
 def _box_line(content: str) -> str:
@@ -51,6 +95,7 @@ def print_json(data: object, file: object = None) -> None:
     """Print data as formatted JSON to stdout (or file)."""
     print(format_json(data), file=file or sys.stdout)
 
+
 def print_json_message(message: object, file: object = None) -> None:
     """Print a message from JSON format to stdout (or file)."""
     if isinstance(message, dict):
@@ -76,8 +121,48 @@ def print_error(title: str, message: str) -> None:
     ])
 
 
-def print_auth_failed(socket_path: str, details: str) -> None:
+def print_http_auto_failed(url: str, details: str) -> None:
     """Print a clearly formatted auth-failed error to stderr."""
+    parsed_error = parse_http_error(details)
+    details_lines = []
+
+    for key, value in parsed_error.items():
+        if value is not None:
+            details_lines.append(_box_line(f" '{key}': '{value}',"))
+
+    if len(details_lines) == 0:
+        details_lines.append(_box_line(f" {details}"))
+
+        # print(f"details: {parsed_error}")
+
+    _box([
+        "",
+        _border_top(),
+        _box_line("Authentication failed"),
+        _border_mid(),
+        _box_line("The CLI could not reach the backend HTTP server."),
+        _box_line(""),
+        _box_line(f"Base URL:     {url}"),
+        _border_mid(),
+        _box_line("Details:"),
+        *details_lines,
+        _border_bot(),
+        ""
+    ])
+
+
+def print_uds_auth_failed(socket_path: str, details: str) -> None:
+    """Print a clearly formatted auth-failed error to stderr."""
+    parsed_error = parse_http_error(details)
+    details_lines = []
+
+    for key, value in parsed_error.items():
+        if value is not None:
+            details_lines.append(_box_line(f" '{key}': '{value}',"))
+
+    if len(details_lines) == 0:
+        details_lines.append(_box_line(f" {details}"))
+
     _box([
         "",
         _border_top(),
@@ -92,7 +177,8 @@ def print_auth_failed(socket_path: str, details: str) -> None:
         _box_line(""),
         _box_line("(This starts both the public HTTP server and the CLI Unix socket.)"),
         _border_mid(),
-        _box_line(f"Details: {details}"),
+        _box_line("Details:"),
+        *details_lines,
         _border_bot(),
         "",
     ])
