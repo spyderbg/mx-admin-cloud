@@ -1,5 +1,7 @@
-from fastapi import Depends, Header, HTTPException, Request, status
-from jose import jwt, JWTError
+"""Dependencies for API routes."""
+
+from fastapi import Depends, Header, HTTPException, Request, status  # pylint: disable=import-error
+from jose import jwt, JWTError  # pylint: disable=import-error  # pylint: disable=import-error
 
 from src.core.config import settings
 from src.security.auth import verify_token
@@ -24,6 +26,7 @@ def require_uds(request: Request) -> None:
 
 
 def get_current_user(user: dict = Depends(verify_token)) -> dict:
+    """Get the current user."""
     return user
 
 

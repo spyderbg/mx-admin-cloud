@@ -1,7 +1,9 @@
+"""Authentication API routes."""
+
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi import APIRouter, Depends, HTTPException, Request, status  # pylint: disable=import-error
+from fastapi.security import OAuth2PasswordRequestForm  # pylint: disable=import-error
 
 from src.core.config import settings
 from src.db.database import get_db, verify_password
@@ -30,6 +32,7 @@ def _authenticate_user(username: str, password: str) -> dict | None:
 
 @router.post("/login")
 def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    """Login for web interface: returns a long-lived JWT."""
     user = _authenticate_user(form_data.username, form_data.password)
     if not user:
         raise HTTPException(

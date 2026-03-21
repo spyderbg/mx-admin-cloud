@@ -11,8 +11,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile  # pylint: disable=import-error
+from pydantic import BaseModel  # pylint: disable=import-error
 
 from src.api.dependencies import verify_internal_access
 from src.core.config import settings
@@ -27,12 +27,14 @@ ALLOWED_EXTENSIONS = {".txt", ".csv", ".xlsx"}
 
 
 class GenerateResponse(BaseModel):
+    """Response body for a voice generation job."""
     job_id: str
     status: str
     message: str
 
 
 class JobStatusResponse(BaseModel):
+    """Response body for a voice generation job status."""
     job_id: str
     status: str
     result: dict[str, Any] | None = None
@@ -62,6 +64,7 @@ async def _run_job(
     output_format: str,
     max_concurrency: int,
 ) -> None:
+
     _jobs[job_id]["status"] = "running"
     try:
         summary = await run_pipeline(

@@ -1,6 +1,8 @@
-from sqlite3 import IntegrityError
+"""Users API routes."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from sqlite3 import IntegrityError  # pylint: disable=import-error
+
+from fastapi import APIRouter, Depends, HTTPException, status  # pylint: disable=import-error
 from pydantic import BaseModel, Field
 
 from src.api.dependencies import require_uds, require_admin
@@ -14,20 +16,24 @@ router = APIRouter(
 # --------------- schemas ---------------
 
 class CreateUserRequest(BaseModel):
+    """Request body for creating a new user."""
     username: str = Field(min_length=1, max_length=150)
     password: str = Field(min_length=1)
     role: str = Field(default="viewer", pattern=r"^(admin|viewer)$")
 
 
 class ChangePasswordRequest(BaseModel):
+    """Request body for changing a user's password."""
     password: str = Field(min_length=1)
 
 
 class ChangeRoleRequest(BaseModel):
+    """Request body for changing a user's role."""
     role: str = Field(pattern=r"^(admin|viewer)$")
 
 
 class UserOut(BaseModel):
+    """Response body for a user."""
     id: int
     username: str
     role: str
@@ -37,6 +43,7 @@ class UserOut(BaseModel):
 
 @router.post("/users", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 def create_user(body: CreateUserRequest):
+    """Create a new user."""
     conn = get_db()
     try:
         hashed = hash_password(body.password)
@@ -56,7 +63,8 @@ def create_user(body: CreateUserRequest):
 
 
 @router.get("/users", response_model=list[UserOut])
-def list_users():
+def list_users() -> list[UserOut]:
+    """List all users."""
     conn = get_db()
     try:
         rows = conn.execute("SELECT id, username, role FROM users ORDER BY id").fetchall()
@@ -67,6 +75,7 @@ def list_users():
 
 @router.delete("/users/{username}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(username: str):
+    """Delete a user."""
     conn = get_db()
     try:
         row = conn.execute(
@@ -96,6 +105,7 @@ def delete_user(username: str):
 
 @router.patch("/users/{username}/password", status_code=status.HTTP_204_NO_CONTENT)
 def change_password(username: str, body: ChangePasswordRequest):
+    """Change a user's password."""
     conn = get_db()
     try:
         row = conn.execute(
@@ -119,6 +129,7 @@ def change_password(username: str, body: ChangePasswordRequest):
 
 @router.patch("/users/{username}/role", response_model=UserOut)
 def change_role(username: str, body: ChangeRoleRequest):
+    """Change a user's role."""
     conn = get_db()
     try:
         row = conn.execute(
