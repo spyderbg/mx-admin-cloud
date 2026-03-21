@@ -1,9 +1,9 @@
-"""Generate commands: trigger TTS pipeline, list generators/translators via backend HTTP."""
+"""Generate commands: trigger TTS pipeline via backend HTTP."""
 from pathlib import Path
 
 import typer
 
-from kiddo_cli.api.client import internal_get, internal_post
+from kiddo_cli.api.client import internal_post
 from kiddo_cli.auth_flow import run_with_auth
 from kiddo_cli.output import print_json
 
@@ -52,32 +52,6 @@ def register(app: typer.Typer) -> None:
                     },
                     files={"file": (input_file.name, fh)},
                 )
-            print_json(result)
-
-        run_with_auth(url, token, _run)
-
-    @app.command("list-generators")
-    def list_generators(
-        url: str = typer.Option(None, "--url"),
-        token: str | None = typer.Option(None, "--token"),
-    ):
-        """Show configured generators with activation states."""
-
-        def _run(t: str):
-            result = internal_get("/voice/generators", token=t)
-            print_json(result)
-
-        run_with_auth(url, token, _run)
-
-    @app.command("list-translators")
-    def list_translators(
-        url: str = typer.Option(None, "--url"),
-        token: str | None = typer.Option(None, "--token"),
-    ):
-        """Show configured translators with priority and states."""
-
-        def _run(t: str):
-            result = internal_get("/voice/translators", token=t)
             print_json(result)
 
         run_with_auth(url, token, _run)

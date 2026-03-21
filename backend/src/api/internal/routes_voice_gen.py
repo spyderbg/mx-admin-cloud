@@ -184,3 +184,44 @@ async def list_translators(
         }
         for c in configs
     ]
+
+
+@router.get("/optimizers")
+async def list_optimizers(
+    _user: dict = Depends(verify_internal_access),
+) -> list[dict[str, Any]]:
+    """Return configured optimizers with activation states."""
+    from src.services.config_loader import load_optimizer_configs
+
+    configs = load_optimizer_configs(
+        base_dir=Path("."),
+        config_dir=Path(settings.CONFIG_DIR),
+    )
+    return [
+        {
+            "name": c.name,
+            "active": c.active,
+            "type": c.type,
+            "config_path": str(c.config_path),
+        }
+        for c in configs
+    ]
+
+
+@router.get("/evaluators")
+async def list_evaluators(
+    _user: dict = Depends(verify_internal_access),
+) -> list[dict[str, Any]]:
+    """Return configured evaluators (from generators/providers) with activation states."""
+    configs = load_provider_configs(
+        base_dir=Path("."),
+        config_dir=Path(settings.CONFIG_DIR),
+    )
+    return [
+        {
+            "name": c.name,
+            "active": c.evaluate.get("active", False),
+            "config_path": str(c.config_path),
+        }
+        for c in configs
+    ]
