@@ -1,6 +1,6 @@
 """Common commands (backend routes_tasks): ping, status, do-operation, list."""
 
-import typer # pylint: disable=import-error
+import typer
 
 from kiddo_cli.api.client import get, post
 from kiddo_cli.auth_flow import run_with_auth
