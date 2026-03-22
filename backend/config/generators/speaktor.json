@@ -1,7 +1,7 @@
 {
   "provider": "speaktor",
   "generate": {
-    "active": "yes",
+    "active": "no",
     "endpoint": "https://api.tor.app/developer/text_to_speech",
     "method": "POST",
     "response_mode": "json_url",

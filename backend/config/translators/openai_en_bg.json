@@ -2,7 +2,7 @@
   "service": {
     "type": "translator",
     "name": "openai",
-    "active": true,
+    "active": false,
     "priority": 2
   },
   "config": {
