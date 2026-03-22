@@ -6,6 +6,7 @@ import typer  # pylint: disable=import-error
 
 from kiddo_cli.api import auth as api_auth
 from kiddo_cli.output import print_http_auto_failed, print_uds_auth_failed, print_request_error
+from kiddo_cli.utils import is_windows_platform
 
 
 def get_token_for_run(
@@ -29,12 +30,12 @@ def get_token_for_run(
         return token
 
     username = os.getenv("KIDDO_USER", "admin")
-    password = os.getenv("KIDDO_PASSWORD", "admin")
+    password = os.getenv("KIDDO_PASSWORD", "MarXman2025")
 
     api_base_url = api_auth.get_api_base_url()
     socket_path = api_auth.get_cli_socket_path()
 
-    if os.path.exists(socket_path):
+    if not is_windows_platform() and os.path.exists(socket_path):
         try:
             return api_auth.login_via_uds(username, password)
         except Exception as e:

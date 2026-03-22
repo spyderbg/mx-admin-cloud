@@ -1,4 +1,5 @@
 """Shared HTTP client for backend API calls."""
+
 import os
 
 import requests
@@ -37,6 +38,7 @@ def get(
         timeout: int = 30,
 ) -> dict:
     """Get the data from the API."""
+    print(f"GET {API_V1}{path}")
     r = requests.get(
         f"{base_url()}{API_V1}{path}",
         headers=headers(token),
@@ -49,6 +51,7 @@ def get(
 
 def delete(path: str, token: str | None = None, timeout: int = 30) -> dict:
     """Delete the data from the API."""
+    print(f"DELETE {API_V1}{path}")
     r = requests.delete(
         f"{base_url()}{API_V1}{path}",
         headers=headers(token),
@@ -60,6 +63,7 @@ def delete(path: str, token: str | None = None, timeout: int = 30) -> dict:
 
 def patch(path: str, token: str | None = None, json: dict | None = None, timeout: int = 30) -> dict:
     """Patch the data from the API."""
+    print(f"PATCH {API_V1}{path}")
     r = requests.patch(
         f"{base_url()}{API_V1}{path}",
         headers=headers(token),
@@ -80,6 +84,7 @@ def post(
         timeout: int = 30,
 ) -> dict:
     """Post the data to the API."""
+    print(f"POST {API_V1}{path}")
     r = requests.post(
         f"{base_url()}{API_V1}{path}",
         headers=headers(token),
@@ -100,6 +105,7 @@ def internal_get(
         timeout: int = 30,
 ) -> dict:
     """Get the data from the internal API."""
+    print(f"GET {INTERNAL_PREFIX}{path}")
     r = requests.get(
         f"{base_url()}{INTERNAL_PREFIX}{path}",
         headers=headers(token),
@@ -119,6 +125,7 @@ def internal_post(
         timeout: int = 300,
 ) -> dict:
     """Post the data to the internal API."""
+    print(f"POST {INTERNAL_PREFIX}{path}")
     r = requests.post(
         f"{base_url()}{INTERNAL_PREFIX}{path}",
         headers=headers(token),

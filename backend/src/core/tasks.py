@@ -7,14 +7,14 @@ from typing import Any
 from src.core.config import settings
 
 # Keys whose values must not be exposed in API responses
-_SENSITIVE_KEYS = {"SECRET_KEY", "OPENAI_API_KEY"}
+_SENSITIVE_KEYS = {"SECRET_KEY", "OPENAI_API_KEY", "ELEVENLABS_API_KEY", "SPEAKTOR_API_KEY"}
 
 
 def _env_from_settings() -> dict[str, Any]:
     """Build a dict of settings (env vars used in project) with sensitive values masked."""
     env = {}
     for name, value in settings.model_dump().items():
-        if name in _SENSITIVE_KEYS:
+        if name in _SENSITIVE_KEYS or name.endswith("_API_KEY"):
             env[name] = "***" if value else "<unset>"
         else:
             env[name] = value

@@ -2,7 +2,7 @@
 
 import typer
 
-from kiddo_cli.api.client import internal_get
+from kiddo_cli.api.client import get, internal_get
 from kiddo_cli.auth_flow import run_with_auth
 from kiddo_cli.output import print_json
 
@@ -69,7 +69,7 @@ def register(app: typer.Typer) -> None:
         """Show configured users with activation states."""
 
         def _run(t: str):
-            result = internal_get("/users", token=t)
+            result = get("/users", token=t)
             print_json(result)
 
         run_with_auth(url, token, _run)

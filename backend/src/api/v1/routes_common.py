@@ -1,4 +1,4 @@
-"""Tasks API routes."""
+"""Common API routes."""
 
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends  # pylint: disable=import-error
@@ -29,6 +29,5 @@ class ListFilesRequest(BaseModel):
 @router.post("/list-files")
 def post_list_files(data: ListFilesRequest, _user: dict = Depends(get_current_user)):
     """List files in the configured content directory."""
-    if data.depth < 1:
-        data.depth = 1
-    return list_files(data.depth)
+    depth = max(1, data.depth)
+    return list_files(depth)

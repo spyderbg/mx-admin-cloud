@@ -1,4 +1,4 @@
-"""Common commands (backend routes_tasks): ping, status, do-operation, list."""
+"""Common commands (backend routes_common): ping, status, do-operation, list."""
 
 import typer
 

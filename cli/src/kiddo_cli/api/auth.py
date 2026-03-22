@@ -4,6 +4,7 @@ import os
 
 import httpx
 
+from kiddo_cli.utils import is_windows_platform
 from .client import API_V1  # pylint: disable=import-error
 
 DEFAULT_API_BASE_URL = "http://localhost:8000"
@@ -39,6 +40,8 @@ def login(username: str, password: str) -> str:
 
 def login_via_uds(username: str, password: str) -> str:
     """Authenticate via CLI-only Unix socket. Returns access_token. Raises on failure."""
+    if is_windows_platform():
+        raise RuntimeError("UDS authentication is not supported on Windows.")
     print("Authenticating via UDS...")
     socket_path = get_cli_socket_path()
     try:

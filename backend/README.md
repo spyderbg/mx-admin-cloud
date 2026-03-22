@@ -75,10 +75,10 @@ Base URL for all routes below: `/api/v1`. Protected routes require `Authorizatio
 
 | Method | Path                                                    | Auth | Description |
 |--------|---------------------------------------------------------|------|-------------|
-| `GET` | [`/ping`](backend/src/api/v1/routes_tasks.py#L11)       | No | Health check; returns PONG with backend platform info. |
-| `GET` | [`/status`](backend/src/api/v1/routes_tasks.py#L16)     | Yes | Service status. |
-| `POST` | [`/operation`](backend/src/api/v1/routes_tasks.py#L21)  | Yes | Perform a service operation. Query param: `name`. |
-| `POST` | [`/list-files`](backend/src/api/v1/routes_tasks.py#L30) | Yes | List files in the configured directory. Body: `{"depth": int}` (depth < 1 treated as 1). |
+| `GET` | [`/ping`](backend/src/api/v1/routes_common.py#L11)       | No | Health check; returns PONG with backend platform info. |
+| `GET` | [`/status`](backend/src/api/v1/routes_common.py#L16)     | Yes | Service status. |
+| `POST` | [`/operation`](backend/src/api/v1/routes_common.py#L21)  | Yes | Perform a service operation. Query param: `name`. |
+| `POST` | [`/list-files`](backend/src/api/v1/routes_common.py#L30) | Yes | List files in the configured directory. Body: `{"depth": int}` (depth < 1 treated as 1). |
 
 ### Content
 
@@ -100,7 +100,7 @@ When `DEBUG_MODE=true`, those two dependencies are overridden at startup for loc
 | Method | Path                                                                    | Auth | Description |
 |--------|-------------------------------------------------------------------------|------|-------------|
 | `POST` | [`/users`](backend/src/api/v1/routes_users.py#L45)                      | Yes (admin + UDS) | Create a user with role `admin` or `viewer`. |
-| `GET` | [`/users`](backend/src/api/v1/routes_users.py#L66)                      | Yes (admin + UDS) | List all users. |
+| `GET` | [`/users`](backend/src/api/v1/routes_users.py#L66)                      | Yes (admin + UDS) | List all users. Query: `username` (fuzzy), `role` (admin/viewer). |
 | `DELETE` | [`/users/{username}`](backend/src/api/v1/routes_users.py#L77)           | Yes (admin + UDS) | Delete a user (cannot remove the last admin). |
 | `PATCH` | [`/users/{username}/password`](backend/src/api/v1/routes_users.py#L107) | Yes (admin + UDS) | Change a user's password. |
 | `PATCH` | [`/users/{username}/role`](backend/src/api/v1/routes_users.py#L131)     | Yes (admin + UDS) | Change a user's role (cannot demote the last admin). |

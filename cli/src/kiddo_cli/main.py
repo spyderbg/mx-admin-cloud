@@ -9,23 +9,27 @@ from kiddo_cli.commands import content_commands as content_commands  # pylint: d
 from kiddo_cli.commands import generate_commands as generate_commands  # pylint: disable=import-error
 from kiddo_cli.commands import list_commands as list_commands  # pylint: disable=import-error
 from kiddo_cli.commands import common_commands as tasks_commands  # pylint: disable=import-error
+from kiddo_cli.commands import users_commands as users_commands  # pylint: disable=import-error
 
 app = typer.Typer(no_args_is_help=True)
 
 common_app = typer.Typer(help="Task commands: ping, status, operation, list-files.")
 content_app = typer.Typer(help="Content commands: categories, category-details, create-object.")
 list_app = typer.Typer(help="List configured components: generators, translators, optimizers, evaluators.")
+users_app = typer.Typer(help="User management: list, create, delete, update.")
 generate_app = typer.Typer(help="Voice generation: run pipeline.")
 
 tasks_commands.register(common_app)
 content_commands.register(content_app)
 list_commands.register(list_app)
 generate_commands.register(generate_app)
+users_commands.register(users_app)
 
 app.add_typer(common_app, name="common")
 app.add_typer(content_app, name="content")
 app.add_typer(list_app, name="list")
 app.add_typer(generate_app, name="generate")
+app.add_typer(users_app, name="users")
 
 if __name__ == "__main__":
     app()

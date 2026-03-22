@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     # API settings
     PROJECT_NAME: str = "FastAPI Backend"
     API_V1_STR: str = "/api/v1"
-    DEBUG_MODE: bool = False
+    DEBUG_MODE: bool = True
 
     # Authentication settings
     SECRET_KEY: str = "your-secret-key"

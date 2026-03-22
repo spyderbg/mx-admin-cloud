@@ -4,11 +4,14 @@ from fastapi import Depends, Header, HTTPException, Request, status  # pylint: d
 from jose import jwt, JWTError  # pylint: disable=import-error  # pylint: disable=import-error
 
 from src.core.config import settings
+from src.core.utils import is_windows_platform
 from src.security.auth import verify_token
 
 
 def is_unix_socket_request(request: Request) -> bool:
     """True when the request arrived over a Unix domain socket."""
+    if is_windows_platform():
+        return False
     server = request.scope.get("server")
     if not isinstance(server, (list, tuple)) or len(server) < 1:
         return False

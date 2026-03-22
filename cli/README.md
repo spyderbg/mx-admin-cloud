@@ -34,11 +34,11 @@ Env:
 
 ## Commands
 
-The CLI is organized into sub-apps: **common**, **content**, **list**, and **generate**.
+The CLI is organized into sub-apps: **common**, **content**, **list**, **users**, and **generate**.
 Commands that call the backend accept optional `--url` (backend base URL) and `--token` (bearer token). `common ping` uses no auth.
-Run `kiddo-cli --help`, `kiddo-cli common --help`, `kiddo-cli content --help`, `kiddo-cli list --help`, or `kiddo-cli generate --help` for details.
+Run `kiddo-cli --help`, `kiddo-cli common --help`, `kiddo-cli content --help`, `kiddo-cli list --help`, `kiddo-cli users --help`, or `kiddo-cli generate --help` for details.
 
-### Common (backend routes_tasks)
+### Common (backend routes_common)
 
 | Command                                                                      | Description |
 |------------------------------------------------------------------------------|-------------|
@@ -73,6 +73,15 @@ Run `kiddo-cli --help`, `kiddo-cli common --help`, `kiddo-cli content --help`, `
 | [`list translators`](cli/src/kiddo_cli/commands/list_commands.py#L26) | Show congured translators with priority and states. |
 | [`list optimizers`](cli/src/kiddo_cli/commands/list_commands.py#L39) | Show congured optimizers with activation states. |
 | [`list evaluators`](cli/src/kiddo_cli/commands/list_commands.py#L52) | Show congured evaluators with activation states. |
+
+### Users (backend user management)
+
+| Command | Description |
+|---------|-------------|
+| [`users list`](cli/src/kiddo_cli/commands/users_commands.py#L12) | Show configured users. Options: `--username` (fuzzy), `--role`. |
+| [`users create <user> <pass>`](cli/src/kiddo_cli/commands/users_commands.py#L32) | Create a new user. Option: `--role`. |
+| [`users delete <user>`](cli/src/kiddo_cli/commands/users_commands.py#L52) | Delete a user by username. |
+| [`users update <user>`](cli/src/kiddo_cli/commands/users_commands.py#L65) | Update user password or role. Options: `--password`, `--role`. |
 
 Options for `generate run`:
 
@@ -118,4 +127,11 @@ kiddo-cli list generators
 kiddo-cli list translators
 kiddo-cli list optimizers
 kiddo-cli list evaluators
+
+# Users
+kiddo-cli users list
+kiddo-cli users list --username ali --role admin
+kiddo-cli users create new_user secret_pass --role viewer
+kiddo-cli users update new_user --password new_secret --role admin
+kiddo-cli users delete old_user
 ```
