@@ -12,7 +12,7 @@ __all__ = [
     "TTSTranslate",
     "build_translator",
     "build_translators",
-    "translate_with_fallback",
+    "translate_with_all_active",
 ]
 
 
@@ -20,30 +20,32 @@ def build_translators(
     configs: Sequence[TranslatorConfig],
     base_dir: Path,
 ) -> list[TTSTranslate]:
-    translators = [
-        build_translator(cfg, base_dir)
-        for cfg in configs
-        if cfg.translate.get("active")
-    ]
-    translators.sort(key=lambda t: t.priority())
-    return translators
+    return [build_translator(cfg, base_dir) for cfg in configs if cfg.active]
 
 
-async def translate_with_fallback(
+async def translate_with_all_active(
     translators: Sequence[TTSTranslate],
     text: str,
-    input_lang_code: str,
-    target_lang_code: str,
+    input_lang_code: str | None = None,
+    target_lang_code: str | None = None,
     category: str | None = None,
 ) -> str:
-    """Try each translator in priority order; return original text as last resort."""
+    """Run all active translators and return the last successful translation."""
+    current_text = text
     for translator in translators:
+        resolved_input = input_lang_code or translator.default_input_language()
+        resolved_target = target_lang_code or translator.default_target_language()
+        if not resolved_input or not resolved_target:
+            continue
         try:
             result = await translator.translate_text(
-                text, input_lang_code, target_lang_code, category,
+                current_text,
+                resolved_input,
+                resolved_target,
+                category,
             )
             if result is not None:
-                return result
+                current_text = result
         except Exception:
             continue
-    return text
+    return current_text

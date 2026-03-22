@@ -23,7 +23,7 @@ class OpenAITTSTranslate(TTSTranslate):
         target_lang_code: str,
         category: str | None,
     ) -> str:
-        raw: str = self.config.translate.get("config", {}).get("prompt", "")
+        raw: str = str(self.config.get("prompt", ""))
 
         rendered = raw.replace("{{ input_language }}", self.language_name(input_lang_code))
         rendered = rendered.replace("{{ target_language }}", self.language_name(target_lang_code))
@@ -49,7 +49,7 @@ class OpenAITTSTranslate(TTSTranslate):
         if not api_key:
             raise RuntimeError("OPENAI_API_KEY is not set.")
 
-        cfg = self.config.translate.get("config", {})
+        cfg = self.config
         model = cfg.get("model", "gpt-4o")
         temperature = cfg.get("temperature", 0)
 

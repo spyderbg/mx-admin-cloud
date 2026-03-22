@@ -11,28 +11,43 @@ from ..models import TranslatorConfig
 
 
 class TTSTranslate(ABC):
-    def __init__(self, config: TranslatorConfig, base_dir: Path) -> None:
+    def __init__(
+        self,
+        service: TranslatorConfig,
+        config: dict[str, object],
+        base_dir: Path,
+    ) -> None:
+        self.service = service
         self.config = config
         self.base_dir = base_dir
 
     @property
     def name(self) -> str:
-        return self.config.name
+        return self.service.name
 
     def is_active(self) -> bool:
-        return bool(self.config.translate.get("active"))
-
-    def priority(self) -> int:
-        return int(self.config.translate.get("priority", 999))
+        return bool(self.service.active)
 
     def api_key_env_name(self) -> str:
-        return f"{self.config.name.upper()}_API_KEY"
+        return f"{self.service.name.upper()}_API_KEY"
 
     def resolve_api_key(self) -> str:
         return os.getenv(self.api_key_env_name(), "")
 
     def language_name(self, lang_code: str) -> str:
         return LANG_MAP.get(lang_code.lower(), lang_code)
+
+    def default_input_language(self) -> str | None:
+        value = self.config.get("input_language")
+        if value is None:
+            return None
+        return str(value).strip() or None
+
+    def default_target_language(self) -> str | None:
+        value = self.config.get("target_language")
+        if value is None:
+            return None
+        return str(value).strip() or None
 
     @abstractmethod
     async def translate_text(
@@ -50,13 +65,13 @@ class TTSTranslate(ABC):
 
 
 def build_translator(config: TranslatorConfig, base_dir: Path) -> TTSTranslate:
-    name = config.name.lower()
-    if name == "openai":
+    translator_name = config.name.lower()
+    if translator_name == "openai":
         from .openai_translate import OpenAITTSTranslate
 
-        return OpenAITTSTranslate(config, base_dir)
-    if name == "static":
+        return OpenAITTSTranslate(config, config.config, base_dir)
+    if translator_name == "static":
         from .static_translate import StaticTTSTranslate
 
-        return StaticTTSTranslate(config, base_dir)
-    raise ValueError(f"Unsupported translator config: {config.name}")
+        return StaticTTSTranslate(config, config.config, base_dir)
+    raise ValueError(f"Unsupported translator config name '{config.name}' in '{config.config_path}'.")

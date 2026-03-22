@@ -72,6 +72,7 @@ def load_translator_configs(
 
     actual_config_dir = (config_dir or base_dir / "config") / "translators"
     configs: list[TranslatorConfig] = []
+    seen_names: set[str] = set()
 
     if not actual_config_dir.exists():
         return configs
@@ -82,29 +83,45 @@ def load_translator_configs(
 
         if not isinstance(payload, dict):
             continue
-        if "translate" not in payload:
+
+        service = payload.get("service", {})
+        if not isinstance(service, dict):
             continue
 
-        translate = payload.get("translate", {})
-        if not isinstance(translate, dict):
+        translator_type = str(service.get("type", "")).strip().lower()
+        name = str(service.get("name") or config_path.stem).strip()
+        if not translator_type or not name:
             continue
 
-        translator_name = payload.get("translator") or config_path.stem
-        translate["active"] = _boolish(translate.get("active"))
+        if name in seen_names:
+            raise ValueError(
+                f"Duplicate translator name '{name}' in {config_path}. "
+                "Each translator must have a unique name."
+            )
+        seen_names.add(name)
+
+        active = _boolish(service.get("active", False))
+        priority = int(service.get("priority", 999))
+        raw_config = payload.get("config", {})
+        if not isinstance(raw_config, dict):
+            raw_config = {}
 
         configs.append(
             TranslatorConfig(
-                name=translator_name,
-                translate=translate,
+                type=translator_type,
+                name=name,
+                active=active,
+                priority=priority,
+                config=raw_config,
                 config_path=config_path,
             )
         )
 
-    configs.sort(key=lambda c: int(c.translate.get("priority", 999)))
+    configs.sort(key=lambda c: c.priority)
     return configs
 
 
-_OPTIMIZER_DEFAULT_PARAMS: dict[str, object] = {
+_OPTIMIZER_DEFAULT_CONFIG: dict[str, object] = {
     "sample_rate": 22050,
     "mono": True,
     "vbr_quality": 9,
@@ -129,10 +146,15 @@ def load_optimizer_configs(
         if not isinstance(entry, dict):
             continue
 
-        name = config_file.stem.strip()
-        opt_type = str(entry.get("type", "")).strip().lower()
-        if not name or not opt_type:
+        service = entry.get("service", {})
+        if not isinstance(service, dict):
             continue
+
+        service_type = str(service.get("type", "")).strip().lower()
+        name = str(service.get("name") or config_file.stem).strip()
+        if not name or not service_type:
+            continue
+
         if name in seen_names:
             raise ValueError(
                 f"Duplicate optimizer name '{name}' in {config_file}. "
@@ -140,20 +162,23 @@ def load_optimizer_configs(
             )
         seen_names.add(name)
 
-        active = _boolish(entry.get("active", False))
-        raw_params = entry.get("params", {})
-        if not isinstance(raw_params, dict):
-            raw_params = {}
-        params = {**_OPTIMIZER_DEFAULT_PARAMS, **raw_params}
+        active = _boolish(service.get("active", False))
+        priority = int(service.get("priority", 999))
+        raw_config = entry.get("config", {})
+        if not isinstance(raw_config, dict):
+            raw_config = {}
+        config = {**_OPTIMIZER_DEFAULT_CONFIG, **raw_config}
 
         configs.append(
             OptimizerConfig(
+                type=service_type,
                 name=name,
-                type=opt_type,
                 active=active,
-                params=params,
+                priority=priority,
+                config=config,
                 config_path=config_file,
             )
         )
 
+    configs.sort(key=lambda c: c.priority)
     return configs

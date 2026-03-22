@@ -32,17 +32,21 @@ class ProviderConfig:
 
 @dataclass(slots=True)
 class TranslatorConfig:
+    type: str
     name: str
-    translate: dict[str, Any]
+    active: bool
+    priority: int
+    config: dict[str, Any]
     config_path: Path
 
 
 @dataclass(slots=True)
 class OptimizerConfig:
-    name: str
     type: str
+    name: str
     active: bool
-    params: dict[str, Any]
+    priority: int
+    config: dict[str, Any]
     config_path: Path
 
 
