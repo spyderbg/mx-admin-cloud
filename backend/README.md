@@ -115,8 +115,8 @@ Internal endpoints are under `/internal/voice/*`. They require dual-auth: `X-Int
 | `GET` | [`/internal/voice/generate/{job_id}/status`](backend/src/api/internal/routes_voice_gen.py#L104) | Get job status and result when complete. |
 | `POST` | [`/internal/voice/generate-sync`](backend/src/api/internal/routes_voice_gen.py#L121)            | Upload input file, run pipeline synchronously; returns `RunSummary` JSON. |
 | `GET` | [`/internal/voice/generators`](backend/src/api/internal/routes_voice_gen.py#L149)               | List configured generators with activation states. |
-| `GET` | [`/internal/voice/translators`](backend/src/api/internal/routes_voice_gen.py#L170)              | List configured translators with priority and states. |
-| `GET` | [`/internal/voice/optimizers`](backend/src/api/internal/routes_voice_gen.py#L190)               | List configured optimizers with activation states. |
+| `GET` | [`/internal/voice/translators`](backend/src/api/internal/routes_voice_gen.py#L170)              | List configured translators with service metadata and activation states. |
+| `GET` | [`/internal/voice/optimizers`](backend/src/api/internal/routes_voice_gen.py#L190)               | List configured optimizers with service metadata and activation states. |
 | `GET` | [`/internal/voice/evaluators`](backend/src/api/internal/routes_voice_gen.py#L212)               | List configured evaluators with activation states. |
 
 **Generate request (multipart form):**
@@ -149,28 +149,90 @@ config/
 ```
 
 Set `generate.active` to `"yes"` or `"no"` in each generator config to enable/disable providers.
-For `config/translators/static.json`, `translate.config.content_dir` is optional. When it is
-missing or points to a non-existing directory, the static translator automatically falls back
-to `CONTENT_DIR` from `src/core/config.py`.
+
+### Translators
+
+Each translator is configured in its own JSON file under `config/translators/`.
+Each file has a `service` section (metadata) and a separate `config` section (translator settings).
+
+Service fields:
+
+| Field      | Type   | Description |
+|------------|--------|-------------|
+| `type`     | string | Service type (currently `translator`). |
+| `name`     | string | Translator implementation name (`openai`, `static`). |
+| `active`   | bool   | Set `true` to enable the translator. |
+| `priority` | int    | Execution order (lower runs first). |
+
+Config fields:
+
+| Field       | Type   | Description |
+|-------------|--------|-------------|
+| `config`    | object | Translator-specific settings. |
+| `config.input_language`  | string | Default source language when request/CLI value is missing. |
+| `config.target_language` | string | Default target language when request/CLI value is missing. |
+
+Example (`config/translators/openai.json`):
+
+```json
+{
+  "service": {
+    "type": "translator",
+    "name": "openai",
+    "active": true,
+    "priority": 2
+  },
+  "config": {
+    "input_language": "en",
+    "target_language": "bg",
+    "model": "gpt-4o",
+    "prompt": "You are a professional translator...",
+    "temperature": 0
+  }
+}
+```
+
+`service.name` selects the implementation class, and every active translator is executed in sequence.
+If CLI/API translation language parameters are not provided, each translator uses
+`config.input_language` and `config.target_language` as defaults.
+
+For `service.name: "static"`, `config.content_dir` is optional. When it is missing or points to a
+non-existing directory, the static translator automatically falls back to `CONTENT_DIR`
+from `src/core/config.py`.
 
 ### Audio optimizers
 
 Each optimizer is configured in its own JSON file under `config/optimizers/`.
-The optimizer name is taken from the filename (without `.json`), not from a `name` field in the file.
+Each file has a `service` section (metadata) and a separate `config` section (optimizer settings).
 
-| Field    | Type   | Description |
-|----------|--------|-------------|
-| `type`   | string | Implementation type: `ffmpeg` or `pydub`. |
-| `active` | bool   | Set `true` to enable. If no optimizer is active the stage is skipped. |
-| `params` | object | `sample_rate` (int), `mono` (bool), `vbr_quality` (int 0-9). |
+Service fields:
+
+| Field      | Type   | Description |
+|------------|--------|-------------|
+| `type`     | string | Service type (currently `optimizer`). |
+| `name`     | string | Optimizer implementation name (`ffmpeg`, `pydub`). |
+| `active`   | bool   | Set `true` to enable the optimizer. |
+| `priority` | int    | Execution order (lower runs first). |
+
+Config fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `config.sample_rate` | int | Output sample rate (default `22050`). |
+| `config.mono` | bool | Convert output to mono when `true` (default `true`). |
+| `config.vbr_quality` | int | MP3 VBR quality `0-9` (default `9`). |
 
 Example (`config/optimizers/voice_optimized.json`):
 
 ```json
 {
-  "type": "ffmpeg",
-  "active": true,
-  "params": {
+  "service": {
+    "type": "optimizer",
+    "name": "ffmpeg",
+    "active": true,
+    "priority": 1
+  },
+  "config": {
     "sample_rate": 22050,
     "mono": true,
     "vbr_quality": 9
@@ -178,8 +240,8 @@ Example (`config/optimizers/voice_optimized.json`):
 }
 ```
 
-`type` selects the implementation class. Multiple files can use the same `type` with different params
-(for example, two `ffmpeg` optimizer files with different quality settings).
+`service.name` selects the implementation class. Multiple files can use the same implementation
+with different `name` values and different `config` values.
 
 Optimized files are written alongside generator output, preserving the same hierarchy:
 

@@ -16,13 +16,14 @@ def get_api_base_url() -> str:
     return os.getenv("KIDDO_API_BASE_URL", DEFAULT_API_BASE_URL)
 
 
-def cli_socket_path() -> str:
+def get_cli_socket_path() -> str:
     """Get the CLI socket path from the environment variable KIDDO_CLI_SOCKET."""
     return os.getenv("KIDDO_CLI_SOCKET", DEFAULT_CLI_SOCKET)
 
 
 def login(username: str, password: str) -> str:
     """Authenticate via HTTP request. Returns access_token. Raises on failure."""
+    print("Authenticating via HTTP...")
     base_url = get_api_base_url()
     try:
         with httpx.Client(timeout=5.0) as client:
@@ -38,7 +39,8 @@ def login(username: str, password: str) -> str:
 
 def login_via_uds(username: str, password: str) -> str:
     """Authenticate via CLI-only Unix socket. Returns access_token. Raises on failure."""
-    socket_path = cli_socket_path()
+    print("Authenticating via UDS...")
+    socket_path = get_cli_socket_path()
     try:
         with httpx.Client(
                 transport=httpx.HTTPTransport(uds=socket_path),

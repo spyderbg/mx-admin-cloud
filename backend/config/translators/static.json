@@ -1,10 +1,13 @@
 {
-  "translator": "static",
-  "translate": {
-    "active": "yes",
-    "priority": 1,
-    "config": {
-      "content_dir": "../content"
-    }
+  "service": {
+    "type": "translator",
+    "name": "static",
+    "active": true,
+    "priority": 1
+  },
+  "config": {
+    "input_language": "en",
+    "target_language": "bg",
+    "content_dir": "../content"
   }
 }

@@ -1,9 +1,0 @@
-{
-  "type": "ffmpeg",
-  "active": true,
-  "params": {
-    "sample_rate": 22050,
-    "mono": true,
-    "vbr_quality": 9
-  }
-}

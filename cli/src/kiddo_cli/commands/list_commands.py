@@ -60,3 +60,16 @@ def register(app: typer.Typer) -> None:
             print_json(result)
 
         run_with_auth(url, token, _run)
+
+    @app.command("users")
+    def list_users(
+        url: str = typer.Option(None, "--url"),
+        token: str | None = typer.Option(None, "--token"),
+    ):
+        """Show configured users with activation states."""
+
+        def _run(t: str):
+            result = internal_get("/users", token=t)
+            print_json(result)
+
+        run_with_auth(url, token, _run)

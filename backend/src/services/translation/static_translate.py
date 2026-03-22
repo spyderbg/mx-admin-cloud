@@ -30,8 +30,7 @@ class StaticTTSTranslate(TTSTranslate):
         self._load()
 
     def _load(self) -> None:
-        translate_config = self.config.translate.get("config", {})
-        content_dir = translate_config.get("content_dir")
+        content_dir = self.config.get("content_dir")
         root = Path(content_dir or settings.CONTENT_DIR)
         if not root.is_absolute():
             root = self.base_dir / root

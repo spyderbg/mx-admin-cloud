@@ -16,10 +16,10 @@ class PydubAudioOptimizer(AudioOptimizerBase):  # pylint: disable=too-few-public
         if not input_path.exists():
             raise FileNotFoundError(f"Input file not found: {input_path}")
 
-        params = self.config.params
-        sample_rate = int(params.get("sample_rate", 22050))
-        mono: bool = params.get("mono", True)
-        vbr_quality = int(params.get("vbr_quality", 9))
+        config = self.config
+        sample_rate = int(config.get("sample_rate", 22050))
+        mono: bool = bool(config.get("mono", True))
+        vbr_quality = int(config.get("vbr_quality", 9))
 
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(

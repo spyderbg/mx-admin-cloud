@@ -15,7 +15,7 @@ from .optimization import AudioOptimizerBase, build_active_optimizers
 from .output_paths import optimized_output_dir, scores_dir
 from .providers import build_provider
 from .evaluation import EvaluationEngine, JsonScoreStore, MultiScoreStore, SQLiteScoreStore
-from .translation import build_translators, translate_with_fallback
+from .translation import build_translators, translate_with_all_active
 from .generation.audio_normalizer import normalize_audio
 from .generation.input_loader import load_requests
 from .generation.result_writer import write_run_summary
@@ -136,7 +136,7 @@ async def _resolve_english_filenames(requests, translators) -> None:
     for request in requests:
         if request.language_code == "en":
             continue
-        english = await translate_with_fallback(
+        english = await translate_with_all_active(
             translators,
             text=request.text,
             input_lang_code=request.language_code,

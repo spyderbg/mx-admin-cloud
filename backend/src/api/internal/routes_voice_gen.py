@@ -170,16 +170,17 @@ async def list_generators(
 async def list_translators(
     _user: dict = Depends(verify_internal_access),
 ) -> list[dict[str, Any]]:
-    """Return configured translators with priority and activation states."""
+    """Return configured translators with service metadata."""
     configs = load_translator_configs(
         base_dir=Path("."),
         config_dir=Path(settings.CONFIG_DIR),
     )
     return [
         {
+            "service_type": c.type,
             "name": c.name,
-            "active": c.translate.get("active", False),
-            "priority": c.translate.get("priority", 999),
+            "active": c.active,
+            "priority": c.priority,
             "config_path": str(c.config_path),
         }
         for c in configs
@@ -190,7 +191,7 @@ async def list_translators(
 async def list_optimizers(
     _user: dict = Depends(verify_internal_access),
 ) -> list[dict[str, Any]]:
-    """Return configured optimizers with activation states."""
+    """Return configured optimizers with service metadata."""
     from src.services.config_loader import load_optimizer_configs
 
     configs = load_optimizer_configs(
@@ -199,9 +200,10 @@ async def list_optimizers(
     )
     return [
         {
+            "service_type": c.type,
             "name": c.name,
             "active": c.active,
-            "type": c.type,
+            "priority": c.priority,
             "config_path": str(c.config_path),
         }
         for c in configs
