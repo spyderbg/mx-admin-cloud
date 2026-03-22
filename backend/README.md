@@ -48,6 +48,7 @@ Env (see `src/core/config.py`):
 
 - `SECRET_KEY`, `ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES`, `CLI_TOKEN_EXPIRE_SECONDS` -- JWT settings
 - `AUTH_DISABLED` -- if true, auth checks are skipped
+- `DEBUG_MODE` -- if true, `/api/v1/users*` skips Unix socket + admin dependency checks
 - `CONTENT_DIR` -- content data path
 - `ARCHIVE_DIR` -- directory for archived (removed) categories. If empty, remove deletes categories permanently instead of archiving.
 - `OPENAI_API_KEY` -- required for TTS, translation, and category icon generation (create/rename category, create object).
@@ -94,6 +95,7 @@ Base URL for all routes below: `/api/v1`. Protected routes require `Authorizatio
 ### Users
 
 User routes are under `/api/v1/users*` and require both admin role and Unix socket access.
+When `DEBUG_MODE=true`, those two dependencies are overridden at startup for local debugging.
 
 | Method | Path                                                                    | Auth | Description |
 |--------|-------------------------------------------------------------------------|------|-------------|

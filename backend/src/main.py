@@ -7,6 +7,7 @@ from starlette.concurrency import run_in_threadpool
 
 from src.api.internal import routes_voice_gen
 from src.api.v1 import routes_auth, routes_tasks, routes_content, routes_users
+from src.api.dependencies import require_admin, require_uds
 from src.core.config import settings
 from src.db.database import init_db
 from src.services.logging import LoggingSystem
@@ -16,6 +17,7 @@ from src.services.logging import LoggingSystem
 async def lifespan(app_lifespan: FastAPI) -> AsyncIterator[None]:
     """Initialize shared services during application startup."""
     await run_in_threadpool(init_db)
+
     log_config = Path(settings.CONFIG_DIR) / "loggers"
     app_lifespan.state.logging_system = None
     if log_config.exists():
@@ -27,6 +29,11 @@ async def lifespan(app_lifespan: FastAPI) -> AsyncIterator[None]:
         )
         await run_in_threadpool(logging_system.configure)
         app_lifespan.state.logging_system = logging_system
+
+    if settings.DEBUG_MODE:
+        app_lifespan.dependency_overrides[require_uds] = lambda: None
+        app_lifespan.dependency_overrides[require_admin] = lambda: None
+
     yield
 
 
