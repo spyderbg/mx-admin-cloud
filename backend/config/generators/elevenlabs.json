@@ -1,71 +1,77 @@
 {
-  "provider": "elevenlabs",
-  "generate": {
-    "active": "no",
-    "languages": {
-      "en": {
-        "actor": "Milena",
-        "voice_id": "M1ydWt7KnBCiuv4CnEDC",
-        "language": "en",
-        "model": "eleven_multilingual_v2",
-        "prompt": "",
-        "use_space": "no",
-        "speed": 1.0,
-        "speaker_boost": true,
-        "voice_settings": {
-          "stability": 0.5,
-          "similarity_boost": 0.75
+  "service": {
+    "type": "generator",
+    "name": "elevenlabs",
+    "active": false,
+    "priority": 1,
+    "config": {
+      "generate": {
+        "languages": {
+          "en": {
+            "actor": "Milena",
+            "voice_id": "M1ydWt7KnBCiuv4CnEDC",
+            "language": "en",
+            "model": "eleven_multilingual_v2",
+            "prompt": "",
+            "use_space": "no",
+            "speed": 1.0,
+            "speaker_boost": true,
+            "voice_settings": {
+              "stability": 0.5,
+              "similarity_boost": 0.75
+            }
+          },
+          "fr": {
+            "actor": "Charlotte",
+            "voice_id": "XB0fDUnXU5powFXDhCwa",
+            "language": "fr",
+            "model": "eleven_multilingual_v2",
+            "prompt": "",
+            "use_space": "no",
+            "speed": 1.0,
+            "speaker_boost": true,
+            "voice_settings": {
+              "stability": 0.5,
+              "similarity_boost": 0.75
+            }
+          },
+          "es": {
+            "actor": "Valentina",
+            "voice_id": "mL4SVHvUBGxGy8KrGOBh",
+            "language": "es",
+            "model": "eleven_multilingual_v2",
+            "prompt": "",
+            "use_space": "no",
+            "speed": 1.0,
+            "speaker_boost": true,
+            "voice_settings": {
+              "stability": 0.5,
+              "similarity_boost": 0.75
+            }
+          },
+          "bg": {
+            "actor": "Milena",
+            "voice_id": "M1ydWt7KnBCiuv4CnEDC",
+            "language": "bg",
+            "model": "eleven_multilingual_v2",
+            "prompt": "",
+            "use_space": "yes",
+            "speed": 0.9,
+            "speaker_boost": true,
+            "voice_settings": {
+              "stability": 0.6,
+              "similarity_boost": 0.70
+            }
+          }
         }
       },
-      "fr": {
-        "actor": "Charlotte",
-        "voice_id": "XB0fDUnXU5powFXDhCwa",
-        "language": "fr",
-        "model": "eleven_multilingual_v2",
+      "evaluate": {
+        "active": false,
+        "stt_provider": "elevenlabs",
+        "model": "scribe_v1",
         "prompt": "",
-        "use_space": "no",
-        "speed": 1.0,
-        "speaker_boost": true,
-        "voice_settings": {
-          "stability": 0.5,
-          "similarity_boost": 0.75
-        }
-      },
-      "es": {
-        "actor": "Valentina",
-        "voice_id": "mL4SVHvUBGxGy8KrGOBh",
-        "language": "es",
-        "model": "eleven_multilingual_v2",
-        "prompt": "",
-        "use_space": "no",
-        "speed": 1.0,
-        "speaker_boost": true,
-        "voice_settings": {
-          "stability": 0.5,
-          "similarity_boost": 0.75
-        }
-      },
-      "bg": {
-        "actor": "Milena",
-        "voice_id": "M1ydWt7KnBCiuv4CnEDC",
-        "language": "bg",
-        "model": "eleven_multilingual_v2",
-        "prompt": "",
-        "use_space": "yes",
-        "speed": 0.9,
-        "speaker_boost": true,
-        "voice_settings": {
-          "stability": 0.6,
-          "similarity_boost": 0.70
-        }
+        "language": "en"
       }
     }
-  },
-  "evaluate": {
-    "active": "no",
-    "stt_provider": "elevenlabs",
-    "model": "scribe_v1",
-    "prompt": "",
-    "language": "en"
   }
 }

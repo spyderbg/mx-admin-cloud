@@ -4,18 +4,24 @@ from __future__ import annotations
 
 import re
 import time
-from typing import Any
 
 from openai import AsyncOpenAI
 
-from ..logging import log_translator_request
-from .base import TTSTranslate
-
+from src.services.logging import log_translator_request
+from src.services.translation import TranslatorFactory
+from .base import TextTranslate
 
 _CATEGORY_LINE_RE = re.compile(r"[^\n]*\{\{\s*category\s*\}\}[^\n]*\n?")
 
 
-class OpenAITTSTranslate(TTSTranslate):
+class OpenAITTSTranslate(TextTranslate):
+    """OpenAI-powered translator using the Chat Completions API."""
+
+    @classmethod
+    def register(cls) -> None:
+        """Register the OpenAI translator."""
+        TranslatorFactory.register("openai", cls)
+
 
     def _render_prompt(
         self,
@@ -83,3 +89,5 @@ class OpenAITTSTranslate(TTSTranslate):
 
         result = (response.choices[0].message.content or "").strip()
         return result or None
+
+OpenAITTSTranslate.register()

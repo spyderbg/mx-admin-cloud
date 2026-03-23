@@ -15,12 +15,13 @@ import time
 from pathlib import Path
 from typing import Any
 
-from ..languages import to_bcp47
-from ..models import EvaluationResult, GeneratedAudio, ProviderConfig
-from ..logging import log_provider_request
+from src.services.languages import to_bcp47
+from src.services.models import EvaluationResult, GeneratedAudio, ProviderConfig
+from src.services.logging import log_provider_request
 
 
 def levenshtein_distance(left: str, right: str) -> int:
+    """Calculate the Levenshtein distance between two strings."""
     if left == right:
         return 0
     if not left:
@@ -41,16 +42,20 @@ def levenshtein_distance(left: str, right: str) -> int:
 
 
 def normalized_accuracy(left: str, right: str) -> float:
+    """Calculate normalized accuracy between two strings."""
     length = max(len(left), len(right), 1)
     return max(0.0, 1.0 - (levenshtein_distance(left, right) / length)) * 100.0
 
 
 def _resolve_stt_api_key(stt_provider: str) -> str:
+    """Resolve the API key from the environment variables."""
     env_name = f"{stt_provider.upper()}_API_KEY"
     return os.getenv(env_name, "")
 
 
 class EvaluationEngine:
+    """Engine for evaluating generated audio against expected text."""
+
     def __init__(self, timeout_seconds: float = 120.0, base_dir: Path | None = None) -> None:
         self.timeout_seconds = timeout_seconds
         self.base_dir = base_dir
@@ -61,6 +66,7 @@ class EvaluationEngine:
         provider_config: ProviderConfig,
         client: Any,
     ) -> EvaluationResult:
+        """Evaluate the generated audio against the expected text."""
         normalized_path = generated_audio.normalized_path
         if not normalized_path:
             return self._fail(
@@ -123,6 +129,7 @@ class EvaluationEngine:
         generated_audio: GeneratedAudio,
         client: Any,
     ) -> str:
+        """Transcribe the audio file using the OpenAI API."""
         model = eval_cfg.get("model", "whisper-1")
         prompt = str(eval_cfg.get("prompt", "")).strip()
         language = str(eval_cfg.get("language") or generated_audio.language_code)
@@ -153,7 +160,7 @@ class EvaluationEngine:
             actor="",
             voice_id="",
             language=language,
-            input=f"audio:{audio_path.name}",
+            request_input=f"audio:{audio_path.name}",
             response_duration=response_duration,
         )
         return str(response.json().get("text", "")).strip()
@@ -166,6 +173,7 @@ class EvaluationEngine:
         generated_audio: GeneratedAudio,
         client: Any,
     ) -> str:
+        """Transcribe the audio file using the ElevenLabs API."""
         model = eval_cfg.get("model", "scribe_v1")
         language = str(eval_cfg.get("language") or generated_audio.language_code)
 
@@ -192,7 +200,7 @@ class EvaluationEngine:
             actor="",
             voice_id="",
             language=language,
-            input=f"audio:{audio_path.name}",
+            request_input=f"audio:{audio_path.name}",
             response_duration=response_duration,
         )
         return str(response.json().get("text", "")).strip()
@@ -291,7 +299,7 @@ class EvaluationEngine:
             actor="",
             voice_id="",
             language=language,
-            input=f"audio:{audio_path.name}",
+            request_input=f"audio:{audio_path.name}",
             response_duration=response_duration,
         )
         return transcription_text
@@ -320,7 +328,7 @@ class EvaluationEngine:
         actor: str,
         voice_id: str,
         language: str,
-        input: Any,
+        request_input: Any,
         response_duration: float,
     ) -> None:
         if self.base_dir is None:
@@ -332,6 +340,6 @@ class EvaluationEngine:
             actor=actor,
             voice_id=voice_id,
             language=language,
-            input=input,
+            input=request_input,
             response_duration=response_duration,
         )

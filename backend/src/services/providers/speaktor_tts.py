@@ -33,6 +33,11 @@ def _render_template(value: Any, context: dict[str, str]) -> Any:
 
 
 class SpeaktorTTSProvider(TTSProvider):
+    @classmethod
+    def register(cls) -> None:
+        from . import ProviderFactory
+        ProviderFactory.register("speaktor", cls)
+
     async def generate(self, request: TTSRequest, output_format: str, client: Any) -> GeneratedAudio:
         gen = self.resolve_language_generate(request.language_code)
 
@@ -141,3 +146,5 @@ class SpeaktorTTSProvider(TTSProvider):
             latency_seconds=latency,
             success=True,
         )
+
+SpeaktorTTSProvider.register()

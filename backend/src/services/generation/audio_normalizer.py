@@ -6,11 +6,12 @@ import asyncio
 import shutil
 from pathlib import Path
 
-from ..models import GeneratedAudio
-from ..output_paths import build_output_stem_from_result, normalized_output_dir
+from src.services.models import GeneratedAudio
+from src.services.output_paths import build_output_stem_from_result, normalized_output_dir
 
 
 async def normalize_audio(base_dir: Path, generated_audio: GeneratedAudio) -> GeneratedAudio:
+    """Normalize raw provider output to a common WAV format for evaluation."""
     ffmpeg_path = shutil.which("ffmpeg")
     if not ffmpeg_path:
         generated_audio.normalization_error = "ffmpeg not found in PATH."

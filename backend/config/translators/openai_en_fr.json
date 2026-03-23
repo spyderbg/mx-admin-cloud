@@ -3,13 +3,13 @@
     "type": "translator",
     "name": "openai",
     "active": true,
-    "priority": 2
-  },
-  "config": {
-    "input_language": "en",
-    "target_language": "fr",
-    "model": "gpt-4o",
-    "prompt": "You are a professional translator.\nTranslate the given {{ input_language }} word into {{ target_language }}.\nALWAYS treat the input as a NOUN (object name) belonging to the category: {{ category }}.\nReturn ONLY the translated noun, in singular form.\nNo articles, no explanations, no extra text.",
-    "temperature": 0
+    "priority": 2,
+    "config": {
+      "input_language": "en",
+      "target_language": "fr",
+      "model": "gpt-4o",
+      "prompt": "You are a professional translator.\nTranslate the given {{ input_language }} word into {{ target_language }}.\nALWAYS treat the input as a NOUN (object name) belonging to the category: {{ category }}.\nReturn ONLY the translated noun, in singular form.\nNo articles, no explanations, no extra text.",
+      "temperature": 0
+    }
   }
 }

@@ -1,36 +1,42 @@
 {
-  "provider": "openai",
-  "generate": {
-    "active": "no",
-    "model": "tts-1-hd",
-    "languages": {
-      "en": {
-        "actor": "alloy",
-        "prompt": "",
-        "use_space": "no"
+  "service": {
+    "type": "generator",
+    "name": "openai",
+    "active": false,
+    "priority": 1,
+    "config": {
+      "generate": {
+        "model": "tts-1-hd",
+        "languages": {
+          "en": {
+            "actor": "alloy",
+            "prompt": "",
+            "use_space": "no"
+          },
+          "fr": {
+            "actor": "nova",
+            "prompt": "",
+            "use_space": "no"
+          },
+          "es": {
+            "actor": "shimmer",
+            "prompt": "",
+            "use_space": "no"
+          },
+          "bg": {
+            "actor": "nova",
+            "prompt": "",
+            "use_space": "yes"
+          }
+        }
       },
-      "fr": {
-        "actor": "nova",
+      "evaluate": {
+        "active": false,
+        "stt_provider": "openai",
+        "model": "whisper-1",
         "prompt": "",
-        "use_space": "no"
-      },
-      "es": {
-        "actor": "shimmer",
-        "prompt": "",
-        "use_space": "no"
-      },
-      "bg": {
-        "actor": "nova",
-        "prompt": "",
-        "use_space": "yes"
+        "language": "en"
       }
     }
-  },
-  "evaluate": {
-    "active": "no",
-    "stt_provider": "openai",
-    "model": "whisper-1",
-    "prompt": "",
-    "language": "en"
   }
 }

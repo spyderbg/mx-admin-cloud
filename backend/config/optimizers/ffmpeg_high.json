@@ -3,11 +3,11 @@
     "type": "optimizer",
     "name": "ffmpeg",
     "active": true,
-    "priority": 1
-  },
-  "config": {
-    "sample_rate": 22050,
-    "mono": true,
-    "vbr_quality": 9
+    "priority": 1,
+    "config": {
+      "sample_rate": 22050,
+      "mono": true,
+      "vbr_quality": 9
+    }
   }
 }

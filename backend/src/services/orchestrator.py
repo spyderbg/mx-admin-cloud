@@ -34,6 +34,7 @@ async def run_pipeline(
     max_concurrency: int = 5,
     output_dir: Path | None = None,
 ) -> RunSummary:
+    """Run the pipeline."""
     try:
         httpx_module = importlib.import_module("httpx")
     except ModuleNotFoundError as exc:
@@ -46,7 +47,11 @@ async def run_pipeline(
     output_root = output_dir or base_dir
     ensure_requests_log(output_root)
     configs = load_provider_configs(base_dir=base_dir, config_dir=config_dir, dotenv_path=dotenv_path)
-    providers = [(build_provider(config, output_root), config) for config in configs if config.generate.get("active")]
+    providers = []
+    for config in configs:
+        provider = build_provider(config, output_root)
+        if provider.is_active():
+            providers.append((provider, config))
 
     if not requests:
         raise RuntimeError(f"No input texts were found in {input_path}.")

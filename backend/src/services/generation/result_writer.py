@@ -11,6 +11,7 @@ from ..output_paths import reports_dir
 
 
 def write_run_summary(base_dir: Path, summary: RunSummary) -> tuple[Path, Path]:
+    """Write the run summary to a JSON and CSV file."""
     report_dir = reports_dir(base_dir)
     report_dir.mkdir(parents=True, exist_ok=True)
 

@@ -3,11 +3,11 @@
     "type": "translator",
     "name": "static",
     "active": true,
-    "priority": 1
-  },
-  "config": {
-    "input_language": "en",
-    "target_language": "bg",
-    "content_dir": "../content"
+    "priority": 1,
+    "config": {
+      "input_language": "en",
+      "target_language": "bg",
+      "content_dir": "../content"
+    }
   }
 }

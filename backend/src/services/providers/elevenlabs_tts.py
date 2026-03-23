@@ -44,6 +44,11 @@ def _to_bool(value: Any, field_name: str) -> bool:
 class ElevenLabsTTSProvider(TTSProvider):
     API_BASE = "https://api.elevenlabs.io/v1"
 
+    @classmethod
+    def register(cls) -> None:
+        from . import ProviderFactory
+        ProviderFactory.register("elevenlabs", cls)
+
     async def generate(self, request: TTSRequest, output_format: str, client: Any) -> GeneratedAudio:
         gen = self.resolve_language_generate(request.language_code)
 
@@ -162,3 +167,5 @@ class ElevenLabsTTSProvider(TTSProvider):
             latency_seconds=latency,
             success=True,
         )
+
+ElevenLabsTTSProvider.register()

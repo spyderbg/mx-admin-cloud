@@ -7,10 +7,15 @@ from pathlib import Path
 
 from src.core.config import settings
 
-from .base import TTSTranslate
+from .base import TextTranslate
 
 
-class StaticTTSTranslate(TTSTranslate):
+class StaticTTSTranslate(TextTranslate):
+    @classmethod
+    def register(cls) -> None:
+        from . import TranslatorFactory
+        TranslatorFactory.register("static", cls)
+
     """Look up translations from aligned CSV files in a content directory.
 
     Expected layout::
@@ -83,3 +88,5 @@ class StaticTTSTranslate(TTSTranslate):
         if targets is None:
             return None
         return targets.get(tgt)
+
+StaticTTSTranslate.register()

@@ -1,4 +1,4 @@
-"""Base provider abstractions and provider factory."""
+"""Base provider abstraction."""
 
 from __future__ import annotations
 
@@ -14,20 +14,30 @@ from ..output_paths import build_output_stem, raw_output_dir
 logger = logging.getLogger(__name__)
 
 
+def _boolish(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 class TTSProvider(ABC):
-    def __init__(self, config: ProviderConfig, base_dir: Path) -> None:
-        self.config = config
+    """Common interface for all TTS provider implementations."""
+
+    def __init__(self, cfg: ProviderConfig, base_dir: Path) -> None:
+        self.cfg = cfg
         self.base_dir = base_dir
 
     @property
     def name(self) -> str:
-        return self.config.name
+        return self.cfg.name
 
     def is_active(self) -> bool:
-        return bool(self.config.generate.get("active"))
+        return _boolish(self.cfg.generate.get("active", False))
 
     def api_key_env_name(self) -> str:
-        return f"{self.config.name.upper()}_API_KEY"
+        return f"{self.cfg.name.upper()}_API_KEY"
 
     def resolve_api_key(self) -> str:
         return os.getenv(self.api_key_env_name(), "")
@@ -41,7 +51,7 @@ class TTSProvider(ABC):
         3. First entry in the map (arbitrary but deterministic in Python 3.7+).
         4. No overrides -- return the base generate dict as-is.
         """
-        base: dict[str, Any] = dict(self.config.generate)
+        base: dict[str, Any] = dict(self.cfg.generate)
         languages: dict[str, Any] | None = base.pop("languages", None)
         if not isinstance(languages, dict) or not languages:
             return base
@@ -56,8 +66,9 @@ class TTSProvider(ABC):
         return base
 
     def build_prompt_text(self, request: TTSRequest) -> str:
-        prompt = str(self.config.generate.get("prompt", "")).strip()
-        use_space = str(self.config.generate.get("use_space", "no")).strip().lower() in {
+        gen = self.cfg.generate
+        prompt = str(gen.get("prompt", "")).strip()
+        use_space = str(gen.get("use_space", "no")).strip().lower() in {
             "yes", "true", "1", "on",
         }
         text = request.text
@@ -79,17 +90,3 @@ class TTSProvider(ABC):
 
     async def evaluate(self, *_: Any, **__: Any) -> None:
         return None
-
-
-def build_provider(config: ProviderConfig, base_dir: Path) -> TTSProvider:
-    name = config.name.lower()
-    if name == "openai":
-        from .openai_tts import OpenAITTSProvider
-        return OpenAITTSProvider(config, base_dir)
-    if name == "elevenlabs":
-        from .elevenlabs_tts import ElevenLabsTTSProvider
-        return ElevenLabsTTSProvider(config, base_dir)
-    if name == "speaktor":
-        from .speaktor_tts import SpeaktorTTSProvider
-        return SpeaktorTTSProvider(config, base_dir)
-    raise ValueError(f"Unsupported provider config: {config.name}")

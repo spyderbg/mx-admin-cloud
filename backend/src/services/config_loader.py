@@ -38,21 +38,30 @@ def load_provider_configs(base_dir: Path, config_dir: Path | None = None, dotenv
 
         if not isinstance(payload, dict):
             continue
-        if "generate" not in payload or "evaluate" not in payload:
+
+        service = payload.get("service", {})
+        if not isinstance(service, dict):
             continue
 
-        generate = payload.get("generate", {})
-        evaluate = payload.get("evaluate", {})
+        name = str(service.get("name") or config_path.stem).strip()
+        if not name:
+            continue
+
+        active = _boolish(service.get("active", False))
+        raw_config = service.get("config", {})
+        if raw_config is None:
+            raw_config = {}
+
+        generate = raw_config.get("generate", {})
+        evaluate = raw_config.get("evaluate", {})
         if not isinstance(generate, dict) or not isinstance(evaluate, dict):
             continue
-
-        provider_name = payload.get("provider") or config_path.stem
-        generate["active"] = _boolish(generate.get("active"))
+        generate["active"] = _boolish(generate.get("active", active))
         evaluate["active"] = _boolish(evaluate.get("active", True))
 
         configs.append(
             ProviderConfig(
-                name=provider_name,
+                name=name,
                 generate=generate,
                 evaluate=evaluate,
                 config_path=config_path,
@@ -76,7 +85,6 @@ def load_translator_configs(
 
     actual_config_dir = (config_dir or base_dir / "config") / "translators"
     configs: list[TranslatorConfig] = []
-    seen_names: set[str] = set()
 
     if not actual_config_dir.exists():
         return configs
@@ -97,16 +105,9 @@ def load_translator_configs(
         if not translator_type or not name:
             continue
 
-        if name in seen_names:
-            raise ValueError(
-                f"Duplicate translator name '{name}' in {config_path}. "
-                "Each translator must have a unique name."
-            )
-        seen_names.add(name)
-
         active = _boolish(service.get("active", False))
         priority = int(service.get("priority", 999))
-        raw_config = payload.get("config", {})
+        raw_config = service.get("config", {})
         if not isinstance(raw_config, dict):
             raw_config = {}
 
@@ -142,7 +143,6 @@ def load_optimizer_configs(
     if not config_root.exists():
         return []
 
-    seen_names: set[str] = set()
     configs: list[OptimizerConfig] = []
 
     for config_file in sorted(config_root.glob("*.json")):
@@ -161,19 +161,16 @@ def load_optimizer_configs(
         if not name or not service_type:
             continue
 
-        if name in seen_names:
-            raise ValueError(
-                f"Duplicate optimizer name '{name}' in {config_file}. "
-                "Each optimizer must have a unique name."
-            )
-        seen_names.add(name)
-
         active = _boolish(service.get("active", False))
         priority = int(service.get("priority", 999))
-        raw_config = entry.get("config", {})
-        if not isinstance(raw_config, dict):
+        raw_config = service.get("config", {})
+        if raw_config is None:
             raw_config = {}
-        config = {**_OPTIMIZER_DEFAULT_CONFIG, **raw_config}
+        merged_config: object
+        if isinstance(raw_config, dict):
+            merged_config = {**_OPTIMIZER_DEFAULT_CONFIG, **raw_config}
+        else:
+            merged_config = raw_config
 
         configs.append(
             OptimizerConfig(
@@ -181,7 +178,7 @@ def load_optimizer_configs(
                 name=name,
                 active=active,
                 priority=priority,
-                config=config,
+                config=merged_config,
                 config_path=config_file,
             )
         )

@@ -16,6 +16,11 @@ logger = logging.getLogger(__name__)
 class OpenAITTSProvider(TTSProvider):
     ENDPOINT = "https://api.openai.com/v1/audio/speech"
 
+    @classmethod
+    def register(cls) -> None:
+        from . import ProviderFactory
+        ProviderFactory.register("openai", cls)
+
     async def generate(self, request: TTSRequest, output_format: str, client: Any) -> GeneratedAudio:
         gen = self.resolve_language_generate(request.language_code)
 
@@ -93,3 +98,5 @@ class OpenAITTSProvider(TTSProvider):
             latency_seconds=latency,
             success=True,
         )
+
+OpenAITTSProvider.register()

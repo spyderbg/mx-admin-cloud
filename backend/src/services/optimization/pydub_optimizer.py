@@ -11,6 +11,11 @@ from .base import AudioOptimizerBase
 class PydubAudioOptimizer(AudioOptimizerBase):  # pylint: disable=too-few-public-methods
     """Optimize audio files using pydub (AudioSegment)."""
 
+    @classmethod
+    def register(cls) -> None:
+        from . import OptimizerFactory
+        OptimizerFactory.register("pydub", cls)
+
     async def optimize(self, input_path: Path, output_path: Path) -> Path:
         """Optimize an input MP3 asynchronously and return output path."""
         if not input_path.exists():
@@ -53,3 +58,5 @@ class PydubAudioOptimizer(AudioOptimizerBase):  # pylint: disable=too-few-public
             format="mp3",
             parameters=["-q:a", str(vbr_quality)],
         )
+
+PydubAudioOptimizer.register()

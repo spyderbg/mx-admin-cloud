@@ -3,11 +3,11 @@
     "type": "optimizer",
     "name": "pydub",
     "active": false,
-    "priority": 2
-  },
-  "config": {
-    "sample_rate": 22050,
-    "mono": true,
-    "vbr_quality": 9
+    "priority": 2,
+    "config": {
+      "sample_rate": 22050,
+      "mono": true,
+      "vbr_quality": 9
+    }
   }
 }

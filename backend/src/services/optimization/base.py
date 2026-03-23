@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from ..models import OptimizerConfig
+from src.services.models import OptimizerConfig
 
 
 class AudioOptimizerBase(ABC):
@@ -13,27 +13,26 @@ class AudioOptimizerBase(ABC):
 
     def __init__(
         self,
-        service: OptimizerConfig,
-        config: dict[str, object],
+        cfg: OptimizerConfig,
         base_dir: Path,
     ) -> None:
-        self.service = service
-        self.config = config
+        self.cfg = cfg
+        self.config = cfg.config
         self.base_dir = base_dir
 
     @property
     def name(self) -> str:
         """Return logical optimizer name from configuration."""
-        return self.service.name
+        return self.cfg.name
 
     @property
     def optimizer_type(self) -> str:
         """Return optimizer backend type (for example, ffmpeg or pydub)."""
-        return self.service.type
+        return self.cfg.type
 
     def is_active(self) -> bool:
         """Return whether this optimizer should run."""
-        return self.service.active
+        return bool(self.cfg.active)
 
     @abstractmethod
     async def optimize(self, input_path: Path, output_path: Path) -> Path:

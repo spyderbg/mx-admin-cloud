@@ -1,57 +1,63 @@
 {
-  "provider": "speaktor",
-  "generate": {
-    "active": "no",
-    "endpoint": "https://api.tor.app/developer/text_to_speech",
-    "method": "POST",
-    "response_mode": "json_url",
-    "audio_field": "audioUrl",
-    "headers": {
-      "Authorization": "Bearer {api_key}",
-      "Content-Type": "application/json",
-      "Accept": "application/json"
-    },
-    "payload_template": {
-      "text": "{text}",
-      "language": "{language}",
-      "voice_name": "{voice_name}"
-    },
-    "languages": {
-      "en": {
-        "voice_name": "Sveta",
-        "speed_rate": 1.0,
-        "emotion": "",
-        "prompt": "",
-        "use_space": "no"
+  "service": {
+    "type": "generator",
+    "name": "speaktor",
+    "active": false,
+    "priority": 1,
+    "config": {
+      "generate": {
+        "endpoint": "https://api.tor.app/developer/text_to_speech",
+        "method": "POST",
+        "response_mode": "json_url",
+        "audio_field": "audioUrl",
+        "headers": {
+          "Authorization": "Bearer {api_key}",
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        "payload_template": {
+          "text": "{text}",
+          "language": "{language}",
+          "voice_name": "{voice_name}"
+        },
+        "languages": {
+          "en": {
+            "voice_name": "Sveta",
+            "speed_rate": 1.0,
+            "emotion": "",
+            "prompt": "",
+            "use_space": "no"
+          },
+          "fr": {
+            "voice_name": "Marie",
+            "speed_rate": 1.0,
+            "emotion": "",
+            "prompt": "",
+            "use_space": "no"
+          },
+          "es": {
+            "voice_name": "Carmen",
+            "speed_rate": 1.0,
+            "emotion": "",
+            "prompt": "",
+            "use_space": "no"
+          },
+          "bg": {
+            "voice_name": "Ния",
+            "speed_rate": 0.9,
+            "emotion": "",
+            "prompt": "",
+            "use_space": "yes"
+          }
+        }
       },
-      "fr": {
-        "voice_name": "Marie",
-        "speed_rate": 1.0,
-        "emotion": "",
-        "prompt": "",
-        "use_space": "no"
-      },
-      "es": {
-        "voice_name": "Carmen",
-        "speed_rate": 1.0,
-        "emotion": "",
-        "prompt": "",
-        "use_space": "no"
-      },
-      "bg": {
-        "voice_name": "Ния",
-        "speed_rate": 0.9,
-        "emotion": "",
-        "prompt": "",
-        "use_space": "yes"
+      "evaluate": {
+        "active": false,
+        "stt_provider": "speaktor",
+        "language": "en-US",
+        "poll_interval_seconds": 3,
+        "poll_max_attempts": 40
       }
     }
-  },
-  "evaluate": {
-    "active": "no",
-    "stt_provider": "speaktor",
-    "language": "en-US",
-    "poll_interval_seconds": 3,
-    "poll_max_attempts": 40
   }
 }

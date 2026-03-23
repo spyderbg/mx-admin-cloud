@@ -7,12 +7,13 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
-from ..languages import language_name, normalize_language_code
-from ..models import TTSRequest
-from ..output_paths import slugify_filename
+from src.services.languages import language_name, normalize_language_code
+from src.services.models import TTSRequest
+from src.services.output_paths import slugify_filename
 
 
 def load_requests(input_path: Path, default_language: str) -> list[TTSRequest]:
+    """Load structured requests from CSV, XLSX, and TXT files."""
     suffix = input_path.suffix.lower()
     if suffix == ".txt":
         return _load_from_txt(input_path, default_language)
