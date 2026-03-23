@@ -20,6 +20,7 @@ def build_translators(
     configs: Sequence[TranslatorConfig],
     base_dir: Path,
 ) -> list[TTSTranslate]:
+    
     return [build_translator(cfg, base_dir) for cfg in configs if cfg.active]
 
 

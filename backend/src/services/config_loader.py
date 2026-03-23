@@ -19,6 +19,8 @@ def _boolish(value: object) -> bool:
 
 
 def load_provider_configs(base_dir: Path, config_dir: Path | None = None, dotenv_path: Path | None = None) -> list[ProviderConfig]:
+    """Load provider configs from JSON files and environment variables."""
+
     if dotenv_path:
         load_dotenv(dotenv_path=dotenv_path)
     else:
@@ -65,6 +67,8 @@ def load_translator_configs(
     config_dir: Path | None = None,
     dotenv_path: Path | None = None,
 ) -> list[TranslatorConfig]:
+    """Load translator configs from JSON files and environment variables."""
+
     if dotenv_path:
         load_dotenv(dotenv_path=dotenv_path)
     else:
@@ -132,6 +136,8 @@ def load_optimizer_configs(
     base_dir: Path,
     config_dir: Path | None = None,
 ) -> list[OptimizerConfig]:
+    """Load optimizer configs from JSON files and environment variables."""
+
     config_root = (config_dir or base_dir / "config") / "optimizers"
     if not config_root.exists():
         return []
