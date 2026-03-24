@@ -17,7 +17,7 @@ from src.core.tts import generate_audio
 
 
 def _content_root() -> Path:
-    return Path(settings.CONTENT_DIR)
+    return settings.content_path
 
 
 def _category_path(category: str) -> Path:
@@ -25,7 +25,7 @@ def _category_path(category: str) -> Path:
 
 
 def _archive_root() -> Path:
-    return Path(settings.ARCHIVE_DIR)
+    return settings.archive_path
 
 
 def _list_archived_entries() -> list[dict[str, Any]]:

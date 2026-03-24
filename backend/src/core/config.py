@@ -60,5 +60,29 @@ class Settings(BaseSettings):
     # TTS pipeline settings
     TTS_MAX_CONCURRENCY: int = 5
 
+    # --- Resolved path properties ---
+    # Each property: absolute env-var path used as-is; relative path resolved against BASE_DIR.
+    # In Docker, set e.g. CONFIG_DIR=/app/config to bypass BASE_DIR entirely.
+
+    @property
+    def config_path(self) -> Path:
+        p = Path(self.CONFIG_DIR)
+        return p if p.is_absolute() else self.BASE_DIR / p
+
+    @property
+    def content_path(self) -> Path:
+        p = Path(self.CONTENT_DIR)
+        return p if p.is_absolute() else self.BASE_DIR / p
+
+    @property
+    def archive_path(self) -> Path:
+        p = Path(self.ARCHIVE_DIR)
+        return p if p.is_absolute() else self.BASE_DIR / p
+
+    @property
+    def output_path(self) -> Path:
+        p = Path(self.OUTPUT_DIR)
+        return p if p.is_absolute() else self.BASE_DIR / p
+
 
 settings = Settings()

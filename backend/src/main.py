@@ -26,12 +26,12 @@ async def lifespan(app_lifespan: FastAPI) -> AsyncIterator[None]:
     """Initialize shared services during application startup."""
     await run_in_threadpool(UsersDb.init_db)
 
-    log_config = settings.BASE_DIR / settings.CONFIG_DIR / "loggers"
+    log_config = settings.config_path / "loggers"
     app_lifespan.state.logging_system = None
     if log_config.exists():
         logging_system = LoggingSystem(
             base_dir=settings.BASE_DIR,
-            output_dir=settings.BASE_DIR / settings.OUTPUT_DIR,
+            output_dir=settings.output_path,
             config_path=log_config,
             profile=settings.LOG_PROFILE,
         )
@@ -41,8 +41,8 @@ async def lifespan(app_lifespan: FastAPI) -> AsyncIterator[None]:
     # Build the service registry (parses all JSON configs, instantiates providers)
     registry = await ServiceRegistry.build(
         base_dir=settings.BASE_DIR,
-        config_dir=settings.BASE_DIR / settings.CONFIG_DIR,
-        output_dir=settings.BASE_DIR / settings.OUTPUT_DIR,
+        config_dir=settings.config_path,
+        output_dir=settings.output_path,
     )
     app_lifespan.state.registry = registry
     logging.info("registry_built providers=%s translators=%s optimizers=%s",
@@ -60,7 +60,7 @@ async def lifespan(app_lifespan: FastAPI) -> AsyncIterator[None]:
     async def _watch_configs() -> None:
         try:
             from watchfiles import awatch  # pylint: disable=import-outside-toplevel
-            async for _ in awatch(settings.BASE_DIR / settings.CONFIG_DIR):
+            async for _ in awatch(settings.config_path):
                 logging.info("config_changed reloading_registry")
                 await registry.reload()
                 logging.info("registry_reloaded providers=%s", len(registry.providers))

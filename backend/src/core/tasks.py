@@ -38,7 +38,7 @@ def operation(operation_name: str) -> dict[str, str]:
 
 def list_files(depth: int = 1) -> dict[str, Any]:
     """List files in the configured content directory."""
-    directory = settings.CONTENT_DIR
+    directory = settings.content_path
     if not os.path.exists(directory):
         return {"error": f"Directory '{directory}' does not exist"}
     try:

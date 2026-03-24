@@ -42,23 +42,22 @@ This starts the HTTP server and the CLI Unix socket. To stop:
 
 - **HTTP login:** `POST /api/v1/login` with `application/x-www-form-urlencoded` body `username` and `password` (default `admin` / value of `DEFAULT_ADMIN_PASSWORD`). Returns `access_token`; use as `Authorization: Bearer <token>`.
 - **CLI login:** `POST /api/v1/cli-login` is allowed only when the request is made over the backend's Unix socket (e.g. by the CLI). Returns a short-lived token.
-- **Internal dual-auth:** Internal endpoints accept either `X-Internal-Token` header (service-to-service) or `Authorization: Bearer <jwt>` with admin role (CLI).
+- **Internal auth:** Internal endpoints require a JWT with role `"internal"` or `"admin"`. An internal token is generated at startup (stored in `app.state.internal_token`, 24-hour lifetime) and never shared as a static secret. Admin JWTs also satisfy the check, so the CLI can call internal endpoints with its normal login token.
 
 Env (see `src/core/config.py`):
 
-- `SECRET_KEY`, `ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES`, `CLI_TOKEN_EXPIRE_SECONDS` -- JWT settings
-- `AUTH_DISABLED` -- if true, auth checks are skipped
-- `DEBUG_MODE` -- if true, `/api/v1/users*` skips Unix socket + admin dependency checks
-- `CONTENT_DIR` -- content data path
-- `ARCHIVE_DIR` -- directory for archived (removed) categories. If empty, remove deletes categories permanently instead of archiving.
-- `OPENAI_API_KEY` -- required for TTS, translation, and category icon generation (create/rename category, create object).
-- `ELEVENLABS_API_KEY` -- ElevenLabs TTS provider (optional)
-- `SPEAKTOR_API_KEY` -- Speaktor TTS provider (optional)
-- `INTERNAL_SERVICE_TOKEN` -- shared secret for service-to-service internal API calls
-- `CONFIG_DIR` -- path to TTS config directory (default `config`)
-- `OUTPUT_DIR` -- path to TTS output directory (default `../output`)
-- `TTS_MAX_CONCURRENCY` -- max parallel provider requests (default 5)
-- `LOG_PROFILE` -- logging profile: `dev` or `prod` (default `dev`)
+- `SECRET_KEY`, `ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES`, `CLI_TOKEN_EXPIRE_SECONDS` — JWT settings
+- `AUTH_DISABLED` — if true, auth checks are skipped
+- `DEBUG_MODE` — if true, `/api/v1/users*` skips Unix socket + admin dependency checks
+- `CONTENT_DIR` — content data path
+- `ARCHIVE_DIR` — directory for archived (removed) categories. If empty, remove deletes categories permanently instead of archiving.
+- `OPENAI_API_KEY` — required for TTS, translation, and category icon generation (create/rename category, create object).
+- `ELEVENLABS_API_KEY` — ElevenLabs TTS provider (optional)
+- `SPEAKTOR_API_KEY` — Speaktor TTS provider (optional)
+- `CONFIG_DIR` — path to TTS config directory (default `config`)
+- `OUTPUT_DIR` — path to TTS output directory (default `../output`)
+- `TTS_MAX_CONCURRENCY` — max parallel provider requests (default 5)
+- `LOG_PROFILE` — logging profile: `dev` or `prod` (default `dev`)
 
 ## Endpoints
 
@@ -68,63 +67,117 @@ Base URL for all routes below: `/api/v1`. Protected routes require `Authorizatio
 
 | Method | Path                                                  | Auth | Description                                               |
 |--------|-------------------------------------------------------|------|-----------------------------------------------------------|
-| `POST` | [`/login`](backend/src/api/v1/routes_auth.py#L34)     | No   | Login with username/password; returns JWT.                |
-| `POST` | [`/cli-login`](backend/src/api/v1/routes_auth.py#L52) | No   | CLI-only login over Unix socket; returns short-lived JWT. |
+| `POST` | [`/login`](src/api/v1/routes_auth.py#L34)             | No   | Login with username/password; returns JWT.                |
+| `POST` | [`/cli-login`](src/api/v1/routes_auth.py#L52)         | No   | CLI-only login over Unix socket; returns short-lived JWT. |
 
 ### Tasks
 
 | Method | Path                                                     | Auth | Description                                                                              |
 |--------|----------------------------------------------------------|------|------------------------------------------------------------------------------------------|
-| `GET`  | [`/ping`](backend/src/api/v1/routes_common.py#L11)       | No   | Health check; returns PONG with backend platform info.                                   |
-| `GET`  | [`/status`](backend/src/api/v1/routes_common.py#L16)     | Yes  | Service status.                                                                          |
-| `POST` | [`/operation`](backend/src/api/v1/routes_common.py#L21)  | Yes  | Perform a service operation. Query param: `name`.                                        |
-| `POST` | [`/list-files`](backend/src/api/v1/routes_common.py#L30) | Yes  | List files in the configured directory. Body: `{"depth": int}` (depth < 1 treated as 1). |
+| `GET`  | [`/ping`](src/api/v1/routes_common.py#L11)               | No   | Health check; returns PONG with backend platform info.                                   |
+| `GET`  | [`/status`](src/api/v1/routes_common.py#L16)             | Yes  | Service status.                                                                          |
+| `POST` | [`/operation`](src/api/v1/routes_common.py#L21)          | Yes  | Perform a service operation. Query param: `name`.                                        |
+| `POST` | [`/list-files`](src/api/v1/routes_common.py#L30)         | Yes  | List files in the configured directory. Body: `{"depth": int}` (depth < 1 treated as 1). |
 
 ### Content
 
-| Method   | Path                                                                               | Auth | Description                                                                                                                       |
-|----------|------------------------------------------------------------------------------------|------|-----------------------------------------------------------------------------------------------------------------------------------|
-| `GET`    | [`/content/categories`](backend/src/api/v1/routes_content.py#L38)                  | Yes  | List content categories. Query: `include_archived`, `archived_only` (bool) to include or list only archived categories.           |
-| `POST`   | [`/content/categories`](backend/src/api/v1/routes_content.py#L51)                  | Yes  | Create a category. Body: `{"name": "<category_name>"}`. Creates folder, voice files per language, and category icon. Returns 201. |
-| `POST`   | [`/content/categories/restore`](backend/src/api/v1/routes_content.py#L62)          | Yes  | Restore a category from archive. Body: `{"name": "<category_name_or_archive_folder>"}` (e.g. `foods` or `foods_1738456789`).      |
-| `GET`    | [`/content/categories/{category_name}`](backend/src/api/v1/routes_content.py#L103) | Yes  | Category details by name.                                                                                                         |
-| `PATCH`  | [`/content/categories/{category_name}`](backend/src/api/v1/routes_content.py#L77)  | Yes  | Rename category. Body: `{"name": "<new_name>"}`. Renames folder and regenerates category voice files.                             |
-| `DELETE` | [`/content/categories/{category_name}`](backend/src/api/v1/routes_content.py#L90)  | Yes  | Remove category. If `ARCHIVE_DIR` is set, archives it (date suffix); otherwise deletes permanently.                               |
-| `POST`   | [`/content/objects`](backend/src/api/v1/routes_content.py#L114)                    | Yes  | Create a content object. Multipart: `image` (file), `category` (form), `object` (form, English word). Returns 201.                |
+| Method   | Path                                                                            | Auth | Description                                                                                                                       |
+|----------|---------------------------------------------------------------------------------|------|-----------------------------------------------------------------------------------------------------------------------------------|
+| `GET`    | [`/content/categories`](src/api/v1/routes_content.py#L38)                      | Yes  | List content categories. Query: `include_archived`, `archived_only` (bool) to include or list only archived categories.           |
+| `POST`   | [`/content/categories`](src/api/v1/routes_content.py#L51)                      | Yes  | Create a category. Body: `{"name": "<category_name>"}`. Creates folder, voice files per language, and category icon. Returns 201. |
+| `POST`   | [`/content/categories/restore`](src/api/v1/routes_content.py#L62)              | Yes  | Restore a category from archive. Body: `{"name": "<category_name_or_archive_folder>"}` (e.g. `foods` or `foods_1738456789`).      |
+| `GET`    | [`/content/categories/{category_name}`](src/api/v1/routes_content.py#L103)     | Yes  | Category details by name.                                                                                                         |
+| `PATCH`  | [`/content/categories/{category_name}`](src/api/v1/routes_content.py#L77)      | Yes  | Rename category. Body: `{"name": "<new_name>"}`. Renames folder and regenerates category voice files.                             |
+| `DELETE` | [`/content/categories/{category_name}`](src/api/v1/routes_content.py#L90)      | Yes  | Remove category. If `ARCHIVE_DIR` is set, archives it (date suffix); otherwise deletes permanently.                               |
+| `POST`   | [`/content/objects`](src/api/v1/routes_content.py#L114)                         | Yes  | Create a content object. Multipart: `image` (file), `category` (form), `object` (form, English word). Returns 201.                |
 
 ### Users
 
 User routes are under `/api/v1/users*` and require both admin role and Unix socket access.
 When `DEBUG_MODE=true`, those two dependencies are overridden at startup for local debugging.
 
-| Method   | Path                                                                    | Auth              | Description                                                       |
-|----------|-------------------------------------------------------------------------|-------------------|-------------------------------------------------------------------|
-| `POST`   | [`/users`](backend/src/api/v1/routes_users.py#L45)                      | Yes (admin + UDS) | Create a user with role `admin` or `viewer`.                      |
-| `GET`    | [`/users`](backend/src/api/v1/routes_users.py#L66)                      | Yes (admin + UDS) | List all users. Query: `username` (fuzzy), `role` (admin/viewer). |
-| `DELETE` | [`/users/{username}`](backend/src/api/v1/routes_users.py#L77)           | Yes (admin + UDS) | Delete a user (cannot remove the last admin).                     |
-| `PATCH`  | [`/users/{username}/password`](backend/src/api/v1/routes_users.py#L107) | Yes (admin + UDS) | Change a user's password.                                         |
-| `PATCH`  | [`/users/{username}/role`](backend/src/api/v1/routes_users.py#L131)     | Yes (admin + UDS) | Change a user's role (cannot demote the last admin).              |
+| Method   | Path                                                                 | Auth              | Description                                                       |
+|----------|----------------------------------------------------------------------|-------------------|-------------------------------------------------------------------|
+| `POST`   | [`/users`](src/api/v1/routes_users.py#L45)                           | Yes (admin + UDS) | Create a user with role `admin` or `viewer`.                      |
+| `GET`    | [`/users`](src/api/v1/routes_users.py#L66)                           | Yes (admin + UDS) | List all users. Query: `username` (fuzzy), `role` (admin/viewer). |
+| `DELETE` | [`/users/{username}`](src/api/v1/routes_users.py#L77)                | Yes (admin + UDS) | Delete a user (cannot remove the last admin).                     |
+| `PATCH`  | [`/users/{username}/password`](src/api/v1/routes_users.py#L107)      | Yes (admin + UDS) | Change a user's password.                                         |
+| `PATCH`  | [`/users/{username}/role`](src/api/v1/routes_users.py#L131)          | Yes (admin + UDS) | Change a user's role (cannot demote the last admin).              |
 
 ### Internal (voice generation)
 
-Internal endpoints are under `/internal/voice/*`. They require dual-auth: `X-Internal-Token` header or admin JWT.
+Internal endpoints are under `/internal/voice/*`. They require `Authorization: Bearer <token>` where the token's role is `"internal"` or `"admin"`. An internal token is automatically generated at startup; admin JWTs (from `/login`) also work.
 
-| Method | Path                                                                                            | Description                                                               |
-|--------|-------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------|
-| `POST` | [`/internal/voice/generate`](backend/src/api/internal/routes_voice_gen.py#L88)                  | Upload input file, trigger TTS pipeline in background; returns `job_id`.  |
-| `GET`  | [`/internal/voice/generate/{job_id}/status`](backend/src/api/internal/routes_voice_gen.py#L104) | Get job status and result when complete.                                  |
-| `POST` | [`/internal/voice/generate-sync`](backend/src/api/internal/routes_voice_gen.py#L121)            | Upload input file, run pipeline synchronously; returns `RunSummary` JSON. |
-| `GET`  | [`/internal/voice/generators`](backend/src/api/internal/routes_voice_gen.py#L149)               | List configured generators with activation states.                        |
-| `GET`  | [`/internal/voice/translators`](backend/src/api/internal/routes_voice_gen.py#L170)              | List configured translators with service metadata and activation states.  |
-| `GET`  | [`/internal/voice/optimizers`](backend/src/api/internal/routes_voice_gen.py#L190)               | List configured optimizers with service metadata and activation states.   |
-| `GET`  | [`/internal/voice/evaluators`](backend/src/api/internal/routes_voice_gen.py#L212)               | List configured evaluators with activation states.                        |
+| Method | Path                                                                                       | Description                                                               |
+|--------|--------------------------------------------------------------------------------------------|---------------------------------------------------------------------------|
+| `POST` | [`/internal/voice/generate`](src/api/internal/routes_voice_gen.py#L84)                     | Upload input file, trigger TTS pipeline in background; returns `job_id`.  |
+| `GET`  | [`/internal/voice/generate/{job_id}/status`](src/api/internal/routes_voice_gen.py#L104)    | Get job status and result when complete.                                  |
+| `POST` | [`/internal/voice/generate-sync`](src/api/internal/routes_voice_gen.py#L122)               | Upload input file, run pipeline synchronously; returns `RunSummary` JSON. |
+| `GET`  | [`/internal/voice/generators`](src/api/internal/routes_voice_gen.py#L150)                  | List all configured generators with activation states.                    |
+| `GET`  | [`/internal/voice/translators`](src/api/internal/routes_voice_gen.py#L172)                 | List all configured translators with service metadata.                    |
+| `GET`  | [`/internal/voice/optimizers`](src/api/internal/routes_voice_gen.py#L195)                  | List all configured optimizers with service metadata.                     |
+| `GET`  | [`/internal/voice/evaluators`](src/api/internal/routes_voice_gen.py#L217)                  | List all configured evaluators with activation states.                    |
 
 **Generate request (multipart form):**
 
-- `file` -- input file (.txt, .csv, or .xlsx). The backend parses it using `input_loader` which handles CSV headers, XLSX language columns, etc.
-- `language` -- default language code (default: `en`)
-- `output_format` -- audio format: mp3, wav, pcm, opus (default: `mp3`)
-- `max_concurrency` -- parallel provider requests (default: `5`)
+- `file` — input file (.txt, .csv, or .xlsx). The backend parses it using `input_loader` which handles CSV headers, XLSX language columns, etc.
+- `language` — default language code (default: `en`)
+- `output_format` — audio format: mp3, wav, pcm, opus (default: `mp3`)
+- `max_concurrency` — parallel provider requests (default: `5`)
+
+## Architecture
+
+### Service Registry
+
+At startup, `src/core/registry.py` builds a `ServiceRegistry` that parses all JSON configs once and instantiates TTS providers, translators, and optimizers. The registry is stored in `app.state.registry` and injected via `Depends(get_registry)`.
+
+This eliminates per-request JSON parsing. Provider instances are reused across all requests.
+
+**Hot-reload:** The `watchfiles` background task watches `config/` for changes. When a file changes, `registry.reload()` re-parses configs and replaces instances in-place behind an `asyncio.Lock`, so in-flight requests finish cleanly.
+
+### Job Store
+
+Async job tracking (`src/core/job_store.py`) replaces the previous module-level `_jobs` dict. `JobStore` is stored in `app.state.job_store` and injected via `Depends(get_job_store)`.
+
+- Jobs expire after 1 hour (TTL eviction runs every 5 minutes via background task)
+- Thread-safe via `asyncio.Lock`
+- Drop-in replaceable with SQLite or Redis for multi-worker deployments
+
+### Source layout
+
+```
+src/
+├── api/
+│   ├── dependencies.py       # get_registry, get_job_store, require_internal, require_admin, require_uds
+│   ├── internal/
+│   │   └── routes_voice_gen.py
+│   └── v1/
+│       ├── routes_auth.py
+│       ├── routes_common.py
+│       ├── routes_content.py
+│       └── routes_users.py
+├── core/
+│   ├── config.py             # Settings (BASE_DIR, env vars)
+│   ├── config_loader.py      # JSON config parsing (providers, translators, optimizers)
+│   ├── content_service.py    # Category / object filesystem operations
+│   ├── job_store.py          # Async JobStore with TTL eviction
+│   ├── pipeline.py           # TTS pipeline orchestration
+│   ├── registry.py           # ServiceRegistry — built once at lifespan startup
+│   ├── tts.py                # Single-word TTS helper for content_service
+│   └── translation.py        # Single-word translation helper for content_service
+├── db/
+│   └── database.py           # SQLite user store
+├── security/
+│   ├── auth.py               # JWT verification
+│   └── tokens.py             # create_access_token, create_internal_token
+└── services/
+    ├── config_loader.py      # Re-exports from src.core.config_loader (backward compat)
+    ├── orchestrator.py       # Re-exports from src.core.pipeline (backward compat)
+    ├── generation/           # Input loading, audio normalization, result writing
+    ├── optimization/         # FFmpeg / pydub audio optimizers
+    ├── providers/            # OpenAI / ElevenLabs / Speaktor TTS providers
+    └── translation/          # OpenAI / static translators
+```
 
 ## TTS config
 
@@ -137,18 +190,21 @@ config/
 |   |-- request_logger.json
 |   `-- structlog.json
 |-- optimizers/
-|   |-- ffmpeg_optimized.json
+|   |-- ffmpeg_high.json
+|   |-- ffmpeg_low.json
 |   `-- pydub_optimized.json
 |-- generators/
 |   |-- openai.json
 |   |-- elevenlabs.json
 |   `-- speaktor.json
 `-- translators/
-    |-- openai.json
+    |-- openai_en_es.json
+    |-- openai_en_fr.json
+    |-- openai_en_bg.json
     `-- static.json
 ```
 
-Set `generate.active` to `"yes"` or `"no"` in each generator config to enable/disable providers.
+Set `generate.active` to `"yes"` or `"no"` in each generator config to enable/disable providers. The registry hot-reloads within seconds when any file in `config/` is saved.
 
 ### Translators
 
@@ -172,7 +228,7 @@ Config fields:
 | `config.input_language`  | string | Default source language when request/CLI value is missing. |
 | `config.target_language` | string | Default target language when request/CLI value is missing. |
 
-Example (`config/translators/openai.json`):
+Example (`config/translators/openai_en_fr.json`):
 
 ```json
 {
@@ -184,7 +240,7 @@ Example (`config/translators/openai.json`):
   },
   "config": {
     "input_language": "en",
-    "target_language": "bg",
+    "target_language": "fr",
     "model": "gpt-4o",
     "prompt": "You are a professional translator...",
     "temperature": 0
@@ -222,7 +278,7 @@ Config fields:
 | `config.mono`        | bool | Convert output to mono when `true` (default `true`). |
 | `config.vbr_quality` | int  | MP3 VBR quality `0-9` (default `9`).                 |
 
-Example (`config/optimizers/voice_optimized.json`):
+Example (`config/optimizers/ffmpeg_high.json`):
 
 ```json
 {
@@ -248,7 +304,7 @@ Optimized files are written alongside generator output, preserving the same hier
 ```
 output/
 |-- tts_audio_en/openai/hello_en.mp3          # raw generator output
-|-- optimized_voice_optimized/
+|-- optimized_ffmpeg_high/
 |   `-- tts_audio_en/openai/hello_en.mp3      # optimized copy
 ```
 
@@ -291,10 +347,18 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   -F "image=@./pic.png" -F "category=foods" -F "object=apple pie" \
   http://localhost:8000/api/v1/content/objects
 
-# List generators (internal endpoint, admin JWT)
+# List generators — admin JWT satisfies require_internal
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/internal/voice/generators
 
-# Run TTS pipeline synchronously (upload file, internal endpoint)
+# Run TTS pipeline asynchronously (returns job_id)
+JOB=$(curl -s -X POST -H "Authorization: Bearer $TOKEN" \
+  -F "file=@words.txt" -F "language=bg" -F "output_format=mp3" \
+  http://localhost:8000/internal/voice/generate | jq -r .job_id)
+
+# Poll job status
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/internal/voice/generate/$JOB/status
+
+# Run TTS pipeline synchronously
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   -F "file=@words.txt" -F "language=bg" -F "output_format=mp3" \
   http://localhost:8000/internal/voice/generate-sync

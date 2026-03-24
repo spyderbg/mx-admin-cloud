@@ -48,7 +48,7 @@ async def _save_upload(upload: UploadFile, job_id: str) -> Path:
             status_code=400,
             detail=f"Unsupported file type '{suffix}'. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
         )
-    output_dir = settings.BASE_DIR / settings.OUTPUT_DIR
+    output_dir = settings.output_path
     output_dir.mkdir(parents=True, exist_ok=True)
     dest = output_dir / f"_input_{job_id}{suffix}"
     content = await upload.read()
@@ -73,7 +73,7 @@ async def _run_job(
             default_language=language,
             output_format=output_format,
             max_concurrency=max_concurrency,
-            output_dir=settings.BASE_DIR / settings.OUTPUT_DIR,
+            output_dir=settings.output_path,
         )
         await job_store.update(job_id, status="completed", result=summary.to_dict())
         input_path.unlink(missing_ok=True)
@@ -138,7 +138,7 @@ async def generate_sync(
             default_language=language,
             output_format=output_format,
             max_concurrency=max_concurrency,
-            output_dir=settings.BASE_DIR / settings.OUTPUT_DIR,
+            output_dir=settings.output_path,
         )
         input_path.unlink(missing_ok=True)
         return summary.to_dict()
@@ -155,7 +155,7 @@ async def list_generators(
     from src.core.config_loader import load_provider_configs  # pylint: disable=import-outside-toplevel
     configs = load_provider_configs(
         base_dir=settings.BASE_DIR,
-        config_dir=settings.BASE_DIR / settings.CONFIG_DIR,
+        config_dir=settings.config_path,
     )
     return [
         {
@@ -177,7 +177,7 @@ async def list_translators(
     from src.core.config_loader import load_translator_configs  # pylint: disable=import-outside-toplevel
     configs = load_translator_configs(
         base_dir=settings.BASE_DIR,
-        config_dir=settings.BASE_DIR / settings.CONFIG_DIR,
+        config_dir=settings.config_path,
     )
     return [
         {
@@ -199,7 +199,7 @@ async def list_optimizers(
     from src.core.config_loader import load_optimizer_configs  # pylint: disable=import-outside-toplevel
     configs = load_optimizer_configs(
         base_dir=settings.BASE_DIR,
-        config_dir=settings.BASE_DIR / settings.CONFIG_DIR,
+        config_dir=settings.config_path,
     )
     return [
         {
@@ -221,7 +221,7 @@ async def list_evaluators(
     from src.core.config_loader import load_provider_configs  # pylint: disable=import-outside-toplevel
     configs = load_provider_configs(
         base_dir=settings.BASE_DIR,
-        config_dir=settings.BASE_DIR / settings.CONFIG_DIR,
+        config_dir=settings.config_path,
     )
     return [
         {

@@ -36,14 +36,12 @@ class StaticTTSTranslate(TextTranslate):
 
     def _load(self) -> None:
         content_dir = self.config.get("content_dir")
-        root = Path(content_dir or settings.CONTENT_DIR)
+        root = Path(content_dir) if content_dir else settings.content_path
         if not root.is_absolute():
             root = self.base_dir / root
 
         if not root.is_dir():
-            fallback_root = Path(settings.CONTENT_DIR)
-            if not fallback_root.is_absolute():
-                fallback_root = self.base_dir / fallback_root
+            fallback_root = settings.content_path
             if not fallback_root.is_dir():
                 return
             root = fallback_root
