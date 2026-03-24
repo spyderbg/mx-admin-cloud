@@ -1,7 +1,7 @@
-"""Internal voice-generation API endpoints.
+"""Internal voice-generation job endpoints.
 
-All endpoints require a JWT with role 'internal' or 'admin'
-via the ``require_internal`` dependency.
+Manages async and synchronous TTS pipeline execution and job-status polling.
+All endpoints require a JWT with role ``internal`` or ``admin``.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from src.core.job_store import JobStore
 from src.core.pipeline import run_pipeline
 from src.core.registry import ServiceRegistry
 
-router = APIRouter(prefix="/internal/voice", tags=["internal"])
+router = APIRouter(prefix="/internal/voice", tags=["internal-jobs"])
 
 ALLOWED_EXTENSIONS = {".txt", ".csv", ".xlsx"}
 
@@ -81,7 +81,15 @@ async def _run_job(
         await job_store.update(job_id, status="failed", error=str(exc))
 
 
-@router.post("/generate", response_model=GenerateResponse)
+@router.post(
+    "/generate",
+    response_model=GenerateResponse,
+    summary="Start async TTS pipeline job",
+    description=(
+        "Upload an input file (TXT, CSV, or XLSX) and start a TTS pipeline job in the background. "
+        "Returns a ``job_id`` that can be polled via the status endpoint."
+    ),
+)
 async def generate(
     file: UploadFile = File(...),
     language: str = Form("en"),
@@ -101,7 +109,15 @@ async def generate(
     return GenerateResponse(job_id=job_id, status="pending", message="Pipeline started.")
 
 
-@router.get("/generate/{job_id}/status", response_model=JobStatusResponse)
+@router.get(
+    "/generate/{job_id}/status",
+    response_model=JobStatusResponse,
+    summary="Poll TTS pipeline job status",
+    description=(
+        "Return the current status of a TTS pipeline job. "
+        "Status values: ``pending``, ``running``, ``completed``, ``failed``."
+    ),
+)
 async def generate_status(
     job_id: str,
     _user: dict = Depends(require_internal),
@@ -119,7 +135,15 @@ async def generate_status(
     )
 
 
-@router.post("/generate-sync")
+@router.post(
+    "/generate-sync",
+    summary="Run TTS pipeline synchronously",
+    description=(
+        "Upload an input file and run the TTS pipeline synchronously. "
+        "Blocks until the pipeline completes and returns the result directly. "
+        "Use for small payloads or scripted calls; prefer ``/generate`` for large batches."
+    ),
+)
 async def generate_sync(
     file: UploadFile = File(...),
     language: str = Form("en"),
@@ -145,89 +169,3 @@ async def generate_sync(
     except Exception as exc:
         input_path.unlink(missing_ok=True)
         raise HTTPException(status_code=500, detail=str(exc))
-
-
-@router.get("/generators")
-async def list_generators(
-    _user: dict = Depends(require_internal),
-) -> list[dict[str, Any]]:
-    """Return configured generators with activation states."""
-    from src.core.config_loader import load_provider_configs  # pylint: disable=import-outside-toplevel
-    configs = load_provider_configs(
-        base_dir=settings.BASE_DIR,
-        config_dir=settings.config_path,
-    )
-    return [
-        {
-            "name": c.name,
-            "active": c.generate.get("active", False),
-            "config_path": str(c.config_path),
-            "generate": {k: v for k, v in c.generate.items() if k != "languages"},
-            "evaluate_active": c.evaluate.get("active", False),
-        }
-        for c in configs
-    ]
-
-
-@router.get("/translators")
-async def list_translators(
-    _user: dict = Depends(require_internal),
-) -> list[dict[str, Any]]:
-    """Return configured translators with service metadata."""
-    from src.core.config_loader import load_translator_configs  # pylint: disable=import-outside-toplevel
-    configs = load_translator_configs(
-        base_dir=settings.BASE_DIR,
-        config_dir=settings.config_path,
-    )
-    return [
-        {
-            "service_type": c.type,
-            "name": c.name,
-            "active": c.active,
-            "priority": c.priority,
-            "config_path": str(c.config_path),
-        }
-        for c in configs
-    ]
-
-
-@router.get("/optimizers")
-async def list_optimizers(
-    _user: dict = Depends(require_internal),
-) -> list[dict[str, Any]]:
-    """Return configured optimizers with service metadata."""
-    from src.core.config_loader import load_optimizer_configs  # pylint: disable=import-outside-toplevel
-    configs = load_optimizer_configs(
-        base_dir=settings.BASE_DIR,
-        config_dir=settings.config_path,
-    )
-    return [
-        {
-            "service_type": c.type,
-            "name": c.name,
-            "active": c.active,
-            "priority": c.priority,
-            "config_path": str(c.config_path),
-        }
-        for c in configs
-    ]
-
-
-@router.get("/evaluators")
-async def list_evaluators(
-    _user: dict = Depends(require_internal),
-) -> list[dict[str, Any]]:
-    """Return configured evaluators (from generators/providers) with activation states."""
-    from src.core.config_loader import load_provider_configs  # pylint: disable=import-outside-toplevel
-    configs = load_provider_configs(
-        base_dir=settings.BASE_DIR,
-        config_dir=settings.config_path,
-    )
-    return [
-        {
-            "name": c.name,
-            "active": c.evaluate.get("active", False),
-            "config_path": str(c.config_path),
-        }
-        for c in configs
-    ]

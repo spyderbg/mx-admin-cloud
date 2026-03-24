@@ -9,7 +9,13 @@ from typing import AsyncIterator
 from fastapi import FastAPI
 from starlette.concurrency import run_in_threadpool
 
-from src.api.internal import routes_voice_gen
+from src.api.internal import (
+    routes_evaluators,
+    routes_generators,
+    routes_jobs,
+    routes_optimizers,
+    routes_translators,
+)
 from src.api.v1 import routes_auth, routes_common, routes_content, routes_users
 from src.api.dependencies import require_admin, require_uds
 from src.core.config import settings
@@ -95,7 +101,11 @@ app.include_router(routes_auth.router, prefix=settings.API_V1_STR, tags=["auth"]
 app.include_router(routes_common.router, prefix=settings.API_V1_STR, tags=["tasks"])
 app.include_router(routes_content.router, prefix=settings.API_V1_STR, tags=["content"])
 app.include_router(routes_users.router, prefix=settings.API_V1_STR, tags=["users"])
-app.include_router(routes_voice_gen.router, tags=["internal"])
+app.include_router(routes_jobs.router)
+app.include_router(routes_generators.router)
+app.include_router(routes_translators.router)
+app.include_router(routes_optimizers.router)
+app.include_router(routes_evaluators.router)
 
 
 @app.get("/")
