@@ -5,7 +5,6 @@ Keeps the ``generate_audio()`` signature so ``content_service.py`` needs no chan
 
 import asyncio
 import importlib
-from pathlib import Path
 
 from src.core.config import settings
 from src.services.config_loader import load_provider_configs
@@ -20,13 +19,13 @@ def generate_audio(word: str, lang: str) -> bytes:
     if not word or not word.strip():
         raise ValueError("Word must be non-empty for TTS.")
 
-    base_dir = Path(".")
-    configs = load_provider_configs(base_dir=base_dir, config_dir=Path(settings.CONFIG_DIR))
+    base_dir = settings.BASE_DIR
+    configs = load_provider_configs(base_dir=base_dir, config_dir=base_dir / settings.CONFIG_DIR)
     active = [c for c in configs if c.generate.get("active")]
     if not active:
         raise ValueError("No active TTS providers configured.")
 
-    provider = build_provider(active[0], Path(settings.OUTPUT_DIR))
+    provider = build_provider(active[0], base_dir / settings.OUTPUT_DIR)
 
     from src.services.models import TTSRequest
     from src.services.languages import language_name, normalize_language_code

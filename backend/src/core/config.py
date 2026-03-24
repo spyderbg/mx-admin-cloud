@@ -1,6 +1,7 @@
 """Application configuration via Pydantic Settings; all env vars and defaults live here."""
 
-from typing import List
+from pathlib import Path
+from typing import ClassVar, List
 
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -11,6 +12,9 @@ load_dotenv()
 
 class Settings(BaseSettings):
     """Centralised settings loaded from environment variables and the .env file."""
+
+    # Absolute path to the backend/ directory — never overridable via env var
+    BASE_DIR: ClassVar[Path] = Path(__file__).parent.parent.parent.resolve()
 
     # For each field, if an env var with the same name exists, use its value; else use default
     model_config = SettingsConfigDict(
@@ -40,7 +44,6 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     CLI_TOKEN_EXPIRE_SECONDS: int = 30
     AUTH_DISABLED: bool = False
-    INTERNAL_SERVICE_TOKEN: str = "change-me-in-production"
 
     # Database settings
     DB_PATH: str = "data/users.db"

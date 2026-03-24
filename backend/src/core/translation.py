@@ -4,7 +4,6 @@ Keeps the ``translate_word()`` signature so ``content_service.py`` needs no chan
 """
 
 import asyncio
-from pathlib import Path
 
 from src.core.config import settings
 from src.services.config_loader import load_translator_configs
@@ -21,8 +20,8 @@ def translate_word(
     if not text or not text.strip():
         return text.strip()
 
-    base_dir = Path(".")
-    configs = load_translator_configs(base_dir=base_dir, config_dir=Path(settings.CONFIG_DIR))
+    base_dir = settings.BASE_DIR
+    configs = load_translator_configs(base_dir=base_dir, config_dir=base_dir / settings.CONFIG_DIR)
     translators = build_translators(configs, base_dir)
 
     if not translators:

@@ -1,9 +1,9 @@
 """Dependencies for API routes."""
 
-from fastapi import Depends, Header, HTTPException, Request, status  # pylint: disable=import-error
-from jose import jwt, JWTError  # pylint: disable=import-error  # pylint: disable=import-error
+from fastapi import Depends, HTTPException, Request, status  # pylint: disable=import-error
 
-from src.core.config import settings
+from src.core.job_store import JobStore
+from src.core.registry import ServiceRegistry
 from src.core.utils import is_windows_platform
 from src.security.auth import verify_token
 
@@ -43,30 +43,21 @@ def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
     return current_user
 
 
-def verify_internal_access(
-    request: Request,
-    x_internal_token: str | None = Header(None),
-) -> dict:
-    """Dual-auth: accepts EITHER X-Internal-Token header OR JWT with admin role."""
-    if x_internal_token and x_internal_token == settings.INTERNAL_SERVICE_TOKEN:
-        return {"sub": "internal_service", "role": "internal_service"}
+def require_internal(current_user: dict = Depends(get_current_user)) -> dict:
+    """Dependency for internal endpoints — allows role 'internal' or 'admin'."""
+    if current_user.get("role") not in ("internal", "admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Internal access required.",
+        )
+    return current_user
 
-    if settings.AUTH_DISABLED:
-        return {"username": "dev-user", "role": "admin"}
 
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        token = auth_header.removeprefix("Bearer ").strip()
-        try:
-            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-            username = payload.get("sub")
-            role = payload.get("role")
-            if username and role == "admin":
-                return {"username": username, "role": role}
-        except JWTError:
-            pass
+def get_registry(request: Request) -> ServiceRegistry:
+    """Inject the shared ServiceRegistry from app state."""
+    return request.app.state.registry
 
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="Internal access requires a valid service token or an admin JWT.",
-    )
+
+def get_job_store(request: Request) -> JobStore:
+    """Inject the shared JobStore from app state."""
+    return request.app.state.job_store

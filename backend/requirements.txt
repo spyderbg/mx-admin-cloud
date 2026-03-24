@@ -12,3 +12,4 @@ structlog
 seqlog
 openpyxl>=3.1.2
 pydub
+watchfiles
