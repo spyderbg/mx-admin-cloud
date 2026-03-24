@@ -1,3 +1,5 @@
+"""Runtime environment helper functions (platform detection and debug/production mode checks)."""
+
 import sys
 from src.core.config import settings
 

@@ -75,14 +75,17 @@ def _box_line(content: str) -> str:
 
 
 def _border_top() -> str:
+    """Return the top border line of a box."""
     return "  ┌" + "─" * _BOX_WIDTH + "┐"
 
 
 def _border_mid() -> str:
+    """Return a mid-section separator line of a box."""
     return "  ├" + "─" * _BOX_WIDTH + "┤"
 
 
 def _border_bot() -> str:
+    """Return the bottom border line of a box."""
     return "  └" + "─" * _BOX_WIDTH + "┘"
 
 
@@ -104,6 +107,7 @@ def print_json_message(message: object, file: object = None) -> None:
 
 
 def _box(lines: list[str], file: object = sys.stderr) -> None:
+    """Print each line to *file* (stderr by default)."""
     for line in lines:
         print(line, file=file)
 

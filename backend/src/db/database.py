@@ -1,3 +1,5 @@
+"""SQLite user store; auto-creates the admin account on first run."""
+
 import hashlib
 import os
 import sqlite3
@@ -9,12 +11,16 @@ from src.core.config import settings
 
 
 class UsersDb:
+    """Static-method façade over the SQLite users table."""
+
     @staticmethod
     def _db_path() -> str:
+        """Return the absolute path to the SQLite database file."""
         return os.path.abspath(settings.DB_PATH)
 
     @staticmethod
     def get_db() -> sqlite3.Connection:
+        """Open and return a WAL-mode connection with row_factory set."""
         conn = sqlite3.connect(UsersDb._db_path())
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
@@ -23,6 +29,7 @@ class UsersDb:
 
     @staticmethod
     def init_db() -> None:
+        """Create the users table and seed the default admin account if absent."""
         path = UsersDb._db_path()
         Path(path).parent.mkdir(parents=True, exist_ok=True)
 
@@ -58,11 +65,13 @@ class UsersDb:
 
     @staticmethod
     def verify_password(plain: str, hashed: str) -> bool:
+        """Return True if *plain* matches the stored bcrypt hash (SHA-256 pre-hashed)."""
         prehashed = hashlib.sha256(plain.encode("utf-8")).hexdigest()
         return bcrypt.checkpw(prehashed.encode("utf-8"), hashed.encode("utf-8"))
 
     @staticmethod
     def hash_password(plain: str) -> str:
+        """Hash *plain* with SHA-256 pre-hash + bcrypt and return the encoded string."""
         prehashed = hashlib.sha256(plain.encode("utf-8")).hexdigest()
         return bcrypt.hashpw(prehashed.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 

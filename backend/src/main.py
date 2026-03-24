@@ -1,3 +1,5 @@
+"""FastAPI application entry point: app factory, lifespan, and root router registration."""
+
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path

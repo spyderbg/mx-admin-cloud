@@ -11,6 +11,7 @@ from .models import OptimizerConfig, ProviderConfig, TranslatorConfig
 
 
 def _boolish(value: object) -> bool:
+    """Coerce a config value to bool; accepts True/False, None, and common string truths."""
     if isinstance(value, bool):
         return value
     if value is None:
@@ -18,7 +19,11 @@ def _boolish(value: object) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
-def load_provider_configs(base_dir: Path, config_dir: Path | None = None, dotenv_path: Path | None = None) -> list[ProviderConfig]:
+def load_provider_configs(
+        base_dir: Path,
+        config_dir: Path | None = None,
+        dotenv_path: Path | None = None
+) -> list[ProviderConfig]:
     """Load provider configs from JSON files and environment variables."""
 
     if dotenv_path:
@@ -72,9 +77,9 @@ def load_provider_configs(base_dir: Path, config_dir: Path | None = None, dotenv
 
 
 def load_translator_configs(
-    base_dir: Path,
-    config_dir: Path | None = None,
-    dotenv_path: Path | None = None,
+        base_dir: Path,
+        config_dir: Path | None = None,
+        dotenv_path: Path | None = None,
 ) -> list[TranslatorConfig]:
     """Load translator configs from JSON files and environment variables."""
 
@@ -134,8 +139,8 @@ _OPTIMIZER_DEFAULT_CONFIG: dict[str, object] = {
 
 
 def load_optimizer_configs(
-    base_dir: Path,
-    config_dir: Path | None = None,
+        base_dir: Path,
+        config_dir: Path | None = None,
 ) -> list[OptimizerConfig]:
     """Load optimizer configs from JSON files and environment variables."""
 

@@ -21,6 +21,7 @@ ELEVENLABS_OUTPUT_MAP = {
 
 
 def _to_float(value: Any, field_name: str) -> float:
+    """Cast *value* to float, raising a descriptive RuntimeError on failure."""
     try:
         return float(value)
     except (TypeError, ValueError) as exc:
@@ -28,6 +29,7 @@ def _to_float(value: Any, field_name: str) -> float:
 
 
 def _to_bool(value: Any, field_name: str) -> bool:
+    """Cast *value* to bool from common string/int representations; raises on unexpected input."""
     if isinstance(value, bool):
         return value
     if isinstance(value, str):
@@ -42,14 +44,18 @@ def _to_bool(value: Any, field_name: str) -> bool:
 
 
 class ElevenLabsTTSProvider(TTSProvider):
+    """TTS provider backed by the ElevenLabs text-to-speech API."""
+
     API_BASE = "https://api.elevenlabs.io/v1"
 
     @classmethod
     def register(cls) -> None:
+        """Register this provider under the key ``"elevenlabs"`` in the ProviderFactory."""
         from . import ProviderFactory
         ProviderFactory.register("elevenlabs", cls)
 
     async def generate(self, request: TTSRequest, output_format: str, client: Any) -> GeneratedAudio:
+        """Call the ElevenLabs TTS endpoint and write the audio to disk."""
         gen = self.resolve_language_generate(request.language_code)
 
         actor = gen.get("actor") or ""

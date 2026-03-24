@@ -40,7 +40,7 @@ This starts the HTTP server and the CLI Unix socket. To stop:
 
 ## Auth
 
-- **HTTP login:** `POST /api/v1/login` with `application/x-www-form-urlencoded` body `username` and `password` (default `admin` / `admin`). Returns `access_token`; use as `Authorization: Bearer <token>`.
+- **HTTP login:** `POST /api/v1/login` with `application/x-www-form-urlencoded` body `username` and `password` (default `admin` / value of `DEFAULT_ADMIN_PASSWORD`). Returns `access_token`; use as `Authorization: Bearer <token>`.
 - **CLI login:** `POST /api/v1/cli-login` is allowed only when the request is made over the backend's Unix socket (e.g. by the CLI). Returns a short-lived token.
 - **Internal dual-auth:** Internal endpoints accept either `X-Internal-Token` header (service-to-service) or `Authorization: Bearer <jwt>` with admin role (CLI).
 
@@ -66,58 +66,58 @@ Base URL for all routes below: `/api/v1`. Protected routes require `Authorizatio
 
 ### Auth
 
-| Method | Path                                                  | Auth | Description |
-|--------|-------------------------------------------------------|------|-------------|
-| `POST` | [`/login`](backend/src/api/v1/routes_auth.py#L34)     | No | Login with username/password; returns JWT. |
-| `POST` | [`/cli-login`](backend/src/api/v1/routes_auth.py#L52) | No | CLI-only login over Unix socket; returns short-lived JWT. |
+| Method | Path                                                  | Auth | Description                                               |
+|--------|-------------------------------------------------------|------|-----------------------------------------------------------|
+| `POST` | [`/login`](backend/src/api/v1/routes_auth.py#L34)     | No   | Login with username/password; returns JWT.                |
+| `POST` | [`/cli-login`](backend/src/api/v1/routes_auth.py#L52) | No   | CLI-only login over Unix socket; returns short-lived JWT. |
 
 ### Tasks
 
-| Method | Path                                                    | Auth | Description |
-|--------|---------------------------------------------------------|------|-------------|
-| `GET` | [`/ping`](backend/src/api/v1/routes_common.py#L11)       | No | Health check; returns PONG with backend platform info. |
-| `GET` | [`/status`](backend/src/api/v1/routes_common.py#L16)     | Yes | Service status. |
-| `POST` | [`/operation`](backend/src/api/v1/routes_common.py#L21)  | Yes | Perform a service operation. Query param: `name`. |
-| `POST` | [`/list-files`](backend/src/api/v1/routes_common.py#L30) | Yes | List files in the configured directory. Body: `{"depth": int}` (depth < 1 treated as 1). |
+| Method | Path                                                     | Auth | Description                                                                              |
+|--------|----------------------------------------------------------|------|------------------------------------------------------------------------------------------|
+| `GET`  | [`/ping`](backend/src/api/v1/routes_common.py#L11)       | No   | Health check; returns PONG with backend platform info.                                   |
+| `GET`  | [`/status`](backend/src/api/v1/routes_common.py#L16)     | Yes  | Service status.                                                                          |
+| `POST` | [`/operation`](backend/src/api/v1/routes_common.py#L21)  | Yes  | Perform a service operation. Query param: `name`.                                        |
+| `POST` | [`/list-files`](backend/src/api/v1/routes_common.py#L30) | Yes  | List files in the configured directory. Body: `{"depth": int}` (depth < 1 treated as 1). |
 
 ### Content
 
-| Method | Path                                                                               | Auth | Description |
-|--------|------------------------------------------------------------------------------------|------|-------------|
-| `GET` | [`/content/categories`](backend/src/api/v1/routes_content.py#L38)                  | Yes | List content categories. Query: `include_archived`, `archived_only` (bool) to include or list only archived categories. |
-| `POST` | [`/content/categories`](backend/src/api/v1/routes_content.py#L51)                  | Yes | Create a category. Body: `{"name": "<category_name>"}`. Creates folder, voice files per language, and category icon. Returns 201. |
-| `POST` | [`/content/categories/restore`](backend/src/api/v1/routes_content.py#L62)          | Yes | Restore a category from archive. Body: `{"name": "<category_name_or_archive_folder>"}` (e.g. `foods` or `foods_1738456789`). |
-| `GET` | [`/content/categories/{category_name}`](backend/src/api/v1/routes_content.py#L103) | Yes | Category details by name. |
-| `PATCH` | [`/content/categories/{category_name}`](backend/src/api/v1/routes_content.py#L77)  | Yes | Rename category. Body: `{"name": "<new_name>"}`. Renames folder and regenerates category voice files. |
-| `DELETE` | [`/content/categories/{category_name}`](backend/src/api/v1/routes_content.py#L90)  | Yes | Remove category. If `ARCHIVE_DIR` is set, archives it (date suffix); otherwise deletes permanently. |
-| `POST` | [`/content/objects`](backend/src/api/v1/routes_content.py#L114)                    | Yes | Create a content object. Multipart: `image` (file), `category` (form), `object` (form, English word). Returns 201. |
+| Method   | Path                                                                               | Auth | Description                                                                                                                       |
+|----------|------------------------------------------------------------------------------------|------|-----------------------------------------------------------------------------------------------------------------------------------|
+| `GET`    | [`/content/categories`](backend/src/api/v1/routes_content.py#L38)                  | Yes  | List content categories. Query: `include_archived`, `archived_only` (bool) to include or list only archived categories.           |
+| `POST`   | [`/content/categories`](backend/src/api/v1/routes_content.py#L51)                  | Yes  | Create a category. Body: `{"name": "<category_name>"}`. Creates folder, voice files per language, and category icon. Returns 201. |
+| `POST`   | [`/content/categories/restore`](backend/src/api/v1/routes_content.py#L62)          | Yes  | Restore a category from archive. Body: `{"name": "<category_name_or_archive_folder>"}` (e.g. `foods` or `foods_1738456789`).      |
+| `GET`    | [`/content/categories/{category_name}`](backend/src/api/v1/routes_content.py#L103) | Yes  | Category details by name.                                                                                                         |
+| `PATCH`  | [`/content/categories/{category_name}`](backend/src/api/v1/routes_content.py#L77)  | Yes  | Rename category. Body: `{"name": "<new_name>"}`. Renames folder and regenerates category voice files.                             |
+| `DELETE` | [`/content/categories/{category_name}`](backend/src/api/v1/routes_content.py#L90)  | Yes  | Remove category. If `ARCHIVE_DIR` is set, archives it (date suffix); otherwise deletes permanently.                               |
+| `POST`   | [`/content/objects`](backend/src/api/v1/routes_content.py#L114)                    | Yes  | Create a content object. Multipart: `image` (file), `category` (form), `object` (form, English word). Returns 201.                |
 
 ### Users
 
 User routes are under `/api/v1/users*` and require both admin role and Unix socket access.
 When `DEBUG_MODE=true`, those two dependencies are overridden at startup for local debugging.
 
-| Method | Path                                                                    | Auth | Description |
-|--------|-------------------------------------------------------------------------|------|-------------|
-| `POST` | [`/users`](backend/src/api/v1/routes_users.py#L45)                      | Yes (admin + UDS) | Create a user with role `admin` or `viewer`. |
-| `GET` | [`/users`](backend/src/api/v1/routes_users.py#L66)                      | Yes (admin + UDS) | List all users. Query: `username` (fuzzy), `role` (admin/viewer). |
-| `DELETE` | [`/users/{username}`](backend/src/api/v1/routes_users.py#L77)           | Yes (admin + UDS) | Delete a user (cannot remove the last admin). |
-| `PATCH` | [`/users/{username}/password`](backend/src/api/v1/routes_users.py#L107) | Yes (admin + UDS) | Change a user's password. |
-| `PATCH` | [`/users/{username}/role`](backend/src/api/v1/routes_users.py#L131)     | Yes (admin + UDS) | Change a user's role (cannot demote the last admin). |
+| Method   | Path                                                                    | Auth              | Description                                                       |
+|----------|-------------------------------------------------------------------------|-------------------|-------------------------------------------------------------------|
+| `POST`   | [`/users`](backend/src/api/v1/routes_users.py#L45)                      | Yes (admin + UDS) | Create a user with role `admin` or `viewer`.                      |
+| `GET`    | [`/users`](backend/src/api/v1/routes_users.py#L66)                      | Yes (admin + UDS) | List all users. Query: `username` (fuzzy), `role` (admin/viewer). |
+| `DELETE` | [`/users/{username}`](backend/src/api/v1/routes_users.py#L77)           | Yes (admin + UDS) | Delete a user (cannot remove the last admin).                     |
+| `PATCH`  | [`/users/{username}/password`](backend/src/api/v1/routes_users.py#L107) | Yes (admin + UDS) | Change a user's password.                                         |
+| `PATCH`  | [`/users/{username}/role`](backend/src/api/v1/routes_users.py#L131)     | Yes (admin + UDS) | Change a user's role (cannot demote the last admin).              |
 
 ### Internal (voice generation)
 
 Internal endpoints are under `/internal/voice/*`. They require dual-auth: `X-Internal-Token` header or admin JWT.
 
-| Method | Path                                                                                            | Description |
-|--------|-------------------------------------------------------------------------------------------------|-------------|
-| `POST` | [`/internal/voice/generate`](backend/src/api/internal/routes_voice_gen.py#L88)                  | Upload input file, trigger TTS pipeline in background; returns `job_id`. |
-| `GET` | [`/internal/voice/generate/{job_id}/status`](backend/src/api/internal/routes_voice_gen.py#L104) | Get job status and result when complete. |
+| Method | Path                                                                                            | Description                                                               |
+|--------|-------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------|
+| `POST` | [`/internal/voice/generate`](backend/src/api/internal/routes_voice_gen.py#L88)                  | Upload input file, trigger TTS pipeline in background; returns `job_id`.  |
+| `GET`  | [`/internal/voice/generate/{job_id}/status`](backend/src/api/internal/routes_voice_gen.py#L104) | Get job status and result when complete.                                  |
 | `POST` | [`/internal/voice/generate-sync`](backend/src/api/internal/routes_voice_gen.py#L121)            | Upload input file, run pipeline synchronously; returns `RunSummary` JSON. |
-| `GET` | [`/internal/voice/generators`](backend/src/api/internal/routes_voice_gen.py#L149)               | List configured generators with activation states. |
-| `GET` | [`/internal/voice/translators`](backend/src/api/internal/routes_voice_gen.py#L170)              | List configured translators with service metadata and activation states. |
-| `GET` | [`/internal/voice/optimizers`](backend/src/api/internal/routes_voice_gen.py#L190)               | List configured optimizers with service metadata and activation states. |
-| `GET` | [`/internal/voice/evaluators`](backend/src/api/internal/routes_voice_gen.py#L212)               | List configured evaluators with activation states. |
+| `GET`  | [`/internal/voice/generators`](backend/src/api/internal/routes_voice_gen.py#L149)               | List configured generators with activation states.                        |
+| `GET`  | [`/internal/voice/translators`](backend/src/api/internal/routes_voice_gen.py#L170)              | List configured translators with service metadata and activation states.  |
+| `GET`  | [`/internal/voice/optimizers`](backend/src/api/internal/routes_voice_gen.py#L190)               | List configured optimizers with service metadata and activation states.   |
+| `GET`  | [`/internal/voice/evaluators`](backend/src/api/internal/routes_voice_gen.py#L212)               | List configured evaluators with activation states.                        |
 
 **Generate request (multipart form):**
 
@@ -157,18 +157,18 @@ Each file has a `service` section (metadata) and a separate `config` section (tr
 
 Service fields:
 
-| Field      | Type   | Description |
-|------------|--------|-------------|
-| `type`     | string | Service type (currently `translator`). |
+| Field      | Type   | Description                                          |
+|------------|--------|------------------------------------------------------|
+| `type`     | string | Service type (currently `translator`).               |
 | `name`     | string | Translator implementation name (`openai`, `static`). |
-| `active`   | bool   | Set `true` to enable the translator. |
-| `priority` | int    | Execution order (lower runs first). |
+| `active`   | bool   | Set `true` to enable the translator.                 |
+| `priority` | int    | Execution order (lower runs first).                  |
 
 Config fields:
 
-| Field       | Type   | Description |
-|-------------|--------|-------------|
-| `config`    | object | Translator-specific settings. |
+| Field                    | Type   | Description                                                |
+|--------------------------|--------|------------------------------------------------------------|
+| `config`                 | object | Translator-specific settings.                              |
 | `config.input_language`  | string | Default source language when request/CLI value is missing. |
 | `config.target_language` | string | Default target language when request/CLI value is missing. |
 
@@ -207,20 +207,20 @@ Each file has a `service` section (metadata) and a separate `config` section (op
 
 Service fields:
 
-| Field      | Type   | Description |
-|------------|--------|-------------|
-| `type`     | string | Service type (currently `optimizer`). |
+| Field      | Type   | Description                                        |
+|------------|--------|----------------------------------------------------|
+| `type`     | string | Service type (currently `optimizer`).              |
 | `name`     | string | Optimizer implementation name (`ffmpeg`, `pydub`). |
-| `active`   | bool   | Set `true` to enable the optimizer. |
-| `priority` | int    | Execution order (lower runs first). |
+| `active`   | bool   | Set `true` to enable the optimizer.                |
+| `priority` | int    | Execution order (lower runs first).                |
 
 Config fields:
 
-| Field | Type | Description |
-|---|---|---|
-| `config.sample_rate` | int | Output sample rate (default `22050`). |
-| `config.mono` | bool | Convert output to mono when `true` (default `true`). |
-| `config.vbr_quality` | int | MP3 VBR quality `0-9` (default `9`). |
+| Field                | Type | Description                                          |
+|----------------------|------|------------------------------------------------------|
+| `config.sample_rate` | int  | Output sample rate (default `22050`).                |
+| `config.mono`        | bool | Convert output to mono when `true` (default `true`). |
+| `config.vbr_quality` | int  | MP3 VBR quality `0-9` (default `9`).                 |
 
 Example (`config/optimizers/voice_optimized.json`):
 

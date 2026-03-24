@@ -1,3 +1,5 @@
+"""Application configuration via Pydantic Settings; all env vars and defaults live here."""
+
 from typing import List
 
 from dotenv import load_dotenv
@@ -8,6 +10,8 @@ load_dotenv()
 
 
 class Settings(BaseSettings):
+    """Centralised settings loaded from environment variables and the .env file."""
+
     # For each field, if an env var with the same name exists, use its value; else use default
     model_config = SettingsConfigDict(
         env_file=".env",

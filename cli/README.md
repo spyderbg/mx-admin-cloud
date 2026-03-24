@@ -44,35 +44,36 @@ Run `kiddo-cli --help`, `kiddo-cli common --help`, `kiddo-cli content --help`, `
 |------------------------------------------------------------------------------|-------------|
 | [`common ping`](cli/src/kiddo_cli/commands/common_commands.py#L14)           | Ping the backend (expected response PONG; no auth). |
 | [`common status`](cli/src/kiddo_cli/commands/common_commands.py#L21)         | Check service status. |
-| [`common operation <name>`](cli/src/kiddo_cli/commands/common_commands.py#L34) | Perfora service operation. |
-| [`common list-files`](cli/src/kiddo_cli/commands/common_commands.py#L48)       | st files in the configured directory (`--depth`, default 1). |
+| [`common operation <name>`](cli/src/kiddo_cli/commands/common_commands.py#L34) | Perform a service operation. |
+| [`common list-files`](cli/src/kiddo_cli/commands/common_commands.py#L48)       | List files in the configured directory (`--depth`, default 1). |
 
 ### Content (backend routes_content)
 
 | Command | Description |
 |---------|-------------|
-| [`content categories`](cli/src/kiddo_cli/commands/content_commands.py#L16) | List ntent categories. Options: `--include-archived`, `--archived-only`. |
-| [`content create-category --name <n>`](cli/src/kiddo_cli/commands/content_commands.py#L35) | Creata category (folder, voices per language, icon). |
-| [`content rename-category <old> --to <new>`](cli/src/kiddo_cli/commands/content_commands.py#L48) | Renama category (folder + regenerate voices). |
-| [`content remove-category <name>`](cli/src/kiddo_cli/commands/content_commands.py#L75) | Remova category (archive if `ARCHIVE_DIR` is set, else delete permanently). |
-| [`content restore-category <name>`](cli/src/kiddo_cli/commands/content_commands.py#L62) | Resto a category from archive (name or archive folder like `foods_1738...`). |
-| [`content category-details <name>`](cli/src/kiddo_cli/commands/content_commands.py#L88) | Show tegory details. |
-| [`content create-object`](cli/src/kiddo_cli/commands/content_commands.py#L101) | Crea a new content object (image). |
+| [`content categories`](cli/src/kiddo_cli/commands/content_commands.py#L16) | List content categories. Options: `--include-archived`, `--archived-only`. |
+| [`content create-category --name <n>`](cli/src/kiddo_cli/commands/content_commands.py#L35) | Create a category (folder, voices per language, icon). |
+| [`content rename-category <old> --to <new>`](cli/src/kiddo_cli/commands/content_commands.py#L48) | Rename a category (folder + regenerate voices). |
+| [`content remove-category <name>`](cli/src/kiddo_cli/commands/content_commands.py#L75) | Remove a category (archive if `ARCHIVE_DIR` is set, else delete permanently). |
+| [`content restore-category <name>`](cli/src/kiddo_cli/commands/content_commands.py#L62) | Restore a category from archive (name or archive folder like `foods_1738...`). |
+| [`content category-details <name>`](cli/src/kiddo_cli/commands/content_commands.py#L88) | Show category details. |
+| [`content create-object`](cli/src/kiddo_cli/commands/content_commands.py#L101) | Create a new content object (image). |
 
 ### Generate (backend voice generation via HTTP)
 
 | Command | Description |
 |---------|-------------|
-| [`generate run INPUT_FILE`](cli/src/kiddo_cli/commands/generate_commands.py#L17) | Run S pipeline (translate, generate, evaluate). |
+| [`generate run INPUT_FILE`](cli/src/kiddo_cli/commands/generate_commands.py#L17) | Run the TTS pipeline (translate, generate, evaluate). |
 
 ### List (backend internal voice routes)
 
 | Command | Description |
 |---------|-------------|
-| [`list generators`](cli/src/kiddo_cli/commands/list_commands.py#L13) | Show congured generators with activation states. |
-| [`list translators`](cli/src/kiddo_cli/commands/list_commands.py#L26) | Show congured translators with priority and states. |
-| [`list optimizers`](cli/src/kiddo_cli/commands/list_commands.py#L39) | Show congured optimizers with activation states. |
-| [`list evaluators`](cli/src/kiddo_cli/commands/list_commands.py#L52) | Show congured evaluators with activation states. |
+| [`list generators`](cli/src/kiddo_cli/commands/list_commands.py#L13) | Show configured generators with activation states. |
+| [`list translators`](cli/src/kiddo_cli/commands/list_commands.py#L26) | Show configured translators with priority and states. |
+| [`list optimizers`](cli/src/kiddo_cli/commands/list_commands.py#L39) | Show configured optimizers with activation states. |
+| [`list evaluators`](cli/src/kiddo_cli/commands/list_commands.py#L52) | Show configured evaluators with activation states. |
+| [`list users`](cli/src/kiddo_cli/commands/list_commands.py#L64) | Show all users. |
 
 ### Users (backend user management)
 

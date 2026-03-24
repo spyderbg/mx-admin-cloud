@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 def _render_template(value: Any, context: dict[str, str]) -> Any:
+    """Recursively apply str.format(**context) to strings, lists, and dicts."""
     if isinstance(value, str):
         return value.format(**context)
     if isinstance(value, list):
@@ -33,12 +34,16 @@ def _render_template(value: Any, context: dict[str, str]) -> Any:
 
 
 class SpeaktorTTSProvider(TTSProvider):
+    """TTS provider backed by the Speaktor (Transkriptor) developer API."""
+
     @classmethod
     def register(cls) -> None:
+        """Register this provider under the key ``"speaktor"`` in the ProviderFactory."""
         from . import ProviderFactory
         ProviderFactory.register("speaktor", cls)
 
     async def generate(self, request: TTSRequest, output_format: str, client: Any) -> GeneratedAudio:
+        """Call the Speaktor TTS endpoint, download the audio URL, and write it to disk."""
         gen = self.resolve_language_generate(request.language_code)
 
         voice_name = str(gen.get("voice_name") or gen.get("actor") or "").strip()

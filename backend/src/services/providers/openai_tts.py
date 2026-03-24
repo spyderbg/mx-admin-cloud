@@ -14,14 +14,18 @@ logger = logging.getLogger(__name__)
 
 
 class OpenAITTSProvider(TTSProvider):
+    """TTS provider backed by the OpenAI audio/speech API."""
+
     ENDPOINT = "https://api.openai.com/v1/audio/speech"
 
     @classmethod
     def register(cls) -> None:
+        """Register this provider under the key ``"openai"`` in the ProviderFactory."""
         from . import ProviderFactory
         ProviderFactory.register("openai", cls)
 
     async def generate(self, request: TTSRequest, output_format: str, client: Any) -> GeneratedAudio:
+        """Call the OpenAI TTS endpoint and write the audio to disk."""
         gen = self.resolve_language_generate(request.language_code)
 
         voice = gen.get("actor") or gen.get("voice") or ""

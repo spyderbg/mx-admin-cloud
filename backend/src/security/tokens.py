@@ -1,9 +1,12 @@
+"""JWT token creation utilities."""
+
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import jwt
 from src.core.config import settings
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    """Encode *data* as a signed JWT; defaults to ACCESS_TOKEN_EXPIRE_MINUTES if no delta given."""
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.utcnow() + expires_delta

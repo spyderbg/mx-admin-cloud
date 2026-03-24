@@ -1,3 +1,5 @@
+"""FastAPI dependency for JWT bearer token verification."""
+
 from fastapi import HTTPException, Depends, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
@@ -10,6 +12,7 @@ oauth2_scheme = OAuth2PasswordBearer(
 
 
 def verify_token(token: str | None = Depends(oauth2_scheme)) -> dict:
+    """Validate the Bearer JWT and return the decoded payload dict (username + role)."""
     if settings.AUTH_DISABLED:
         return {"username": "dev-user", "role": "admin"}
 
