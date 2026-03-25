@@ -15,9 +15,9 @@ import time
 from pathlib import Path
 from typing import Any
 
-from src.services.languages import to_bcp47
-from src.services.models import EvaluationResult, GeneratedAudio, ProviderConfig
-from src.services.logging import log_provider_request
+from src.core.languages import to_bcp47
+from src.core.models import EvaluationResult, GeneratedAudio, ProviderConfig
+from src.core.logging import log_provider_request
 
 
 def levenshtein_distance(left: str, right: str) -> int:

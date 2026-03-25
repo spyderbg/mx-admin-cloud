@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from src.services.models import OptimizerConfig
+from src.core.models import OptimizerConfig
 
 
 class AudioOptimizerBase(ABC):

@@ -64,13 +64,30 @@ docker compose -f docker/docker-compose.yml up -d --build
 ### Backend (`backend/src/`)
 
 - **`api/v1/`** — Public REST routes: login, cli-login, content CRUD, user management, common utils
-- **`api/internal/`** — Voice generation endpoints (requires admin JWT or `X-Internal-Token` header)
-- **`core/config.py`** — Pydantic Settings; all env vars and defaults live here
-- **`core/content_service.py`** — Filesystem ops for categories/images; category icon generation via OpenAI DALL-E
+- **`api/internal/`** — Internal HTTP endpoints for TTS generation, evaluation, optimization, and translation
+  (requires admin JWT or internal service token)
+- **`core/`** — Shared infrastructure with **zero** `src.services` imports (HTTP boundary enforced):
+  - `config.py` — Pydantic Settings; all env vars and defaults
+  - `config_loader.py` — Loads and validates JSON configs from `backend/config/`
+  - `models.py` — Core dataclasses (TTSRequest, GeneratedAudio, EvaluationResult, etc.)
+  - `output_paths.py` — Stable output directory and filename helpers
+  - `languages.py` — Language code/name lookups and BCP-47 conversion
+  - `logging/` — Centralized logging configuration (structlog, Seq, request logging)
+  - `input_loader.py` — Load structured requests from CSV/XLSX/TXT files
+  - `result_writer.py` — Write per-run JSON and CSV reports
+  - `pipeline.py` — Async TTS pipeline orchestration (calls internal HTTP endpoints)
+  - `tts.py` — Single-word TTS via HTTP (used by content_service)
+  - `translation.py` — Single-word translation via HTTP (used by content_service)
+  - `registry.py` — Pure data container for service instances (no service imports)
+  - `content_service.py` — Filesystem ops for categories/images; DALL-E icon generation
+- **`services/`** — Business logic implementations (providers, translators, optimizers, evaluation)
+  - `registry_builder.py` — Builds and reloads ServiceRegistry from config files
+  - `providers/` — TTS provider implementations (OpenAI, ElevenLabs, Speaktor)
+  - `translation/` — Translator implementations (OpenAI, static CSV)
+  - `optimization/` — Audio post-processing (ffmpeg, pydub)
+  - `evaluation/` — STT transcription and Levenshtein-based scoring
 - **`db/`** — SQLite user store (auto-creates `admin` on first run); passwords use SHA256 prehash + bcrypt
 - **`security/`** — JWT auth; HTTP login → 30 min token, CLI socket login → 30 sec token
-- **`services/orchestrator.py`** — Async TTS pipeline coordinator (translate → generate → optimize → evaluate)
-- **`services/config_loader.py`** — Loads and validates JSON configs from `backend/config/`
 
 ### TTS Pipeline
 
@@ -84,6 +101,10 @@ The pipeline is driven by JSON config files in `backend/config/`:
 | `loggers/` | Structlog + Seqlog configuration |
 
 Pipeline flow: `Input file (TXT/CSV/XLSX) → Translate → Generate audio → Optimize → Evaluate (STT scoring) → Write results`
+
+All pipeline steps call internal HTTP endpoints (`/internal/generators/{provider}/generate`,
+`/internal/evaluators/evaluate`, `/internal/optimizers/{optimizer}/optimize`) so that `core/` never
+imports `services/` directly.
 
 Output lands in `output/tts_audio_<lang>/<provider>/` and `output/optimized_<optimizer>/`.
 

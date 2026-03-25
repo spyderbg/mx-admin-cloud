@@ -14,13 +14,13 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile  # pylint: disable=import-error
 from pydantic import BaseModel  # pylint: disable=import-error
 
-from src.api.dependencies import get_job_store, get_registry, require_internal
+from src.api.dependencies import get_internal_token, get_job_store, get_registry, require_internal
 from src.core.config import settings
 from src.core.job_store import JobStore
 from src.core.pipeline import run_pipeline
 from src.core.registry import ServiceRegistry
 
-router = APIRouter(prefix="/internal/voice", tags=["internal-jobs"])
+router = APIRouter(prefix="/internal", tags=["internal-jobs"])
 
 ALLOWED_EXTENSIONS = {".txt", ".csv", ".xlsx"}
 
@@ -64,11 +64,13 @@ async def _run_job(
     max_concurrency: int,
     registry: ServiceRegistry,
     job_store: JobStore,
+    internal_token: str,
 ) -> None:
     await job_store.update(job_id, status="running")
     try:
         summary = await run_pipeline(
             registry=registry,
+            internal_token=internal_token,
             input_path=input_path,
             default_language=language,
             output_format=output_format,
@@ -98,13 +100,14 @@ async def generate(
     _user: dict = Depends(require_internal),
     registry: ServiceRegistry = Depends(get_registry),
     job_store: JobStore = Depends(get_job_store),
+    internal_token: str = Depends(get_internal_token),
 ) -> GenerateResponse:
     """Upload an input file and trigger the TTS pipeline in background."""
     job_id = str(uuid.uuid4())
     input_path = await _save_upload(file, job_id)
     await job_store.create(job_id)
     asyncio.create_task(
-        _run_job(job_id, input_path, language, output_format, max_concurrency, registry, job_store)
+        _run_job(job_id, input_path, language, output_format, max_concurrency, registry, job_store, internal_token)
     )
     return GenerateResponse(job_id=job_id, status="pending", message="Pipeline started.")
 
@@ -151,6 +154,7 @@ async def generate_sync(
     max_concurrency: int = Form(5),
     _user: dict = Depends(require_internal),
     registry: ServiceRegistry = Depends(get_registry),
+    internal_token: str = Depends(get_internal_token),
 ) -> dict[str, Any]:
     """Upload an input file, run the pipeline synchronously, return the result."""
     job_id = str(uuid.uuid4())
@@ -158,6 +162,7 @@ async def generate_sync(
     try:
         summary = await run_pipeline(
             registry=registry,
+            internal_token=internal_token,
             input_path=input_path,
             default_language=language,
             output_format=output_format,

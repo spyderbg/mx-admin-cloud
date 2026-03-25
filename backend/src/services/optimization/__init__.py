@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
-from src.services.models import OptimizerConfig
+from src.core.models import OptimizerConfig
 from src.services.optimization.base import AudioOptimizerBase
 
 __all__ = [

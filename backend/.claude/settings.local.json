@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -n 'prefix=\"\"/internal' /media/plamen/data/MarXman/mx-admin/backend/src/api/internal/routes_*.py)"
+    ]
+  }
+}

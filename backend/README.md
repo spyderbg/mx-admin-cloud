@@ -1,6 +1,6 @@
 # Kiddo Backend
 
-FastAPI backend for Kiddo content management. All API routes are under `/api/v1`. Protected endpoints require a Bearer token (obtained via `/login` or `/cli-login`). Internal service routes are under `/internal/voice/*`.
+FastAPI backend for Kiddo content management. All public API routes are under `/api/v1`. Protected endpoints require a Bearer token (obtained via `/login` or `/cli-login`). Internal service routes are under `/internal/*`.
 
 ## Create .venv
 ```bash
@@ -56,6 +56,7 @@ Env (see `src/core/config.py`):
 - `SPEAKTOR_API_KEY` — Speaktor TTS provider (optional)
 - `CONFIG_DIR` — path to TTS config directory (default `config`)
 - `OUTPUT_DIR` — path to TTS output directory (default `../output`)
+- `API_BASE_URL` — internal base URL for service-to-service HTTP calls (default `http://127.0.0.1:8000`)
 - `TTS_MAX_CONCURRENCY` — max parallel provider requests (default 5)
 - `LOG_PROFILE` — logging profile: `dev` or `prod` (default `dev`)
 
@@ -89,7 +90,7 @@ Base URL for all routes below: `/api/v1`. Protected routes require `Authorizatio
 | `GET`    | [`/content/categories/{category_name}`](src/api/v1/routes_content.py#L103)     | Yes  | Category details by name.                                                                                                         |
 | `PATCH`  | [`/content/categories/{category_name}`](src/api/v1/routes_content.py#L77)      | Yes  | Rename category. Body: `{"name": "<new_name>"}`. Renames folder and regenerates category voice files.                             |
 | `DELETE` | [`/content/categories/{category_name}`](src/api/v1/routes_content.py#L90)      | Yes  | Remove category. If `ARCHIVE_DIR` is set, archives it (date suffix); otherwise deletes permanently.                               |
-| `POST`   | [`/content/objects`](src/api/v1/routes_content.py#L114)                         | Yes  | Create a content object. Multipart: `image` (file), `category` (form), `object` (form, English word). Returns 201.                |
+| `POST`   | [`/content/objects`](src/api/v1/routes_content.py#L114)                        | Yes  | Create a content object. Multipart: `image` (file), `category` (form), `object` (form, English word). Returns 201.                |
 
 ### Users
 
@@ -104,32 +105,59 @@ When `DEBUG_MODE=true`, those two dependencies are overridden at startup for loc
 | `PATCH`  | [`/users/{username}/password`](src/api/v1/routes_users.py#L107)      | Yes (admin + UDS) | Change a user's password.                                         |
 | `PATCH`  | [`/users/{username}/role`](src/api/v1/routes_users.py#L131)          | Yes (admin + UDS) | Change a user's role (cannot demote the last admin).              |
 
-### Internal (voice generation)
+### Internal
 
-Internal endpoints are under `/internal/voice/*`. They require `Authorization: Bearer <token>` where the token's role is `"internal"` or `"admin"`. An internal token is automatically generated at startup; admin JWTs (from `/login`) also work.
+Internal endpoints are under `/internal/*`. They require `Authorization: Bearer <token>` where the token's role is `"internal"` or `"admin"`. An internal token is automatically generated at startup; admin JWTs (from `/login`) also work.
 
-| Method | Path                                                                                       | Description                                                               |
-|--------|--------------------------------------------------------------------------------------------|---------------------------------------------------------------------------|
-| `POST` | [`/internal/voice/generate`](src/api/internal/routes_voice_gen.py#L84)                     | Upload input file, trigger TTS pipeline in background; returns `job_id`.  |
-| `GET`  | [`/internal/voice/generate/{job_id}/status`](src/api/internal/routes_voice_gen.py#L104)    | Get job status and result when complete.                                  |
-| `POST` | [`/internal/voice/generate-sync`](src/api/internal/routes_voice_gen.py#L122)               | Upload input file, run pipeline synchronously; returns `RunSummary` JSON. |
-| `GET`  | [`/internal/voice/generators`](src/api/internal/routes_voice_gen.py#L150)                  | List all configured generators with activation states.                    |
-| `GET`  | [`/internal/voice/translators`](src/api/internal/routes_voice_gen.py#L172)                 | List all configured translators with service metadata.                    |
-| `GET`  | [`/internal/voice/optimizers`](src/api/internal/routes_voice_gen.py#L195)                  | List all configured optimizers with service metadata.                     |
-| `GET`  | [`/internal/voice/evaluators`](src/api/internal/routes_voice_gen.py#L217)                  | List all configured evaluators with activation states.                    |
+#### Jobs
+
+| Method | Path                                                                                  | Description                                                               |
+|--------|---------------------------------------------------------------------------------------|---------------------------------------------------------------------------|
+| `POST` | [`/internal/generate`](src/api/internal/routes_jobs.py#L86)                          | Upload input file, trigger TTS pipeline in background; returns `job_id`.  |
+| `GET`  | [`/internal/generate/{job_id}/status`](src/api/internal/routes_jobs.py#L115)         | Poll job status (`pending`, `running`, `completed`, `failed`).            |
+| `POST` | [`/internal/generate-sync`](src/api/internal/routes_jobs.py#L141)                    | Upload input file, run pipeline synchronously; returns `RunSummary` JSON. |
 
 **Generate request (multipart form):**
 
-- `file` — input file (.txt, .csv, or .xlsx). The backend parses it using `input_loader` which handles CSV headers, XLSX language columns, etc.
+- `file` — input file (.txt, .csv, or .xlsx)
 - `language` — default language code (default: `en`)
 - `output_format` — audio format: mp3, wav, pcm, opus (default: `mp3`)
 - `max_concurrency` — parallel provider requests (default: `5`)
+
+#### Generators
+
+| Method | Path                                                                                       | Description                                                              |
+|--------|--------------------------------------------------------------------------------------------|--------------------------------------------------------------------------|
+| `GET`  | [`/internal/generators`](src/api/internal/routes_generators.py#L45)                       | List all configured TTS providers with activation state and settings.    |
+| `POST` | [`/internal/generators/{provider}/generate`](src/api/internal/routes_generators.py#L74)   | Generate audio for a single TTS request via the named provider.          |
+| `POST` | [`/internal/generators/generate-word`](src/api/internal/routes_generators.py#L128)        | Generate audio for a single word using the first active provider.        |
+
+#### Evaluators
+
+| Method | Path                                                                                  | Description                                                              |
+|--------|---------------------------------------------------------------------------------------|--------------------------------------------------------------------------|
+| `GET`  | [`/internal/evaluators`](src/api/internal/routes_evaluators.py#L43)                  | List all configured STT evaluators with activation state.                |
+| `POST` | [`/internal/evaluators/evaluate`](src/api/internal/routes_evaluators.py#L70)         | Run STT transcription, score, persist, and return evaluation result.     |
+
+#### Optimizers
+
+| Method | Path                                                                                       | Description                                                              |
+|--------|--------------------------------------------------------------------------------------------|--------------------------------------------------------------------------|
+| `GET`  | [`/internal/optimizers`](src/api/internal/routes_optimizers.py#L28)                       | List all configured audio optimizers with activation state and priority. |
+| `POST` | [`/internal/optimizers/{optimizer}/optimize`](src/api/internal/routes_optimizers.py#L57)  | Run the named optimizer on a given audio file.                           |
+
+#### Translators
+
+| Method | Path                                                                                  | Description                                                              |
+|--------|---------------------------------------------------------------------------------------|--------------------------------------------------------------------------|
+| `GET`  | [`/internal/translators`](src/api/internal/routes_translators.py#L34)                | List all configured translation services with activation state.          |
+| `POST` | [`/internal/translate`](src/api/internal/routes_translators.py#L63)                  | Translate text via all active translators in priority order.             |
 
 ## Architecture
 
 ### Service Registry
 
-At startup, `src/core/registry.py` builds a `ServiceRegistry` that parses all JSON configs once and instantiates TTS providers, translators, and optimizers. The registry is stored in `app.state.registry` and injected via `Depends(get_registry)`.
+At startup, `src/services/registry_builder.py` builds a `ServiceRegistry` that parses all JSON configs once and instantiates TTS providers, translators, and optimizers. The registry is stored in `app.state.registry` and injected via `Depends(get_registry)`.
 
 This eliminates per-request JSON parsing. Provider instances are reused across all requests.
 
@@ -137,46 +165,61 @@ This eliminates per-request JSON parsing. Provider instances are reused across a
 
 ### Job Store
 
-Async job tracking (`src/core/job_store.py`) replaces the previous module-level `_jobs` dict. `JobStore` is stored in `app.state.job_store` and injected via `Depends(get_job_store)`.
+Async job tracking (`src/core/job_store.py`) is stored in `app.state.job_store` and injected via `Depends(get_job_store)`.
 
 - Jobs expire after 1 hour (TTL eviction runs every 5 minutes via background task)
 - Thread-safe via `asyncio.Lock`
 - Drop-in replaceable with SQLite or Redis for multi-worker deployments
+
+### HTTP Boundary
+
+`core/` has zero imports from `services/`. The pipeline and content service call internal HTTP endpoints instead of importing service implementations directly. This keeps the core infrastructure layer decoupled from provider-specific code.
 
 ### Source layout
 
 ```
 src/
 ├── api/
-│   ├── dependencies.py       # get_registry, get_job_store, require_internal, require_admin, require_uds
+│   ├── dependencies.py           # get_registry, get_job_store, require_internal, require_admin, require_uds
 │   ├── internal/
-│   │   └── routes_voice_gen.py
+│   │   ├── routes_jobs.py        # /internal/generate, /generate/{id}/status, /generate-sync
+│   │   ├── routes_generators.py  # /internal/generators, /generators/{provider}/generate, /generators/generate-word
+│   │   ├── routes_evaluators.py  # /internal/evaluators, /evaluators/evaluate
+│   │   ├── routes_optimizers.py  # /internal/optimizers, /optimizers/{optimizer}/optimize
+│   │   └── routes_translators.py # /internal/translators, /translate
 │   └── v1/
 │       ├── routes_auth.py
 │       ├── routes_common.py
 │       ├── routes_content.py
 │       └── routes_users.py
-├── core/
-│   ├── config.py             # Settings (BASE_DIR, env vars)
-│   ├── config_loader.py      # JSON config parsing (providers, translators, optimizers)
-│   ├── content_service.py    # Category / object filesystem operations
-│   ├── job_store.py          # Async JobStore with TTL eviction
-│   ├── pipeline.py           # TTS pipeline orchestration
-│   ├── registry.py           # ServiceRegistry — built once at lifespan startup
-│   ├── tts.py                # Single-word TTS helper for content_service
-│   └── translation.py        # Single-word translation helper for content_service
+├── core/                         # Zero src.services imports (HTTP boundary enforced)
+│   ├── config.py                 # Pydantic Settings (BASE_DIR, env vars)
+│   ├── config_loader.py          # JSON config parsing (providers, translators, optimizers)
+│   ├── models.py                 # Core dataclasses (TTSRequest, GeneratedAudio, EvaluationResult, etc.)
+│   ├── output_paths.py           # Stable output directory and filename helpers
+│   ├── languages.py              # Language code/name lookups and BCP-47 conversion
+│   ├── input_loader.py           # Load structured requests from CSV/XLSX/TXT files
+│   ├── result_writer.py          # Write per-run JSON and CSV reports
+│   ├── logging/                  # Centralized logging (structlog, Seq, request logging)
+│   ├── content_service.py        # Category / object filesystem operations; DALL-E icon generation
+│   ├── job_store.py              # Async JobStore with TTL eviction
+│   ├── pipeline.py               # TTS pipeline orchestration (calls internal HTTP endpoints)
+│   ├── registry.py               # Pure data container for service instances (no service imports)
+│   ├── tts.py                    # Single-word TTS via HTTP (used by content_service)
+│   └── translation.py            # Single-word translation via HTTP (used by content_service)
 ├── db/
-│   └── database.py           # SQLite user store
+│   └── database.py               # SQLite user store
 ├── security/
-│   ├── auth.py               # JWT verification
-│   └── tokens.py             # create_access_token, create_internal_token
-└── services/
-    ├── config_loader.py      # Re-exports from src.core.config_loader (backward compat)
-    ├── orchestrator.py       # Re-exports from src.core.pipeline (backward compat)
-    ├── generation/           # Input loading, audio normalization, result writing
-    ├── optimization/         # FFmpeg / pydub audio optimizers
-    ├── providers/            # OpenAI / ElevenLabs / Speaktor TTS providers
-    └── translation/          # OpenAI / static translators
+│   ├── auth.py                   # JWT verification
+│   └── tokens.py                 # create_access_token, create_internal_token
+└── services/                     # Business logic implementations (provider-specific code)
+    ├── registry_builder.py       # Builds and reloads ServiceRegistry from config files
+    ├── providers/                # OpenAI / ElevenLabs / Speaktor TTS providers
+    ├── translation/              # OpenAI / static translators
+    ├── optimization/             # FFmpeg / pydub audio optimizers
+    ├── evaluation/               # STT transcription, Levenshtein scoring, score stores
+    ├── generation/               # Audio normalization, input loading, result writing
+    └── logging/                  # Structlog and Seq logging implementation
 ```
 
 ## TTS config
@@ -348,18 +391,26 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://localhost:8000/api/v1/content/objects
 
 # List generators — admin JWT satisfies require_internal
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/internal/voice/generators
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/internal/generators
+
+# List translators
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/internal/translators
+
+# Translate text
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"text": "apple", "target_lang_code": "fr"}' \
+  http://localhost:8000/internal/translate
 
 # Run TTS pipeline asynchronously (returns job_id)
 JOB=$(curl -s -X POST -H "Authorization: Bearer $TOKEN" \
   -F "file=@words.txt" -F "language=bg" -F "output_format=mp3" \
-  http://localhost:8000/internal/voice/generate | jq -r .job_id)
+  http://localhost:8000/internal/generate | jq -r .job_id)
 
 # Poll job status
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/internal/voice/generate/$JOB/status
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/internal/generate/$JOB/status
 
 # Run TTS pipeline synchronously
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   -F "file=@words.txt" -F "language=bg" -F "output_format=mp3" \
-  http://localhost:8000/internal/voice/generate-sync
+  http://localhost:8000/internal/generate-sync
 ```

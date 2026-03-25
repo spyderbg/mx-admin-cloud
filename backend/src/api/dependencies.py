@@ -61,3 +61,8 @@ def get_registry(request: Request) -> ServiceRegistry:
 def get_job_store(request: Request) -> JobStore:
     """Inject the shared JobStore from app state."""
     return request.app.state.job_store
+
+
+def get_internal_token(request: Request) -> str:
+    """Inject the long-lived internal service JWT from app state."""
+    return request.app.state.internal_token

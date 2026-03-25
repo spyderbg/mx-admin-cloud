@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     # TTS pipeline settings
     TTS_MAX_CONCURRENCY: int = 5
 
+    # Internal API base URL used for service-to-service calls (e.g. pipeline → translate endpoint)
+    API_BASE_URL: str = "http://127.0.0.1:8000"
+
     # --- Resolved path properties ---
     # Each property: absolute env-var path used as-is; relative path resolved against BASE_DIR.
     # In Docker, set e.g. CONFIG_DIR=/app/config to bypass BASE_DIR entirely.

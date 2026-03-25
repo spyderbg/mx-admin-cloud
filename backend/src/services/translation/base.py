@@ -6,8 +6,8 @@ import os
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from src.services.languages import LANG_MAP
-from src.services.models import TranslatorConfig
+from src.core.languages import LANG_MAP
+from src.core.models import TranslatorConfig
 
 
 class TextTranslate(ABC):

@@ -6,8 +6,8 @@ import asyncio
 import shutil
 from pathlib import Path
 
-from src.services.models import GeneratedAudio
-from src.services.output_paths import build_output_stem_from_result, normalized_output_dir
+from src.core.models import GeneratedAudio
+from src.core.output_paths import build_output_stem_from_result, normalized_output_dir
 
 
 async def normalize_audio(base_dir: Path, generated_audio: GeneratedAudio) -> GeneratedAudio:

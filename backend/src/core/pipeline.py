@@ -1,7 +1,8 @@
 """Async TTS pipeline orchestration.
 
 Accepts a pre-built ServiceRegistry (from lifespan) instead of loading configs
-from disk on every run.
+from disk on every run.  All service interactions go through internal HTTP
+endpoints — ``core/`` never imports ``services/`` directly.
 """
 
 from __future__ import annotations
@@ -12,16 +13,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from src.core.config import settings
+from src.core.input_loader import load_requests
+from src.core.logging import get_logger, log_to_all_active_loggers, ensure_requests_log
+from src.core.models import EvaluationResult, GeneratedAudio, ProviderConfig, ProviderRunRecord, RunSummary, TTSRequest
+from src.core.output_paths import optimized_output_dir
 from src.core.registry import ServiceRegistry
-from src.services.logging import get_logger, log_to_all_active_loggers, ensure_requests_log
-from src.services.models import EvaluationResult, GeneratedAudio, ProviderConfig, ProviderRunRecord, RunSummary, TTSRequest
-from src.services.optimization import AudioOptimizerBase
-from src.services.output_paths import optimized_output_dir, scores_dir
-from src.services.translation import translate_with_all_active
-from src.services.evaluation import EvaluationEngine, JsonScoreStore, MultiScoreStore, SQLiteScoreStore
-from src.services.generation.audio_normalizer import normalize_audio
-from src.services.generation.input_loader import load_requests
-from src.services.generation.result_writer import write_run_summary
+from src.core.result_writer import write_run_summary
 
 logger = get_logger("core.pipeline")
 
@@ -29,6 +27,7 @@ logger = get_logger("core.pipeline")
 async def run_pipeline(
     *,
     registry: ServiceRegistry,
+    internal_token: str,
     input_path: Path,
     default_language: str,
     output_format: str,
@@ -47,13 +46,12 @@ async def run_pipeline(
     requests = load_requests(input_path, default_language)
     ensure_requests_log(output_dir)
 
-    providers = registry.providers
-    translators = registry.translators
-    optimizers = registry.optimizers
+    provider_names_and_configs = registry.provider_names_and_configs()
+    optimizer_names = registry.optimizer_names()
 
     if not requests:
         raise RuntimeError(f"No input texts were found in {input_path}.")
-    if not providers:
+    if not provider_names_and_configs:
         run_id = datetime.now().strftime("run_%Y%m%d_%H%M%S")
         message = (
             "No active generators were found. Enable generate.active for at "
@@ -69,47 +67,41 @@ async def run_pipeline(
         write_run_summary(output_dir, summary)
         return summary
 
-    await _resolve_english_filenames(requests, translators)
-
     for language_code in {request.language_code for request in requests}:
         (output_dir / f"tts_audio_{language_code}").mkdir(parents=True, exist_ok=True)
     logger.info(
         "pipeline_started input_path=%s request_count=%s provider_count=%s output_dir=%s",
         str(input_path),
         len(requests),
-        len(providers),
+        len(provider_names_and_configs),
         str(output_dir),
     )
 
     semaphore = asyncio.Semaphore(max_concurrency)
-    evaluation_engine = EvaluationEngine(base_dir=output_dir)
-    score_root = scores_dir(output_dir)
-    score_store = MultiScoreStore(
-        [
-            JsonScoreStore(score_root / "json"),
-            SQLiteScoreStore(score_root / "sqlite" / "scores.db"),
-        ]
-    )
+    base_url = settings.API_BASE_URL
+    headers = {"Authorization": f"Bearer {internal_token}"}
 
     async with httpx_module.AsyncClient(timeout=180.0) as client:
+        await _resolve_english_filenames(requests, client, internal_token)
         tasks = [
             _process_provider_request(
                 request=request,
+                provider_name=pname,
                 provider_config=config,
-                provider=provider,
                 output_format=output_format,
                 semaphore=semaphore,
                 client=client,
-                evaluation_engine=evaluation_engine,
-                score_store=score_store,
+                base_url=base_url,
+                headers=headers,
+                output_dir=output_dir,
             )
             for request in requests
-            for provider, config in providers
+            for pname, config in provider_names_and_configs
         ]
         records = list(await asyncio.gather(*tasks))
 
-    if optimizers:
-        await _run_optimizations(records, optimizers, output_dir, semaphore)
+    if optimizer_names:
+        await _run_optimizations(records, optimizer_names, output_dir, semaphore, base_url, headers)
     else:
         logger.info("optimization_skipped reason=no_active_optimizers")
 
@@ -125,43 +117,72 @@ async def run_pipeline(
     return summary
 
 
-async def _resolve_english_filenames(requests, translators) -> None:
+async def _resolve_english_filenames(requests, client: Any, internal_token: str) -> None:
     """Translate non-English words to English so output files are named with English words."""
-    if not translators:
-        return
+    translate_url = f"{settings.API_BASE_URL}/internal/translate"
+    headers = {"Authorization": f"Bearer {internal_token}"}
     for request in requests:
         if request.language_code == "en":
             continue
-        english = await translate_with_all_active(
-            translators,
-            text=request.text,
-            input_lang_code=request.language_code,
-            target_lang_code="en",
-        )
-        request.filename_text = english
+        try:
+            response = await client.post(
+                translate_url,
+                json={
+                    "text": request.text,
+                    "input_lang_code": request.language_code,
+                    "target_lang_code": "en",
+                },
+                headers=headers,
+            )
+            response.raise_for_status()
+            request.filename_text = response.json()["translated_text"]
+        except Exception as exc:
+            logger.warning(
+                "filename_translation_failed request_id=%s error=%s",
+                request.request_id,
+                str(exc),
+            )
 
 
 async def _process_provider_request(
     *,
     request: TTSRequest,
+    provider_name: str,
     provider_config: ProviderConfig,
-    provider,
     output_format: str,
     semaphore: asyncio.Semaphore,
     client: Any,
-    evaluation_engine: EvaluationEngine,
-    score_store: MultiScoreStore,
+    base_url: str,
+    headers: dict[str, str],
+    output_dir: Path,
 ) -> ProviderRunRecord:
     async with semaphore:
-        request_log_context = f"request_id={request.request_id} provider={provider.name}"
+        request_log_context = f"request_id={request.request_id} provider={provider_name}"
         try:
             logger.info("provider_generation_started %s", request_log_context)
-            generated_audio = await provider.generate(request, output_format, client)
+            gen_response = await client.post(
+                f"{base_url}/internal/generators/{provider_name}/generate",
+                json={
+                    "text": request.text,
+                    "language_code": request.language_code,
+                    "language_name": request.language_name,
+                    "filename_text": request.filename_text,
+                    "expected_text": request.expected_text,
+                    "source_file": request.source_file,
+                    "source_type": request.source_type,
+                    "output_format": output_format,
+                    "row_index": request.row_index,
+                    "column_index": request.column_index,
+                },
+                headers=headers,
+            )
+            gen_response.raise_for_status()
+            gen_data = gen_response.json()
         except Exception as exc:
             logger.exception("provider_generation_failed %s error=%s", request_log_context, str(exc))
             return ProviderRunRecord(
                 request_id=request.request_id,
-                provider=provider.name,
+                provider=provider_name,
                 source_file=request.source_file,
                 source_type=request.source_type,
                 language_code=request.language_code,
@@ -180,14 +201,29 @@ async def _process_provider_request(
                 error=str(exc),
             )
 
-        generated_audio = await normalize_audio(provider.base_dir, generated_audio)
+        generated_audio = GeneratedAudio(
+            provider=gen_data["provider"],
+            request_id=gen_data["request_id"],
+            language_code=gen_data["language_code"],
+            language_name=gen_data["language_name"],
+            expected_text=gen_data["expected_text"],
+            filename_text=gen_data["filename_text"],
+            output_format=gen_data["output_format"],
+            raw_path=Path(gen_data["raw_path"]),
+            raw_extension=gen_data["raw_extension"],
+            latency_seconds=gen_data["latency_seconds"],
+            success=gen_data["success"],
+            error=gen_data.get("error"),
+            normalized_path=Path(gen_data["normalized_path"]) if gen_data.get("normalized_path") else None,
+            normalization_error=gen_data.get("normalization_error"),
+        )
 
         eval_active = provider_config.evaluate.get("active", False)
         if eval_active:
             logger.info("provider_evaluation_started %s", request_log_context)
-            evaluation_result = await evaluation_engine.evaluate(generated_audio, provider_config, client)
-            aggregate = await score_store.save(generated_audio, evaluation_result)
-            evaluation_result.rolling_average = aggregate.average_score
+            evaluation_result = await _evaluate_via_http(
+                client, base_url, headers, generated_audio, provider_config, output_dir,
+            )
         else:
             evaluation_result = EvaluationResult(
                 provider=generated_audio.provider,
@@ -210,6 +246,69 @@ async def _process_provider_request(
             generated_audio.error,
         )
         return _build_record(request, generated_audio, evaluation_result)
+
+
+async def _evaluate_via_http(
+    client: Any,
+    base_url: str,
+    headers: dict[str, str],
+    generated_audio: GeneratedAudio,
+    provider_config: ProviderConfig,
+    output_dir: Path,
+) -> EvaluationResult:
+    """Call the /internal/evaluators/evaluate endpoint."""
+    try:
+        eval_response = await client.post(
+            f"{base_url}/internal/evaluators/evaluate",
+            json={
+                "provider": generated_audio.provider,
+                "request_id": generated_audio.request_id,
+                "expected_text": generated_audio.expected_text,
+                "language_code": generated_audio.language_code,
+                "language_name": generated_audio.language_name,
+                "filename_text": generated_audio.filename_text,
+                "output_format": generated_audio.output_format,
+                "raw_path": str(generated_audio.raw_path),
+                "raw_extension": generated_audio.raw_extension,
+                "latency_seconds": generated_audio.latency_seconds,
+                "normalized_path": str(generated_audio.normalized_path) if generated_audio.normalized_path else None,
+                "normalization_error": generated_audio.normalization_error,
+                "evaluate_config": provider_config.evaluate,
+                "output_dir": str(output_dir),
+            },
+            headers=headers,
+        )
+        eval_response.raise_for_status()
+        eval_data = eval_response.json()
+        return EvaluationResult(
+            provider=eval_data["provider"],
+            request_id=eval_data["request_id"],
+            expected_text=eval_data["expected_text"],
+            transcription=eval_data["transcription"],
+            levenshtein_distance=eval_data["levenshtein_distance"],
+            char_accuracy=eval_data["char_accuracy"],
+            word_accuracy=eval_data["word_accuracy"],
+            pronunciation_accuracy=eval_data["pronunciation_accuracy"],
+            latency_seconds=eval_data["latency_seconds"],
+            success=eval_data["success"],
+            error=eval_data.get("error"),
+            rolling_average=eval_data.get("rolling_average"),
+        )
+    except Exception as exc:
+        logger.error("evaluation_http_failed error=%s", str(exc))
+        return EvaluationResult(
+            provider=generated_audio.provider,
+            request_id=generated_audio.request_id,
+            expected_text=generated_audio.expected_text,
+            transcription="",
+            levenshtein_distance=0,
+            char_accuracy=0.0,
+            word_accuracy=0.0,
+            pronunciation_accuracy=0.0,
+            latency_seconds=0.0,
+            success=False,
+            error=f"Evaluation HTTP call failed: {exc}",
+        )
 
 
 def _build_record(
@@ -241,43 +340,61 @@ def _build_record(
 
 async def _run_optimizations(
     records: list[ProviderRunRecord],
-    optimizers: list[AudioOptimizerBase],
+    optimizer_names: list[str],
     output_root: Path,
     semaphore: asyncio.Semaphore,
+    base_url: str,
+    headers: dict[str, str],
 ) -> None:
-    """Run every active optimizer on each successfully generated audio file."""
+    """Run every active optimizer on each successfully generated audio file via HTTP."""
+    try:
+        httpx_module = importlib.import_module("httpx")
+    except ModuleNotFoundError:
+        logger.error("optimization_skipped reason=httpx_not_installed")
+        return
+
     logger.info(
         "optimization_started optimizer_count=%s record_count=%s",
-        len(optimizers),
+        len(optimizer_names),
         len(records),
     )
-    for record in records:
-        if not record.success or not record.raw_path:
-            continue
-        raw = Path(record.raw_path)
-        if not raw.exists():
-            continue
 
-        for optimizer in optimizers:
-            out_dir = optimized_output_dir(
-                output_root, optimizer.name, record.language_code, record.provider,
-            )
-            out_dir.mkdir(parents=True, exist_ok=True)
-            out_path = out_dir / raw.name
+    async with httpx_module.AsyncClient(timeout=180.0) as client:
+        for record in records:
+            if not record.success or not record.raw_path:
+                continue
+            raw = Path(record.raw_path)
+            if not raw.exists():
+                continue
 
-            try:
-                async with semaphore:
-                    await optimizer.optimize(raw, out_path)
-                record.optimized_paths[optimizer.name] = str(out_path)
-                logger.info(
-                    "optimization_complete optimizer=%s path=%s",
-                    optimizer.name,
-                    str(out_path),
+            for opt_name in optimizer_names:
+                out_dir = optimized_output_dir(
+                    output_root, opt_name, record.language_code, record.provider,
                 )
-            except Exception as exc:
-                logger.error(
-                    "optimization_failed optimizer=%s raw_path=%s error=%s",
-                    optimizer.name,
-                    str(raw),
-                    str(exc),
-                )
+                out_dir.mkdir(parents=True, exist_ok=True)
+                out_path = out_dir / raw.name
+
+                try:
+                    async with semaphore:
+                        opt_response = await client.post(
+                            f"{base_url}/internal/optimizers/{opt_name}/optimize",
+                            json={
+                                "raw_path": str(raw),
+                                "output_path": str(out_path),
+                            },
+                            headers=headers,
+                        )
+                        opt_response.raise_for_status()
+                    record.optimized_paths[opt_name] = str(out_path)
+                    logger.info(
+                        "optimization_complete optimizer=%s path=%s",
+                        opt_name,
+                        str(out_path),
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "optimization_failed optimizer=%s raw_path=%s error=%s",
+                        opt_name,
+                        str(raw),
+                        str(exc),
+                    )

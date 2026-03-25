@@ -7,7 +7,7 @@ import time
 
 from openai import AsyncOpenAI
 
-from src.services.logging import log_translator_request
+from src.core.logging import log_translator_request
 from src.services.translation import TranslatorFactory
 from .base import TextTranslate
 

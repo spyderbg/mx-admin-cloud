@@ -7,7 +7,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from src.services.models import OptimizerConfig, ProviderConfig, TranslatorConfig
+from src.core.models import OptimizerConfig, ProviderConfig, TranslatorConfig
 
 
 def _boolish(value: object) -> bool:
