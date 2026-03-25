@@ -113,9 +113,9 @@ Internal endpoints are under `/internal/*`. They require `Authorization: Bearer 
 
 | Method | Path                                                                                  | Description                                                               |
 |--------|---------------------------------------------------------------------------------------|---------------------------------------------------------------------------|
-| `POST` | [`/internal/generate`](src/api/internal/routes_jobs.py#L86)                          | Upload input file, trigger TTS pipeline in background; returns `job_id`.  |
-| `GET`  | [`/internal/generate/{job_id}/status`](src/api/internal/routes_jobs.py#L115)         | Poll job status (`pending`, `running`, `completed`, `failed`).            |
-| `POST` | [`/internal/generate-sync`](src/api/internal/routes_jobs.py#L141)                    | Upload input file, run pipeline synchronously; returns `RunSummary` JSON. |
+| `POST` | [`/internal/generate`](src/api/internal/jobs_routes.py#L86)                          | Upload input file, trigger TTS pipeline in background; returns `job_id`.  |
+| `GET`  | [`/internal/generate/{job_id}/status`](src/api/internal/jobs_routes.py#L115)         | Poll job status (`pending`, `running`, `completed`, `failed`).            |
+| `POST` | [`/internal/generate-sync`](src/api/internal/jobs_routes.py#L141)                    | Upload input file, run pipeline synchronously; returns `RunSummary` JSON. |
 
 **Generate request (multipart form):**
 
@@ -128,30 +128,30 @@ Internal endpoints are under `/internal/*`. They require `Authorization: Bearer 
 
 | Method | Path                                                                                       | Description                                                              |
 |--------|--------------------------------------------------------------------------------------------|--------------------------------------------------------------------------|
-| `GET`  | [`/internal/generators`](src/api/internal/routes_generators.py#L45)                       | List all configured TTS providers with activation state and settings.    |
-| `POST` | [`/internal/generators/{provider}/generate`](src/api/internal/routes_generators.py#L74)   | Generate audio for a single TTS request via the named provider.          |
-| `POST` | [`/internal/generators/generate-word`](src/api/internal/routes_generators.py#L128)        | Generate audio for a single word using the first active provider.        |
+| `GET`  | [`/internal/generators`](src/api/internal/generators_routes.py#L45)                       | List all configured TTS providers with activation state and settings.    |
+| `POST` | [`/internal/generators/{provider}/generate`](src/api/internal/generators_routes.py#L74)   | Generate audio for a single TTS request via the named provider.          |
+| `POST` | [`/internal/generators/generate-word`](src/api/internal/generators_routes.py#L128)        | Generate audio for a single word using the first active provider.        |
 
 #### Evaluators
 
 | Method | Path                                                                                  | Description                                                              |
 |--------|---------------------------------------------------------------------------------------|--------------------------------------------------------------------------|
-| `GET`  | [`/internal/evaluators`](src/api/internal/routes_evaluators.py#L43)                  | List all configured STT evaluators with activation state.                |
-| `POST` | [`/internal/evaluators/evaluate`](src/api/internal/routes_evaluators.py#L70)         | Run STT transcription, score, persist, and return evaluation result.     |
+| `GET`  | [`/internal/evaluators`](src/api/internal/evaluators_routes.py#L43)                  | List all configured STT evaluators with activation state.                |
+| `POST` | [`/internal/evaluators/evaluate`](src/api/internal/evaluators_routes.py#L70)         | Run STT transcription, score, persist, and return evaluation result.     |
 
 #### Optimizers
 
 | Method | Path                                                                                       | Description                                                              |
 |--------|--------------------------------------------------------------------------------------------|--------------------------------------------------------------------------|
-| `GET`  | [`/internal/optimizers`](src/api/internal/routes_optimizers.py#L28)                       | List all configured audio optimizers with activation state and priority. |
-| `POST` | [`/internal/optimizers/{optimizer}/optimize`](src/api/internal/routes_optimizers.py#L57)  | Run the named optimizer on a given audio file.                           |
+| `GET`  | [`/internal/optimizers`](src/api/internal/optimizers_routes.py#L28)                       | List all configured audio optimizers with activation state and priority. |
+| `POST` | [`/internal/optimizers/{optimizer}/optimize`](src/api/internal/optimizers_routes.py#L57)  | Run the named optimizer on a given audio file.                           |
 
 #### Translators
 
 | Method | Path                                                                                  | Description                                                              |
 |--------|---------------------------------------------------------------------------------------|--------------------------------------------------------------------------|
-| `GET`  | [`/internal/translators`](src/api/internal/routes_translators.py#L34)                | List all configured translation services with activation state.          |
-| `POST` | [`/internal/translate`](src/api/internal/routes_translators.py#L63)                  | Translate text via all active translators in priority order.             |
+| `GET`  | [`/internal/translators`](src/api/internal/translators_routes.py#L34)                | List all configured translation services with activation state.          |
+| `POST` | [`/internal/translate`](src/api/internal/translators_routes.py#L63)                  | Translate text via all active translators in priority order.             |
 
 ## Architecture
 

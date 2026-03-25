@@ -1,17 +1,17 @@
 """Internal API routes (service-to-service and admin CLI, protected by service token or admin JWT)."""
 
 from src.api.internal import (
-    routes_evaluators,
-    routes_generators,
-    routes_jobs,
-    routes_optimizers,
-    routes_translators,
+    evaluators_routes,
+    generators_routes,
+    jobs_routes,
+    optimizers_routes,
+    translators_routes,
 )
 
 __all__ = [
-    "routes_evaluators",
-    "routes_generators",
-    "routes_jobs",
-    "routes_optimizers",
-    "routes_translators",
+    "evaluators_routes.py",
+    "generators_routes.py",
+    "jobs_routes.py",
+    "optimizers_routes.py",
+    "translators_routes.py",
 ]

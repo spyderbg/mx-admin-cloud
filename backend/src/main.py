@@ -10,11 +10,11 @@ from fastapi import FastAPI
 from starlette.concurrency import run_in_threadpool
 
 from src.api.internal import (
-    routes_evaluators,
-    routes_generators,
-    routes_jobs,
-    routes_optimizers,
-    routes_translators,
+    evaluators_routes,
+    generators_routes,
+    jobs_routes,
+    optimizers_routes,
+    translators_routes,
 )
 from src.api.v1 import routes_auth, routes_common, routes_content, routes_users
 from src.api.dependencies import require_admin, require_uds
