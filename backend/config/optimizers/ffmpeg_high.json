@@ -3,7 +3,7 @@
     "version": "1.0",
     "category": "optimizer",
     "name": "ffmpeg",
-    "enabled": true,
+    "enabled": false,
     "priority": 1,
     "config": {
       "sample_rate": 22050,

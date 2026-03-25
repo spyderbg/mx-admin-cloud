@@ -9,11 +9,22 @@ API_V1 = "/api/v1"
 INTERNAL_PREFIX = "/internal"
 
 
+def _is_verbose() -> bool:
+    """Return whether verbose output is enabled."""
+    return os.getenv("KIDDO_CLI_VERBOSE", "0").lower() in {"1", "true", "yes", "on"}
+
+
+def _vprint(message: str) -> None:
+    """Print message only when verbose mode is enabled."""
+    if _is_verbose():
+        print(message)
+
+
 def base_url() -> str:
     """Get the base URL from the environment variable BACKEND_URL."""
     backend_url = os.getenv("BACKEND_URL")
     if backend_url:
-        print(f"BACKEND_URL: {os.getenv('BACKEND_URL')}")
+        _vprint(f"BACKEND_URL: {os.getenv('BACKEND_URL')}")
     return os.getenv("BACKEND_URL", DEFAULT_BACKEND_URL).rstrip("/")
 
 
@@ -22,7 +33,7 @@ def headers(token: str | None = None) -> dict:
     kiddo_token = token
     env_token = os.getenv("KIDDO_TOKEN")
     if env_token:
-        print(f"KIDDO_TOKEN: {env_token}")
+        _vprint(f"KIDDO_TOKEN: {env_token}")
         kiddo_token = env_token
 
     h = {"Accept": "application/json"}
@@ -38,7 +49,7 @@ def get(
         timeout: int = 30,
 ) -> dict:
     """Get the data from the API."""
-    print(f"GET {API_V1}{path}")
+    _vprint(f"GET {API_V1}{path}")
     r = requests.get(
         f"{base_url()}{API_V1}{path}",
         headers=headers(token),
@@ -51,7 +62,7 @@ def get(
 
 def delete(path: str, token: str | None = None, timeout: int = 30) -> dict:
     """Delete the data from the API."""
-    print(f"DELETE {API_V1}{path}")
+    _vprint(f"DELETE {API_V1}{path}")
     r = requests.delete(
         f"{base_url()}{API_V1}{path}",
         headers=headers(token),
@@ -63,7 +74,7 @@ def delete(path: str, token: str | None = None, timeout: int = 30) -> dict:
 
 def patch(path: str, token: str | None = None, json: dict | None = None, timeout: int = 30) -> dict:
     """Patch the data from the API."""
-    print(f"PATCH {API_V1}{path}")
+    _vprint(f"PATCH {API_V1}{path}")
     r = requests.patch(
         f"{base_url()}{API_V1}{path}",
         headers=headers(token),
@@ -84,7 +95,7 @@ def post(
         timeout: int = 30,
 ) -> dict:
     """Post the data to the API."""
-    print(f"POST {API_V1}{path}")
+    _vprint(f"POST {API_V1}{path}")
     r = requests.post(
         f"{base_url()}{API_V1}{path}",
         headers=headers(token),
@@ -105,7 +116,7 @@ def internal_get(
         timeout: int = 30,
 ) -> dict:
     """Get the data from the internal API."""
-    print(f"GET {INTERNAL_PREFIX}{path}")
+    _vprint(f"GET {INTERNAL_PREFIX}{path}")
     r = requests.get(
         f"{base_url()}{INTERNAL_PREFIX}{path}",
         headers=headers(token),
@@ -125,7 +136,7 @@ def internal_post(
         timeout: int = 300,
 ) -> dict:
     """Post the data to the internal API."""
-    print(f"POST {INTERNAL_PREFIX}{path}")
+    _vprint(f"POST {INTERNAL_PREFIX}{path}")
     r = requests.post(
         f"{base_url()}{INTERNAL_PREFIX}{path}",
         headers=headers(token),

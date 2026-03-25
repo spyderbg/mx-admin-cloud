@@ -36,6 +36,7 @@ Env:
 
 The CLI is organized into sub-apps: **common**, **content**, **list**, **users**, and **generate**.
 Commands that call the backend accept optional `--url` (backend base URL) and `--token` (bearer token). `common ping` uses no auth.
+Use global `--verbose` (or `-v`) before subcommands to show HTTP/debug messages from the client.
 Run `kiddo-cli --help`, `kiddo-cli common --help`, `kiddo-cli content --help`, `kiddo-cli list --help`, `kiddo-cli users --help`, or `kiddo-cli generate --help` for details.
 
 ### Common (backend routes_common)
@@ -73,6 +74,7 @@ Run `kiddo-cli --help`, `kiddo-cli common --help`, `kiddo-cli content --help`, `
 | [`list translators`](cli/src/kiddo_cli/commands/list_commands.py#L26) | Show configured translators with priority and states. |
 | [`list optimizers`](cli/src/kiddo_cli/commands/list_commands.py#L39) | Show configured optimizers with activation states. |
 | [`list evaluators`](cli/src/kiddo_cli/commands/list_commands.py#L52) | Show configured evaluators with activation states. |
+| `list services` | Show all configured internal services (translators, generators, optimizers, evaluators) with colorized output. |
 | [`list users`](cli/src/kiddo_cli/commands/list_commands.py#L64) | Show all users. |
 
 ### Users (backend user management)
@@ -96,6 +98,7 @@ Options for `generate run`:
 
 ```bash
 kiddo-cli --help
+kiddo-cli --verbose list services
 kiddo-cli common --help
 kiddo-cli content --help
 kiddo-cli list --help
@@ -128,6 +131,9 @@ kiddo-cli list generators
 kiddo-cli list translators
 kiddo-cli list optimizers
 kiddo-cli list evaluators
+kiddo-cli list services
+kiddo-cli list services --category translators
+kiddo-cli list services --enabled --name openai
 
 # Users
 kiddo-cli users list

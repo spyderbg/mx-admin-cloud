@@ -39,8 +39,9 @@ mx-admin/
 
 ### CLI (`cli/`)
 
-- **Stack:** Python 3.10+, Typer, requests/httpx. No backend code; all calls over HTTP.
+- **Stack:** Python 3.10+, Typer, requests/httpx, Rich (formatted terminal output). No backend code; all calls over HTTP.
 - **Install:** `./scripts/cli.sh install` or `pip install -e cli/` -> `kiddo-cli` command.
+- **Verbose mode:** Use `kiddo-cli --verbose ...` to print HTTP/debug request messages from the CLI client.
 - **Commands:** `tasks` (ping, status, operation, list-files), `content` (categories, create-category, rename-category, remove-category, restore-category, category-details, create-object), `generate` (run, list-generators, list-translators).
 - **Docs:** See [cli/README.md](cli/README.md) for auth and usage.
 

@@ -3,6 +3,8 @@ Kiddo CLI: all commands call the FastAPI backend over HTTP.
 Auth: use --token / KIDDO_TOKEN, or auto-login via Unix socket (cli-login) on startup.
 """
 
+import os
+
 import typer # pylint: disable=import-error
 
 from kiddo_cli.commands import content_commands as content_commands  # pylint: disable=import-error
@@ -20,6 +22,19 @@ list_app = typer.Typer(help="List configured components: generators, translators
 translate_app = typer.Typer(help="Translation commands: translate words.")
 users_app = typer.Typer(help="User management: list, create, delete, update.")
 generate_app = typer.Typer(help="Voice generation: run pipeline.")
+
+
+@app.callback()
+def main(
+        verbose: bool = typer.Option(
+            False,
+            "--verbose",
+            "-v",
+            help="Enable verbose CLI output (HTTP/debug messages).",
+        ),
+) -> None:
+    """Root CLI options."""
+    os.environ["KIDDO_CLI_VERBOSE"] = "1" if verbose else "0"
 
 tasks_commands.register(common_app)
 content_commands.register(content_app)

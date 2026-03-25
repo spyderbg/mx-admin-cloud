@@ -1,6 +1,10 @@
 """List commands: generators, translators, optimizers, evaluators."""
 
+import json
+import re
 import typer
+from rich import print  # pylint: disable=redefined-builtin
+from rich.markup import escape
 
 from kiddo_cli.api.client import get, internal_get
 from kiddo_cli.auth_flow import run_with_auth
@@ -71,11 +75,23 @@ def register(app: typer.Typer) -> None:
             url: str = typer.Option(None, "--url", help="Backend URL"),
             token: str | None = typer.Option(None, "--token", help="Auth token"),
     ):
-        """Get translation services by criteria."""
+        """List internal services by criteria."""
 
         def _run(t: str):
-            import json
             nonlocal enabled, name, category
+
+            category_routes = {
+                "translators": "/translators",
+                "generators": "/generators",
+                "optimizers": "/optimizers",
+                "evaluators": "/evaluators",
+            }
+            category_aliases = {
+                "translator": "translators",
+                "generator": "generators",
+                "optimizer": "optimizers",
+                "evaluator": "evaluators",
+            }
 
             # --- Parse JSON if provided ---
             if data:
@@ -93,7 +109,28 @@ def register(app: typer.Typer) -> None:
                 if "category" in payload:
                     category = payload["category"]
 
-            services = internal_get("/translators", token=t)
+            normalized_category = None
+            if category:
+                raw_category = category.lower().strip()
+                normalized_category = category_aliases.get(raw_category, raw_category)
+                if normalized_category not in category_routes:
+                    valid_values = ", ".join(category_routes)
+                    raise typer.BadParameter(
+                        f"Invalid category '{category}'. Use one of: {valid_values}"
+                    )
+
+            selected_categories = [normalized_category] if normalized_category else list(category_routes.keys())
+
+            services = []
+            for service_category in selected_categories:
+                response = internal_get(category_routes[service_category], token=t)
+                if not isinstance(response, list):
+                    continue
+
+                for service in response:
+                    service_copy = dict(service)
+                    service_copy["category"] = service_category
+                    services.append(service_copy)
 
             filtered = []
             for s in services:
@@ -107,31 +144,49 @@ def register(app: typer.Typer) -> None:
                         continue
 
                 # Filter by category
-                if category:
-                    if category.lower() != s.get("category", "").lower():
+                if normalized_category:
+                    if normalized_category != s.get("category", "").lower():
                         continue
 
                 filtered.append(s)
 
-            if not name:
-                print_json(filtered)
+            if not filtered:
+                print("[yellow]No services matched the provided filters.[/yellow]")
                 return
 
-            # Highlight name if name filter is used
-            highlighted_output = []
-            for s in filtered:
-                s_copy = dict(s)
-                original_name = s_copy.get("name", "")
-                if name.lower() in original_name.lower():
-                    # Find the start index for case-insensitive match
-                    start = original_name.lower().find(name.lower())
-                    end = start + len(name)
-                    # Use Typer's styling for highlighting
-                    matched_part = typer.style(original_name[start:end], fg=typer.colors.CYAN, bold=True)
-                    new_name = original_name[:start] + matched_part + original_name[end:]
-                    s_copy["name"] = new_name
-                highlighted_output.append(s_copy)
+            print(f"[bold green]Services ({len(filtered)})[/bold green]")
+            category_colors = {
+                "translators": "magenta",
+                "generators": "cyan",
+                "optimizers": "blue",
+                "evaluators": "yellow",
+            }
 
-            print_json(highlighted_output)
+            for service in filtered:
+                service_name = str(service.get("name", "<unnamed>"))
+                category_name = str(service.get("category", "unknown")).lower()
+                enabled_state = bool(service.get("enabled"))
+
+                escaped_name = escape(service_name)
+                if name:
+                    escaped_filter = re.escape(name)
+                    escaped_name = re.sub(
+                        escaped_filter,
+                        lambda match: f"[bold cyan]{escape(match.group(0))}[/bold cyan]",
+                        escaped_name,
+                        flags=re.IGNORECASE,
+                    )
+
+                state_color = "green" if enabled_state else "red"
+                state_text = "enabled" if enabled_state else "disabled"
+                category_color = category_colors.get(category_name, "white")
+                priority = service.get("priority")
+                suffix = f"  [dim](priority: {priority})[/dim]" if priority is not None else ""
+
+                print(
+                    f"- [{category_color}]{category_name}[/{category_color}] :: "
+                    f"[{state_color}]{state_text}[/{state_color}] :: "
+                    f"{escaped_name}{suffix}"
+                )
 
         run_with_auth(url, token, _run)

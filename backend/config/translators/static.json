@@ -2,7 +2,7 @@
   "service": {
     "category": "translator",
     "name": "static_translate",
-    "enabled": false,
+    "enabled": true,
     "priority": 1,
     "version": "1.0",
     "config": {
