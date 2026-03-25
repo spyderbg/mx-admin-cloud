@@ -58,7 +58,7 @@ class OptimizerFactory:
         if builder is None:
             raise ValueError(
                 f"Unsupported optimizer service name: '{cfg.name}' "
-                f"(type='{cfg.type}', file='{cfg.config_path}')"
+                f"(category='{cfg.category}', file='{cfg.config_path}')"
             )
         return builder(cfg, base_dir)
 
@@ -73,7 +73,7 @@ def build_active_optimizers(
     base_dir: Path,
 ) -> list[AudioOptimizerBase]:
     """Build only optimizer instances that are marked active."""
-    return [build_optimizer(cfg, base_dir) for cfg in configs if cfg.active]
+    return [build_optimizer(cfg, base_dir) for cfg in configs if cfg.enabled]
 
 
 # Trigger self-registration of all implementations

@@ -28,11 +28,11 @@ class AudioOptimizerBase(ABC):
     @property
     def optimizer_type(self) -> str:
         """Return optimizer backend type (for example, ffmpeg or pydub)."""
-        return self.cfg.type
+        return self.cfg.category
 
     def is_active(self) -> bool:
         """Return whether this optimizer should run."""
-        return bool(self.cfg.active)
+        return bool(self.cfg.enabled)
 
     @abstractmethod
     async def optimize(self, input_path: Path, output_path: Path) -> Path:

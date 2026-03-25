@@ -54,7 +54,7 @@ async def run_pipeline(
     if not provider_names_and_configs:
         run_id = datetime.now().strftime("run_%Y%m%d_%H%M%S")
         message = (
-            "No active generators were found. Enable generate.active for at "
+            "No active generators were found. Set generate.enabled to true for at "
             "least one provider in config/generators/*.json."
         )
         log_to_all_active_loggers(message, level=30)
@@ -218,7 +218,7 @@ async def _process_provider_request(
             normalization_error=gen_data.get("normalization_error"),
         )
 
-        eval_active = provider_config.evaluate.get("active", False)
+        eval_active = provider_config.evaluate.get("enabled", False)
         if eval_active:
             logger.info("provider_evaluation_started %s", request_log_context)
             evaluation_result = await _evaluate_via_http(

@@ -1,8 +1,9 @@
 {
   "service": {
-    "type": "translator",
+    "version": "1.0",
+    "category": "translator",
     "name": "openai",
-    "active": false,
+    "enabled": false,
     "priority": 2,
     "config": {
       "input_language": "en",

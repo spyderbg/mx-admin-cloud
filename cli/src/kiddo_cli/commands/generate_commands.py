@@ -43,7 +43,7 @@ def register(app: typer.Typer) -> None:
         def _run(t: str):
             with open(input_file, "rb") as fh:
                 result = internal_post(
-                    "/voice/generate-sync",
+                    "/generate-sync",
                     token=t,
                     data={
                         "language": lang,

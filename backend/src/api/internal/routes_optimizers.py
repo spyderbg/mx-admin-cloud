@@ -44,9 +44,9 @@ async def list_optimizers(
     )
     return [
         {
-            "service_type": c.type,
+            "service_type": c.category,
             "name": c.name,
-            "active": c.active,
+            "enabled": c.enabled,
             "priority": c.priority,
             "config_path": str(c.config_path),
         }

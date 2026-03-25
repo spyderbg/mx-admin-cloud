@@ -52,7 +52,7 @@ def load_provider_configs(
         if not name:
             continue
 
-        active = _boolish(service.get("active", False))
+        active = _boolish(service.get("enabled", False))
         raw_config = service.get("config", {})
         if raw_config is None:
             raw_config = {}
@@ -61,8 +61,8 @@ def load_provider_configs(
         evaluate = raw_config.get("evaluate", {})
         if not isinstance(generate, dict) or not isinstance(evaluate, dict):
             continue
-        generate["active"] = _boolish(generate.get("active", active))
-        evaluate["active"] = _boolish(evaluate.get("active", True))
+        generate["enabled"] = _boolish(generate.get("enabled", active))
+        evaluate["enabled"] = _boolish(evaluate.get("enabled", True))
 
         configs.append(
             ProviderConfig(
@@ -105,12 +105,12 @@ def load_translator_configs(
         if not isinstance(service, dict):
             continue
 
-        translator_type = str(service.get("type", "")).strip().lower()
+        translator_type = str(service.get("category", "")).strip().lower()
         name = str(service.get("name") or config_path.stem).strip()
         if not translator_type or not name:
             continue
 
-        active = _boolish(service.get("active", False))
+        active = _boolish(service.get("enabled", False))
         priority = int(service.get("priority", 999))
         raw_config = service.get("config", {})
         if not isinstance(raw_config, dict):
@@ -118,9 +118,9 @@ def load_translator_configs(
 
         configs.append(
             TranslatorConfig(
-                type=translator_type,
+                category=translator_type,
                 name=name,
-                active=active,
+                enabled=active,
                 priority=priority,
                 config=raw_config,
                 config_path=config_path,
@@ -161,12 +161,12 @@ def load_optimizer_configs(
         if not isinstance(service, dict):
             continue
 
-        service_type = str(service.get("type", "")).strip().lower()
+        service_type = str(service.get("category", "")).strip().lower()
         name = str(service.get("name") or config_file.stem).strip()
         if not name or not service_type:
             continue
 
-        active = _boolish(service.get("active", False))
+        active = _boolish(service.get("enabled", False))
         priority = int(service.get("priority", 999))
         raw_config = service.get("config", {})
         if raw_config is None:
@@ -179,9 +179,9 @@ def load_optimizer_configs(
 
         configs.append(
             OptimizerConfig(
-                type=service_type,
+                category=service_type,
                 name=name,
-                active=active,
+                enabled=active,
                 priority=priority,
                 config=merged_config,
                 config_path=config_file,

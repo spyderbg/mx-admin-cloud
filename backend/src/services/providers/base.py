@@ -38,7 +38,7 @@ class TTSProvider(ABC):
 
     def is_active(self) -> bool:
         """Return True when the provider's generate section is marked active."""
-        return _boolish(self.cfg.generate.get("active", False))
+        return _boolish(self.cfg.generate.get("enabled", False))
 
     def api_key_env_name(self) -> str:
         """Return the expected environment variable name for this provider's API key."""

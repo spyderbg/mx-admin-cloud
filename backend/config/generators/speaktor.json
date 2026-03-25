@@ -1,8 +1,9 @@
 {
   "service": {
-    "type": "generator",
+    "version": "1.0",
+    "category": "generator",
     "name": "speaktor",
-    "active": false,
+    "enabled": false,
     "priority": 1,
     "config": {
       "generate": {
@@ -52,7 +53,7 @@
         }
       },
       "evaluate": {
-        "active": false,
+        "enabled": false,
         "stt_provider": "speaktor",
         "language": "en-US",
         "poll_interval_seconds": 3,

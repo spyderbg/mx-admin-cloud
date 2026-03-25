@@ -59,7 +59,7 @@ class TranslatorFactory:
         if builder is None:
             raise ValueError(
                 f"Unsupported translator service name: '{cfg.name}' "
-                f"(type='{cfg.type}', file='{cfg.config_path}')"
+                f"(category='{cfg.category}', file='{cfg.config_path}')"
             )
         return builder(cfg, base_dir)
 
@@ -74,7 +74,7 @@ def build_translators(
     base_dir: Path,
 ) -> list[TextTranslate]:
     """Build only translator instances that are marked active."""
-    return [build_translator(cfg, base_dir) for cfg in configs if cfg.active]
+    return [build_translator(cfg, base_dir) for cfg in configs if cfg.enabled]
 
 
 async def translate_with_all_active(

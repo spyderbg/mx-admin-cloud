@@ -1,8 +1,9 @@
 {
   "service": {
-    "type": "generator",
+    "version": "1.0",
+    "category": "generator",
     "name": "openai",
-    "active": false,
+    "enabled": false,
     "priority": 1,
     "config": {
       "generate": {
@@ -31,7 +32,7 @@
         }
       },
       "evaluate": {
-        "active": false,
+        "enabled": false,
         "stt_provider": "openai",
         "model": "whisper-1",
         "prompt": "",

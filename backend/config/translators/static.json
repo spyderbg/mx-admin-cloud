@@ -1,8 +1,9 @@
 {
   "service": {
-    "type": "translator",
+    "version": "1.0",
+    "category": "translator",
     "name": "static",
-    "active": true,
+    "enabled": true,
     "priority": 1,
     "config": {
       "input_language": "en",

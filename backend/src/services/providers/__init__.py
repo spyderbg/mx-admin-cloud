@@ -60,8 +60,8 @@ class ProviderFactory:
     def create(cls, cfg: ProviderConfig, base_dir: Path) -> TTSProvider:
         cfg.generate = cls._parse_config_map(cfg.generate, "generate", cfg.config_path)
         cfg.evaluate = cls._parse_config_map(cfg.evaluate, "evaluate", cfg.config_path)
-        cfg.generate["active"] = cls._boolish(cfg.generate.get("active", False))
-        cfg.evaluate["active"] = cls._boolish(cfg.evaluate.get("active", True))
+        cfg.generate["enabled"] = cls._boolish(cfg.generate.get("enabled", False))
+        cfg.evaluate["enabled"] = cls._boolish(cfg.evaluate.get("enabled", True))
 
         key = cfg.name.strip().lower()
         builder = cls._builders.get(key)

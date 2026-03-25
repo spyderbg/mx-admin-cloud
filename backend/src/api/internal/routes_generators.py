@@ -62,10 +62,10 @@ async def list_generators(
     return [
         {
             "name": c.name,
-            "active": c.generate.get("active", False),
+            "enabled": c.generate.get("enabled", False),
             "config_path": str(c.config_path),
             "generate": {k: v for k, v in c.generate.items() if k != "languages"},
-            "evaluate_active": c.evaluate.get("active", False),
+            "evaluate_enabled": c.evaluate.get("enabled", False),
         }
         for c in configs
     ]

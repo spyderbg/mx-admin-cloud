@@ -25,7 +25,7 @@ mx-admin/
 
 - **Stack:** Python 3.10+, FastAPI, Uvicorn, Pydantic Settings, python-jose, bcrypt (password hashing), OpenAI (TTS/translation/icons), httpx, structlog.
 - **Layout:** `src/main.py`; `src/api/v1/` (auth, tasks, content, users); `src/api/internal/` (voice generation); `src/core/` (config, content_service, translation, TTS wrappers); `src/services/` (multi-provider TTS, translation, evaluation, logging); `src/security/` (auth, tokens).
-- **API base:** `/api/v1` -- auth, tasks, content; `/internal/voice/*` -- voice generation (dual-auth: service token or admin JWT).
+- **API base:** `/api/v1` -- auth, tasks, content; `/internal/*` -- voice generation (dual-auth: service token or admin JWT).
 - **Services:** Multi-provider TTS (OpenAI, ElevenLabs, Speaktor), priority-based translation (static CSV + OpenAI fallback), evaluation engine (STT + Levenshtein scoring), structured logging (structlog, Seq, file rotation).
 - **Service config flow:** JSON files in `backend/config/*` keep `service` metadata flat (`type`, `name`, `active`, `priority`); factories parse each service `config` payload (object or JSON string) when instantiating providers, translators, and optimizers.
 - **Docs:** See [backend/README.md](backend/README.md) for endpoints and env vars.

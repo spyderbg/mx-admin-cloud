@@ -29,7 +29,7 @@ class TextTranslate(ABC):
 
     def is_active(self) -> bool:
         """Return whether this translator should be used."""
-        return bool(self.cfg.active)
+        return bool(self.cfg.enabled)
 
     def api_key_env_name(self) -> str:
         """Return the environment variable name for the API key."""

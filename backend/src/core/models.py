@@ -17,9 +17,9 @@ class Service:
     responsible for holding the parsed, typed config data.
     """
 
-    type: str       # backend kind, e.g. "generator", "translator", "optimizer"
+    category: str   # backend kind, e.g. "generator", "translator", "optimizer"
     name: str       # implementation key, e.g. "openai", "ffmpeg"
-    active: bool    # whether the service should run
+    enabled: bool   # whether the service should run
     priority: int   # execution order (lower = earlier)
 
 
@@ -50,9 +50,9 @@ class ProviderConfig:
 
 @dataclass(slots=True)
 class TranslatorConfig:
-    type: str
+    category: str
     name: str
-    active: bool
+    enabled: bool
     priority: int
     config: dict[str, Any]
     config_path: Path
@@ -60,9 +60,9 @@ class TranslatorConfig:
 
 @dataclass(slots=True)
 class OptimizerConfig:
-    type: str
+    category: str
     name: str
-    active: bool
+    enabled: bool
     priority: int
     config: dict[str, Any]
     config_path: Path

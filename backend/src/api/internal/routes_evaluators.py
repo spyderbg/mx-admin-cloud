@@ -60,7 +60,7 @@ async def list_evaluators(
     return [
         {
             "name": c.name,
-            "active": c.evaluate.get("active", False),
+            "enabled": c.evaluate.get("enabled", False),
             "config_path": str(c.config_path),
         }
         for c in configs
