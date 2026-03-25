@@ -15,27 +15,6 @@ def register(app: typer.Typer) -> None:
 
     @app.command("word")
     def translate_word(
-            input_lang: str = typer.Argument(..., help="Input language code (e.g., 'en')"),
-            output_lang: str = typer.Argument(..., help="Output language code (e.g., 'es')"),
-            word: str = typer.Argument(..., help="Word or text to translate"),
-            url: str = typer.Option(None, "--url", help="Backend URL"),
-            token: str | None = typer.Option(None, "--token", help="Auth token"),
-    ):
-        """Translate a word or short text from one language to another."""
-
-        def _run(t: str):
-            payload = {
-                "text": word,
-                "input_lang_code": input_lang,
-                "target_lang_code": output_lang,
-            }
-            result = internal_post("/translate", token=t, json=payload)
-            print_json(result)
-
-        run_with_auth(url, token, _run)
-
-    @app.command("word")
-    def translate_word(
             input_lang: str = typer.Argument(None, help="Input language code"),
             output_lang: str = typer.Argument(None, help="Output language code"),
             word: str = typer.Argument(None, help="Word or text to translate"),
@@ -48,7 +27,7 @@ def register(app: typer.Typer) -> None:
         # --- Parse JSON if provided ---
         if data:
             if data.startswith("@"):
-                with open(data[1:], "r") as f:
+                with open(data[1:], "r", encoding="utf-8") as f:
                     payload = json.load(f)
             else:
                 payload = json.loads(data)

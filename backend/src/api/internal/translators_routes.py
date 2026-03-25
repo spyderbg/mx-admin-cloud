@@ -20,10 +20,10 @@ router = APIRouter(prefix="/internal", tags=["internal-translators"])
 
 
 class TranslateRequest(BaseModel):
-    """Request body for the translate endpoint."""
+    """Request body for the translation endpoint."""
     text: str
-    target_lang_code: str
     input_lang_code: str | None = None
+    target_lang_code: str
     category: str | None = None
 
 
