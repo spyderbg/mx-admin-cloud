@@ -6,7 +6,7 @@ import requests
 from typing import Optional, Dict
 
 # Box inner width (chars between the two vertical bars)
-_BOX_WIDTH = 80
+_BOX_WIDTH = 70
 
 # HTTP status code -> description (RFC 7231 and common extensions)
 HTTP_STATUS_DESCRIPTIONS: dict[int, str] = {

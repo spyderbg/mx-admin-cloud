@@ -1,10 +1,10 @@
 {
   "service": {
-    "version": "1.0",
     "category": "translator",
-    "name": "openai",
+    "name": "openai_translate",
     "enabled": false,
     "priority": 2,
+    "version": "1.0",
     "config": {
       "input_language": "en",
       "target_language": "es",

@@ -14,7 +14,7 @@ class StaticTTSTranslate(TextTranslate):
     @classmethod
     def register(cls) -> None:
         from . import TranslatorFactory
-        TranslatorFactory.register("static", cls)
+        TranslatorFactory.register("static_translate", cls)
 
     """Look up translations from aligned CSV files in a content directory.
 

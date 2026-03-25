@@ -1,10 +1,10 @@
 {
   "service": {
-    "version": "1.0",
     "category": "translator",
-    "name": "static",
-    "enabled": true,
+    "name": "static_translate",
+    "enabled": false,
     "priority": 1,
+    "version": "1.0",
     "config": {
       "input_language": "en",
       "target_language": "bg",

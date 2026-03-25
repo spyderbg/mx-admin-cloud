@@ -5,7 +5,7 @@ from pathlib import Path
 import json
 import typer
 
-from kiddo_cli.api.client import internal_post
+from kiddo_cli.api.client import internal_get, internal_post
 from kiddo_cli.auth_flow import run_with_auth
 from kiddo_cli.output import print_json
 

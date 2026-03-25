@@ -20,8 +20,7 @@ class OpenAITTSTranslate(TextTranslate):
     @classmethod
     def register(cls) -> None:
         """Register the OpenAI translator."""
-        TranslatorFactory.register("openai", cls)
-
+        TranslatorFactory.register("openai_translate", cls)
 
     def _render_prompt(
         self,
