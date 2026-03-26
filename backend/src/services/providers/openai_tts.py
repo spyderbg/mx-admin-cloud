@@ -6,7 +6,7 @@ import logging
 import time
 from typing import Any
 
-from ..models import GeneratedAudio, TTSRequest
+from src.core.models import GeneratedAudio, TTSRequest
 from ..logging import log_provider_request
 from .base import TTSProvider
 

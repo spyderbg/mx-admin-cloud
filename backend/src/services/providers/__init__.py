@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
-from ..models import ProviderConfig
+from src.core.models import ProviderConfig
 from .base import TTSProvider
 
 __all__ = [

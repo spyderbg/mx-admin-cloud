@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from ..models import EvaluationResult, GeneratedAudio, ProviderAggregate
+from src.core.models import EvaluationResult, GeneratedAudio, ProviderAggregate
 from .score_store import ScoreStore
 
 

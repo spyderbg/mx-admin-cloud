@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from ..models import EvaluationResult, GeneratedAudio, ProviderAggregate
+from src.core.models import EvaluationResult, GeneratedAudio, ProviderAggregate
 from .score_store import ScoreStore
 
 

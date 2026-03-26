@@ -8,8 +8,8 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
-from ..models import GeneratedAudio, ProviderConfig, TTSRequest
-from ..output_paths import build_output_stem, raw_output_dir
+from src.core.models import GeneratedAudio, ProviderConfig, TTSRequest
+from src.core.output_paths import build_output_stem, raw_output_dir
 
 logger = logging.getLogger(__name__)
 
