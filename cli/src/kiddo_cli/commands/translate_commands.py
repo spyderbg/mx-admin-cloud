@@ -15,12 +15,34 @@ def register(app: typer.Typer) -> None:
 
     @app.command("word")
     def translate_word(
-            input_lang: str = typer.Argument(None, help="Input language code"),
-            output_lang: str = typer.Argument(None, help="Output language code"),
-            word: str = typer.Argument(None, help="Word or text to translate"),
-            data: str = typer.Option(None, "--json", help="JSON input string or @file.json"),
-            url: str = typer.Option(None, "--url"),
-            token: str | None = typer.Option(None, "--token"),
+            input_lang: str = typer.Argument(
+                None,
+                help="Input language code",
+            ),
+            output_lang: str = typer.Argument(
+                None,
+                help="Output language code"
+            ),
+            word: str = typer.Argument(
+                None,
+                help="Word or text to translate"
+            ),
+            *,
+            data: str = typer.Option(
+                None,
+                "--json",
+                help="JSON input string or @file.json",
+            ),
+            url: str = typer.Option(
+                None,
+                "--url",
+                help="Backend URL",
+            ),
+            token: str | None = typer.Option(
+                None,
+                "--token",
+                help="Auth token",
+            ),
     ):
         """Translate a word or short text from one language to another."""
 
@@ -50,15 +72,40 @@ def register(app: typer.Typer) -> None:
 
         run_with_auth(url, token, _run)
 
+
+
     @app.command("file")
     def translate_file(
-            input_file: Path = typer.Argument(..., help="Path to input file (.txt, .csv, .xlsx)"),
-            input_lang: str | None = typer.Option(None, "--input-lang",
-                                                  help="Default input language code if not provided in file (e.g., 'en')"),
-            output_lang: str = typer.Option("en", "--output-lang", help="Output language code (e.g., 'es')"),
-            category: str | None = typer.Option(None, "--category", help="Optional translation category/context"),
-            url: str = typer.Option(None, "--url", help="Backend URL"),
-            token: str | None = typer.Option(None, "--token", help="Auth token"),
+            input_file: Path = typer.Argument(
+                ...,
+                help="Path to input file (.txt, .csv, .xlsx)",
+            ),
+            *,
+            input_lang: str | None = typer.Option(
+                None,
+                "--input-lang",
+                help="Default input language code if not provided in file (e.g., 'en')",
+            ),
+            output_lang: str = typer.Option(
+                "en",
+                "--output-lang",
+                help="Output language code (e.g., 'es')",
+            ),
+            category: str | None = typer.Option(
+                None,
+                "--category",
+                help="Optional translation category/context",
+            ),
+            url: str = typer.Option(
+                None,
+                "--url",
+                help="Backend URL",
+            ),
+            token: str | None = typer.Option(
+                None,
+                "--token",
+                help="Auth token",
+            ),
     ):
         """Translate words listed in a file. The backend determines the file format and parsing."""
 

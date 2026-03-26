@@ -215,7 +215,10 @@ src/
 └── services/                     # Business logic implementations (provider-specific code)
     ├── registry_builder.py       # Builds and reloads ServiceRegistry from config files
     ├── providers/                # OpenAI / ElevenLabs / Speaktor TTS providers
-    ├── translation/              # OpenAI / static translators
+    ├── translation/              # Translation service
+    │   ├── models.py             # TextTranslate abstract base class
+    │   ├── service.py            # TranslatorFactory, builders, orchestration
+    │   └── providers/            # OpenAI / static translator implementations
     ├── optimization/             # FFmpeg / pydub audio optimizers
     ├── evaluation/               # STT transcription, Levenshtein scoring, score stores
     ├── generation/               # Audio normalization, input loading, result writing
