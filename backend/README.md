@@ -56,6 +56,9 @@ tests/
 ├── text_to_speech/
 │   ├── test_text_to_speech.py  # Unit tests: _boolish, TTSProvider base, ProviderFactory, build_provider*, load_provider_configs
 │   └── test_integration.py     # Integration tests: GET /internal/generators, POST /internal/generators/{provider}/generate, POST /internal/generators/generate-word
+├── generation/
+│   ├── test_generation.py      # Unit tests: normalize_audio (no ffmpeg, success, failure, ffmpeg args)
+│   └── test_integration.py     # Integration tests: normalization pipeline, request_id construction, provider matching, generate-word
 └── test_optimization.py        # Unit tests: audio optimizers
 ```
 
