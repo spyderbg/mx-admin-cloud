@@ -17,7 +17,8 @@
       "Bash(PYTHONPATH=\"$PWD/src\" python -m pytest --ignore=tests/test_optimization.py -q)",
       "Bash(PYTHONPATH=\"$PWD/src\" python -c \"from src.main import app; print\\(''App import OK''\\)\")",
       "Bash(PYTHONPATH=\"$PWD/src\" python -m pytest tests/text_to_speech/ -v)",
-      "Bash(PYTHONPATH=\"$PWD/src\" .venv/bin/python -m pytest tests/text_to_speech/ -v)"
+      "Bash(PYTHONPATH=\"$PWD/src\" .venv/bin/python -m pytest tests/text_to_speech/ -v)",
+      "Bash(PYTHONPATH=\"$PWD/src\" python -m pytest tests/generation/ -v)"
     ]
   }
 }
