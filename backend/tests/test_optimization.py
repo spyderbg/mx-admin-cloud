@@ -9,8 +9,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.core.config_loader import load_optimizer_configs
-from src.core.models import OptimizerConfig, ProviderRunRecord
+from src.core.models import ProviderRunRecord
+from src.services.optimization.config_loader import load_optimizer_configs
+from src.services.optimization.models import OptimizerConfig
 from src.services.optimization import build_active_optimizers, build_optimizer
 from src.services.optimization.base import AudioOptimizerBase
 from src.core.output_paths import optimized_output_dir

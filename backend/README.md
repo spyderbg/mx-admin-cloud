@@ -38,6 +38,27 @@ This starts the HTTP server and the CLI Unix socket. To stop:
 ./uvicorn_stop.sh
 ```
 
+## Tests
+
+From the backend directory:
+
+```bash
+PYTHONPATH="$PWD/src" .venv/bin/python -m pytest tests/ -v
+```
+
+Test layout:
+
+```
+tests/
+├── translation/
+│   ├── test_translation.py     # Unit tests: TextTranslate base, TranslatorFactory, build_translator*, translate_with_all_active, StaticTTSTranslate
+│   └── test_integration.py     # Integration tests: GET /internal/translators, POST /internal/translate
+├── text_to_speech/
+│   ├── test_text_to_speech.py  # Unit tests: _boolish, TTSProvider base, ProviderFactory, build_provider*, load_provider_configs
+│   └── test_integration.py     # Integration tests: GET /internal/generators, POST /internal/generators/{provider}/generate, POST /internal/generators/generate-word
+└── test_optimization.py        # Unit tests: audio optimizers
+```
+
 ## Auth
 
 - **HTTP login:** `POST /api/v1/login` with `application/x-www-form-urlencoded` body `username` and `password` (default `admin` / value of `DEFAULT_ADMIN_PASSWORD`). Returns `access_token`; use as `Authorization: Bearer <token>`.
@@ -214,14 +235,17 @@ src/
 │   └── tokens.py                 # create_access_token, create_internal_token
 └── services/                     # Business logic implementations (provider-specific code)
     ├── registry_builder.py       # Builds and reloads ServiceRegistry from config files
-    ├── providers/                # OpenAI / ElevenLabs / Speaktor TTS providers
+    ├── text_to_speech/           # OpenAI / ElevenLabs / Speaktor TTS providers
+    │   └── providers/            # OpenAI / ElevenLabs / Speaktor provider implementations
     ├── translation/              # Translation service
     │   ├── models.py             # TextTranslate abstract base class
     │   ├── service.py            # TranslatorFactory, builders, orchestration
     │   └── providers/            # OpenAI / static translator implementations
     ├── optimization/             # FFmpeg / pydub audio optimizers
+    │   └── providers/            # FFmpeg / pydub optimizer implementations
     ├── evaluation/               # STT transcription, Levenshtein scoring, score stores
     ├── generation/               # Audio normalization, input loading, result writing
+    │   └── providers/            # Audio normalizer
     └── logging/                  # Structlog and Seq logging implementation
 ```
 

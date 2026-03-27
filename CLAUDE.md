@@ -82,10 +82,14 @@ docker compose -f docker/docker-compose.yml up -d --build
   - `content_service.py` — Filesystem ops for categories/images; DALL-E icon generation
 - **`services/`** — Business logic implementations (providers, translators, optimizers, evaluation)
   - `registry_builder.py` — Builds and reloads ServiceRegistry from config files
-  - `providers/` — TTS provider implementations (OpenAI, ElevenLabs, Speaktor)
+  - `text_to_speech/` — TTS provider implementations (OpenAI, ElevenLabs, Speaktor)
+  - `text_to_speech/providers/` — OpenAI, ElevenLabs, and Speaktor provider implementations
   - `translation/` — Translator implementations (OpenAI, static CSV)
+  - `translation/providers/` — OpenAI and static translator implementations
   - `optimization/` — Audio post-processing (ffmpeg, pydub)
+  - `optimization/providers/` — FFmpeg and pydub optimizer implementations
   - `evaluation/` — STT transcription and Levenshtein-based scoring
+  - `generation/providers/` — Audio normalizer
 - **`db/`** — SQLite user store (auto-creates `admin` on first run); passwords use SHA256 prehash + bcrypt
 - **`security/`** — JWT auth; HTTP login → 30 min token, CLI socket login → 30 sec token
 

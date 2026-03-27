@@ -1,15 +1,16 @@
-"""Base provider abstraction."""
+"""Base TTS provider abstraction."""
 
 from __future__ import annotations
 
 import logging
-import os
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from pathlib import Path
 from typing import Any
 
-from src.core.models import GeneratedAudio, ProviderConfig, TTSRequest
+from src.core.models import GeneratedAudio, TTSRequest
 from src.core.output_paths import build_output_stem, raw_output_dir
+from src.services.base import ServiceProvider
+from src.services.text_to_speech.models import ProviderConfig
 
 logger = logging.getLogger(__name__)
 
@@ -23,30 +24,15 @@ def _boolish(value: object) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
-class TTSProvider(ABC):
+class TTSProvider(ServiceProvider):
     """Common interface for all TTS provider implementations."""
 
     def __init__(self, cfg: ProviderConfig, base_dir: Path) -> None:
-        """Initialise the provider with its config and the project base directory."""
-        self.cfg = cfg
-        self.base_dir = base_dir
-
-    @property
-    def name(self) -> str:
-        """Human-readable provider name from the config."""
-        return self.cfg.name
+        super().__init__(cfg, base_dir)
 
     def is_active(self) -> bool:
         """Return True when the provider's generate section is marked active."""
         return _boolish(self.cfg.generate.get("enabled", False))
-
-    def api_key_env_name(self) -> str:
-        """Return the expected environment variable name for this provider's API key."""
-        return f"{self.cfg.name.upper()}_API_KEY"
-
-    def resolve_api_key(self) -> str:
-        """Read and return the provider API key from the environment."""
-        return os.getenv(self.api_key_env_name(), "")
 
     def resolve_language_generate(self, language_code: str) -> dict[str, Any]:
         """Return a merged generate dict with language-specific overrides applied.

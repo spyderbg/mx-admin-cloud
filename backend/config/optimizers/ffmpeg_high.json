@@ -1,8 +1,8 @@
 {
-  "service": {
+  "service_provider": {
     "version": "1.0",
-    "category": "optimizer",
-    "name": "ffmpeg",
+    "service": "optimizer",
+    "provider": "ffmpeg",
     "enabled": false,
     "priority": 1,
     "config": {

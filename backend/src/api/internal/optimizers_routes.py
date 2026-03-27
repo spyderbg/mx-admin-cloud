@@ -37,7 +37,7 @@ async def list_optimizers(
     _user: dict = Depends(require_internal),
 ) -> list[dict[str, Any]]:
     """Return configured optimizers with service metadata."""
-    from src.core.config_loader import load_optimizer_configs  # pylint: disable=import-outside-toplevel
+    from src.services.optimization.config_loader import load_optimizer_configs  # pylint: disable=import-outside-toplevel
     configs = load_optimizer_configs(
         base_dir=settings.BASE_DIR,
         config_dir=settings.config_path,

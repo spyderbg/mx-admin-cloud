@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.core.models import TranslatorConfig
+from src.services.translation.models import TranslatorConfig
 from src.services.translation.models import TextTranslate
 from src.services.translation.service import (
     TranslatorFactory,
@@ -46,6 +46,10 @@ class _StubTranslator(TextTranslate):
     def __init__(self, cfg: TranslatorConfig, base_dir: Path, result: str | None = "translated") -> None:
         super().__init__(cfg, base_dir)
         self._result = result
+
+    @classmethod
+    def register(cls) -> None:
+        pass
 
     async def translate_text(
         self,

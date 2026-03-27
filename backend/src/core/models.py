@@ -11,10 +11,10 @@ from typing import Any
 class Service:
     """Service identity descriptor.
 
-    Maps to the ``"service"`` block in each JSON config file.  Holds only
-    identity and scheduling metadata — no domain config.  The owning config
-    class (``ProviderConfig``, ``TranslatorConfig``, ``OptimizerConfig``) is
-    responsible for holding the parsed, typed config data.
+    Maps to the ``"service_provider"`` block in each JSON config file.  Holds
+    only identity and scheduling metadata — no domain config.  The owning config
+    class (``ProviderConfig``, ``TranslatorConfig``, ``OptimizerConfig``) lives
+    in the respective service sub-module.
     """
 
     category: str   # backend kind, e.g. "generator", "translator", "optimizer"
@@ -39,33 +39,6 @@ class TTSRequest:
     column_index: int | None = None             # column position (multi-column inputs)
     metadata: dict[str, Any] = field(default_factory=dict)  # extra pass-through data
 
-
-@dataclass(slots=True)
-class ProviderConfig:
-    name: str
-    generate: dict[str, Any]
-    evaluate: dict[str, Any]
-    config_path: Path
-
-
-@dataclass(slots=True)
-class TranslatorConfig:
-    category: str
-    name: str
-    enabled: bool
-    priority: int
-    config: dict[str, Any]
-    config_path: Path
-
-
-@dataclass(slots=True)
-class OptimizerConfig:
-    category: str
-    name: str
-    enabled: bool
-    priority: int
-    config: dict[str, Any]
-    config_path: Path
 
 
 @dataclass(slots=True)

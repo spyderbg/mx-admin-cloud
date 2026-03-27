@@ -1,7 +1,7 @@
 {
-  "service": {
-    "category": "translator",
-    "name": "openai_translate",
+  "service_provider": {
+    "service": "translator",
+    "provider": "openai_translate",
     "enabled": false,
     "priority": 2,
     "version": "1.0",

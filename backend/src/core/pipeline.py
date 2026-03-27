@@ -16,7 +16,7 @@ from typing import Any
 from src.core.config import settings
 from src.core.input_loader import load_requests
 from src.core.logging import get_logger, log_to_all_active_loggers, ensure_requests_log
-from src.core.models import EvaluationResult, GeneratedAudio, ProviderConfig, ProviderRunRecord, RunSummary, TTSRequest
+from src.core.models import EvaluationResult, GeneratedAudio, ProviderRunRecord, RunSummary, TTSRequest
 from src.core.output_paths import optimized_output_dir
 from src.core.registry import ServiceRegistry
 from src.core.result_writer import write_run_summary
@@ -148,7 +148,7 @@ async def _process_provider_request(
     *,
     request: TTSRequest,
     provider_name: str,
-    provider_config: ProviderConfig,
+    provider_config: Any,
     output_format: str,
     semaphore: asyncio.Semaphore,
     client: Any,
@@ -253,7 +253,7 @@ async def _evaluate_via_http(
     base_url: str,
     headers: dict[str, str],
     generated_audio: GeneratedAudio,
-    provider_config: ProviderConfig,
+    provider_config: Any,
     output_dir: Path,
 ) -> EvaluationResult:
     """Call the /internal/evaluators/evaluate endpoint."""

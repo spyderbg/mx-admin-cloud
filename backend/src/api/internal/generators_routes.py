@@ -17,7 +17,7 @@ from src.api.dependencies import get_registry, require_internal
 from src.core.config import settings
 from src.core.models import TTSRequest
 from src.core.registry import ServiceRegistry
-from src.services.generation.audio_normalizer import normalize_audio
+from src.services.generation.providers.audio_normalizer import normalize_audio
 
 router = APIRouter(prefix="/internal", tags=["internal-generators"])
 
@@ -54,7 +54,7 @@ async def list_generators(
     _user: dict = Depends(require_internal),
 ) -> list[dict[str, Any]]:
     """Return configured generators with activation states."""
-    from src.core.config_loader import load_provider_configs  # pylint: disable=import-outside-toplevel
+    from src.services.text_to_speech.config_loader import load_provider_configs  # pylint: disable=import-outside-toplevel
     configs = load_provider_configs(
         base_dir=settings.BASE_DIR,
         config_dir=settings.config_path,

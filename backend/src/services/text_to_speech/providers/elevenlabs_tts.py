@@ -7,8 +7,8 @@ import time
 from typing import Any
 
 from src.core.models import GeneratedAudio, TTSRequest
-from ..logging import log_provider_request
-from .base import TTSProvider
+from ...logging import log_provider_request
+from ..base import TTSProvider
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ class ElevenLabsTTSProvider(TTSProvider):
     @classmethod
     def register(cls) -> None:
         """Register this provider under the key ``"elevenlabs"`` in the ProviderFactory."""
-        from . import ProviderFactory
+        from .. import ProviderFactory
         ProviderFactory.register("elevenlabs", cls)
 
     async def generate(self, request: TTSRequest, output_format: str, client: Any) -> GeneratedAudio:

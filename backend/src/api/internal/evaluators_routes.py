@@ -14,7 +14,8 @@ from pydantic import BaseModel  # pylint: disable=import-error
 
 from src.api.dependencies import get_registry, require_internal
 from src.core.config import settings
-from src.core.models import GeneratedAudio, ProviderConfig
+from src.core.models import GeneratedAudio
+from src.services.text_to_speech.models import ProviderConfig
 from src.core.output_paths import scores_dir
 from src.core.registry import ServiceRegistry
 from src.services.evaluation import EvaluationEngine, JsonScoreStore, MultiScoreStore, SQLiteScoreStore
@@ -52,7 +53,7 @@ async def list_evaluators(
     _user: dict = Depends(require_internal),
 ) -> list[dict[str, Any]]:
     """Return configured evaluators (from generators/providers) with activation states."""
-    from src.core.config_loader import load_provider_configs  # pylint: disable=import-outside-toplevel
+    from src.services.text_to_speech.config_loader import load_provider_configs  # pylint: disable=import-outside-toplevel
     configs = load_provider_configs(
         base_dir=settings.BASE_DIR,
         config_dir=settings.config_path,

@@ -7,15 +7,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.core.config_loader import (
-    load_optimizer_configs,
-    load_provider_configs,
-    load_translator_configs,
-)
 from src.core.registry import ServiceRegistry
 from src.services.optimization import build_active_optimizers
-from src.services.providers import build_provider
+from src.services.optimization.config_loader import load_optimizer_configs
+from src.services.text_to_speech import build_provider
+from src.services.text_to_speech.config_loader import load_provider_configs
 from src.services.translation import build_translators
+from src.services.translation.config_loader import load_translator_configs
 
 
 async def build_registry(

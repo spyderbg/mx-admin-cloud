@@ -1,16 +1,28 @@
-"""Translation service models and base classes."""
+"""Translation service configuration dataclass and base class."""
 
 from __future__ import annotations
 
-import os
-from abc import ABC, abstractmethod
+from abc import abstractmethod
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from src.core.languages import LANG_MAP
-from src.core.models import TranslatorConfig
+from src.services.base import ServiceProvider
 
 
-class TextTranslate(ABC):
+@dataclass(slots=True)
+class TranslatorConfig:
+    category: str
+    name: str
+    enabled: bool
+    priority: int
+    config: dict[str, Any]
+    config_path: Path
+    version: str = field(default="1.0")
+
+
+class TextTranslate(ServiceProvider):
     """Common interface for all translator implementations."""
 
     def __init__(
@@ -18,26 +30,7 @@ class TextTranslate(ABC):
         cfg: TranslatorConfig,
         base_dir: Path,
     ) -> None:
-        self.cfg = cfg
-        self.config = cfg.config
-        self.base_dir = base_dir
-
-    @property
-    def name(self) -> str:
-        """Return the name of the translator."""
-        return self.cfg.name
-
-    def is_active(self) -> bool:
-        """Return whether this translator should be used."""
-        return bool(self.cfg.enabled)
-
-    def api_key_env_name(self) -> str:
-        """Return the environment variable name for the API key."""
-        return f"{self.cfg.name.upper()}_API_KEY"
-
-    def resolve_api_key(self) -> str:
-        """Resolve the API key from the environment variables."""
-        return os.getenv(self.api_key_env_name(), "")
+        super().__init__(cfg, base_dir)
 
     @staticmethod
     def language_name(lang_code: str) -> str:

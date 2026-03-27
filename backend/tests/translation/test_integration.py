@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.api.dependencies import get_registry, require_internal
-from src.core.models import TranslatorConfig
+from src.services.translation.models import TranslatorConfig
 from src.core.registry import ServiceRegistry
 from src.main import app
 from src.security.tokens import create_access_token

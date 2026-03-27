@@ -6,8 +6,8 @@ import json
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
-from src.core.models import OptimizerConfig
 from src.services.optimization.base import AudioOptimizerBase
+from src.services.optimization.models import OptimizerConfig
 
 __all__ = [
     "AudioOptimizerBase",
@@ -77,5 +77,5 @@ def build_active_optimizers(
 
 
 # Trigger self-registration of all implementations
-from src.services.optimization.ffmpeg_optimizer import FfmpegAudioOptimizer as _Ffmpeg
-from src.services.optimization.pydub_optimizer import PydubAudioOptimizer as _Pydub
+from src.services.optimization.providers.ffmpeg_optimizer import FfmpegAudioOptimizer as _Ffmpeg
+from src.services.optimization.providers.pydub_optimizer import PydubAudioOptimizer as _Pydub

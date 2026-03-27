@@ -1,8 +1,8 @@
 {
-  "service": {
+  "service_provider": {
     "version": "1.0",
-    "category": "optimizer",
-    "name": "pydub",
+    "service": "optimizer",
+    "provider": "pydub",
     "enabled": false,
     "priority": 2,
     "config": {

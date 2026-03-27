@@ -16,7 +16,8 @@ from pathlib import Path
 from typing import Any
 
 from src.core.languages import to_bcp47
-from src.core.models import EvaluationResult, GeneratedAudio, ProviderConfig
+from src.core.models import EvaluationResult, GeneratedAudio
+from src.services.text_to_speech.models import ProviderConfig
 from src.core.logging import log_provider_request
 
 

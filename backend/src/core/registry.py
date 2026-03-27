@@ -7,25 +7,24 @@ during FastAPI lifespan and injected via ``Depends(get_registry)``.
 from __future__ import annotations
 
 import asyncio
-
-from src.core.models import ProviderConfig
+from typing import Any
 
 
 class ServiceRegistry:
     """Owns pre-built service instances; eliminates per-request config parsing."""
 
     def __init__(self) -> None:
-        self.providers: list[tuple] = []
-        self.translators: list = []
-        self.optimizers: list = []
+        self.providers: list[tuple[Any, Any]] = []
+        self.translators: list[Any] = []
+        self.optimizers: list[Any] = []
         self._lock: asyncio.Lock = asyncio.Lock()
 
-    def provider_configs(self) -> list[ProviderConfig]:
-        """Return only the ProviderConfig objects (without provider instances)."""
+    def provider_configs(self) -> list[Any]:
+        """Return only the config objects (without provider instances)."""
         return [cfg for _, cfg in self.providers]
 
-    def provider_names_and_configs(self) -> list[tuple[str, ProviderConfig]]:
-        """Return (provider_name, ProviderConfig) for each active provider."""
+    def provider_names_and_configs(self) -> list[tuple[str, Any]]:
+        """Return (provider_name, config) for each active provider."""
         return [(provider.name, cfg) for provider, cfg in self.providers]
 
     def optimizer_names(self) -> list[str]:

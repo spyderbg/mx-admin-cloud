@@ -6,8 +6,8 @@ import json
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
-from src.core.models import ProviderConfig
-from .base import TTSProvider
+from src.services.text_to_speech.base import TTSProvider
+from src.services.text_to_speech.models import ProviderConfig
 
 __all__ = [
     "TTSProvider",
@@ -88,6 +88,6 @@ def build_active_providers(
 
 
 # Trigger self-registration of all implementations
-from .openai_tts import OpenAITTSProvider as _OpenAI  # noqa: E402, F401
-from .elevenlabs_tts import ElevenLabsTTSProvider as _ElevenLabs  # noqa: E402, F401
-from .speaktor_tts import SpeaktorTTSProvider as _Speaktor  # noqa: E402, F401
+from src.services.text_to_speech.providers.openai_tts import OpenAITTSProvider as _OpenAI  # noqa: E402, F401
+from src.services.text_to_speech.providers.elevenlabs_tts import ElevenLabsTTSProvider as _ElevenLabs  # noqa: E402, F401
+from src.services.text_to_speech.providers.speaktor_tts import SpeaktorTTSProvider as _Speaktor  # noqa: E402, F401

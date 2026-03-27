@@ -5,7 +5,19 @@
       "Bash(source .venv/bin/activate)",
       "Bash(PYTHONPATH=\"$PWD\" python -c \"from src.services.translation import TextTranslate, TranslatorFactory, build_translator, build_translators, translate_with_all_active; print\\(''imports OK''\\)\")",
       "Bash(PYTHONPATH=\"$PWD\" python -m pytest tests/translation/ -v)",
-      "Bash(pip install:*)"
+      "Bash(pip install:*)",
+      "Bash(find /home/spyder/_Proj/Python/mx-admin/backend/config/translators/ -type f -name *.json)",
+      "Bash(find /home/spyder/_Proj/Python/mx-admin/backend/config/generators/ -type f -name *.json)",
+      "Bash(find /home/spyder/_Proj/Python/mx-admin/backend/config/optimizers/ -type f -name *.json)",
+      "Bash(PYTHONPATH=\"$PWD/src\" python -c \":*)",
+      "Bash(PYTHONPATH=\"$PWD/src\" python -m pytest tests/translation/ -q)",
+      "Bash(PYTHONPATH=\"$PWD/src\" python -m pytest tests/translation/test_translation.py::TestTextTranslate::test_is_active_false -q)",
+      "Bash(PYTHONPATH=\"$PWD/src\" python -m pytest tests/test_optimization.py -q)",
+      "Bash(PYTHONPATH=\"$PWD/src\" python -m pytest tests/test_optimization.py::TestBuildOptimizer::test_ffmpeg_type -q)",
+      "Bash(PYTHONPATH=\"$PWD/src\" python -m pytest --ignore=tests/test_optimization.py -q)",
+      "Bash(PYTHONPATH=\"$PWD/src\" python -c \"from src.main import app; print\\(''App import OK''\\)\")",
+      "Bash(PYTHONPATH=\"$PWD/src\" python -m pytest tests/text_to_speech/ -v)",
+      "Bash(PYTHONPATH=\"$PWD/src\" .venv/bin/python -m pytest tests/text_to_speech/ -v)"
     ]
   }
 }
