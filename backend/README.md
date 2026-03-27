@@ -272,7 +272,7 @@ Config fields:
 |--------------------------|--------|------------------------------------------------------------|
 | `config`                 | object | Translator-specific settings.                              |
 | `config.input_language`  | string | Default source language when request/CLI value is missing. |
-| `config.target_language` | string | Default target language when request/CLI value is missing. |
+| `config.output_language` | string | Default output language when request/CLI value is missing. |
 
 Example (`config/translators/openai_en_fr.json`):
 
@@ -286,7 +286,7 @@ Example (`config/translators/openai_en_fr.json`):
   },
   "config": {
     "input_language": "en",
-    "target_language": "fr",
+    "output_language": "fr",
     "model": "gpt-4o",
     "prompt": "You are a professional translator...",
     "temperature": 0
@@ -296,7 +296,7 @@ Example (`config/translators/openai_en_fr.json`):
 
 `service.name` selects the implementation class, and every active translator is executed in sequence.
 If CLI/API translation language parameters are not provided, each translator uses
-`config.input_language` and `config.target_language` as defaults.
+`config.input_language` and `config.output_language` as defaults.
 
 For `service.name: "static"`, `config.content_dir` is optional. When it is missing or points to a
 non-existing directory, the static translator automatically falls back to `CONTENT_DIR`

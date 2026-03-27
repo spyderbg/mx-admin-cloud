@@ -31,7 +31,7 @@ class OpenAITTSTranslate(TextTranslate):
         raw: str = str(self.config.get("prompt", ""))
 
         rendered = raw.replace("{{ input_language }}", self.language_name(input_lang_code))
-        rendered = rendered.replace("{{ target_language }}", self.language_name(target_lang_code))
+        rendered = rendered.replace("{{ output_language }}", self.language_name(target_lang_code))
 
         if category:
             rendered = rendered.replace("{{ category }}", category)

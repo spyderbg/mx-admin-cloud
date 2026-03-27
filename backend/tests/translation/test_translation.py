@@ -35,7 +35,7 @@ def _make_config(
         category=category,
         enabled=enabled,
         priority=priority,
-        config=config if config is not None else {"input_language": "en", "target_language": "fr"},
+        config=config if config is not None else {"input_language": "en", "output_language": "fr"},
         config_path=config_path or Path("test.json"),
     )
 
@@ -94,21 +94,21 @@ class TestTextTranslate:
         cfg = _make_config(config={"input_language": "en"})
         assert _StubTranslator(cfg, tmp_path).default_input_language() == "en"
 
-    def test_default_target_language(self, tmp_path: Path) -> None:
-        cfg = _make_config(config={"target_language": "fr"})
-        assert _StubTranslator(cfg, tmp_path).default_target_language() == "fr"
+    def test_default_output_language(self, tmp_path: Path) -> None:
+        cfg = _make_config(config={"output_language": "fr"})
+        assert _StubTranslator(cfg, tmp_path).default_output_language() == "fr"
 
     def test_default_languages_none_when_missing(self, tmp_path: Path) -> None:
         cfg = _make_config(config={})
         t = _StubTranslator(cfg, tmp_path)
         assert t.default_input_language() is None
-        assert t.default_target_language() is None
+        assert t.default_output_language() is None
 
     def test_default_language_empty_string_returns_none(self, tmp_path: Path) -> None:
-        cfg = _make_config(config={"input_language": "  ", "target_language": ""})
+        cfg = _make_config(config={"input_language": "  ", "output_language": ""})
         t = _StubTranslator(cfg, tmp_path)
         assert t.default_input_language() is None
-        assert t.default_target_language() is None
+        assert t.default_output_language() is None
 
 
 # ---------------------------------------------------------------------------
@@ -205,14 +205,14 @@ class TestTranslateWithAllActive:
 
     @pytest.mark.asyncio
     async def test_returns_translation_from_single_translator(self, tmp_path: Path) -> None:
-        cfg = _make_config(config={"input_language": "en", "target_language": "fr"})
+        cfg = _make_config(config={"input_language": "en", "output_language": "fr"})
         t = _StubTranslator(cfg, tmp_path, result="bonjour")
         result = await translate_with_all_active([t], "hello", "en", "fr")
         assert result == "bonjour"
 
     @pytest.mark.asyncio
     async def test_chains_multiple_translators(self, tmp_path: Path) -> None:
-        cfg = _make_config(config={"input_language": "en", "target_language": "fr"})
+        cfg = _make_config(config={"input_language": "en", "output_language": "fr"})
         t1 = _StubTranslator(cfg, tmp_path, result="intermediate")
         t2 = _StubTranslator(cfg, tmp_path, result="final")
         result = await translate_with_all_active([t1, t2], "hello", "en", "fr")
@@ -220,7 +220,7 @@ class TestTranslateWithAllActive:
 
     @pytest.mark.asyncio
     async def test_skips_translator_returning_none(self, tmp_path: Path) -> None:
-        cfg = _make_config(config={"input_language": "en", "target_language": "fr"})
+        cfg = _make_config(config={"input_language": "en", "output_language": "fr"})
         t_none = _StubTranslator(cfg, tmp_path, result=None)
         t_good = _StubTranslator(cfg, tmp_path, result="bonjour")
         result = await translate_with_all_active([t_none, t_good], "hello", "en", "fr")
@@ -228,7 +228,7 @@ class TestTranslateWithAllActive:
 
     @pytest.mark.asyncio
     async def test_continues_after_exception(self, tmp_path: Path) -> None:
-        cfg = _make_config(config={"input_language": "en", "target_language": "fr"})
+        cfg = _make_config(config={"input_language": "en", "output_language": "fr"})
 
         bad = _StubTranslator(cfg, tmp_path)
         bad.translate_text = AsyncMock(side_effect=RuntimeError("boom"))  # type: ignore[method-assign]
@@ -247,7 +247,7 @@ class TestTranslateWithAllActive:
 
     @pytest.mark.asyncio
     async def test_uses_translator_default_languages(self, tmp_path: Path) -> None:
-        cfg = _make_config(config={"input_language": "en", "target_language": "es"})
+        cfg = _make_config(config={"input_language": "en", "output_language": "es"})
         t = _StubTranslator(cfg, tmp_path, result="hola")
         # No explicit lang codes → falls back to translator defaults
         result = await translate_with_all_active([t], "hello")
@@ -255,7 +255,7 @@ class TestTranslateWithAllActive:
 
     @pytest.mark.asyncio
     async def test_all_translators_return_none_returns_original(self, tmp_path: Path) -> None:
-        cfg = _make_config(config={"input_language": "en", "target_language": "fr"})
+        cfg = _make_config(config={"input_language": "en", "output_language": "fr"})
         translators = [_StubTranslator(cfg, tmp_path, result=None) for _ in range(3)]
         result = await translate_with_all_active(translators, "hello", "en", "fr")
         assert result == "hello"

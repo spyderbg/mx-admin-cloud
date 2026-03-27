@@ -80,7 +80,7 @@ async def translate_with_all_active(
     current_text = text
     for translator in translators:
         resolved_input = input_lang_code or translator.default_input_language()
-        resolved_target = target_lang_code or translator.default_target_language()
+        resolved_target = target_lang_code or translator.default_output_language()
         if not resolved_input or not resolved_target:
             continue
         try:
@@ -92,6 +92,6 @@ async def translate_with_all_active(
             )
             if result is not None:
                 current_text = result
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             continue
     return current_text

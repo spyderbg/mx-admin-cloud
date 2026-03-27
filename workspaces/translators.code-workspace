@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "../backend/config/translators"
+		},
+		{
+			"path": "../backend/src/services/translation"
+		},
+		{
+			"path": "../backend/tests/translation"
+		}
+	],
+	"settings": {}
+}

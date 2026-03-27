@@ -51,9 +51,9 @@ class TextTranslate(ABC):
             return None
         return str(value).strip() or None
 
-    def default_target_language(self) -> str | None:
-        """Return the default target language."""
-        value = self.config.get("target_language")
+    def default_output_language(self) -> str | None:
+        """Return the default output language."""
+        value = self.config.get("output_language")
         if value is None:
             return None
         return str(value).strip() or None

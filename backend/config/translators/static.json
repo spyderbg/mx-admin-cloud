@@ -7,7 +7,7 @@
     "version": "1.0",
     "config": {
       "input_language": "en",
-      "target_language": "bg",
+      "output_language": "bg",
       "content_dir": "../content"
     }
   }

@@ -50,7 +50,7 @@ def _make_mock_translator(result: str | None = "translated") -> object:
     """Return a mock translator that returns *result* from translate_text."""
     mock = AsyncMock()
     mock.default_input_language.return_value = "en"
-    mock.default_target_language.return_value = "fr"
+    mock.default_output_language.return_value = "fr"
     mock.translate_text = AsyncMock(return_value=result)
     return mock
 
