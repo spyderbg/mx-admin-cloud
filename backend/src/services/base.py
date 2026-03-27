@@ -38,7 +38,7 @@ class ServiceProvider(Service):
 
     def __init__(self, cfg: Any, base_dir: Path) -> None:
         self.cfg = cfg
-        self.config: dict[str, Any] = cfg.config
+        self.config: dict[str, Any] = getattr(cfg, "config", {})
         self.base_dir = base_dir
 
     @property
