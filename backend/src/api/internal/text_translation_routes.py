@@ -57,7 +57,7 @@ async def list_translators(
     return [
         {
             "name": c.name,
-            "category": c.category,
+            "service_type": c.service_type,
             "enabled": c.enabled,
             "priority": c.priority,
             "config_path": str(c.config_path),
@@ -82,10 +82,10 @@ async def translate_text(
 ) -> TranslateResponse:
     """Translate text via the registry's active translators."""
     from src.services.text_translation import translate_with_all_active  # pylint: disable=import-outside-toplevel
-    if not registry.translators:
+    if not registry.get("translators"):
         raise HTTPException(status_code=503, detail="No active translators are configured.")
     result = await translate_with_all_active(
-        registry.translators,
+        registry.get("translators"),
         text=body.text,
         input_lang_code=body.input_lang_code,
         target_lang_code=body.target_lang_code,
@@ -117,7 +117,7 @@ async def translate_file(
     import uuid
     import os
 
-    if not registry.translators:
+    if not registry.get("translators"):
         raise HTTPException(status_code=503, detail="No active translators are configured.")
 
     # Temporarily save the file to parse it
@@ -136,7 +136,7 @@ async def translate_file(
 
         for req in requests:
             translated = await translate_with_all_active(
-                registry.translators,
+                registry.get("translators"),
                 text=req.text,
                 input_lang_code=req.language_code,
                 target_lang_code=target_lang_code,

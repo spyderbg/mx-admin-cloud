@@ -18,33 +18,53 @@ from src.services.optimization.models import OptimizerConfig
 
 
 # ---------------------------------------------------------------------------
-# Fixtures
+# Fixtures / helpers
 # ---------------------------------------------------------------------------
 
 @pytest.fixture()
 def config_dir(tmp_path: Path) -> Path:
-    """Return a temp dir usable as config_dir (parent of optimizers/)."""
+    """Return a temp dir whose ``optimizers/`` subdirectory is pre-created."""
     (tmp_path / "optimizers").mkdir(parents=True, exist_ok=True)
     return tmp_path
 
 
-def _write_optimizer_json(config_root: Path, name: str, payload: object) -> Path:
-    path = config_root / "optimizers" / f"{name}.json"
+def _write_optimizer_json(
+    config_root: Path,
+    filename: str,
+    provider: str,
+    *,
+    enabled: bool = True,
+    priority: int = 1,
+    config: dict | None = None,
+) -> Path:
+    """Write a correctly-formatted optimizer JSON file."""
+    path = config_root / "optimizers" / f"{filename}.json"
+    payload = {
+        "service_provider": {
+            "service": "optimizer",
+            "provider": provider,
+            "enabled": enabled,
+            "priority": priority,
+            "config": config or {},
+        }
+    }
     path.write_text(json.dumps(payload), encoding="utf-8")
     return path
 
 
 def _make_config(
-    name: str = "test_opt",
-    opt_type: str = "ffmpeg",
-    active: bool = True,
-    **params: object,
+    name: str = "ffmpeg",
+    service_type: str = "optimizer",
+    enabled: bool = True,
+    priority: int = 1,
+    **config_overrides: object,
 ) -> OptimizerConfig:
     return OptimizerConfig(
+        service_type=service_type,
         name=name,
-        type=opt_type,
-        active=active,
-        params={"sample_rate": 22050, "mono": True, "vbr_quality": 9, **params},
+        enabled=enabled,
+        priority=priority,
+        config={"sample_rate": 22050, "mono": True, "vbr_quality": 9, **config_overrides},
         config_path=Path("test.json"),
     )
 
@@ -54,54 +74,61 @@ def _make_config(
 # ---------------------------------------------------------------------------
 
 class TestLoadOptimizerConfigs:
-    def test_missing_file_returns_empty(self, tmp_path: Path) -> None:
+    def test_missing_directory_returns_empty(self, tmp_path: Path) -> None:
         assert load_optimizer_configs(base_dir=tmp_path, config_dir=tmp_path) == []
 
-    def test_parses_valid_list(self, config_dir: Path) -> None:
-        _write_optimizer_json(config_dir, "fast", {"type": "ffmpeg", "active": True, "params": {"sample_rate": 16000}})
-        _write_optimizer_json(config_dir, "hq", {"type": "pydub", "active": False, "params": {"vbr_quality": 2}})
+    def test_parses_valid_files(self, config_dir: Path) -> None:
+        _write_optimizer_json(config_dir, "fast", "ffmpeg", enabled=True, priority=1,
+                              config={"sample_rate": 16000})
+        _write_optimizer_json(config_dir, "hq", "pydub", enabled=False, priority=2,
+                              config={"vbr_quality": 2})
         configs = load_optimizer_configs(base_dir=config_dir, config_dir=config_dir)
         assert len(configs) == 2
-        assert configs[0].name == "fast"
-        assert configs[0].type == "ffmpeg"
-        assert configs[0].active is True
-        assert configs[0].params["sample_rate"] == 16000
-        assert configs[0].params["mono"] is True  # default merged
-        assert configs[1].name == "hq"
-        assert configs[1].active is False
 
-    def test_duplicate_name_raises(self, config_dir: Path) -> None:
-        _write_optimizer_json(config_dir, "dup", {"type": "ffmpeg", "active": True})
-        # Overwrite same filename to verify loader keeps one unique config name.
-        _write_optimizer_json(config_dir, "dup", {"type": "pydub", "active": False})
+        fast = next(c for c in configs if c.name == "ffmpeg")
+        assert fast.service_type == "optimizer"
+        assert fast.enabled is True
+        assert fast.config["sample_rate"] == 16000
+        assert fast.config["mono"] is True       # default merged
+
+        hq = next(c for c in configs if c.name == "pydub")
+        assert hq.enabled is False
+        assert hq.config["vbr_quality"] == 2
+
+    def test_sorted_by_priority(self, config_dir: Path) -> None:
+        _write_optimizer_json(config_dir, "b", "pydub", priority=2)
+        _write_optimizer_json(config_dir, "a", "ffmpeg", priority=1)
+        configs = load_optimizer_configs(base_dir=config_dir, config_dir=config_dir)
+        assert configs[0].priority == 1
+        assert configs[1].priority == 2
+
+    def test_defaults_merged_when_config_absent(self, config_dir: Path) -> None:
+        _write_optimizer_json(config_dir, "bare", "ffmpeg")
+        configs = load_optimizer_configs(base_dir=config_dir, config_dir=config_dir)
+        assert configs[0].config == {"sample_rate": 22050, "mono": True, "vbr_quality": 9}
+
+    def test_skips_entries_without_provider_or_service(self, config_dir: Path) -> None:
+        # Missing "service" field
+        bad_path = config_dir / "optimizers" / "bad.json"
+        bad_path.write_text(json.dumps({"service_provider": {"provider": ""}}))
+        _write_optimizer_json(config_dir, "ok", "ffmpeg")
         configs = load_optimizer_configs(base_dir=config_dir, config_dir=config_dir)
         assert len(configs) == 1
-        assert configs[0].name == "dup"
-        assert configs[0].type == "pydub"
+        assert configs[0].name == "ffmpeg"
 
-    def test_skips_entries_without_name_or_type(self, config_dir: Path) -> None:
-        _write_optimizer_json(config_dir, "missing_type", {"active": True})
-        _write_optimizer_json(config_dir, "ok", {"type": "ffmpeg"})
+    def test_skips_non_dict_payload(self, config_dir: Path) -> None:
+        bad_path = config_dir / "optimizers" / "list.json"
+        bad_path.write_text(json.dumps([1, 2, 3]))
         configs = load_optimizer_configs(base_dir=config_dir, config_dir=config_dir)
-        assert len(configs) == 1
-        assert configs[0].name == "ok"
+        assert configs == []
 
-    def test_defaults_merged_when_params_missing(self, config_dir: Path) -> None:
-        _write_optimizer_json(config_dir, "bare", {"type": "ffmpeg", "active": True})
+    def test_boolish_enabled_field(self, config_dir: Path) -> None:
+        _write_optimizer_json(config_dir, "yes_str", "ffmpeg", enabled="yes")  # type: ignore[arg-type]
+        _write_optimizer_json(config_dir, "no_str", "pydub", enabled="no")  # type: ignore[arg-type]
         configs = load_optimizer_configs(base_dir=config_dir, config_dir=config_dir)
-        assert configs[0].params == {"sample_rate": 22050, "mono": True, "vbr_quality": 9}
-
-    def test_non_list_payload_returns_empty(self, config_dir: Path) -> None:
-        _write_optimizer_json(config_dir, "bad", {"not": "an_optimizer"})
-        assert load_optimizer_configs(base_dir=config_dir, config_dir=config_dir) == []
-
-    def test_boolish_active_field(self, config_dir: Path) -> None:
-        _write_optimizer_json(config_dir, "yes_str", {"type": "ffmpeg", "active": "yes"})
-        _write_optimizer_json(config_dir, "no_str", {"type": "ffmpeg", "active": "no"})
-        configs = load_optimizer_configs(base_dir=config_dir, config_dir=config_dir)
-        by_name = {cfg.name: cfg for cfg in configs}
-        assert by_name["yes_str"].active is True
-        assert by_name["no_str"].active is False
+        by_name = {c.name: c for c in configs}
+        assert by_name["ffmpeg"].enabled is True
+        assert by_name["pydub"].enabled is False
 
 
 # ---------------------------------------------------------------------------
@@ -110,35 +137,39 @@ class TestLoadOptimizerConfigs:
 
 class TestBuildOptimizer:
     def test_ffmpeg_type(self, tmp_path: Path) -> None:
-        from src.services.optimization.ffmpeg_optimizer import FfmpegAudioOptimizer
-        cfg = _make_config(opt_type="ffmpeg")
+        from src.services.optimization.providers.ffmpeg_optimizer import FfmpegAudioOptimizer
+        cfg = _make_config(name="ffmpeg")
         opt = build_optimizer(cfg, tmp_path)
         assert isinstance(opt, FfmpegAudioOptimizer)
 
     def test_pydub_type(self, tmp_path: Path) -> None:
-        from src.services.optimization.pydub_optimizer import PydubAudioOptimizer
-        cfg = _make_config(opt_type="pydub")
+        from src.services.optimization.providers.pydub_optimizer import PydubAudioOptimizer
+        cfg = _make_config(name="pydub")
         opt = build_optimizer(cfg, tmp_path)
         assert isinstance(opt, PydubAudioOptimizer)
 
-    def test_unknown_type_raises(self, tmp_path: Path) -> None:
-        cfg = _make_config(opt_type="unknown")
-        with pytest.raises(ValueError, match="Unsupported optimizer type"):
+    def test_unknown_name_raises(self, tmp_path: Path) -> None:
+        cfg = _make_config(name="unknown_optimizer")
+        with pytest.raises(ValueError, match="Unsupported optimizer service name"):
             build_optimizer(cfg, tmp_path)
 
     def test_build_active_filters_inactive(self, tmp_path: Path) -> None:
         configs = [
-            _make_config(name="a", active=True),
-            _make_config(name="b", active=False),
-            _make_config(name="c", active=True),
+            _make_config(name="ffmpeg", enabled=True),
+            _make_config(name="ffmpeg", enabled=False),
+            _make_config(name="ffmpeg", enabled=True),
         ]
         active = build_active_optimizers(configs, tmp_path)
         assert len(active) == 2
-        assert [o.name for o in active] == ["a", "c"]
 
     def test_build_active_empty_when_all_inactive(self, tmp_path: Path) -> None:
-        configs = [_make_config(name="x", active=False)]
+        configs = [_make_config(name="ffmpeg", enabled=False)]
         assert build_active_optimizers(configs, tmp_path) == []
+
+    def test_optimizer_type_property(self, tmp_path: Path) -> None:
+        cfg = _make_config(name="ffmpeg", service_type="optimizer")
+        opt = build_optimizer(cfg, tmp_path)
+        assert opt.optimizer_type == "optimizer"
 
 
 # ---------------------------------------------------------------------------

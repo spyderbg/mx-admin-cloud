@@ -44,7 +44,7 @@ async def list_optimizers(
     )
     return [
         {
-            "service_type": c.category,
+            "service_type": c.service_type,
             "name": c.name,
             "enabled": c.enabled,
             "priority": c.priority,
@@ -66,7 +66,7 @@ async def optimize_single(
     registry: ServiceRegistry = Depends(get_registry),
 ) -> dict[str, Any]:
     """Optimize an audio file using the named optimizer."""
-    matched = [opt for opt in registry.optimizers if opt.name == optimizer]
+    matched = [opt for opt in registry.get("optimizers") if opt.name == optimizer]
     if not matched:
         raise HTTPException(status_code=404, detail=f"Optimizer '{optimizer}' not found or not active.")
     opt = matched[0]

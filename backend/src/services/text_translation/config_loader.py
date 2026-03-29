@@ -62,7 +62,7 @@ def load_translator_configs(
 
         configs.append(
             TranslatorConfig(
-                category=translator_type,
+                service_type=translator_type,
                 name=name,
                 enabled=active,
                 priority=priority,

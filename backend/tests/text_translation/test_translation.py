@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
-from src.services.text_translation.models import TranslatorConfig
+from src.services.text_translation.models import BaseTranslatorProviderConfig, TranslatorConfig
 from src.services.text_translation.models import TextTranslate
 from src.services.text_translation.service import (
     TranslatorFactory,
@@ -24,19 +24,21 @@ from src.services.text_translation.service import (
 
 def _make_config(
     name: str = "test_translator",
-    category: str = "translator",
+    service_type: str = "text_translation",
     enabled: bool = True,
     priority: int = 1,
     config: dict | None = None,
     config_path: Path | None = None,
+    provider_config: BaseTranslatorProviderConfig | None = None,
 ) -> TranslatorConfig:
     return TranslatorConfig(
         name=name,
-        category=category,
+        service_type=service_type,
         enabled=enabled,
         priority=priority,
         config=config if config is not None else {"input_language": "en", "output_language": "fr"},
         config_path=config_path or Path("test.json"),
+        provider_config=provider_config,
     )
 
 
@@ -94,11 +96,13 @@ class TestTextTranslate:
         t = _StubTranslator(cfg, tmp_path)
         assert t.language_name("xx") == "xx"
 
-    def test_default_input_language(self, tmp_path: Path) -> None:
+    # default_input/output_language: fallback path via raw config dict
+
+    def test_default_input_language_from_raw_config(self, tmp_path: Path) -> None:
         cfg = _make_config(config={"input_language": "en"})
         assert _StubTranslator(cfg, tmp_path).default_input_language() == "en"
 
-    def test_default_output_language(self, tmp_path: Path) -> None:
+    def test_default_output_language_from_raw_config(self, tmp_path: Path) -> None:
         cfg = _make_config(config={"output_language": "fr"})
         assert _StubTranslator(cfg, tmp_path).default_output_language() == "fr"
 
@@ -114,6 +118,26 @@ class TestTextTranslate:
         assert t.default_input_language() is None
         assert t.default_output_language() is None
 
+    # default_input/output_language: typed provider_config takes priority
+
+    def test_default_languages_from_typed_provider_config(self, tmp_path: Path) -> None:
+        pc = BaseTranslatorProviderConfig(input_language="de", output_language="es")
+        cfg = _make_config(config={}, provider_config=pc)
+        t = _StubTranslator(cfg, tmp_path)
+        assert t.default_input_language() == "de"
+        assert t.default_output_language() == "es"
+
+    def test_typed_provider_config_overrides_raw_dict(self, tmp_path: Path) -> None:
+        """Typed config takes priority over the raw dict fallback."""
+        pc = BaseTranslatorProviderConfig(input_language="ja", output_language="ko")
+        cfg = _make_config(
+            config={"input_language": "en", "output_language": "fr"},
+            provider_config=pc,
+        )
+        t = _StubTranslator(cfg, tmp_path)
+        assert t.default_input_language() == "ja"
+        assert t.default_output_language() == "ko"
+
 
 # ---------------------------------------------------------------------------
 # TranslatorFactory
@@ -121,8 +145,8 @@ class TestTextTranslate:
 
 class TestTranslatorFactory:
     def setup_method(self) -> None:
-        # Clear any previously registered builders to isolate tests
         TranslatorFactory._builders.clear()
+        TranslatorFactory._parsers.clear()
 
     def test_register_and_create(self, tmp_path: Path) -> None:
         TranslatorFactory.register("stub", _StubTranslator)
@@ -165,6 +189,35 @@ class TestTranslatorFactory:
         with pytest.raises(ValueError, match="must be a JSON object"):
             TranslatorFactory._parse_config(42, tmp_path / "c.json")
 
+    def test_create_calls_parser_and_sets_provider_config(self, tmp_path: Path) -> None:
+        """Factory calls the registered config parser and stores the result in cfg.provider_config."""
+        parsed_result = BaseTranslatorProviderConfig(input_language="de", output_language="fr")
+        parser = lambda data, path: parsed_result  # noqa: E731
+
+        TranslatorFactory.register("stub", _StubTranslator, parser)
+        cfg = _make_config(name="stub", config={"input_language": "de", "output_language": "fr"})
+        translator = TranslatorFactory.create(cfg, tmp_path)
+
+        assert isinstance(translator, _StubTranslator)
+        assert cfg.provider_config is parsed_result
+        assert translator.provider_config is parsed_result
+
+    def test_create_parser_error_raised_at_build_time(self, tmp_path: Path) -> None:
+        """Validation errors in the parser surface immediately (not at request time)."""
+        def bad_parser(data, path):
+            raise ValueError("bad temperature value")
+
+        TranslatorFactory.register("stub", _StubTranslator, bad_parser)
+        cfg = _make_config(name="stub")
+        with pytest.raises(ValueError, match="bad temperature value"):
+            TranslatorFactory.create(cfg, tmp_path)
+
+    def test_create_without_parser_leaves_provider_config_none(self, tmp_path: Path) -> None:
+        TranslatorFactory.register("stub", _StubTranslator)  # no parser
+        cfg = _make_config(name="stub")
+        TranslatorFactory.create(cfg, tmp_path)
+        assert cfg.provider_config is None
+
 
 # ---------------------------------------------------------------------------
 # build_translator / build_translators
@@ -173,6 +226,7 @@ class TestTranslatorFactory:
 class TestBuildTranslator:
     def setup_method(self) -> None:
         TranslatorFactory._builders.clear()
+        TranslatorFactory._parsers.clear()
         TranslatorFactory.register("stub", _StubTranslator)
 
     def test_build_translator_returns_instance(self, tmp_path: Path) -> None:
@@ -245,7 +299,6 @@ class TestTranslateWithAllActive:
     async def test_skips_when_no_resolved_languages(self, tmp_path: Path) -> None:
         cfg = _make_config(config={})  # no default languages
         t = _StubTranslator(cfg, tmp_path, result="should_not_appear")
-        # No explicit lang codes, no defaults → translator is skipped
         result = await translate_with_all_active([t], "hello")
         assert result == "hello"
 
@@ -253,7 +306,6 @@ class TestTranslateWithAllActive:
     async def test_uses_translator_default_languages(self, tmp_path: Path) -> None:
         cfg = _make_config(config={"input_language": "en", "output_language": "es"})
         t = _StubTranslator(cfg, tmp_path, result="hola")
-        # No explicit lang codes → falls back to translator defaults
         result = await translate_with_all_active([t], "hello")
         assert result == "hola"
 
@@ -323,7 +375,6 @@ class TestStaticTTSTranslate:
         from src.services.text_translation.providers.static_translate import StaticTTSTranslate
 
         cfg = _make_config(name="static_translate", config={"content_dir": str(tmp_path / "nonexistent")})
-        # Patch settings.content_path so the fallback also points to a nonexistent dir
         with patch("src.services.text_translation.providers.static_translate.settings") as mock_settings:
             mock_settings.content_path = tmp_path / "also_nonexistent"
             t = StaticTTSTranslate(cfg, tmp_path)

@@ -5,7 +5,6 @@ Separated from ``core.registry`` so that ``core/`` never imports ``services/``.
 Adding a new service type requires:
 1. Creating its module with a ``ServicePluginRegistry.register(...)`` call.
 2. Adding one ``import src.services.<new_module>`` line below to trigger registration.
-3. Adding the typed attribute to ``ServiceRegistry.__init__``.
 """
 
 from __future__ import annotations

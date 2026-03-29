@@ -42,7 +42,7 @@ async def lifespan(app_lifespan: FastAPI) -> AsyncIterator[None]:
     registry = await build_registry(settings)
     app_lifespan.state.registry = registry
     logging.info("registry_built providers=%s translators=%s optimizers=%s",
-                 len(registry.providers), len(registry.translators), len(registry.optimizers))
+                 len(registry.get("providers")), len(registry.get("translators")), len(registry.get("optimizers")))
 
     # Job store — in-memory with TTL eviction; swap for SQLite/Redis for multi-worker
     app_lifespan.state.job_store = JobStore(ttl_seconds=3600)
@@ -59,7 +59,7 @@ async def lifespan(app_lifespan: FastAPI) -> AsyncIterator[None]:
             async for _ in awatch(settings.config_path):
                 logging.info("config_changed reloading_registry")
                 await reload_registry(registry, settings)
-                logging.info("registry_reloaded providers=%s", len(registry.providers))
+                logging.info("registry_reloaded providers=%s", len(registry.get("providers")))
         except ImportError:
             logging.warning("watchfiles not installed — config hot-reload disabled")
 

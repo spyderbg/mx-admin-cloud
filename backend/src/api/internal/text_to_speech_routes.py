@@ -83,7 +83,7 @@ async def generate_single(
     registry: ServiceRegistry = Depends(get_registry),
 ) -> dict[str, Any]:
     """Generate audio for a single TTS request via the named provider."""
-    matched = [(p, cfg) for p, cfg in registry.providers if p.name == provider]
+    matched = [(p, cfg) for p, cfg in registry.get("providers") if p.name == provider]
     if not matched:
         raise HTTPException(status_code=404, detail=f"Provider '{provider}' not found or not active.")
     prov, _cfg = matched[0]
@@ -142,10 +142,11 @@ async def generate_word(
     if not body.word or not body.word.strip():
         raise HTTPException(status_code=400, detail="Word must be non-empty.")
 
-    if not registry.providers:
+    providers = registry.get("providers")
+    if not providers:
         raise HTTPException(status_code=503, detail="No active TTS providers configured.")
 
-    prov, _cfg = registry.providers[0]
+    prov, _cfg = providers[0]
 
     lang_code = normalize_language_code(body.lang)
     lang_full = language_name(lang_code)

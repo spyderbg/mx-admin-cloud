@@ -13,15 +13,25 @@ class TranslatorFactory:
     """Factory registry that builds translators from service metadata."""
 
     _builders: dict[str, Callable[[TranslatorConfig, Path], TextTranslate]] = {}
+    _parsers: dict[str, Callable[[dict[str, Any], Path], Any]] = {}
 
     @classmethod
     def register(
         cls,
         translator_name: str,
         builder: Callable[[TranslatorConfig, Path], TextTranslate],
+        config_parser: Callable[[dict[str, Any], Path], Any] | None = None,
     ) -> None:
-        """Register a new translator builder."""
-        cls._builders[translator_name.strip().lower()] = builder
+        """Register a translator builder and optional typed config parser.
+
+        The *config_parser* is called by :meth:`create` before the builder to validate
+        and parse the raw ``config`` dict into a typed provider config object.  Errors
+        raised there surface at application startup rather than at request time.
+        """
+        key = translator_name.strip().lower()
+        cls._builders[key] = builder
+        if config_parser is not None:
+            cls._parsers[key] = config_parser
 
     @staticmethod
     def _parse_config(raw_value: object, config_path: Path) -> dict[str, Any]:
@@ -43,14 +53,25 @@ class TranslatorFactory:
 
     @classmethod
     def create(cls, cfg: TranslatorConfig, base_dir: Path) -> TextTranslate:
-        """Create a new translator instance."""
-        cfg.config = cls._parse_config(cfg.config, cfg.config_path)
+        """Create a new translator instance.
+
+        Normalises the raw config dict, calls any registered config parser for early
+        field-level validation, then delegates to the builder.
+        """
+        raw = cls._parse_config(cfg.config, cfg.config_path)
+        cfg.config = raw
+
         key = cfg.name.strip().lower()
+
+        parser = cls._parsers.get(key)
+        if parser is not None:
+            cfg.provider_config = parser(raw, cfg.config_path)
+
         builder = cls._builders.get(key)
         if builder is None:
             raise ValueError(
                 f"Unsupported translator service name: '{cfg.name}' "
-                f"(category='{cfg.category}', file='{cfg.config_path}')"
+                f"(service_type='{cfg.service_type}', file='{cfg.config_path}')"
             )
         return builder(cfg, base_dir)
 

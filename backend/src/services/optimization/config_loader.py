@@ -66,7 +66,7 @@ def load_optimizer_configs(
 
         configs.append(
             OptimizerConfig(
-                category=service_type,
+                service_type=service_type,
                 name=name,
                 enabled=active,
                 priority=priority,

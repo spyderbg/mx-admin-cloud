@@ -10,7 +10,7 @@ from typing import Any
 @dataclass(slots=True)
 class OptimizerConfig:
     """Configuration for an audio optimizer."""
-    category: str
+    service_type: str   # "service" field in JSON  (was: category)
     name: str
     enabled: bool
     priority: int

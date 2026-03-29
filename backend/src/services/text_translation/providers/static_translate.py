@@ -3,11 +3,28 @@
 from __future__ import annotations
 
 import csv
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from src.core.config import settings
-from src.services.text_translation.models import TextTranslate
+from src.services.text_translation.models import BaseTranslatorProviderConfig, TextTranslate
 from src.services.text_translation.service import TranslatorFactory
+
+
+@dataclass(slots=True)
+class StaticTranslatorConfig(BaseTranslatorProviderConfig):
+    """Typed and validated config for the static CSV translator."""
+    content_dir: str | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], config_path: Path) -> "StaticTranslatorConfig":
+        """Parse and validate *data* from the ``service_provider.config`` JSON block."""
+        return cls(
+            input_language=str(data.get("input_language", "en")).strip(),
+            output_language=str(data.get("output_language", "bg")).strip(),
+            content_dir=str(data["content_dir"]).strip() if "content_dir" in data else None,
+        )
 
 
 class StaticTTSTranslate(TextTranslate):
@@ -26,7 +43,13 @@ class StaticTTSTranslate(TextTranslate):
 
     @classmethod
     def register(cls) -> None:
-        TranslatorFactory.register("static_translate", cls)
+        TranslatorFactory.register("static_translate", cls, StaticTranslatorConfig.from_dict)
+
+    @property
+    def static_cfg(self) -> StaticTranslatorConfig:
+        """Return the typed static provider config."""
+        assert isinstance(self.provider_config, StaticTranslatorConfig)
+        return self.provider_config
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -34,7 +57,7 @@ class StaticTTSTranslate(TextTranslate):
         self._load()
 
     def _load(self) -> None:
-        content_dir = self.config.get("content_dir")
+        content_dir = self.static_cfg.content_dir if self.provider_config is not None else self.config.get("content_dir")
         root = Path(content_dir) if content_dir else settings.content_path
         if not root.is_absolute():
             root = self.base_dir / root

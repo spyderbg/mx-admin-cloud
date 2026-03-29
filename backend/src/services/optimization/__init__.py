@@ -60,7 +60,7 @@ class OptimizerFactory:
         if builder is None:
             raise ValueError(
                 f"Unsupported optimizer service name: '{cfg.name}' "
-                f"(category='{cfg.category}', file='{cfg.config_path}')"
+                f"(service_type='{cfg.service_type}', file='{cfg.config_path}')"
             )
         return builder(cfg, base_dir)
 
