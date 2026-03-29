@@ -98,8 +98,8 @@ app.include_router(routes_common.router, prefix=settings.API_V1_STR, tags=["task
 app.include_router(routes_content.router, prefix=settings.API_V1_STR, tags=["content"])
 app.include_router(routes_users.router, prefix=settings.API_V1_STR, tags=["users"])
 app.include_router(src.api.internal.jobs_routes.router)
-app.include_router(src.api.internal.translators_routes.router)
-app.include_router(src.api.internal.generators_routes.router)
+app.include_router(src.api.internal.text_translation_routes.router)
+app.include_router(src.api.internal.text_to_speech_routes.router)
 app.include_router(src.api.internal.optimizers_routes.router)
 app.include_router(src.api.internal.evaluators_routes.router)
 

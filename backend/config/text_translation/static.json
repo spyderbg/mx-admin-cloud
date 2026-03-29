@@ -1,6 +1,6 @@
 {
   "service_provider": {
-    "service": "translator",
+    "service": "text_translation",
     "provider": "static_translate",
     "enabled": true,
     "priority": 1,

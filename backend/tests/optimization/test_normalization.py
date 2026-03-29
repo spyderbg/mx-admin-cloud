@@ -1,4 +1,4 @@
-"""Unit tests for audio normalization and generation pipeline utilities."""
+"""Unit tests for audio normalization (optimization service)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.core.models import GeneratedAudio
-from src.services.generation.providers.audio_normalizer import normalize_audio
+from src.services.optimization.normalizer import normalize_audio
 
 
 # ---------------------------------------------------------------------------

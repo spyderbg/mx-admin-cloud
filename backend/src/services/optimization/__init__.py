@@ -8,12 +8,14 @@ from typing import Any, Callable, Sequence
 
 from src.services.optimization.base import AudioOptimizerBase
 from src.services.optimization.models import OptimizerConfig
+from src.services.optimization.normalizer import normalize_audio
 
 __all__ = [
     "AudioOptimizerBase",
     "OptimizerFactory",
     "build_optimizer",
     "build_active_optimizers",
+    "normalize_audio",
 ]
 
 

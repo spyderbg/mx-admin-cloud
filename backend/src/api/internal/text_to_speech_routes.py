@@ -1,6 +1,6 @@
 """Internal generator-configuration and generation endpoints.
 
-Exposes TTS provider (generator) configs loaded from ``backend/config/generators/``.
+Exposes TTS provider (generator) configs loaded from ``backend/config/text_to_speech/``.
 All endpoints require a JWT with role ``internal`` or ``admin``.
 """
 
@@ -17,7 +17,7 @@ from src.api.dependencies import get_registry, require_internal
 from src.core.config import settings
 from src.core.models import TTSRequest
 from src.core.registry import ServiceRegistry
-from src.services.generation.providers.audio_normalizer import normalize_audio
+from src.services.optimization.normalizer import normalize_audio
 
 router = APIRouter(prefix="/internal", tags=["internal-generators"])
 

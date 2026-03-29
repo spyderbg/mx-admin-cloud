@@ -342,7 +342,7 @@ class TestBuildProvider:
 
 class TestLoadProviderConfigs:
     def _write_generator_config(self, tmp_path: Path, filename: str, payload: dict) -> Path:
-        generators_dir = tmp_path / "generators"
+        generators_dir = tmp_path / "text_to_speech"
         generators_dir.mkdir(parents=True, exist_ok=True)
         config_file = generators_dir / filename
         config_file.write_text(json.dumps(payload), encoding="utf-8")
@@ -400,7 +400,7 @@ class TestLoadProviderConfigs:
 
     def test_skips_non_dict_top_level(self, tmp_path: Path) -> None:
         from src.services.text_to_speech.config_loader import load_provider_configs
-        generators_dir = tmp_path / "generators"
+        generators_dir = tmp_path / "text_to_speech"
         generators_dir.mkdir(parents=True)
         (generators_dir / "bad.json").write_text("[1, 2, 3]", encoding="utf-8")
         result = load_provider_configs(base_dir=tmp_path, config_dir=tmp_path)

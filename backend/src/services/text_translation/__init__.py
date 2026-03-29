@@ -1,7 +1,7 @@
 """Translation subsystem: base class, factory, implementations, and helpers."""
 
-from src.services.translation.models import TextTranslate
-from src.services.translation.service import (
+from src.services.text_translation.models import TextTranslate
+from src.services.text_translation.service import (
     TranslatorFactory,
     build_translator,
     build_translators,
@@ -17,4 +17,4 @@ __all__ = [
 ]
 
 # Trigger self-registration of all implementations
-from src.services.translation import providers as _providers  # noqa: F401
+from src.services.text_translation import providers as _providers  # noqa: F401

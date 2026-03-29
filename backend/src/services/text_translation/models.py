@@ -13,6 +13,7 @@ from src.services.base import ServiceProvider
 
 @dataclass(slots=True)
 class TranslatorConfig:
+    """Configuration for a translator."""
     category: str
     name: str
     enabled: bool

@@ -3,7 +3,7 @@
 Service-specific loaders have moved to their respective sub-modules:
 
 - TTS providers  → ``src.services.text_to_speech.config_loader``
-- Translators    → ``src.services.translation.config_loader``
+- Translators    → ``src.services.text_translation.config_loader``
 - Optimizers     → ``src.services.optimization.config_loader``
 """
 

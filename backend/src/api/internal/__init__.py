@@ -2,16 +2,16 @@
 
 from src.api.internal import (
     jobs_routes,
-    translators_routes,
-    generators_routes,
+    text_translation_routes,
+    text_to_speech_routes,
     optimizers_routes,
     evaluators_routes,
 )
 
 __all__ = [
     "jobs_routes",
-    "translators_routes",
-    "generators_routes",
+    "text_translation_routes",
+    "text_to_speech_routes",
     "optimizers_routes",
     "evaluators_routes",
 ]

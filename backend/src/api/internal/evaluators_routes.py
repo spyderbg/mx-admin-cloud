@@ -1,6 +1,6 @@
 """Internal evaluator-configuration and evaluation endpoints.
 
-Exposes STT evaluator configs derived from generator/provider configs in ``backend/config/generators/``.
+Exposes STT evaluator configs derived from generator/provider configs in ``backend/config/text_to_speech/``.
 All endpoints require a JWT with role ``internal`` or ``admin``.
 """
 

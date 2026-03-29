@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.api.dependencies import get_registry, require_internal
-from src.services.translation.models import TranslatorConfig
+from src.services.text_translation.models import TranslatorConfig
 from src.core.registry import ServiceRegistry
 from src.main import app
 from src.security.tokens import create_access_token
@@ -95,7 +95,7 @@ class TestListTranslators:
     ) -> None:
         """Entries from a real config file contain the documented fields."""
         # Write a minimal translator config file
-        translators_dir = tmp_path / "translators"
+        translators_dir = tmp_path / "text_translation"
         translators_dir.mkdir(parents=True)
         config_file = translators_dir / "test_translator.json"
         config_file.write_text(

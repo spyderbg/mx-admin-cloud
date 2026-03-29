@@ -1,4 +1,4 @@
-"""Load TTS provider configs from JSON files in config/generators/."""
+"""Load TTS provider configs from JSON files in config/text_to_speech/."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def load_provider_configs(
     else:
         load_dotenv()
 
-    actual_config_dir = (config_dir or base_dir / "config") / "generators"
+    actual_config_dir = (config_dir or base_dir / "config") / "text_to_speech"
     configs: list[ProviderConfig] = []
 
     if not actual_config_dir.exists():

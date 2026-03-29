@@ -1,10 +1,10 @@
 {
   "service_provider": {
-    "version": "1.0",
-    "service": "generator",
+    "service": "text_to_speech",
     "provider": "openai",
     "enabled": false,
     "priority": 1,
+    "version": "1.0",
     "config": {
       "generate": {
         "model": "tts-1-hd",

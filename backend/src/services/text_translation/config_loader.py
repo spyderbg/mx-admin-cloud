@@ -1,4 +1,4 @@
-"""Load translator configs from JSON files in config/translators/."""
+"""Load translator configs from JSON files in config/text_translation/."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from src.services.translation.models import TranslatorConfig
+from src.services.text_translation.models import TranslatorConfig
 
 
 def _boolish(value: object) -> bool:
@@ -31,7 +31,7 @@ def load_translator_configs(
     else:
         load_dotenv()
 
-    actual_config_dir = (config_dir or base_dir / "config") / "translators"
+    actual_config_dir = (config_dir or base_dir / "config") / "text_translation"
     configs: list[TranslatorConfig] = []
 
     if not actual_config_dir.exists():

@@ -107,7 +107,7 @@ class TestListGenerators:
     def test_each_entry_has_expected_fields(
         self, tmp_path: Path, auth_headers: dict
     ) -> None:
-        generators_dir = tmp_path / "generators"
+        generators_dir = tmp_path / "text_to_speech"
         generators_dir.mkdir(parents=True)
         config_file = generators_dir / "test_openai.json"
         config_file.write_text(
@@ -212,7 +212,7 @@ class TestGenerateSingle:
         app.dependency_overrides[require_internal] = lambda: {"sub": "test", "role": "internal"}
         try:
             with patch(
-                "src.api.internal.generators_routes.normalize_audio",
+                "src.api.internal.text_to_speech_routes.normalize_audio",
                 new=AsyncMock(side_effect=lambda base_dir, audio: audio),
             ):
                 client = TestClient(app, raise_server_exceptions=True)
@@ -253,7 +253,7 @@ class TestGenerateSingle:
         app.dependency_overrides[require_internal] = lambda: {"sub": "test", "role": "internal"}
         try:
             with patch(
-                "src.api.internal.generators_routes.normalize_audio",
+                "src.api.internal.text_to_speech_routes.normalize_audio",
                 new=AsyncMock(side_effect=lambda base_dir, audio: audio),
             ):
                 client = TestClient(app, raise_server_exceptions=True)

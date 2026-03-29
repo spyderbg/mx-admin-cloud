@@ -54,7 +54,7 @@ async def run_pipeline(
         run_id = datetime.now().strftime("run_%Y%m%d_%H%M%S")
         message = (
             "No active generators were found. Set generate.enabled to true for at "
-            "least one provider in config/generators/*.json."
+            "least one provider in config/text_to_speech/*.json."
         )
         log_to_all_active_loggers(message, level=30)
         summary = RunSummary(

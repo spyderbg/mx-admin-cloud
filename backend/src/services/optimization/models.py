@@ -9,6 +9,7 @@ from typing import Any
 
 @dataclass(slots=True)
 class OptimizerConfig:
+    """Configuration for an audio optimizer."""
     category: str
     name: str
     enabled: bool

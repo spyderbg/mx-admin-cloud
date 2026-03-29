@@ -1,6 +1,6 @@
 """Internal translator-configuration endpoints.
 
-Exposes translation service configs loaded from ``backend/config/translators/``.
+Exposes translation service configs loaded from ``backend/config/text_translation/``.
 All endpoints require a JWT with role ``internal`` or ``admin``.
 """
 
@@ -49,7 +49,7 @@ async def list_translators(
     _user: dict = Depends(require_internal),
 ) -> list[dict[str, Any]]:
     """Return configured translators with service metadata."""
-    from src.services.translation.config_loader import load_translator_configs  # pylint: disable=import-outside-toplevel
+    from src.services.text_translation.config_loader import load_translator_configs  # pylint: disable=import-outside-toplevel
     configs = load_translator_configs(
         base_dir=settings.BASE_DIR,
         config_dir=settings.config_path,
@@ -81,7 +81,7 @@ async def translate_text(
     registry: ServiceRegistry = Depends(get_registry),
 ) -> TranslateResponse:
     """Translate text via the registry's active translators."""
-    from src.services.translation import translate_with_all_active  # pylint: disable=import-outside-toplevel
+    from src.services.text_translation import translate_with_all_active  # pylint: disable=import-outside-toplevel
     if not registry.translators:
         raise HTTPException(status_code=503, detail="No active translators are configured.")
     result = await translate_with_all_active(
@@ -113,7 +113,7 @@ async def translate_file(
 ) -> TranslateFileResponse:
     """Translate words in an uploaded file via the registry's active translators."""
     from src.core.input_loader import load_requests  # pylint: disable=import-outside-toplevel
-    from src.services.translation import translate_with_all_active  # pylint: disable=import-outside-toplevel
+    from src.services.text_translation import translate_with_all_active  # pylint: disable=import-outside-toplevel
     import uuid
     import os
 

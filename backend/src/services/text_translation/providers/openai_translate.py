@@ -8,8 +8,8 @@ import time
 from openai import AsyncOpenAI
 
 from src.core.logging import log_translator_request
-from src.services.translation.models import TextTranslate
-from src.services.translation.service import TranslatorFactory
+from src.services.text_translation.models import TextTranslate
+from src.services.text_translation.service import TranslatorFactory
 
 _CATEGORY_LINE_RE = re.compile(r"[^\n]*\{\{\s*category\s*\}\}[^\n]*\n?")
 

@@ -6,8 +6,8 @@ import csv
 from pathlib import Path
 
 from src.core.config import settings
-from src.services.translation.models import TextTranslate
-from src.services.translation.service import TranslatorFactory
+from src.services.text_translation.models import TextTranslate
+from src.services.text_translation.service import TranslatorFactory
 
 
 class StaticTTSTranslate(TextTranslate):

@@ -82,12 +82,11 @@ docker compose -f docker/docker-compose.yml up -d --build
   - `registry_builder.py` — Builds and reloads ServiceRegistry from config files
   - `text_to_speech/` — TTS provider implementations (OpenAI, ElevenLabs, Speaktor)
   - `text_to_speech/providers/` — OpenAI, ElevenLabs, and Speaktor provider implementations
-  - `translation/` — Translator implementations (OpenAI, static CSV)
-  - `translation/providers/` — OpenAI and static translator implementations
+  - `text_translation/` — Translator implementations (OpenAI, static CSV)
+  - `text_translation/providers/` — OpenAI and static translator implementations
   - `optimization/` — Audio post-processing (ffmpeg, pydub)
   - `optimization/providers/` — FFmpeg and pydub optimizer implementations
   - `evaluation/` — STT transcription and Levenshtein-based scoring
-  - `generation/providers/` — Audio normalizer
 - **`db/`** — SQLite user store (auto-creates `admin` on first run); passwords use SHA256 prehash + bcrypt
 - **`security/`** — JWT auth; HTTP login → 30 min token, CLI socket login → 30 sec token
 
@@ -97,8 +96,8 @@ The pipeline is driven by JSON config files in `backend/config/`:
 
 | Directory | Purpose |
 |-----------|---------|
-| `generators/` | TTS providers (OpenAI, ElevenLabs, Speaktor) — set `"active": "yes/no"` |
-| `translators/` | Translation configs (static CSV or OpenAI) per language pair |
+| `text_to_speech/` | TTS providers (OpenAI, ElevenLabs, Speaktor) — set `"active": "yes/no"` |
+| `text_translation/` | Translation configs (static CSV or OpenAI) per language pair |
 | `optimizers/` | Audio post-processing (ffmpeg/pydub) — sample rate, mono, VBR |
 | `loggers/` | Structlog + Seqlog configuration |
 

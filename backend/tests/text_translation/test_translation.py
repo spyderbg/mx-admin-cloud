@@ -8,9 +8,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.services.translation.models import TranslatorConfig
-from src.services.translation.models import TextTranslate
-from src.services.translation.service import (
+from src.services.text_translation.models import TranslatorConfig
+from src.services.text_translation.models import TextTranslate
+from src.services.text_translation.service import (
     TranslatorFactory,
     build_translator,
     build_translators,
@@ -280,7 +280,7 @@ class TestStaticTTSTranslate:
 
     @pytest.mark.asyncio
     async def test_translates_known_word(self, tmp_path: Path) -> None:
-        from src.services.translation.providers.static_translate import StaticTTSTranslate
+        from src.services.text_translation.providers.static_translate import StaticTTSTranslate
 
         content_dir = self._make_content_dir(tmp_path)
         cfg = _make_config(name="static_translate", config={"content_dir": str(content_dir)})
@@ -290,7 +290,7 @@ class TestStaticTTSTranslate:
 
     @pytest.mark.asyncio
     async def test_returns_none_for_unknown_word(self, tmp_path: Path) -> None:
-        from src.services.translation.providers.static_translate import StaticTTSTranslate
+        from src.services.text_translation.providers.static_translate import StaticTTSTranslate
 
         content_dir = self._make_content_dir(tmp_path)
         cfg = _make_config(name="static_translate", config={"content_dir": str(content_dir)})
@@ -300,7 +300,7 @@ class TestStaticTTSTranslate:
 
     @pytest.mark.asyncio
     async def test_case_insensitive_lookup(self, tmp_path: Path) -> None:
-        from src.services.translation.providers.static_translate import StaticTTSTranslate
+        from src.services.text_translation.providers.static_translate import StaticTTSTranslate
 
         content_dir = self._make_content_dir(tmp_path)
         cfg = _make_config(name="static_translate", config={"content_dir": str(content_dir)})
@@ -310,7 +310,7 @@ class TestStaticTTSTranslate:
 
     @pytest.mark.asyncio
     async def test_reverse_direction(self, tmp_path: Path) -> None:
-        from src.services.translation.providers.static_translate import StaticTTSTranslate
+        from src.services.text_translation.providers.static_translate import StaticTTSTranslate
 
         content_dir = self._make_content_dir(tmp_path)
         cfg = _make_config(name="static_translate", config={"content_dir": str(content_dir)})
@@ -320,11 +320,11 @@ class TestStaticTTSTranslate:
 
     def test_missing_content_dir_loads_empty(self, tmp_path: Path) -> None:
         from unittest.mock import patch
-        from src.services.translation.providers.static_translate import StaticTTSTranslate
+        from src.services.text_translation.providers.static_translate import StaticTTSTranslate
 
         cfg = _make_config(name="static_translate", config={"content_dir": str(tmp_path / "nonexistent")})
         # Patch settings.content_path so the fallback also points to a nonexistent dir
-        with patch("src.services.translation.providers.static_translate.settings") as mock_settings:
+        with patch("src.services.text_translation.providers.static_translate.settings") as mock_settings:
             mock_settings.content_path = tmp_path / "also_nonexistent"
             t = StaticTTSTranslate(cfg, tmp_path)
         assert t._lookup == {}

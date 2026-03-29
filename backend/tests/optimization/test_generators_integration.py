@@ -32,7 +32,7 @@ def auth_headers(internal_token: str) -> dict[str, str]:
 
 
 def _make_audio(tmp_path: Path, provider: str = "openai", success: bool = True) -> GeneratedAudio:
-    raw = tmp_path / f"hello_en.mp3"
+    raw = tmp_path / "hello_en.mp3"
     raw.write_bytes(b"audio-bytes")
     return GeneratedAudio(
         provider=provider,
@@ -99,7 +99,7 @@ class TestGenerateSingleNormalization:
         app.dependency_overrides[get_registry] = lambda: registry
         app.dependency_overrides[require_internal] = lambda: {"sub": "test", "role": "internal"}
         try:
-            with patch("src.api.internal.generators_routes.normalize_audio", new=_normalize):
+            with patch("src.api.internal.text_to_speech_routes.normalize_audio", new=_normalize):
                 client = TestClient(app, raise_server_exceptions=True)
                 resp = client.post(
                     "/internal/generators/openai/generate",
@@ -124,7 +124,7 @@ class TestGenerateSingleNormalization:
         app.dependency_overrides[get_registry] = lambda: registry
         app.dependency_overrides[require_internal] = lambda: {"sub": "test", "role": "internal"}
         try:
-            with patch("src.api.internal.generators_routes.normalize_audio", new=_normalize_fail):
+            with patch("src.api.internal.text_to_speech_routes.normalize_audio", new=_normalize_fail):
                 client = TestClient(app, raise_server_exceptions=True)
                 resp = client.post(
                     "/internal/generators/openai/generate",
@@ -147,7 +147,7 @@ class TestGenerateSingleNormalization:
         app.dependency_overrides[require_internal] = lambda: {"sub": "test", "role": "internal"}
         try:
             with patch(
-                "src.api.internal.generators_routes.normalize_audio",
+                "src.api.internal.text_to_speech_routes.normalize_audio",
                 new=AsyncMock(side_effect=lambda base_dir, a: a),
             ):
                 client = TestClient(app, raise_server_exceptions=True)
@@ -180,7 +180,7 @@ class TestGenerateSingleNormalization:
         app.dependency_overrides[get_registry] = lambda: registry
         app.dependency_overrides[require_internal] = lambda: {"sub": "test", "role": "internal"}
         try:
-            with patch("src.api.internal.generators_routes.normalize_audio", new=_capture_normalize):
+            with patch("src.api.internal.text_to_speech_routes.normalize_audio", new=_capture_normalize):
                 client = TestClient(app, raise_server_exceptions=True)
                 client.post(
                     "/internal/generators/openai/generate",
@@ -215,7 +215,7 @@ class TestGenerateSingleRequestId:
         app.dependency_overrides[require_internal] = lambda: {"sub": "test", "role": "internal"}
         try:
             with patch(
-                "src.api.internal.generators_routes.normalize_audio",
+                "src.api.internal.text_to_speech_routes.normalize_audio",
                 new=AsyncMock(side_effect=lambda base_dir, a: a),
             ):
                 client = TestClient(app, raise_server_exceptions=True)
@@ -249,7 +249,7 @@ class TestGenerateSingleRequestId:
         app.dependency_overrides[require_internal] = lambda: {"sub": "test", "role": "internal"}
         try:
             with patch(
-                "src.api.internal.generators_routes.normalize_audio",
+                "src.api.internal.text_to_speech_routes.normalize_audio",
                 new=AsyncMock(side_effect=lambda base_dir, a: a),
             ):
                 client = TestClient(app, raise_server_exceptions=True)
@@ -282,7 +282,7 @@ class TestGenerateSingleRequestId:
         app.dependency_overrides[require_internal] = lambda: {"sub": "test", "role": "internal"}
         try:
             with patch(
-                "src.api.internal.generators_routes.normalize_audio",
+                "src.api.internal.text_to_speech_routes.normalize_audio",
                 new=AsyncMock(side_effect=lambda base_dir, a: a),
             ):
                 client = TestClient(app, raise_server_exceptions=True)
@@ -334,7 +334,7 @@ class TestGenerateSingleProviderMatching:
         app.dependency_overrides[require_internal] = lambda: {"sub": "test", "role": "internal"}
         try:
             with patch(
-                "src.api.internal.generators_routes.normalize_audio",
+                "src.api.internal.text_to_speech_routes.normalize_audio",
                 new=AsyncMock(side_effect=lambda base_dir, a: a),
             ):
                 client = TestClient(app, raise_server_exceptions=True)

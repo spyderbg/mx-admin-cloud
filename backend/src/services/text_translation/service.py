@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
-from src.services.translation.models import TextTranslate, TranslatorConfig
+from src.services.text_translation.models import TextTranslate, TranslatorConfig
 
 
 class TranslatorFactory:

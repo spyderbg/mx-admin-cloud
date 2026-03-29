@@ -50,16 +50,16 @@ Test layout:
 
 ```
 tests/
-├── translation/
+├── text_translation/
 │   ├── test_translation.py     # Unit tests: TextTranslate base, TranslatorFactory, build_translator*, translate_with_all_active, StaticTTSTranslate
 │   └── test_integration.py     # Integration tests: GET /internal/translators, POST /internal/translate
 ├── text_to_speech/
-│   ├── test_text_to_speech.py  # Unit tests: _boolish, TTSProvider base, ProviderFactory, build_provider*, load_provider_configs
-│   └── test_integration.py     # Integration tests: GET /internal/generators, POST /internal/generators/{provider}/generate, POST /internal/generators/generate-word
-├── generation/
-│   ├── test_generation.py      # Unit tests: normalize_audio (no ffmpeg, success, failure, ffmpeg args)
-│   └── test_integration.py     # Integration tests: normalization pipeline, request_id construction, provider matching, generate-word
-└── test_optimization.py        # Unit tests: audio optimizers
+│   ├── test_text_to_speech.py         # Unit tests: _boolish, TTSProvider base, ProviderFactory, build_provider*, load_provider_configs
+│   └── test_integration.py            # Integration tests: GET /internal/generators, POST generate, POST generate-word
+├── optimization/
+│   ├── test_normalization.py          # Unit tests: normalize_audio (no ffmpeg, success, failure, ffmpeg args)
+│   └── test_generators_integration.py # Integration tests: normalization pipeline, request_id construction, provider matching, generate-word
+└── test_optimization.py               # Unit tests: audio optimizers (config loading, factory, output paths, orchestrator)
 ```
 
 ## Auth
@@ -152,9 +152,9 @@ Internal endpoints are under `/internal/*`. They require `Authorization: Bearer 
 
 | Method | Path                                                                                       | Description                                                              |
 |--------|--------------------------------------------------------------------------------------------|--------------------------------------------------------------------------|
-| `GET`  | [`/internal/generators`](src/api/internal/generators_routes.py#L45)                       | List all configured TTS providers with activation state and settings.    |
-| `POST` | [`/internal/generators/{provider}/generate`](src/api/internal/generators_routes.py#L74)   | Generate audio for a single TTS request via the named provider.          |
-| `POST` | [`/internal/generators/generate-word`](src/api/internal/generators_routes.py#L128)        | Generate audio for a single word using the first active provider.        |
+| `GET`  | [`/internal/generators`](src/api/internal/text_to_speech_routes.py#L45)                   | List all configured TTS providers with activation state and settings.    |
+| `POST` | [`/internal/generators/{provider}/generate`](src/api/internal/text_to_speech_routes.py#L74) | Generate audio for a single TTS request via the named provider.        |
+| `POST` | [`/internal/generators/generate-word`](src/api/internal/text_to_speech_routes.py#L128)    | Generate audio for a single word using the first active provider.        |
 
 #### Evaluators
 
@@ -174,9 +174,9 @@ Internal endpoints are under `/internal/*`. They require `Authorization: Bearer 
 
 | Method | Path                                                                                  | Description                                                              |
 |--------|---------------------------------------------------------------------------------------|--------------------------------------------------------------------------|
-| `GET`  | [`/internal/translators`](src/api/internal/translators_routes.py#L40)                | List all configured translation services with activation state.          |
-| `POST` | [`/internal/translate`](src/api/internal/translators_routes.py#L69)                  | Translate text via all active translators in priority order.             |
-| `POST` | [`/internal/translate-file`](src/api/internal/translators_routes.py#L97)             | Translate a word list file; returns per-word translations for all langs. |
+| `GET`  | [`/internal/translators`](src/api/internal/text_translation_routes.py#L40)           | List all configured translation services with activation state.          |
+| `POST` | [`/internal/translate`](src/api/internal/text_translation_routes.py#L69)             | Translate text via all active translators in priority order.             |
+| `POST` | [`/internal/translate-file`](src/api/internal/text_translation_routes.py#L97)        | Translate a word list file; returns per-word translations for all langs. |
 
 ## Architecture
 
@@ -216,10 +216,10 @@ src/
 │   ├── dependencies.py           # get_registry, get_job_store, require_internal, require_admin, require_uds
 │   ├── internal/
 │   │   ├── jobs_routes.py        # /internal/generate, /generate/{id}/status, /generate-sync
-│   │   ├── generators_routes.py  # /internal/generators, /generators/{provider}/generate, /generators/generate-word
+│   │   ├── text_to_speech_routes.py # /internal/generators, /generators/{provider}/generate, /generators/generate-word
 │   │   ├── evaluators_routes.py  # /internal/evaluators, /evaluators/evaluate
 │   │   ├── optimizers_routes.py  # /internal/optimizers, /optimizers/{optimizer}/optimize
-│   │   └── translators_routes.py # /internal/translators, /translate, /translate-file
+│   │   └── text_translation_routes.py # /internal/translators, /translate, /translate-file
 │   └── v1/
 │       ├── routes_auth.py
 │       ├── routes_common.py
@@ -246,15 +246,13 @@ src/
     ├── registry_builder.py       # Builds and reloads ServiceRegistry from config files
     ├── text_to_speech/           # OpenAI / ElevenLabs / Speaktor TTS providers
     │   └── providers/            # OpenAI / ElevenLabs / Speaktor provider implementations
-    ├── translation/              # Translation service
+    ├── text_translation/         # Translation service
     │   ├── models.py             # TextTranslate abstract base class
     │   ├── service.py            # TranslatorFactory, builders, orchestration
     │   └── providers/            # OpenAI / static translator implementations
     ├── optimization/             # FFmpeg / pydub audio optimizers
     │   └── providers/            # FFmpeg / pydub optimizer implementations
     ├── evaluation/               # STT transcription, Levenshtein scoring, score stores
-    ├── generation/               # Audio normalization, input loading, result writing
-    │   └── providers/            # Audio normalizer
     └── logging/                  # Structlog and Seq logging implementation
 ```
 
@@ -272,22 +270,22 @@ config/
 |   |-- ffmpeg_high.json
 |   |-- ffmpeg_low.json
 |   `-- pydub_optimized.json
-|-- generators/
+|-- text_to_speech/
 |   |-- openai.json
 |   |-- elevenlabs.json
 |   `-- speaktor.json
-`-- translators/
+`-- text_translation/
     |-- openai_en_es.json
     |-- openai_en_fr.json
     |-- openai_en_bg.json
     `-- static.json
 ```
 
-Set `service_provider.enabled` to `true` or `false` in each config file to enable/disable entries. For generators, `service_provider.config.generate.enabled` can optionally override generation activation per provider. The registry hot-reloads within seconds when any file in `config/` is saved.
+Set `service_provider.enabled` to `true` or `false` in each config file to enable/disable entries. For text_to_speech providers, `service_provider.config.generate.enabled` can optionally override generation activation per provider. The registry hot-reloads within seconds when any file in `config/` is saved.
 
 ### Translators
 
-Each translator is configured in its own JSON file under `config/translators/`.
+Each translator is configured in its own JSON file under `config/text_translation/`.
 Each file uses a top-level `service_provider` object containing both metadata and translator settings.
 
 `service_provider` fields:
@@ -309,7 +307,7 @@ Common `service_provider.config` fields:
 | `output_language`        | string | Default output language when request/CLI value is missing. |
 | `content_dir`            | string | Optional path used by `static_translate` provider.         |
 
-Example (`config/translators/openai_en_fr.json`):
+Example (`config/text_translation/openai_en_fr.json`):
 
 ```json
 {
