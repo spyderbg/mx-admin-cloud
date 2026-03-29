@@ -30,3 +30,12 @@ class ServiceRegistry:
     def optimizer_names(self) -> list[str]:
         """Return names of all active optimizers."""
         return [opt.name for opt in self.optimizers]
+
+    def set_service(self, attr: str, instances: list[Any]) -> None:
+        """Generic write path used by registry_builder plugin loop."""
+        if not hasattr(self, attr):
+            raise AttributeError(
+                f"ServiceRegistry has no attribute '{attr}'. "
+                f"Add it to __init__ before registering a plugin for it."
+            )
+        setattr(self, attr, instances)

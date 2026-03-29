@@ -1,0 +1,763 @@
+{
+  "info": {
+    "name": "Kiddo Admin API",
+    "description": "API collection for the Kiddo Admin content management frontend. Import into Postman and create a Mock Server from this collection to develop the frontend against realistic responses.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "1. Authentication",
+      "item": [
+        {
+          "name": "1.1 Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "username", "value": "admin", "type": "text" },
+                { "key": "password", "value": "secret", "type": "text" }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "login"]
+            },
+            "description": "Authenticate and obtain a JWT token. Store access_token in the token collection variable."
+          },
+          "response": [
+            {
+              "name": "200 - Success",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "body": "{\n  \"access_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsInJvbGUiOiJhZG1pbiIsImV4cCI6OTk5OTk5OTk5OX0.mock\",\n  \"token_type\": \"bearer\"\n}",
+              "_postman_previewlanguage": "json"
+            },
+            {
+              "name": "401 - Invalid credentials",
+              "status": "Unauthorized",
+              "code": 401,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "body": "{\n  \"detail\": \"Incorrect username or password\"\n}",
+              "_postman_previewlanguage": "json"
+            }
+          ]
+        },
+        {
+          "name": "1.2 Get Current User",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "me"]
+            },
+            "description": "Get the authenticated user's profile. Used by AppNavbar and AppSidebar."
+          },
+          "response": [
+            {
+              "name": "200 - Admin user",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "body": "{\n  \"username\": \"admin\",\n  \"role\": \"admin\"\n}",
+              "_postman_previewlanguage": "json"
+            },
+            {
+              "name": "401 - Not authenticated",
+              "status": "Unauthorized",
+              "code": 401,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "body": "{\n  \"detail\": \"Not authenticated\"\n}",
+              "_postman_previewlanguage": "json"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Categories",
+      "item": [
+        {
+          "name": "2.1 List Categories",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/content/categories?include_archived=false",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "content", "categories"],
+              "query": [
+                { "key": "include_archived", "value": "false" },
+                { "key": "archived_only", "value": "false", "disabled": true }
+              ]
+            },
+            "description": "List all categories with full details. Called on initial page load to populate sidebar and main view."
+          },
+          "response": [
+            {
+              "name": "200 - Categories list",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "body": "{\n  \"categories\": [\n    {\n      \"id\": \"nature_scenes\",\n      \"name\": \"Nature Scenes\",\n      \"description\": \"Mountains and Trees\",\n      \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\",\n      \"voices\": [\n        { \"id\": \"nature_scenes_en\", \"name\": \"Nature Scenes\", \"language\": \"en\", \"type\": \"tts\", \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\", \"audioUrl\": \"/content/nature_scenes/nature_scenes_en.mp3\" },\n        { \"id\": \"nature_scenes_es\", \"name\": \"Escenas de Naturaleza\", \"language\": \"es\", \"type\": \"tts\", \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\", \"audioUrl\": \"/content/nature_scenes/nature_scenes_es.mp3\" },\n        { \"id\": \"nature_scenes_fr\", \"name\": \"Scènes de Nature\", \"language\": \"fr\", \"type\": \"tts\", \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\", \"audioUrl\": \"/content/nature_scenes/nature_scenes_fr.mp3\" },\n        { \"id\": \"nature_scenes_bg\", \"name\": \"Природни Сцени\", \"language\": \"bg\", \"type\": \"tts\", \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\", \"audioUrl\": \"/content/nature_scenes/nature_scenes_bg.mp3\" }\n      ],\n      \"images\": [\n        {\n          \"id\": \"mountain_peak\",\n          \"name\": \"Mountain Peak\",\n          \"thumbnailUrl\": \"/content/nature_scenes/mountain_peak/01.png\",\n          \"files\": [\"/content/nature_scenes/mountain_peak/01.png\", \"/content/nature_scenes/mountain_peak/02.png\"],\n          \"voices\": [\n            { \"id\": \"mountain_peak_en\", \"name\": \"Mountain Peak\", \"language\": \"en\", \"type\": \"tts\", \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\", \"audioUrl\": \"/content/nature_scenes/mountain_peak/mountain_peak_en_01.mp3\" },\n            { \"id\": \"mountain_peak_es\", \"name\": \"Pico de Montaña\", \"language\": \"es\", \"type\": \"tts\", \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\", \"audioUrl\": \"/content/nature_scenes/mountain_peak/mountain_peak_es_01.mp3\" },\n            { \"id\": \"mountain_peak_fr\", \"name\": \"Sommet de Montagne\", \"language\": \"fr\", \"type\": \"tts\", \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\", \"audioUrl\": \"/content/nature_scenes/mountain_peak/mountain_peak_fr_01.mp3\" },\n            { \"id\": \"mountain_peak_bg\", \"name\": \"Планински Връх\", \"language\": \"bg\", \"type\": \"tts\", \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\", \"audioUrl\": \"/content/nature_scenes/mountain_peak/mountain_peak_bg_01.mp3\" }\n          ]\n        },\n        {\n          \"id\": \"river_valley\",\n          \"name\": \"River Valley\",\n          \"thumbnailUrl\": \"/content/nature_scenes/river_valley/01.png\",\n          \"files\": [\"/content/nature_scenes/river_valley/01.png\"],\n          \"voices\": [\n            { \"id\": \"river_valley_en\", \"name\": \"River Valley\", \"language\": \"en\", \"type\": \"tts\", \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\", \"audioUrl\": \"/content/nature_scenes/river_valley/river_valley_en_01.mp3\" },\n            { \"id\": \"river_valley_es\", \"name\": \"Valle del Río\", \"language\": \"es\", \"type\": \"tts\", \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\", \"audioUrl\": \"/content/nature_scenes/river_valley/river_valley_es_01.mp3\" },\n            { \"id\": \"river_valley_fr\", \"name\": \"Vallée de la Rivière\", \"language\": \"fr\", \"type\": \"tts\", \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\", \"audioUrl\": \"/content/nature_scenes/river_valley/river_valley_fr_01.mp3\" },\n            { \"id\": \"river_valley_bg\", \"name\": \"Речна Долина\", \"language\": \"bg\", \"type\": \"tts\", \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\", \"audioUrl\": \"/content/nature_scenes/river_valley/river_valley_bg_01.mp3\" }\n          ]\n        },\n        {\n          \"id\": \"dense_forest\",\n          \"name\": \"Dense Forest\",\n          \"thumbnailUrl\": \"/content/nature_scenes/dense_forest/01.png\",\n          \"files\": [\"/content/nature_scenes/dense_forest/01.png\"],\n          \"voices\": [\n            { \"id\": \"dense_forest_en\", \"name\": \"Dense Forest\", \"language\": \"en\", \"type\": \"tts\", \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\", \"audioUrl\": \"/content/nature_scenes/dense_forest/dense_forest_en_01.mp3\" },\n            { \"id\": \"dense_forest_es\", \"name\": \"Bosque Denso\", \"language\": \"es\", \"type\": \"tts\", \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\", \"audioUrl\": \"/content/nature_scenes/dense_forest/dense_forest_es_01.mp3\" },\n            { \"id\": \"dense_forest_fr\", \"name\": \"Forêt Dense\", \"language\": \"fr\", \"type\": \"tts\", \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\", \"audioUrl\": \"/content/nature_scenes/dense_forest/dense_forest_fr_01.mp3\" },\n            { \"id\": \"dense_forest_bg\", \"name\": \"Гъста Гора\", \"language\": \"bg\", \"type\": \"tts\", \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\", \"audioUrl\": \"/content/nature_scenes/dense_forest/dense_forest_bg_01.mp3\" }\n          ]\n        }\n      ]\n    },\n    {\n      \"id\": \"urban_landmarks\",\n      \"name\": \"Urban Landmarks\",\n      \"description\": \"Cities and Architecture\",\n      \"iconUrl\": \"/content/urban_landmarks/urban_landmarks.png\",\n      \"voices\": [\n        { \"id\": \"urban_landmarks_en\", \"name\": \"Urban Landmarks\", \"language\": \"en\", \"type\": \"tts\", \"iconUrl\": \"/content/urban_landmarks/urban_landmarks.png\", \"audioUrl\": \"/content/urban_landmarks/urban_landmarks_en.mp3\" },\n        { \"id\": \"urban_landmarks_es\", \"name\": \"Puntos de Interés Urbanos\", \"language\": \"es\", \"type\": \"tts\", \"iconUrl\": \"/content/urban_landmarks/urban_landmarks.png\", \"audioUrl\": \"/content/urban_landmarks/urban_landmarks_es.mp3\" },\n        { \"id\": \"urban_landmarks_fr\", \"name\": \"Sites Urbains\", \"language\": \"fr\", \"type\": \"tts\", \"iconUrl\": \"/content/urban_landmarks/urban_landmarks.png\", \"audioUrl\": \"/content/urban_landmarks/urban_landmarks_fr.mp3\" },\n        { \"id\": \"urban_landmarks_bg\", \"name\": \"Градски Забележителности\", \"language\": \"bg\", \"type\": \"tts\", \"iconUrl\": \"/content/urban_landmarks/urban_landmarks.png\", \"audioUrl\": \"/content/urban_landmarks/urban_landmarks_bg.mp3\" }\n      ],\n      \"images\": [\n        {\n          \"id\": \"steel_bridge\",\n          \"name\": \"Steel Bridge\",\n          \"thumbnailUrl\": \"/content/urban_landmarks/steel_bridge/01.png\",\n          \"files\": [\"/content/urban_landmarks/steel_bridge/01.png\"],\n          \"voices\": [\n            { \"id\": \"steel_bridge_en\", \"name\": \"Steel Bridge\", \"language\": \"en\", \"type\": \"tts\", \"iconUrl\": \"/content/urban_landmarks/urban_landmarks.png\", \"audioUrl\": \"/content/urban_landmarks/steel_bridge/steel_bridge_en_01.mp3\" },\n            { \"id\": \"steel_bridge_es\", \"name\": \"Puente de Acero\", \"language\": \"es\", \"type\": \"tts\", \"iconUrl\": \"/content/urban_landmarks/urban_landmarks.png\", \"audioUrl\": \"/content/urban_landmarks/steel_bridge/steel_bridge_es_01.mp3\" },\n            { \"id\": \"steel_bridge_fr\", \"name\": \"Pont d'Acier\", \"language\": \"fr\", \"type\": \"tts\", \"iconUrl\": \"/content/urban_landmarks/urban_landmarks.png\", \"audioUrl\": \"/content/urban_landmarks/steel_bridge/steel_bridge_fr_01.mp3\" },\n            { \"id\": \"steel_bridge_bg\", \"name\": \"Стоманен Мост\", \"language\": \"bg\", \"type\": \"tts\", \"iconUrl\": \"/content/urban_landmarks/urban_landmarks.png\", \"audioUrl\": \"/content/urban_landmarks/steel_bridge/steel_bridge_bg_01.mp3\" }\n          ]\n        },\n        {\n          \"id\": \"clock_tower\",\n          \"name\": \"Clock Tower\",\n          \"thumbnailUrl\": \"/content/urban_landmarks/clock_tower/01.png\",\n          \"files\": [\"/content/urban_landmarks/clock_tower/01.png\"],\n          \"voices\": [\n            { \"id\": \"clock_tower_en\", \"name\": \"Clock Tower\", \"language\": \"en\", \"type\": \"tts\", \"iconUrl\": \"/content/urban_landmarks/urban_landmarks.png\", \"audioUrl\": \"/content/urban_landmarks/clock_tower/clock_tower_en_01.mp3\" },\n            { \"id\": \"clock_tower_es\", \"name\": \"Torre del Reloj\", \"language\": \"es\", \"type\": \"tts\", \"iconUrl\": \"/content/urban_landmarks/urban_landmarks.png\", \"audioUrl\": \"/content/urban_landmarks/clock_tower/clock_tower_es_01.mp3\" },\n            { \"id\": \"clock_tower_fr\", \"name\": \"Tour de l'Horloge\", \"language\": \"fr\", \"type\": \"tts\", \"iconUrl\": \"/content/urban_landmarks/urban_landmarks.png\", \"audioUrl\": \"/content/urban_landmarks/clock_tower/clock_tower_fr_01.mp3\" },\n            { \"id\": \"clock_tower_bg\", \"name\": \"Часовникова Кула\", \"language\": \"bg\", \"type\": \"tts\", \"iconUrl\": \"/content/urban_landmarks/urban_landmarks.png\", \"audioUrl\": \"/content/urban_landmarks/clock_tower/clock_tower_bg_01.mp3\" }\n          ]\n        }\n      ]\n    }\n  ]\n}",
+              "_postman_previewlanguage": "json"
+            }
+          ]
+        },
+        {
+          "name": "2.2 Create Category",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"animals\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/content/categories",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "content", "categories"]
+            },
+            "description": "Create a new category. Backend generates folder, per-language voice files, and a DALL-E icon."
+          },
+          "response": [
+            {
+              "name": "201 - Created",
+              "status": "Created",
+              "code": 201,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "body": "{\n  \"category\": \"animals\",\n  \"message\": \"Category 'animals' created.\"\n}",
+              "_postman_previewlanguage": "json"
+            },
+            {
+              "name": "409 - Already exists",
+              "status": "Conflict",
+              "code": 409,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "body": "{\n  \"detail\": \"Category already exists: animals\"\n}",
+              "_postman_previewlanguage": "json"
+            }
+          ]
+        },
+        {
+          "name": "2.3 Get Category Details",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/content/categories/nature_scenes",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "content", "categories", "nature_scenes"]
+            },
+            "description": "Get full details for one category: objects, images, voices, CSV word lists."
+          },
+          "response": [
+            {
+              "name": "200 - Category details",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "body": "{\n  \"id\": \"nature_scenes\",\n  \"name\": \"Nature Scenes\",\n  \"description\": \"Mountains and Trees\",\n  \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\",\n  \"objects\": [\"mountain_peak\", \"river_valley\", \"dense_forest\"],\n  \"images_en\": [\"Mountain Peak\", \"River Valley\", \"Dense Forest\"],\n  \"images_es\": [\"Pico de Montaña\", \"Valle del Río\", \"Bosque Denso\"],\n  \"images_fr\": [\"Sommet de Montagne\", \"Vallée de la Rivière\", \"Forêt Dense\"],\n  \"images_bg\": [\"Планински Връх\", \"Речна Долина\", \"Гъста Гора\"],\n  \"images_names\": [\"mountain_peak\", \"river_valley\", \"dense_forest\"],\n  \"voices\": [\n    { \"id\": \"nature_scenes_en\", \"name\": \"Nature Scenes\", \"language\": \"en\", \"type\": \"tts\", \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\", \"audioUrl\": \"/content/nature_scenes/nature_scenes_en.mp3\" },\n    { \"id\": \"nature_scenes_es\", \"name\": \"Escenas de Naturaleza\", \"language\": \"es\", \"type\": \"tts\", \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\", \"audioUrl\": \"/content/nature_scenes/nature_scenes_es.mp3\" },\n    { \"id\": \"nature_scenes_fr\", \"name\": \"Scènes de Nature\", \"language\": \"fr\", \"type\": \"tts\", \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\", \"audioUrl\": \"/content/nature_scenes/nature_scenes_fr.mp3\" },\n    { \"id\": \"nature_scenes_bg\", \"name\": \"Природни Сцени\", \"language\": \"bg\", \"type\": \"tts\", \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\", \"audioUrl\": \"/content/nature_scenes/nature_scenes_bg.mp3\" }\n  ],\n  \"images\": [\n    {\n      \"id\": \"mountain_peak\",\n      \"name\": \"Mountain Peak\",\n      \"thumbnailUrl\": \"/content/nature_scenes/mountain_peak/01.png\",\n      \"files\": [\"/content/nature_scenes/mountain_peak/01.png\", \"/content/nature_scenes/mountain_peak/02.png\"],\n      \"voices\": [\n        { \"id\": \"mountain_peak_en\", \"name\": \"Mountain Peak\", \"language\": \"en\", \"type\": \"tts\", \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\", \"audioUrl\": \"/content/nature_scenes/mountain_peak/mountain_peak_en_01.mp3\" },\n        { \"id\": \"mountain_peak_es\", \"name\": \"Pico de Montaña\", \"language\": \"es\", \"type\": \"tts\", \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\", \"audioUrl\": \"/content/nature_scenes/mountain_peak/mountain_peak_es_01.mp3\" },\n        { \"id\": \"mountain_peak_fr\", \"name\": \"Sommet de Montagne\", \"language\": \"fr\", \"type\": \"tts\", \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\", \"audioUrl\": \"/content/nature_scenes/mountain_peak/mountain_peak_fr_01.mp3\" },\n        { \"id\": \"mountain_peak_bg\", \"name\": \"Планински Връх\", \"language\": \"bg\", \"type\": \"tts\", \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\", \"audioUrl\": \"/content/nature_scenes/mountain_peak/mountain_peak_bg_01.mp3\" }\n      ]\n    }\n  ]\n}",
+              "_postman_previewlanguage": "json"
+            },
+            {
+              "name": "404 - Not found",
+              "status": "Not Found",
+              "code": 404,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "body": "{\n  \"detail\": \"Category not found\"\n}",
+              "_postman_previewlanguage": "json"
+            }
+          ]
+        },
+        {
+          "name": "2.4 Rename Category",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"outdoor_scenes\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/content/categories/nature_scenes",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "content", "categories", "nature_scenes"]
+            },
+            "description": "Rename a category. Moves folder, regenerates voice files, renames icon."
+          },
+          "response": [
+            {
+              "name": "200 - Renamed",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "body": "{\n  \"category\": \"outdoor_scenes\",\n  \"message\": \"Category renamed from 'nature_scenes' to 'outdoor_scenes'.\"\n}",
+              "_postman_previewlanguage": "json"
+            },
+            {
+              "name": "404 - Not found",
+              "status": "Not Found",
+              "code": 404,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "body": "{\n  \"detail\": \"Category not found\"\n}",
+              "_postman_previewlanguage": "json"
+            },
+            {
+              "name": "409 - Target exists",
+              "status": "Conflict",
+              "code": 409,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "body": "{\n  \"detail\": \"Target category already exists: outdoor_scenes\"\n}",
+              "_postman_previewlanguage": "json"
+            }
+          ]
+        },
+        {
+          "name": "2.5 Delete Category",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/content/categories/nature_scenes",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "content", "categories", "nature_scenes"]
+            },
+            "description": "Delete or archive a category and all its contents."
+          },
+          "response": [
+            {
+              "name": "200 - Archived",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "body": "{\n  \"archived\": true,\n  \"name\": \"nature_scenes\",\n  \"archive_folder\": \"nature_scenes_1738456789\",\n  \"destination\": \"/data/archive/nature_scenes_1738456789\",\n  \"message\": \"Category 'nature_scenes' has been archived to nature_scenes_1738456789 and removed from content.\"\n}",
+              "_postman_previewlanguage": "json"
+            },
+            {
+              "name": "404 - Not found",
+              "status": "Not Found",
+              "code": 404,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "body": "{\n  \"detail\": \"Category not found\"\n}",
+              "_postman_previewlanguage": "json"
+            }
+          ]
+        },
+        {
+          "name": "2.6 Restore Category",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"nature_scenes\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/content/categories/restore",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "content", "categories", "restore"]
+            },
+            "description": "Restore an archived category back to the content directory."
+          },
+          "response": [
+            {
+              "name": "200 - Restored",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "body": "{\n  \"restored\": true,\n  \"name\": \"nature_scenes\",\n  \"from_archive\": \"nature_scenes_1738456789\",\n  \"message\": \"Restored category 'nature_scenes' from archive 'nature_scenes_1738456789'.\"\n}",
+              "_postman_previewlanguage": "json"
+            },
+            {
+              "name": "404 - No archive found",
+              "status": "Not Found",
+              "code": 404,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "body": "{\n  \"detail\": \"No archive found for category 'nature_scenes'\"\n}",
+              "_postman_previewlanguage": "json"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Category Icon",
+      "item": [
+        {
+          "name": "3.1 Upload Category Icon",
+          "request": {
+            "method": "PUT",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "image", "type": "file", "src": "" }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/content/categories/nature_scenes/icon",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "content", "categories", "nature_scenes", "icon"]
+            },
+            "description": "Upload or replace the category icon image."
+          },
+          "response": [
+            {
+              "name": "200 - Icon uploaded",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "body": "{\n  \"category\": \"nature_scenes\",\n  \"icon_url\": \"/content/nature_scenes/nature_scenes.png\"\n}",
+              "_postman_previewlanguage": "json"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Category Voices",
+      "item": [
+        {
+          "name": "4.1 List Category Voices",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/content/categories/nature_scenes/voices",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "content", "categories", "nature_scenes", "voices"]
+            },
+            "description": "List voice files for a category, one per supported language."
+          },
+          "response": [
+            {
+              "name": "200 - Voices list",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "body": "{\n  \"category\": \"nature_scenes\",\n  \"voices\": [\n    { \"id\": \"nature_scenes_en\", \"name\": \"Nature Scenes\", \"language\": \"en\", \"type\": \"tts\", \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\", \"audioUrl\": \"/content/nature_scenes/nature_scenes_en.mp3\", \"exists\": true },\n    { \"id\": \"nature_scenes_es\", \"name\": \"Escenas de Naturaleza\", \"language\": \"es\", \"type\": \"tts\", \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\", \"audioUrl\": \"/content/nature_scenes/nature_scenes_es.mp3\", \"exists\": true },\n    { \"id\": \"nature_scenes_fr\", \"name\": \"Scènes de Nature\", \"language\": \"fr\", \"type\": \"tts\", \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\", \"audioUrl\": \"/content/nature_scenes/nature_scenes_fr.mp3\", \"exists\": true },\n    { \"id\": \"nature_scenes_bg\", \"name\": \"Природни Сцени\", \"language\": \"bg\", \"type\": \"tts\", \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\", \"audioUrl\": \"/content/nature_scenes/nature_scenes_bg.mp3\", \"exists\": false }\n  ]\n}",
+              "_postman_previewlanguage": "json"
+            }
+          ]
+        },
+        {
+          "name": "4.2 Upload Category Voice",
+          "request": {
+            "method": "PUT",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "audio", "type": "file", "src": "" }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/content/categories/nature_scenes/voices/es",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "content", "categories", "nature_scenes", "voices", "es"]
+            },
+            "description": "Upload or replace a category voice file for a specific language."
+          },
+          "response": [
+            {
+              "name": "200 - Voice uploaded",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "body": "{\n  \"category\": \"nature_scenes\",\n  \"language\": \"es\",\n  \"audio_url\": \"/content/nature_scenes/nature_scenes_es.mp3\"\n}",
+              "_postman_previewlanguage": "json"
+            }
+          ]
+        },
+        {
+          "name": "4.3 Regenerate Category Voice",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/content/categories/nature_scenes/voices/fr/regenerate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "content", "categories", "nature_scenes", "voices", "fr", "regenerate"]
+            },
+            "description": "Regenerate a category voice file using the TTS pipeline (translate + synthesize)."
+          },
+          "response": [
+            {
+              "name": "200 - Voice regenerated",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "body": "{\n  \"category\": \"nature_scenes\",\n  \"language\": \"fr\",\n  \"audio_url\": \"/content/nature_scenes/nature_scenes_fr.mp3\"\n}",
+              "_postman_previewlanguage": "json"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Images (Objects)",
+      "item": [
+        {
+          "name": "5.1 Create Object",
+          "request": {
+            "method": "POST",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "image", "type": "file", "src": "" },
+                { "key": "category", "value": "nature_scenes", "type": "text" },
+                { "key": "object", "value": "Mountain Peak", "type": "text" }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/content/objects",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "content", "objects"]
+            },
+            "description": "Create a new image/object. Saves image, translates name to all languages, generates per-language voice files."
+          },
+          "response": [
+            {
+              "name": "201 - Object created",
+              "status": "Created",
+              "code": 201,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "body": "{\n  \"category\": \"nature_scenes\",\n  \"object\": \"Mountain Peak\",\n  \"folder\": \"mountain_peak\",\n  \"image_id\": \"mountain_peak\"\n}",
+              "_postman_previewlanguage": "json"
+            },
+            {
+              "name": "400 - Invalid input",
+              "status": "Bad Request",
+              "code": 400,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "body": "{\n  \"detail\": \"Image file is required\"\n}",
+              "_postman_previewlanguage": "json"
+            }
+          ]
+        },
+        {
+          "name": "5.2 Get Object Details",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/content/categories/nature_scenes/objects/mountain_peak",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "content", "categories", "nature_scenes", "objects", "mountain_peak"]
+            },
+            "description": "Get full details for one image/object including files, thumbnail, and per-language voices."
+          },
+          "response": [
+            {
+              "name": "200 - Object details",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "body": "{\n  \"category\": \"nature_scenes\",\n  \"name\": \"Mountain Peak\",\n  \"folder\": \"mountain_peak\",\n  \"image_id\": \"mountain_peak\",\n  \"files\": [\n    \"/content/nature_scenes/mountain_peak/01.png\",\n    \"/content/nature_scenes/mountain_peak/02.png\"\n  ],\n  \"thumbnail_url\": \"/content/nature_scenes/mountain_peak/01.png\",\n  \"voices\": [\n    { \"id\": \"mountain_peak_en\", \"name\": \"Mountain Peak\", \"language\": \"en\", \"type\": \"tts\", \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\", \"audioUrl\": \"/content/nature_scenes/mountain_peak/mountain_peak_en_01.mp3\", \"exists\": true },\n    { \"id\": \"mountain_peak_es\", \"name\": \"Pico de Montaña\", \"language\": \"es\", \"type\": \"tts\", \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\", \"audioUrl\": \"/content/nature_scenes/mountain_peak/mountain_peak_es_01.mp3\", \"exists\": true },\n    { \"id\": \"mountain_peak_fr\", \"name\": \"Sommet de Montagne\", \"language\": \"fr\", \"type\": \"tts\", \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\", \"audioUrl\": \"/content/nature_scenes/mountain_peak/mountain_peak_fr_01.mp3\", \"exists\": true },\n    { \"id\": \"mountain_peak_bg\", \"name\": \"Планински Връх\", \"language\": \"bg\", \"type\": \"tts\", \"iconUrl\": \"/content/nature_scenes/nature_scenes.png\", \"audioUrl\": \"/content/nature_scenes/mountain_peak/mountain_peak_bg_01.mp3\", \"exists\": true }\n  ]\n}",
+              "_postman_previewlanguage": "json"
+            },
+            {
+              "name": "404 - Not found",
+              "status": "Not Found",
+              "code": 404,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "body": "{\n  \"detail\": \"Object not found\"\n}",
+              "_postman_previewlanguage": "json"
+            }
+          ]
+        },
+        {
+          "name": "5.3 Rename Object",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Alpine Peak\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/content/categories/nature_scenes/objects/mountain_peak",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "content", "categories", "nature_scenes", "objects", "mountain_peak"]
+            },
+            "description": "Rename an image/object. Updates folder, CSVs, and regenerates voice files."
+          },
+          "response": [
+            {
+              "name": "200 - Renamed",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "body": "{\n  \"category\": \"nature_scenes\",\n  \"old_name\": \"mountain_peak\",\n  \"new_name\": \"alpine_peak\",\n  \"message\": \"Object renamed.\"\n}",
+              "_postman_previewlanguage": "json"
+            }
+          ]
+        },
+        {
+          "name": "5.4 Delete Object",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/content/categories/nature_scenes/objects/mountain_peak",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "content", "categories", "nature_scenes", "objects", "mountain_peak"]
+            },
+            "description": "Delete an image/object and all its files, voices, and CSV entries."
+          },
+          "response": [
+            {
+              "name": "200 - Deleted",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "body": "{\n  \"category\": \"nature_scenes\",\n  \"name\": \"mountain_peak\",\n  \"deleted\": true\n}",
+              "_postman_previewlanguage": "json"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Image Files",
+      "item": [
+        {
+          "name": "6.1 Add Image File",
+          "request": {
+            "method": "POST",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "image", "type": "file", "src": "" }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/content/categories/nature_scenes/objects/mountain_peak/files",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "content", "categories", "nature_scenes", "objects", "mountain_peak", "files"]
+            },
+            "description": "Add an additional image file to an existing object."
+          },
+          "response": [
+            {
+              "name": "201 - File added",
+              "status": "Created",
+              "code": 201,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "body": "{\n  \"category\": \"nature_scenes\",\n  \"object\": \"mountain_peak\",\n  \"file\": \"02.png\",\n  \"file_url\": \"/content/nature_scenes/mountain_peak/02.png\"\n}",
+              "_postman_previewlanguage": "json"
+            }
+          ]
+        },
+        {
+          "name": "6.2 Replace Image File",
+          "request": {
+            "method": "PUT",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "image", "type": "file", "src": "" }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/content/categories/nature_scenes/objects/mountain_peak/files/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "content", "categories", "nature_scenes", "objects", "mountain_peak", "files", "1"]
+            },
+            "description": "Replace an image file at a specific 1-based index position."
+          },
+          "response": [
+            {
+              "name": "200 - File replaced",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "body": "{\n  \"category\": \"nature_scenes\",\n  \"object\": \"mountain_peak\",\n  \"file\": \"01.png\",\n  \"file_url\": \"/content/nature_scenes/mountain_peak/01.png\"\n}",
+              "_postman_previewlanguage": "json"
+            }
+          ]
+        },
+        {
+          "name": "6.3 Delete Image File",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/content/categories/nature_scenes/objects/mountain_peak/files/2",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "content", "categories", "nature_scenes", "objects", "mountain_peak", "files", "2"]
+            },
+            "description": "Delete an image file at a specific 1-based index. At least one file must remain."
+          },
+          "response": [
+            {
+              "name": "200 - File deleted",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "body": "{\n  \"category\": \"nature_scenes\",\n  \"object\": \"mountain_peak\",\n  \"deleted_file\": \"02.png\"\n}",
+              "_postman_previewlanguage": "json"
+            },
+            {
+              "name": "400 - Cannot delete last file",
+              "status": "Bad Request",
+              "code": 400,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "body": "{\n  \"detail\": \"Cannot delete the last image file for an object\"\n}",
+              "_postman_previewlanguage": "json"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "7. Object Voices",
+      "item": [
+        {
+          "name": "7.1 Upload Object Voice",
+          "request": {
+            "method": "PUT",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "audio", "type": "file", "src": "" }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/content/categories/nature_scenes/objects/mountain_peak/voices/es",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "content", "categories", "nature_scenes", "objects", "mountain_peak", "voices", "es"]
+            },
+            "description": "Upload or replace a voice file for one language on an image/object."
+          },
+          "response": [
+            {
+              "name": "200 - Voice uploaded",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "body": "{\n  \"category\": \"nature_scenes\",\n  \"object\": \"mountain_peak\",\n  \"language\": \"es\",\n  \"audio_url\": \"/content/nature_scenes/mountain_peak/mountain_peak_es_01.mp3\"\n}",
+              "_postman_previewlanguage": "json"
+            }
+          ]
+        },
+        {
+          "name": "7.2 Regenerate Object Voice",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/content/categories/nature_scenes/objects/mountain_peak/voices/fr/regenerate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "content", "categories", "nature_scenes", "objects", "mountain_peak", "voices", "fr", "regenerate"]
+            },
+            "description": "Regenerate a voice file for one language using the TTS pipeline (translate + synthesize)."
+          },
+          "response": [
+            {
+              "name": "200 - Voice regenerated",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                { "key": "Content-Type", "value": "application/json" }
+              ],
+              "body": "{\n  \"category\": \"nature_scenes\",\n  \"object\": \"mountain_peak\",\n  \"language\": \"fr\",\n  \"audio_url\": \"/content/nature_scenes/mountain_peak/mountain_peak_fr_01.mp3\"\n}",
+              "_postman_previewlanguage": "json"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

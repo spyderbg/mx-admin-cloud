@@ -39,11 +39,7 @@ async def lifespan(app_lifespan: FastAPI) -> AsyncIterator[None]:
         app_lifespan.state.logging_system = logging_system
 
     # Build the service registry (parses all JSON configs, instantiates providers)
-    registry = await build_registry(
-        base_dir=settings.BASE_DIR,
-        config_dir=settings.config_path,
-        output_dir=settings.output_path,
-    )
+    registry = await build_registry(settings)
     app_lifespan.state.registry = registry
     logging.info("registry_built providers=%s translators=%s optimizers=%s",
                  len(registry.providers), len(registry.translators), len(registry.optimizers))
@@ -62,9 +58,7 @@ async def lifespan(app_lifespan: FastAPI) -> AsyncIterator[None]:
             from watchfiles import awatch  # pylint: disable=import-outside-toplevel
             async for _ in awatch(settings.config_path):
                 logging.info("config_changed reloading_registry")
-                await reload_registry(
-                    registry, settings.BASE_DIR, settings.config_path, settings.output_path,
-                )
+                await reload_registry(registry, settings)
                 logging.info("registry_reloaded providers=%s", len(registry.providers))
         except ImportError:
             logging.warning("watchfiles not installed — config hot-reload disabled")

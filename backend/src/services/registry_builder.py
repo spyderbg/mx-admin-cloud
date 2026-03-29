@@ -1,63 +1,43 @@
 """Factory that builds and reloads a ServiceRegistry from config files.
 
 Separated from ``core.registry`` so that ``core/`` never imports ``services/``.
+
+Adding a new service type requires:
+1. Creating its module with a ``ServicePluginRegistry.register(...)`` call.
+2. Adding one ``import src.services.<new_module>`` line below to trigger registration.
+3. Adding the typed attribute to ``ServiceRegistry.__init__``.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-
+from src.core.config import Settings
 from src.core.registry import ServiceRegistry
-from src.services.optimization import build_active_optimizers
-from src.services.optimization.config_loader import load_optimizer_configs
-from src.services.text_to_speech import build_provider
-from src.services.text_to_speech.config_loader import load_provider_configs
-from src.services.text_translation import build_translators
-from src.services.text_translation.config_loader import load_translator_configs
+
+# These imports trigger each package's __init__.py, which calls
+# ServicePluginRegistry.register() for that service type.
+import src.services.text_to_speech   # noqa: F401
+import src.services.text_translation  # noqa: F401
+import src.services.optimization      # noqa: F401
+
+from src.services.plugin_registry import ServicePluginRegistry
 
 
-async def build_registry(
-    base_dir: Path,
-    config_dir: Path,
-    output_dir: Path,
-) -> ServiceRegistry:
+async def build_registry(settings: Settings) -> ServiceRegistry:
     """Create and populate a registry from config files on disk."""
     registry = ServiceRegistry()
-    await _load_into(registry, base_dir, config_dir, output_dir)
+    await _load_into(registry, settings)
     return registry
 
 
-async def reload_registry(
-    registry: ServiceRegistry,
-    base_dir: Path,
-    config_dir: Path,
-    output_dir: Path,
-) -> None:
+async def reload_registry(registry: ServiceRegistry, settings: Settings) -> None:
     """Re-parse configs and replace instances in-place (thread-safe)."""
     async with registry._lock:  # pylint: disable=protected-access
-        await _load_into(registry, base_dir, config_dir, output_dir)
+        await _load_into(registry, settings)
 
 
-async def _load_into(
-    registry: ServiceRegistry,
-    base_dir: Path,
-    config_dir: Path,
-    output_dir: Path,
-) -> None:
-    """Parse all config files and populate registry instances."""
-    provider_configs = load_provider_configs(base_dir=base_dir, config_dir=config_dir)
-    providers: list[tuple] = []
-    for config in provider_configs:
-        provider = build_provider(config, output_dir)
-        if provider.is_active():
-            providers.append((provider, config))
-
-    translator_configs = load_translator_configs(base_dir=base_dir, config_dir=config_dir)
-    translators = build_translators(translator_configs, base_dir)
-
-    optimizer_configs = load_optimizer_configs(base_dir=base_dir, config_dir=config_dir)
-    optimizers = build_active_optimizers(optimizer_configs, output_dir)
-
-    registry.providers = providers
-    registry.translators = translators
-    registry.optimizers = optimizers
+async def _load_into(registry: ServiceRegistry, settings: Settings) -> None:
+    """Iterate registered service plugins and populate the registry."""
+    for plugin in ServicePluginRegistry.all_plugins():
+        configs = plugin.load_configs(settings)
+        instances = plugin.build_instances(configs, settings)
+        registry.set_service(plugin.registry_attr, instances)

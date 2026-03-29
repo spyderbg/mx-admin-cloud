@@ -186,7 +186,9 @@ At startup, `src/services/registry_builder.py` builds a `ServiceRegistry` that p
 
 This eliminates per-request JSON parsing. Provider instances are reused across all requests.
 
-**Hot-reload:** The `watchfiles` background task watches `config/` for changes. When a file changes, `registry.reload()` re-parses configs and replaces instances in-place behind an `asyncio.Lock`, so in-flight requests finish cleanly.
+**Plugin-based loading:** Each service package self-registers a `ServicePlugin` with `ServicePluginRegistry` (in `src/services/plugin_registry.py`) at import time. `registry_builder._load_into` iterates the plugin list generically — it does not hard-code per-service calls. Adding a new service type requires no changes to `registry_builder.py` logic (see [Adding a new service type](#adding-a-new-service-type) below).
+
+**Hot-reload:** The `watchfiles` background task watches `config/` for changes. When a file changes, `reload_registry()` re-parses configs and replaces instances in-place behind an `asyncio.Lock`, so in-flight requests finish cleanly.
 
 ### Job Store
 
@@ -244,6 +246,7 @@ src/
 │   └── tokens.py                 # create_access_token, create_internal_token
 └── services/                     # Business logic implementations (provider-specific code)
     ├── registry_builder.py       # Builds and reloads ServiceRegistry from config files
+    ├── plugin_registry.py        # ServicePlugin dataclass + ServicePluginRegistry (self-registration)
     ├── text_to_speech/           # OpenAI / ElevenLabs / Speaktor TTS providers
     │   └── providers/            # OpenAI / ElevenLabs / Speaktor provider implementations
     ├── text_translation/         # Translation service
@@ -255,6 +258,69 @@ src/
     ├── evaluation/               # STT transcription, Levenshtein scoring, score stores
     └── logging/                  # Structlog and Seq logging implementation
 ```
+
+## Adding a new service type
+
+The registry uses a plugin system — each service package self-registers at import time. Adding a new service type (e.g. `voice_cloning`) requires changes in exactly four places:
+
+**1. Declare the registry attribute** in `src/core/registry.py`:
+
+```python
+def __init__(self) -> None:
+    ...
+    self.voice_clonings: list[Any] = []   # add this
+```
+
+**2. Create the service package** at `src/services/voice_cloning/__init__.py`.
+The package must define:
+- A factory class (following the pattern of `ProviderFactory` / `TranslatorFactory`)
+- A `build_xxx` function
+- Provider implementations under `providers/` (each with a `register()` classmethod)
+
+At the bottom of `__init__.py`, register the plugin:
+
+```python
+from src.services.plugin_registry import ServicePlugin, ServicePluginRegistry
+from src.services.voice_cloning.config_loader import load_voice_cloning_configs as _load_vc_cfgs
+
+def _vc_load(settings):
+    return _load_vc_cfgs(base_dir=settings.BASE_DIR, config_dir=settings.config_path)
+
+def _vc_build(configs, settings):
+    return build_active_voice_clonings(configs, settings.BASE_DIR)
+
+ServicePluginRegistry.register(ServicePlugin(
+    service_key="voice_cloning",      # must match "service" field in config JSON
+    registry_attr="voice_clonings",   # must match the attribute added in step 1
+    load_configs=_vc_load,
+    build_instances=_vc_build,
+))
+```
+
+**3. Add the trigger import** in `src/services/registry_builder.py` (this is the only line that changes there):
+
+```python
+import src.services.voice_cloning   # noqa: F401
+```
+
+**4. Add config files** under `config/voice_cloning/` using the standard `service_provider` envelope, with `"service": "voice_cloning"` matching the `service_key` above:
+
+```json
+{
+  "service_provider": {
+    "service": "voice_cloning",
+    "provider": "my_vc_provider",
+    "enabled": true,
+    "priority": 1,
+    "version": "1.0",
+    "config": { ... }
+  }
+}
+```
+
+The registry will hot-reload automatically when config files change (if `watchfiles` is installed). No restarts needed after enabling/disabling via `enabled`.
+
+---
 
 ## TTS config
 
