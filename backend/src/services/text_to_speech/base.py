@@ -7,8 +7,8 @@ from abc import abstractmethod
 from pathlib import Path
 from typing import Any
 
+from src.core.config import settings
 from src.core.models import GeneratedAudio, TTSRequest
-from src.core.output_paths import build_output_stem, raw_output_dir
 from src.services.base import ServiceProvider
 from src.services.text_to_speech.models import ProviderConfig
 
@@ -73,9 +73,9 @@ class TTSProvider(ServiceProvider):
 
     def build_output_path(self, request: TTSRequest, extension: str) -> Path:
         """Resolve the full output file path for the generated audio."""
-        output_dir = raw_output_dir(self.base_dir, request.language_code, self.name)
+        output_dir = settings.raw_output_dir(request.language_code, self.name)
         output_dir.mkdir(parents=True, exist_ok=True)
-        output_stem = build_output_stem(request)
+        output_stem = settings.build_output_stem(request)
         return output_dir / f"{output_stem}.{extension.lstrip('.')}"
 
     @abstractmethod

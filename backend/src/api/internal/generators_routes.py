@@ -137,7 +137,6 @@ async def generate_word(
 ):
     """Generate audio for a single word and return raw audio bytes."""
     from src.core.languages import language_name, normalize_language_code  # pylint: disable=import-outside-toplevel
-    from src.core.output_paths import slugify_filename  # pylint: disable=import-outside-toplevel
     from fastapi.responses import Response  # pylint: disable=import-outside-toplevel
 
     if not body.word or not body.word.strip():
@@ -150,7 +149,7 @@ async def generate_word(
 
     lang_code = normalize_language_code(body.lang)
     lang_full = language_name(lang_code)
-    safe_text = slugify_filename(body.word.strip(), "item")
+    safe_text = settings.slugify_filename(body.word.strip(), "item")
     tts_request = TTSRequest(
         request_id=f"word-{safe_text}-{lang_code}",
         text=body.word.strip(),

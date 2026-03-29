@@ -6,20 +6,20 @@ import asyncio
 import shutil
 from pathlib import Path
 
+from src.core.config import settings
 from src.core.models import GeneratedAudio
-from src.core.output_paths import build_output_stem_from_result, normalized_output_dir
 
 
-async def normalize_audio(base_dir: Path, generated_audio: GeneratedAudio) -> GeneratedAudio:
+async def normalize_audio(_base_dir: Path, generated_audio: GeneratedAudio) -> GeneratedAudio:
     """Normalize raw provider output to a common WAV format for evaluation."""
     ffmpeg_path = shutil.which("ffmpeg")
     if not ffmpeg_path:
         generated_audio.normalization_error = "ffmpeg not found in PATH."
         return generated_audio
 
-    output_dir = normalized_output_dir(base_dir, generated_audio.language_code, generated_audio.provider)
+    output_dir = settings.normalized_output_dir(generated_audio.language_code, generated_audio.provider)
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / f"{build_output_stem_from_result(generated_audio)}.wav"
+    output_path = output_dir / f"{settings.build_output_stem_from_result(generated_audio)}.wav"
 
     process = await asyncio.create_subprocess_exec(
         ffmpeg_path,

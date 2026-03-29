@@ -9,15 +9,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException  # pylint: disable=import-error
+from fastapi import APIRouter, Depends  # pylint: disable=import-error
 from pydantic import BaseModel  # pylint: disable=import-error
 
 from src.api.dependencies import get_registry, require_internal
 from src.core.config import settings
 from src.core.models import GeneratedAudio
-from src.services.text_to_speech.models import ProviderConfig
-from src.core.output_paths import scores_dir
 from src.core.registry import ServiceRegistry
+from src.services.text_to_speech.models import ProviderConfig
 from src.services.evaluation import EvaluationEngine, JsonScoreStore, MultiScoreStore, SQLiteScoreStore
 
 router = APIRouter(prefix="/internal", tags=["internal-evaluators"])
@@ -76,7 +75,7 @@ async def list_evaluators(
 async def evaluate(
     body: EvaluateRequest,
     _user: dict = Depends(require_internal),
-    registry: ServiceRegistry = Depends(get_registry),
+    _registry: ServiceRegistry = Depends(get_registry),
 ) -> dict[str, Any]:
     """Evaluate a generated audio file using STT and Levenshtein scoring."""
     import httpx  # pylint: disable=import-outside-toplevel
@@ -107,7 +106,7 @@ async def evaluate(
     )
 
     engine = EvaluationEngine(base_dir=output_dir)
-    score_root = scores_dir(output_dir)
+    score_root = settings.scores_output_dir()
     store = MultiScoreStore(
         [
             JsonScoreStore(score_root / "json"),

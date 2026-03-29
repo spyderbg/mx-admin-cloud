@@ -21,6 +21,11 @@ class TranslatorConfig:
     config_path: Path
     version: str = field(default="1.0")
 
+class TextTranslateCriteria:
+    """Criteria to evaluate a text translation."""
+    def __init__(self, cfg: TranslatorConfig) -> None:
+        self.cfg = cfg
+
 
 class TextTranslate(ServiceProvider):
     """Common interface for all translator implementations."""
@@ -64,3 +69,4 @@ class TextTranslate(ServiceProvider):
         Returns the translated string, or ``None`` when this translator
         cannot handle the request (signals fallback to the next translator).
         """
+

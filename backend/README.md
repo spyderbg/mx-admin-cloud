@@ -200,6 +200,14 @@ Async job tracking (`src/core/job_store.py`) is stored in `app.state.job_store` 
 
 `core/` has zero imports from `services/`. The pipeline and content service call internal HTTP endpoints instead of importing service implementations directly. This keeps the core infrastructure layer decoupled from provider-specific code.
 
+### Output path helpers
+
+Output naming/path helpers now live on `Settings` in `src/core/config.py` (not a separate `output_paths.py` module).
+
+- Raw/optimized/normalized outputs: `raw_output_dir`, `optimized_output_dir`, `normalized_output_dir`
+- Results/log folders: `reports_output_dir`, `logs_output_dir`, `scores_output_dir`
+- Request log file: `requests_log_file`
+
 ### Source layout
 
 ```
@@ -218,20 +226,17 @@ src/
 │       ├── routes_content.py
 │       └── routes_users.py
 ├── core/                         # Zero src.services imports (HTTP boundary enforced)
-│   ├── config.py                 # Pydantic Settings (BASE_DIR, env vars)
+│   ├── config.py                 # Pydantic Settings + output path/name helper methods
 │   ├── config_loader.py          # JSON config parsing (providers, translators, optimizers)
 │   ├── models.py                 # Core dataclasses (TTSRequest, GeneratedAudio, EvaluationResult, etc.)
-│   ├── output_paths.py           # Stable output directory and filename helpers
 │   ├── languages.py              # Language code/name lookups and BCP-47 conversion
 │   ├── input_loader.py           # Load structured requests from CSV/XLSX/TXT files
 │   ├── result_writer.py          # Write per-run JSON and CSV reports
 │   ├── logging/                  # Centralized logging (structlog, Seq, request logging)
-│   ├── content_service.py        # Category / object filesystem operations; DALL-E icon generation
+│   ├── content_service.py        # Category/object ops; DALL-E icons; internal translate/TTS helpers
 │   ├── job_store.py              # Async JobStore with TTL eviction
 │   ├── pipeline.py               # TTS pipeline orchestration (calls internal HTTP endpoints)
-│   ├── registry.py               # Pure data container for service instances (no service imports)
-│   ├── tts.py                    # Single-word TTS via HTTP (used by content_service)
-│   └── translation.py            # Single-word translation via HTTP (used by content_service)
+│   └── registry.py               # Pure data container for service instances (no service imports)
 ├── db/
 │   └── database.py               # SQLite user store
 ├── security/

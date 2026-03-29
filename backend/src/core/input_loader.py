@@ -7,9 +7,9 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
+from src.core.config import settings
 from src.core.languages import language_name, normalize_language_code
 from src.core.models import TTSRequest
-from src.core.output_paths import slugify_filename
 
 
 def load_requests(input_path: Path, default_language: str) -> list[TTSRequest]:
@@ -35,7 +35,10 @@ def _request(
     normalized_code = normalize_language_code(language)
     cleaned_text = text.strip()
     file_text = (filename_text or cleaned_text).strip()
-    request_id = f"{source_type}-{row_index}-{column_index or 0}-{normalized_code}-{slugify_filename(file_text, 'item')}"
+    request_id = (
+        f"{source_type}-{row_index}-{column_index or 0}-{normalized_code}-"
+        f"{settings.slugify_filename(file_text, 'item')}"
+    )
     return TTSRequest(
         request_id=request_id,
         text=cleaned_text,

@@ -6,13 +6,13 @@ import csv
 import json
 from pathlib import Path
 
+from src.core.config import settings
 from src.core.models import RunSummary
-from src.core.output_paths import reports_dir
 
 
-def write_run_summary(base_dir: Path, summary: RunSummary) -> tuple[Path, Path]:
+def write_run_summary(_base_dir: Path, summary: RunSummary) -> tuple[Path, Path]:
     """Write the run summary to a JSON and CSV file."""
-    report_dir = reports_dir(base_dir)
+    report_dir = settings.reports_output_dir()
     report_dir.mkdir(parents=True, exist_ok=True)
 
     json_path = report_dir / f"{summary.run_id}.json"

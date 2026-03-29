@@ -17,7 +17,7 @@ kiddo-cli = "kiddo_cli.main:app"
 where = ["src"]
 
 [tool.pylint.format]
-max-line-length = 80
+max-line-length = 120
 
 [tool.pylint.design]
 max-args = 10

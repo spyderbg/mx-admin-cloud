@@ -17,7 +17,6 @@ from src.core.config import settings
 from src.core.input_loader import load_requests
 from src.core.logging import get_logger, log_to_all_active_loggers, ensure_requests_log
 from src.core.models import EvaluationResult, GeneratedAudio, ProviderRunRecord, RunSummary, TTSRequest
-from src.core.output_paths import optimized_output_dir
 from src.core.registry import ServiceRegistry
 from src.core.result_writer import write_run_summary
 
@@ -341,7 +340,7 @@ def _build_record(
 async def _run_optimizations(
     records: list[ProviderRunRecord],
     optimizer_names: list[str],
-    output_root: Path,
+    _output_root: Path,
     semaphore: asyncio.Semaphore,
     base_url: str,
     headers: dict[str, str],
@@ -368,9 +367,7 @@ async def _run_optimizations(
                 continue
 
             for opt_name in optimizer_names:
-                out_dir = optimized_output_dir(
-                    output_root, opt_name, record.language_code, record.provider,
-                )
+                out_dir = settings.optimized_output_dir(opt_name, record.language_code, record.provider)
                 out_dir.mkdir(parents=True, exist_ok=True)
                 out_path = out_dir / raw.name
 

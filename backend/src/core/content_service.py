@@ -1,19 +1,22 @@
 """
 Content service: list categories, category details, create object, archive and restore category.
-Orchestrates filesystem, CSVs, translation and TTS.
+Orchestrates filesystem, CSVs, translation, TTS, and icon generation.
 """
+import base64
 import csv
 import re
 import shutil
 import time
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
+import httpx
+from openai import OpenAI
+
 from src.core.config import settings
 from src.core.content_naming import english_word_to_folder_name, english_word_to_image_id
-from src.core.icon import generate_icon
-from src.core.translation import translate_word
-from src.core.tts import generate_audio
+from src.security.tokens import create_internal_token
 
 
 def _content_root() -> Path:
@@ -26,6 +29,70 @@ def _category_path(category: str) -> Path:
 
 def _archive_root() -> Path:
     return settings.archive_path
+
+
+def translate_word(
+    text: str,
+    target_lang_code: str | None = None,
+    category: str | None = None,
+    input_lang_code: str | None = None,
+) -> str:
+    """Translate text by calling the internal /internal/translate endpoint."""
+    if not text or not text.strip():
+        return text.strip()
+
+    token = create_internal_token("translation-service", timedelta(seconds=30))
+    response = httpx.post(
+        f"{settings.API_BASE_URL}/internal/translate",
+        json={
+            "text": text.strip(),
+            "target_lang_code": target_lang_code,
+            "input_lang_code": input_lang_code,
+            "category": category,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=30.0,
+    )
+    response.raise_for_status()
+    return response.json()["translated_text"] or text.strip()
+
+
+def generate_audio(word: str, lang: str) -> bytes:
+    """Generate TTS audio for one word using the first active provider."""
+    if not word or not word.strip():
+        raise ValueError("Word must be non-empty for TTS.")
+
+    token = create_internal_token("tts-service", timedelta(seconds=30))
+    response = httpx.post(
+        f"{settings.API_BASE_URL}/internal/generators/generate-word",
+        json={"word": word.strip(), "lang": lang},
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=60.0,
+    )
+    response.raise_for_status()
+    return response.content
+
+
+def generate_icon(prompt: str) -> bytes:
+    """Generate a simple, child-friendly icon from a text prompt."""
+    if not prompt or not prompt.strip():
+        raise ValueError("Prompt must be non-empty for icon generation.")
+
+    if not settings.OPENAI_API_KEY:
+        raise ValueError("OPENAI_API_KEY is not set; cannot call Images API.")
+
+    client = OpenAI(api_key=settings.OPENAI_API_KEY)
+    response = client.images.generate(
+        model="dall-e-2",
+        prompt=prompt.strip(),
+        size="256x256",
+        response_format="b64_json",
+        n=1,
+    )
+    b64_data = response.data[0].b64_json
+    if not b64_data:
+        raise ValueError("No image data returned from Images API.")
+    return base64.b64decode(b64_data)
 
 
 def _list_archived_entries() -> list[dict[str, Any]]:

@@ -9,12 +9,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from src.core.config import settings
 from src.core.models import ProviderRunRecord
-from src.services.optimization.config_loader import load_optimizer_configs
-from src.services.optimization.models import OptimizerConfig
 from src.services.optimization import build_active_optimizers, build_optimizer
 from src.services.optimization.base import AudioOptimizerBase
-from src.core.output_paths import optimized_output_dir
+from src.services.optimization.config_loader import load_optimizer_configs
+from src.services.optimization.models import OptimizerConfig
 
 
 # ---------------------------------------------------------------------------
@@ -147,14 +147,12 @@ class TestBuildOptimizer:
 
 class TestOptimizedOutputDir:
     def test_structure(self) -> None:
-        result = optimized_output_dir(
-            Path("/out"), "voice_fast", "bg", "openai",
-        )
-        assert result == Path("/out/optimized_voice_fast/tts_audio_bg/openai")
+        result = settings.optimized_output_dir("voice_fast", "bg", "openai")
+        assert str(result).endswith("/optimized_voice_fast/tts_audio_bg/openai")
 
     def test_different_optimizer_names_differ(self) -> None:
-        a = optimized_output_dir(Path("/out"), "opt_a", "en", "p")
-        b = optimized_output_dir(Path("/out"), "opt_b", "en", "p")
+        a = settings.optimized_output_dir("opt_a", "en", "p")
+        b = settings.optimized_output_dir("opt_b", "en", "p")
         assert a != b
         assert "optimized_opt_a" in str(a)
         assert "optimized_opt_b" in str(b)

@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from src.core.output_paths import requests_log_path as default_requests_log_path
+from src.core.config import settings
 
 try:
     _structlog = importlib.import_module("structlog")
@@ -101,7 +101,7 @@ def resolve_requests_log_path(base_dir: Path) -> Path:
     if rel_path.is_absolute():
         return rel_path
     if _REQUEST_LOG_REL_PATH == "results/requests.log":
-        return default_requests_log_path(base_dir)
+        return settings.requests_log_file()
     return base_dir / rel_path
 
 

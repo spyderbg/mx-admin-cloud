@@ -28,12 +28,12 @@ class TranslateRequest(BaseModel):
 
 
 class TranslateResponse(BaseModel):
-    """Response body for the translate endpoint."""
+    """Response body for the translation endpoint."""
     translated_text: str
 
 
 class TranslateFileResponse(BaseModel):
-    """Response body for the translate file endpoint."""
+    """Response body for the translation file endpoint."""
     results: list[dict[str, str]]
 
 
