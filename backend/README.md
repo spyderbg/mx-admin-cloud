@@ -174,8 +174,9 @@ Internal endpoints are under `/internal/*`. They require `Authorization: Bearer 
 
 | Method | Path                                                                                  | Description                                                              |
 |--------|---------------------------------------------------------------------------------------|--------------------------------------------------------------------------|
-| `GET`  | [`/internal/translators`](src/api/internal/translators_routes.py#L34)                | List all configured translation services with activation state.          |
-| `POST` | [`/internal/translate`](src/api/internal/translators_routes.py#L63)                  | Translate text via all active translators in priority order.             |
+| `GET`  | [`/internal/translators`](src/api/internal/translators_routes.py#L40)                | List all configured translation services with activation state.          |
+| `POST` | [`/internal/translate`](src/api/internal/translators_routes.py#L69)                  | Translate text via all active translators in priority order.             |
+| `POST` | [`/internal/translate-file`](src/api/internal/translators_routes.py#L97)             | Translate a word list file; returns per-word translations for all langs. |
 
 ## Architecture
 
@@ -206,11 +207,11 @@ src/
 ├── api/
 │   ├── dependencies.py           # get_registry, get_job_store, require_internal, require_admin, require_uds
 │   ├── internal/
-│   │   ├── routes_jobs.py        # /internal/generate, /generate/{id}/status, /generate-sync
-│   │   ├── routes_generators.py  # /internal/generators, /generators/{provider}/generate, /generators/generate-word
-│   │   ├── routes_evaluators.py  # /internal/evaluators, /evaluators/evaluate
-│   │   ├── routes_optimizers.py  # /internal/optimizers, /optimizers/{optimizer}/optimize
-│   │   └── routes_translators.py # /internal/translators, /translate
+│   │   ├── jobs_routes.py        # /internal/generate, /generate/{id}/status, /generate-sync
+│   │   ├── generators_routes.py  # /internal/generators, /generators/{provider}/generate, /generators/generate-word
+│   │   ├── evaluators_routes.py  # /internal/evaluators, /evaluators/evaluate
+│   │   ├── optimizers_routes.py  # /internal/optimizers, /optimizers/{optimizer}/optimize
+│   │   └── translators_routes.py # /internal/translators, /translate, /translate-file
 │   └── v1/
 │       ├── routes_auth.py
 │       ├── routes_common.py
@@ -277,100 +278,107 @@ config/
     `-- static.json
 ```
 
-Set `generate.active` to `"yes"` or `"no"` in each generator config to enable/disable providers. The registry hot-reloads within seconds when any file in `config/` is saved.
+Set `service_provider.enabled` to `true` or `false` in each config file to enable/disable entries. For generators, `service_provider.config.generate.enabled` can optionally override generation activation per provider. The registry hot-reloads within seconds when any file in `config/` is saved.
 
 ### Translators
 
 Each translator is configured in its own JSON file under `config/translators/`.
-Each file has a `service` section (metadata) and a separate `config` section (translator settings).
+Each file uses a top-level `service_provider` object containing both metadata and translator settings.
 
-Service fields:
+`service_provider` fields:
 
 | Field      | Type   | Description                                          |
 |------------|--------|------------------------------------------------------|
-| `type`     | string | Service type (currently `translator`).               |
-| `name`     | string | Translator implementation name (`openai`, `static`). |
-| `active`   | bool   | Set `true` to enable the translator.                 |
+| `service`  | string | Service type (currently `translator`).               |
+| `provider` | string | Translator implementation name (`openai`, `static_translate`). |
+| `enabled`  | bool   | Set `true` to enable the translator.                 |
 | `priority` | int    | Execution order (lower runs first).                  |
+| `version`  | string | Config schema version (typically `1.0`).             |
+| `config`   | object | Translator-specific settings.                        |
 
-Config fields:
+Common `service_provider.config` fields:
 
 | Field                    | Type   | Description                                                |
 |--------------------------|--------|------------------------------------------------------------|
-| `config`                 | object | Translator-specific settings.                              |
-| `config.input_language`  | string | Default source language when request/CLI value is missing. |
-| `config.output_language` | string | Default output language when request/CLI value is missing. |
+| `input_language`         | string | Default source language when request/CLI value is missing. |
+| `output_language`        | string | Default output language when request/CLI value is missing. |
+| `content_dir`            | string | Optional path used by `static_translate` provider.         |
 
 Example (`config/translators/openai_en_fr.json`):
 
 ```json
 {
-  "service": {
-    "type": "translator",
-    "name": "openai",
-    "active": true,
-    "priority": 2
-  },
-  "config": {
-    "input_language": "en",
-    "output_language": "fr",
-    "model": "gpt-4o",
-    "prompt": "You are a professional translator...",
-    "temperature": 0
+  "service_provider": {
+    "service": "translator",
+    "provider": "openai",
+    "enabled": true,
+    "priority": 2,
+    "version": "1.0",
+    "config": {
+      "input_language": "en",
+      "output_language": "fr",
+      "model": "gpt-4o",
+      "prompt": "You are a professional translator...",
+      "temperature": 0
+    }
   }
 }
 ```
 
-`service.name` selects the implementation class, and every active translator is executed in sequence.
+`service_provider.provider` selects the implementation class, and every active translator is executed in sequence.
 If CLI/API translation language parameters are not provided, each translator uses
-`config.input_language` and `config.output_language` as defaults.
+`service_provider.config.input_language` and `service_provider.config.output_language` as defaults.
 
-For `service.name: "static"`, `config.content_dir` is optional. When it is missing or points to a
+For `service_provider.provider: "static_translate"`, `service_provider.config.content_dir` is optional.
+When it is missing or points to a
 non-existing directory, the static translator automatically falls back to `CONTENT_DIR`
 from `src/core/config.py`.
 
 ### Audio optimizers
 
 Each optimizer is configured in its own JSON file under `config/optimizers/`.
-Each file has a `service` section (metadata) and a separate `config` section (optimizer settings).
+Each file uses a top-level `service_provider` object containing both metadata and optimizer settings.
 
-Service fields:
+`service_provider` fields:
 
 | Field      | Type   | Description                                        |
 |------------|--------|----------------------------------------------------|
-| `type`     | string | Service type (currently `optimizer`).              |
-| `name`     | string | Optimizer implementation name (`ffmpeg`, `pydub`). |
-| `active`   | bool   | Set `true` to enable the optimizer.                |
+| `service`  | string | Service type (currently `optimizer`).              |
+| `provider` | string | Optimizer implementation name (`ffmpeg`, `pydub`). |
+| `enabled`  | bool   | Set `true` to enable the optimizer.                |
 | `priority` | int    | Execution order (lower runs first).                |
+| `version`  | string | Config schema version (typically `1.0`).           |
+| `config`   | object | Optimizer-specific settings.                       |
 
-Config fields:
+Common `service_provider.config` fields:
 
 | Field                | Type | Description                                          |
 |----------------------|------|------------------------------------------------------|
-| `config.sample_rate` | int  | Output sample rate (default `22050`).                |
-| `config.mono`        | bool | Convert output to mono when `true` (default `true`). |
-| `config.vbr_quality` | int  | MP3 VBR quality `0-9` (default `9`).                 |
+| `sample_rate`        | int  | Output sample rate (default `22050`).                |
+| `mono`               | bool | Convert output to mono when `true` (default `true`). |
+| `vbr_quality`        | int  | MP3 VBR quality `0-9` (default `9`).                 |
 
 Example (`config/optimizers/ffmpeg_high.json`):
 
 ```json
 {
-  "service": {
-    "type": "optimizer",
-    "name": "ffmpeg",
-    "active": true,
-    "priority": 1
-  },
-  "config": {
-    "sample_rate": 22050,
-    "mono": true,
-    "vbr_quality": 9
+  "service_provider": {
+    "service": "optimizer",
+    "provider": "ffmpeg",
+    "enabled": true,
+    "priority": 1,
+    "version": "1.0",
+    "config": {
+      "sample_rate": 22050,
+      "mono": true,
+      "vbr_quality": 9
+    }
   }
 }
 ```
 
-`service.name` selects the implementation class. Multiple files can use the same implementation
-with different `name` values and different `config` values.
+`service_provider.provider` selects the implementation class. Multiple files can use the same
+implementation with different providers and different config values.
 
 Optimized files are written alongside generator output, preserving the same hierarchy:
 
@@ -391,7 +399,8 @@ requires the `pydub` Python package (included in `requirements.txt`).
 curl http://localhost:8000/api/v1/ping
 
 # Login and use token
-TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/login -d "username=admin&password=admin" | jq -r .access_token)
+TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/login \
+  -d "username=admin&password=$DEFAULT_ADMIN_PASSWORD" | jq -r .access_token)
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/v1/status
 
 # List categories
