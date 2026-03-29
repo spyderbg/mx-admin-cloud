@@ -18,7 +18,7 @@ class Service:
     """
 
     category: str   # backend kind, e.g. "generator", "translator", "optimizer"
-    name: str       # implementation key, e.g. "openai", "ffmpeg"
+    name: str       # specific provider name, e.g. "google_cloud", "custom_rule_based"
     enabled: bool   # whether the service should run
     priority: int   # execution order (lower = earlier)
 
