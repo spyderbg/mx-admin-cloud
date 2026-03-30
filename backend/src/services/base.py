@@ -1,7 +1,7 @@
 """Shared base classes for all service implementations.
 
 Defines the root ``Service`` contract (enforces ``register``) and
-``ServiceProvider`` which supplies the common runtime behaviour shared by
+``ServiceProvider`` which supplies the common runtime behavior shared by
 TTS providers, translators, and optimizers.
 """
 
@@ -16,7 +16,7 @@ from typing import Any
 class Service(ABC):
     """Root contract for all service implementations.
 
-    Every concrete service class must implement :meth:`register` so it can
+    Every concrete service class must implement: meth:`register` so it can
     self-register with its factory at import time.
     """
 

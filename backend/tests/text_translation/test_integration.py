@@ -59,7 +59,7 @@ def _make_mock_translator(result: str | None = "translated") -> object:
 def client_with_translator() -> TestClient:
     """TestClient with one mock translator that returns 'bonjour'."""
     registry = ServiceRegistry()
-    registry.translators = [_make_mock_translator("bonjour")]
+    registry.set_service("translators", [_make_mock_translator("bonjour")])
 
     app.dependency_overrides[get_registry] = lambda: registry
     app.dependency_overrides[require_internal] = lambda: {"sub": "test", "role": "internal"}
@@ -100,23 +100,21 @@ class TestListTranslators:
         config_file = translators_dir / "test_translator.json"
         config_file.write_text(
             json.dumps({
-                "service": {
-                    "type": "translator",
-                    "category": "translator",
-                    "name": "static_translate",
+                "service_provider": {
+                    "service": "translator",
+                    "provider": "static_translate",
                     "enabled": True,
                     "priority": 1,
+                    "config": {},
                 }
             }),
             encoding="utf-8",
         )
 
-        from src.core import config_loader
         from src.core.config import settings
 
         original_config_path = settings.config_path
 
-        # Temporarily redirect config_path to our temp dir
         app.dependency_overrides[require_internal] = lambda: {"sub": "test", "role": "internal"}
         try:
             settings.__dict__["config_path"] = tmp_path
@@ -126,7 +124,7 @@ class TestListTranslators:
             data = resp.json()
             if data:
                 entry = data[0]
-                for field in ("name", "category", "enabled", "priority", "config_path"):
+                for field in ("name", "service_type", "enabled", "priority", "config_path"):
                     assert field in entry, f"Missing field: {field}"
         finally:
             settings.__dict__["config_path"] = original_config_path
@@ -216,7 +214,7 @@ class TestTranslateText:
         self, auth_headers: dict
     ) -> None:
         registry = ServiceRegistry()
-        registry.translators = [_make_mock_translator(result=None)]
+        registry.set_service("translators", [_make_mock_translator(result=None)])
 
         app.dependency_overrides[get_registry] = lambda: registry
         app.dependency_overrides[require_internal] = lambda: {"sub": "test", "role": "internal"}

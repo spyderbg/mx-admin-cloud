@@ -15,24 +15,11 @@ from src.services.text_to_speech.models import ProviderConfig
 logger = logging.getLogger(__name__)
 
 
-def _boolish(value: object) -> bool:
-    """Coerce a config value to bool; accepts True/False, None, and common string truths."""
-    if isinstance(value, bool):
-        return value
-    if value is None:
-        return False
-    return str(value).strip().lower() in {"1", "true", "yes", "on"}
-
-
 class TTSProvider(ServiceProvider):
     """Common interface for all TTS provider implementations."""
 
     def __init__(self, cfg: ProviderConfig, base_dir: Path) -> None:
         super().__init__(cfg, base_dir)
-
-    def is_active(self) -> bool:
-        """Return True when the provider's generate section is marked active."""
-        return _boolish(self.cfg.generate.get("enabled", False))
 
     def resolve_language_generate(self, language_code: str) -> dict[str, Any]:
         """Return a merged generate dict with language-specific overrides applied.

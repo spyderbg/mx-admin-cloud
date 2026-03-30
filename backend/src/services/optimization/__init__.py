@@ -79,25 +79,19 @@ def build_active_optimizers(
 
 
 # Trigger self-registration of all implementations
-from src.services.optimization.providers.ffmpeg_optimizer import FfmpegAudioOptimizer as _Ffmpeg
-from src.services.optimization.providers.pydub_optimizer import PydubAudioOptimizer as _Pydub
+from src.services.optimization.providers.ffmpeg_optimizer import FfmpegAudioOptimizer as _Ffmpeg  # noqa: E402, F401
+from src.services.optimization.providers.pydub_optimizer import PydubAudioOptimizer as _Pydub  # noqa: E402, F401
 
 # Register this service with the plugin registry
 from src.services.plugin_registry import ServicePlugin, ServicePluginRegistry  # noqa: E402
-from src.services.optimization.config_loader import load_optimizer_configs as _load_opt_cfgs  # noqa: E402
 
-
-def _opt_load(settings):
-    return _load_opt_cfgs(base_dir=settings.BASE_DIR, config_dir=settings.config_path)
-
-
-def _opt_build(configs, settings):
-    return build_active_optimizers(configs, settings.output_path)
-
-
-ServicePluginRegistry.register(ServicePlugin(
-    service_key="optimizer",
-    registry_attr="optimizers",
-    load_configs=_opt_load,
-    build_instances=_opt_build,
-))
+ServicePluginRegistry.register(
+    ServicePlugin(
+        registry_attr="optimizers",
+        config_dir="optimizers",
+        config_class=OptimizerConfig,
+        factory_create=OptimizerFactory.create,
+        sort_key="priority",
+    ),
+    module_name=__name__,
+)

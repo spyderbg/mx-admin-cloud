@@ -17,7 +17,7 @@ from pydantic import BaseModel  # pylint: disable=import-error
 from src.api.dependencies import get_internal_token, get_job_store, get_registry, require_internal
 from src.core.config import settings
 from src.core.job_store import JobStore
-from src.core.pipeline import run_pipeline
+# from src.core.pipeline import run_pipeline
 from src.core.registry import ServiceRegistry
 
 router = APIRouter(prefix="/internal", tags=["internal-jobs"])
@@ -56,31 +56,31 @@ async def _save_upload(upload: UploadFile, job_id: str) -> Path:
     return dest
 
 
-async def _run_job(
-    job_id: str,
-    input_path: Path,
-    language: str,
-    output_format: str,
-    max_concurrency: int,
-    registry: ServiceRegistry,
-    job_store: JobStore,
-    internal_token: str,
-) -> None:
-    await job_store.update(job_id, status="running")
-    try:
-        summary = await run_pipeline(
-            registry=registry,
-            internal_token=internal_token,
-            input_path=input_path,
-            default_language=language,
-            output_format=output_format,
-            max_concurrency=max_concurrency,
-            output_dir=settings.output_path,
-        )
-        await job_store.update(job_id, status="completed", result=summary.to_dict())
-        input_path.unlink(missing_ok=True)
-    except Exception as exc:
-        await job_store.update(job_id, status="failed", error=str(exc))
+# async def _run_job(
+#     job_id: str,
+#     input_path: Path,
+#     language: str,
+#     output_format: str,
+#     max_concurrency: int,
+#     registry: ServiceRegistry,
+#     job_store: JobStore,
+#     internal_token: str,
+# ) -> None:
+#     await job_store.update(job_id, status="running")
+#     try:
+#         summary = await run_pipeline(
+#             registry=registry,
+#             internal_token=internal_token,
+#             input_path=input_path,
+#             default_language=language,
+#             output_format=output_format,
+#             max_concurrency=max_concurrency,
+#             output_dir=settings.output_path,
+#         )
+#         await job_store.update(job_id, status="completed", result=summary.to_dict())
+#         input_path.unlink(missing_ok=True)
+#     except Exception as exc:
+#         await job_store.update(job_id, status="failed", error=str(exc))
 
 
 @router.post(
@@ -137,40 +137,40 @@ async def generate_status(
         error=record.error,
     )
 
-
-@router.post(
-    "/generate-sync",
-    summary="Run TTS pipeline synchronously",
-    description=(
-        "Upload an input file and run the TTS pipeline synchronously. "
-        "Blocks until the pipeline completes and returns the result directly. "
-        "Use for small payloads or scripted calls; prefer ``/generate`` for large batches."
-    ),
-)
-async def generate_sync(
-    file: UploadFile = File(...),
-    language: str = Form("en"),
-    output_format: str = Form("mp3"),
-    max_concurrency: int = Form(5),
-    _user: dict = Depends(require_internal),
-    registry: ServiceRegistry = Depends(get_registry),
-    internal_token: str = Depends(get_internal_token),
-) -> dict[str, Any]:
-    """Upload an input file, run the pipeline synchronously, return the result."""
-    job_id = str(uuid.uuid4())
-    input_path = await _save_upload(file, job_id)
-    try:
-        summary = await run_pipeline(
-            registry=registry,
-            internal_token=internal_token,
-            input_path=input_path,
-            default_language=language,
-            output_format=output_format,
-            max_concurrency=max_concurrency,
-            output_dir=settings.output_path,
-        )
-        input_path.unlink(missing_ok=True)
-        return summary.to_dict()
-    except Exception as exc:
-        input_path.unlink(missing_ok=True)
-        raise HTTPException(status_code=500, detail=str(exc))
+#
+# @router.post(
+#     "/generate-sync",
+#     summary="Run TTS pipeline synchronously",
+#     description=(
+#         "Upload an input file and run the TTS pipeline synchronously. "
+#         "Blocks until the pipeline completes and returns the result directly. "
+#         "Use for small payloads or scripted calls; prefer ``/generate`` for large batches."
+#     ),
+# )
+# async def generate_sync(
+#     file: UploadFile = File(...),
+#     language: str = Form("en"),
+#     output_format: str = Form("mp3"),
+#     max_concurrency: int = Form(5),
+#     _user: dict = Depends(require_internal),
+#     registry: ServiceRegistry = Depends(get_registry),
+#     internal_token: str = Depends(get_internal_token),
+# ) -> dict[str, Any]:
+#     """Upload an input file, run the pipeline synchronously, return the result."""
+#     job_id = str(uuid.uuid4())
+#     input_path = await _save_upload(file, job_id)
+#     try:
+#         summary = await run_pipeline(
+#             registry=registry,
+#             internal_token=internal_token,
+#             input_path=input_path,
+#             default_language=language,
+#             output_format=output_format,
+#             max_concurrency=max_concurrency,
+#             output_dir=settings.output_path,
+#         )
+#         input_path.unlink(missing_ok=True)
+#         return summary.to_dict()
+#     except Exception as exc:
+#         input_path.unlink(missing_ok=True)
+#         raise HTTPException(status_code=500, detail=str(exc))

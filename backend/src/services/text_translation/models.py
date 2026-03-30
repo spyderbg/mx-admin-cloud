@@ -30,6 +30,41 @@ class TranslatorConfig:
     provider_config: Any = field(default=None)   # typed per-provider config; set by TranslatorFactory.create()
     version: str = field(default="1.0")
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any], config_path: Path) -> TranslatorConfig | None:
+        """Parse a raw JSON config dict into a ``TranslatorConfig``.
+
+        Returns ``None`` when the payload is structurally invalid so the
+        generic loader can skip it silently.
+        """
+        from src.core.utils import boolish  # pylint: disable=import-outside-toplevel
+
+        service = data.get("service_provider", {})
+        if not isinstance(service, dict):
+            return None
+
+        service_type = str(service.get("service", "")).strip().lower()
+        name = str(service.get("provider") or config_path.stem).strip()
+        if not service_type or not name:
+            return None
+
+        version = str(service.get("version", "1.0")).strip()
+        active = boolish(service.get("enabled", False))
+        priority = int(service.get("priority", 999))
+        raw_config = service.get("config", {})
+        if not isinstance(raw_config, dict):
+            raw_config = {}
+
+        return cls(
+            service_type=service_type,
+            name=name,
+            enabled=active,
+            priority=priority,
+            config=raw_config,
+            config_path=config_path,
+            version=version,
+        )
+
 
 class TextTranslateCriteria:
     """Criteria to evaluate a text translation."""

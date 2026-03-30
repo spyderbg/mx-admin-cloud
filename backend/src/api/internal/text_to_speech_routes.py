@@ -54,11 +54,9 @@ async def list_generators(
     _user: dict = Depends(require_internal),
 ) -> list[dict[str, Any]]:
     """Return configured generators with activation states."""
-    from src.services.text_to_speech.config_loader import load_provider_configs  # pylint: disable=import-outside-toplevel
-    configs = load_provider_configs(
-        base_dir=settings.BASE_DIR,
-        config_dir=settings.config_path,
-    )
+    from src.services.config_loader import load_service_configs  # pylint: disable=import-outside-toplevel
+    from src.services.text_to_speech.models import ProviderConfig  # pylint: disable=import-outside-toplevel
+    configs = load_service_configs(settings.config_path / "text_to_speech", ProviderConfig)
     return [
         {
             "name": c.name,
@@ -83,10 +81,10 @@ async def generate_single(
     registry: ServiceRegistry = Depends(get_registry),
 ) -> dict[str, Any]:
     """Generate audio for a single TTS request via the named provider."""
-    matched = [(p, cfg) for p, cfg in registry.get("providers") if p.name == provider]
+    matched = [p for p in registry.get("providers") if p.name == provider]
     if not matched:
         raise HTTPException(status_code=404, detail=f"Provider '{provider}' not found or not active.")
-    prov, _cfg = matched[0]
+    prov = matched[0]
 
     request_id = f"api-{body.row_index}-{body.column_index or 0}-{body.language_code}"
     tts_request = TTSRequest(
@@ -146,7 +144,7 @@ async def generate_word(
     if not providers:
         raise HTTPException(status_code=503, detail="No active TTS providers configured.")
 
-    prov, _cfg = providers[0]
+    prov = providers[0]
 
     lang_code = normalize_language_code(body.lang)
     lang_full = language_name(lang_code)

@@ -9,8 +9,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from src.core.utils import boolish
 from src.services.text_to_speech.models import ProviderConfig
-from src.services.text_to_speech.base import TTSProvider, _boolish
+from src.services.text_to_speech.base import TTSProvider
 from src.services.text_to_speech import (
     ProviderFactory,
     build_provider,
@@ -30,12 +31,14 @@ def _make_config(
     config_path: Path | None = None,
     version: str = "1.0",
 ) -> ProviderConfig:
+    gen = generate if generate is not None else {"enabled": True}
     return ProviderConfig(
         name=name,
-        generate=generate if generate is not None else {"enabled": True},
+        generate=gen,
         evaluate=evaluate if evaluate is not None else {"enabled": False},
         config_path=config_path or Path("test.json"),
         version=version,
+        enabled=boolish(gen.get("enabled", False)),
     )
 
 
@@ -61,7 +64,6 @@ class _StubProvider(TTSProvider):
     """Minimal concrete TTS provider for testing."""
 
     def __init__(self, cfg: ProviderConfig, base_dir: Path, success: bool = True) -> None:
-        # ProviderConfig has no .config field; bypass ServiceProvider.__init__
         self.cfg = cfg
         self.config: dict[str, Any] = {}
         self.base_dir = base_dir
@@ -88,26 +90,26 @@ class _StubProvider(TTSProvider):
 
 
 # ---------------------------------------------------------------------------
-# _boolish helper
+# boolish helper
 # ---------------------------------------------------------------------------
 
 class TestBoolish:
     def test_true_bool(self) -> None:
-        assert _boolish(True) is True
+        assert boolish(True) is True
 
     def test_false_bool(self) -> None:
-        assert _boolish(False) is False
+        assert boolish(False) is False
 
     def test_none_returns_false(self) -> None:
-        assert _boolish(None) is False
+        assert boolish(None) is False
 
     @pytest.mark.parametrize("val", ["1", "true", "yes", "on", "TRUE", "Yes"])
     def test_truthy_strings(self, val: str) -> None:
-        assert _boolish(val) is True
+        assert boolish(val) is True
 
     @pytest.mark.parametrize("val", ["0", "false", "no", "off", "nope", ""])
     def test_falsy_strings(self, val: str) -> None:
-        assert _boolish(val) is False
+        assert boolish(val) is False
 
 
 # ---------------------------------------------------------------------------
@@ -262,11 +264,11 @@ class TestProviderFactory:
 
     def test_boolish_true_values(self) -> None:
         for val in (True, "yes", "1", "on", "true"):
-            assert ProviderFactory._boolish(val) is True
+            assert boolish(val) is True
 
     def test_boolish_false_values(self) -> None:
         for val in (False, None, "no", "0", "off", "false"):
-            assert ProviderFactory._boolish(val) is False
+            assert boolish(val) is False
 
     def test_parse_config_map_dict(self, tmp_path: Path) -> None:
         result = ProviderFactory._parse_config_map({"key": "val"}, "generate", tmp_path / "c.json")
@@ -337,7 +339,7 @@ class TestBuildProvider:
 
 
 # ---------------------------------------------------------------------------
-# load_provider_configs
+# load_provider_configs (via generic loader)
 # ---------------------------------------------------------------------------
 
 class TestLoadProviderConfigs:
@@ -349,12 +351,12 @@ class TestLoadProviderConfigs:
         return config_file
 
     def test_returns_empty_when_no_generators_dir(self, tmp_path: Path) -> None:
-        from src.services.text_to_speech.config_loader import load_provider_configs
-        result = load_provider_configs(base_dir=tmp_path, config_dir=tmp_path)
+        from src.services.config_loader import load_service_configs
+        result = load_service_configs(tmp_path / "text_to_speech", ProviderConfig)
         assert result == []
 
     def test_loads_config_from_valid_json(self, tmp_path: Path) -> None:
-        from src.services.text_to_speech.config_loader import load_provider_configs
+        from src.services.config_loader import load_service_configs
         self._write_generator_config(tmp_path, "openai.json", {
             "service_provider": {
                 "provider": "openai",
@@ -366,12 +368,12 @@ class TestLoadProviderConfigs:
                 },
             }
         })
-        result = load_provider_configs(base_dir=tmp_path, config_dir=tmp_path)
+        result = load_service_configs(tmp_path / "text_to_speech", ProviderConfig)
         assert len(result) == 1
         assert result[0].name == "openai"
 
-    def test_enabled_flag_propagated_to_generate(self, tmp_path: Path) -> None:
-        from src.services.text_to_speech.config_loader import load_provider_configs
+    def test_enabled_field_propagated_to_generate(self, tmp_path: Path) -> None:
+        from src.services.config_loader import load_service_configs
         self._write_generator_config(tmp_path, "openai.json", {
             "service_provider": {
                 "provider": "openai",
@@ -382,11 +384,12 @@ class TestLoadProviderConfigs:
                 },
             }
         })
-        result = load_provider_configs(base_dir=tmp_path, config_dir=tmp_path)
+        result = load_service_configs(tmp_path / "text_to_speech", ProviderConfig)
         assert result[0].generate["enabled"] is True
+        assert result[0].enabled is True
 
     def test_uses_filename_stem_when_provider_missing(self, tmp_path: Path) -> None:
-        from src.services.text_to_speech.config_loader import load_provider_configs
+        from src.services.config_loader import load_service_configs
         self._write_generator_config(tmp_path, "myprovider.json", {
             "service_provider": {
                 "config": {
@@ -395,19 +398,19 @@ class TestLoadProviderConfigs:
                 },
             }
         })
-        result = load_provider_configs(base_dir=tmp_path, config_dir=tmp_path)
+        result = load_service_configs(tmp_path / "text_to_speech", ProviderConfig)
         assert result[0].name == "myprovider"
 
     def test_skips_non_dict_top_level(self, tmp_path: Path) -> None:
-        from src.services.text_to_speech.config_loader import load_provider_configs
+        from src.services.config_loader import load_service_configs
         generators_dir = tmp_path / "text_to_speech"
         generators_dir.mkdir(parents=True)
         (generators_dir / "bad.json").write_text("[1, 2, 3]", encoding="utf-8")
-        result = load_provider_configs(base_dir=tmp_path, config_dir=tmp_path)
+        result = load_service_configs(tmp_path / "text_to_speech", ProviderConfig)
         assert result == []
 
     def test_version_defaults_to_1_0(self, tmp_path: Path) -> None:
-        from src.services.text_to_speech.config_loader import load_provider_configs
+        from src.services.config_loader import load_service_configs
         self._write_generator_config(tmp_path, "openai.json", {
             "service_provider": {
                 "provider": "openai",
@@ -417,5 +420,5 @@ class TestLoadProviderConfigs:
                 },
             }
         })
-        result = load_provider_configs(base_dir=tmp_path, config_dir=tmp_path)
+        result = load_service_configs(tmp_path / "text_to_speech", ProviderConfig)
         assert result[0].version == "1.0"

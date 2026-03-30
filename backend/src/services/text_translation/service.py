@@ -1,4 +1,4 @@
-"""Translation service business logic: factory, builders, and orchestration."""
+"""Text translation service business logic: factory, builders, and orchestration."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ class TranslatorFactory:
 
         The *config_parser* is called by :meth:`create` before the builder to validate
         and parse the raw ``config`` dict into a typed provider config object.  Errors
-        raised there surface at application startup rather than at request time.
+        raised their surface at application startup rather than at request time.
         """
         key = translator_name.strip().lower()
         cls._builders[key] = builder

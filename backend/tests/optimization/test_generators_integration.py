@@ -61,7 +61,7 @@ def _make_mock_provider(name: str = "openai", audio: GeneratedAudio | None = Non
 
 def _registry_with(provider: Any) -> ServiceRegistry:
     registry = ServiceRegistry()
-    registry.providers = [(provider, MagicMock())]
+    registry.set_service("providers", [provider])
     return registry
 
 
@@ -328,7 +328,7 @@ class TestGenerateSingleProviderMatching:
         prov_b = _make_mock_provider("providerB", audio=audio_b)
 
         registry = ServiceRegistry()
-        registry.providers = [(prov_a, MagicMock()), (prov_b, MagicMock())]
+        registry.set_service("providers", [prov_a, prov_b])
 
         app.dependency_overrides[get_registry] = lambda: registry
         app.dependency_overrides[require_internal] = lambda: {"sub": "test", "role": "internal"}

@@ -52,11 +52,8 @@ async def list_evaluators(
     _user: dict = Depends(require_internal),
 ) -> list[dict[str, Any]]:
     """Return configured evaluators (from generators/providers) with activation states."""
-    from src.services.text_to_speech.config_loader import load_provider_configs  # pylint: disable=import-outside-toplevel
-    configs = load_provider_configs(
-        base_dir=settings.BASE_DIR,
-        config_dir=settings.config_path,
-    )
+    from src.services.config_loader import load_service_configs  # pylint: disable=import-outside-toplevel
+    configs = load_service_configs(settings.config_path / "text_to_speech", ProviderConfig)
     return [
         {
             "name": c.name,

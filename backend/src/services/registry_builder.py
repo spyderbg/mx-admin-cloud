@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from src.core.config import Settings
 from src.core.registry import ServiceRegistry
+from src.services.config_loader import load_service_configs
 
 # These imports trigger each package's __init__.py, which calls
 # ServicePluginRegistry.register() for that service type.
@@ -29,7 +30,7 @@ async def build_registry(settings: Settings) -> ServiceRegistry:
 
 
 async def reload_registry(registry: ServiceRegistry, settings: Settings) -> None:
-    """Re-parse configs and replace instances in-place (thread-safe)."""
+    """Reparse configs and replace instances in-place (thread-safe)."""
     async with registry._lock:  # pylint: disable=protected-access
         await _load_into(registry, settings)
 
@@ -37,6 +38,14 @@ async def reload_registry(registry: ServiceRegistry, settings: Settings) -> None
 async def _load_into(registry: ServiceRegistry, settings: Settings) -> None:
     """Iterate registered service plugins and populate the registry."""
     for plugin in ServicePluginRegistry.all_plugins():
-        configs = plugin.load_configs(settings)
-        instances = plugin.build_instances(configs, settings)
+        config_path = settings.config_path / plugin.config_dir
+        configs = load_service_configs(config_path, plugin.config_class)
+        if plugin.sort_key:
+            configs.sort(key=lambda c: getattr(c, plugin.sort_key))
+        base_dir = getattr(settings, plugin.base_dir_key)
+        instances = [
+            plugin.factory_create(cfg, base_dir)
+            for cfg in configs
+            if cfg.enabled
+        ]
         registry.set_service(plugin.registry_attr, instances)

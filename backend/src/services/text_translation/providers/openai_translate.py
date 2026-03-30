@@ -28,7 +28,7 @@ class OpenAITranslatorConfig(BaseTranslatorProviderConfig):
     def from_dict(cls, data: dict[str, Any], config_path: Path) -> "OpenAITranslatorConfig":
         """Parse and validate *data* from the ``service_provider.config`` JSON block.
 
-        Raises :exc:`ValueError` with a file-path context if a field is invalid,
+        Raises: exc:`ValueError` with a file-path context if a field is invalid,
         so errors surface at application startup rather than at request time.
         """
         temp = data.get("temperature", 0.0)

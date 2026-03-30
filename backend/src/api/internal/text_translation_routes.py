@@ -49,11 +49,10 @@ async def list_translators(
     _user: dict = Depends(require_internal),
 ) -> list[dict[str, Any]]:
     """Return configured translators with service metadata."""
-    from src.services.text_translation.config_loader import load_translator_configs  # pylint: disable=import-outside-toplevel
-    configs = load_translator_configs(
-        base_dir=settings.BASE_DIR,
-        config_dir=settings.config_path,
-    )
+    from src.services.config_loader import load_service_configs  # pylint: disable=import-outside-toplevel
+    from src.services.text_translation.models import TranslatorConfig  # pylint: disable=import-outside-toplevel
+    configs = load_service_configs(settings.config_path / "text_translation", TranslatorConfig)
+    configs.sort(key=lambda c: c.priority)
     return [
         {
             "name": c.name,

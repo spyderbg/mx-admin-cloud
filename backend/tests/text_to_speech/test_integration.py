@@ -73,8 +73,7 @@ def _make_mock_provider(name: str = "openai", success: bool = True) -> Any:
 def client_with_provider():
     """TestClient with one mock provider that succeeds."""
     registry = ServiceRegistry()
-    mock_cfg = MagicMock()
-    registry.providers = [(_make_mock_provider("openai"), mock_cfg)]
+    registry.set_service("providers", [_make_mock_provider("openai")])
 
     app.dependency_overrides[get_registry] = lambda: registry
     app.dependency_overrides[require_internal] = lambda: {"sub": "test", "role": "internal"}
@@ -191,7 +190,6 @@ class TestGenerateSingle:
         dummy_audio.write_bytes(b"audio")
 
         registry = ServiceRegistry()
-        mock_cfg = MagicMock()
         mock_provider = _make_mock_provider("openai")
         mock_provider.generate.return_value = GeneratedAudio(
             provider="openai",
@@ -206,7 +204,7 @@ class TestGenerateSingle:
             latency_seconds=0.1,
             success=True,
         )
-        registry.providers = [(mock_provider, mock_cfg)]
+        registry.set_service("providers", [mock_provider])
 
         app.dependency_overrides[get_registry] = lambda: registry
         app.dependency_overrides[require_internal] = lambda: {"sub": "test", "role": "internal"}
@@ -232,7 +230,6 @@ class TestGenerateSingle:
         dummy_audio.write_bytes(b"audio")
 
         registry = ServiceRegistry()
-        mock_cfg = MagicMock()
         mock_provider = _make_mock_provider("openai")
         mock_provider.generate.return_value = GeneratedAudio(
             provider="openai",
@@ -247,7 +244,7 @@ class TestGenerateSingle:
             latency_seconds=0.1,
             success=True,
         )
-        registry.providers = [(mock_provider, mock_cfg)]
+        registry.set_service("providers", [mock_provider])
 
         app.dependency_overrides[get_registry] = lambda: registry
         app.dependency_overrides[require_internal] = lambda: {"sub": "test", "role": "internal"}
@@ -328,7 +325,6 @@ class TestGenerateWord:
         dummy_audio.write_bytes(b"fake-mp3-bytes")
 
         registry = ServiceRegistry()
-        mock_cfg = MagicMock()
         mock_provider = _make_mock_provider("openai")
         mock_provider.generate.return_value = GeneratedAudio(
             provider="openai",
@@ -343,7 +339,7 @@ class TestGenerateWord:
             latency_seconds=0.1,
             success=True,
         )
-        registry.providers = [(mock_provider, mock_cfg)]
+        registry.set_service("providers", [mock_provider])
 
         app.dependency_overrides[get_registry] = lambda: registry
         app.dependency_overrides[require_internal] = lambda: {"sub": "test", "role": "internal"}
@@ -364,7 +360,6 @@ class TestGenerateWord:
         self, auth_headers: dict, tmp_path: Path
     ) -> None:
         registry = ServiceRegistry()
-        mock_cfg = MagicMock()
         mock_provider = _make_mock_provider("openai", success=False)
         mock_provider.generate.return_value = GeneratedAudio(
             provider="openai",
@@ -380,7 +375,7 @@ class TestGenerateWord:
             success=False,
             error="generation failed",
         )
-        registry.providers = [(mock_provider, mock_cfg)]
+        registry.set_service("providers", [mock_provider])
 
         app.dependency_overrides[get_registry] = lambda: registry
         app.dependency_overrides[require_internal] = lambda: {"sub": "test", "role": "internal"}

@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
+from src.core.utils import boolish
 from src.services.text_to_speech.base import TTSProvider
 from src.services.text_to_speech.models import ProviderConfig
 
@@ -48,20 +49,13 @@ class ProviderFactory:
                 return parsed
         raise ValueError(f"Provider '{label}' config in '{config_path}' must be a JSON object.")
 
-    @staticmethod
-    def _boolish(value: object) -> bool:
-        if isinstance(value, bool):
-            return value
-        if value is None:
-            return False
-        return str(value).strip().lower() in {"1", "true", "yes", "on"}
-
     @classmethod
     def create(cls, cfg: ProviderConfig, base_dir: Path) -> TTSProvider:
         cfg.generate = cls._parse_config_map(cfg.generate, "generate", cfg.config_path)
         cfg.evaluate = cls._parse_config_map(cfg.evaluate, "evaluate", cfg.config_path)
-        cfg.generate["enabled"] = cls._boolish(cfg.generate.get("enabled", False))
-        cfg.evaluate["enabled"] = cls._boolish(cfg.evaluate.get("enabled", True))
+        cfg.generate["enabled"] = boolish(cfg.generate.get("enabled", False))
+        cfg.evaluate["enabled"] = boolish(cfg.evaluate.get("enabled", True))
+        cfg.enabled = cfg.generate["enabled"]
 
         key = cfg.name.strip().lower()
         builder = cls._builders.get(key)
@@ -94,25 +88,13 @@ from src.services.text_to_speech.providers.speaktor_tts import SpeaktorTTSProvid
 
 # Register this service with the plugin registry
 from src.services.plugin_registry import ServicePlugin, ServicePluginRegistry  # noqa: E402
-from src.services.text_to_speech.config_loader import load_provider_configs as _load_tts_cfgs  # noqa: E402
 
-
-def _tts_load(settings):
-    return _load_tts_cfgs(base_dir=settings.BASE_DIR, config_dir=settings.config_path)
-
-
-def _tts_build(configs, settings):
-    result = []
-    for cfg in configs:
-        provider = build_provider(cfg, settings.output_path)
-        if provider.is_active():
-            result.append((provider, cfg))
-    return result
-
-
-ServicePluginRegistry.register(ServicePlugin(
-    service_key="text_to_speech",
-    registry_attr="providers",
-    load_configs=_tts_load,
-    build_instances=_tts_build,
-))
+ServicePluginRegistry.register(
+    ServicePlugin(
+        registry_attr="providers",
+        config_dir="text_to_speech",
+        config_class=ProviderConfig,
+        factory_create=ProviderFactory.create,
+    ),
+    module_name=__name__,
+)

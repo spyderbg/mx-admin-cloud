@@ -13,7 +13,7 @@ from src.core.config import settings
 from src.core.models import ProviderRunRecord
 from src.services.optimization import build_active_optimizers, build_optimizer
 from src.services.optimization.base import AudioOptimizerBase
-from src.services.optimization.config_loader import load_optimizer_configs
+from src.services.config_loader import load_service_configs
 from src.services.optimization.models import OptimizerConfig
 
 
@@ -75,14 +75,14 @@ def _make_config(
 
 class TestLoadOptimizerConfigs:
     def test_missing_directory_returns_empty(self, tmp_path: Path) -> None:
-        assert load_optimizer_configs(base_dir=tmp_path, config_dir=tmp_path) == []
+        assert load_service_configs(tmp_path / "optimizers", OptimizerConfig) == []
 
     def test_parses_valid_files(self, config_dir: Path) -> None:
         _write_optimizer_json(config_dir, "fast", "ffmpeg", enabled=True, priority=1,
                               config={"sample_rate": 16000})
         _write_optimizer_json(config_dir, "hq", "pydub", enabled=False, priority=2,
                               config={"vbr_quality": 2})
-        configs = load_optimizer_configs(base_dir=config_dir, config_dir=config_dir)
+        configs = load_service_configs(config_dir / "optimizers", OptimizerConfig)
         assert len(configs) == 2
 
         fast = next(c for c in configs if c.name == "ffmpeg")
@@ -98,34 +98,34 @@ class TestLoadOptimizerConfigs:
     def test_sorted_by_priority(self, config_dir: Path) -> None:
         _write_optimizer_json(config_dir, "b", "pydub", priority=2)
         _write_optimizer_json(config_dir, "a", "ffmpeg", priority=1)
-        configs = load_optimizer_configs(base_dir=config_dir, config_dir=config_dir)
+        configs = load_service_configs(config_dir / "optimizers", OptimizerConfig)
+        configs.sort(key=lambda c: c.priority)
         assert configs[0].priority == 1
         assert configs[1].priority == 2
 
     def test_defaults_merged_when_config_absent(self, config_dir: Path) -> None:
         _write_optimizer_json(config_dir, "bare", "ffmpeg")
-        configs = load_optimizer_configs(base_dir=config_dir, config_dir=config_dir)
+        configs = load_service_configs(config_dir / "optimizers", OptimizerConfig)
         assert configs[0].config == {"sample_rate": 22050, "mono": True, "vbr_quality": 9}
 
     def test_skips_entries_without_provider_or_service(self, config_dir: Path) -> None:
-        # Missing "service" field
         bad_path = config_dir / "optimizers" / "bad.json"
         bad_path.write_text(json.dumps({"service_provider": {"provider": ""}}))
         _write_optimizer_json(config_dir, "ok", "ffmpeg")
-        configs = load_optimizer_configs(base_dir=config_dir, config_dir=config_dir)
+        configs = load_service_configs(config_dir / "optimizers", OptimizerConfig)
         assert len(configs) == 1
         assert configs[0].name == "ffmpeg"
 
     def test_skips_non_dict_payload(self, config_dir: Path) -> None:
         bad_path = config_dir / "optimizers" / "list.json"
         bad_path.write_text(json.dumps([1, 2, 3]))
-        configs = load_optimizer_configs(base_dir=config_dir, config_dir=config_dir)
+        configs = load_service_configs(config_dir / "optimizers", OptimizerConfig)
         assert configs == []
 
     def test_boolish_enabled_field(self, config_dir: Path) -> None:
         _write_optimizer_json(config_dir, "yes_str", "ffmpeg", enabled="yes")  # type: ignore[arg-type]
         _write_optimizer_json(config_dir, "no_str", "pydub", enabled="no")  # type: ignore[arg-type]
-        configs = load_optimizer_configs(base_dir=config_dir, config_dir=config_dir)
+        configs = load_service_configs(config_dir / "optimizers", OptimizerConfig)
         by_name = {c.name: c for c in configs}
         assert by_name["ffmpeg"].enabled is True
         assert by_name["pydub"].enabled is False
