@@ -43,7 +43,7 @@ async def lifespan(app_lifespan: FastAPI) -> AsyncIterator[None]:
     if not app_lifespan.state.registry:
         raise Exception("Failed to build registry")
 
-    app_lifespan.state.registry.dump()
+    ServiceRegistry.dump(settings.BASE_DIR)
 
     # Job store — in-memory with TTL eviction; swap for SQLite/Redis for multi-worker
     app_lifespan.state.job_store = JobStore(ttl_seconds=3600)

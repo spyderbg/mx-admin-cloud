@@ -1,5 +1,4 @@
-"""
-"""
+""" Service registry for managing service packages and runtime instances. """
 
 from __future__ import annotations
 
@@ -18,8 +17,6 @@ class ServiceRegistry:
     def __init__(self) -> None:
         self._instances: dict[str, list[Any]] = {}
         self._lock: asyncio.Lock = asyncio.Lock()
-
-    # ── class-level: service-package bookkeeping ──────────────────────
 
     @classmethod
     def register(cls, service: Service) -> None:
@@ -40,8 +37,12 @@ class ServiceRegistry:
         return cls._registered_services.copy()
 
     @classmethod
-    def dump(cls) -> None:
-        """Print detailed information about all registered service packages."""
+    def dump(cls, base_dir: Path | None = None) -> None:
+        """Print detailed information about all registered service packages.
+
+        When *base_dir* is set, *service_dir* is printed relative to it; otherwise the
+        absolute path is shown.
+        """
         services = cls._registered_services
         print(f"\n{'=' * 80}")
         print(f"ServiceRegistry - Total Services: {len(services)}")
@@ -63,18 +64,13 @@ class ServiceRegistry:
                 if service_dict:
                     print("    Attributes:")
                     for key, value in service_dict.items():
-                        value_str = str(value)
-                        if len(value_str) > 100:
-                            value_str = value_str[:97] + "..."
-                        print(f"      - {key}: {value_str}")
+                        print(f"      - {key}: {cls._format_registry_attr(key, value, base_dir)}")
             except Exception as exc:  # pylint: disable=broad-exception-caught
                 print(f"    [Could not serialize attributes: {exc}]")
 
             print()
 
         print(f"{'=' * 80}\n")
-
-    # ── instance-level: runtime service instances (lock-protected) ────
 
     def get(self, attr: str) -> list[Any]:
         """Return the list of live instances for *attr* (e.g. ``"providers"``)."""
@@ -84,9 +80,23 @@ class ServiceRegistry:
         """Store *instances* under *attr* — called by ``registry_builder``."""
         self._instances[attr] = instances
 
+    @staticmethod
+    def _format_registry_attr(key: str, value: Any, base_dir: Path | None) -> str:
+        """String form for dump output; *service_dir* is relative to *base_dir* when possible."""
+        if key == "service_dir" and base_dir is not None and isinstance(value, Path):
+            try:
+                display = str(value.relative_to(base_dir))
+            except ValueError:
+                display = str(value)
+        else:
+            display = str(value)
+        if len(display) > 100:
+            display = display[:97] + "..."
+        return display
+
 
 import importlib  # noqa: E402  pylint: disable=wrong-import-position
-import pkgutil    # noqa: E402  pylint: disable=wrong-import-position
+import pkgutil  # noqa: E402  pylint: disable=wrong-import-position
 import src.services as _services_pkg  # noqa: E402  pylint: disable=wrong-import-position
 
 for _mod_info in pkgutil.iter_modules(_services_pkg.__path__, _services_pkg.__name__ + "."):

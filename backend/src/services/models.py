@@ -23,7 +23,7 @@ class Service:
     service_dir: Path
 
 
-class ServiceProvider(Service):
+class ServiceProvider:
     """Common runtime base for provider, translator, and optimizer instances.
 
     Holds the config object and base directory; exposes the name, active-state,
@@ -54,7 +54,3 @@ class ServiceProvider(Service):
     def resolve_api_key(self) -> str:
         """Read and return the service API key from the environment."""
         return os.getenv(self.api_key_env_name(), "")
-
-
-
-
