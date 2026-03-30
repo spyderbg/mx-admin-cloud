@@ -76,9 +76,9 @@ docker compose -f docker/docker-compose.yml up -d --build
   - `input_loader.py` — Load structured requests from CSV/XLSX/TXT files
   - `result_writer.py` — Write per-run JSON and CSV reports
   - `pipeline.py` — Async TTS pipeline orchestration (calls internal HTTP endpoints)
-  - `registry.py` — Pure data container for service instances (no service imports)
   - `content_service.py` — Filesystem ops for categories/images; DALL-E icons; internal translate/TTS helpers
 - **`services/`** — Business logic implementations (providers, translators, optimizers, evaluation)
+  - `service_registry.py` — Unified registry: package descriptors (class-level) + runtime instances (lock-protected)
   - `registry_builder.py` — Builds and reloads ServiceRegistry from config files
   - `text_to_speech/` — TTS provider implementations (OpenAI, ElevenLabs, Speaktor)
   - `text_to_speech/providers/` — OpenAI, ElevenLabs, and Speaktor provider implementations

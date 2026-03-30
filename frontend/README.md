@@ -6,10 +6,13 @@ Vue 3 + TypeScript + Vite application for managing image categories, their voice
 
 ```bash
 npm install
-npm run dev         # dev server at http://localhost:5173
-npm run build       # production build with type-checking
-npm run type-check  # type-check only (no build)
+npm run dev         # Vite dev server: port 5173, host 0.0.0.0 (see vite.config.ts)
+npm run build       # vue-tsc --noEmit && vite build
+npm run type-check  # vue-tsc --noEmit only
+npm run preview     # serve production build locally
 ```
+
+The dev server proxies **`/api`** to **`http://127.0.0.1:8000`**. Run the FastAPI backend on that port for login and API-backed features; category sidebar and some views still use **`src/data/mockData.ts`** for content until fully wired to the API.
 
 ## Project Structure
 
@@ -25,8 +28,8 @@ src/
 │   ├── CategoryDetail.vue
 │   ├── ImageGrid.vue
 │   └── LoginForm.vue
-├── data/             # Mock data (replaced by API later)
-│   └── mockData.ts
+├── data/
+│   └── mockData.ts   # Mock user + categories (used by sidebar, navbar, category views)
 ├── layouts/          # Application shell components
 │   ├── AppLayout.vue
 │   ├── AppNavbar.vue
@@ -40,7 +43,7 @@ src/
 │   ├── CategoriesView.vue
 │   ├── ImageDetailView.vue
 │   ├── LoginView.vue
-│   └── DashboardView.vue
+│   └── DashboardView.vue   # present but not registered in the router
 ├── App.vue           # Root component (bare router-view)
 ├── env.d.ts          # Vite/Vue/SVG type declarations
 └── main.ts           # App entry point and CSS imports
@@ -115,15 +118,20 @@ Displayed for a specific image within a category:
 
 ## Domain Types
 
+Defined in `src/types/index.ts` (excerpt):
+
 ```typescript
 type Language = 'en' | 'es' | 'fr' | 'bg'
+
+const SUPPORTED_LANGUAGES: Language[] = ['en', 'es', 'fr', 'bg']
 
 interface Voice {
   id: string
   name: string
   language: Language
-  type: string        // "male", "female", "ambient"
+  type: string        // e.g. "male", "female", "ambient"
   iconUrl: string
+  audioUrl?: string   // if absent/empty, play is disabled for that voice
 }
 
 interface Image {
@@ -142,15 +150,21 @@ interface Category {
   voices: Voice[]     // category-level voices per language
   images: Image[]
 }
+
+interface User {
+  name: string
+  role: string
+  avatarUrl: string
+}
 ```
 
 ## Styles
 
-Uses the Star Admin Bootstrap template (from vue3-demo):
+Imported from `src/main.ts` (Star Admin / vue3-demo lineage):
 
-- `vendor.bundle.base.css` -- Bootstrap 4 + Perfect Scrollbar + jVectorMap
-- `vendor.bundle.addons.css` -- Additional vendor styles
-- `shared/style.css` -- Star Admin shared theme (~10K lines)
-- `demo_1/style.css` -- Demo skin overrides (sidebar gradient, navbar, cards)
-- `auth.css` -- Custom login page styles
-- Icon fonts: Material Design Icons, Font Awesome 4.7, flag-icon-css
+- `assets/vendors/css/vendor.bundle.base.css` -- Bootstrap 4 + Perfect Scrollbar + jVectorMap
+- `assets/vendors/css/vendor.bundle.addons.css` -- Additional vendor styles
+- `assets/css/shared/style.css` -- Star Admin shared theme
+- `assets/css/demo_1/style.css` -- Demo skin overrides (sidebar, navbar, cards)
+- `assets/css/auth.css` -- Login page styles
+- Icon fonts under `assets/vendors/`: MDI, Font Awesome 4.7, flag-icon-css
