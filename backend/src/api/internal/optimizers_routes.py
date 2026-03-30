@@ -38,8 +38,8 @@ async def list_optimizers(
 ) -> list[dict[str, Any]]:
     """Return configured optimizers with service metadata."""
     from src.services.config_loader import load_service_configs  # pylint: disable=import-outside-toplevel
-    from src.services.voice_optimization.models import OptimizerConfig  # pylint: disable=import-outside-toplevel
-    configs = load_service_configs(settings.config_path / "voice_optimizers", OptimizerConfig)
+    from src.services.models import ServiceProvider  # pylint: disable=import-outside-toplevel
+    configs = load_service_configs(settings.config_path / "voice_optimizers", ServiceProvider)
     configs.sort(key=lambda c: c.priority)
     return [
         {

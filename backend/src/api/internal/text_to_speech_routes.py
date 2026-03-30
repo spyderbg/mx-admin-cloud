@@ -55,15 +55,15 @@ async def list_generators(
 ) -> list[dict[str, Any]]:
     """Return configured generators with activation states."""
     from src.services.config_loader import load_service_configs  # pylint: disable=import-outside-toplevel
-    from src.services.text_to_speech.models import ProviderConfig  # pylint: disable=import-outside-toplevel
-    configs = load_service_configs(settings.config_path / "text_to_speech", ProviderConfig)
+    from src.services.models import ServiceProvider  # pylint: disable=import-outside-toplevel
+    configs = load_service_configs(settings.config_path / "text_to_speech", ServiceProvider)
     return [
         {
             "name": c.name,
-            "enabled": c.generate.get("enabled", False),
+            "enabled": c.config.get("generate", {}).get("enabled", False),
             "config_path": str(c.config_path),
-            "generate": {k: v for k, v in c.generate.items() if k != "languages"},
-            "evaluate_enabled": c.evaluate.get("enabled", False),
+            "generate": {k: v for k, v in c.config.get("generate", {}).items() if k != "languages"},
+            "evaluate_enabled": c.config.get("evaluate", {}).get("enabled", False),
         }
         for c in configs
     ]

@@ -3,31 +3,14 @@
 from __future__ import annotations
 
 import csv
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from src.core.config import settings
-from src.services.text_translation.models import BaseTranslatorProviderConfig, TextTranslate
-from src.services.text_translation.service import TranslatorFactory
+from src.services.text_translation.models import TextTranslationServiceProvider
 
 
-@dataclass(slots=True)
-class StaticTranslatorConfig(BaseTranslatorProviderConfig):
-    """Typed and validated config for the static CSV translator."""
-    content_dir: str | None = None
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], config_path: Path) -> "StaticTranslatorConfig":
-        """Parse and validate *data* from the ``service_provider.config`` JSON block."""
-        return cls(
-            input_language=str(data.get("input_language", "en")).strip(),
-            output_language=str(data.get("output_language", "bg")).strip(),
-            content_dir=str(data["content_dir"]).strip() if "content_dir" in data else None,
-        )
-
-
-class StaticTTSTranslate(TextTranslate):
+class StaticTextTranslate(TextTranslationServiceProvider):
     """Look up translations from aligned CSV files in a content directory.
 
     Expected layout::
@@ -39,34 +22,37 @@ class StaticTTSTranslate(TextTranslate):
           drinks/
             images_en.csv
             images_bg.csv
+
+    Config keys (from ``self.config``):
+        ``input_language``  — source language code (default ``"en"``)
+        ``output_language`` — target language code (default ``"bg"``)
+        ``content_dir``     — path to the content directory (relative to
+                              ``base_dir`` or absolute); falls back to
+                              ``settings.content_path`` when absent.
     """
 
     @classmethod
     def register(cls) -> None:
-        TranslatorFactory.register("static_translate", cls, StaticTranslatorConfig.from_dict)
+        """Register this provider with the TranslatorFactory."""
+        from src.services.text_translation.service import TranslatorFactory  # pylint: disable=import-outside-toplevel
+        TranslatorFactory.register("static_translate", cls)
 
-    @property
-    def static_cfg(self) -> StaticTranslatorConfig:
-        """Return the typed static provider config."""
-        assert isinstance(self.provider_config, StaticTranslatorConfig)
-        return self.provider_config
-
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._lookup: dict[str, dict[str, dict[str, str]]] = {}
         self._load()
 
     def _load(self) -> None:
-        content_dir = self.static_cfg.content_dir if self.provider_config is not None else self.config.get("content_dir")
-        root = Path(content_dir) if content_dir else settings.content_path
-        if not root.is_absolute():
+        raw_dir = self.config.get("content_dir")
+        raw_dir_str = raw_dir.strip() if isinstance(raw_dir, str) else ""
+        root = Path(raw_dir_str) if raw_dir_str else None
+        if root is not None and not root.is_absolute():
             root = self.base_dir / root
-
-        if not root.is_dir():
-            fallback_root = settings.content_path
-            if not fallback_root.is_dir():
-                return
-            root = fallback_root
+        if root is None or not root.is_dir():
+            fallback = settings.content_path
+            root = fallback if fallback.is_dir() else None
+        if root is None:
+            return
 
         for category_dir in sorted(root.iterdir()):
             if not category_dir.is_dir():
@@ -110,4 +96,4 @@ class StaticTTSTranslate(TextTranslate):
         return targets.get(tgt)
 
 
-StaticTTSTranslate.register()
+StaticTextTranslate.register()

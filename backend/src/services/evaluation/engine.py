@@ -17,7 +17,6 @@ from typing import Any
 
 from src.core.languages import to_bcp47
 from src.core.models import EvaluationResult, GeneratedAudio
-from src.services.text_to_speech.models import ProviderConfig
 from src.core.logging import log_provider_request
 
 
@@ -64,10 +63,18 @@ class EvaluationEngine:
     async def evaluate(
         self,
         generated_audio: GeneratedAudio,
-        provider_config: ProviderConfig,
+        evaluate_config: dict[str, Any],
         client: Any,
+        provider_name: str = "",
     ) -> EvaluationResult:
-        """Evaluate the generated audio against the expected text."""
+        """Evaluate the generated audio against the expected text.
+
+        Args:
+            generated_audio: The audio to evaluate.
+            evaluate_config: The ``evaluate`` sub-dict from the provider config.
+            client: An async HTTP client.
+            provider_name: Fallback STT provider name when not set in *evaluate_config*.
+        """
         normalized_path = generated_audio.normalized_path
         if not normalized_path:
             return self._fail(
@@ -75,8 +82,8 @@ class EvaluationEngine:
                 generated_audio.normalization_error or "Normalized audio file was not created.",
             )
 
-        eval_cfg = provider_config.evaluate
-        stt_provider = str(eval_cfg.get("stt_provider", provider_config.name)).lower()
+        eval_cfg = evaluate_config
+        stt_provider = str(eval_cfg.get("stt_provider", provider_name or generated_audio.provider)).lower()
         api_key = _resolve_stt_api_key(stt_provider)
         if not api_key:
             return self._fail(

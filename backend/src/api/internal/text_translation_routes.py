@@ -50,8 +50,8 @@ async def list_translators(
 ) -> list[dict[str, Any]]:
     """Return configured translators with service metadata."""
     from src.services.config_loader import load_service_configs  # pylint: disable=import-outside-toplevel
-    from src.services.text_translation.models import TranslatorConfig  # pylint: disable=import-outside-toplevel
-    configs = load_service_configs(settings.config_path / "text_translation", TranslatorConfig)
+    from src.services.models import ServiceProvider  # pylint: disable=import-outside-toplevel
+    configs = load_service_configs(settings.config_path / "text_translation", ServiceProvider)
     configs.sort(key=lambda c: c.priority)
     return [
         {

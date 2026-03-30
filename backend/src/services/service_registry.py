@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
+import threading
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -10,31 +10,31 @@ from src.services.models import Service
 
 
 class ServiceRegistry:
-    """Registry for service packages and pre-built runtime instances."""
+    """Registry for service package descriptors."""
 
     _registered_services: ClassVar[list[Service]] = []
-
-    def __init__(self) -> None:
-        self._instances: dict[str, list[Any]] = {}
-        self._lock: asyncio.Lock = asyncio.Lock()
+    _lock: ClassVar[threading.Lock] = threading.Lock()
 
     @classmethod
     def register(cls, service: Service) -> None:
-        """Register a service package descriptor."""
-        cls._registered_services.append(service)
+        """Register a service package descriptor (thread-safe)."""
+        with cls._lock:
+            cls._registered_services.append(service)
 
     @classmethod
     def find(cls, name: str) -> Service | None:
-        """Retrieve a service package descriptor by name."""
-        for service in cls._registered_services:
-            if service.name == name:
-                return service
+        """Retrieve a service package descriptor by name (thread-safe)."""
+        with cls._lock:
+            for service in cls._registered_services:
+                if service.name == name:
+                    return service
         return None
 
     @classmethod
     def all_services(cls) -> list[Service]:
-        """Return a copy of all registered service package descriptors."""
-        return cls._registered_services.copy()
+        """Return a copy of all registered service package descriptors (thread-safe)."""
+        with cls._lock:
+            return cls._registered_services.copy()
 
     @classmethod
     def dump(cls, base_dir: Path | None = None) -> None:
@@ -74,11 +74,7 @@ class ServiceRegistry:
 
     def get(self, attr: str) -> list[Any]:
         """Return the list of live instances for *attr* (e.g. ``"providers"``)."""
-        return self._instances.get(attr, [])
-
-    def set_service(self, attr: str, instances: list[Any]) -> None:
-        """Store *instances* under *attr* — called by ``registry_builder``."""
-        self._instances[attr] = instances
+        raise NotImplementedError("ServiceRegistry.get() is not implemented yet; use get_registry() instead.")
 
     @staticmethod
     def _format_registry_attr(key: str, value: Any, base_dir: Path | None) -> str:

@@ -1,6 +1,14 @@
-"""Audio optimizer provider implementations."""
+"""Auto-import all optimizer provider modules to trigger their register() calls.
 
-from src.services.voice_optimization.providers.ffmpeg_optimizer import FfmpegAudioOptimizer
-from src.services.voice_optimization.providers.pydub_optimizer import PydubAudioOptimizer
+Adding a new provider only requires placing a new .py file in this directory —
+no edits to this file are needed.
+"""
 
-__all__ = ["FfmpegAudioOptimizer", "PydubAudioOptimizer"]
+import importlib
+import pkgutil
+
+import src.services.voice_optimization.providers as _pkg  # pylint: disable=import-self
+
+for _mod_info in pkgutil.iter_modules(_pkg.__path__, _pkg.__name__ + "."):
+    if not _mod_info.ispkg:
+        importlib.import_module(_mod_info.name)

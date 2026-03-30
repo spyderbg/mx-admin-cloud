@@ -15,8 +15,8 @@ from pydantic import BaseModel  # pylint: disable=import-error
 from src.api.dependencies import get_registry, require_internal
 from src.core.config import settings
 from src.core.models import GeneratedAudio
+from src.services.models import ServiceProvider
 from src.services.service_registry import ServiceRegistry
-from src.services.text_to_speech.models import ProviderConfig
 from src.services.evaluation import EvaluationEngine, JsonScoreStore, MultiScoreStore, SQLiteScoreStore
 
 router = APIRouter(prefix="/internal", tags=["internal-evaluators"])
@@ -53,11 +53,11 @@ async def list_evaluators(
 ) -> list[dict[str, Any]]:
     """Return configured evaluators (from generators/providers) with activation states."""
     from src.services.config_loader import load_service_configs  # pylint: disable=import-outside-toplevel
-    configs = load_service_configs(settings.config_path / "text_to_speech", ProviderConfig)
+    configs = load_service_configs(settings.config_path / "text_to_speech", ServiceProvider)
     return [
         {
             "name": c.name,
-            "enabled": c.evaluate.get("enabled", False),
+            "enabled": c.config.get("evaluate", {}).get("enabled", False),
             "config_path": str(c.config_path),
         }
         for c in configs
@@ -95,13 +95,6 @@ async def evaluate(
         normalization_error=body.normalization_error,
     )
 
-    provider_config = ProviderConfig(
-        name=body.provider,
-        generate={},
-        evaluate=body.evaluate_config,
-        config_path=Path("api-supplied"),
-    )
-
     engine = EvaluationEngine(base_dir=output_dir)
     score_root = settings.scores_output_dir()
     store = MultiScoreStore(
@@ -112,7 +105,12 @@ async def evaluate(
     )
 
     async with httpx.AsyncClient(timeout=180.0) as client:
-        evaluation_result = await engine.evaluate(generated_audio, provider_config, client)
+        evaluation_result = await engine.evaluate(
+            generated_audio,
+            evaluate_config=body.evaluate_config,
+            client=client,
+            provider_name=body.provider,
+        )
 
     try:
         aggregate = await store.save(generated_audio, evaluation_result)

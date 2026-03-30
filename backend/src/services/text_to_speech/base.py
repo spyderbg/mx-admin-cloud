@@ -10,16 +10,35 @@ from typing import Any
 from src.core.config import settings
 from src.core.models import GeneratedAudio, TTSRequest
 from src.services.models import ServiceProvider
-from src.services.text_to_speech.models import ProviderConfig
 
 logger = logging.getLogger(__name__)
 
 
 class TTSProvider(ServiceProvider):
-    """Common interface for all TTS provider implementations."""
+    """Common interface for all TTS provider implementations.
 
-    def __init__(self, cfg: ProviderConfig, base_dir: Path) -> None:
-        super().__init__(cfg, base_dir)
+    The TTS ``config`` dict (from ``service_provider.config`` in JSON) has two
+    sub-dicts: ``"generate"`` and ``"evaluate"``.  These are accessed via the
+    :attr:`generate_config` and :attr:`evaluate_config` properties.
+
+    Active state for TTS is driven by ``config.generate.enabled`` rather than
+    the top-level ``enabled`` field, so :meth:`is_active` is overridden here.
+    """
+
+    @property
+    def generate_config(self) -> dict[str, Any]:
+        """Return a copy of the ``"generate"`` sub-dict from ``self.config``."""
+        return dict(self.config.get("generate", {}))
+
+    @property
+    def evaluate_config(self) -> dict[str, Any]:
+        """Return a copy of the ``"evaluate"`` sub-dict from ``self.config``."""
+        return dict(self.config.get("evaluate", {}))
+
+    def is_active(self) -> bool:
+        """TTS active state is driven by ``config.generate.enabled``."""
+        from src.core.utils import boolish  # pylint: disable=import-outside-toplevel
+        return boolish(self.config.get("generate", {}).get("enabled", self.enabled))
 
     def resolve_language_generate(self, language_code: str) -> dict[str, Any]:
         """Return a merged generate dict with language-specific overrides applied.
@@ -28,9 +47,9 @@ class TTSProvider(ServiceProvider):
         1. Exact ``language_code`` key.
         2. ``"en"`` fallback (if present).
         3. First entry in the map (arbitrary but deterministic in Python 3.7+).
-        4. No overrides -- return the base generate dict as-is.
+        4. No overrides — return the base generate dict as-is.
         """
-        base: dict[str, Any] = dict(self.cfg.generate)
+        base: dict[str, Any] = self.generate_config
         languages: dict[str, Any] | None = base.pop("languages", None)
         if not isinstance(languages, dict) or not languages:
             return base
@@ -46,7 +65,7 @@ class TTSProvider(ServiceProvider):
 
     def build_prompt_text(self, request: TTSRequest) -> str:
         """Combine the configured prompt prefix with the request text."""
-        gen = self.cfg.generate
+        gen = self.generate_config
         prompt = str(gen.get("prompt", "")).strip()
         use_space = str(gen.get("use_space", "no")).strip().lower() in {
             "yes", "true", "1", "on",

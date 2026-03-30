@@ -1,79 +1,59 @@
-"""Audio optimization subsystem: base class, implementations, and builders."""
+"""Audio optimization subsystem: base class, factory, and service orchestrator."""
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from typing import Any, Callable, Sequence
 
+from src.services.models import ServiceProvider
 from src.services.voice_optimization.base import AudioOptimizerBase
-from src.services.voice_optimization.models import OptimizerConfig
 from src.services.voice_optimization.normalizer import normalize_audio
 
 __all__ = [
     "AudioOptimizerBase",
     "OptimizerFactory",
-    "build_optimizer",
-    "build_active_optimizers",
     "normalize_audio",
 ]
 
 
 class OptimizerFactory:
-    """Factory registry that builds optimizers from service metadata."""
+    """Registry that maps optimizer names to concrete optimizer classes."""
 
-    _builders: dict[str, Callable[[OptimizerConfig, Path], AudioOptimizerBase]] = {}
+    _builders: dict[str, type[AudioOptimizerBase]] = {}
 
     @classmethod
     def register(
         cls,
         optimizer_name: str,
-        builder: Callable[[OptimizerConfig, Path], AudioOptimizerBase],
+        builder: type[AudioOptimizerBase],
     ) -> None:
-        """Register a new optimizer builder."""
+        """Register a concrete optimizer class under *optimizer_name*."""
         cls._builders[optimizer_name.strip().lower()] = builder
 
-    @staticmethod
-    def _parse_config(raw_value: object, config_path: Path) -> dict[str, Any]:
-        if isinstance(raw_value, dict):
-            return dict(raw_value)
-        if isinstance(raw_value, str):
-            text = raw_value.strip()
-            if not text:
-                return {}
-            try:
-                parsed = json.loads(text)
-            except json.JSONDecodeError as exc:
-                raise ValueError(
-                    f"Invalid optimizer config JSON in '{config_path}'"
-                ) from exc
-            if isinstance(parsed, dict):
-                return parsed
-        raise ValueError(f"Optimizer config in '{config_path}' must be a JSON object.")
-
     @classmethod
-    def create(cls, cfg: OptimizerConfig, base_dir: Path) -> AudioOptimizerBase:
-        """Create a new optimizer instance."""
-        cfg.config = cls._parse_config(cfg.config, cfg.config_path)
-        key = cfg.name.strip().lower()
+    def create(cls, provider: ServiceProvider, base_dir: Path) -> AudioOptimizerBase:
+        """Instantiate the concrete optimizer for *provider*.
+
+        Raises :exc:`ValueError` when no builder is registered for
+        ``provider.name``.
+        """
+        key = provider.name.strip().lower()
         builder = cls._builders.get(key)
         if builder is None:
             raise ValueError(
-                f"Unsupported optimizer service name: '{cfg.name}' "
-                f"(service_type='{cfg.service_type}', file='{cfg.config_path}')"
+                f"Unsupported optimizer: '{provider.name}' "
+                f"(file='{provider.config_path}')"
             )
-        return builder(cfg, base_dir)
+        return builder(
+            service_type=provider.service_type,
+            name=provider.name,
+            enabled=provider.enabled,
+            priority=provider.priority,
+            config=provider.config,
+            config_path=provider.config_path,
+            base_dir=base_dir,
+        )
 
 
-def build_optimizer(config: OptimizerConfig, base_dir: Path) -> AudioOptimizerBase:
-    """Build an optimizer instance from service metadata and config JSON."""
-    return OptimizerFactory.create(config, base_dir)
-
-
-def build_active_optimizers(
-    configs: Sequence[OptimizerConfig],
-    base_dir: Path,
-) -> list[AudioOptimizerBase]:
-    """Build only optimizer instances that are marked active."""
-    return [build_optimizer(cfg, base_dir) for cfg in configs if cfg.enabled]
-
+# Import providers AFTER OptimizerFactory is defined so that provider modules
+# can safely call `from .. import OptimizerFactory` inside their register() methods.
+import src.services.voice_optimization.providers  # noqa: F401, E402

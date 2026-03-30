@@ -1,117 +1,140 @@
-"""Text translation service business logic: factory, builders, and orchestration."""
+"""Text translation service business logic: factory and orchestration."""
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from typing import Any, Callable, Sequence
+from typing import Sequence
 
-from src.services.text_translation.models import TextTranslate, TranslatorConfig
+from src.services.models import Service, ServiceProvider
+from src.services.text_translation.models import TextTranslationServiceProvider
 
 
 class TranslatorFactory:
-    """Factory registry that builds translators from service metadata."""
+    """Registry that maps provider names to concrete translator classes."""
 
-    _builders: dict[str, Callable[[TranslatorConfig, Path], TextTranslate]] = {}
-    _parsers: dict[str, Callable[[dict[str, Any], Path], Any]] = {}
+    _builders: dict[str, type[TextTranslationServiceProvider]] = {}
 
     @classmethod
     def register(
-        cls,
-        translator_name: str,
-        builder: Callable[[TranslatorConfig, Path], TextTranslate],
-        config_parser: Callable[[dict[str, Any], Path], Any] | None = None,
+            cls,
+            translator_name: str,
+            builder: type[TextTranslationServiceProvider],
     ) -> None:
-        """Register a translator builder and optional typed config parser.
+        """Register a concrete translator class under *translator_name*.
 
-        The *config_parser* is called by :meth:`create` before the builder to validate
-        and parse the raw ``config`` dict into a typed provider config object.  Errors
-        raised their surface at application startup rather than at request time.
+        Provider modules call this from their module-level ``ProviderClass.register()``
+        statements, which are triggered automatically when the module is imported.
         """
-        key = translator_name.strip().lower()
-        cls._builders[key] = builder
-        if config_parser is not None:
-            cls._parsers[key] = config_parser
-
-    @staticmethod
-    def _parse_config(raw_value: object, config_path: Path) -> dict[str, Any]:
-        if isinstance(raw_value, dict):
-            return dict(raw_value)
-        if isinstance(raw_value, str):
-            text = raw_value.strip()
-            if not text:
-                return {}
-            try:
-                parsed = json.loads(text)
-            except json.JSONDecodeError as exc:
-                raise ValueError(
-                    f"Invalid translator config JSON in '{config_path}'"
-                ) from exc
-            if isinstance(parsed, dict):
-                return parsed
-        raise ValueError(f"Translator config in '{config_path}' must be a JSON object.")
+        cls._builders[translator_name.strip().lower()] = builder
 
     @classmethod
-    def create(cls, cfg: TranslatorConfig, base_dir: Path) -> TextTranslate:
-        """Create a new translator instance.
+    def create(
+            cls,
+            provider: ServiceProvider,
+            base_dir: Path,
+    ) -> TextTranslationServiceProvider:
+        """Instantiate the concrete translator for *provider*.
 
-        Normalises the raw config dict, calls any registered config parser for early
-        field-level validation, then delegates to the builder.
+        Raises :exc:`ValueError` when no builder is registered for
+        ``provider.name``.
         """
-        raw = cls._parse_config(cfg.config, cfg.config_path)
-        cfg.config = raw
-
-        key = cfg.name.strip().lower()
-
-        parser = cls._parsers.get(key)
-        if parser is not None:
-            cfg.provider_config = parser(raw, cfg.config_path)
-
+        key = provider.name.strip().lower()
         builder = cls._builders.get(key)
         if builder is None:
             raise ValueError(
-                f"Unsupported translator service name: '{cfg.name}' "
-                f"(service_type='{cfg.service_type}', file='{cfg.config_path}')"
+                f"Unsupported translator: '{provider.name}' "
+                f"(file='{provider.config_path}')"
             )
-        return builder(cfg, base_dir)
+        return builder(
+            service_type=provider.service_type,
+            name=provider.name,
+            enabled=provider.enabled,
+            priority=provider.priority,
+            config=provider.config,
+            config_path=provider.config_path,
+            base_dir=base_dir,
+        )
 
 
-def build_translator(config: TranslatorConfig, base_dir: Path) -> TextTranslate:
-    """Build a translator instance from service metadata and config JSON."""
-    return TranslatorFactory.create(config, base_dir)
+class TextTranslationService(Service):
+    """Orchestrator for all text translation providers.
 
+    Loads providers from config files and exposes :meth:`translate_text` which
+    iterates active providers in priority order, chaining results until the first
+    successful translation of each step.
+    """
 
-def build_translators(
-    configs: Sequence[TranslatorConfig],
-    base_dir: Path,
-) -> list[TextTranslate]:
-    """Build only translator instances that are marked active."""
-    return [build_translator(cfg, base_dir) for cfg in configs if cfg.enabled]
+    def __init__(self, name: str, service_dir: Path, base_dir: Path) -> None:
+        super().__init__(name=name, service_dir=service_dir)
+        self.base_dir = base_dir
+        self._providers: list[TextTranslationServiceProvider] = []
+
+    def load_providers(self, config_dir: Path) -> None:
+        """Load and build all enabled translators from *config_dir*, sorted by priority."""
+        from src.services.config_loader import load_service_configs  # pylint: disable=import-outside-toplevel
+        raw = load_service_configs(config_dir, ServiceProvider)
+        raw.sort(key=lambda p: p.priority)
+        self._providers = [
+            TranslatorFactory.create(p, self.base_dir)
+            for p in raw
+            if p.enabled
+        ]
+
+    @property
+    def active_providers(self) -> list[TextTranslationServiceProvider]:
+        """Return providers that report themselves as active."""
+        return [p for p in self._providers if p.is_active()]
+
+    async def translate_text(
+            self,
+            text: str,
+            input_lang_code: str | None = None,
+            target_lang_code: str | None = None,
+            category: str | None = None,
+    ) -> str:
+        """Translate *text* through all active providers in priority order.
+
+        Each provider's output is fed as input to the next provider.  A provider
+        that returns ``None`` is skipped (fallback).  Returns the original *text*
+        when no provider succeeds.
+        """
+        current = text
+        for provider in self.active_providers:
+            inp = input_lang_code or provider.default_input_language()
+            tgt = target_lang_code or provider.default_output_language()
+            if not inp or not tgt:
+                continue
+            try:
+                result = await provider.translate_text(current, inp, tgt, category)
+                if result is not None:
+                    current = result
+            except Exception:  # pylint: disable=broad-exception-caught
+                continue
+        return current
 
 
 async def translate_with_all_active(
-    translators: Sequence[TextTranslate],
-    text: str,
-    input_lang_code: str | None = None,
-    target_lang_code: str | None = None,
-    category: str | None = None,
+        translators: Sequence[TextTranslationServiceProvider],
+        text: str,
+        input_lang_code: str | None = None,
+        target_lang_code: str | None = None,
+        category: str | None = None,
 ) -> str:
-    """Run all active translators and return the last successful translation."""
-    current_text = text
+    """Module-level wrapper: run *translators* in order and return the result.
+
+    Kept for backward compatibility with call sites that pass an explicit
+    list of providers rather than using :class:`TextTranslationService` directly.
+    """
+    current = text
     for translator in translators:
-        resolved_input = input_lang_code or translator.default_input_language()
-        resolved_target = target_lang_code or translator.default_output_language()
-        if not resolved_input or not resolved_target:
+        inp = input_lang_code or translator.default_input_language()
+        tgt = target_lang_code or translator.default_output_language()
+        if not inp or not tgt:
             continue
         try:
-            result = await translator.translate_text(
-                current_text,
-                resolved_input,
-                resolved_target,
-                category,
-            )
+            result = await translator.translate_text(current, inp, tgt, category)
             if result is not None:
-                current_text = result
+                current = result
         except Exception:  # pylint: disable=broad-exception-caught
             continue
-    return current_text
+    return current

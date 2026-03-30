@@ -1,82 +1,57 @@
-"""TTS provider implementations."""
+"""TTS subsystem: base class, factory, and service orchestrator."""
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from typing import Any, Callable, Sequence
 
-from src.core.utils import boolish
+from src.services.models import ServiceProvider
 from src.services.text_to_speech.base import TTSProvider
-from src.services.text_to_speech.models import ProviderConfig
 
 __all__ = [
     "TTSProvider",
     "ProviderFactory",
-    "build_provider",
-    "build_active_providers",
 ]
 
 
 class ProviderFactory:
-    """Factory registry that builds TTS providers from service metadata."""
+    """Registry that maps provider names to concrete TTS provider classes."""
 
-    _builders: dict[str, Callable[[ProviderConfig, Path], TTSProvider]] = {}
+    _builders: dict[str, type[TTSProvider]] = {}
 
     @classmethod
     def register(
         cls,
         provider_name: str,
-        builder: Callable[[ProviderConfig, Path], TTSProvider],
+        builder: type[TTSProvider],
     ) -> None:
+        """Register a concrete TTS provider class under *provider_name*."""
         cls._builders[provider_name.strip().lower()] = builder
 
-    @staticmethod
-    def _parse_config_map(raw_value: object, label: str, config_path: Path) -> dict[str, Any]:
-        if isinstance(raw_value, dict):
-            return dict(raw_value)
-        if isinstance(raw_value, str):
-            text = raw_value.strip()
-            if not text:
-                return {}
-            try:
-                parsed = json.loads(text)
-            except json.JSONDecodeError as exc:
-                raise ValueError(
-                    f"Invalid JSON string for provider '{label}' config in '{config_path}'"
-                ) from exc
-            if isinstance(parsed, dict):
-                return parsed
-        raise ValueError(f"Provider '{label}' config in '{config_path}' must be a JSON object.")
-
     @classmethod
-    def create(cls, cfg: ProviderConfig, base_dir: Path) -> TTSProvider:
-        cfg.generate = cls._parse_config_map(cfg.generate, "generate", cfg.config_path)
-        cfg.evaluate = cls._parse_config_map(cfg.evaluate, "evaluate", cfg.config_path)
-        cfg.generate["enabled"] = boolish(cfg.generate.get("enabled", False))
-        cfg.evaluate["enabled"] = boolish(cfg.evaluate.get("enabled", True))
-        cfg.enabled = cfg.generate["enabled"]
+    def create(cls, provider: ServiceProvider, base_dir: Path) -> TTSProvider:
+        """Instantiate the concrete TTS provider for *provider*.
 
-        key = cfg.name.strip().lower()
+        Raises :exc:`ValueError` when no builder is registered for
+        ``provider.name``.
+        """
+        key = provider.name.strip().lower()
         builder = cls._builders.get(key)
         if builder is None:
             raise ValueError(
-                f"Unsupported provider name: '{cfg.name}' "
-                f"(file='{cfg.config_path}')"
+                f"Unsupported TTS provider: '{provider.name}' "
+                f"(file='{provider.config_path}')"
             )
-        return builder(cfg, base_dir)
+        return builder(
+            service_type=provider.service_type,
+            name=provider.name,
+            enabled=provider.enabled,
+            priority=provider.priority,
+            config=provider.config,
+            config_path=provider.config_path,
+            base_dir=base_dir,
+        )
 
 
-def build_provider(config: ProviderConfig, base_dir: Path) -> TTSProvider:
-    """Build a provider instance from service metadata."""
-    return ProviderFactory.create(config, base_dir)
-
-
-def build_active_providers(
-    configs: Sequence[ProviderConfig],
-    base_dir: Path,
-) -> list[TTSProvider]:
-    """Build only provider instances that are marked active."""
-    providers = [build_provider(cfg, base_dir) for cfg in configs]
-    return [provider for provider in providers if provider.is_active()]
-
+# Import providers AFTER ProviderFactory is defined so that provider modules
+# can safely call `from .. import ProviderFactory` inside their register() methods.
+import src.services.text_to_speech.providers  # noqa: F401, E402

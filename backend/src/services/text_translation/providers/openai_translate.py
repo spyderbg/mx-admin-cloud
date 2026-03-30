@@ -4,67 +4,50 @@ from __future__ import annotations
 
 import re
 import time
-from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 from openai import AsyncOpenAI
 
 from src.core.logging import log_translator_request
-from src.services.text_translation.models import BaseTranslatorProviderConfig, TextTranslate
-from src.services.text_translation.service import TranslatorFactory
+from src.services.text_translation.models import TextTranslationServiceProvider
 
 _CATEGORY_LINE_RE = re.compile(r"[^\n]*\{\{\s*category\s*\}\}[^\n]*\n?")
 
 
-@dataclass(slots=True)
-class OpenAITranslatorConfig(BaseTranslatorProviderConfig):
-    """Typed and validated config for the OpenAI translator."""
-    model: str = "gpt-4o"
-    temperature: float = 0.0
-    prompt: str = ""
+class OpenAITextTranslate(TextTranslationServiceProvider):
+    """OpenAI-powered translator using the Chat Completions API.
 
-    @classmethod
-    def from_dict(cls, data: dict[str, Any], config_path: Path) -> "OpenAITranslatorConfig":
-        """Parse and validate *data* from the ``service_provider.config`` JSON block.
-
-        Raises: exc:`ValueError` with a file-path context if a field is invalid,
-        so errors surface at application startup rather than at request time.
-        """
-        temp = data.get("temperature", 0.0)
-        try:
-            temperature = float(temp)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(
-                f"{config_path}: 'temperature' must be a number, got {temp!r}"
-            ) from exc
-
-        model = str(data.get("model", "gpt-4o")).strip()
-        if not model:
-            raise ValueError(f"{config_path}: 'model' must be a non-empty string")
-
-        return cls(
-            input_language=str(data.get("input_language", "en")).strip(),
-            output_language=str(data.get("output_language", "en")).strip(),
-            model=model,
-            temperature=temperature,
-            prompt=str(data.get("prompt", "")),
-        )
-
-
-class OpenAITTSTranslate(TextTranslate):
-    """OpenAI-powered translator using the Chat Completions API."""
+    Config keys (from ``self.config``):
+        ``input_language``  — source language code (default ``"en"``)
+        ``output_language`` — target language code (default ``"en"``)
+        ``model``           — OpenAI model ID (default ``"gpt-4o"``)
+        ``temperature``     — sampling temperature (default ``0.0``)
+        ``prompt``          — system-prompt template (supports ``{{ input_language }}``,
+                              ``{{ output_language }}``, and ``{{ category }}`` placeholders)
+    """
 
     @classmethod
     def register(cls) -> None:
-        """Register the OpenAI translator."""
-        TranslatorFactory.register("openai_translate", cls, OpenAITranslatorConfig.from_dict)
+        """Register this provider with the TranslatorFactory."""
+        from src.services.text_translation.service import TranslatorFactory  # pylint: disable=import-outside-toplevel
+        TranslatorFactory.register("openai_translate", cls)
 
-    @property
-    def openai_cfg(self) -> OpenAITranslatorConfig:
-        """Return the typed OpenAI provider config."""
-        assert isinstance(self.provider_config, OpenAITranslatorConfig)
-        return self.provider_config
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+
+        temp = self.config.get("temperature", 0.0)
+        try:
+            self._temperature = float(temp)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"{self.config_path}: 'temperature' must be a number, got {temp!r}"
+            ) from exc
+
+        model = str(self.config.get("model", "gpt-4o")).strip()
+        if not model:
+            raise ValueError(f"{self.config_path}: 'model' must be a non-empty string")
+        self._model = model
+        self._prompt = str(self.config.get("prompt", ""))
 
     def _render_prompt(
         self,
@@ -72,9 +55,7 @@ class OpenAITTSTranslate(TextTranslate):
         target_lang_code: str,
         category: str | None,
     ) -> str:
-        raw: str = self.openai_cfg.prompt
-
-        rendered = raw.replace("{{ input_language }}", self.language_name(input_lang_code))
+        rendered = self._prompt.replace("{{ input_language }}", self.language_name(input_lang_code))
         rendered = rendered.replace("{{ output_language }}", self.language_name(target_lang_code))
 
         if category:
@@ -98,24 +79,23 @@ class OpenAITTSTranslate(TextTranslate):
         if not api_key:
             raise RuntimeError("OPENAI_API_KEY is not set.")
 
-        cfg = self.openai_cfg
         system_content = self._render_prompt(input_lang_code, target_lang_code, category)
 
         client = AsyncOpenAI(api_key=api_key)
         started_at = time.perf_counter()
         response = await client.chat.completions.create(
-            model=cfg.model,
+            model=self._model,
             messages=[
                 {"role": "system", "content": system_content},
                 {"role": "user", "content": text.strip()},
             ],
-            temperature=cfg.temperature,
+            temperature=self._temperature,
         )
         latency = time.perf_counter() - started_at
         log_translator_request(
             base_dir=self.base_dir,
             translator=self.name,
-            model=cfg.model,
+            model=self._model,
             actor="translator",
             voice_id="",
             language=f"{input_lang_code}->{target_lang_code}",
@@ -131,4 +111,4 @@ class OpenAITTSTranslate(TextTranslate):
         return result or None
 
 
-OpenAITTSTranslate.register()
+OpenAITextTranslate.register()
