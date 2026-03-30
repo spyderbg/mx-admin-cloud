@@ -77,21 +77,3 @@ def build_active_optimizers(
     """Build only optimizer instances that are marked active."""
     return [build_optimizer(cfg, base_dir) for cfg in configs if cfg.enabled]
 
-
-# Trigger self-registration of all implementations
-from src.services.voice_optimization.providers.ffmpeg_optimizer import FfmpegAudioOptimizer as _Ffmpeg  # noqa: E402, F401
-from src.services.voice_optimization.providers.pydub_optimizer import PydubAudioOptimizer as _Pydub  # noqa: E402, F401
-
-# Register this service with the plugin registry
-from src.services.plugin_registry import ServicePlugin, ServicePluginRegistry  # noqa: E402
-
-ServicePluginRegistry.register(
-    ServicePlugin(
-        registry_attr="optimizers",
-        config_dir="voice_optimizers",
-        config_class=OptimizerConfig,
-        factory_create=OptimizerFactory.create,
-        sort_key="priority",
-    ),
-    module_name=__name__,
-)

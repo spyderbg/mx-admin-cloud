@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from src.core.languages import LANG_MAP
-from src.services.base import ServiceProvider
+from src.services.models import ServiceProvider
 
 
 @dataclass(slots=True)

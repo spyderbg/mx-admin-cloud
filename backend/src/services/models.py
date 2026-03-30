@@ -11,19 +11,16 @@ import os
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
+import dataclasses
+from dataclasses import dataclass
 
 
-class Service(ABC):
-    """Root contract for all service implementations.
+@dataclass(frozen=True)
+class Service:
+    """Root contract for all service implementations."""
 
-    Every concrete service class must implement: meth:`register` so it can
-    self-register with its factory at import time.
-    """
-
-    @classmethod
-    @abstractmethod
-    def register(cls) -> None:
-        """Register this implementation with its factory."""
+    name: str
+    service_dir: Path
 
 
 class ServiceProvider(Service):
@@ -36,10 +33,10 @@ class ServiceProvider(Service):
     expected to narrow the type of *cfg* to their own config dataclass.
     """
 
-    def __init__(self, cfg: Any, base_dir: Path) -> None:
-        self.cfg = cfg
-        self.config: dict[str, Any] = getattr(cfg, "config", {})
-        self.base_dir = base_dir
+    # def __init__(self, cfg: Any, base_dir: Path) -> None:
+    #     self.cfg = cfg
+    #     self.config: dict[str, Any] = getattr(cfg, "config", {})
+    #     self.base_dir = base_dir
 
     @property
     def name(self) -> str:
@@ -57,3 +54,7 @@ class ServiceProvider(Service):
     def resolve_api_key(self) -> str:
         """Read and return the service API key from the environment."""
         return os.getenv(self.api_key_env_name(), "")
+
+
+
+

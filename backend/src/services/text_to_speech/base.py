@@ -9,7 +9,7 @@ from typing import Any
 
 from src.core.config import settings
 from src.core.models import GeneratedAudio, TTSRequest
-from src.services.base import ServiceProvider
+from src.services.models import ServiceProvider
 from src.services.text_to_speech.models import ProviderConfig
 
 logger = logging.getLogger(__name__)

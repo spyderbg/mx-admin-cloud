@@ -18,7 +18,7 @@ from src.api.dependencies import get_internal_token, get_job_store, get_registry
 from src.core.config import settings
 from src.core.job_store import JobStore
 # from src.core.pipeline import run_pipeline
-from src.core.registry import ServiceRegistry
+from src.services.service_registry import ServiceRegistry
 
 router = APIRouter(prefix="/internal", tags=["internal-jobs"])
 

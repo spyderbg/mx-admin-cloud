@@ -80,21 +80,3 @@ def build_active_providers(
     providers = [build_provider(cfg, base_dir) for cfg in configs]
     return [provider for provider in providers if provider.is_active()]
 
-
-# Trigger self-registration of all implementations
-from src.services.text_to_speech.providers.openai_tts import OpenAITTSProvider as _OpenAI  # noqa: E402, F401
-from src.services.text_to_speech.providers.elevenlabs_tts import ElevenLabsTTSProvider as _ElevenLabs  # noqa: E402, F401
-from src.services.text_to_speech.providers.speaktor_tts import SpeaktorTTSProvider as _Speaktor  # noqa: E402, F401
-
-# Register this service with the plugin registry
-from src.services.plugin_registry import ServicePlugin, ServicePluginRegistry  # noqa: E402
-
-ServicePluginRegistry.register(
-    ServicePlugin(
-        registry_attr="providers",
-        config_dir="text_to_speech",
-        config_class=ProviderConfig,
-        factory_create=ProviderFactory.create,
-    ),
-    module_name=__name__,
-)

@@ -16,7 +16,7 @@ from pydantic import BaseModel  # pylint: disable=import-error
 from src.api.dependencies import get_registry, require_internal
 from src.core.config import settings
 from src.core.models import TTSRequest
-from src.core.registry import ServiceRegistry
+from src.services.service_registry import ServiceRegistry
 from src.services.voice_optimization.normalizer import normalize_audio
 
 router = APIRouter(prefix="/internal", tags=["internal-generators"])

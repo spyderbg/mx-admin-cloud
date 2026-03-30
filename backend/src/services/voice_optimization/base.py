@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import abstractmethod
 from pathlib import Path
 
-from src.services.base import ServiceProvider
+from src.services.models import ServiceProvider
 from src.services.voice_optimization.models import OptimizerConfig
 
 
