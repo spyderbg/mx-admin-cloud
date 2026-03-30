@@ -14,7 +14,6 @@ class ProviderConfig:
     evaluate: dict[str, Any]
     config_path: Path
     enabled: bool = field(default=False)
-    version: str = field(default="1.0")
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], config_path: Path) -> ProviderConfig | None:
@@ -33,7 +32,6 @@ class ProviderConfig:
         if not name:
             return None
 
-        version = str(service.get("version", "1.0")).strip()
         active = boolish(service.get("enabled", False))
         raw_config = service.get("config", {})
         if raw_config is None:
@@ -53,5 +51,4 @@ class ProviderConfig:
             evaluate=evaluate,
             config_path=config_path,
             enabled=generate["enabled"],
-            version=version,
         )

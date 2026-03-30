@@ -1,7 +1,6 @@
 {
   "service_provider": {
-    "version": "1.0",
-    "service": "optimizer",
+    "service": "voice_optimization",
     "provider": "ffmpeg",
     "enabled": false,
     "priority": 1,

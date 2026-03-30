@@ -17,7 +17,7 @@ from src.services.config_loader import load_service_configs
 # ServicePluginRegistry.register() for that service type.
 import src.services.text_to_speech   # noqa: F401
 import src.services.text_translation  # noqa: F401
-import src.services.optimization      # noqa: F401
+import src.services.voice_optimization      # noqa: F401
 
 from src.services.plugin_registry import ServicePluginRegistry
 

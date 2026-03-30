@@ -1,6 +1,5 @@
 {
   "service_provider": {
-    "version": "1.0",
     "service": "text_translation",
     "provider": "openai_translate",
     "enabled": false,

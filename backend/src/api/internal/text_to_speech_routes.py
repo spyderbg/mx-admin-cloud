@@ -17,7 +17,7 @@ from src.api.dependencies import get_registry, require_internal
 from src.core.config import settings
 from src.core.models import TTSRequest
 from src.core.registry import ServiceRegistry
-from src.services.optimization.normalizer import normalize_audio
+from src.services.voice_optimization.normalizer import normalize_audio
 
 router = APIRouter(prefix="/internal", tags=["internal-generators"])
 

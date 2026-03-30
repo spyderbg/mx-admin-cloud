@@ -4,7 +4,6 @@
     "provider": "openai_translate",
     "enabled": false,
     "priority": 2,
-    "version": "1.0",
     "config": {
       "input_language": "en",
       "output_language": "fr",

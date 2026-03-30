@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.core.models import GeneratedAudio
-from src.services.optimization.normalizer import normalize_audio
+from src.services.voice_optimization.normalizer import normalize_audio
 
 
 # ---------------------------------------------------------------------------

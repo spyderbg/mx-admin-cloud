@@ -54,15 +54,15 @@ def require_internal(current_user: dict = Depends(get_current_user)) -> dict:
 
 
 def get_registry(request: Request) -> ServiceRegistry:
-    """Inject the shared ServiceRegistry from app state."""
+    """Inject the shared ServiceRegistry from the app state."""
     return request.app.state.registry
 
 
 def get_job_store(request: Request) -> JobStore:
-    """Inject the shared JobStore from app state."""
+    """Inject the shared JobStore from the app state."""
     return request.app.state.job_store
 
 
 def get_internal_token(request: Request) -> str:
-    """Inject the long-lived internal service JWT from app state."""
+    """Inject the long-lived internal service JWT from the app state."""
     return request.app.state.internal_token

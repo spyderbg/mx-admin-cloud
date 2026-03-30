@@ -22,7 +22,6 @@ class OptimizerConfig:
     priority: int
     config: dict[str, Any]
     config_path: Path
-    version: str = field(default="1.0")
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], config_path: Path) -> OptimizerConfig | None:
@@ -43,7 +42,6 @@ class OptimizerConfig:
         if not name or not service_type:
             return None
 
-        version = str(service.get("version", "1.0")).strip()
         active = boolish(service.get("enabled", False))
         priority = int(service.get("priority", 999))
         raw_config = service.get("config", {})
@@ -61,5 +59,4 @@ class OptimizerConfig:
             priority=priority,
             config=merged_config,
             config_path=config_path,
-            version=version,
         )

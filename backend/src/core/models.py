@@ -25,10 +25,10 @@ class Service:
 
 @dataclass(slots=True)
 class TTSRequest:
-    """Single text item to be synthesised, loaded from the input file."""
+    """Single text item to be synthesized, loaded from the input file."""
 
     request_id: str                 # unique id for this request
-    text: str                       # source text to synthesise
+    text: str                       # source text to synthesize
     language_code: str              # ISO language code, e.g. "en"
     language_name: str              # human-readable language, e.g. "English"
     filename_text: str              # text used in the output file name

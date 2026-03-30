@@ -84,8 +84,8 @@ docker compose -f docker/docker-compose.yml up -d --build
   - `text_to_speech/providers/` — OpenAI, ElevenLabs, and Speaktor provider implementations
   - `text_translation/` — Translator implementations (OpenAI, static CSV)
   - `text_translation/providers/` — OpenAI and static translator implementations
-  - `optimization/` — Audio post-processing (ffmpeg, pydub)
-  - `optimization/providers/` — FFmpeg and pydub optimizer implementations
+  - `voice_optimization/` — Audio post-processing (ffmpeg, pydub)
+  - `voice_optimization/providers/` — FFmpeg and pydub optimizer implementations
   - `evaluation/` — STT transcription and Levenshtein-based scoring
 - **`db/`** — SQLite user store (auto-creates `admin` on first run); passwords use SHA256 prehash + bcrypt
 - **`security/`** — JWT auth; HTTP login → 30 min token, CLI socket login → 30 sec token
@@ -98,7 +98,7 @@ The pipeline is driven by JSON config files in `backend/config/`:
 |-----------|---------|
 | `text_to_speech/` | TTS providers (OpenAI, ElevenLabs, Speaktor) — set `"active": "yes/no"` |
 | `text_translation/` | Translation configs (static CSV or OpenAI) per language pair |
-| `optimizers/` | Audio post-processing (ffmpeg/pydub) — sample rate, mono, VBR |
+| `voice_optimizers/` | Audio post-processing (ffmpeg/pydub) — sample rate, mono, VBR |
 | `loggers/` | Structlog + Seqlog configuration |
 
 Pipeline flow: `Input file (TXT/CSV/XLSX) → Translate → Generate audio → Optimize → Evaluate (STT scoring) → Write results`

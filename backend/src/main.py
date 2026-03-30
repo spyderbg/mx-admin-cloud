@@ -41,8 +41,8 @@ async def lifespan(app_lifespan: FastAPI) -> AsyncIterator[None]:
     # Build the service registry (parses all JSON configs, instantiates providers)
     registry = await build_registry(settings)
     app_lifespan.state.registry = registry
-    logging.info("registry_built providers=%s translators=%s optimizers=%s",
-                 len(registry.get("providers")), len(registry.get("translators")), len(registry.get("optimizers")))
+    # logging.info("registry_built providers=%s translators=%s optimizers=%s",
+    #              len(registry.get("providers")), len(registry.get("translators")), len(registry.get("optimizers")))
 
     # Job store — in-memory with TTL eviction; swap for SQLite/Redis for multi-worker
     app_lifespan.state.job_store = JobStore(ttl_seconds=3600)

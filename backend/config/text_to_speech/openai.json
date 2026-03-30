@@ -4,7 +4,6 @@
     "provider": "openai",
     "enabled": false,
     "priority": 1,
-    "version": "1.0",
     "config": {
       "generate": {
         "model": "tts-1-hd",

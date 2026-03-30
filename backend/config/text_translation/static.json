@@ -4,7 +4,6 @@
     "provider": "static_translate",
     "enabled": true,
     "priority": 1,
-    "version": "1.0",
     "config": {
       "input_language": "en",
       "output_language": "bg",

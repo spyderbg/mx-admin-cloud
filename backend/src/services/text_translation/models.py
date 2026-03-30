@@ -28,7 +28,6 @@ class TranslatorConfig:
     config: dict[str, Any]  # raw provider config dict; parsed into provider_config by the factory
     config_path: Path
     provider_config: Any = field(default=None)   # typed per-provider config; set by TranslatorFactory.create()
-    version: str = field(default="1.0")
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], config_path: Path) -> TranslatorConfig | None:
@@ -48,7 +47,6 @@ class TranslatorConfig:
         if not service_type or not name:
             return None
 
-        version = str(service.get("version", "1.0")).strip()
         active = boolish(service.get("enabled", False))
         priority = int(service.get("priority", 999))
         raw_config = service.get("config", {})
@@ -62,7 +60,6 @@ class TranslatorConfig:
             priority=priority,
             config=raw_config,
             config_path=config_path,
-            version=version,
         )
 
 

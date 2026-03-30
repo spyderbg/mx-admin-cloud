@@ -1,14 +1,13 @@
 {
   "service_provider": {
-    "version": "1.0",
-    "service": "optimizer",
-    "provider": "ffmpeg",
+    "service": "voice_optimization",
+    "provider": "pydub",
     "enabled": false,
-    "priority": 1,
+    "priority": 2,
     "config": {
       "sample_rate": 22050,
       "mono": true,
-      "vbr_quality": 3
+      "vbr_quality": 9
     }
   }
 }

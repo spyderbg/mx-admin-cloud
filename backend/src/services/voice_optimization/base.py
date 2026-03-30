@@ -6,7 +6,7 @@ from abc import abstractmethod
 from pathlib import Path
 
 from src.services.base import ServiceProvider
-from src.services.optimization.models import OptimizerConfig
+from src.services.voice_optimization.models import OptimizerConfig
 
 
 class AudioOptimizerBase(ServiceProvider):

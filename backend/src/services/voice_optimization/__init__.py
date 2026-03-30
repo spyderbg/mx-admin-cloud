@@ -6,9 +6,9 @@ import json
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
-from src.services.optimization.base import AudioOptimizerBase
-from src.services.optimization.models import OptimizerConfig
-from src.services.optimization.normalizer import normalize_audio
+from src.services.voice_optimization.base import AudioOptimizerBase
+from src.services.voice_optimization.models import OptimizerConfig
+from src.services.voice_optimization.normalizer import normalize_audio
 
 __all__ = [
     "AudioOptimizerBase",
@@ -79,8 +79,8 @@ def build_active_optimizers(
 
 
 # Trigger self-registration of all implementations
-from src.services.optimization.providers.ffmpeg_optimizer import FfmpegAudioOptimizer as _Ffmpeg  # noqa: E402, F401
-from src.services.optimization.providers.pydub_optimizer import PydubAudioOptimizer as _Pydub  # noqa: E402, F401
+from src.services.voice_optimization.providers.ffmpeg_optimizer import FfmpegAudioOptimizer as _Ffmpeg  # noqa: E402, F401
+from src.services.voice_optimization.providers.pydub_optimizer import PydubAudioOptimizer as _Pydub  # noqa: E402, F401
 
 # Register this service with the plugin registry
 from src.services.plugin_registry import ServicePlugin, ServicePluginRegistry  # noqa: E402
@@ -88,7 +88,7 @@ from src.services.plugin_registry import ServicePlugin, ServicePluginRegistry  #
 ServicePluginRegistry.register(
     ServicePlugin(
         registry_attr="optimizers",
-        config_dir="optimizers",
+        config_dir="voice_optimizers",
         config_class=OptimizerConfig,
         factory_create=OptimizerFactory.create,
         sort_key="priority",

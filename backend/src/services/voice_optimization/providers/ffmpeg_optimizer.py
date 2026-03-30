@@ -6,7 +6,7 @@ import asyncio
 import shutil
 from pathlib import Path
 
-from src.services.optimization.base import AudioOptimizerBase
+from src.services.voice_optimization.base import AudioOptimizerBase
 
 
 class FfmpegAudioOptimizer(AudioOptimizerBase):  # pylint: disable=too-few-public-methods
@@ -15,7 +15,7 @@ class FfmpegAudioOptimizer(AudioOptimizerBase):  # pylint: disable=too-few-publi
     @classmethod
     def register(cls) -> None:
         """Register this optimizer with the factory."""
-        from src.services.optimization import OptimizerFactory
+        from src.services.voice_optimization import OptimizerFactory
         OptimizerFactory.register("ffmpeg", cls)
 
     async def optimize(self, input_path: Path, output_path: Path) -> Path:
