@@ -129,21 +129,33 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { mockCategories } from '../data/mockData'
-import type { Language } from '../types'
+import { getCategory } from '../api/categories'
+import type { Category, Language } from '../types'
 
 const route = useRoute()
 
-const category = computed(() => {
-  const catId = route.params.categoryId as string
-  return mockCategories.find(c => c.id === catId) || null
+const categoryData = ref<Category | null>(null)
+
+const loadCategory = async (id: string) => {
+  categoryData.value = await getCategory(id)
+}
+
+onMounted(() => {
+  const id = route.params.categoryId as string
+  if (id) loadCategory(id)
 })
+
+watch(() => route.params.categoryId as string, (id) => {
+  if (id) loadCategory(id)
+})
+
+const category = computed(() => categoryData.value)
 
 const image = computed(() => {
   const imgId = route.params.imageId as string
-  return category.value?.images.find(i => i.id === imgId) || null
+  return category.value?.images.find(i => i.id === imgId) ?? null
 })
 
 const langFlagMap: Record<Language, string> = { en: 'us', es: 'es', fr: 'fr', bg: 'bg' }

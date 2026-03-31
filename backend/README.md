@@ -52,10 +52,6 @@ PYTHONPATH="$PWD/src" .venv/bin/python -m pytest tests/ -v
 
 Test layout:
 
-text
-
-Copy
-
 ```
 tests/
 ├── text_translation/
@@ -99,14 +95,14 @@ Base URL for all routes below: `/api/v1`. Protected routes require `Authorizatio
 ### Auth
 
 | Method | Path | Auth | Description |
-| --- | --- | --- | --- |
+| :--- | :--- | :--- | :--- |
 | `POST` | [/login → login()](src/api/v1/routes_auth.py) | No | Login with username/password; returns JWT. |
 | `POST` | [/cli-login → cli_login()](src/api/v1/routes_auth.py) | No | CLI-only login over Unix socket; returns short-lived JWT. |
 
 ### Tasks
 
 | Method | Path | Auth | Description |
-| --- | --- | --- | --- |
+| :--- | :--- | :--- | :--- |
 | `GET` | [/ping](src/api/v1/routes_common.py#L11) | No | Health check; returns PONG with backend platform info. |
 | `GET` | [/status](src/api/v1/routes_common.py#L16) | Yes | Service status. |
 | `POST` | [/operation](src/api/v1/routes_common.py#L21) | Yes | Perform a service operation. Query param: `name`. |
@@ -115,7 +111,7 @@ Base URL for all routes below: `/api/v1`. Protected routes require `Authorizatio
 ### Content
 
 | Method | Path | Auth | Description |
-| --- | --- | --- | --- |
+| :--- | :--- | :--- | :--- |
 | `GET` | [/content/categories](src/api/v1/routes_content.py#L38) | Yes | List content categories. Query: `include_archived`, `archived_only` (bool) to include or list only archived categories. |
 | `POST` | [/content/categories](src/api/v1/routes_content.py#L51) | Yes | Create a category. Body: `{"name": "<category_name>"}`. Creates folder, voice files per language, and category icon. Returns 201. |
 | `POST` | [/content/categories/restore](src/api/v1/routes_content.py#L62) | Yes | Restore a category from archive. Body: `{"name": "<category_name_or_archive_folder>"}` (e.g. `foods` or `foods_1738456789`). |
@@ -130,7 +126,7 @@ User routes are under `/api/v1/users*` and require both admin role and Unix sock
 When `DEBUG_MODE=true`, those two dependencies are overridden at startup for local debugging.
 
 | Method | Path | Auth | Description |
-| --- | --- | --- | --- |
+| :--- | :--- | :--- | :--- |
 | `POST` | [/users](src/api/v1/routes_users.py#L45) | Yes (admin + UDS) | Create a user with role `admin` or `viewer`. |
 | `GET` | [/users](src/api/v1/routes_users.py#L66) | Yes (admin + UDS) | List all users. Query: `username` (fuzzy), `role` (admin/viewer). |
 | `DELETE` | [/users/{username}](src/api/v1/routes_users.py#L77) | Yes (admin + UDS) | Delete a user (cannot remove the last admin). |
@@ -144,7 +140,7 @@ Internal endpoints are under `/internal/*`. They require `Authorization: Bearer 
 #### Jobs
 
 | Method | Path | Description |
-| --- | --- | --- |
+| :--- | :--- | :--- |
 | `POST` | [/internal/generate](src/api/internal/jobs_routes.py#L86) | Upload input file, trigger TTS pipeline in background; returns `job_id`. |
 | `GET` | [/internal/generate/{job_id}/status](src/api/internal/jobs_routes.py#L115) | Poll job status (`pending`, `running`, `completed`, `failed`). |
 | `POST` | [/internal/generate-sync](src/api/internal/jobs_routes.py#L141) | Upload input file, run pipeline synchronously; returns `RunSummary` JSON. |
@@ -159,7 +155,7 @@ Internal endpoints are under `/internal/*`. They require `Authorization: Bearer 
 #### Generators
 
 | Method | Path | Description |
-| --- | --- | --- |
+| :--- | :--- | :--- |
 | `GET` | [/internal/generators](src/api/internal/text_to_speech_routes.py#L45) | List all configured TTS providers with activation state and settings. |
 | `POST` | [/internal/generators/{provider}/generate](src/api/internal/text_to_speech_routes.py#L74) | Generate audio for a single TTS request via the named provider. |
 | `POST` | [/internal/generators/generate-word](src/api/internal/text_to_speech_routes.py#L128) | Generate audio for a single word using the first active provider; returns `audio/mpeg` bytes. |
@@ -167,21 +163,21 @@ Internal endpoints are under `/internal/*`. They require `Authorization: Bearer 
 #### Evaluators
 
 | Method | Path | Description |
-| --- | --- | --- |
+| :--- | :--- | :--- |
 | `GET` | [/internal/evaluators](src/api/internal/evaluators_routes.py#L43) | List all configured STT evaluators with activation state. |
 | `POST` | [/internal/evaluators/evaluate](src/api/internal/evaluators_routes.py#L70) | Run STT transcription, score, persist, and return evaluation result. |
 
 #### Optimizers
 
 | Method | Path | Description |
-| --- | --- | --- |
+| :--- | :--- | :--- |
 | `GET` | [/internal/optimizers](src/api/internal/optimizers_routes.py#L28) | List all configured audio optimizers with activation state and priority. |
 | `POST` | [/internal/optimizers/{optimizer}/optimize](src/api/internal/optimizers_routes.py#L57) | Run the named optimizer on a given audio file. |
 
 #### Translators
 
 | Method | Path | Description |
-| --- | --- | --- |
+| :--- | :--- | :--- |
 | `GET` | [/internal/translators](src/api/internal/text_translation_routes.py#L40) | List all configured translation services with activation state. |
 | `POST` | [/internal/translate](src/api/internal/text_translation_routes.py#L69) | Translate text via all active translators in priority order. |
 | `POST` | [/internal/translate-file](src/api/internal/text_translation_routes.py#L97) | Translate a word list file; returns per-word translations for all langs. |
@@ -189,7 +185,7 @@ Internal endpoints are under `/internal/*`. They require `Authorization: Bearer 
 #### Runtime Service Configs
 
 | Method | Path | Description |
-| --- | --- | --- |
+| :--- | :--- | :--- |
 | `POST` | [/internal/services/configs/apply](src/api/internal/service_config_routes.py) | Validate and apply one JSON config payload in memory (no file persistence). |
 | `POST` | [/internal/services/configs/upload](src/api/internal/service_config_routes.py) | Validate and apply uploaded JSON config content in memory (no file persistence). |
 
@@ -233,12 +229,74 @@ Output naming/path helpers now live on `Settings` in `src/core/config.py` (not a
 
 ### Source layout
 
-text
+Paths are relative to `backend/` (set `PYTHONPATH` to `src` when running uvicorn).
 
-Copy
-
-```
-src/├── api/│   ├── dependencies.py           # get_registry, get_job_store, require_internal, require_admin, require_uds│   ├── internal/│   │   ├── jobs_routes.py        # /internal/generate, /generate/{id}/status, /generate-sync│   │   ├── text_to_speech_routes.py # /internal/generators, /generators/{provider}/generate, /generators/generate-word│   │   ├── evaluators_routes.py  # /internal/evaluators, /evaluators/evaluate│   │   ├── optimizers_routes.py  # /internal/optimizers, /optimizers/{optimizer}/optimize│   │   └── text_translation_routes.py # /internal/translators, /translate, /translate-file│   └── v1/│       ├── routes_auth.py│       ├── routes_common.py│       ├── routes_content.py│       └── routes_users.py├── core/                         # Zero src.services imports (HTTP boundary enforced)│   ├── config.py                 # Pydantic Settings + output path/name helper methods│   ├── config_loader.py          # JSON config parsing (providers, translators, optimizers)│   ├── models.py                 # Core dataclasses (TTSRequest, GeneratedAudio, EvaluationResult, etc.)│   ├── languages.py              # Language code/name lookups and BCP-47 conversion│   ├── input_loader.py           # Load structured requests from CSV/XLSX/TXT files│   ├── result_writer.py          # Write per-run JSON and CSV reports│   ├── logging/                  # Centralized logging (structlog, Seq, request logging)│   ├── content_service.py        # Category/object ops; DALL-E icons; internal translate/TTS helpers│   ├── job_store.py              # Async JobStore with TTL eviction│   ├── pipeline.py               # TTS pipeline orchestration (calls internal HTTP endpoints)│   └── registry.py               # Pure data container for service instances (no service imports)├── db/│   └── database.py               # SQLite user store├── security/│   ├── auth.py                   # JWT verification│   └── tokens.py                 # create_access_token, create_internal_token└── services/                     # Business logic implementations (provider-specific code)    ├── service_registry.py       # SERVICE_CLASS discovery; build_runtime + get()    ├── models.py                 # Service, ServiceProvider base types    ├── config_loader.py          # Generic load_service_configs(config_dir, config_class)    ├── text_to_speech/           # OpenAI / ElevenLabs / Speaktor TTS providers    │   └── providers/            # OpenAI / ElevenLabs / Speaktor provider implementations    ├── text_translation/         # Translation service    │   ├── models.py             # TextTranslate abstract base class    │   ├── service.py            # TranslatorFactory, builders, orchestration    │   └── providers/            # OpenAI / static translator implementations    ├── voice_optimization/       # FFmpeg / pydub audio optimizers    │   └── providers/            # FFmpeg / pydub optimizer implementations    ├── evaluation/               # STT transcription, Levenshtein scoring, score stores    └── logging/                  # Structlog and Seq logging implementation
+```text
+src/
+├── main.py                       # FastAPI app factory, lifespan, router registration
+├── api/
+│   ├── dependencies.py           # get_registry, get_registry_builder, get_job_store, auth deps
+│   ├── internal/                 # Internal routes (internal JWT or admin)
+│   │   ├── jobs_routes.py        # /internal/generate, status, /generate-sync
+│   │   ├── text_to_speech_routes.py
+│   │   ├── evaluators_routes.py
+│   │   ├── optimizers_routes.py
+│   │   ├── text_translation_routes.py
+│   │   └── service_config_routes.py   # /internal/services/configs/apply, /upload
+│   └── v1/                       # Public /api/v1
+│       ├── routes_auth.py
+│       ├── routes_common.py      # ping, status, operation, list-files
+│       ├── routes_content.py
+│       └── routes_users.py
+├── core/                         # No src.services imports (HTTP boundary)
+│   ├── config.py                 # Settings + output path helpers
+│   ├── models.py
+│   ├── languages.py
+│   ├── input_loader.py
+│   ├── result_writer.py
+│   ├── content_naming.py         # Content folder / image id naming
+│   ├── content_service.py
+│   ├── job_store.py
+│   ├── pipeline.py               # TTS pipeline (internal HTTP)
+│   ├── tasks.py                  # ping, status, operation, list-files
+│   ├── utils.py                  # boolish, platform / debug helpers
+│   └── logging/
+│       ├── logging_system.py
+│       └── request_logger.py
+├── db/
+│   └── database.py               # SQLite user store
+├── security/
+│   ├── auth.py                   # JWT verification
+│   └── tokens.py                 # access + internal tokens
+└── services/                     # Registry + provider implementations
+    ├── acceptance.py             # ServiceAcceptCriteria
+    ├── service_registry.py       # Subpackage discovery, get_service
+    ├── registry_builder.py       # load_all_from_disk, hot-reload
+    ├── models.py                 # Service / ServiceProvider bases
+    ├── config_loader.py          # Generic JSON config loader
+    ├── text_to_speech/
+    │   ├── base.py
+    │   ├── service.py
+    │   └── providers/            # openai_tts, elevenlabs_tts, speaktor_tts
+    ├── text_translation/
+    │   ├── models.py
+    │   ├── service.py
+    │   └── providers/            # openai_translate, static_translate
+    ├── voice_optimization/
+    │   ├── base.py
+    │   ├── normalizer.py
+    │   ├── service.py
+    │   └── providers/            # ffmpeg_optimizer, pydub_optimizer
+    ├── evaluation/
+    │   ├── engine.py
+    │   ├── service.py
+    │   ├── score_store.py
+    │   ├── score_store_json.py
+    │   └── score_store_sqlite.py
+    └── logging/                  # Service-layer logging adapters
+        ├── service.py
+        ├── logging_system.py
+        └── request_logger.py
 ```
 
 ## Adding a new service type
@@ -272,8 +330,25 @@ No registry API change is required to add a new service as long as the package e
 
 TTS providers and translators are configured via JSON files in `config/`:
 
-```
-config/|-- loggers/|   |-- logging.json|   |-- request_logger.json|   `-- structlog.json|-- voice_optimizers/|   |-- ffmpeg_high.json|   |-- ffmpeg_low.json|   `-- pydub_optimized.json|-- text_to_speech/|   |-- openai.json|   |-- elevenlabs.json|   `-- speaktor.json`-- text_translation/    |-- openai_en_es.json    |-- openai_en_fr.json    |-- openai_en_bg.json    `-- static.json
+```text
+config/
+├── loggers/
+│   ├── logging.json
+│   ├── request_logger.json
+│   └── structlog.json
+├── voice_optimizers/
+│   ├── ffmpeg_high.json
+│   ├── ffmpeg_low.json
+│   └── pydub_optimized.json
+├── text_to_speech/
+│   ├── openai.json
+│   ├── elevenlabs.json
+│   └── speaktor.json
+└── text_translation/
+    ├── openai_en_es.json
+    ├── openai_en_fr.json
+    ├── openai_en_bg.json
+    └── static.json
 ```
 
 Set `service_provider.enabled` to `true` or `false` in each config file to enable/disable entries. For text\_to\_speech providers, `service_provider.config.generate.enabled` can optionally override generation activation per provider.
@@ -286,7 +361,7 @@ Each file uses a top-level `service_provider` object containing both metadata an
 `service_provider` fields:
 
 | Field | Type | Description |
-| --- | --- | --- |
+| :--- | :--- | :--- |
 | `service` | string | Service type (`text_translation`). Must match the service package `SERVICE_NAME`. |
 | `provider` | string | Translator implementation name (`openai`, `static_translate`). |
 | `enabled` | bool | Set `true` to enable the translator. |
@@ -297,7 +372,7 @@ Each file uses a top-level `service_provider` object containing both metadata an
 Common `service_provider.config` fields:
 
 | Field | Type | Description |
-| --- | --- | --- |
+| :--- | :--- | :--- |
 | `input_language` | string | Default source language when request/CLI value is missing. |
 | `output_language` | string | Default output language when request/CLI value is missing. |
 | `content_dir` | string | Optional path used by `static_translate` provider. |
@@ -340,7 +415,7 @@ Each file uses a top-level `service_provider` object containing both metadata an
 `service_provider` fields:
 
 | Field | Type | Description |
-| --- | --- | --- |
+| :--- | :--- | :--- |
 | `service` | string | Service type (`voice_optimization`). Must match the service package `SERVICE_NAME`. |
 | `provider` | string | Optimizer implementation name (`ffmpeg`, `pydub`). |
 | `enabled` | bool | Set `true` to enable the optimizer. |
@@ -351,7 +426,7 @@ Each file uses a top-level `service_provider` object containing both metadata an
 Common `service_provider.config` fields:
 
 | Field | Type | Description |
-| --- | --- | --- |
+| :--- | :--- | :--- |
 | `sample_rate` | int | Output sample rate (default `22050`). |
 | `mono` | bool | Convert output to mono when `true` (default `true`). |
 | `vbr_quality` | int | MP3 VBR quality `0-9` (default `9`). |

@@ -25,20 +25,23 @@
 </template>
 
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { mockCategories } from '../data/mockData'
-import type { Voice } from '../types'
+import { getCategories } from '../api/categories'
+import type { Category, Voice } from '../types'
 import CategoryDetail from '../components/CategoryDetail.vue'
 import ImageGrid from '../components/ImageGrid.vue'
 
 const route = useRoute()
 const router = useRouter()
 
+const categories = ref<Category[]>([])
+onMounted(async () => { categories.value = await getCategories() })
+
 const category = computed(() => {
   const id = route.params.categoryId as string
-  if (id) return mockCategories.find(c => c.id === id) || null
-  return mockCategories[0] || null
+  if (id) return categories.value.find(c => c.id === id) ?? null
+  return categories.value[0] ?? null
 })
 
 watch(category, (cat) => {

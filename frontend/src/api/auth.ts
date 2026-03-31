@@ -1,6 +1,4 @@
-import axios from 'axios'
-
-const API_URL = '/api/v1'
+import client from './client'
 
 interface LoginResponse {
   access_token?: string
@@ -12,7 +10,7 @@ export const login = async (username: string, password: string): Promise<LoginRe
   params.append('username', username)
   params.append('password', password)
 
-  const response = await axios.post<LoginResponse>(`${API_URL}/login`, params)
+  const response = await client.post<LoginResponse>('/login', params)
   if (response.data.access_token) {
     localStorage.setItem('token', response.data.access_token)
   }
@@ -21,7 +19,7 @@ export const login = async (username: string, password: string): Promise<LoginRe
 
 export const getStatus = async (): Promise<unknown> => {
   const token = localStorage.getItem('token')
-  const response = await axios.get(`${API_URL}/status`, {
+  const response = await client.get('/status', {
     headers: { Authorization: `Bearer ${token}` }
   })
   return response.data
@@ -36,7 +34,7 @@ interface FilesResponse {
 
 export const listFiles = async (): Promise<FilesResponse> => {
   const token = localStorage.getItem('token')
-  const response = await axios.get<FilesResponse>(`${API_URL}/list`, {
+  const response = await client.get<FilesResponse>('/list', {
     headers: { Authorization: `Bearer ${token}` }
   })
   return response.data

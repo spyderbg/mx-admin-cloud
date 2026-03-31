@@ -294,4 +294,30 @@ export const mockCategories: Category[] = [
       },
     ],
   },
+  {
+    id: 'cat-5',
+    name: 'Ocean Life',
+    description: 'Sea Creatures and Coral',
+    iconUrl: img(6),
+    voices: [
+      { id: 'v17', name: 'Ocean Narrator', language: 'en', type: 'ambient', iconUrl: face(5) },
+      { id: 'v18', name: 'Narrador del Océano', language: 'es', type: 'ambient', iconUrl: face(6) },
+      { id: 'v19', name: 'Narrateur de l\'Océan', language: 'fr', type: 'ambient', iconUrl: face(7) },
+      { id: 'v20', name: 'Океански Разказвач', language: 'bg', type: 'ambient', iconUrl: face(8) },
+    ],
+    images: [
+      {
+        id: 'img-5-1',
+        name: 'Coral Reef',
+        files: [img(8)],
+        thumbnailUrl: img(8),
+        voices: [
+          { id: 'iv77', name: 'Coral Reef', language: 'en', type: 'ambient', iconUrl: face(9) },
+          { id: 'iv78', name: 'Arrecife de Coral', language: 'es', type: 'ambient', iconUrl: face(10) },
+          { id: 'iv79', name: 'Récif Corallien', language: 'fr', type: 'ambient', iconUrl: face(11) },
+          { id: 'iv80', name: 'Коралов Риф', language: 'bg', type: 'ambient', iconUrl: face(12) },
+        ],
+      },
+    ],
+  },
 ]
