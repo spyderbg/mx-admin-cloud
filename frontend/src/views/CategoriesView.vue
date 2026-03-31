@@ -1,5 +1,5 @@
 <template>
-  <div v-if="category">
+  <div v-if="category" style="width: 100%;">
     <div class="page-header" style="margin-bottom: 0.5rem;">
       <h3 class="page-title">{{ category.name }}</h3>
     </div>
@@ -13,11 +13,26 @@
     />
     <div class="d-flex justify-content-between align-items-center mt-4 mb-3">
       <h4 class="mb-0">Images</h4>
-      <button class="btn btn-primary btn-sm" @click="onAddImage">
-        <i class="mdi mdi-plus mr-1"></i>Add New Image
-      </button>
+      <div class="d-flex align-items-center" style="gap: 1rem;">
+        <div class="d-flex align-items-center" style="gap: 0.5rem;">
+          <i class="mdi mdi-view-grid-outline text-muted" style="font-size: 1.1rem;"></i>
+          <input
+            type="range"
+            min="1"
+            max="6"
+            step="1"
+            v-model.number="gridColumns"
+            style="width: 100px; cursor: pointer;"
+            :title="`${gridColumns} column${gridColumns > 1 ? 's' : ''}`"
+          />
+          <i class="mdi mdi-view-grid text-muted" style="font-size: 1.4rem;"></i>
+        </div>
+        <button class="btn btn-primary btn-sm" @click="onAddImage">
+          <i class="mdi mdi-plus mr-1"></i>Add New Image
+        </button>
+      </div>
     </div>
-    <ImageGrid :images="category.images" :category-id="category.id" />
+    <ImageGrid :images="category.images" :category-id="category.id" :columns="gridColumns" />
   </div>
   <div v-else class="text-center py-5">
     <h4 class="text-muted">Select a category from the sidebar</h4>
@@ -35,6 +50,7 @@ import ImageGrid from '../components/ImageGrid.vue'
 const route = useRoute()
 const router = useRouter()
 
+const gridColumns = ref(4)
 const categories = ref<Category[]>([])
 onMounted(async () => { categories.value = await getCategories() })
 

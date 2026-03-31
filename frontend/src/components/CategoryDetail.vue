@@ -1,5 +1,5 @@
 <template>
-  <div class="card mb-2">
+  <div class="card mb-2" style="width: 100%;">
     <div class="card-body">
       <div class="row">
         <!-- Left: Category Name, Icon, Description -->
@@ -331,7 +331,7 @@ function togglePlay(voice: Voice): void {
 /* Voice cards grid */
 .voice-cards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
+  grid-template-columns: repeat(4, 1fr);
   gap: 0.75rem;
 }
 .voice-card {

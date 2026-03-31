@@ -1,25 +1,23 @@
 <template>
-  <div class="row">
+  <div class="image-grid" :style="{ gridTemplateColumns: `repeat(${columns}, 1fr)` }">
     <div
       v-for="image in images"
       :key="image.id"
-      class="col-xl-3 col-lg-4 col-md-6 col-sm-6 col-12 mb-4"
+      class="image-card"
+      @click="navigateToDetail(image.id)"
     >
-      <div class="image-card" @click="navigateToDetail(image.id)">
-        <img
-          :src="image.thumbnailUrl"
-          :alt="image.name"
-          class="img-fluid rounded"
-          style="width: 100%; aspect-ratio: 4/3; object-fit: cover; cursor: pointer;"
-        />
-        <button
-          class="edit-badge"
-          @click.stop="navigateToDetail(image.id)"
-          :title="'Edit ' + image.name"
-        >
-          <i class="mdi mdi-pencil"></i>
-        </button>
-      </div>
+      <img
+        :src="image.thumbnailUrl"
+        :alt="image.name"
+        class="image-card-thumb"
+      />
+      <button
+        class="edit-badge"
+        @click.stop="navigateToDetail(image.id)"
+        :title="'Edit ' + image.name"
+      >
+        <i class="mdi mdi-pencil"></i>
+      </button>
     </div>
   </div>
 </template>
@@ -31,6 +29,7 @@ import type { Image } from '../types'
 const props = defineProps<{
   images: Image[]
   categoryId: string
+  columns: number
 }>()
 
 const router = useRouter()
@@ -41,15 +40,28 @@ const navigateToDetail = (imageId: string): void => {
 </script>
 
 <style scoped>
+.image-grid {
+  display: grid;
+  gap: 1rem;
+  width: 100%;
+  transition: grid-template-columns 0.3s ease;
+}
 .image-card {
   position: relative;
   border-radius: 6px;
   overflow: hidden;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
   transition: box-shadow 0.2s;
+  cursor: pointer;
 }
 .image-card:hover {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+}
+.image-card-thumb {
+  width: 100%;
+  aspect-ratio: 4/3;
+  object-fit: cover;
+  display: block;
 }
 .edit-badge {
   position: absolute;

@@ -206,30 +206,7 @@ export const mockCategories: Category[] = [
           { id: 'iv52', name: 'Искрена Усмивка', language: 'bg', type: 'female', iconUrl: face(24) },
         ],
       },
-      {
-        id: 'img-3-4',
-        name: 'Golden Hour',
-        files: [img(14)],
-        thumbnailUrl: img(14),
-        voices: [
-          { id: 'iv53', name: 'Golden Hour', language: 'en', type: 'ambient', iconUrl: face(25) },
-          { id: 'iv54', name: 'Hora Dorada', language: 'es', type: 'ambient', iconUrl: face(1) },
-          { id: 'iv55', name: 'Heure Dorée', language: 'fr', type: 'ambient', iconUrl: face(2) },
-          { id: 'iv56', name: 'Златен Час', language: 'bg', type: 'ambient', iconUrl: face(3) },
-        ],
-      },
-      {
-        id: 'img-3-5',
-        name: 'Winter Portrait',
-        files: [img(15)],
-        thumbnailUrl: img(15),
-        voices: [
-          { id: 'iv57', name: 'Winter Portrait', language: 'en', type: 'female', iconUrl: face(4) },
-          { id: 'iv58', name: 'Retrato de Invierno', language: 'es', type: 'female', iconUrl: face(5) },
-          { id: 'iv59', name: 'Portrait d\'Hiver', language: 'fr', type: 'female', iconUrl: face(6) },
-          { id: 'iv60', name: 'Зимен Портрет', language: 'bg', type: 'female', iconUrl: face(7) },
-        ],
-      },
+
     ],
   },
   {
