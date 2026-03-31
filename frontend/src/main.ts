@@ -6,7 +6,6 @@ import './assets/vendors/css/vendor.bundle.base.css'
 import './assets/vendors/css/vendor.bundle.addons.css'
 import './assets/css/shared/style.css'
 import './assets/css/demo_1/style.css'
-import './assets/css/auth.css'
 import App from './App.vue'
 import router from './router'
 

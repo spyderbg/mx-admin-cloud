@@ -19,3 +19,7 @@
 <script setup lang="ts">
 import LoginForm from '../components/LoginForm.vue'
 </script>
+
+<style>
+@import '../assets/css/auth.css';
+</style>

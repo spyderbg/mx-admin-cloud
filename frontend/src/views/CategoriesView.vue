@@ -50,7 +50,7 @@ import ImageGrid from '../components/ImageGrid.vue'
 const route = useRoute()
 const router = useRouter()
 
-const gridColumns = ref(4)
+const gridColumns = ref(3)
 const categories = ref<Category[]>([])
 onMounted(async () => { categories.value = await getCategories() })
 
