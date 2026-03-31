@@ -12,6 +12,8 @@ __all__ = [
     "AudioOptimizerBase",
     "OptimizerFactory",
     "normalize_audio",
+    "SERVICE_CLASS",
+    "VoiceOptimizationService",
 ]
 
 
@@ -57,3 +59,7 @@ class OptimizerFactory:
 # Import providers AFTER OptimizerFactory is defined so that provider modules
 # can safely call `from .. import OptimizerFactory` inside their register() methods.
 import src.services.voice_optimization.providers  # noqa: F401, E402
+
+from src.services.voice_optimization.service import VoiceOptimizationService  # noqa: E402
+
+SERVICE_CLASS = VoiceOptimizationService

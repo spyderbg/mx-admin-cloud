@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from src.services.models import Service, ServiceProvider
 from src.services.text_to_speech.base import TTSProvider
@@ -27,6 +28,14 @@ class TextToSpeechService(Service):
         raw = load_service_configs(config_dir, ServiceProvider)
         raw.sort(key=lambda p: p.priority)
         self._providers = [ProviderFactory.create(p, self.base_dir) for p in raw]
+
+    def load_runtime_config(self, config_root: Path) -> None:
+        self.load_providers(config_root / "text_to_speech")
+
+    def registry_get(self, key: str) -> list[Any] | None:
+        if key == "providers":
+            return list(self.active_providers)
+        return None
 
     @property
     def active_providers(self) -> list[TTSProvider]:

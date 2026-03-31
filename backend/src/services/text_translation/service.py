@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 
 from src.services.models import Service, ServiceProvider
 from src.services.text_translation.models import TextTranslationServiceProvider
@@ -79,6 +79,14 @@ class TextTranslationService(Service):
             for p in raw
             if p.enabled
         ]
+
+    def load_runtime_config(self, config_root: Path) -> None:
+        self.load_providers(config_root / "text_translation")
+
+    def registry_get(self, key: str) -> list[Any] | None:
+        if key == "translators":
+            return list(self.active_providers)
+        return None
 
     @property
     def active_providers(self) -> list[TextTranslationServiceProvider]:

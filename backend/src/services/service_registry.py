@@ -2,48 +2,79 @@
 
 from __future__ import annotations
 
+import importlib
+import pkgutil
 import threading
 from pathlib import Path
+from types import ModuleType
 from typing import Any, ClassVar
 
+import src.services as _services_pkg
 from src.services.models import Service
 
 
 class ServiceRegistry:
-    """Registry for service package descriptors."""
+    """Runtime registry built from packages that export ``SERVICE_CLASS``."""
 
-    _registered_services: ClassVar[list[Service]] = []
-    _lock: ClassVar[threading.Lock] = threading.Lock()
-
-    @classmethod
-    def register(cls, service: Service) -> None:
-        """Register a service package descriptor (thread-safe)."""
-        with cls._lock:
-            cls._registered_services.append(service)
+    #: Loaded orchestrator instances (set in :meth:`build_runtime`).
+    _services: ClassVar[list[Service]] = []
+    _services_lock: ClassVar[threading.Lock] = threading.Lock()
 
     @classmethod
-    def find(cls, name: str) -> Service | None:
-        """Retrieve a service package descriptor by name (thread-safe)."""
-        with cls._lock:
-            for service in cls._registered_services:
-                if service.name == name:
-                    return service
-        return None
+    def build_runtime(cls, base_dir: Path, config_path: Path) -> ServiceRegistry:
+        """Instantiate and load each discovered ``SERVICE_CLASS``."""
+        inst = cls()
+        with cls._services_lock:
+            # Discover and instantiate if not already done or if we want to refresh
+            discovered = cls._discover()
+            built: list[Service] = []
+            for svc_cls, name, service_dir in discovered:
+                svc = svc_cls(name=name, service_dir=service_dir, base_dir=base_dir)
+                svc.load_runtime_config(config_path)
+                built.append(svc)
+            cls._services = built
+        return inst
 
     @classmethod
-    def all_services(cls) -> list[Service]:
-        """Return a copy of all registered service package descriptors (thread-safe)."""
-        with cls._lock:
-            return cls._registered_services.copy()
+    def _discover(cls) -> list[tuple[type[Service], str, Path]]:
+        """Scan src.services for packages that export ``SERVICE_CLASS``."""
+        specs: list[tuple[type[Service], str, Path]] = []
+        for _mod_info in pkgutil.iter_modules(_services_pkg.__path__, _services_pkg.__name__ + "."):
+            if not _mod_info.ispkg:
+                continue
+            try:
+                _mod: ModuleType = importlib.import_module(_mod_info.name)
+            except ImportError:
+                continue
 
-    @classmethod
-    def dump(cls, base_dir: Path | None = None) -> None:
-        """Print detailed information about all registered service packages.
+            _svc_cls = getattr(_mod, "SERVICE_CLASS", None)
+            if _svc_cls is None:
+                continue
+            if not isinstance(_svc_cls, type) or not issubclass(_svc_cls, Service):
+                continue
+            if _svc_cls is Service:
+                continue
 
-        When *base_dir* is set, *service_dir* is printed relative to it; otherwise the
-        absolute path is shown.
-        """
-        services = cls._registered_services
+            specs.append((_svc_cls, _mod.__name__, Path(_mod.__file__).parent))
+        return specs
+
+    def get(self, key: str) -> list[Any]:
+        """Return the list published by the first orchestrator that handles *key* (via :meth:`Service.registry_get`)."""
+        with ServiceRegistry._services_lock:
+            instances = list(ServiceRegistry._services)
+
+        for svc in instances:
+            chunk = svc.registry_get(key)
+            if chunk is not None:
+                return list(chunk)
+
+        raise KeyError(f"Unknown registry key: {key!r}")
+
+    def dump(self, base_dir: Path | None = None) -> None:
+        """Print detailed information about loaded orchestrator instances."""
+        with ServiceRegistry._services_lock:
+            services = list(ServiceRegistry._services)
+
         print(f"\n{'=' * 80}")
         print(f"ServiceRegistry - Total Services: {len(services)}")
         print(f"{'=' * 80}\n")
@@ -58,23 +89,19 @@ class ServiceRegistry:
 
             try:
                 service_dict = {
-                    key: value for key, value in service.__dict__.items()
-                    if not key.startswith('_') and not callable(value)
+                    k: v for k, v in service.__dict__.items()
+                    if not k.startswith('_') and not callable(v)
                 }
                 if service_dict:
                     print("    Attributes:")
-                    for key, value in service_dict.items():
-                        print(f"      - {key}: {cls._format_registry_attr(key, value, base_dir)}")
+                    for k, v in service_dict.items():
+                        print(f"      - {k}: {self._format_registry_attr(k, v, base_dir)}")
             except Exception as exc:  # pylint: disable=broad-exception-caught
                 print(f"    [Could not serialize attributes: {exc}]")
 
             print()
 
         print(f"{'=' * 80}\n")
-
-    def get(self, attr: str) -> list[Any]:
-        """Return the list of live instances for *attr* (e.g. ``"providers"``)."""
-        raise NotImplementedError("ServiceRegistry.get() is not implemented yet; use get_registry() instead.")
 
     @staticmethod
     def _format_registry_attr(key: str, value: Any, base_dir: Path | None) -> str:
@@ -91,12 +118,3 @@ class ServiceRegistry:
         return display
 
 
-import importlib  # noqa: E402  pylint: disable=wrong-import-position
-import pkgutil  # noqa: E402  pylint: disable=wrong-import-position
-import src.services as _services_pkg  # noqa: E402  pylint: disable=wrong-import-position
-
-for _mod_info in pkgutil.iter_modules(_services_pkg.__path__, _services_pkg.__name__ + "."):
-    if not _mod_info.ispkg:
-        continue
-    _mod = importlib.import_module(_mod_info.name)
-    ServiceRegistry.register(Service(name=_mod.__name__, service_dir=Path(_mod.__file__).parent))

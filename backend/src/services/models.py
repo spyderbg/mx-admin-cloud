@@ -26,6 +26,20 @@ class Service:
         self.name = name
         self.service_dir = service_dir
 
+    def load_runtime_config(self, config_root: Path) -> None:
+        """Load package configs from *config_root* (e.g. ``settings.config_path``)."""
+        raise NotImplementedError(
+            f"{type(self).__name__} must implement load_runtime_config()",
+        )
+
+    def registry_get(self, key: str) -> list[Any] | None:
+        """Return data for *key* if this orchestrator exposes it; else ``None`` (not handled).
+
+        Handlers return a (possibly empty) list. :class:`ServiceRegistry` aggregates without
+        knowing concrete service types.
+        """
+        return None
+
 
 class ServiceProvider:
     """Data representation of one ``service_provider`` config JSON file.

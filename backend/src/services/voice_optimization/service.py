@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from src.services.models import Service, ServiceProvider
 from src.services.voice_optimization.base import AudioOptimizerBase
@@ -32,6 +33,14 @@ class VoiceOptimizationService(Service):
             for p in raw
             if p.enabled
         ]
+
+    def load_runtime_config(self, config_root: Path) -> None:
+        self.load_optimizers(config_root / "voice_optimizers")
+
+    def registry_get(self, key: str) -> list[Any] | None:
+        if key == "optimizers":
+            return list(self.active_optimizers)
+        return None
 
     @property
     def active_optimizers(self) -> list[AudioOptimizerBase]:

@@ -222,13 +222,13 @@ Internal endpoints are under `/internal/*`. They require `Authorization: Bearer 
 
 ### Service Registry
 
-At startup, `src/services/registry_builder.py` builds a `ServiceRegistry` that parses all JSON configs once and instantiates TTS providers, translators, and optimizers. The registry is stored in `app.state.registry` and injected via `Depends(get_registry)`.
+When `src/services/service_registry.py` is imported, it scans immediate subpackages of `src.services` (via `pkgutil`) and records any package that exports `SERVICE_CLASS`: a concrete subclass of `Service` (not the base class). Packages without `SERVICE_CLASS` (for example `evaluation`, `logging`) are skipped.
 
-This eliminates per-request JSON parsing. Provider instances are reused across all requests.
+At startup, `main.py` calls `ServiceRegistry.build_runtime(settings.BASE_DIR, settings.config_path)`. That constructs one instance per discovered class, calls `load_runtime_config(config_path)` on each orchestrator (which loads JSON under `config/text_to_speech/`, `config/text_translation/`, and `config/voice_optimizers/` as appropriate), and stores the result in `app.state.registry`. Routes use `Depends(get_registry)` and `registry.get("providers")`, `get("translators")`, or `get("optimizers")` for **active** provider/optimizer lists.
 
-**Plugin-based loading:** Each service package self-registers a `ServicePlugin` with `ServicePluginRegistry` (in `src/services/plugin_registry.py`) at import time. `registry_builder._load_into` iterates the plugin list and, for each, calls the generic `load_service_configs()` loader followed by the plugin's `factory_create` to build instances. Adding a new service type requires no changes to `registry_builder.py` logic (see [Adding a new service type](#adding-a-new-service-type) below).
+This avoids per-request JSON parsing for those endpoints; live instances are reused across requests.
 
-**Hot-reload:** The `watchfiles` background task watches `config/` for changes. When a file changes, `reload_registry()` re-parses configs and replaces instances in-place behind an `asyncio.Lock`, so in-flight requests finish cleanly.
+**Hot-reload:** If `watchfiles` is installed, a background task logs when files under `config/` change. Replacing the registry in-place after a change is not implemented yet (restart the app to pick up config changes).
 
 ### Job Store
 
@@ -257,67 +257,22 @@ text
 Copy
 
 ```
-src/├── api/│   ├── dependencies.py           # get_registry, get_job_store, require_internal, require_admin, require_uds│   ├── internal/│   │   ├── jobs_routes.py        # /internal/generate, /generate/{id}/status, /generate-sync│   │   ├── text_to_speech_routes.py # /internal/generators, /generators/{provider}/generate, /generators/generate-word│   │   ├── evaluators_routes.py  # /internal/evaluators, /evaluators/evaluate│   │   ├── optimizers_routes.py  # /internal/optimizers, /optimizers/{optimizer}/optimize│   │   └── text_translation_routes.py # /internal/translators, /translate, /translate-file│   └── v1/│       ├── routes_auth.py│       ├── routes_common.py│       ├── routes_content.py│       └── routes_users.py├── core/                         # Zero src.services imports (HTTP boundary enforced)│   ├── config.py                 # Pydantic Settings + output path/name helper methods│   ├── config_loader.py          # JSON config parsing (providers, translators, optimizers)│   ├── models.py                 # Core dataclasses (TTSRequest, GeneratedAudio, EvaluationResult, etc.)│   ├── languages.py              # Language code/name lookups and BCP-47 conversion│   ├── input_loader.py           # Load structured requests from CSV/XLSX/TXT files│   ├── result_writer.py          # Write per-run JSON and CSV reports│   ├── logging/                  # Centralized logging (structlog, Seq, request logging)│   ├── content_service.py        # Category/object ops; DALL-E icons; internal translate/TTS helpers│   ├── job_store.py              # Async JobStore with TTL eviction│   ├── pipeline.py               # TTS pipeline orchestration (calls internal HTTP endpoints)│   └── registry.py               # Pure data container for service instances (no service imports)├── db/│   └── database.py               # SQLite user store├── security/│   ├── auth.py                   # JWT verification│   └── tokens.py                 # create_access_token, create_internal_token└── services/                     # Business logic implementations (provider-specific code)    ├── registry_builder.py       # Builds and reloads ServiceRegistry from config files    ├── plugin_registry.py        # ServicePlugin dataclass + ServicePluginRegistry (self-registration)    ├── config_loader.py          # Generic load_service_configs(config_dir, config_class)    ├── text_to_speech/           # OpenAI / ElevenLabs / Speaktor TTS providers    │   └── providers/            # OpenAI / ElevenLabs / Speaktor provider implementations    ├── text_translation/         # Translation service    │   ├── models.py             # TextTranslate abstract base class    │   ├── service.py            # TranslatorFactory, builders, orchestration    │   └── providers/            # OpenAI / static translator implementations    ├── optimization/             # FFmpeg / pydub audio optimizers    │   └── providers/            # FFmpeg / pydub optimizer implementations    ├── evaluation/               # STT transcription, Levenshtein scoring, score stores    └── logging/                  # Structlog and Seq logging implementation
+src/├── api/│   ├── dependencies.py           # get_registry, get_job_store, require_internal, require_admin, require_uds│   ├── internal/│   │   ├── jobs_routes.py        # /internal/generate, /generate/{id}/status, /generate-sync│   │   ├── text_to_speech_routes.py # /internal/generators, /generators/{provider}/generate, /generators/generate-word│   │   ├── evaluators_routes.py  # /internal/evaluators, /evaluators/evaluate│   │   ├── optimizers_routes.py  # /internal/optimizers, /optimizers/{optimizer}/optimize│   │   └── text_translation_routes.py # /internal/translators, /translate, /translate-file│   └── v1/│       ├── routes_auth.py│       ├── routes_common.py│       ├── routes_content.py│       └── routes_users.py├── core/                         # Zero src.services imports (HTTP boundary enforced)│   ├── config.py                 # Pydantic Settings + output path/name helper methods│   ├── config_loader.py          # JSON config parsing (providers, translators, optimizers)│   ├── models.py                 # Core dataclasses (TTSRequest, GeneratedAudio, EvaluationResult, etc.)│   ├── languages.py              # Language code/name lookups and BCP-47 conversion│   ├── input_loader.py           # Load structured requests from CSV/XLSX/TXT files│   ├── result_writer.py          # Write per-run JSON and CSV reports│   ├── logging/                  # Centralized logging (structlog, Seq, request logging)│   ├── content_service.py        # Category/object ops; DALL-E icons; internal translate/TTS helpers│   ├── job_store.py              # Async JobStore with TTL eviction│   ├── pipeline.py               # TTS pipeline orchestration (calls internal HTTP endpoints)│   └── registry.py               # Pure data container for service instances (no service imports)├── db/│   └── database.py               # SQLite user store├── security/│   ├── auth.py                   # JWT verification│   └── tokens.py                 # create_access_token, create_internal_token└── services/                     # Business logic implementations (provider-specific code)    ├── service_registry.py       # SERVICE_CLASS discovery; build_runtime + get()    ├── models.py                 # Service, ServiceProvider base types    ├── config_loader.py          # Generic load_service_configs(config_dir, config_class)    ├── text_to_speech/           # OpenAI / ElevenLabs / Speaktor TTS providers    │   └── providers/            # OpenAI / ElevenLabs / Speaktor provider implementations    ├── text_translation/         # Translation service    │   ├── models.py             # TextTranslate abstract base class    │   ├── service.py            # TranslatorFactory, builders, orchestration    │   └── providers/            # OpenAI / static translator implementations    ├── voice_optimization/       # FFmpeg / pydub audio optimizers    │   └── providers/            # FFmpeg / pydub optimizer implementations    ├── evaluation/               # STT transcription, Levenshtein scoring, score stores    └── logging/                  # Structlog and Seq logging implementation
 ```
 
 ## Adding a new service type
 
-The registry uses a plugin system — each service package self-registers at import time. Adding a new service type
-(e.g. `voice_cloning`) requires changes in exactly three places:
+**1. Add a subpackage** under `src/services/` (e.g. `voice_cloning/`) with a `Service` subclass in `service.py` whose constructor matches the existing orchestrators: `(name, service_dir, base_dir)`.
 
-**1. Create the service package** at `src/services/voice_cloning/__init__.py`.
-The package must define:
+**2. Implement** `load_runtime_config(self, config_root: Path)` on that subclass to load configs (typically via `load_service_configs` and a factory pattern, like TTS or translation).
 
-- A config dataclass with a `from_dict(data, config_path)` classmethod (returns an instance or `None`).
-- A factory class with a `create(cfg, base_dir)` classmethod.
-- Provider implementations under `providers/` (each with a `register()` classmethod).
+**3. Export** `SERVICE_CLASS = YourService` from the package `__init__.py`. The import-time scan in `service_registry.py` will pick it up automatically.
 
-At the bottom of `__init__.py`, register the plugin:
+**4. Implement** `registry_get(self, key)` on your orchestrator (see `Service` in `src/services/models.py`) so `ServiceRegistry.get` can return the right list for a new key. Existing orchestrators expose ``providers``, ``translators``, and ``optimizers``; the registry does not hard-code service types.
 
-```python
-from src.services.plugin_registry import ServicePlugin, ServicePluginRegistry
+**5. Add JSON configs** under the directory your `load_runtime_config` reads, using the usual `service_provider` envelope.
 
-ServicePluginRegistry.register(
-    ServicePlugin(
-        registry_attr="voice_clonings",     # key in ServiceRegistry
-        config_dir="voice_cloning",         # subdirectory under config/
-        config_class=VoiceCloningConfig,    # has from_dict(data, config_path)
-        factory_create=VoiceCloningFactory.create,
-        base_dir_key="output_path",         # Settings attr for base_dir (default)
-        sort_key="priority",                # optional: sort configs before building
-    ),
-    module_name=__name__,
-)
-```
-
-**2. Add the trigger import** in `src/services/registry_builder.py` (this is the only line that changes there):
-
-```python
-import src.services.voice_cloning   # noqa: F401
-```
-
-**3. Add config files** under `config/voice_cloning/` using the standard `service_provider` envelope:
-
-```json
-{
-  "service_provider": {
-    "service": "voice_cloning",
-    "provider": "my_vc_provider",
-    "enabled": true,
-    "priority": 1,
-    "version": "1.0",
-    "config": { ... }
-  }
-}
-```
-
-The `registry_builder._load_into` loop handles everything generically: it calls
-`load_service_configs(config_dir, config_class)` to parse JSON files, filters by `cfg.enabled`, calls
-`factory_create(cfg, base_dir)` per config, and stores the resulting instances in the registry. No per-service
-load/build wrappers needed.
-
-The registry hot-reloads automatically when config files change (if `watchfiles` is installed). No restarts
-needed after enabling/disabling via `enabled`.
+After changing code or config layout, restart the app so `build_runtime` runs again.
 
 ---
 
@@ -333,7 +288,7 @@ Copy
 config/|-- loggers/|   |-- logging.json|   |-- request_logger.json|   `-- structlog.json|-- optimizers/|   |-- ffmpeg_high.json|   |-- ffmpeg_low.json|   `-- pydub_optimized.json|-- text_to_speech/|   |-- openai.json|   |-- elevenlabs.json|   `-- speaktor.json`-- text_translation/    |-- openai_en_es.json    |-- openai_en_fr.json    |-- openai_en_bg.json    `-- static.json
 ```
 
-Set `service_provider.enabled` to `true` or `false` in each config file to enable/disable entries. For text\_to\_speech providers, `service_provider.config.generate.enabled` can optionally override generation activation per provider. The registry hot-reloads within seconds when any file in `config/` is saved.
+Set `service_provider.enabled` to `true` or `false` in each config file to enable/disable entries. For text\_to\_speech providers, `service_provider.config.generate.enabled` can optionally override generation activation per provider. Restart the backend after changing config files (automatic registry reload is not implemented yet).
 
 ### Translators
 

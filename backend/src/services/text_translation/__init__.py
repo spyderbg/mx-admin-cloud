@@ -9,7 +9,10 @@ from src.services.text_translation.service import (
     translate_with_all_active,
 )
 
+SERVICE_CLASS = TextTranslationService
+
 __all__ = [
+    "SERVICE_CLASS",
     "TextTranslationService",
     "TextTranslationServiceProvider",
     "TranslatorFactory",

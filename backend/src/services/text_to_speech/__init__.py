@@ -10,6 +10,8 @@ from src.services.text_to_speech.base import TTSProvider
 __all__ = [
     "TTSProvider",
     "ProviderFactory",
+    "SERVICE_CLASS",
+    "TextToSpeechService",
 ]
 
 
@@ -55,3 +57,7 @@ class ProviderFactory:
 # Import providers AFTER ProviderFactory is defined so that provider modules
 # can safely call `from .. import ProviderFactory` inside their register() methods.
 import src.services.text_to_speech.providers  # noqa: F401, E402
+
+from src.services.text_to_speech.service import TextToSpeechService  # noqa: E402
+
+SERVICE_CLASS = TextToSpeechService
