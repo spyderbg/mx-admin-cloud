@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from src.services.acceptance import ServiceAcceptCriteria
 from src.services.models import ServiceProvider
 from src.services.text_to_speech.base import TTSProvider
 
@@ -53,6 +54,11 @@ class ProviderFactory:
             base_dir=base_dir,
         )
 
+    @classmethod
+    def supports(cls, provider_name: str) -> bool:
+        """Return whether a provider builder is registered for *provider_name*."""
+        return provider_name.strip().lower() in cls._builders
+
 
 # Import providers AFTER ProviderFactory is defined so that provider modules
 # can safely call `from .. import ProviderFactory` inside their register() methods.
@@ -61,3 +67,23 @@ import src.services.text_to_speech.providers  # noqa: F401, E402
 from src.services.text_to_speech.service import TextToSpeechService  # noqa: E402
 
 SERVICE_CLASS = TextToSpeechService
+SERVICE_NAME = "text_to_speech"
+
+
+def _validate_tts_provider(provider: ServiceProvider) -> None:
+    if not ProviderFactory.supports(provider.name):
+        raise ValueError(
+            f"Unsupported TTS provider: '{provider.name}' (file='{provider.config_path}')"
+        )
+
+
+def _build_tts_provider(provider: ServiceProvider, base_dir: Path) -> TTSProvider:
+    return ProviderFactory.create(provider, base_dir)
+
+
+SERVICE_ACCEPT_CRITERIA = ServiceAcceptCriteria(
+    service_name=SERVICE_NAME,
+    config_subdir="text_to_speech",
+    validate_provider=_validate_tts_provider,
+    build_provider=_build_tts_provider,
+)

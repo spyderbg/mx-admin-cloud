@@ -2,6 +2,7 @@
 
 from src.api.internal import (
     jobs_routes,
+    service_config_routes,
     text_translation_routes,
     text_to_speech_routes,
     optimizers_routes,
@@ -10,6 +11,7 @@ from src.api.internal import (
 
 __all__ = [
     "jobs_routes",
+    "service_config_routes",
     "text_translation_routes",
     "text_to_speech_routes",
     "optimizers_routes",

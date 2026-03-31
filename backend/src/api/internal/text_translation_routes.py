@@ -14,6 +14,7 @@ from pydantic import BaseModel  # pylint: disable=import-error
 from src.api.dependencies import get_registry, require_internal
 from src.core.config import settings
 from src.services.service_registry import ServiceRegistry
+from src.services.text_translation.service import TextTranslationService
 
 
 router = APIRouter(prefix="/internal", tags=["internal-translators"])
@@ -47,11 +48,13 @@ class TranslateFileResponse(BaseModel):
 )
 async def list_translators(
     _user: dict = Depends(require_internal),
+    registry: ServiceRegistry = Depends(get_registry),
 ) -> list[dict[str, Any]]:
     """Return configured translators with service metadata."""
-    from src.services.config_loader import load_service_configs  # pylint: disable=import-outside-toplevel
-    from src.services.models import ServiceProvider  # pylint: disable=import-outside-toplevel
-    configs = load_service_configs(settings.config_path / "text_translation", ServiceProvider)
+    service = registry.get_service("text_translation")
+    if not isinstance(service, TextTranslationService):
+        raise HTTPException(status_code=500, detail="Service registry mismatch for text_translation.")
+    configs = service.providers_snapshot()
     configs.sort(key=lambda c: c.priority)
     return [
         {
@@ -80,11 +83,12 @@ async def translate_text(
     registry: ServiceRegistry = Depends(get_registry),
 ) -> TranslateResponse:
     """Translate text via the registry's active translators."""
-    from src.services.text_translation import translate_with_all_active  # pylint: disable=import-outside-toplevel
-    if not registry.get("translators"):
+    service = registry.get_service("text_translation")
+    if not isinstance(service, TextTranslationService):
+        raise HTTPException(status_code=500, detail="Service registry mismatch for text_translation.")
+    if not service.active_providers:
         raise HTTPException(status_code=503, detail="No active translators are configured.")
-    result = await translate_with_all_active(
-        registry.get("translators"),
+    result = await service.translate_text(
         text=body.text,
         input_lang_code=body.input_lang_code,
         target_lang_code=body.target_lang_code,
@@ -112,11 +116,13 @@ async def translate_file(
 ) -> TranslateFileResponse:
     """Translate words in an uploaded file via the registry's active translators."""
     from src.core.input_loader import load_requests  # pylint: disable=import-outside-toplevel
-    from src.services.text_translation import translate_with_all_active  # pylint: disable=import-outside-toplevel
     import uuid
     import os
 
-    if not registry.get("translators"):
+    service = registry.get_service("text_translation")
+    if not isinstance(service, TextTranslationService):
+        raise HTTPException(status_code=500, detail="Service registry mismatch for text_translation.")
+    if not service.active_providers:
         raise HTTPException(status_code=503, detail="No active translators are configured.")
 
     # Temporarily save the file to parse it
@@ -134,8 +140,7 @@ async def translate_file(
         results = []
 
         for req in requests:
-            translated = await translate_with_all_active(
-                registry.get("translators"),
+            translated = await service.translate_text(
                 text=req.text,
                 input_lang_code=req.language_code,
                 target_lang_code=target_lang_code,

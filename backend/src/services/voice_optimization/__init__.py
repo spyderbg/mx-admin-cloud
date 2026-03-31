@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from src.services.acceptance import ServiceAcceptCriteria
 from src.services.models import ServiceProvider
 from src.services.voice_optimization.base import AudioOptimizerBase
 from src.services.voice_optimization.normalizer import normalize_audio
@@ -55,6 +56,11 @@ class OptimizerFactory:
             base_dir=base_dir,
         )
 
+    @classmethod
+    def supports(cls, optimizer_name: str) -> bool:
+        """Return whether an optimizer builder is registered."""
+        return optimizer_name.strip().lower() in cls._builders
+
 
 # Import providers AFTER OptimizerFactory is defined so that provider modules
 # can safely call `from .. import OptimizerFactory` inside their register() methods.
@@ -63,3 +69,23 @@ import src.services.voice_optimization.providers  # noqa: F401, E402
 from src.services.voice_optimization.service import VoiceOptimizationService  # noqa: E402
 
 SERVICE_CLASS = VoiceOptimizationService
+SERVICE_NAME = "voice_optimization"
+
+
+def _validate_optimizer_provider(provider: ServiceProvider) -> None:
+    if not OptimizerFactory.supports(provider.name):
+        raise ValueError(
+            f"Unsupported optimizer: '{provider.name}' (file='{provider.config_path}')"
+        )
+
+
+def _build_optimizer_provider(provider: ServiceProvider, base_dir: Path) -> AudioOptimizerBase:
+    return OptimizerFactory.create(provider, base_dir)
+
+
+SERVICE_ACCEPT_CRITERIA = ServiceAcceptCriteria(
+    service_name=SERVICE_NAME,
+    config_subdir="voice_optimizers",
+    validate_provider=_validate_optimizer_provider,
+    build_provider=_build_optimizer_provider,
+)

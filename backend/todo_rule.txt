@@ -1,0 +1,8 @@
+
+Validation run results:
+
+python3 -m compileall src ✅ passed (no syntax errors)
+python3 -m pytest tests -q ❌ failed because pytest is not installed in this environment:
+/usr/bin/python3: No module named pytest
+IDE lint diagnostics for src/ ✅ no linter errors reported
+If you want, I can run tests through your project venv next (e.g. .venv/bin/python -m pytest tests -q) once you confirm the venv path to use.

@@ -13,8 +13,8 @@ from fastapi import APIRouter, Depends, HTTPException  # pylint: disable=import-
 from pydantic import BaseModel  # pylint: disable=import-error
 
 from src.api.dependencies import get_registry, require_internal
-from src.core.config import settings
 from src.services.service_registry import ServiceRegistry
+from src.services.voice_optimization.service import VoiceOptimizationService
 
 router = APIRouter(prefix="/internal", tags=["internal-optimizers"])
 
@@ -35,11 +35,13 @@ class OptimizeRequest(BaseModel):
 )
 async def list_optimizers(
     _user: dict = Depends(require_internal),
+    registry: ServiceRegistry = Depends(get_registry),
 ) -> list[dict[str, Any]]:
     """Return configured optimizers with service metadata."""
-    from src.services.config_loader import load_service_configs  # pylint: disable=import-outside-toplevel
-    from src.services.models import ServiceProvider  # pylint: disable=import-outside-toplevel
-    configs = load_service_configs(settings.config_path / "voice_optimizers", ServiceProvider)
+    service = registry.get_service("voice_optimization")
+    if not isinstance(service, VoiceOptimizationService):
+        raise HTTPException(status_code=500, detail="Service registry mismatch for voice_optimization.")
+    configs = service.providers_snapshot()
     configs.sort(key=lambda c: c.priority)
     return [
         {
@@ -65,7 +67,10 @@ async def optimize_single(
     registry: ServiceRegistry = Depends(get_registry),
 ) -> dict[str, Any]:
     """Optimize an audio file using the named optimizer."""
-    matched = [opt for opt in registry.get("optimizers") if opt.name == optimizer]
+    service = registry.get_service("voice_optimization")
+    if not isinstance(service, VoiceOptimizationService):
+        raise HTTPException(status_code=500, detail="Service registry mismatch for voice_optimization.")
+    matched = [opt for opt in service.active_optimizers if opt.name == optimizer]
     if not matched:
         raise HTTPException(status_code=404, detail=f"Optimizer '{optimizer}' not found or not active.")
     opt = matched[0]

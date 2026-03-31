@@ -14,7 +14,9 @@ from src.api.v1 import routes_auth, routes_common, routes_content, routes_users
 from src.api.dependencies import require_admin, require_uds
 from src.core.config import settings
 from src.core.job_store import JobStore
+from src.services.registry_builder import ServiceRegistryBuilder
 from src.services.service_registry import ServiceRegistry
+from src.services.text_to_speech.service import TextToSpeechService
 from src.core.utils import is_windows_platform, is_debug_mode
 from src.db.database import UsersDb
 from src.security.tokens import create_internal_token
@@ -38,8 +40,11 @@ async def lifespan(app_lifespan: FastAPI) -> AsyncIterator[None]:
         await run_in_threadpool(logging_system.configure)
         app_lifespan.state.logging_system = logging_system
 
-    registry = ServiceRegistry.build_runtime(settings.BASE_DIR, settings.config_path)
+    registry = ServiceRegistry.build_runtime(settings.BASE_DIR)
+    registry_builder = ServiceRegistryBuilder(registry, settings.BASE_DIR, settings.config_path)
+    registry_builder.load_all_from_disk()
     app_lifespan.state.registry = registry
+    app_lifespan.state.registry_builder = registry_builder
     registry.dump(settings.BASE_DIR)
 
     # Job store — in-memory with TTL eviction; swap for SQLite/Redis for multi-worker
@@ -55,10 +60,20 @@ async def lifespan(app_lifespan: FastAPI) -> AsyncIterator[None]:
         try:
             from watchfiles import awatch  # pylint: disable=import-outside-toplevel
             reg: ServiceRegistry = app_lifespan.state.registry
+            builder: ServiceRegistryBuilder = app_lifespan.state.registry_builder
             async for _ in awatch(settings.config_path):
                 logging.info("config_changed reloading_registry")
-                # await reload_registry(reg, settings)
-                logging.info("registry_reloaded providers=%s", len(reg.get("providers")))
+                await run_in_threadpool(builder.load_all_from_disk)
+                try:
+                    tts_service = reg.get_service("text_to_speech")
+                    providers_count = len(
+                        tts_service.active_providers
+                        if isinstance(tts_service, TextToSpeechService)
+                        else []
+                    )
+                except KeyError:
+                    providers_count = 0
+                logging.info("registry_reloaded active_tts_providers=%s", providers_count)
         except ImportError:
             logging.warning("watchfiles not installed — config hot-reload disabled")
 
@@ -91,6 +106,7 @@ app.include_router(routes_common.router, prefix=settings.API_V1_STR, tags=["task
 app.include_router(routes_content.router, prefix=settings.API_V1_STR, tags=["content"])
 app.include_router(routes_users.router, prefix=settings.API_V1_STR, tags=["users"])
 app.include_router(src.api.internal.jobs_routes.router)
+app.include_router(src.api.internal.service_config_routes.router)
 app.include_router(src.api.internal.text_translation_routes.router)
 app.include_router(src.api.internal.text_to_speech_routes.router)
 app.include_router(src.api.internal.optimizers_routes.router)

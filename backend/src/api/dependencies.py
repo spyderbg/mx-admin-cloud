@@ -3,6 +3,7 @@
 from fastapi import Depends, HTTPException, Request, status  # pylint: disable=import-error
 
 from src.core.job_store import JobStore
+from src.services.registry_builder import ServiceRegistryBuilder
 from src.services.service_registry import ServiceRegistry
 from src.core.utils import is_windows_platform
 from src.security.auth import verify_token
@@ -56,6 +57,11 @@ def require_internal(current_user: dict = Depends(get_current_user)) -> dict:
 def get_registry(request: Request) -> ServiceRegistry:
     """Inject the shared ServiceRegistry from the app state."""
     return request.app.state.registry
+
+
+def get_registry_builder(request: Request) -> ServiceRegistryBuilder:
+    """Inject the shared ServiceRegistryBuilder from app state."""
+    return request.app.state.registry_builder
 
 
 def get_job_store(request: Request) -> JobStore:

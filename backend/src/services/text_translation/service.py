@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Sequence
 
 from src.services.models import Service, ServiceProvider
 from src.services.text_translation.models import TextTranslationServiceProvider
@@ -55,6 +55,11 @@ class TranslatorFactory:
             base_dir=base_dir,
         )
 
+    @classmethod
+    def supports(cls, translator_name: str) -> bool:
+        """Return whether a translator builder is registered."""
+        return translator_name.strip().lower() in cls._builders
+
 
 class TextTranslationService(Service):
     """Orchestrator for all text translation providers.
@@ -65,28 +70,18 @@ class TextTranslationService(Service):
     """
 
     def __init__(self, name: str, service_dir: Path, base_dir: Path) -> None:
-        super().__init__(name=name, service_dir=service_dir)
-        self.base_dir = base_dir
+        super().__init__(name=name, service_dir=service_dir, base_dir=base_dir)
         self._providers: list[TextTranslationServiceProvider] = []
 
-    def load_providers(self, config_dir: Path) -> None:
-        """Load and build all enabled translators from *config_dir*, sorted by priority."""
-        from src.services.config_loader import load_service_configs  # pylint: disable=import-outside-toplevel
-        raw = load_service_configs(config_dir, ServiceProvider)
-        raw.sort(key=lambda p: p.priority)
+    def replace_providers(self, providers: list[object]) -> None:
+        """Replace loaded translation providers with *providers*."""
         self._providers = [
-            TranslatorFactory.create(p, self.base_dir)
-            for p in raw
-            if p.enabled
+            p for p in providers if isinstance(p, TextTranslationServiceProvider)
         ]
 
-    def load_runtime_config(self, config_root: Path) -> None:
-        self.load_providers(config_root / "text_translation")
-
-    def registry_get(self, key: str) -> list[Any] | None:
-        if key == "translators":
-            return list(self.active_providers)
-        return None
+    def providers_snapshot(self) -> list[object]:
+        """Return loaded translation providers, including disabled ones."""
+        return list(self._providers)
 
     @property
     def active_providers(self) -> list[TextTranslationServiceProvider]:

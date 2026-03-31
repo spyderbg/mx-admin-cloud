@@ -17,6 +17,7 @@ from src.api.dependencies import get_registry, require_internal
 from src.core.config import settings
 from src.core.models import TTSRequest
 from src.services.service_registry import ServiceRegistry
+from src.services.text_to_speech.service import TextToSpeechService
 from src.services.voice_optimization.normalizer import normalize_audio
 
 router = APIRouter(prefix="/internal", tags=["internal-generators"])
@@ -52,11 +53,13 @@ class GenerateWordRequest(BaseModel):
 )
 async def list_generators(
     _user: dict = Depends(require_internal),
+    registry: ServiceRegistry = Depends(get_registry),
 ) -> list[dict[str, Any]]:
     """Return configured generators with activation states."""
-    from src.services.config_loader import load_service_configs  # pylint: disable=import-outside-toplevel
-    from src.services.models import ServiceProvider  # pylint: disable=import-outside-toplevel
-    configs = load_service_configs(settings.config_path / "text_to_speech", ServiceProvider)
+    service = registry.get_service("text_to_speech")
+    if not isinstance(service, TextToSpeechService):
+        raise HTTPException(status_code=500, detail="Service registry mismatch for text_to_speech.")
+    configs = service.providers_snapshot()
     return [
         {
             "name": c.name,
@@ -81,7 +84,10 @@ async def generate_single(
     registry: ServiceRegistry = Depends(get_registry),
 ) -> dict[str, Any]:
     """Generate audio for a single TTS request via the named provider."""
-    matched = [p for p in registry.get("providers") if p.name == provider]
+    service = registry.get_service("text_to_speech")
+    if not isinstance(service, TextToSpeechService):
+        raise HTTPException(status_code=500, detail="Service registry mismatch for text_to_speech.")
+    matched = [p for p in service.active_providers if p.name == provider]
     if not matched:
         raise HTTPException(status_code=404, detail=f"Provider '{provider}' not found or not active.")
     prov = matched[0]
@@ -140,7 +146,10 @@ async def generate_word(
     if not body.word or not body.word.strip():
         raise HTTPException(status_code=400, detail="Word must be non-empty.")
 
-    providers = registry.get("providers")
+    service = registry.get_service("text_to_speech")
+    if not isinstance(service, TextToSpeechService):
+        raise HTTPException(status_code=500, detail="Service registry mismatch for text_to_speech.")
+    providers = service.active_providers
     if not providers:
         raise HTTPException(status_code=503, detail="No active TTS providers configured.")
 

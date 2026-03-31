@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
-from src.services.models import Service, ServiceProvider
+from src.services.models import Service
 from src.services.voice_optimization.base import AudioOptimizerBase
 
 
@@ -18,29 +17,16 @@ class VoiceOptimizationService(Service):
     """
 
     def __init__(self, name: str, service_dir: Path, base_dir: Path) -> None:
-        super().__init__(name=name, service_dir=service_dir)
-        self.base_dir = base_dir
+        super().__init__(name=name, service_dir=service_dir, base_dir=base_dir)
         self._optimizers: list[AudioOptimizerBase] = []
 
-    def load_optimizers(self, config_dir: Path) -> None:
-        """Load and build all enabled optimizers from *config_dir*, sorted by priority."""
-        from src.services.config_loader import load_service_configs  # pylint: disable=import-outside-toplevel
-        from src.services.voice_optimization import OptimizerFactory  # pylint: disable=import-outside-toplevel
-        raw = load_service_configs(config_dir, ServiceProvider)
-        raw.sort(key=lambda p: p.priority)
-        self._optimizers = [
-            OptimizerFactory.create(p, self.base_dir)
-            for p in raw
-            if p.enabled
-        ]
+    def replace_providers(self, providers: list[object]) -> None:
+        """Replace loaded optimizers with *providers*."""
+        self._optimizers = [o for o in providers if isinstance(o, AudioOptimizerBase)]
 
-    def load_runtime_config(self, config_root: Path) -> None:
-        self.load_optimizers(config_root / "voice_optimizers")
-
-    def registry_get(self, key: str) -> list[Any] | None:
-        if key == "optimizers":
-            return list(self.active_optimizers)
-        return None
+    def providers_snapshot(self) -> list[object]:
+        """Return loaded optimizers, including disabled ones."""
+        return list(self._optimizers)
 
     @property
     def active_optimizers(self) -> list[AudioOptimizerBase]:

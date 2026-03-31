@@ -22,23 +22,22 @@ class Service:
     public methods called from routes.
     """
 
-    def __init__(self, name: str, service_dir: Path) -> None:
+    def __init__(self, name: str, service_dir: Path, base_dir: Path) -> None:
         self.name = name
         self.service_dir = service_dir
+        self.base_dir = base_dir
 
-    def load_runtime_config(self, config_root: Path) -> None:
-        """Load package configs from *config_root* (e.g. ``settings.config_path``)."""
+    def replace_providers(self, providers: list[Any]) -> None:
+        """Replace runtime providers for this service."""
         raise NotImplementedError(
-            f"{type(self).__name__} must implement load_runtime_config()",
+            f"{type(self).__name__} must implement replace_providers()",
         )
 
-    def registry_get(self, key: str) -> list[Any] | None:
-        """Return data for *key* if this orchestrator exposes it; else ``None`` (not handled).
-
-        Handlers return a (possibly empty) list. :class:`ServiceRegistry` aggregates without
-        knowing concrete service types.
-        """
-        return None
+    def providers_snapshot(self) -> list[Any]:
+        """Return a copy of currently loaded providers."""
+        raise NotImplementedError(
+            f"{type(self).__name__} must implement providers_snapshot()",
+        )
 
 
 class ServiceProvider:
