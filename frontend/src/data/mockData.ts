@@ -1,7 +1,10 @@
 import type { Category, User } from '../types'
 
-const img = (n: number) => new URL(`../assets/images/samples/300x300/${n}.jpg`, import.meta.url).href
-const face = (n: number) => new URL(`../assets/images/faces/face${n}.jpg`, import.meta.url).href
+const sampleImgs = import.meta.glob('../assets/images/samples/300x300/*.jpg', { eager: true, import: 'default' }) as Record<string, string>
+const faceImgs = import.meta.glob('../assets/images/faces/face*.jpg', { eager: true, import: 'default' }) as Record<string, string>
+
+const img = (n: number) => sampleImgs[`../assets/images/samples/300x300/${n}.jpg`] ?? ''
+const face = (n: number) => faceImgs[`../assets/images/faces/face${n}.jpg`] ?? ''
 
 export const mockUser: User = {
   name: 'Allen Moreno',
