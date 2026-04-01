@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from src.services.voice_optimization.base import AudioOptimizerBase
+from src.services.voice_optimization.models import AudioOptimizerBase
 
 
 class PydubAudioOptimizer(AudioOptimizerBase):  # pylint: disable=too-few-public-methods

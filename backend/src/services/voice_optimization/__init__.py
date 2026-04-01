@@ -7,7 +7,7 @@ from pathlib import Path
 from src.services.acceptance import ServiceAcceptCriteria
 from src.services.models import ServiceProvider
 from src.services.voice_optimization.service import AudioOptimizerFactory
-from src.services.voice_optimization.base import AudioOptimizerBase
+from src.services.voice_optimization.models import AudioOptimizerBase
 from src.services.voice_optimization.normalizer import normalize_audio
 
 # Import providers AFTER OptimizerFactory is defined so that provider modules

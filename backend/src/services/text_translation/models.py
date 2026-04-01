@@ -11,10 +11,10 @@ from src.services.models import ServiceProvider
 class TextTranslationServiceProvider(ServiceProvider):
     """Base class for translator service providers.
 
-    Reads ``input_language`` and ``output_language`` from ``self.config``
+    Reads "input_language" and "output_language" from "self.config"
     (the raw "config" dict stored by ``ServiceProvider``).  Subclasses implement
-    ``translate_text`` and may parse additional typed fields from ``self.config``
-    in their own ``__init__``.
+    "translate_text" and may parse additional typed fields from "self.config"
+    in their own "__init__".
     """
 
     def default_input_language(self) -> str | None:
@@ -40,6 +40,6 @@ class TextTranslationServiceProvider(ServiceProvider):
     ) -> str | None:
         """Translate a single word/phrase.
 
-        Returns the translated string, or ``None`` when this translator cannot
+        Returns the translated string, or "None" when this translator cannot
         handle the request (signals fallback to the next translator).
         """

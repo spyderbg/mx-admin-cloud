@@ -22,9 +22,10 @@ class Service:
     public methods called from routes.
     """
 
-    def __init__(self, name: str, service_dir: Path, base_dir: Path) -> None:
-        self.name = name
-        self.type_name = self.__class__.__name__
+    def __init__(self, service_name: str, package_name: str, service_dir: Path, base_dir: Path) -> None:
+        self.name = service_name
+        self.class_name = self.__class__.__name__
+        self.package_name = package_name
         self.service_dir = service_dir
         self.base_dir = base_dir
 

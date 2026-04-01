@@ -6,7 +6,7 @@ import asyncio
 import shutil
 from pathlib import Path
 
-from src.services.voice_optimization.base import AudioOptimizerBase
+from src.services.voice_optimization.models import AudioOptimizerBase
 
 
 class FfmpegAudioOptimizer(AudioOptimizerBase):  # pylint: disable=too-few-public-methods

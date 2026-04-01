@@ -24,8 +24,14 @@ class TextTranslationService(Service):
     successful translation of each step.
     """
 
-    def __init__(self, name: str, service_dir: Path, base_dir: Path) -> None:
-        super().__init__(name=name, service_dir=service_dir, base_dir=base_dir)
+    def __init__(
+        self,
+        service_name: str,
+        package_name: str,
+        service_dir: Path,
+        base_dir: Path,
+    ) -> None:
+        super().__init__(service_name, package_name, service_dir, base_dir)
         self._providers: list[TextTranslationServiceProvider] = []
 
     def replace_providers(self, providers: list[object]) -> None:

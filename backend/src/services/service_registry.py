@@ -45,9 +45,11 @@ class ServiceRegistry:
         inst = cls()
         descriptors = cls._discover()
         services: dict[str, Service] = {}
+
         for descriptor in descriptors:
             services[descriptor.service_name] = descriptor.service_class(
-                name=descriptor.package_name,
+                service_name=descriptor.service_name,
+                package_name=descriptor.package_name,
                 service_dir=descriptor.service_dir,
                 base_dir=base_dir,
             )
@@ -57,7 +59,7 @@ class ServiceRegistry:
 
     @classmethod
     def _discover(cls) -> list[ServiceDescriptor]:
-        """Scan ``src.services`` for packages exporting service metadata."""
+        """Scan "src.services" for packages exporting service metadata."""
         specs: list[ServiceDescriptor] = []
         for _mod_info in pkgutil.iter_modules(
             _services_pkg.__path__,
@@ -159,12 +161,6 @@ class ServiceRegistry:
             title.append("Service: ")
             title.append(escape(service.name), style="bold green")
             console.print(title)
-            console.print(
-                Text.assemble(
-                    ("    Type: ", ""),
-                    (escape(service.type_name), "yellow"),
-                )
-            )
 
             try:
                 service_dict = {
