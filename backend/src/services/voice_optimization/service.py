@@ -5,7 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 
 from src.services.models import Service
+from src.services.provider_factory import ServiceProviderFactory
 from src.services.voice_optimization.base import AudioOptimizerBase
+
+
+class AudioOptimizerFactory(ServiceProviderFactory[AudioOptimizerBase]):
+    """Audio-optimizer-specific provider registry."""
+
+    unsupported_label = "optimizer"
 
 
 class VoiceOptimizationService(Service):

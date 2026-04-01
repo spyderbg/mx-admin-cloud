@@ -15,8 +15,8 @@ class FfmpegAudioOptimizer(AudioOptimizerBase):  # pylint: disable=too-few-publi
     @classmethod
     def register(cls) -> None:
         """Register this optimizer with the factory."""
-        from src.services.voice_optimization import OptimizerFactory
-        OptimizerFactory.register("ffmpeg", cls)
+        from src.services.voice_optimization import AudioOptimizerFactory
+        AudioOptimizerFactory.register("ffmpeg", cls)
 
     async def optimize(self, input_path: Path, output_path: Path) -> Path:
         """Run ffmpeg with configured parameters and return output path."""

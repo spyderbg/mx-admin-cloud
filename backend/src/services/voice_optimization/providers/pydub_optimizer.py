@@ -13,8 +13,8 @@ class PydubAudioOptimizer(AudioOptimizerBase):  # pylint: disable=too-few-public
 
     @classmethod
     def register(cls) -> None:
-        from src.services.voice_optimization import OptimizerFactory
-        OptimizerFactory.register("pydub", cls)
+        from src.services.voice_optimization import AudioOptimizerFactory
+        AudioOptimizerFactory.register("pydub", cls)
 
     async def optimize(self, input_path: Path, output_path: Path) -> Path:
         """Optimize an input MP3 asynchronously and return output path."""

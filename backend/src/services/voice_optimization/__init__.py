@@ -6,49 +6,41 @@ from pathlib import Path
 
 from src.services.acceptance import ServiceAcceptCriteria
 from src.services.models import ServiceProvider
-from src.services.provider_factory import ServiceProviderFactory
+from src.services.voice_optimization.service import AudioOptimizerFactory
 from src.services.voice_optimization.base import AudioOptimizerBase
 from src.services.voice_optimization.normalizer import normalize_audio
 
-__all__ = [
-    "AudioOptimizerBase",
-    "OptimizerFactory",
-    "normalize_audio",
-    "SERVICE_CLASS",
-    "VoiceOptimizationService",
-]
-
-
-class OptimizerFactory(ServiceProviderFactory[AudioOptimizerBase]):
-    """Audio-optimizer-specific provider registry."""
-
-    unsupported_label = "optimizer"
-
-
 # Import providers AFTER OptimizerFactory is defined so that provider modules
-# can safely call `from .. import OptimizerFactory` inside their register() methods.
+# can safely call `from ... import OptimizerFactory` inside their register() methods.
 import src.services.voice_optimization.providers  # noqa: F401, E402  # pylint: disable=wrong-import-position
 
-from src.services.voice_optimization.service import VoiceOptimizationService  # noqa: E402  # pylint: disable=wrong-import-position
-
-SERVICE_CLASS = VoiceOptimizationService  # pylint: disable=invalid-name
-SERVICE_NAME = "voice_optimization"
+from src.services.voice_optimization.service import \
+    VoiceOptimizationService  # noqa: E402 # pylint: disable=wrong-import-position
 
 
 def _validate_optimizer_provider(provider: ServiceProvider) -> None:
-    if not OptimizerFactory.supports(provider.name):
+    if not AudioOptimizerFactory.supports(provider.name):
         raise ValueError(
             f"Unsupported optimizer: '{provider.name}' (file='{provider.config_path}')"
         )
 
 
 def _build_optimizer_provider(provider: ServiceProvider, base_dir: Path) -> AudioOptimizerBase:
-    return OptimizerFactory.create(provider, base_dir)
+    return AudioOptimizerFactory.create(provider, base_dir)
 
 
+SERVICE_CLASS = VoiceOptimizationService  # pylint: disable=invalid-name
+SERVICE_NAME = "voice_optimization"
 SERVICE_ACCEPT_CRITERIA = ServiceAcceptCriteria(
     service_name=SERVICE_NAME,
     config_subdir="voice_optimizers",
     validate_provider=_validate_optimizer_provider,
     build_provider=_build_optimizer_provider,
 )
+
+__all__ = [
+    "SERVICE_CLASS",
+    "AudioOptimizerBase",
+    "normalize_audio",
+    "VoiceOptimizationService",
+]
