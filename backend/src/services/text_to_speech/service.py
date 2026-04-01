@@ -5,7 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from src.services.models import Service
+from src.services.provider_factory import ServiceProviderFactory
 from src.services.text_to_speech.base import TTSProvider
+
+
+class TextToSpeechProviderFactory(ServiceProviderFactory[TTSProvider]):
+    """TTS-specific provider registry."""
+    unsupported_label = "TTS provider"
 
 
 class TextToSpeechService(Service):

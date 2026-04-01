@@ -9,8 +9,11 @@ from typing import Any
 from src.core.models import GeneratedAudio, TTSRequest
 from ...logging import log_provider_request
 from ..base import TTSProvider
+from ..service import TextToSpeechProviderFactory
 
 logger = logging.getLogger(__name__)
+
+API_BASE = "https://api.elevenlabs.io/v1"
 
 ELEVENLABS_OUTPUT_MAP = {
     "mp3": "mp3_44100_128",
@@ -46,13 +49,10 @@ def _to_bool(value: Any, field_name: str) -> bool:
 class ElevenLabsTTSProvider(TTSProvider):
     """TTS provider backed by the ElevenLabs text-to-speech API."""
 
-    API_BASE = "https://api.elevenlabs.io/v1"
-
     @classmethod
     def register(cls) -> None:
-        """Register this provider under the key ``"elevenlabs"`` in the ProviderFactory."""
-        from .. import ProviderFactory
-        ProviderFactory.register("elevenlabs", cls)
+        """Register this provider under the key ""elevenlabs"" in the TextToSpeechProviderFactory."""
+        TextToSpeechProviderFactory.register("elevenlabs", cls)
 
     async def generate(self, request: TTSRequest, output_format: str, client: Any) -> GeneratedAudio:
         """Call the ElevenLabs TTS endpoint and write the audio to disk."""
@@ -136,7 +136,7 @@ class ElevenLabsTTSProvider(TTSProvider):
             "Content-Type": "application/json",
         }
         output_path = self.build_output_path(request, output_format)
-        endpoint = f"{self.API_BASE}/text-to-speech/{voice_id}"
+        endpoint = f"{API_BASE}/text-to-speech/{voice_id}"
 
         started_at = time.perf_counter()
         request_params = {"output_format": elevenlabs_format}
@@ -173,5 +173,6 @@ class ElevenLabsTTSProvider(TTSProvider):
             latency_seconds=latency,
             success=True,
         )
+
 
 ElevenLabsTTSProvider.register()

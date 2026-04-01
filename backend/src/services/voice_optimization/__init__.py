@@ -6,6 +6,7 @@ from pathlib import Path
 
 from src.services.acceptance import ServiceAcceptCriteria
 from src.services.models import ServiceProvider
+from src.services.provider_factory import ServiceProviderFactory
 from src.services.voice_optimization.base import AudioOptimizerBase
 from src.services.voice_optimization.normalizer import normalize_audio
 
@@ -18,57 +19,19 @@ __all__ = [
 ]
 
 
-class OptimizerFactory:
-    """Registry that maps optimizer names to concrete optimizer classes."""
+class OptimizerFactory(ServiceProviderFactory[AudioOptimizerBase]):
+    """Audio-optimizer-specific provider registry."""
 
-    _builders: dict[str, type[AudioOptimizerBase]] = {}
-
-    @classmethod
-    def register(
-        cls,
-        optimizer_name: str,
-        builder: type[AudioOptimizerBase],
-    ) -> None:
-        """Register a concrete optimizer class under *optimizer_name*."""
-        cls._builders[optimizer_name.strip().lower()] = builder
-
-    @classmethod
-    def create(cls, provider: ServiceProvider, base_dir: Path) -> AudioOptimizerBase:
-        """Instantiate the concrete optimizer for *provider*.
-
-        Raises :exc:`ValueError` when no builder is registered for
-        ``provider.name``.
-        """
-        key = provider.name.strip().lower()
-        builder = cls._builders.get(key)
-        if builder is None:
-            raise ValueError(
-                f"Unsupported optimizer: '{provider.name}' "
-                f"(file='{provider.config_path}')"
-            )
-        return builder(
-            service_type=provider.service_type,
-            name=provider.name,
-            enabled=provider.enabled,
-            priority=provider.priority,
-            config=provider.config,
-            config_path=provider.config_path,
-            base_dir=base_dir,
-        )
-
-    @classmethod
-    def supports(cls, optimizer_name: str) -> bool:
-        """Return whether an optimizer builder is registered."""
-        return optimizer_name.strip().lower() in cls._builders
+    unsupported_label = "optimizer"
 
 
 # Import providers AFTER OptimizerFactory is defined so that provider modules
 # can safely call `from .. import OptimizerFactory` inside their register() methods.
-import src.services.voice_optimization.providers  # noqa: F401, E402
+import src.services.voice_optimization.providers  # noqa: F401, E402  # pylint: disable=wrong-import-position
 
-from src.services.voice_optimization.service import VoiceOptimizationService  # noqa: E402
+from src.services.voice_optimization.service import VoiceOptimizationService  # noqa: E402  # pylint: disable=wrong-import-position
 
-SERVICE_CLASS = VoiceOptimizationService
+SERVICE_CLASS = VoiceOptimizationService  # pylint: disable=invalid-name
 SERVICE_NAME = "voice_optimization"
 
 

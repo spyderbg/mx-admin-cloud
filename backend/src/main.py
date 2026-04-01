@@ -14,8 +14,7 @@ from src.api.v1 import routes_auth, routes_common, routes_content, routes_users
 from src.api.dependencies import require_admin, require_uds
 from src.core.config import settings
 from src.core.job_store import JobStore
-from src.services.registry_builder import ServiceRegistryBuilder
-from src.services.service_registry import ServiceRegistry
+from src.services.service_registry import ServiceRegistry, ServiceRegistryBuilder
 from src.services.text_to_speech.service import TextToSpeechService
 from src.core.utils import is_windows_platform, is_debug_mode
 from src.db.database import UsersDb

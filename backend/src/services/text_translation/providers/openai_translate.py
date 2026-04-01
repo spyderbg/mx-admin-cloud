@@ -29,8 +29,8 @@ class OpenAITextTranslate(TextTranslationServiceProvider):
     @classmethod
     def register(cls) -> None:
         """Register this provider with the TranslatorFactory."""
-        from src.services.text_translation.service import TranslatorFactory  # pylint: disable=import-outside-toplevel
-        TranslatorFactory.register("openai_translate", cls)
+        from src.services.text_translation.service import TextTranslationProviderFactory  # pylint: disable=import-outside-toplevel
+        TextTranslationProviderFactory.register("openai_translate", cls)
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)

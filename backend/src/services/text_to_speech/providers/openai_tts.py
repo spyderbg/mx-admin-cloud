@@ -9,6 +9,7 @@ from typing import Any
 from src.core.models import GeneratedAudio, TTSRequest
 from ...logging import log_provider_request
 from ..base import TTSProvider
+from ..service import TextToSpeechProviderFactory
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +22,7 @@ class OpenAITTSProvider(TTSProvider):
     @classmethod
     def register(cls) -> None:
         """Register this provider under the key ``"openai"`` in the ProviderFactory."""
-        from .. import ProviderFactory
-        ProviderFactory.register("openai", cls)
+        TextToSpeechProviderFactory.register("openai", cls)
 
     async def generate(self, request: TTSRequest, output_format: str, client: Any) -> GeneratedAudio:
         """Call the OpenAI TTS endpoint and write the audio to disk."""

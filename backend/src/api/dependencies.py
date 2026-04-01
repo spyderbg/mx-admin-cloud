@@ -3,8 +3,7 @@
 from fastapi import Depends, HTTPException, Request, status  # pylint: disable=import-error
 
 from src.core.job_store import JobStore
-from src.services.registry_builder import ServiceRegistryBuilder
-from src.services.service_registry import ServiceRegistry
+from src.services.service_registry import ServiceRegistry, ServiceRegistryBuilder
 from src.core.utils import is_windows_platform
 from src.security.auth import verify_token
 

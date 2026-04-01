@@ -5,60 +5,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Sequence
 
-from src.services.models import Service, ServiceProvider
+from src.services.models import Service
+from src.services.provider_factory import ServiceProviderFactory
 from src.services.text_translation.models import TextTranslationServiceProvider
 
 
-class TranslatorFactory:
-    """Registry that maps provider names to concrete translator classes."""
+class TextTranslationProviderFactory(ServiceProviderFactory[TextTranslationServiceProvider]):
+    """Translation-specific provider registry."""
 
-    _builders: dict[str, type[TextTranslationServiceProvider]] = {}
-
-    @classmethod
-    def register(
-            cls,
-            translator_name: str,
-            builder: type[TextTranslationServiceProvider],
-    ) -> None:
-        """Register a concrete translator class under *translator_name*.
-
-        Provider modules call this from their module-level ``ProviderClass.register()``
-        statements, which are triggered automatically when the module is imported.
-        """
-        cls._builders[translator_name.strip().lower()] = builder
-
-    @classmethod
-    def create(
-            cls,
-            provider: ServiceProvider,
-            base_dir: Path,
-    ) -> TextTranslationServiceProvider:
-        """Instantiate the concrete translator for *provider*.
-
-        Raises :exc:`ValueError` when no builder is registered for
-        ``provider.name``.
-        """
-        key = provider.name.strip().lower()
-        builder = cls._builders.get(key)
-        if builder is None:
-            raise ValueError(
-                f"Unsupported translator: '{provider.name}' "
-                f"(file='{provider.config_path}')"
-            )
-        return builder(
-            service_type=provider.service_type,
-            name=provider.name,
-            enabled=provider.enabled,
-            priority=provider.priority,
-            config=provider.config,
-            config_path=provider.config_path,
-            base_dir=base_dir,
-        )
-
-    @classmethod
-    def supports(cls, translator_name: str) -> bool:
-        """Return whether a translator builder is registered."""
-        return translator_name.strip().lower() in cls._builders
+    unsupported_label = "translator"
 
 
 class TextTranslationService(Service):

@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile  # pylin
 from pydantic import BaseModel  # pylint: disable=import-error
 
 from src.api.dependencies import get_registry_builder, require_internal
-from src.services.registry_builder import ServiceRegistryBuilder
+from src.services.service_registry import ServiceRegistryBuilder
 
 router = APIRouter(prefix="/internal/services/configs", tags=["internal-service-configs"])
 

@@ -1,11 +1,11 @@
 """Shared base classes for all service implementations.
 
-Defines the root ``Service`` contract and ``ServiceProvider`` which is the
-unified data representation of a config JSON file.  Common ``service_provider``
+Defines the root "Service" contract and "ServiceProvider" which is the
+unified data representation of a config JSON file.  Common "service_provider"
 envelope fields (service_type, name, enabled, priority) are parsed as direct
-attributes; the ``config`` dict (from the "config" key in the JSON) is stored
+attributes; the "config" dict (from the "config" key in the JSON) is stored
 as-is.  Typed per-provider parsing happens inside each provider subclass using
-``self.config``.
+"self.config".
 """
 
 from __future__ import annotations
@@ -41,33 +41,33 @@ class Service:
 
 
 class ServiceProvider:
-    """Data representation of one ``service_provider`` config JSON file.
+    """Data representation of one "service_provider" config JSON file.
 
-    Attributes populated from the ``service_provider`` JSON envelope:
+    Attributes populated from the "service_provider" JSON envelope:
 
-    * ``service_type`` — value of the ``"service"`` key
-    * ``name``         — value of the ``"provider"`` key (falls back to filename stem)
-    * ``enabled``      — value of the ``"enabled"`` key
-    * ``priority``     — value of the ``"priority"`` key (defaults to 999)
-    * ``config``       — raw dict from the ``"config"`` key, stored as-is
+    * "name" — name of the configuration file, without extension
+    * "service_type" — value of the ""service"" key
+    * "provider_name" — value of the ""provider"" key
+    * "enabled" — value of the ""enabled"" key
+    * "priority" — value of the ""priority"" key (defaults to 999)
+    * "config" — raw dict from the ""config"" key, stored as-is
 
-    Subclasses (``TTSProvider``, ``TextTranslationServiceProvider``,
-    ``AudioOptimizerBase``) parse ``self.config`` into typed fields in their
-    own ``__init__``.
     """
 
     def __init__(
         self,
-        service_type: str,
         name: str,
+        service_type: str,
+        provider_name: str,
         enabled: bool,
         priority: int,
         config: dict[str, Any],
         config_path: Path,
         base_dir: Path,
     ) -> None:
-        self.service_type = service_type
         self.name = name
+        self.service_type = service_type
+        self.provider_name = provider_name
         self.enabled = enabled
         self.priority = priority
         self.config = config          # raw "config" dict, stored as-is
@@ -76,24 +76,25 @@ class ServiceProvider:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], config_path: Path) -> "ServiceProvider | None":
-        """Parse the common ``service_provider`` envelope from a config JSON dict.
+        """Parse the common "service_provider" envelope from a config JSON dict.
 
-        Returns ``None`` on structural failure so the generic loader can skip the
-        file silently.  ``service_type`` is optional (empty string when absent) so
-        that service-specific formats (e.g. TTS) that omit the ``"service"`` key
+        Returns "None" on structural failure so the generic loader can skip the
+        file silently. "service_type" is optional (empty string when absent) so
+        that service-specific formats (e.g., TTS) that omit the ""service"" key
         still parse correctly.
         """
         from src.core.utils import boolish  # pylint: disable=import-outside-toplevel
+
+        name = config_path.stem.strip()
+        if not name:
+            return None
 
         service = data.get("service_provider", {})
         if not isinstance(service, dict):
             return None
 
-        name = str(service.get("provider") or config_path.stem).strip()
-        if not name:
-            return None
-
         service_type = str(service.get("service", "")).strip().lower()
+        provider_name = str(service.get("provider", "")).strip().lower()
         enabled = boolish(service.get("enabled", False))
         priority = int(service.get("priority", 999))
         raw_config = service.get("config", {})
@@ -101,8 +102,9 @@ class ServiceProvider:
             raw_config = {}
 
         return cls(
-            service_type=service_type,
             name=name,
+            service_type=service_type,
+            provider_name=provider_name,
             enabled=enabled,
             priority=priority,
             config=raw_config,

@@ -18,6 +18,7 @@ from src.core.languages import to_bcp47
 from src.core.models import GeneratedAudio, TTSRequest
 from src.services.logging import log_provider_request
 from ..base import TTSProvider
+from ..service import TextToSpeechProviderFactory
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +40,7 @@ class SpeaktorTTSProvider(TTSProvider):
     @classmethod
     def register(cls) -> None:
         """Register this provider under the key ``"speaktor"`` in the ProviderFactory."""
-        from .. import ProviderFactory
-        ProviderFactory.register("speaktor", cls)
+        TextToSpeechProviderFactory.register("speaktor", cls)
 
     async def generate(self, request: TTSRequest, output_format: str, client: Any) -> GeneratedAudio:
         """Call the Speaktor TTS endpoint, download the audio URL, and write it to disk."""
