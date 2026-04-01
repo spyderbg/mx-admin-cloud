@@ -38,7 +38,6 @@ SERVICE_ACCEPT_CRITERIA = ServiceAcceptCriteria(
 )
 
 __all__ = [
-    "SERVICE_CLASS",
     "TextTranslationService",
     "TextTranslationServiceProvider",
     "TextTranslationProviderFactory",

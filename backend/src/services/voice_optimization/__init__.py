@@ -39,7 +39,6 @@ SERVICE_ACCEPT_CRITERIA = ServiceAcceptCriteria(
 )
 
 __all__ = [
-    "SERVICE_CLASS",
     "AudioOptimizerBase",
     "normalize_audio",
     "VoiceOptimizationService",
