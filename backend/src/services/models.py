@@ -24,6 +24,7 @@ class Service:
 
     def __init__(self, name: str, service_dir: Path, base_dir: Path) -> None:
         self.name = name
+        self.type_name = self.__class__.__name__
         self.service_dir = service_dir
         self.base_dir = base_dir
 

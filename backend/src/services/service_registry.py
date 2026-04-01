@@ -11,6 +11,10 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
+from rich.console import Console
+from rich.markup import escape
+from rich.text import Text
+
 import src.services as _services_pkg
 from src.services.acceptance import ConfigApplyResult, ServiceAcceptCriteria
 from src.services.models import Service, ServiceProvider
@@ -132,20 +136,35 @@ class ServiceRegistry:
 
     def dump(self, base_dir: Path | None = None) -> None:
         """Print detailed information about registered services."""
+        console = Console()
         with self._lock:
             services = list(self._services.values())
 
-        print(f"\n{'=' * 80}")
-        print(f"ServiceRegistry - Total Registered Services: {len(services)}")
-        print(f"{'=' * 80}\n")
+        console.print()
+        console.print("=" * 80, style="dim")
+        console.print(
+            "[bold]ServiceRegistry[/bold] - Total Registered Services: "
+            f"[yellow]{len(services)}[/yellow]"
+        )
+        console.print("=" * 80, style="dim")
+        console.print()
 
         if not services:
-            print("No services registered.")
+            console.print("[yellow]No services registered.[/yellow]")
             return
 
         for idx, service in enumerate(services, start=1):
-            print(f"[{idx}] Service: {service.name}")
-            print(f"    Type: {type(service).__name__}")
+            title = Text()
+            title.append(f"[{idx}] ", style="cyan")
+            title.append("Service: ")
+            title.append(escape(service.name), style="bold green")
+            console.print(title)
+            console.print(
+                Text.assemble(
+                    ("    Type: ", ""),
+                    (escape(service.type_name), "yellow"),
+                )
+            )
 
             try:
                 service_dict = {
@@ -154,16 +173,29 @@ class ServiceRegistry:
                     if not k.startswith("_") and not callable(v)
                 }
                 if service_dict:
-                    print("    Attributes:")
+                    console.print("    Attributes:")
                     for key, value in service_dict.items():
                         formatted = self._format_registry_attr(key, value, base_dir)
-                        print(f"      - {key}: {formatted}")
+                        console.print(
+                            Text.assemble(
+                                "      - ",
+                                (escape(key), "cyan"),
+                                ": ",
+                                (escape(formatted), ""),
+                            )
+                        )
             except Exception as exc:  # pylint: disable=broad-exception-caught
-                print(f"    [Could not serialize attributes: {exc}]")
+                err = Text.assemble(
+                    "    ",
+                    ("Could not serialize attributes: ", "red"),
+                    (escape(str(exc)), "red"),
+                )
+                console.print(err)
 
-            print()
+            console.print()
 
-        print(f"{'=' * 80}\n")
+        console.print("=" * 80, style="dim")
+        console.print()
 
     @staticmethod
     def _format_registry_attr(key: str, value: Any, base_dir: Path | None) -> str:
