@@ -156,10 +156,7 @@ class ServiceRegistry:
 
         console.print()
         console.print("=" * 80, style="dim")
-        console.print(
-            "[bold]ServiceRegistry[/bold] - Total Registered Services: "
-            f"[yellow]{len(services)}[/yellow]"
-        )
+        console.print(f"[bold]ServiceRegistry[/bold] - Total Registered Services: [yellow]{len(services)}[/yellow]")
         console.print("=" * 80, style="dim")
         console.print()
 
@@ -168,11 +165,18 @@ class ServiceRegistry:
             return
 
         for idx, service in enumerate(services, start=1):
-            title = Text()
-            title.append(f"[{idx}] ", style="cyan")
-            title.append("Service: ")
-            title.append(escape(service.name), style="bold green")
+            title = Text() \
+                .append(f"[{idx}] ", style="cyan") \
+                .append("Service: ") \
+                .append(escape(service.name), style="bold green")
             console.print(title)
+            active_provider_names = self._active_provider_names(service)
+            console.print(
+                Text.assemble(
+                    "    Active providers: ",
+                    (escape(str(active_provider_names)), "yellow"),
+                )
+            )
 
             try:
                 service_dict = {
@@ -197,6 +201,17 @@ class ServiceRegistry:
 
         console.print("=" * 80, style="dim")
         console.print()
+
+    @staticmethod
+    def _active_provider_names(service: Service) -> list[str]:
+        """Return active provider names for dump output."""
+        active_names: list[str] = []
+        for provider in service.providers_snapshot():
+            if provider.is_active():
+                provider_name = provider.name
+                if provider_name:
+                    active_names.append(provider_name)
+        return active_names
 
     @staticmethod
     def _format_registry_attr(key: str, value: Any, base_dir: Path | None) -> str:
@@ -335,16 +350,16 @@ class ServiceRegistryBuilder:
 
         if not criteria.can_accept(service_provider):
             apply_result.error = (
-                f"Service mismatch: expected '{criteria.service_name}', "
-                f"got '{service_provider.service}'."
-            ),
-            return apply_result, None,
+                f"Service mismatch: expected '{criteria.service_name}', got "
+                f"'{service_provider.service}'."
+            )
+            return apply_result, None
         try:
             criteria.validate_provider(service_provider)
             materialized = criteria.build_provider(service_provider, self._base_dir)
         except Exception as exc:  # pylint: disable=broad-exception-caught
             apply_result.error = str(exc)
-            return apply_result, None,
+            return apply_result, None
 
         apply_result.accepted = True
         return apply_result, materialized

@@ -1,15 +1,16 @@
+"""Evaluation service business logic and orchestration."""
+
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Sequence
 
-from src.services.models import Service
+from src.services.models import Service, ServiceProvider
 from src.services.provider_factory import ServiceProviderFactory
 from src.services.evaluation.models import EvaluationServiceProvider
 
 class EvaluationProviderFactory(ServiceProviderFactory[EvaluationServiceProvider]):
-    """TTS-specific provider registry."""
-    unsupported_label = "TTS provider"
+    """Evaluation-specific provider registry."""
+    unsupported_label = "evaluation provider"
 
 
 class EvaluationService(Service):
@@ -25,12 +26,12 @@ class EvaluationService(Service):
         super().__init__(service_name, package_name, service_dir, base_dir)
         self._providers: list[EvaluationServiceProvider] = []
 
-    def replace_providers(self, providers: list[object]) -> None:
-        """Replace loaded TTS providers with *providers*."""
+    def replace_providers(self, providers: list[ServiceProvider]) -> None:
+        """Replace loaded evaluation providers with *providers*."""
         self._providers = [p for p in providers if isinstance(p, EvaluationServiceProvider)]
 
-    def providers_snapshot(self) -> list[object]:
-        """Return loaded TTS providers, including disabled ones."""
+    def providers_snapshot(self) -> list[ServiceProvider]:
+        """Return loaded evaluation providers, including disabled ones."""
         return list(self._providers)
 
     @property

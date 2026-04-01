@@ -22,19 +22,19 @@ class Service:
     """
 
     def __init__(self, service_name: str, package_name: str, service_dir: Path, base_dir: Path) -> None:
-        self.name = service_name
-        self.class_name = self.__class__.__name__
-        self.package_name = package_name
-        self.service_dir = service_dir
-        self.base_dir = base_dir
+        self.name: str = service_name
+        self.class_name: str = self.__class__.__name__
+        self.package_name: str = package_name
+        self.service_dir: Path = service_dir
+        self.base_dir: Path = base_dir
 
-    def replace_providers(self, providers: list[Any]) -> None:
+    def replace_providers(self, providers: list["ServiceProvider"]) -> None:
         """Replace runtime providers for this service."""
         raise NotImplementedError(
             f"{type(self).__name__} must implement replace_providers()",
         )
 
-    def providers_snapshot(self) -> list[Any]:
+    def providers_snapshot(self) -> list["ServiceProvider"]:
         """Return a copy of currently loaded providers."""
         raise NotImplementedError(
             f"{type(self).__name__} must implement providers_snapshot()",
@@ -42,16 +42,16 @@ class Service:
 
 
 class ServiceProvider:
-    """Data representation of one "service_provider" config JSON file.
+    """Data representation of one `service_provider` config JSON file.
 
     Attributes populated from the "service_provider" JSON envelope:
 
-    * "name" — name of the configuration file, without extension
-    * "service_name" — value of the ""service"" key
-    * "provider_name" — value of the ""provider"" key
-    * "enabled" — value of the ""enabled"" key
-    * "priority" — value of the ""priority"" key (defaults to 999)
-    * "config" — raw dict from the ""config"" key, stored as-is
+    * `name` - name of the configuration file, without extension
+    * `service_name` - value of the `service` key
+    * `provider_name` - value of the `provider` key
+    * `enabled` - value of the `enabled` key
+    * `priority` - value of the `priority` key (defaults to 999)
+    * `config` - raw dict from the `config` key, stored as-is
 
     """
 
@@ -77,11 +77,11 @@ class ServiceProvider:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], config_path: Path) -> "ServiceProvider | None":
-        """Parse the common "service_provider" envelope from a config JSON dict.
+        """Parse the common `service_provider` envelope from a config JSON dict.
 
-        Returns "None" on structural failure so the generic loader can skip the
-        file silently. The "service_name" is optional (empty string when absent) so
-        that service-specific formats (e.g., TTS) that omit the ""service"" key
+        Returns `None` on structural failure so the generic loader can skip the
+        file silently. The `service_name` is optional (empty string when absent) so
+        that service-specific formats (e.g., TTS) that omit the `service` key
         still parse correctly.
         """
         from src.core.utils import boolish  # pylint: disable=import-outside-toplevel

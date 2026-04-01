@@ -27,14 +27,14 @@ class ServiceAcceptCriteria:
         return provider.service in ("", self.service_name)
 
 
-@dataclass(frozen=False)
+@dataclass
 class ConfigApplyResult:
     """Result of attempting to apply a config payload or config file."""
 
     def __init__(self, config_name: str, accepted: bool = False, error: str | None = None) -> None:
-        self.config_name = config_name
-        self.accepted = accepted
-        self.error = error
+        self.config_name: str = config_name
+        self.accepted: bool = accepted
+        self.error: str | None = error
 
     @override
     def __str__(self) -> str:

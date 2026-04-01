@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.services.models import Service
+from src.services.models import Service, ServiceProvider
 from src.services.provider_factory import ServiceProviderFactory
 from src.services.text_to_speech.base import TTSProvider
 
@@ -31,11 +31,11 @@ class TextToSpeechService(Service):
         super().__init__(service_name, package_name, service_dir, base_dir)
         self._providers: list[TTSProvider] = []
 
-    def replace_providers(self, providers: list[object]) -> None:
+    def replace_providers(self, providers: list[ServiceProvider]) -> None:
         """Replace loaded TTS providers with *providers*."""
         self._providers = [p for p in providers if isinstance(p, TTSProvider)]
 
-    def providers_snapshot(self) -> list[object]:
+    def providers_snapshot(self) -> list[ServiceProvider]:
         """Return loaded TTS providers, including disabled ones."""
         return list(self._providers)
 

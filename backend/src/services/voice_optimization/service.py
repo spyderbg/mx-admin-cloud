@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.services.models import Service
+from src.services.models import Service, ServiceProvider
 from src.services.provider_factory import ServiceProviderFactory
 from src.services.voice_optimization.models import AudioOptimizerBase
 
@@ -33,11 +33,11 @@ class VoiceOptimizationService(Service):
         super().__init__(service_name, package_name, service_dir, base_dir)
         self._optimizers: list[AudioOptimizerBase] = []
 
-    def replace_providers(self, providers: list[object]) -> None:
+    def replace_providers(self, providers: list[ServiceProvider]) -> None:
         """Replace loaded optimizers with *providers*."""
         self._optimizers = [o for o in providers if isinstance(o, AudioOptimizerBase)]
 
-    def providers_snapshot(self) -> list[object]:
+    def providers_snapshot(self) -> list[ServiceProvider]:
         """Return loaded optimizers, including disabled ones."""
         return list(self._optimizers)
 

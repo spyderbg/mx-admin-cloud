@@ -66,16 +66,7 @@ async def lifespan(app_lifespan: FastAPI) -> AsyncIterator[None]:
             async for _ in awatch(settings.config_path):
                 logging.info("config_changed reloading_registry")
                 await run_in_threadpool(builder.load_all_from_disk)
-                try:
-                    tts_service = reg.get_service("text_to_speech")
-                    providers_count = len(
-                        tts_service.active_providers
-                        if isinstance(tts_service, TextToSpeechService)
-                        else []
-                    )
-                except KeyError:
-                    providers_count = 0
-                logging.info("registry_reloaded active_tts_providers=%s", providers_count)
+                registry.dump(settings.BASE_DIR)
         except ImportError:
             logging.warning("watchfiles not installed — config hot-reload disabled")
 

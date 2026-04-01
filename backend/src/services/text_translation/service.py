@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Sequence
 
-from src.services.models import Service
+from src.services.models import Service, ServiceProvider
 from src.services.provider_factory import ServiceProviderFactory
 from src.services.text_translation.models import TextTranslationServiceProvider
+from typing_extensions import override
 
 
 class TextTranslationProviderFactory(ServiceProviderFactory[TextTranslationServiceProvider]):
     """Translation-specific provider registry."""
 
-    unsupported_label = "translator"
+    unsupported_label: str = "translator"
 
 
 class TextTranslationService(Service):
@@ -34,13 +34,15 @@ class TextTranslationService(Service):
         super().__init__(service_name, package_name, service_dir, base_dir)
         self._providers: list[TextTranslationServiceProvider] = []
 
-    def replace_providers(self, providers: list[object]) -> None:
+    @override
+    def replace_providers(self, providers: list[ServiceProvider]) -> None:
         """Replace loaded translation providers with *providers*."""
         self._providers = [
             p for p in providers if isinstance(p, TextTranslationServiceProvider)
         ]
 
-    def providers_snapshot(self) -> list[object]:
+    @override
+    def providers_snapshot(self) -> list[ServiceProvider]:
         """Return loaded translation providers, including disabled ones."""
         return list(self._providers)
 
