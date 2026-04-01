@@ -14,10 +14,11 @@ from src.services.text_translation.service import (
 )
 
 
-def _validate_translation_provider(provider: ServiceProvider) -> None:
-    if not TextTranslationProviderFactory.supports(provider.name):
+def _validate_translation_provider(service_provider: ServiceProvider) -> None:
+    provider_name = service_provider.provider
+    if not TextTranslationProviderFactory.supports(provider_name):
         raise ValueError(
-            f"Unsupported translator: '{provider.name}' (file='{provider.config_path}')"
+            f"Unsupported translator: '{provider_name}' (file='{service_provider.config_path}')"
         )
 
 

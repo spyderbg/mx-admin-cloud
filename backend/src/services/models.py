@@ -1,11 +1,10 @@
 """Shared base classes for all service implementations.
 
-Defines the root "Service" contract and "ServiceProvider" which is the
-unified data representation of a config JSON file.  Common "service_provider"
-envelope fields (service_type, name, enabled, priority) are parsed as direct
-attributes; the "config" dict (from the "config" key in the JSON) is stored
-as-is.  Typed per-provider parsing happens inside each provider subclass using
-"self.config".
+Defines the root "Service" contract and "ServiceProvider", which is the
+unified data representation of a config JSON file.
+Common "service_provider" envelope fields that are parsed as direct attributes.
+The "config" dict (from the "config" key in the JSON) is stored as-is.
+Typed per-provider parsing happens inside each provider subclass using "self.config".
 """
 
 from __future__ import annotations
@@ -48,7 +47,7 @@ class ServiceProvider:
     Attributes populated from the "service_provider" JSON envelope:
 
     * "name" — name of the configuration file, without extension
-    * "service_type" — value of the ""service"" key
+    * "service_name" — value of the ""service"" key
     * "provider_name" — value of the ""provider"" key
     * "enabled" — value of the ""enabled"" key
     * "priority" — value of the ""priority"" key (defaults to 999)
@@ -59,7 +58,7 @@ class ServiceProvider:
     def __init__(
         self,
         name: str,
-        service_type: str,
+        service_name: str,
         provider_name: str,
         enabled: bool,
         priority: int,
@@ -68,8 +67,8 @@ class ServiceProvider:
         base_dir: Path,
     ) -> None:
         self.name = name
-        self.service_type = service_type
-        self.provider_name = provider_name
+        self.service = service_name
+        self.provider = provider_name
         self.enabled = enabled
         self.priority = priority
         self.config = config          # raw "config" dict, stored as-is
@@ -81,7 +80,7 @@ class ServiceProvider:
         """Parse the common "service_provider" envelope from a config JSON dict.
 
         Returns "None" on structural failure so the generic loader can skip the
-        file silently. "service_type" is optional (empty string when absent) so
+        file silently. The "service_name" is optional (empty string when absent) so
         that service-specific formats (e.g., TTS) that omit the ""service"" key
         still parse correctly.
         """
@@ -95,7 +94,7 @@ class ServiceProvider:
         if not isinstance(service, dict):
             return None
 
-        service_type = str(service.get("service", "")).strip().lower()
+        service_name = str(service.get("service", "")).strip().lower()
         provider_name = str(service.get("provider", "")).strip().lower()
         enabled = boolish(service.get("enabled", False))
         priority = int(service.get("priority", 999))
@@ -105,7 +104,7 @@ class ServiceProvider:
 
         return cls(
             name=name,
-            service_type=service_type,
+            service_name=service_name,
             provider_name=provider_name,
             enabled=enabled,
             priority=priority,

@@ -20,6 +20,18 @@ from src.services.acceptance import ConfigApplyResult, ServiceAcceptCriteria
 from src.services.models import Service, ServiceProvider
 
 
+def _runtime_source_config_name(source: str) -> str:
+    """Derive *config_name* from apply_runtime_payload *source* strings."""
+    if source.startswith("<runtime-upload:") and source.endswith(">"):
+        inner = source[len("<runtime-upload:"): -1].strip() or "unknown.json"
+        path = Path(inner)
+        return path.stem if path.suffix else path.name
+    path = Path(source)
+    if path.suffix:
+        return path.stem
+    return path.name or source
+
+
 @dataclass(frozen=True)
 class ServiceDescriptor:
     """Metadata exported by a service package."""
@@ -62,8 +74,8 @@ class ServiceRegistry:
         """Scan "src.services" for packages exporting service metadata."""
         specs: list[ServiceDescriptor] = []
         for _mod_info in pkgutil.iter_modules(
-            _services_pkg.__path__,
-            _services_pkg.__name__ + ".",
+                _services_pkg.__path__,
+                _services_pkg.__name__ + ".",
         ):
             if not _mod_info.ispkg:
                 continue
@@ -100,7 +112,7 @@ class ServiceRegistry:
         return specs
 
     def get_service(self, service_name: str) -> Service:
-        """Return registered service instance for *service_name*."""
+        """Return a registered service instance for *service_name*."""
         with self._lock:
             service = self._services.get(service_name)
         if service is None:
@@ -172,14 +184,7 @@ class ServiceRegistry:
                     console.print("    Attributes:")
                     for key, value in service_dict.items():
                         formatted = self._format_registry_attr(key, value, base_dir)
-                        console.print(
-                            Text.assemble(
-                                "      - ",
-                                (escape(key), "cyan"),
-                                ": ",
-                                (escape(formatted), ""),
-                            )
-                        )
+                        console.print(Text.assemble("      - ", (escape(key), "cyan"), ": ", (escape(formatted), ""), ))
             except Exception as exc:  # pylint: disable=broad-exception-caught
                 err = Text.assemble(
                     "    ",
@@ -216,7 +221,7 @@ class ServiceRegistryBuilder:
         self._base_dir = base_dir
         self._config_root = config_root
 
-    def load_all_from_disk(self) -> list[ConfigApplyResult]:
+    def load_all_from_disk(self):
         """Load all known config directories and replace each service provider set."""
         criteria_map = self._registry.get_accept_criteria()
         built: dict[str, list[Any]] = {service_name: [] for service_name in criteria_map}
@@ -232,9 +237,8 @@ class ServiceRegistryBuilder:
                 if payload is None:
                     results.append(
                         ConfigApplyResult(
+                            config_name=config_path.stem,
                             accepted=False,
-                            source=str(config_path),
-                            service_name=service_name,
                             error="Invalid JSON payload.",
                         )
                     )
@@ -243,7 +247,6 @@ class ServiceRegistryBuilder:
                     payload=payload,
                     source=config_path,
                     criteria=criteria,
-                    expected_service_name=service_name,
                 )
                 results.append(apply_result)
                 if materialized is not None:
@@ -253,17 +256,18 @@ class ServiceRegistryBuilder:
             providers.sort(key=lambda provider: getattr(provider, "priority", 999))
             self._registry.replace_service_providers(service_name, providers)
 
-        return results
+        # log results
+        self._log_apply_result(results)
 
     def apply_runtime_payload(self, payload: dict[str, Any], source: str = "<runtime-upload>") -> ConfigApplyResult:
         """Validate and apply one runtime-submitted config payload in memory."""
+
+        apply_result = ConfigApplyResult(_runtime_source_config_name(source))
+
+        # check for common fields
         common_provider = ServiceProvider.from_dict(payload, Path(source))
         if common_provider is None:
-            return ConfigApplyResult(
-                accepted=False,
-                source=source,
-                error="Invalid service_provider envelope.",
-            )
+            apply_result.error = "Invalid service_provider envelope."
 
         candidates = [
             (service_name, criteria)
@@ -271,26 +275,20 @@ class ServiceRegistryBuilder:
             if criteria.can_accept(common_provider)
         ]
         if not candidates:
-            return ConfigApplyResult(
-                accepted=False,
-                source=source,
-                provider_name=common_provider.name,
-                error=f"Unsupported service '{common_provider.service_type}'.",
-            )
-        if len(candidates) > 1:
-            return ConfigApplyResult(
-                accepted=False,
-                source=source,
-                provider_name=common_provider.name,
-                error=f"Ambiguous service match for '{common_provider.service_type}'.",
-            )
+            apply_result.error = f"Unsupported service '{common_provider.service}'."
 
+        if len(candidates) > 1:
+            apply_result.error = f"Ambiguous service match for '{common_provider.service}'."
+
+        if apply_result.error:
+            return apply_result
+
+        # apply payload to matching service
         service_name, criteria = candidates[0]
         apply_result, materialized = self._materialize_payload(
             payload=payload,
             source=Path(source),
             criteria=criteria,
-            expected_service_name=service_name,
         )
         if materialized is None:
             return apply_result
@@ -301,61 +299,55 @@ class ServiceRegistryBuilder:
         self._registry.replace_service_providers(service_name, current)
         return apply_result
 
+    @staticmethod
+    def _log_apply_result(results: list[ConfigApplyResult]):
+        console = Console()
+
+        def log(result: ConfigApplyResult):
+            txt = Text()
+            txt.append(f"{result.config_name}")
+            txt.append(f"  accepted:{str(result.accepted).lower()}\n", style="yellow")
+            if result.error:
+                txt.append(f" error:{result.error}", style="red")
+            console.print(txt)
+
+        for result in [r for r in results if r.error]:
+            log(result)
+
+        not_accepted_results = [r for r in results if not r.accepted and not r.error]
+        if not_accepted_results:
+            console.print("\nService config NOT accepted:")
+            for result in not_accepted_results:
+                log(result)
+
     def _materialize_payload(
-        self,
-        payload: dict[str, Any],
-        source: Path,
-        criteria: ServiceAcceptCriteria,
-        expected_service_name: str,
+            self,
+            payload: dict[str, Any],
+            source: Path,
+            criteria: ServiceAcceptCriteria,
     ) -> tuple[ConfigApplyResult, Any | None]:
-        provider = ServiceProvider.from_dict(payload, source)
-        if provider is None:
-            return (
-                ConfigApplyResult(
-                    accepted=False,
-                    source=str(source),
-                    service_name=expected_service_name,
-                    error="Invalid service_provider envelope.",
-                ),
-                None,
-            )
-        if not criteria.can_accept(provider):
-            return (
-                ConfigApplyResult(
-                    accepted=False,
-                    source=str(source),
-                    service_name=expected_service_name,
-                    provider_name=provider.name,
-                    error=(
-                        f"Service mismatch: expected '{criteria.service_name}', "
-                        f"got '{provider.service_type}'."
-                    ),
-                ),
-                None,
-            )
-        try:
-            criteria.validate_provider(provider)
-            materialized = criteria.build_provider(provider, self._base_dir)
-        except Exception as exc:  # pylint: disable=broad-exception-caught
-            return (
-                ConfigApplyResult(
-                    accepted=False,
-                    source=str(source),
-                    service_name=expected_service_name,
-                    provider_name=provider.name,
-                    error=str(exc),
-                ),
-                None,
-            )
-        return (
-            ConfigApplyResult(
-                accepted=True,
-                source=str(source),
-                service_name=expected_service_name,
-                provider_name=provider.name,
+
+        apply_result = ConfigApplyResult(_runtime_source_config_name(source.stem))
+        service_provider = ServiceProvider.from_dict(payload, source)
+        if service_provider is None:
+            apply_result.error = "Invalid service_provider envelope."
+            return apply_result, None
+
+        if not criteria.can_accept(service_provider):
+            apply_result.error = (
+                f"Service mismatch: expected '{criteria.service_name}', "
+                f"got '{service_provider.service}'."
             ),
-            materialized,
-        )
+            return apply_result, None,
+        try:
+            criteria.validate_provider(service_provider)
+            materialized = criteria.build_provider(service_provider, self._base_dir)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            apply_result.error = str(exc)
+            return apply_result, None,
+
+        apply_result.accepted = True
+        return apply_result, materialized
 
     @staticmethod
     def _read_json_file(config_path: Path) -> dict[str, Any] | None:
@@ -370,14 +362,14 @@ class ServiceRegistryBuilder:
 
     @staticmethod
     def _replace_provider_by_identity(providers: list[Any], new_provider: Any) -> list[Any]:
-        provider_name = str(getattr(new_provider, "name", "")).strip().lower()
-        service_type = str(getattr(new_provider, "service_type", "")).strip().lower()
+        provider_name = str(getattr(new_provider, "provider_name", "")).strip().lower()
+        service_name = str(getattr(new_provider, "service_name", "")).strip().lower()
         updated = [
             provider
             for provider in providers
             if not (
-                str(getattr(provider, "name", "")).strip().lower() == provider_name
-                and str(getattr(provider, "service_type", "")).strip().lower() == service_type
+                    str(getattr(provider, "provider_name", "")).strip().lower() == provider_name
+                    and str(getattr(provider, "service_name", "")).strip().lower() == service_name
             )
         ]
         updated.append(new_provider)

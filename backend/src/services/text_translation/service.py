@@ -45,6 +45,11 @@ class TextTranslationService(Service):
         return list(self._providers)
 
     @property
+    def all_providers(self) -> list[TextTranslationServiceProvider]:
+        """Return all loaded translation providers, including disabled ones."""
+        return list(self._providers)
+
+    @property
     def active_providers(self) -> list[TextTranslationServiceProvider]:
         """Return providers that report themselves as active."""
         return [p for p in self._providers if p.is_active()]
@@ -59,7 +64,7 @@ class TextTranslationService(Service):
         """Translate *text* through all active providers in priority order.
 
         Each provider's output is fed as input to the next provider.  A provider
-        that returns ``None`` is skipped (fallback).  Returns the original *text*
+        that returns "None" is skipped (fallback).  Returns the original *text*
         when no provider succeeds.
         """
         current = text

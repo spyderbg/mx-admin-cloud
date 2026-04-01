@@ -31,7 +31,7 @@ class AudioOptimizerBase(ServiceProvider):
     @property
     def optimizer_type(self) -> str:
         """Return optimizer backend type (e.g. ``"ffmpeg"`` or ``"pydub"``)."""
-        return self.service_type
+        return self.service
 
     @abstractmethod
     async def optimize(self, input_path: Path, output_path: Path) -> Path:

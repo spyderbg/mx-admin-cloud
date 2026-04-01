@@ -14,6 +14,7 @@ from src.api.v1 import routes_auth, routes_common, routes_content, routes_users
 from src.api.dependencies import require_admin, require_uds
 from src.core.config import settings
 from src.core.job_store import JobStore
+from src.services.acceptance import ConfigApplyResult
 from src.services.service_registry import ServiceRegistry, ServiceRegistryBuilder
 from src.services.text_to_speech.service import TextToSpeechService
 from src.core.utils import is_windows_platform, is_debug_mode
@@ -27,6 +28,7 @@ async def lifespan(app_lifespan: FastAPI) -> AsyncIterator[None]:
     """Initialize shared services during application startup."""
     await run_in_threadpool(UsersDb.init_db)
 
+    # Logging system
     log_config = settings.config_path / "loggers"
     app_lifespan.state.logging_system = None
     if log_config.exists():
@@ -39,6 +41,7 @@ async def lifespan(app_lifespan: FastAPI) -> AsyncIterator[None]:
         await run_in_threadpool(logging_system.configure)
         app_lifespan.state.logging_system = logging_system
 
+    # Service registry
     registry = ServiceRegistry.build_runtime(settings.BASE_DIR)
     registry_builder = ServiceRegistryBuilder(registry, settings.BASE_DIR, settings.config_path)
     registry_builder.load_all_from_disk()

@@ -18,7 +18,6 @@ class ServiceProviderFactory(Generic[ProviderT]):
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         super().__init_subclass__(**kwargs)
-        # Keep independent registries per subclass (TTS/translation/optimization).
         cls._builders = {}
 
     @classmethod
@@ -32,21 +31,22 @@ class ServiceProviderFactory(Generic[ProviderT]):
         return provider_name.strip().lower() in cls._builders
 
     @classmethod
-    def create(cls, provider: ServiceProvider, base_dir: Path) -> ProviderT:
+    def create(cls, service_provider: ServiceProvider, base_dir: Path) -> ProviderT:
         """Instantiate the concrete provider for *provider*."""
-        key = provider.name.strip().lower()
+        key = service_provider.provider.strip().lower()
         builder = cls._builders.get(key)
         if builder is None:
             raise ValueError(
-                f"Unsupported {cls.unsupported_label}: '{provider.name}' "
-                f"(file='{provider.config_path}')"
+                f"Unsupported {cls.unsupported_label}: '{key}' "
+                f"(file='{service_provider.config_path}')"
             )
         return builder(
-            service_type=provider.service_type,
-            name=provider.name,
-            enabled=provider.enabled,
-            priority=provider.priority,
-            config=provider.config,
-            config_path=provider.config_path,
+            name=service_provider.name,
+            service_name=service_provider.service,
+            provider_name=service_provider.provider,
+            enabled=service_provider.enabled,
+            priority=service_provider.priority,
+            config=service_provider.config,
+            config_path=service_provider.config_path,
             base_dir=base_dir,
         )

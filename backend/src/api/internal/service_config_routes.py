@@ -23,10 +23,8 @@ class ApplyConfigRequest(BaseModel):
 class ApplyConfigResponse(BaseModel):
     """Result model for runtime config apply endpoints."""
 
+    config_name: str
     accepted: bool
-    source: str
-    service_name: str | None = None
-    provider_name: str | None = None
     error: str | None = None
 
 
@@ -41,10 +39,8 @@ async def apply_config_payload(
     if not result.accepted:
         raise HTTPException(status_code=422, detail=result.error or "Config validation failed.")
     return ApplyConfigResponse(
+        config_name=result.config_name,
         accepted=result.accepted,
-        source=result.source,
-        service_name=result.service_name,
-        provider_name=result.provider_name,
         error=result.error,
     )
 
@@ -69,9 +65,7 @@ async def upload_config_file(
     if not result.accepted:
         raise HTTPException(status_code=422, detail=result.error or "Config validation failed.")
     return ApplyConfigResponse(
+        config_name=result.config_name,
         accepted=result.accepted,
-        source=result.source,
-        service_name=result.service_name,
-        provider_name=result.provider_name,
         error=result.error,
     )

@@ -45,8 +45,9 @@ async def list_optimizers(
     configs.sort(key=lambda c: c.priority)
     return [
         {
-            "service_type": c.service_type,
             "name": c.name,
+            "service": c.service,
+            "provider": c.provider,
             "enabled": c.enabled,
             "priority": c.priority,
             "config_path": str(c.config_path),

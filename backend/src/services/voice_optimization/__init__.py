@@ -18,10 +18,11 @@ from src.services.voice_optimization.service import \
     VoiceOptimizationService  # noqa: E402 # pylint: disable=wrong-import-position
 
 
-def _validate_optimizer_provider(provider: ServiceProvider) -> None:
-    if not AudioOptimizerFactory.supports(provider.name):
+def _validate_optimizer_provider(service_provider: ServiceProvider) -> None:
+    provider_name = service_provider.provider
+    if not AudioOptimizerFactory.supports(provider_name):
         raise ValueError(
-            f"Unsupported optimizer: '{provider.name}' (file='{provider.config_path}')"
+            f"Unsupported optimizer: '{provider_name}' (file='{service_provider.config_path}')"
         )
 
 

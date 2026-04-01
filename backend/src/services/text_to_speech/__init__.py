@@ -17,10 +17,11 @@ from src.services.text_to_speech.service import (
 import src.services.text_to_speech.providers  # noqa: F401, E402 # pylint: disable=wrong-import-position
 
 
-def _validate_tts_provider(provider: ServiceProvider) -> None:
-    if not TextToSpeechProviderFactory.supports(provider.name):
+def _validate_tts_provider(service_provider: ServiceProvider) -> None:
+    provider_name = service_provider.provider
+    if not TextToSpeechProviderFactory.supports(provider_name):
         raise ValueError(
-            f"Unsupported TTS provider: '{provider.name}' (file='{provider.config_path}')"
+            f"Unsupported TTS provider: '{provider_name}' (file='{service_provider.config_path}')"
         )
 
 

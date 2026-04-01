@@ -189,6 +189,8 @@ Internal endpoints are under `/internal/*`. They require `Authorization: Bearer 
 | `POST` | [/internal/services/configs/apply](src/api/internal/service_config_routes.py) | Validate and apply one JSON config payload in memory (no file persistence). |
 | `POST` | [/internal/services/configs/upload](src/api/internal/service_config_routes.py) | Validate and apply uploaded JSON config content in memory (no file persistence). |
 
+On success, both return JSON with `config_name`, `accepted`, and `error` (null when there is no error), matching `ConfigApplyResult`.
+
 ## Architecture
 
 ### Service Registry

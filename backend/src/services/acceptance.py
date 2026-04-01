@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from src.services.models import ServiceProvider
+from typing_extensions import override
 
 ValidateProviderFn = Callable[[ServiceProvider], None]
 BuildProviderFn = Callable[[ServiceProvider, Path], Any]
@@ -23,15 +24,23 @@ class ServiceAcceptCriteria:
 
     def can_accept(self, provider: ServiceProvider) -> bool:
         """Return whether this service can accept *provider* envelope."""
-        return provider.service_type in ("", self.service_name)
+        return provider.service in ("", self.service_name)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=False)
 class ConfigApplyResult:
     """Result of attempting to apply a config payload or config file."""
 
-    accepted: bool
-    source: str
-    service_name: str | None = None
-    provider_name: str | None = None
-    error: str | None = None
+    def __init__(self, config_name: str, accepted: bool = False, error: str | None = None) -> None:
+        self.config_name = config_name
+        self.accepted = accepted
+        self.error = error
+
+    @override
+    def __str__(self) -> str:
+        """Return a human-readable summary of the result."""
+        text = f"{self.config_name}\n"
+        text = text + f" accepted:{str(self.accepted).lower()}\n"
+        if self.error:
+            text = text + f" error:{self.error}"
+        return text
