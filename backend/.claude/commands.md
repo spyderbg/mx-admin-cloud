@@ -32,7 +32,7 @@ Steps:
    - pytest
    - pytest-asyncio
    - httpx.AsyncClient
-5. Place tests under the tests/ directory.
+5. Place tests under ``__tests__/unit/`` and ``__tests__/integration/`` beside the module (see ``src/api/internal/__tests__/``).
 6. Output the created or updated test files.
 
 ---
@@ -45,6 +45,5 @@ Generate tests only for a specific module or file.
 Steps:
 1. Read the file at <path>.
 2. Generate appropriate unit tests.
-3. Place them under tests/ mirroring the module structure.
+3. Place them under ``__tests__/unit/`` or ``__tests__/integration/`` next to that module.
 4. Output the full test file.
-

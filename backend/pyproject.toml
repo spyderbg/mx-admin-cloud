@@ -17,6 +17,7 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+exclude = ["tests*", "*test*", "*__tests__*"]
 
 [tool.pylint.format]
 max-line-length = 120

@@ -1,8 +1,18 @@
-# Python
-__pycache__
+# Python artifacts
+__pycache__/
 app.egg-info
 *.pyc
+*.pyo
+*.pyd
 .mypy_cache
 .coverage
 htmlcov
+
+# Environment variables
+.env
 .venv
+
+# Tests
+tests/
+**/test_*.py
+**/__tests__/

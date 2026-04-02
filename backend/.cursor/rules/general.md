@@ -1,0 +1,221 @@
+# GENERAL.md
+
+## Purpose
+
+This document defines the global development rules, architecture principles, and coding standards for the backend project.
+It must be followed for all new features, refactors, and fixes.
+
+---
+
+# 🧱 Architecture Principles
+
+## Layered Structure (STRICT)
+
+* `api/` → HTTP layer only (FastAPI routes, request/response handling)
+* `core/` → business logic, utilities, pipelines (NO service imports)
+* `services/` → provider-based implementations (pluggable logic)
+* `db/` → persistence layer
+* `security/` → authentication & authorization
+
+### Rules
+
+* ❌ `core/` MUST NOT import from `services/`
+* ❌ `services/` MUST NOT depend on `api/`
+* ✅ `api/` can depend on `core/` and `services/`
+* ✅ Dependencies must flow inward
+
+---
+
+# ⚙️ FastAPI Guidelines
+
+## Routes
+
+* Keep routes **thin**
+* No business logic in routes
+* Delegate to:
+
+  * `core/` for workflows
+  * `services/` for provider execution
+
+## Structure
+
+* Public API → `/api/v1/`
+* Internal API → `/api/internal/`
+
+## Validation
+
+* Always use Pydantic models for:
+
+  * Request bodies
+  * Responses
+* Never trust raw input
+
+---
+
+# 🧠 Pydantic Best Practices
+
+## Models
+
+* Use `BaseModel` for all schemas
+* Use explicit typing (no `Any` unless necessary)
+
+## Rules
+
+* Prefer:
+
+  * `str | None` over `Optional[str]` (Python 3.10+)
+* Use validators for:
+
+  * normalization
+  * constraints
+
+## Separation
+
+* API models ≠ internal models (separate when needed)
+
+---
+
+# 🧩 Services & Providers
+
+## Design Pattern
+
+* Services act as orchestrators
+* Providers implement actual logic
+
+## Provider Rules
+
+Each provider MUST:
+
+1. Live in:
+   `services/{domain}/providers/{provider_name}/`
+2. Extend a base class (`base.py`)
+3. Be discoverable via registry
+4. Have a config entry
+5. Be stateless
+
+## Do NOT
+
+* Hardcode provider selection
+* Mix multiple responsibilities
+
+---
+
+# ⚡ Configuration Management
+
+## Rules
+
+* All configs must be externalized
+* Use JSON configs in `CONFIG_DIR`
+* Load configs via `config_loader.py`
+
+## Settings
+
+* Use `Settings` class for environment configuration
+* Do NOT hardcode paths
+* Always use:
+
+  * `BASE_DIR`
+  * helper methods
+
+---
+
+# 📁 File & Naming Conventions
+
+## General
+
+* snake_case for files and variables
+* PascalCase for classes
+* UPPER_CASE for constants
+
+## Services
+
+* `service.py` → orchestration
+* `base.py` → abstract definitions
+* `providers/` → service providers implementations
+
+---
+
+# 🧹 Code Quality (PyLint)
+
+## General Rules
+
+* Code MUST pass PyLint
+* Avoid:
+
+  * unused imports
+  * long functions (>150 lines recommended max)
+  * deep nesting (>3 levels)
+
+## Readability
+
+* Prefer small, composable functions
+* Use clear naming over comments
+
+---
+
+# 🔐 Security
+
+## Authentication
+
+* Use JWT validation from `security/auth.py`
+* Never trust client-provided identity
+
+## Sensitive Data
+
+* Do NOT log:
+
+  * tokens
+  * passwords
+  * secrets
+
+---
+
+# 📜 Logging
+
+## Rules
+
+* Use centralized logging system
+* No print statements
+* Include:
+
+  * request context
+  * operation details
+
+---
+
+# 🚀 Development Workflow
+
+## When Adding a Feature
+
+1. Define Pydantic models
+2. Implement core logic
+3. Add/extend service
+4. Add provider (if needed)
+5. Expose via API
+
+## When Adding a Provider
+
+1. Copy an existing provider
+2. Rename + adapt
+3. Add config
+4. Ensure registry loads it
+
+---
+
+# ❌ Anti-Patterns
+
+* Business logic inside routes
+* Cross-layer imports
+* Hardcoded configs
+* God classes/functions
+* Ignoring existing patterns
+
+---
+
+# ✅ Guiding Principle
+
+Follow existing patterns in the codebase.
+When in doubt, copy a similar implementation and adapt it.
+
+Consistency > cleverness.
+

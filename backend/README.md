@@ -47,23 +47,25 @@ This starts the HTTP server and the CLI Unix socket. To stop:
 From the backend directory:
 
 ```bash
-PYTHONPATH="$PWD/src" .venv/bin/python -m pytest tests/ -v
+PYTHONPATH="$PWD/src" .venv/bin/python -m pytest -v
 ```
 
-Test layout:
+Tests for a feature module live under a sibling ``__tests__`` tree (no ``__init__.py`` there, so it stays out of the installable package). Example for internal translation routes:
 
 ```
-tests/
-├── text_translation/
-│   ├── test_translation.py     # Unit: TextTranslate, TranslatorFactory, build_translator*
-│   └── test_integration.py     # Integration: GET /internal/translators, POST /internal/translate
-├── text_to_speech/
-│   ├── test_text_to_speech.py  # Unit: boolish, TTSProvider, ProviderFactory, build_provider*, load_service_configs
-│   └── test_integration.py     # Integration: GET /internal/generators, POST generate, POST generate-word
-├── optimization/
-│   ├── test_normalization.py          # Unit: normalize_audio (no ffmpeg, success, failure, ffmpeg args)
-│   └── test_generators_integration.py # Integration: normalization pipeline, request_id, provider matching
-└── test_optimization.py               # Unit: audio optimizers (config loading, factory, output paths)
+src/api/internal/
+├── text_translation_routes.py
+└── __tests__/
+    ├── unit/
+    │   └── test_text_translation_routes.py          # Schemas / pure logic
+    └── integration/
+        └── test_text_translation_routes_integration.py   # HTTP + ASGI
+```
+
+Run only those tests:
+
+```bash
+PYTHONPATH="$PWD/src" .venv/bin/python -m pytest src/api/internal/__tests__ -v
 ```
 
 ## Auth
