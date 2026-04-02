@@ -55,7 +55,7 @@ Test layout:
 ```
 tests/
 ├── text_translation/
-│   ├── test_translation.py     # Unit: TextTranslate, TranslatorFactory, build_translator*, translate_with_all_active
+│   ├── test_translation.py     # Unit: TextTranslate, TranslatorFactory, build_translator*
 │   └── test_integration.py     # Integration: GET /internal/translators, POST /internal/translate
 ├── text_to_speech/
 │   ├── test_text_to_speech.py  # Unit: boolish, TTSProvider, ProviderFactory, build_provider*, load_service_configs
@@ -179,7 +179,7 @@ Internal endpoints are under `/internal/*`. They require `Authorization: Bearer 
 | Method | Path | Description |
 | :--- | :--- | :--- |
 | `GET` | [/internal/translators](src/api/internal/text_translation_routes.py#L40) | List all configured translation services with activation state. |
-| `POST` | [/internal/translate](src/api/internal/text_translation_routes.py#L69) | Translate text via all active translators in priority order. |
+| `POST` | [/internal/translate](src/api/internal/text_translation_routes.py#L69) | Translate text via all active translators; returns `success` and `lang_text` (`lang_code` + `text`). |
 | `POST` | [/internal/translate-file](src/api/internal/text_translation_routes.py#L97) | Translate a word list file; returns per-word translations for all langs. |
 
 #### Runtime Service Configs
@@ -520,6 +520,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/internal/translator
 curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"text": "apple", "target_lang_code": "fr"}' \
   http://localhost:8000/internal/translate
+# Example response: {"success": true, "lang_text": {"lang_code": "fr", "text": "pomme"}}
 
 # generate-word returns audio bytes
 curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \

@@ -2,13 +2,22 @@
 
 from __future__ import annotations
 
-from abc import abstractmethod
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
 
 from src.core.languages import LANG_MAP
-from src.services.models import ServiceProvider
+from src.services.models import LangCodeText, ServiceProvider
 
 
-class TextTranslationServiceProvider(ServiceProvider):
+@dataclass
+class TranslateResult:
+    """Result of one translation operation."""
+
+    success: bool
+    lang_text: LangCodeText | None = None
+
+
+class TextTranslationServiceProvider(ServiceProvider, ABC):
     """Base class for translator service providers.
 
     Reads "input_language" and "output_language" from "self.config"
@@ -19,11 +28,17 @@ class TextTranslationServiceProvider(ServiceProvider):
 
     def default_input_language(self) -> str | None:
         """Return the default input language from the provider config dict."""
-        return str(self.config.get("input_language", "")).strip() or None
+        raw_lang = self.config.get("input_language")
+        if not isinstance(raw_lang, str):
+            return None
+        return raw_lang.strip() or None
 
     def default_output_language(self) -> str | None:
         """Return the default output language from the provider config dict."""
-        return str(self.config.get("output_language", "")).strip() or None
+        raw_lang = self.config.get("output_language")
+        if not isinstance(raw_lang, str):
+            return None
+        return raw_lang.strip() or None
 
     @staticmethod
     def language_name(lang_code: str) -> str:

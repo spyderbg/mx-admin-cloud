@@ -10,8 +10,22 @@ Typed per-provider parsing happens inside each provider subclass using "self.con
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from src.core.languages import normalize_language_code
+
+
+@dataclass
+class LangCodeText:
+    """Pair of text and its normalized language code."""
+
+    lang_code: str
+    text: str
+
+    def __post_init__(self) -> None:
+        self.lang_code = normalize_language_code(self.lang_code)
 
 
 class Service:

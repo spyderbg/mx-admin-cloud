@@ -5,9 +5,9 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing_extensions import override
 
-from src.services.models import Service, ServiceProvider
+from src.services.models import LangCodeText, Service, ServiceProvider
 from src.services.provider_factory import ServiceProviderFactory
-from src.services.text_translation.models import TextTranslationServiceProvider
+from src.services.text_translation.models import TextTranslationServiceProvider, TranslateResult
 
 
 class TextTranslationProviderFactory(ServiceProviderFactory[TextTranslationServiceProvider]):
@@ -62,50 +62,34 @@ class TextTranslationService(Service):
             input_lang_code: str | None = None,
             target_lang_code: str | None = None,
             category: str | None = None,
-    ) -> str:
+    ) -> TranslateResult:
         """Translate *text* through all active providers in priority order.
 
         Each provider's output is fed as input to the next provider.  A provider
-        that returns "None" is skipped (fallback).  Returns the original *text*
-        when no provider succeeds.
+        that returns "None" is skipped (fallback).
         """
         current = text
+        current_lang_code = input_lang_code
+        success = False
         for provider in self.active_providers:
             inp = input_lang_code or provider.default_input_language()
             tgt = target_lang_code or provider.default_output_language()
             if not inp or not tgt:
                 continue
+            if current_lang_code is None:
+                current_lang_code = inp
             try:
                 result = await provider.translate_text(current, inp, tgt, category)
                 if result is not None:
                     current = result
+                    current_lang_code = tgt
+                    success = True
             except Exception:  # pylint: disable=broad-exception-caught
                 continue
-        return current
 
-
-async def translate_with_all_active(
-        translators: Sequence[TextTranslationServiceProvider],
-        text: str,
-        input_lang_code: str | None = None,
-        target_lang_code: str | None = None,
-        category: str | None = None,
-) -> str:
-    """Module-level wrapper: run *translators* in order and return the result.
-
-    Kept for backward compatibility with call sites that pass an explicit
-    list of providers rather than using :class:`TextTranslationService` directly.
-    """
-    current = text
-    for translator in translators:
-        inp = input_lang_code or translator.default_input_language()
-        tgt = target_lang_code or translator.default_output_language()
-        if not inp or not tgt:
-            continue
-        try:
-            result = await translator.translate_text(current, inp, tgt, category)
-            if result is not None:
-                current = result
-        except Exception:  # pylint: disable=broad-exception-caught
-            continue
-    return current
+        if current_lang_code is None:
+            return TranslateResult(success=success, lang_text=None)
+        return TranslateResult(
+            success=success,
+            lang_text=LangCodeText(lang_code=current_lang_code, text=current),
+        )

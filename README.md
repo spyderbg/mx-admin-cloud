@@ -26,6 +26,7 @@ mx-admin/
 - **Stack:** Python 3.10+, FastAPI, Uvicorn, Pydantic Settings, python-jose, bcrypt (password hashing), OpenAI (TTS/translation/icons), httpx, structlog.
 - **Layout:** `src/main.py`; `src/api/v1/` (auth, tasks, content, users); `src/api/internal/` (voice generation); `src/core/` (config, content_service, translation, TTS wrappers); `src/services/` (multi-provider TTS, translation, evaluation, logging); `src/security/` (auth, tokens).
 - **API base:** `/api/v1` -- auth, tasks, content; `/internal/*` -- voice generation (dual-auth: service token or admin JWT).
+- **Internal translate response:** `POST /internal/translate` returns `success` and `lang_text` (`{ "lang_code", "text" }`).
 - **Services:** Multi-provider TTS (OpenAI, ElevenLabs, Speaktor), priority-based translation (static CSV + OpenAI fallback), evaluation engine (STT + Levenshtein scoring), structured logging (structlog, Seq, file rotation).
 - **Service config flow:** JSON files in `backend/config/*` use a `service_provider` envelope with `service` (type), `provider` (implementation name), `enabled`, `priority`, and a `config` payload. Each service package self-registers a `ServicePlugin` with `ServicePluginRegistry` at import time; `registry_builder` iterates the plugin list generically — adding a new service type requires no changes to registry logic.
 - **Docs:** See [backend/README.md](backend/README.md) for endpoints and env vars.

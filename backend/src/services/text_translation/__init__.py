@@ -10,14 +10,12 @@ from src.services.text_translation.models import TextTranslationServiceProvider
 from src.services.text_translation.service import (
     TextTranslationService,
     TextTranslationProviderFactory,
-    translate_with_all_active,
 )
 
 __all__ = [
     "TextTranslationService",
     "TextTranslationServiceProvider",
     "TextTranslationProviderFactory",
-    "translate_with_all_active",
 ]
 
 

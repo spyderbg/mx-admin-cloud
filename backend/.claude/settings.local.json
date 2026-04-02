@@ -3,7 +3,7 @@
     "allow": [
       "Bash(grep -n 'prefix=\"\"/internal' /media/plamen/data/MarXman/mx-admin/backend/src/api/internal/routes_*.py)",
       "Bash(source .venv/bin/activate)",
-      "Bash(PYTHONPATH=\"$PWD\" python -c \"from src.services.text_translation import TextTranslate, TranslatorFactory, build_translator, build_translators, translate_with_all_active; print\\(''imports OK''\\)\")",
+      "Bash(PYTHONPATH=\"$PWD\" python -c \"from src.services.text_translation import TextTranslate, TranslatorFactory, build_translator, build_translators; print\\(''imports OK''\\)\")",
       "Bash(PYTHONPATH=\"$PWD\" python -m pytest tests/text_translation/ -v)",
       "Bash(pip install:*)",
       "Bash(find /home/spyder/_Proj/Python/mx-admin/backend/config/text_translation/ -type f -name *.json)",
