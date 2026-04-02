@@ -12,10 +12,16 @@ from src.services.voice_optimization.normalizer import normalize_audio
 
 # Import providers AFTER OptimizerFactory is defined so that provider modules
 # can safely call `from ... import OptimizerFactory` inside their register() methods.
-import src.services.voice_optimization.providers  # noqa: F401, E402  # pylint: disable=wrong-import-position
+import src.services.voice_optimization.providers  # noqa: F401, E402 # pylint: disable=wrong-import-position
 
 from src.services.voice_optimization.service import \
     VoiceOptimizationService  # noqa: E402 # pylint: disable=wrong-import-position
+
+__all__ = [
+    "AudioOptimizerBase",
+    "VoiceOptimizationService",
+    "normalize_audio",
+]
 
 
 def _validate_optimizer_provider(service_provider: ServiceProvider) -> None:
@@ -38,9 +44,3 @@ SERVICE_ACCEPT_CRITERIA = ServiceAcceptCriteria(
     validate_provider=_validate_optimizer_provider,
     build_provider=_build_optimizer_provider,
 )
-
-__all__ = [
-    "AudioOptimizerBase",
-    "normalize_audio",
-    "VoiceOptimizationService",
-]

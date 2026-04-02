@@ -6,21 +6,18 @@ from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import AsyncIterator
 
-from fastapi import FastAPI
-from starlette.concurrency import run_in_threadpool
-
 import src.api.internal
-from src.api.v1 import routes_auth, routes_common, routes_content, routes_users
+from fastapi import FastAPI
 from src.api.dependencies import require_admin, require_uds
+from src.api.v1 import routes_auth, routes_common, routes_content, routes_users
 from src.core.config import settings
 from src.core.job_store import JobStore
-from src.services.acceptance import ConfigApplyResult
-from src.services.service_registry import ServiceRegistry, ServiceRegistryBuilder
-from src.services.text_to_speech.service import TextToSpeechService
+from src.core.logging import LoggingSystem
 from src.core.utils import is_windows_platform, is_debug_mode
 from src.db.database import UsersDb
 from src.security.tokens import create_internal_token
-from src.core.logging import LoggingSystem
+from src.services.service_registry import ServiceRegistry, ServiceRegistryBuilder
+from starlette.concurrency import run_in_threadpool
 
 
 @asynccontextmanager

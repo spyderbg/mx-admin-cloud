@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from typing import Sequence
 from src.services.models import Service, ServiceProvider
 from src.services.provider_factory import ServiceProviderFactory
 from src.services.text_translation.models import TextTranslationServiceProvider
@@ -25,11 +26,11 @@ class TextTranslationService(Service):
     """
 
     def __init__(
-        self,
-        service_name: str,
-        package_name: str,
-        service_dir: Path,
-        base_dir: Path,
+            self,
+            service_name: str,
+            package_name: str,
+            service_dir: Path,
+            base_dir: Path,
     ) -> None:
         super().__init__(service_name, package_name, service_dir, base_dir)
         self._providers: list[TextTranslationServiceProvider] = []

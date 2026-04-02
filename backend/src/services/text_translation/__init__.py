@@ -13,6 +13,13 @@ from src.services.text_translation.service import (
     translate_with_all_active,
 )
 
+__all__ = [
+    "TextTranslationService",
+    "TextTranslationServiceProvider",
+    "TextTranslationProviderFactory",
+    "translate_with_all_active",
+]
+
 
 def _validate_translation_provider(service_provider: ServiceProvider) -> None:
     provider_name = service_provider.provider
@@ -37,10 +44,3 @@ SERVICE_ACCEPT_CRITERIA = ServiceAcceptCriteria(
     validate_provider=_validate_translation_provider,
     build_provider=_build_translation_provider,
 )
-
-__all__ = [
-    "TextTranslationService",
-    "TextTranslationServiceProvider",
-    "TextTranslationProviderFactory",
-    "translate_with_all_active",
-]

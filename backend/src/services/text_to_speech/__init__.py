@@ -16,6 +16,12 @@ from src.services.text_to_speech.service import (
 # modules can register safely without triggering circular package initialization.
 import src.services.text_to_speech.providers  # noqa: F401, E402 # pylint: disable=wrong-import-position
 
+__all__ = [
+    "TTSProvider",
+    "TextToSpeechProviderFactory",
+    "TextToSpeechService",
+]
+
 
 def _validate_tts_provider(service_provider: ServiceProvider) -> None:
     provider_name = service_provider.provider
@@ -37,9 +43,3 @@ SERVICE_ACCEPT_CRITERIA = ServiceAcceptCriteria(
     validate_provider=_validate_tts_provider,
     build_provider=_build_tts_provider,
 )
-
-__all__ = [
-    "TTSProvider",
-    "TextToSpeechProviderFactory",
-    "TextToSpeechService",
-]

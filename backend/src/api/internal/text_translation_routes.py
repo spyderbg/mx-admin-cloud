@@ -14,7 +14,7 @@ from pydantic import BaseModel  # pylint: disable=import-error
 from src.api.dependencies import get_registry, require_internal
 from src.core.config import settings
 from src.services.service_registry import ServiceRegistry
-from src.services.text_translation.service import TextTranslationService
+from src.services.text_translation import TextTranslationService
 
 
 router = APIRouter(prefix="/internal", tags=["internal-translators"])

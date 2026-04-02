@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Sequence
-
-from src.services.models import Service, ServiceProvider
+from src.services.models import Service
 
 
 class LoggingService(Service):
