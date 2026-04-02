@@ -1,14 +1,13 @@
 """Text translation service business logic: factory and orchestration."""
 
 from __future__ import annotations
-
+from collections.abc import Sequence
 from pathlib import Path
+from typing_extensions import override
 
-from typing import Sequence
 from src.services.models import Service, ServiceProvider
 from src.services.provider_factory import ServiceProviderFactory
 from src.services.text_translation.models import TextTranslationServiceProvider
-from typing_extensions import override
 
 
 class TextTranslationProviderFactory(ServiceProviderFactory[TextTranslationServiceProvider]):
@@ -20,7 +19,7 @@ class TextTranslationProviderFactory(ServiceProviderFactory[TextTranslationServi
 class TextTranslationService(Service):
     """Orchestrator for all text translation providers.
 
-    Loads providers from config files and exposes :meth:`translate_text` which
+    Loads providers from config files and exposes: meth:`translate_text` which
     iterates active providers in priority order, chaining results until the first
     successful translation of each step.
     """
