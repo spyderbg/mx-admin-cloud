@@ -1,5 +1,9 @@
 import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import sirv from 'sirv'
+import path from 'node:path'
+
+const contentDir = path.resolve(__dirname, '../content')
 
 export default defineConfig(({ mode }) => {
   loadEnv(mode, process.cwd(), '')
@@ -8,7 +12,15 @@ export default defineConfig(({ mode }) => {
   console.log('backendTarget', backendTarget)
 
   return {
-    plugins: [vue()],
+    plugins: [
+      vue(),
+      {
+        name: 'serve-content',
+        configureServer(server) {
+          server.middlewares.use('/content', sirv(contentDir, { dev: true, etag: true }))
+        },
+      },
+    ],
     server: {
       host: '0.0.0.0',
       port: 5173,
@@ -17,10 +29,6 @@ export default defineConfig(({ mode }) => {
           target: backendTarget,
           changeOrigin: true,
         },
-        '/content': {
-          target: backendTarget,
-          changeOrigin: true,
-        }
       }
     }
   }
