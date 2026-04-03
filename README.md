@@ -27,8 +27,9 @@ mx-admin/
 - **Layout:** `src/main.py`; `src/api/v1/` (auth, tasks, content, users); `src/api/internal/` (voice generation); `src/core/` (config, content_service, translation, TTS wrappers); `src/services/` (multi-provider TTS, translation, evaluation, logging); `src/security/` (auth, tokens).
 - **API base:** `/api/v1` -- auth, tasks, content; `/internal/*` -- voice generation (dual-auth: service token or admin JWT).
 - **Internal translate response:** `POST /internal/translate` returns `success` and `lang_text` (`{ "lang_code", "text" }`).
-- **Services:** Multi-provider TTS (OpenAI, ElevenLabs, Speaktor), priority-based translation (static CSV + OpenAI fallback), evaluation engine (STT + Levenshtein scoring), structured logging (structlog, Seq, file rotation).
+- **Services:** Multi-provider TTS (Static, OpenAI, ElevenLabs, Speaktor), priority-based translation (static CSV + OpenAI fallback), evaluation engine (STT + Levenshtein scoring), structured logging (structlog, Seq, file rotation).
 - **Service config flow:** JSON files in `backend/config/*` use a `service_provider` envelope with `service` (type), `provider` (implementation name), `enabled`, `priority`, and a `config` payload. Each service package self-registers a `ServicePlugin` with `ServicePluginRegistry` at import time; `registry_builder` iterates the plugin list generically — adding a new service type requires no changes to registry logic.
+- **TTS priority:** Lower `priority` values are selected first. `backend/config/text_to_speech/static.json` is configured with `priority: 0`, so it is preferred ahead of providers configured with `priority: 1`.
 - **Docs:** See [backend/README.md](backend/README.md) for endpoints and env vars.
 
 ### Frontend (`frontend/`)

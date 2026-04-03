@@ -8,6 +8,7 @@ from typing import AsyncIterator
 
 import src.api.internal
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from src.api.dependencies import require_admin, require_uds
 from src.api.v1 import routes_auth, routes_common, routes_content, routes_users
 from src.core.config import settings
@@ -90,6 +91,8 @@ async def lifespan(app_lifespan: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title=settings.PROJECT_NAME, lifespan=lifespan)
+
+app.mount("/content", StaticFiles(directory=str(settings.content_path)), name="content")
 
 app.include_router(routes_auth.router, prefix=settings.API_V1_STR, tags=["auth"])
 app.include_router(routes_common.router, prefix=settings.API_V1_STR, tags=["tasks"])

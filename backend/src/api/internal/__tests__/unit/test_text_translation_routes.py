@@ -35,9 +35,9 @@ def test_translate_request_accepts_optional_fields() -> None:
 
 def test_translate_request_requires_text_and_target() -> None:
     with pytest.raises(ValidationError):
-        TranslateRequest(target_lang_code="es")
+        TranslateRequest(target_lang_code="es") # type: ignore[call-arg]
     with pytest.raises(ValidationError):
-        TranslateRequest(text="hi")
+        TranslateRequest(text="hi") # type: ignore[call-arg]
 
 
 def test_translate_response_serializes_lang_text() -> None:
