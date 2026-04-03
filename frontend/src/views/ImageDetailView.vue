@@ -52,7 +52,7 @@
                 :src="file"
                 alt=""
                 class="img-fluid rounded"
-                style="width: 100%; aspect-ratio: 16/10; object-fit: cover;"
+                style="width: 100%; aspect-ratio: 1/1; object-fit: cover;"
               />
               <div class="file-actions">
                 <button
@@ -110,9 +110,20 @@
                 </td>
                 <td><span class="badge badge-light">{{ voice.type }}</span></td>
                 <td>
-                  <button class="btn btn-outline-primary btn-sm py-0 px-2" @click="onUploadVoice(voice.language)">
-                    <i class="mdi mdi-upload mr-1"></i>Replace
-                  </button>
+                  <div class="d-flex align-items-center" style="gap: 0.4rem;">
+                    <button
+                      class="btn btn-sm py-0 px-2"
+                      :class="playingVoiceId === voice.id ? 'btn-danger' : 'btn-outline-success'"
+                      :disabled="!hasAudio(voice)"
+                      :title="!hasAudio(voice) ? 'Voice file missing' : (playingVoiceId === voice.id ? 'Stop' : 'Play')"
+                      @click="togglePlay(voice)"
+                    >
+                      <i :class="playingVoiceId === voice.id ? 'mdi mdi-stop' : 'mdi mdi-play'"></i>
+                    </button>
+                    <button class="btn btn-outline-primary btn-sm py-0 px-2" @click="onUploadVoice(voice.language)">
+                      <i class="mdi mdi-upload mr-1"></i>Replace
+                    </button>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -132,7 +143,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { getCategory } from '../api/categories'
-import type { Category, Language } from '../types'
+import type { Category, Language, Voice } from '../types'
 
 const route = useRoute()
 
@@ -179,6 +190,36 @@ const onDeleteFile = (index: number): void => {
 }
 const onUploadVoice = (language: Language): void => {
   console.log('Upload voice for language:', language)
+}
+
+const playingVoiceId = ref<string | null>(null)
+let activeAudio: HTMLAudioElement | null = null
+
+function hasAudio(voice: Voice): boolean {
+  return !!(voice.audioUrl && voice.audioUrl.trim())
+}
+
+function stopAudio(): void {
+  if (activeAudio) {
+    activeAudio.pause()
+    activeAudio.currentTime = 0
+    activeAudio = null
+  }
+  playingVoiceId.value = null
+}
+
+function togglePlay(voice: Voice): void {
+  if (!hasAudio(voice)) return
+  if (playingVoiceId.value === voice.id) {
+    stopAudio()
+    return
+  }
+  stopAudio()
+  const audio = new Audio(voice.audioUrl)
+  activeAudio = audio
+  playingVoiceId.value = voice.id
+  audio.addEventListener('ended', stopAudio, { once: true })
+  audio.play()
 }
 </script>
 

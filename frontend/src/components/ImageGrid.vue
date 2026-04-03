@@ -59,7 +59,7 @@ const navigateToDetail = (imageId: string): void => {
 }
 .image-card-thumb {
   width: 100%;
-  aspect-ratio: 4/3;
+  aspect-ratio: 1/1;
   object-fit: cover;
   display: block;
 }

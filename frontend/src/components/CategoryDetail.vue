@@ -224,9 +224,19 @@ const showVoiceUpload = ref(false)
 const editingVoice = ref<Voice | null>(null)
 const renameValue = ref('')
 const playingVoiceId = ref<string | null>(null)
+let activeAudio: HTMLAudioElement | null = null
 
 function hasAudio(voice: Voice): boolean {
   return !!(voice.audioUrl && voice.audioUrl.trim())
+}
+
+function stopAudio(): void {
+  if (activeAudio) {
+    activeAudio.pause()
+    activeAudio.currentTime = 0
+    activeAudio = null
+  }
+  playingVoiceId.value = null
 }
 
 function openVoiceUpload(voice: Voice): void {
@@ -274,10 +284,15 @@ function onFileSelected(e: Event): void {
 function togglePlay(voice: Voice): void {
   if (!hasAudio(voice)) return
   if (playingVoiceId.value === voice.id) {
-    playingVoiceId.value = null
-  } else {
-    playingVoiceId.value = voice.id
+    stopAudio()
+    return
   }
+  stopAudio()
+  const audio = new Audio(voice.audioUrl)
+  activeAudio = audio
+  playingVoiceId.value = voice.id
+  audio.addEventListener('ended', stopAudio, { once: true })
+  audio.play()
 }
 </script>
 
