@@ -3,7 +3,7 @@
     "service": "text_to_speech",
     "provider": "speaktor",
     "enabled": false,
-    "priority": 1,
+    "priority": 2,
     "config": {
       "generate": {
         "endpoint": "https://api.tor.app/developer/text_to_speech",

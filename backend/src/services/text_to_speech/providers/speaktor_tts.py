@@ -17,7 +17,7 @@ from typing import Any
 from src.core.languages import to_bcp47
 from src.core.models import GeneratedAudio, TTSRequest
 from src.services.logging import log_provider_request
-from ..base import TTSProvider
+from ..models import TTSProvider
 from ..service import TextToSpeechProviderFactory
 
 logger = logging.getLogger(__name__)

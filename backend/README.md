@@ -279,7 +279,7 @@ src/
     ├── models.py                 # Service / ServiceProvider bases
     ├── config_loader.py          # Generic JSON config loader
     ├── text_to_speech/
-    │   ├── base.py
+    │   ├── models.py
     │   ├── service.py
     │   └── providers/            # openai_tts, elevenlabs_tts, speaktor_tts
     ├── text_translation/

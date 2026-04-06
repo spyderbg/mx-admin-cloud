@@ -2,8 +2,8 @@
   "service_provider": {
     "service": "text_to_speech",
     "provider": "static",
-    "enabled": true,
-    "priority": 0,
+    "enabled": false,
+    "priority": 1,
     "config": {
       "generate": {
         "enabled": true,

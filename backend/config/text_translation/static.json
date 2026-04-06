@@ -2,7 +2,7 @@
   "service_provider": {
     "service": "text_translation",
     "provider": "static_translate",
-    "enabled": true,
+    "enabled": false,
     "priority": 1,
     "config": {
       "input_language": "en",

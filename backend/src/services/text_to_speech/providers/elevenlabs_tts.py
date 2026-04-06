@@ -8,7 +8,7 @@ from typing import Any
 
 from src.core.models import GeneratedAudio, TTSRequest
 from ...logging import log_provider_request
-from ..base import TTSProvider
+from ..models import TTSProvider
 from ..service import TextToSpeechProviderFactory
 
 logger = logging.getLogger(__name__)

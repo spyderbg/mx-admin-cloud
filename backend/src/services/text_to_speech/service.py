@@ -6,7 +6,7 @@ from pathlib import Path
 
 from src.services.models import Service, ServiceProvider
 from src.services.provider_factory import ServiceProviderFactory
-from src.services.text_to_speech.base import TTSProvider
+from src.services.text_to_speech.models import TTSProvider
 
 
 class TextToSpeechProviderFactory(ServiceProviderFactory[TTSProvider]):
@@ -17,7 +17,7 @@ class TextToSpeechProviderFactory(ServiceProviderFactory[TTSProvider]):
 class TextToSpeechService(Service):
     """Orchestrator for all TTS providers.
 
-    Loads providers from config files and exposes :meth:`active_providers`
+    Loads providers from config files and exposes: meth:`active_providers`
     which routes and the pipeline use to iterate enabled providers.
     """
 

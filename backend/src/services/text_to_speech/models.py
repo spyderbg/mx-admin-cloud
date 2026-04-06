@@ -17,17 +17,17 @@ logger = logging.getLogger(__name__)
 class TTSProvider(ServiceProvider):
     """Common interface for all TTS provider implementations.
 
-    The TTS ``config`` dict (from ``service_provider.config`` in JSON) has two
-    sub-dicts: ``"generate"`` and ``"evaluate"``.  These are accessed via the
-    :attr:`generate_config` and :attr:`evaluate_config` properties.
+    The TTS "config" dict (from "service_provider.config" in JSON) has two
+    sub-dicts: ""generate"" and ""evaluate"".  These are accessed via the:
+    attr:`generate_config 'and: attr:`evaluate_config` properties.
 
-    Active state for TTS is driven by ``config.generate.enabled`` rather than
-    the top-level ``enabled`` field, so :meth:`is_active` is overridden here.
+    Active state for TTS is driven by "config.generate.enabled" rather than
+    the top-level "enabled" field, so: meth:`is_active` is overridden here.
     """
 
     @property
     def generate_config(self) -> dict[str, Any]:
-        """Return a copy of the ``"generate"`` sub-dict from ``self.config``."""
+        """Return a copy of the "generate" sub-dict from "self.config"."""
         return dict(self.config.get("generate", {}))
 
     @property
@@ -35,17 +35,12 @@ class TTSProvider(ServiceProvider):
         """Return a copy of the ``"evaluate"`` sub-dict from ``self.config``."""
         return dict(self.config.get("evaluate", {}))
 
-    def is_active(self) -> bool:
-        """TTS active state is driven by ``config.generate.enabled``."""
-        from src.core.utils import boolish  # pylint: disable=import-outside-toplevel
-        return boolish(self.config.get("generate", {}).get("enabled", self.enabled))
-
     def resolve_language_generate(self, language_code: str) -> dict[str, Any]:
         """Return a merged generate dict with language-specific overrides applied.
 
-        Lookup order for the ``languages`` map:
-        1. Exact ``language_code`` key.
-        2. ``"en"`` fallback (if present).
+        Lookup order for the "languages" map:
+        1. Exact "language_code" key.
+        2. "en" fallback (if present).
         3. First entry in the map (arbitrary but deterministic in Python 3.7+).
         4. No overrides — return the base generate dict as-is.
         """

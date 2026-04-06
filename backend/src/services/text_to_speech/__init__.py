@@ -6,7 +6,7 @@ from pathlib import Path
 
 from src.services.acceptance import ServiceAcceptCriteria
 from src.services.models import ServiceProvider
-from src.services.text_to_speech.base import TTSProvider
+from src.services.text_to_speech.models import TTSProvider
 from src.services.text_to_speech.service import (
     TextToSpeechProviderFactory,
     TextToSpeechService

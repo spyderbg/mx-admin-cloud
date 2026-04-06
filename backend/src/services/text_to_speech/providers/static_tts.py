@@ -9,7 +9,7 @@ from typing import Any
 from src.core.models import GeneratedAudio, TTSRequest
 from ...logging import log_provider_request
 from .elevenlabs_tts import API_BASE, ELEVENLABS_OUTPUT_MAP, _to_bool, _to_float
-from ..base import TTSProvider
+from ..models import TTSProvider
 from ..service import TextToSpeechProviderFactory
 
 logger = logging.getLogger(__name__)
