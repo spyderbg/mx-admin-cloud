@@ -21,7 +21,7 @@ pip install -r requirements.txt
 
 # Run (HTTP + Unix socket)
 ./uvicorn_start.sh
-./uvicorn_stop.sh
+./kill_uvicorn.sh
 
 # Run (HTTP only, dev)
 PYTHONPATH="$PWD/src" uvicorn src.main:app --reload --host 0.0.0.0 --port 8000

@@ -5,21 +5,14 @@ import os
 import httpx
 
 from kiddo_cli.utils import is_windows_platform
-from .client import API_V1  # pylint: disable=import-error
+from .client import API_V1, get_cli_socket_path  # pylint: disable=import-error
 
 DEFAULT_API_BASE_URL = "http://localhost:8000"
-
-DEFAULT_CLI_SOCKET = "/tmp/kiddo-backend.sock"
 
 
 def get_api_base_url() -> str:
     """Get the API base URL from the environment variable KIDDO_API_BASE_URL."""
     return os.getenv("KIDDO_API_BASE_URL", DEFAULT_API_BASE_URL)
-
-
-def get_cli_socket_path() -> str:
-    """Get the CLI socket path from the environment variable KIDDO_CLI_SOCKET."""
-    return os.getenv("KIDDO_CLI_SOCKET", DEFAULT_CLI_SOCKET)
 
 
 def login(username: str, password: str) -> str:

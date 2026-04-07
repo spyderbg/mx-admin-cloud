@@ -1,6 +1,7 @@
 """Token resolution and run-with-auth helper for commands."""
 import os
 
+import httpx
 import requests
 import typer  # pylint: disable=import-error
 
@@ -60,4 +61,10 @@ def run_with_auth(
         run(token)
     except requests.RequestException as e:
         print_request_error(e)
+        raise typer.Exit(1)
+    except httpx.HTTPError as e:
+        print_request_error(e)
+        raise typer.Exit(1)
+    except RuntimeError as e:
+        typer.echo(str(e), err=True)
         raise typer.Exit(1)

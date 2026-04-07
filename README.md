@@ -41,10 +41,11 @@ mx-admin/
 
 ### CLI (`cli/`)
 
-- **Stack:** Python 3.10+, Typer, requests/httpx, Rich (formatted terminal output). No backend code; all calls over HTTP.
+- **Stack:** Python 3.10+, Typer, requests/httpx, Rich (formatted terminal output). No backend code; all calls over HTTP. Typer/Click versions are pinned so the CLI can share an environment with packages that require `click<8.2` (for example gtts).
 - **Install:** `./scripts/cli.sh install` or `pip install -e cli/` -> `kiddo-cli` command.
 - **Verbose mode:** Use `kiddo-cli --verbose ...` to print HTTP/debug request messages from the CLI client.
 - **Commands:** `tasks` (ping, status, operation, list-files), `content` (categories, create-category, rename-category, remove-category, restore-category, category-details, create-object), `generate` (run, list-generators, list-translators).
+- **User management from the CLI:** On Linux/macOS, `kiddo-cli users …` and `kiddo-cli list users` use the backend’s Unix socket (same as socket login); start the backend with `backend/uvicorn_start.sh` so that socket exists.
 - **Docs:** See [cli/README.md](cli/README.md) for auth and usage.
 
 ### Docker (`docker/`)
@@ -70,7 +71,7 @@ cd backend
 ./uvicorn_start.sh
 ```
 
-This starts HTTP on `http://0.0.0.0:8000` and a CLI-only Unix socket at `/tmp/kiddo-backend.sock`. To stop: `./uvicorn_stop.sh`.
+This starts HTTP on `http://0.0.0.0:8000` and a CLI-only Unix socket at `/tmp/kiddo-backend.sock`, and writes `backend/uvicorn.pid`. To stop: `cd backend && ./kill_uvicorn.sh`.
 
 Or without the socket (HTTP only):
 

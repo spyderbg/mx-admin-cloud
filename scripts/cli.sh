@@ -14,7 +14,7 @@ case "${1:-}" in
       echo "Error: CLI directory not found: $CLI_DIR" >&2
       exit 1
     fi
-    pip install -e "$CLI_DIR"
+    pip install --break-system-packages -e "$CLI_DIR"
     echo "Installed. Run 'kiddo-cli --help' to use the CLI."
     ;;
   uninstall)

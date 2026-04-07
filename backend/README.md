@@ -25,7 +25,7 @@ source .venv/bin/activate
 ## Install Python packages
 
 ```
-pip install -r backend/requirements.txt
+pip install --break-system-packages -r backend/requirements.txt
 ```
 
 ## Run the backend
@@ -36,10 +36,21 @@ From the backend directory:
 ./uvicorn_start.sh
 ```
 
-This starts the HTTP server and the CLI Unix socket. To stop:
+This starts the HTTP server and the CLI Unix socket, records both PIDs in `uvicorn.pid`, and uses `python -m uvicorn` (prefers `.venv/bin/python`, or set `UVICORN_PYTHON`). `nohup` keeps the servers running after the script exits.
+
+To stop:
 
 ```bash
-./uvicorn_stop.sh
+./kill_uvicorn.sh
+```
+
+## Logs
+
+```
+tail -f /tmp/backend_http.log
+```
+```
+tail -f /tmp/backend_uds.log
 ```
 
 ## Tests

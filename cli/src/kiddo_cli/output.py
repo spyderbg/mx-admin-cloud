@@ -2,6 +2,7 @@
 import json
 import re
 import sys
+import httpx
 import requests
 from typing import Optional, Dict
 
@@ -167,7 +168,7 @@ def print_uds_auth_failed(socket_path: str, details: str) -> None:
     if len(details_lines) == 0:
         details_lines.append(_box_line(f" {details}"))
 
-    _box([
+    body_lines = [
         "",
         _border_top(),
         _box_line("Authentication failed"),
@@ -177,15 +178,27 @@ def print_uds_auth_failed(socket_path: str, details: str) -> None:
         _box_line(f"Socket:  {socket_path}"),
         _box_line(""),
         _box_line("Start the backend so the CLI socket is available:"),
-        _box_line("  ./uvicorn_start.sh"),
+        _box_line("  cd backend && ./uvicorn_start.sh"),
         _box_line(""),
         _box_line("(This starts both the public HTTP server and the CLI Unix socket.)"),
         _border_mid(),
+    ]
+    lowered = details.lower()
+    if "111" in details or "connection refused" in lowered or "connect error" in lowered:
+        body_lines.extend([
+            _box_line("If the socket file exists but nothing is listening, remove it and"),
+            _box_line("restart the backend, for example:"),
+            _box_line(f"  rm -f {socket_path}"),
+            _box_line("  cd backend && ./uvicorn_start.sh"),
+            _border_mid(),
+        ])
+    body_lines.extend([
         _box_line("Details:"),
         *details_lines,
         _border_bot(),
         "",
     ])
+    _box(body_lines)
 
 
 def _format_response_detail(response: requests.Response) -> str:
@@ -214,25 +227,43 @@ def print_request_error(exc: BaseException) -> None:
     url = ""
     status_code = ""
     body_detail = ""
+    status_description = ""
 
-    if not isinstance(exc, requests.RequestException):
+    if isinstance(exc, requests.RequestException):
+        if hasattr(exc, "response") and exc.response is not None:
+            response: requests.Response = exc.response
+            url = response.url or ""
+            status_code = str(response.status_code)
+            code = response.status_code
+            status_description = HTTP_STATUS_DESCRIPTIONS.get(
+                code, response.reason or "Unknown"
+            )
+            body_detail = _format_response_detail(response)
+            if body_detail and body_detail != details:
+                details = f"{response.status_code} {response.reason}; {body_detail}"
+            else:
+                details = f"{response.status_code} {response.reason} for url: {url}"
+    elif isinstance(exc, httpx.HTTPError):
+        if hasattr(exc, "response") and exc.response is not None:
+            resp: httpx.Response = exc.response
+            url = str(resp.url)
+            status_code = str(resp.status_code)
+            code = resp.status_code
+            status_description = HTTP_STATUS_DESCRIPTIONS.get(
+                code, resp.reason_phrase or "Unknown"
+            )
+            try:
+                body = resp.json()
+                if isinstance(body, dict) and "detail" in body:
+                    body_detail = str(body["detail"])
+                else:
+                    body_detail = resp.text[:200].strip() or "(no body)"
+            except (ValueError, TypeError, json.JSONDecodeError):
+                body_detail = resp.text[:200].strip() or "(no body)"
+            details = f"{resp.status_code} {resp.reason_phrase}; {body_detail}"
+    else:
         print_error(title, details)
         return
-
-    status_description = ""
-    if hasattr(exc, "response") and exc.response is not None:
-        response: requests.Response = exc.response
-        url = response.url or ""
-        status_code = str(response.status_code)
-        code = response.status_code
-        status_description = HTTP_STATUS_DESCRIPTIONS.get(
-            code, response.reason or "Unknown"
-        )
-        body_detail = _format_response_detail(response)
-        if body_detail and body_detail != details:
-            details = f"{response.status_code} {response.reason}; {body_detail}"
-        else:
-            details = f"{response.status_code} {response.reason} for url: {url}"
 
     lines = [
         "",

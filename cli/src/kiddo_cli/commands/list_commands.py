@@ -6,7 +6,7 @@ import typer
 from rich import print  # pylint: disable=redefined-builtin
 from rich.markup import escape
 
-from kiddo_cli.api.client import get, internal_get
+from kiddo_cli.api.client import get, internal_get, user_mgmt_get
 from kiddo_cli.auth_flow import run_with_auth
 from kiddo_cli.output import print_json
 
@@ -22,7 +22,7 @@ def register(app: typer.Typer) -> None:
         """Show configured users with activation states."""
 
         def _run(t: str):
-            result = get("/users", token=t)
+            result = user_mgmt_get("/users", token=t)
             print_json(result)
 
         run_with_auth(url, token, _run)

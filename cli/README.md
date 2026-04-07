@@ -12,6 +12,8 @@ From the project root:
 
 Or: `pip install -e cli/`
 
+Dependencies pin Typer below 0.23 and Click below 8.2 so the CLI can coexist with packages such as **gtts** (which require `click<8.2`). A dedicated virtual environment is still recommended when you do not need that compatibility.
+
 ## Uninstall
 
 ```bash
@@ -22,7 +24,8 @@ Or: `pip uninstall kiddo-cli`
 
 ## Auth
 
-- **Automatic (default):** The CLI resolves auth from `KIDDO_TOKEN` first; if not set, it tries Unix socket login (`/tmp/kiddo-backend.sock`) using `KIDDO_USER` / `KIDDO_PASSWORD` (default `admin` / `admin`), then falls back to HTTP login with the same credentials.
+- **Automatic (default):** The CLI resolves auth from `KIDDO_TOKEN` first; if not set, it tries Unix socket login (`/tmp/kiddo-backend.sock`) using `KIDDO_USER` / `KIDDO_PASSWORD` (default `admin` / `admin`), then falls back to HTTP login with the same credentials when no socket file exists (non-Windows).
+- **User management (`users` and `list users`):** On Linux and macOS, the backend only accepts these calls over the CLI Unix socket. Run the backend with `cd backend && ./uvicorn_start.sh` so both HTTP and the socket are up; the CLI sends those requests over the socket automatically when it exists.
 - **Manual token:** Set `KIDDO_TOKEN` or use `--token`.
 
 Env:
