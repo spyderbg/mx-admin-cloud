@@ -24,8 +24,9 @@ class OpenAITTSProvider(TTSProvider):
         """Register this provider under the key ``"openai"`` in the ProviderFactory."""
         TextToSpeechProviderFactory.register("openai", cls)
 
-    async def generate(self, request: TTSRequest, output_format: str, client: Any) -> GeneratedAudio:
+    async def generate(self, request: TTSRequest, client: Any) -> GeneratedAudio:
         """Call the OpenAI TTS endpoint and write the audio to disk."""
+        output_format = request.output_format
         gen = self.resolve_language_generate(request.language_code)
 
         voice = gen.get("actor") or gen.get("voice") or ""

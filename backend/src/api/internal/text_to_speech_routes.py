@@ -101,6 +101,7 @@ async def generate_single(
         expected_text=body.expected_text,
         source_file=body.source_file,
         source_type=body.source_type,
+        output_format=body.output_format,
         row_index=body.row_index,
         column_index=body.column_index,
     )
@@ -109,7 +110,6 @@ async def generate_single(
         try:
             generated = await service.generate(
                 tts_request,
-                body.output_format,
                 client,
                 provider_name=provider,
             )
@@ -171,12 +171,13 @@ async def generate_word(
         expected_text=body.word.strip(),
         source_file="generate-word-endpoint",
         source_type="inline",
+        output_format="mp3",
         row_index=0,
     )
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         try:
-            result = await service.generate(tts_request, "mp3", client)
+            result = await service.generate(tts_request, client)
         except NoActiveTTSProvidersError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 

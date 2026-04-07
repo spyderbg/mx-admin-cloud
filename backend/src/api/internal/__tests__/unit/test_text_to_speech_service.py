@@ -34,7 +34,7 @@ class _StubTTSProvider(TTSProvider):
         )
         self.calls: int = 0
 
-    async def generate(self, request: TTSRequest, output_format: str, client: Any) -> GeneratedAudio:
+    async def generate(self, request: TTSRequest, client: Any) -> GeneratedAudio:
         del client
         self.calls += 1
         return GeneratedAudio(
@@ -44,9 +44,9 @@ class _StubTTSProvider(TTSProvider):
             language_name=request.language_name,
             expected_text=request.expected_text,
             filename_text=request.filename_text,
-            output_format=output_format,
-            raw_path=self.base_dir / f"{request.request_id}.{output_format}",
-            raw_extension=output_format,
+            output_format=request.output_format,
+            raw_path=self.base_dir / f"{request.request_id}.{request.output_format}",
+            raw_extension=request.output_format,
             latency_seconds=0.1,
             success=True,
         )
@@ -74,6 +74,7 @@ def _make_request() -> TTSRequest:
         source_file="unit-test",
         source_type="inline",
         row_index=0,
+        output_format="mp3",
     )
 
 
@@ -82,7 +83,7 @@ async def test_generate_raises_when_no_active_providers(tmp_path: Path) -> None:
     service = _make_service(tmp_path, [])
 
     with pytest.raises(NoActiveTTSProvidersError):
-        await service.generate(_make_request(), "mp3", object())
+        await service.generate(_make_request(), object())
 
 
 @pytest.mark.asyncio
@@ -91,7 +92,7 @@ async def test_generate_raises_when_provider_name_missing(tmp_path: Path) -> Non
     service = _make_service(tmp_path, [provider])
 
     with pytest.raises(TTSProviderNotFoundError):
-        await service.generate(_make_request(), "mp3", object(), provider_name="elevenlabs")
+        await service.generate(_make_request(), object(), provider_name="elevenlabs")
 
 
 @pytest.mark.asyncio
@@ -100,7 +101,7 @@ async def test_generate_uses_requested_provider_name(tmp_path: Path) -> None:
     second = _StubTTSProvider(tmp_path, "elevenlabs")
     service = _make_service(tmp_path, [first, second])
 
-    result = await service.generate(_make_request(), "mp3", object(), provider_name="elevenlabs")
+    result = await service.generate(_make_request(), object(), provider_name="elevenlabs")
 
     assert result.provider == "elevenlabs"
     assert first.calls == 0
@@ -113,7 +114,7 @@ async def test_generate_uses_first_active_provider_by_default(tmp_path: Path) ->
     second = _StubTTSProvider(tmp_path, "openai")
     service = _make_service(tmp_path, [first, second])
 
-    result = await service.generate(_make_request(), "mp3", object())
+    result = await service.generate(_make_request(), object())
 
     assert result.provider == "speaktor"
     assert first.calls == 1

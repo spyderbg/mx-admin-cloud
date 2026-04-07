@@ -42,8 +42,9 @@ class SpeaktorTTSProvider(TTSProvider):
         """Register this provider under the key ``"speaktor"`` in the ProviderFactory."""
         TextToSpeechProviderFactory.register("speaktor", cls)
 
-    async def generate(self, request: TTSRequest, output_format: str, client: Any) -> GeneratedAudio:
+    async def generate(self, request: TTSRequest, client: Any) -> GeneratedAudio:
         """Call the Speaktor TTS endpoint, download the audio URL, and write it to disk."""
+        output_format = request.output_format
         gen = self.resolve_language_generate(request.language_code)
 
         voice_name = str(gen.get("voice_name") or gen.get("actor") or "").strip()

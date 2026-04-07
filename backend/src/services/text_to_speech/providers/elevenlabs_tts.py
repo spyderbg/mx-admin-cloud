@@ -54,8 +54,9 @@ class ElevenLabsTTSProvider(TTSProvider):
         """Register this provider under the key ""elevenlabs"" in the TextToSpeechProviderFactory."""
         TextToSpeechProviderFactory.register("elevenlabs", cls)
 
-    async def generate(self, request: TTSRequest, output_format: str, client: Any) -> GeneratedAudio:
+    async def generate(self, request: TTSRequest, client: Any) -> GeneratedAudio:
         """Call the ElevenLabs TTS endpoint and write the audio to disk."""
+        output_format = request.output_format
         gen = self.resolve_language_generate(request.language_code)
 
         actor = gen.get("actor") or ""

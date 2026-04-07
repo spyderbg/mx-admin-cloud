@@ -27,8 +27,9 @@ class StaticTTSProvider(TTSProvider):
         """Reuse ElevenLabs credentials for the static provider backend."""
         return "ELEVENLABS_API_KEY"
 
-    def _build_failure(self, request: TTSRequest, output_format: str, error: str) -> GeneratedAudio:
+    def _build_failure(self, request: TTSRequest, error: str) -> GeneratedAudio:
         """Build a failed generation response with common request metadata."""
+        output_format = request.output_format
         return GeneratedAudio(
             provider=self.name,
             request_id=request.request_id,
@@ -80,11 +81,11 @@ class StaticTTSProvider(TTSProvider):
     async def _generate_with_english_config(
         self,
         request: TTSRequest,
-        output_format: str,
         client: Any,
         gen: dict[str, Any],
     ) -> GeneratedAudio:
         """Call ElevenLabs with resolved English voice config and persist audio."""
+        output_format = request.output_format
         api_key = self.resolve_api_key()
         if not api_key:
             raise RuntimeError("ELEVENLABS_API_KEY is not set.")
@@ -144,7 +145,7 @@ class StaticTTSProvider(TTSProvider):
             success=True,
         )
 
-    async def generate(self, request: TTSRequest, output_format: str, client: Any) -> GeneratedAudio:
+    async def generate(self, request: TTSRequest, client: Any) -> GeneratedAudio:
         """Generate audio while always resolving voice settings from English config."""
         gen = self.resolve_language_generate("en")
 
@@ -154,8 +155,8 @@ class StaticTTSProvider(TTSProvider):
                 "No English actor configured for provider=%s -- skipping API request.",
                 self.name,
             )
-            return self._build_failure(request, output_format, "No English actor configured for static provider")
-        return await self._generate_with_english_config(request, output_format, client, gen)
+            return self._build_failure(request, "No English actor configured for static provider")
+        return await self._generate_with_english_config(request, client, gen)
 
     async def evaluate(self, *_: Any, **__: Any) -> None:
         """Static provider has no provider-specific evaluation hook."""

@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
+# pylint: disable=too-many-instance-attributes
 class TTSRequest:
     """Single text item to be synthesized, loaded from the input file."""
 
@@ -27,6 +28,7 @@ class TTSRequest:
     source_file: str  # originating input file path
     source_type: str  # input format, e.g. "csv", "txt"
     row_index: int  # row position in the input file
+    output_format: str = "mp3"  # requested audio format, e.g. "mp3"
     column_index: int | None = None  # column position (multi-column inputs)
     metadata: dict[str, Any] = field(default_factory=dict)  # extra pass-through data
 
@@ -99,7 +101,7 @@ class TTSProvider(ServiceProvider, ABC):
         return output_dir / f"{output_stem}.{extension.lstrip('.')}"
 
     @abstractmethod
-    async def generate(self, request: TTSRequest, output_format: str, client: Any) -> GeneratedAudio:
+    async def generate(self, request: TTSRequest, client: Any) -> GeneratedAudio:
         """Generate raw audio for a single request."""
 
     async def evaluate(self, *_: Any, **__: Any) -> None:

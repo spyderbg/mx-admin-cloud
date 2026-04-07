@@ -71,11 +71,10 @@ class TextToSpeechService(Service):
     async def generate(
         self,
         request: TTSRequest,
-        output_format: str,
         client: Any,
         *,
         provider_name: str | None = None,
     ) -> GeneratedAudio:
         """Generate audio with the requested provider or highest-priority active provider."""
         provider = self._resolve_active_provider(provider_name=provider_name)
-        return await provider.generate(request, output_format, client)
+        return await provider.generate(request, client)
