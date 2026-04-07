@@ -18,8 +18,8 @@ _OPTIMIZER_DEFAULTS: dict[str, Any] = {
 class AudioOptimizerBase(ServiceProvider):
     """Common interface for all audio optimizer implementations.
 
-    Merges ``_OPTIMIZER_DEFAULTS`` into ``self.config`` on construction so that
-    subclasses can always rely on ``sample_rate``, ``mono``, and ``vbr_quality``
+    Merges "_OPTIMIZER_DEFAULTS" into "self.config" on construction so that
+    subclasses can always rely on "sample_rate", "mono", and "vbr_quality"
     being present.
     """
 

@@ -9,7 +9,7 @@ from openpyxl import load_workbook
 
 from src.core.config import settings
 from src.core.languages import language_name, normalize_language_code
-from src.core.models import TTSRequest
+from src.services.text_to_speech.models import TTSRequest
 
 
 def load_requests(input_path: Path, default_language: str) -> list[TTSRequest]:

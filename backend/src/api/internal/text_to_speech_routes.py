@@ -15,10 +15,13 @@ from pydantic import BaseModel  # pylint: disable=import-error
 
 from src.api.dependencies import get_registry, require_internal
 from src.core.config import settings
-from src.core.models import TTSRequest
 from src.services.service_registry import ServiceRegistry
-from src.services.text_to_speech.service import TextToSpeechService
-from src.services.voice_optimization.normalizer import normalize_audio
+from src.services.text_to_speech.models import TTSRequest
+from src.services.text_to_speech.service import (
+    NoActiveTTSProvidersError,
+    TTSProviderNotFoundError,
+    TextToSpeechService,
+)
 
 router = APIRouter(prefix="/internal", tags=["internal-generators"])
 
@@ -75,7 +78,7 @@ async def list_generators(
 @router.post(
     "/generators/{provider}/generate",
     summary="Generate TTS audio for one request",
-    description="Run provider.generate() + normalize_audio() and return the result as JSON.",
+    description="Generate raw audio using the named provider and return the result as JSON.",
 )
 async def generate_single(
     provider: str,
@@ -83,14 +86,10 @@ async def generate_single(
     _user: dict = Depends(require_internal),
     registry: ServiceRegistry = Depends(get_registry),
 ) -> dict[str, Any]:
-    """Generate audio for a single TTS request via the named provider."""
+    """Generate raw audio for a single TTS request via the named provider."""
     service = registry.get_service("text_to_speech")
     if not isinstance(service, TextToSpeechService):
         raise HTTPException(status_code=500, detail="Service registry mismatch for text_to_speech.")
-    matched = [p for p in service.active_providers if p.name == provider]
-    if not matched:
-        raise HTTPException(status_code=404, detail=f"Provider '{provider}' not found or not active.")
-    prov = matched[0]
 
     request_id = f"api-{body.row_index}-{body.column_index or 0}-{body.language_code}"
     tts_request = TTSRequest(
@@ -107,9 +106,17 @@ async def generate_single(
     )
 
     async with httpx.AsyncClient(timeout=180.0) as client:
-        generated = await prov.generate(tts_request, body.output_format, client)
-
-    generated = await normalize_audio(prov.base_dir, generated)
+        try:
+            generated = await service.generate(
+                tts_request,
+                body.output_format,
+                client,
+                provider_name=provider,
+            )
+        except NoActiveTTSProvidersError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except TTSProviderNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     return {
         "provider": generated.provider,
@@ -132,7 +139,7 @@ async def generate_single(
 @router.post(
     "/generators/generate-word",
     summary="Generate TTS audio for a single word",
-    description="Pick the first active provider, generate audio, and return raw bytes.",
+    description="Generate raw audio using the highest-priority active provider and return raw bytes.",
 )
 async def generate_word(
     body: GenerateWordRequest,
@@ -149,11 +156,8 @@ async def generate_word(
     service = registry.get_service("text_to_speech")
     if not isinstance(service, TextToSpeechService):
         raise HTTPException(status_code=500, detail="Service registry mismatch for text_to_speech.")
-    providers = service.active_providers
-    if not providers:
+    if not service.active_providers:
         raise HTTPException(status_code=503, detail="No active TTS providers configured.")
-
-    prov = providers[0]
 
     lang_code = normalize_language_code(body.lang)
     lang_full = language_name(lang_code)
@@ -171,7 +175,10 @@ async def generate_word(
     )
 
     async with httpx.AsyncClient(timeout=60.0) as client:
-        result = await prov.generate(tts_request, "mp3", client)
+        try:
+            result = await service.generate(tts_request, "mp3", client)
+        except NoActiveTTSProvidersError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error or "TTS generation failed.")

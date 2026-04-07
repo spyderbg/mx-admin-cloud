@@ -6,9 +6,9 @@ import logging
 import time
 from typing import Any
 
-from src.core.models import GeneratedAudio, TTSRequest
+from src.core.models import GeneratedAudio
 from ...logging import log_provider_request
-from ..models import TTSProvider
+from ..models import TTSProvider, TTSRequest
 from ..service import TextToSpeechProviderFactory
 
 logger = logging.getLogger(__name__)

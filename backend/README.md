@@ -170,8 +170,8 @@ Internal endpoints are under `/internal/*`. They require `Authorization: Bearer 
 | Method | Path | Description |
 | :--- | :--- | :--- |
 | `GET` | [/internal/generators](src/api/internal/text_to_speech_routes.py#L45) | List all configured TTS providers with activation state and settings. |
-| `POST` | [/internal/generators/{provider}/generate](src/api/internal/text_to_speech_routes.py#L74) | Generate audio for a single TTS request via the named provider. |
-| `POST` | [/internal/generators/generate-word](src/api/internal/text_to_speech_routes.py#L128) | Generate audio for a single word using the first active provider; returns `audio/mpeg` bytes. |
+| `POST` | [/internal/generators/{provider}/generate](src/api/internal/text_to_speech_routes.py#L74) | Generate raw audio for a single TTS request via the named provider (no normalization step). |
+| `POST` | [/internal/generators/generate-word](src/api/internal/text_to_speech_routes.py#L128) | Generate raw audio for a single word using the highest-priority active provider; returns `audio/mpeg` bytes. |
 
 #### Evaluators
 
@@ -535,11 +535,13 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/jso
   http://localhost:8000/internal/translate
 # Example response: {"success": true, "lang_text": {"lang_code": "fr", "text": "pomme"}}
 
-# generate-word returns audio bytes
+# generate-word returns raw audio bytes from highest-priority active provider
 curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"word": "apple", "lang": "en"}' \
   --output apple.mp3 \
   http://localhost:8000/internal/generators/generate-word
+
+# If you need normalized audio, call the optimizer endpoint separately.
 
 # Run TTS pipeline asynchronously (returns job_id)
 JOB=$(

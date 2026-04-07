@@ -6,24 +6,6 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-
-@dataclass(slots=True)
-class TTSRequest:
-    """Single text item to be synthesized, loaded from the input file."""
-
-    request_id: str  # unique id for this request
-    text: str  # source text to synthesize
-    language_code: str  # ISO language code, e.g. "en"
-    language_name: str  # human-readable language, e.g. "English"
-    filename_text: str  # text used in the output file name
-    expected_text: str  # reference text for evaluation
-    source_file: str  # originating input file path
-    source_type: str  # input format, e.g. "csv", "txt"
-    row_index: int  # row position in the input file
-    column_index: int | None = None  # column position (multi-column inputs)
-    metadata: dict[str, Any] = field(default_factory=dict)  # extra pass-through data
-
-
 @dataclass(slots=True)
 class GeneratedAudio:
     """Result of a single TTS generation attempt by one provider."""

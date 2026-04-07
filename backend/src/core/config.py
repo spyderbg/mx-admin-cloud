@@ -2,11 +2,14 @@
 
 import re
 from pathlib import Path
-from typing import ClassVar, List, Pattern
+from typing import TYPE_CHECKING, ClassVar, List, Pattern
 
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from src.core.models import GeneratedAudio, TTSRequest
+from src.core.models import GeneratedAudio
+
+if TYPE_CHECKING:
+    from src.services.text_to_speech.models import TTSRequest
 
 # Load .env into os.environ so Settings defaults are overridden by .env values
 load_dotenv()
@@ -136,7 +139,7 @@ class Settings(BaseSettings):
         """Get the scores directory."""
         return self.output_path / "results" / "scores"
 
-    def build_output_stem(self, request: TTSRequest) -> str:
+    def build_output_stem(self, request: "TTSRequest") -> str:
         """Build the output stem."""
         base = request.filename_text if request.language_code != "en" and request.filename_text else request.text
         safe_text = self.slugify_filename(base, fallback=request.request_id)

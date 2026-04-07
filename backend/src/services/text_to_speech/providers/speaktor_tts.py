@@ -15,9 +15,9 @@ import time
 from typing import Any
 
 from src.core.languages import to_bcp47
-from src.core.models import GeneratedAudio, TTSRequest
+from src.core.models import GeneratedAudio
 from src.services.logging import log_provider_request
-from ..models import TTSProvider
+from ..models import TTSProvider, TTSRequest
 from ..service import TextToSpeechProviderFactory
 
 logger = logging.getLogger(__name__)

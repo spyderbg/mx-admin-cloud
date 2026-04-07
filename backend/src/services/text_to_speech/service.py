@@ -3,10 +3,20 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
+from src.core.models import GeneratedAudio
 from src.services.models import Service, ServiceProvider
 from src.services.provider_factory import ServiceProviderFactory
-from src.services.text_to_speech.models import TTSProvider
+from src.services.text_to_speech.models import TTSProvider, TTSRequest
+
+
+class NoActiveTTSProvidersError(Exception):
+    """Raised when there are no active TTS providers."""
+
+
+class TTSProviderNotFoundError(Exception):
+    """Raised when a requested TTS provider is not active or missing."""
 
 
 class TextToSpeechProviderFactory(ServiceProviderFactory[TTSProvider]):
@@ -41,5 +51,31 @@ class TextToSpeechService(Service):
 
     @property
     def active_providers(self) -> list[TTSProvider]:
-        """Return providers that report themselves as active (generate.enabled=true)."""
+        """Return active providers ordered by ascending priority."""
         return [p for p in self._providers if p.is_active()]
+
+    def _resolve_active_provider(self, provider_name: str | None = None) -> TTSProvider:
+        """Return requested active provider or first active by priority."""
+        providers = self.active_providers
+        if not providers:
+            raise NoActiveTTSProvidersError("No active TTS providers configured.")
+
+        if provider_name is None:
+            return providers[0]
+
+        for provider in providers:
+            if provider.name == provider_name:
+                return provider
+        raise TTSProviderNotFoundError(f"Provider '{provider_name}' not found or not active.")
+
+    async def generate(
+        self,
+        request: TTSRequest,
+        output_format: str,
+        client: Any,
+        *,
+        provider_name: str | None = None,
+    ) -> GeneratedAudio:
+        """Generate audio with the requested provider or highest-priority active provider."""
+        provider = self._resolve_active_provider(provider_name=provider_name)
+        return await provider.generate(request, output_format, client)

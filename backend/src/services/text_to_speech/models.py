@@ -3,18 +3,35 @@
 from __future__ import annotations
 
 import logging
-from abc import abstractmethod
+from dataclasses import dataclass, field
+from abc import abstractmethod, ABC
 from pathlib import Path
 from typing import Any
 
-from src.core.config import settings
-from src.core.models import GeneratedAudio, TTSRequest
+from src.core.models import GeneratedAudio
 from src.services.models import ServiceProvider
 
 logger = logging.getLogger(__name__)
 
 
-class TTSProvider(ServiceProvider):
+@dataclass(slots=True)
+class TTSRequest:
+    """Single text item to be synthesized, loaded from the input file."""
+
+    request_id: str  # unique id for this request
+    text: str  # source text to synthesize
+    language_code: str  # ISO language code, e.g. "en"
+    language_name: str  # human-readable language, e.g. "English"
+    filename_text: str  # text used in the output file name
+    expected_text: str  # reference text for evaluation
+    source_file: str  # originating input file path
+    source_type: str  # input format, e.g. "csv", "txt"
+    row_index: int  # row position in the input file
+    column_index: int | None = None  # column position (multi-column inputs)
+    metadata: dict[str, Any] = field(default_factory=dict)  # extra pass-through data
+
+
+class TTSProvider(ServiceProvider, ABC):
     """Common interface for all TTS provider implementations.
 
     The TTS "config" dict (from "service_provider.config" in JSON) has two
@@ -74,6 +91,8 @@ class TTSProvider(ServiceProvider):
 
     def build_output_path(self, request: TTSRequest, extension: str) -> Path:
         """Resolve the full output file path for the generated audio."""
+        from src.core.config import settings  # pylint: disable=import-outside-toplevel
+
         output_dir = settings.raw_output_dir(request.language_code, self.name)
         output_dir.mkdir(parents=True, exist_ok=True)
         output_stem = settings.build_output_stem(request)

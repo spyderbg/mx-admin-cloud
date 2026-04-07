@@ -16,7 +16,8 @@ from typing import Any
 from src.core.config import settings
 from src.core.input_loader import load_requests
 from src.core.logging import get_logger, log_to_all_active_loggers, ensure_requests_log
-from src.core.models import EvaluationResult, GeneratedAudio, ProviderRunRecord, RunSummary, TTSRequest
+from src.core.models import EvaluationResult, GeneratedAudio, ProviderRunRecord, RunSummary
+from src.services.text_to_speech.models import TTSRequest
 from src.services.service_registry import ServiceRegistry
 from src.core.result_writer import write_run_summary
 
