@@ -32,7 +32,7 @@ class TTSProvider(ServiceProvider):
 
     @property
     def evaluate_config(self) -> dict[str, Any]:
-        """Return a copy of the ``"evaluate"`` sub-dict from ``self.config``."""
+        """Return a copy of the ""evaluate"" sub-dict from "self.config"."""
         return dict(self.config.get("evaluate", {}))
 
     def resolve_language_generate(self, language_code: str) -> dict[str, Any]:

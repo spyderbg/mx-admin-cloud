@@ -318,3 +318,25 @@ def internal_post(
     )
     r.raise_for_status()
     return r.json()
+
+
+def internal_post_bytes(
+        path: str,
+        token: str | None = None,
+        json: dict | None = None,
+        data: dict | None = None,
+        files: dict | None = None,
+        timeout: int = 300,
+) -> bytes:
+    """Post the data to the internal API and return the raw response bytes."""
+    _vprint(f"POST {INTERNAL_PREFIX}{path}")
+    r = requests.post(
+        f"{base_url()}{INTERNAL_PREFIX}{path}",
+        headers=headers(token),
+        json=json,
+        data=data,
+        files=files,
+        timeout=timeout,
+    )
+    r.raise_for_status()
+    return r.content

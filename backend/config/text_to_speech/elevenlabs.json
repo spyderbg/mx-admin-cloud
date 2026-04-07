@@ -56,7 +56,7 @@
             "model": "eleven_multilingual_v2",
             "prompt": "",
             "use_space": "yes",
-            "speed": 0.9,
+            "speed": 0.3,
             "speaker_boost": true,
             "voice_settings": {
               "stability": 0.6,

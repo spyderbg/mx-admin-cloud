@@ -1,7 +1,7 @@
 """Internal generator-configuration and generation endpoints.
 
-Exposes TTS provider (generator) configs loaded from ``backend/config/text_to_speech/``.
-All endpoints require a JWT with role ``internal`` or ``admin``.
+Exposes TTS provider (generator) configs loaded from "backend/config/text_to_speech/".
+All endpoints require a JWT with the role "internal" or "admin".
 """
 
 from __future__ import annotations

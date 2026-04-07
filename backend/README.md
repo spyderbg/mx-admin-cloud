@@ -47,7 +47,7 @@ To stop:
 ## Logs
 
 ```
-tail -f /tmp/backend_http.log
+tail --lines 40 -f /tmp/backend_http.log
 ```
 ```
 tail -f /tmp/backend_uds.log

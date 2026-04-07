@@ -3,7 +3,7 @@ from pathlib import Path
 
 import typer
 
-from kiddo_cli.api.client import internal_post
+from kiddo_cli.api.client import internal_post, internal_post_bytes
 from kiddo_cli.auth_flow import run_with_auth
 from kiddo_cli.output import print_json
 
@@ -55,3 +55,30 @@ def register(app: typer.Typer) -> None:
             print_json(result)
 
         run_with_auth(url, token, _run)
+
+
+    @app.command("word")
+    def generate_word(
+        word: str = typer.Argument(..., help="Word to generate"),
+        lang: str = typer.Option("en", "-l", "--lang", help="Default language code"),
+        output_format: str = typer.Option("mp3", "-f", "--output-format"),
+        output: Path | None = typer.Option(None, "-o", "--output", help="Output file path"),
+        url: str = typer.Option(None, "--url", help="Backend base URL"),
+        token: str | None = typer.Option(None, "--token"),
+    ):
+        """Generate a single word."""
+
+        def _run(t: str):
+            audio_bytes = internal_post_bytes(
+                "/generators/generate-word",
+                token=t,
+                json={"word": word, "lang": lang},
+            )
+
+            output_file = output or Path(f"{word}.{output_format}")
+            output_file.write_bytes(audio_bytes)
+            typer.echo(f"Successfully generated word '{word}' and saved to '{output_file}'")
+
+        run_with_auth(url, token, _run)
+
+        
