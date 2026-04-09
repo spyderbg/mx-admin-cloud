@@ -10,9 +10,9 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends  # pylint: disable=import-error
-from pydantic import BaseModel  # pylint: disable=import-error
 
 from src.api.dependencies import get_registry, require_internal
+from src.api.internal.schemas.evaluation import EvaluateRequest
 from src.core.config import settings
 from src.core.models import GeneratedAudio
 from src.services.models import ServiceProvider
@@ -20,24 +20,6 @@ from src.services.service_registry import ServiceRegistry
 from src.services.evaluation import EvaluationEngine, JsonScoreStore, MultiScoreStore, SQLiteScoreStore
 
 router = APIRouter(prefix="/internal", tags=["internal-evaluators"])
-
-
-class EvaluateRequest(BaseModel):
-    """Body for a single evaluation request."""
-    provider: str
-    request_id: str
-    expected_text: str
-    language_code: str
-    language_name: str
-    filename_text: str
-    output_format: str
-    raw_path: str
-    raw_extension: str
-    latency_seconds: float
-    normalized_path: str | None = None
-    normalization_error: str | None = None
-    evaluate_config: dict[str, Any]
-    output_dir: str
 
 
 @router.get(
@@ -115,7 +97,7 @@ async def evaluate(
     try:
         aggregate = await store.save(generated_audio, evaluation_result)
         evaluation_result.rolling_average = aggregate.average_score
-    except Exception as exc:
+    except Exception as exc:  # pylint: disable=broad-exception-caught
         evaluation_result.error = (evaluation_result.error or "") + f" Score save failed: {exc}"
 
     return {

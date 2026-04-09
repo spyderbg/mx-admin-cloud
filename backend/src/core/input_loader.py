@@ -7,12 +7,12 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
+from src.api.internal.schemas.text_to_speech import GenerateRequest
 from src.core.config import settings
 from src.core.languages import language_name, normalize_language_code
-from src.services.text_to_speech.models import TTSRequest
 
 
-def load_requests(input_path: Path, default_language: str) -> list[TTSRequest]:
+def load_requests(input_path: Path, default_language: str) -> list[GenerateRequest]:
     """Load structured requests from CSV, XLSX, and TXT files."""
     suffix = input_path.suffix.lower()
     if suffix == ".txt":
@@ -31,7 +31,8 @@ def _request(
     text: str,
     language: str,
     filename_text: str | None = None,
-) -> TTSRequest:
+    expected_text: str | None = None,
+) -> GenerateRequest:
     normalized_code = normalize_language_code(language)
     cleaned_text = text.strip()
     file_text = (filename_text or cleaned_text).strip()
@@ -39,13 +40,13 @@ def _request(
         f"{source_type}-{row_index}-{column_index or 0}-{normalized_code}-"
         f"{settings.slugify_filename(file_text, 'item')}"
     )
-    return TTSRequest(
+    return GenerateRequest(
         request_id=request_id,
         text=cleaned_text,
         language_code=normalized_code,
         language_name=language_name(normalized_code),
         filename_text=file_text,
-        expected_text=cleaned_text,
+        expected_text=(expected_text or cleaned_text).strip(),
         source_file=str(source_file),
         source_type=source_type,
         row_index=row_index,
@@ -53,8 +54,8 @@ def _request(
     )
 
 
-def _load_from_txt(input_path: Path, default_language: str) -> list[TTSRequest]:
-    requests: list[TTSRequest] = []
+def _load_from_txt(input_path: Path, default_language: str) -> list[GenerateRequest]:
+    requests: list[GenerateRequest] = []
     with input_path.open("r", encoding="utf-8") as handle:
         for row_index, line in enumerate(handle, start=1):
             text = line.strip()
@@ -73,8 +74,9 @@ def _load_from_txt(input_path: Path, default_language: str) -> list[TTSRequest]:
     return requests
 
 
-def _load_from_csv(input_path: Path, default_language: str) -> list[TTSRequest]:
-    requests: list[TTSRequest] = []
+def _load_from_csv(input_path: Path, default_language: str) -> list[GenerateRequest]:
+    # pylint: disable=too-many-locals
+    requests: list[GenerateRequest] = []
     with input_path.open("r", encoding="utf-8", newline="") as handle:
         sample = handle.read(2048)
         handle.seek(0)
@@ -99,8 +101,8 @@ def _load_from_csv(input_path: Path, default_language: str) -> list[TTSRequest]:
                     text=text,
                     language=language,
                     filename_text=filename_text,
+                    expected_text=expected,
                 )
-                request.expected_text = expected
                 requests.append(request)
             return requests
 
@@ -124,7 +126,7 @@ def _load_from_csv(input_path: Path, default_language: str) -> list[TTSRequest]:
     return requests
 
 
-def _load_from_xlsx(input_path: Path, default_language: str) -> list[TTSRequest]:
+def _load_from_xlsx(input_path: Path, default_language: str) -> list[GenerateRequest]:
     workbook = load_workbook(filename=input_path, read_only=True, data_only=True)
     sheet = workbook.active
 
@@ -132,8 +134,11 @@ def _load_from_xlsx(input_path: Path, default_language: str) -> list[TTSRequest]
     if not rows:
         return []
 
-    header_languages = [normalize_language_code(str(value).strip(), default_language) if value else default_language for value in rows[0]]
-    requests: list[TTSRequest] = []
+    header_languages = [
+        normalize_language_code(str(value).strip(), default_language) if value else default_language
+        for value in rows[0]
+    ]
+    requests: list[GenerateRequest] = []
 
     for row_index, row in enumerate(rows[1:], start=2):
         english_text = ""

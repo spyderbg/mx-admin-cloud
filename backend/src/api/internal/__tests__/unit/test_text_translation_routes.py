@@ -3,19 +3,19 @@
 Small surface area keeps runs fast and context small for tooling.
 """
 
-# pylint: disable=missing-function-docstring
+# pylint: disable=duplicate-code,missing-function-docstring
 
 from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
 
-from src.api.internal.text_translation_routes import (
+from src.api.internal.schemas.text_translation import (
+    LangCodeText,
     TranslateFileResponse,
     TranslateRequest,
     TranslateResponse,
 )
-from src.services.models import LangCodeText
 
 
 def test_translate_request_accepts_optional_fields() -> None:

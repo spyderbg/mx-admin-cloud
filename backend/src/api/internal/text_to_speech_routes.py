@@ -11,9 +11,9 @@ from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException  # pylint: disable=import-error
-from pydantic import BaseModel  # pylint: disable=import-error
 
 from src.api.dependencies import get_registry, require_internal
+from src.api.internal.schemas.text_to_speech import GenerateRequest, GenerateWordRequest, TtsGenerateResult
 from src.core.config import settings
 from src.services.service_registry import ServiceRegistry
 from src.services.text_to_speech.models import TTSRequest
@@ -26,31 +26,11 @@ from src.services.text_to_speech.service import (
 router = APIRouter(prefix="/internal", tags=["internal-generators"])
 
 
-class GenerateRequest(BaseModel):
-    """Body for a single TTS generation request."""
-    text: str
-    language_code: str
-    language_name: str
-    filename_text: str
-    expected_text: str
-    source_file: str
-    source_type: str
-    output_format: str
-    row_index: int
-    column_index: int | None = None
-
-
-class GenerateWordRequest(BaseModel):
-    """Body for single-word TTS generation."""
-    word: str
-    lang: str
-
-
 @router.get(
     "/generators",
-    summary="List TTS generator configurations",
+    summary="List text to speech service configurations",
     description=(
-        "Return all configured TTS providers (generators) with their activation state, "
+        "Return all configured text to speech services with their activation state, "
         "config path, and generation settings. Language lists are omitted from the response."
     ),
 )
@@ -77,8 +57,9 @@ async def list_generators(
 
 @router.post(
     "/generators/{provider}/generate",
-    summary="Generate TTS audio for one request",
-    description="Generate raw audio using the named provider and return the result as JSON.",
+    response_model=TtsGenerateResult,
+    summary="Generate text to speech audio for one request",
+    description="Generate raw audio using the named text to speech service and return the result as JSON.",
 )
 async def generate_single(
     provider: str,
@@ -86,12 +67,12 @@ async def generate_single(
     _user: dict = Depends(require_internal),
     registry: ServiceRegistry = Depends(get_registry),
 ) -> dict[str, Any]:
-    """Generate raw audio for a single TTS request via the named provider."""
+    """Generate raw audio for a single text to speech request via the named text to speech service."""
     service = registry.get_service("text_to_speech")
     if not isinstance(service, TextToSpeechService):
         raise HTTPException(status_code=500, detail="Service registry mismatch for text_to_speech.")
 
-    request_id = f"api-{body.row_index}-{body.column_index or 0}-{body.language_code}"
+    request_id = body.request_id or f"api-{body.row_index}-{body.column_index or 0}-{body.language_code}"
     tts_request = TTSRequest(
         request_id=request_id,
         text=body.text,
@@ -138,8 +119,8 @@ async def generate_single(
 
 @router.post(
     "/generators/generate-word",
-    summary="Generate TTS audio for a single word",
-    description="Generate raw audio using the highest-priority active provider and return raw bytes.",
+    summary="Generate text to speech audio for a single word",
+    description="Generate raw audio using the highest-priority active text to speech service and return raw bytes.",
 )
 async def generate_word(
     body: GenerateWordRequest,
@@ -157,7 +138,7 @@ async def generate_word(
     if not isinstance(service, TextToSpeechService):
         raise HTTPException(status_code=500, detail="Service registry mismatch for text_to_speech.")
     if not service.active_providers:
-        raise HTTPException(status_code=503, detail="No active TTS providers configured.")
+        raise HTTPException(status_code=503, detail="No active text to speech services configured.")
 
     lang_code = normalize_language_code(body.lang)
     lang_full = language_name(lang_code)
@@ -182,7 +163,7 @@ async def generate_word(
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     if not result.success:
-        raise HTTPException(status_code=500, detail=result.error or "TTS generation failed.")
+        raise HTTPException(status_code=500, detail=result.error or "Text to speech generation failed.")
 
     audio_bytes = Path(result.raw_path).read_bytes()
     return Response(content=audio_bytes, media_type="audio/mpeg")

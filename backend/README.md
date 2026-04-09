@@ -258,7 +258,14 @@ src/
 │   │   ├── evaluators_routes.py
 │   │   ├── optimizers_routes.py
 │   │   ├── text_translation_routes.py
-│   │   └── service_config_routes.py   # /internal/services/configs/apply, /upload
+│   │   ├── service_config_routes.py   # /internal/services/configs/apply, /upload
+│   │   └── schemas/              # Internal OpenAPI contract models (Pydantic)
+│   │       ├── text_to_speech.py
+│   │       ├── text_translation.py
+│   │       ├── evaluation.py
+│   │       ├── voice_optimization.py
+│   │       ├── jobs.py
+│   │       └── service_config.py
 │   └── v1/                       # Public /api/v1
 │       ├── routes_auth.py
 │       ├── routes_common.py      # ping, status, operation, list-files

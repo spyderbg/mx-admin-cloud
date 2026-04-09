@@ -10,19 +10,13 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException  # pylint: disable=import-error
-from pydantic import BaseModel  # pylint: disable=import-error
 
 from src.api.dependencies import get_registry, require_internal
+from src.api.internal.schemas.voice_optimization import OptimizeRequest
 from src.services.service_registry import ServiceRegistry
 from src.services.voice_optimization.service import VoiceOptimizationService
 
 router = APIRouter(prefix="/internal", tags=["internal-optimizers"])
-
-
-class OptimizeRequest(BaseModel):
-    """Body for a single optimization request."""
-    raw_path: str
-    output_path: str
 
 
 @router.get(

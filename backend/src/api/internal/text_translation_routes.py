@@ -11,43 +11,28 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile  # pylint: disable=import-error
-from pydantic import BaseModel  # pylint: disable=import-error
 
 from src.api.dependencies import get_registry, require_internal
+from src.api.internal.schemas.text_translation import (
+    LangCodeText,
+    TranslateFileResponse,
+    TranslateRequest,
+    TranslateResponse,
+)
 from src.core.languages import normalize_language_code
 from src.core.config import settings
 from src.services import text_translation
-from src.services.models import LangCodeText
 from src.services.service_registry import ServiceRegistry
 from src.services.text_translation import TextTranslationService
 
 router = APIRouter(prefix="/internal", tags=["internal-translators"])
 
 
-class TranslateRequest(BaseModel):
-    """Request body for the translation endpoint."""
-    text: str
-    input_lang_code: str | None = None
-    target_lang_code: str
-    category: str | None = None
-
-
-class TranslateResponse(BaseModel):
-    """Response body for the translation endpoint."""
-    success: bool
-    lang_text: LangCodeText
-
-
-class TranslateFileResponse(BaseModel):
-    """Response body for the translation file endpoint."""
-    results: list[dict[str, str]]
-
-
 @router.get(
     "/translators",
-    summary="List translator configurations",
+    summary="List text translation service configurations",
     description=(
-            "Return all configured translation services with their service type, "
+            "Return all configured text translation services with their service type, "
             "activation state, priority, and config path."
     ),
 )

@@ -6,9 +6,9 @@
 
   * `api/` → HTTP layer only
   * `core/` → business logic (NO service imports)
-  * `services/` → provider implementations
+  * `services/` → services implementations, each service has subfolder for providers
 * Do not break module boundaries
-* Prefer composition over tight coupling
+* Prefer composition to tight coupling
 
 ---
 
@@ -40,11 +40,11 @@
 
 ## Services & Providers
 
-* Use service + provider pattern
+* Use the service and provider pattern
 * Providers must:
 
-  * live under `services/{domain}/providers/`
-  * extend a base class
+  * live under `services/{service_name}/providers/`
+  * extend a base class `ServiceProvider`
   * be stateless and modular
 * Reuse existing providers as templates
 
@@ -62,7 +62,7 @@
 ## Code Quality
 
 * Code must pass PyLint
-* Prefer readability over cleverness
+* Prefer readability to cleverness
 * Keep functions small and focused
 * Avoid deep nesting and duplication
 
@@ -70,7 +70,7 @@
 
 ## Logging
 
-* Use centralized logging system
+* Use a centralized logging system
 * No print statements
 * Do not log sensitive data
 
@@ -78,7 +78,7 @@
 
 ## Security
 
-* Validate JWTs using existing security module
+* Validate JWTs using the existing security module
 * Never trust client-provided identity
 * Protect internal endpoints
 

@@ -3,29 +3,14 @@
 from __future__ import annotations
 
 import json
-from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile  # pylint: disable=import-error
-from pydantic import BaseModel  # pylint: disable=import-error
 
 from src.api.dependencies import get_registry_builder, require_internal
+from src.api.internal.schemas.service_config import ApplyConfigRequest, ApplyConfigResponse
 from src.services.service_registry import ServiceRegistryBuilder
 
 router = APIRouter(prefix="/internal/services/configs", tags=["internal-service-configs"])
-
-
-class ApplyConfigRequest(BaseModel):
-    """Body model for direct JSON payload submission."""
-
-    payload: dict[str, Any]
-
-
-class ApplyConfigResponse(BaseModel):
-    """Result model for runtime config apply endpoints."""
-
-    config_name: str
-    accepted: bool
-    error: str | None = None
 
 
 @router.post("/apply", response_model=ApplyConfigResponse)

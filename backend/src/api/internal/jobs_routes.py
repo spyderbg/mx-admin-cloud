@@ -9,12 +9,11 @@ from __future__ import annotations
 import asyncio
 import uuid
 from pathlib import Path
-from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile  # pylint: disable=import-error
-from pydantic import BaseModel  # pylint: disable=import-error
 
 from src.api.dependencies import get_internal_token, get_job_store, get_registry, require_internal
+from src.api.internal.schemas.jobs import GenerateJobResponse, JobStatusResponse
 from src.core.config import settings
 from src.core.job_store import JobStore
 # from src.core.pipeline import run_pipeline
@@ -23,21 +22,6 @@ from src.services.service_registry import ServiceRegistry
 router = APIRouter(prefix="/internal", tags=["internal-jobs"])
 
 ALLOWED_EXTENSIONS = {".txt", ".csv", ".xlsx"}
-
-
-class GenerateResponse(BaseModel):
-    """Response body for a voice generation job."""
-    job_id: str
-    status: str
-    message: str
-
-
-class JobStatusResponse(BaseModel):
-    """Response body for a voice generation job status."""
-    job_id: str
-    status: str
-    result: dict[str, Any] | None = None
-    error: str | None = None
 
 
 async def _save_upload(upload: UploadFile, job_id: str) -> Path:
@@ -85,14 +69,14 @@ async def _save_upload(upload: UploadFile, job_id: str) -> Path:
 
 @router.post(
     "/generate",
-    response_model=GenerateResponse,
+    response_model=GenerateJobResponse,
     summary="Start async TTS pipeline job",
     description=(
         "Upload an input file (TXT, CSV, or XLSX) and start a TTS pipeline job in the background. "
         "Returns a ``job_id`` that can be polled via the status endpoint."
     ),
 )
-async def generate(
+async def generate(  # pylint: disable=too-many-positional-arguments
     file: UploadFile = File(...),
     language: str = Form("en"),
     output_format: str = Form("mp3"),
@@ -101,15 +85,17 @@ async def generate(
     registry: ServiceRegistry = Depends(get_registry),
     job_store: JobStore = Depends(get_job_store),
     internal_token: str = Depends(get_internal_token),
-) -> GenerateResponse:
+) -> GenerateJobResponse:
     """Upload an input file and trigger the TTS pipeline in background."""
     job_id = str(uuid.uuid4())
     input_path = await _save_upload(file, job_id)
     await job_store.create(job_id)
-    asyncio.create_task(
-        _run_job(job_id, input_path, language, output_format, max_concurrency, registry, job_store, internal_token)
+    asyncio.create_task(  # pylint: disable=too-many-positional-arguments,undefined-variable
+        _run_job(  # pylint: disable=undefined-variable
+            job_id, input_path, language, output_format, max_concurrency, registry, job_store, internal_token
+        )
     )
-    return GenerateResponse(job_id=job_id, status="pending", message="Pipeline started.")
+    return GenerateJobResponse(job_id=job_id, status="pending", message="Pipeline started.")
 
 
 @router.get(

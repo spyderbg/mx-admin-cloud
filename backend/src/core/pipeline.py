@@ -5,27 +5,15 @@ from disk on every run.  All service interactions go through internal HTTP
 endpoints — ``core/`` never imports ``services/`` directly.
 """
 
-from __future__ import annotations
+# pylint: disable=duplicate-code
 
-import asyncio
-import importlib
-from datetime import datetime
-from pathlib import Path
-from typing import Any
-
-from src.core.config import settings
-from src.core.input_loader import load_requests
-from src.core.logging import get_logger, log_to_all_active_loggers, ensure_requests_log
-from src.core.models import EvaluationResult, GeneratedAudio, ProviderRunRecord, RunSummary
-from src.services.text_to_speech.models import TTSRequest
-from src.services.service_registry import ServiceRegistry
-from src.core.result_writer import write_run_summary
+from src.core.logging import get_logger
 
 logger = get_logger("core.pipeline")
 #  #
 # async def run_pipeline(
 #     *,
-#     registry: ServiceRegistry,
+#     registry: Any,
 #     internal_token: str,
 #     input_path: Path,
 #     default_language: str,
@@ -145,7 +133,7 @@ logger = get_logger("core.pipeline")
 #
 # async def _process_provider_request(
 #     *,
-#     request: TTSRequest,
+#     request: GenerateRequest,
 #     provider_name: str,
 #     provider_config: Any,
 #     output_format: str,
@@ -162,6 +150,7 @@ logger = get_logger("core.pipeline")
 #             gen_response = await client.post(
 #                 f"{base_url}/internal/generators/{provider_name}/generate",
 #                 json={
+#                     "request_id": request.request_id,
 #                     "text": request.text,
 #                     "language_code": request.language_code,
 #                     "language_name": request.language_name,
@@ -311,7 +300,7 @@ logger = get_logger("core.pipeline")
 #
 #
 # def _build_record(
-#     request: TTSRequest,
+#     request: GenerateRequest,
 #     generated_audio: GeneratedAudio,
 #     evaluation_result: EvaluationResult,
 # ) -> ProviderRunRecord:
