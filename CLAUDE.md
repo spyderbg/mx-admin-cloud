@@ -140,19 +140,20 @@ archive/<category>_<unix_timestamp>/   # Deleted categories
 ### CLI (`cli/src/kiddo_cli/`)
 
 - Pure HTTP client — no backend code shared
-- Subcommands: `common`, `content`, `generate`, `list`, `users`
+- Subcommands: `common`, `content`, `generate`, `list`, `translate`, `users`
 - Auth priority: `KIDDO_TOKEN` env var → Unix socket login → HTTP login (`BACKEND_URL` + `KIDDO_USER`/`KIDDO_PASSWORD`)
 
 ---
 
 ## Key Environment Variables
 
-Set in `backend/.env` (copy from `.env.example`):
+Set in `backend/.env` (provider keys can start from repo root `.env.example`):
 
 ```
 OPENAI_API_KEY=
 ELEVENLABS_API_KEY=
 SPEAKTOR_API_KEY=
-INTERNAL_SERVICE_TOKEN=
-JWT_SECRET_KEY=
+SECRET_KEY=
 ```
+
+Internal `/internal/*` routes accept a JWT with role `internal` (created at backend startup) or `admin` (from `/api/v1/login`). Docker Compose may still define `INTERNAL_SERVICE_TOKEN`; it is not read by `Settings` unless you add it to the model.

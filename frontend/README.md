@@ -12,7 +12,9 @@ npm run type-check  # vue-tsc --noEmit only
 npm run preview     # serve production build locally
 ```
 
-The dev server proxies **`/api`** to **`http://127.0.0.1:8000`**. Run the FastAPI backend on that port for login and API-backed features; category sidebar and some views still use **`src/data/mockData.ts`** for content until fully wired to the API.
+The dev server proxies **`/api`** to **`http://127.0.0.1:8000`** and serves the monorepo **`content/`** tree at **`/content`** (see `vite.config.ts`). Run the FastAPI backend on port 8000 for a full API-backed app.
+
+**Optional offline UI:** If `VITE_DEBUG_MODE=true` (e.g. in `.env.development.local`), the app starts [MSW](https://mswjs.io/) (`src/mocks/`), seeds a placeholder token when none is set, and unhandled requests bypass the worker so real APIs still work when reachable.
 
 ## Project Structure
 
@@ -29,7 +31,8 @@ src/
 │   ├── ImageGrid.vue
 │   └── LoginForm.vue
 ├── data/
-│   └── mockData.ts   # Mock user + categories (used by sidebar, navbar, category views)
+│   └── mockData.ts   # Fallback / dev sample data where views are not API-only
+├── mocks/            # MSW handlers (used when VITE_DEBUG_MODE=true)
 ├── layouts/          # Application shell components
 │   ├── AppLayout.vue
 │   ├── AppNavbar.vue

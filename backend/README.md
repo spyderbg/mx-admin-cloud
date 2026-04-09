@@ -24,9 +24,11 @@ source .venv/bin/activate
 
 ## Install Python packages
 
+```bash
+pip install -r requirements.txt
 ```
-pip install --break-system-packages -r backend/requirements.txt
-```
+
+Use a virtual environment (see above); avoid `--break-system-packages` on system Python unless you intentionally install globally.
 
 ## Run the backend
 
@@ -154,9 +156,8 @@ Internal endpoints are under `/internal/*`. They require `Authorization: Bearer 
 
 | Method | Path | Description |
 | :--- | :--- | :--- |
-| `POST` | [/internal/generate](src/api/internal/jobs_routes.py#L86) | Upload input file, trigger TTS pipeline in background; returns `job_id`. |
-| `GET` | [/internal/generate/{job_id}/status](src/api/internal/jobs_routes.py#L115) | Poll job status (`pending`, `running`, `completed`, `failed`). |
-| `POST` | [/internal/generate-sync](src/api/internal/jobs_routes.py#L141) | Upload input file, run pipeline synchronously; returns `RunSummary` JSON. |
+| `POST` | [/internal/generate](src/api/internal/jobs_routes.py) | Upload input file, trigger TTS pipeline in background; returns `job_id`. |
+| `GET` | [/internal/generate/{job_id}/status](src/api/internal/jobs_routes.py) | Poll job status (`pending`, `running`, `completed`, `failed`). |
 
 **Generate request (multipart form):**
 
@@ -252,7 +253,7 @@ src/
 ├── api/
 │   ├── dependencies.py           # get_registry, get_registry_builder, get_job_store, auth deps
 │   ├── internal/                 # Internal routes (internal JWT or admin)
-│   │   ├── jobs_routes.py        # /internal/generate, status, /generate-sync
+│   │   ├── jobs_routes.py        # /internal/generate, /generate/{id}/status
 │   │   ├── text_to_speech_routes.py
 │   │   ├── evaluators_routes.py
 │   │   ├── optimizers_routes.py
@@ -470,8 +471,11 @@ implementation with different providers and different config values.
 
 Optimized files are written alongside generator output, preserving the same hierarchy:
 
-```
-output/|-- tts_audio_en/openai/hello_en.mp3          # raw generator output|-- optimized_ffmpeg_high/|   `-- tts_audio_en/openai/hello_en.mp3      # optimized copy
+```text
+output/
+├── tts_audio_en/openai/hello_en.mp3              # raw generator output
+└── optimized_ffmpeg_high/
+    └── tts_audio_en/openai/hello_en.mp3          # optimized copy
 ```
 
 Requirements: `ffmpeg` must be on PATH for the ffmpeg optimizer type. The pydub type additionally  
@@ -553,9 +557,4 @@ JOB=$(
 
 # Poll job status
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/internal/generate/$JOB/status
-
-# Run TTS pipeline synchronously
-curl -X POST -H "Authorization: Bearer $TOKEN" \
-  -F "file=@words.txt" -F "language=bg" -F "output_format=mp3" \
-  http://localhost:8000/internal/generate-sync
 ```
