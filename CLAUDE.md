@@ -73,7 +73,7 @@ docker compose -f docker/docker-compose.yml up -d --build
   - `output_paths.py` — Stable output directory and filename helpers
   - `languages.py` — Language code/name lookups and BCP-47 conversion
   - `logging/` — Centralized logging configuration (structlog, Seq, request logging)
-  - `input_loader.py` — Load structured requests from CSV/XLSX/TXT files
+  - `input_loader.py` — `load_words()` parses CSV/XLSX/TXT for translation (source vs target language)
   - `result_writer.py` — Write per-run JSON and CSV reports
   - `pipeline.py` — Async TTS pipeline orchestration (calls internal HTTP endpoints)
   - `content_service.py` — Filesystem ops for categories/images; DALL-E icons; internal translate/TTS helpers

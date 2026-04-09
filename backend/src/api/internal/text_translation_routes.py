@@ -18,6 +18,7 @@ from src.api.internal.schemas.text_translation import (
     TranslateFileResponse,
     TranslateRequest,
     TranslateResponse,
+    TranslationFileSourceWord,
 )
 from src.core.languages import normalize_language_code
 from src.core.config import settings
@@ -106,8 +107,8 @@ async def translate_text(
     response_model=TranslateFileResponse,
     summary="Translate words in a file using active translators",
     description=(
-            "Upload a file (TXT, CSV, or XLSX) and translate all words from *input_lang_code* "
-            "to *target_lang_code* using all active translators in priority order."
+        "Upload a file (TXT, CSV, or XLSX) and translate segments whose language differs from "
+        "*target_lang_code* (per row/column language) using active translators in priority order."
     ),
 )
 async def translate_file(
@@ -120,7 +121,7 @@ async def translate_file(
         registry: ServiceRegistry = Depends(get_registry),
 ) -> TranslateFileResponse:
     """Translate words in an uploaded file via the registry's active translators."""
-    from src.core.input_loader import load_requests  # pylint: disable=import-outside-toplevel
+    from src.core.input_loader import load_words  # pylint: disable=import-outside-toplevel
 
     service = registry.get_service(text_translation.SERVICE_NAME)
     if not isinstance(service, TextTranslationService):
@@ -139,13 +140,19 @@ async def translate_file(
         with open(temp_path, "wb") as f:
             f.write(content)
 
-        requests = load_requests(temp_path, input_lang_code or "en")
+        source_lang = input_lang_code or "en"
+        loaded = load_words(
+            temp_path,
+            source_language=source_lang,
+            target_language=target_lang_code,
+        )
         results = []
 
-        for req in requests:
+        for word in loaded:
+            payload = TranslationFileSourceWord.from_core(word)
             translated = await service.translate_text(
-                text=req.text,
-                input_lang_code=req.language_code,
+                text=payload.text,
+                input_lang_code=payload.source_language_code,
                 target_lang_code=target_lang_code,
                 category=category,
             )
@@ -153,10 +160,10 @@ async def translate_file(
                 translated_text = translated.lang_text.text
                 translated_lang = normalize_language_code(target_lang_code)
             else:
-                translated_text = req.text
-                translated_lang = normalize_language_code(req.language_code)
+                translated_text = payload.text
+                translated_lang = normalize_language_code(payload.source_language_code)
             results.append({
-                "original": req.text,
+                "original": payload.text,
                 "translated": translated_text,
                 "language": translated_lang,
             })

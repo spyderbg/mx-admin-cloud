@@ -1,10 +1,28 @@
-"""Core dataclasses used across the TTS pipeline."""
+"""Core dataclasses for the TTS pipeline and file-derived structures (e.g. translation sources)."""
 
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
+
+
+@dataclass(slots=True)
+class TranslationSourceWord:  # pylint: disable=too-many-instance-attributes
+    """One text segment from an input file intended for translation.
+
+    Holds file-derived fields only (no TTS "request_id" or HTTP request metadata).
+    """
+
+    text: str
+    source_language_code: str
+    filename_text: str
+    expected_text: str
+    row_index: int
+    column_index: int | None
+    source_file: str
+    source_type: str
+
 
 @dataclass(slots=True)
 class GeneratedAudio:

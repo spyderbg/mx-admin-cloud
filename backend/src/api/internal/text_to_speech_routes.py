@@ -66,7 +66,7 @@ async def generate_single(
         body: GenerateRequest,
         _user: dict = Depends(require_internal),
         registry: ServiceRegistry = Depends(get_registry),
-) -> dict[str, Any]:
+) -> TtsGenerateResult:
     """Generate raw audio for a single text to speech request via the named text to speech service."""
     service = registry.get_service("text_to_speech")
     if not isinstance(service, TextToSpeechService):
@@ -99,22 +99,22 @@ async def generate_single(
         except TTSProviderNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    return {
-        "provider": generated.provider,
-        "request_id": generated.request_id,
-        "language_code": generated.language_code,
-        "language_name": generated.language_name,
-        "expected_text": generated.expected_text,
-        "filename_text": generated.filename_text,
-        "output_format": generated.output_format,
-        "raw_path": str(generated.raw_path),
-        "raw_extension": generated.raw_extension,
-        "latency_seconds": generated.latency_seconds,
-        "success": generated.success,
-        "error": generated.error,
-        "normalized_path": str(generated.normalized_path) if generated.normalized_path else None,
-        "normalization_error": generated.normalization_error,
-    }
+    return TtsGenerateResult(
+        provider=generated.provider,
+        request_id=generated.request_id,
+        language_code=generated.language_code,
+        language_name=generated.language_name,
+        expected_text=generated.expected_text,
+        filename_text=generated.filename_text,
+        output_format=generated.output_format,
+        raw_path=str(generated.raw_path),
+        raw_extension=generated.raw_extension,
+        latency_seconds=generated.latency_seconds,
+        success=generated.success,
+        error=generated.error,
+        normalized_path=str(generated.normalized_path) if generated.normalized_path else None,
+        normalization_error=generated.normalization_error,
+    )
 
 
 @router.post(

@@ -12,6 +12,7 @@ from src.api.internal.schemas.text_translation import (
     TranslateFileResponse,
     TranslateRequest,
     TranslateResponse,
+    TranslationFileSourceWord,
 )
 from src.api.internal.schemas.voice_optimization import OptimizeRequest
 
@@ -28,5 +29,6 @@ __all__ = [
     "TranslateFileResponse",
     "TranslateRequest",
     "TranslateResponse",
+    "TranslationFileSourceWord",
     "TtsGenerateResult",
 ]

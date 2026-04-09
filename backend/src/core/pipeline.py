@@ -30,7 +30,9 @@ logger = get_logger("core.pipeline")
 #             "`pip install -r requirements.txt`."
 #         ) from exc
 #
-#     requests = load_requests(input_path, default_language)
+#     # File rows for TTS must be built as list[GenerateRequest] (see api/internal/schemas); load_words is
+#     # translation-only (core.input_loader.load_words).
+#     requests: list[Any] = []
 #     ensure_requests_log(output_dir)
 #
 #     provider_names_and_configs = registry.provider_names_and_configs()

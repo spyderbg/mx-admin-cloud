@@ -7,6 +7,8 @@ Small surface area keeps runs fast and context small for tooling.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -15,7 +17,10 @@ from src.api.internal.schemas.text_translation import (
     TranslateFileResponse,
     TranslateRequest,
     TranslateResponse,
+    TranslationFileSourceWord,
 )
+from src.core.input_loader import load_words
+from src.core.models import TranslationSourceWord
 
 
 def test_translate_request_accepts_optional_fields() -> None:
@@ -57,3 +62,25 @@ def test_translate_file_response_accepts_result_rows() -> None:
     )
     assert len(body.results) == 1
     assert body.results[0]["translated"] == "b"
+
+
+def test_translation_file_source_word_from_core() -> None:
+    word = TranslationSourceWord(
+        text="hi",
+        source_language_code="en",
+        filename_text="hi",
+        expected_text="hi",
+        row_index=1,
+        column_index=None,
+        source_file="/tmp/x.txt",
+        source_type="txt",
+    )
+    payload = TranslationFileSourceWord.from_core(word)
+    assert payload.text == "hi"
+    assert payload.source_language_code == "en"
+
+
+def test_load_words_txt_skips_when_source_equals_target(tmp_path: Path) -> None:
+    path = tmp_path / "w.txt"
+    path.write_text("one\ntwo\n", encoding="utf-8")
+    assert load_words(path, source_language="en", target_language="en") == []

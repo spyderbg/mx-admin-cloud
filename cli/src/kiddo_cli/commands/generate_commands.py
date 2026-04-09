@@ -24,8 +24,8 @@ def register(app: typer.Typer) -> None:
     ):
         """Run the TTS pipeline (translate, generate, evaluate).
 
-        The input file is uploaded to the backend as-is; the backend's
-        input_loader handles parsing based on the file type (.txt, .csv, .xlsx).
+        The input file is uploaded to the backend as-is; the backend parses it
+        for the job (.txt, .csv, .xlsx).
         """
         if not input_file.exists() or not input_file.is_file():
             typer.echo(f"Error: Input file not found: {input_file}", err=True)
