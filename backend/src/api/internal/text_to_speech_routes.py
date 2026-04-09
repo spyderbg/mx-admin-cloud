@@ -30,13 +30,13 @@ router = APIRouter(prefix="/internal", tags=["internal-generators"])
     "/generators",
     summary="List text to speech service configurations",
     description=(
-        "Return all configured text to speech services with their activation state, "
-        "config path, and generation settings. Language lists are omitted from the response."
+            "Return all configured text to speech services with their activation state, "
+            "config path, and generation settings. Language lists are omitted from the response."
     ),
 )
 async def list_generators(
-    _user: dict = Depends(require_internal),
-    registry: ServiceRegistry = Depends(get_registry),
+        _user: dict = Depends(require_internal),
+        registry: ServiceRegistry = Depends(get_registry),
 ) -> list[dict[str, Any]]:
     """Return configured generators with activation states."""
     service = registry.get_service("text_to_speech")
@@ -62,10 +62,10 @@ async def list_generators(
     description="Generate raw audio using the named text to speech service and return the result as JSON.",
 )
 async def generate_single(
-    provider: str,
-    body: GenerateRequest,
-    _user: dict = Depends(require_internal),
-    registry: ServiceRegistry = Depends(get_registry),
+        provider: str,
+        body: GenerateRequest,
+        _user: dict = Depends(require_internal),
+        registry: ServiceRegistry = Depends(get_registry),
 ) -> dict[str, Any]:
     """Generate raw audio for a single text to speech request via the named text to speech service."""
     service = registry.get_service("text_to_speech")
@@ -123,9 +123,9 @@ async def generate_single(
     description="Generate raw audio using the highest-priority active text to speech service and return raw bytes.",
 )
 async def generate_word(
-    body: GenerateWordRequest,
-    _user: dict = Depends(require_internal),
-    registry: ServiceRegistry = Depends(get_registry),
+        body: GenerateWordRequest,
+        _user: dict = Depends(require_internal),
+        registry: ServiceRegistry = Depends(get_registry),
 ):
     """Generate audio for a single word and return raw audio bytes."""
     from src.core.languages import language_name, normalize_language_code  # pylint: disable=import-outside-toplevel

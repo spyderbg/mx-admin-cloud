@@ -15,9 +15,9 @@ router = APIRouter(prefix="/internal/services/configs", tags=["internal-service-
 
 @router.post("/apply", response_model=ApplyConfigResponse)
 async def apply_config_payload(
-    body: ApplyConfigRequest,
-    _user: dict = Depends(require_internal),
-    builder: ServiceRegistryBuilder = Depends(get_registry_builder),
+        body: ApplyConfigRequest,
+        _user: dict = Depends(require_internal),
+        builder: ServiceRegistryBuilder = Depends(get_registry_builder),
 ) -> ApplyConfigResponse:
     """Validate and apply one service config payload in memory."""
     result = builder.apply_runtime_payload(body.payload, source="<runtime-upload>")
@@ -32,9 +32,9 @@ async def apply_config_payload(
 
 @router.post("/upload", response_model=ApplyConfigResponse)
 async def upload_config_file(
-    file: UploadFile = File(...),
-    _user: dict = Depends(require_internal),
-    builder: ServiceRegistryBuilder = Depends(get_registry_builder),
+        file: UploadFile = File(...),
+        _user: dict = Depends(require_internal),
+        builder: ServiceRegistryBuilder = Depends(get_registry_builder),
 ) -> ApplyConfigResponse:
     """Validate and apply uploaded config content in memory without persisting."""
     try:

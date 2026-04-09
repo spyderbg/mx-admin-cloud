@@ -72,19 +72,19 @@ async def _save_upload(upload: UploadFile, job_id: str) -> Path:
     response_model=GenerateJobResponse,
     summary="Start async TTS pipeline job",
     description=(
-        "Upload an input file (TXT, CSV, or XLSX) and start a TTS pipeline job in the background. "
-        "Returns a ``job_id`` that can be polled via the status endpoint."
+            "Upload an input file (TXT, CSV, or XLSX) and start a TTS pipeline job in the background. "
+            "Returns a ``job_id`` that can be polled via the status endpoint."
     ),
 )
 async def generate(  # pylint: disable=too-many-positional-arguments
-    file: UploadFile = File(...),
-    language: str = Form("en"),
-    output_format: str = Form("mp3"),
-    max_concurrency: int = Form(5),
-    _user: dict = Depends(require_internal),
-    registry: ServiceRegistry = Depends(get_registry),
-    job_store: JobStore = Depends(get_job_store),
-    internal_token: str = Depends(get_internal_token),
+        file: UploadFile = File(...),
+        language: str = Form("en"),
+        output_format: str = Form("mp3"),
+        max_concurrency: int = Form(5),
+        _user: dict = Depends(require_internal),
+        registry: ServiceRegistry = Depends(get_registry),
+        job_store: JobStore = Depends(get_job_store),
+        internal_token: str = Depends(get_internal_token),
 ) -> GenerateJobResponse:
     """Upload an input file and trigger the TTS pipeline in background."""
     job_id = str(uuid.uuid4())
@@ -103,14 +103,14 @@ async def generate(  # pylint: disable=too-many-positional-arguments
     response_model=JobStatusResponse,
     summary="Poll TTS pipeline job status",
     description=(
-        "Return the current status of a TTS pipeline job. "
-        "Status values: ``pending``, ``running``, ``completed``, ``failed``."
+            "Return the current status of a TTS pipeline job. "
+            "Status values: ``pending``, ``running``, ``completed``, ``failed``."
     ),
 )
 async def generate_status(
-    job_id: str,
-    _user: dict = Depends(require_internal),
-    job_store: JobStore = Depends(get_job_store),
+        job_id: str,
+        _user: dict = Depends(require_internal),
+        job_store: JobStore = Depends(get_job_store),
 ) -> JobStatusResponse:
     """Return job status and result when complete."""
     record = await job_store.get(job_id)

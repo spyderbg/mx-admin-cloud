@@ -26,12 +26,12 @@ router = APIRouter(prefix="/internal", tags=["internal-evaluators"])
     "/evaluators",
     summary="List STT evaluator configurations",
     description=(
-        "Return all configured STT evaluators (derived from generator/provider configs) "
-        "with their activation state and config path."
+            "Return all configured STT evaluators (derived from generator/provider configs) "
+            "with their activation state and config path."
     ),
 )
 async def list_evaluators(
-    _user: dict = Depends(require_internal),
+        _user: dict = Depends(require_internal),
 ) -> list[dict[str, Any]]:
     """Return configured evaluators (from generators/providers) with activation states."""
     from src.services.config_loader import load_service_configs  # pylint: disable=import-outside-toplevel
@@ -52,9 +52,9 @@ async def list_evaluators(
     description="Run STT transcription, score, persist, and return the evaluation result.",
 )
 async def evaluate(
-    body: EvaluateRequest,
-    _user: dict = Depends(require_internal),
-    _registry: ServiceRegistry = Depends(get_registry),
+        body: EvaluateRequest,
+        _user: dict = Depends(require_internal),
+        _registry: ServiceRegistry = Depends(get_registry),
 ) -> dict[str, Any]:
     """Evaluate a generated audio file using STT and Levenshtein scoring."""
     import httpx  # pylint: disable=import-outside-toplevel
