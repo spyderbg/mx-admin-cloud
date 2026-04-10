@@ -9,12 +9,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException  # pylint: disable=import-error
+from fastapi import APIRouter, Depends  # pylint: disable=import-error
 
 from src.api.dependencies import get_registry, require_internal
 from src.api.internal.schemas.evaluation import EvaluateRequest
 from src.core.config import settings
 from src.core.models import GeneratedAudio
+from src.api.service_resolver import get_typed_service
 from src.services import text_to_speech
 from src.services.service_registry import ServiceRegistry
 from src.services.evaluation import EvaluationEngine, JsonScoreStore, MultiScoreStore, SQLiteScoreStore
@@ -36,9 +37,11 @@ async def list_evaluators(
         registry: ServiceRegistry = Depends(get_registry),
 ) -> list[dict[str, Any]]:
     """Return configured evaluators (from generators/providers) with activation states."""
-    service = registry.get_service(text_to_speech.SERVICE_NAME)
-    if not isinstance(service, TextToSpeechService):
-        raise HTTPException(status_code=500, detail="Service registry mismatch for text_to_speech.")
+    service = get_typed_service(
+        registry=registry,
+        service_name=text_to_speech.SERVICE_NAME,
+        expected_type=TextToSpeechService,
+    )
     configs = service.providers_snapshot()
     configs.sort(key=lambda cfg: cfg.priority)
     return [

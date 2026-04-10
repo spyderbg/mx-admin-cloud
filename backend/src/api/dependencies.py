@@ -2,7 +2,9 @@
 
 from fastapi import Depends, HTTPException, Request, status  # pylint: disable=import-error
 
+from src.core.config import settings
 from src.core.job_store import JobStore
+from src.services.config_file_store import ServiceConfigFileStore
 from src.services.service_registry import ServiceRegistry, ServiceRegistryBuilder
 from src.core.utils import is_windows_platform
 from src.security.auth import verify_token
@@ -61,6 +63,13 @@ def get_registry(request: Request) -> ServiceRegistry:
 def get_registry_builder(request: Request) -> ServiceRegistryBuilder:
     """Inject the shared ServiceRegistryBuilder from app state."""
     return request.app.state.registry_builder
+
+
+def get_config_file_store(
+        builder: ServiceRegistryBuilder = Depends(get_registry_builder),
+) -> ServiceConfigFileStore:
+    """Inject the service-config JSON file store."""
+    return ServiceConfigFileStore(config_root=settings.config_path, registry_builder=builder)
 
 
 def get_job_store(request: Request) -> JobStore:

@@ -40,7 +40,7 @@ From the repository root, run:
 
 This script:
 - creates `backend/.venv` when missing,
-- installs `backend/requirements.txt`,
+- installs `backend/requirements.txt` (including `pylint`),
 - compiles all backend Python modules under `backend/src`,
 - runs `pylint` on `backend/src`.
 
@@ -250,9 +250,19 @@ the message, mirroring structlog semantics with an explicit logger name.
 | ------ | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
 | `POST` | [/internal/services/configs/apply](src/api/internal/service_config_routes.py)  | Validate and apply one JSON config payload in memory (no file persistence).      |
 | `POST` | [/internal/services/configs/upload](src/api/internal/service_config_routes.py) | Validate and apply uploaded JSON config content in memory (no file persistence). |
+| `GET` | [/internal/services/configs/{service_name}](src/api/internal/service_config_routes.py) | List all config files for one registered service. |
+| `POST` | [/internal/services/configs/{service_name}](src/api/internal/service_config_routes.py) | Create a new config JSON file for one service and reload the registry. |
+| `PATCH` | [/internal/services/configs/{service_name}/{config_name}](src/api/internal/service_config_routes.py) | Merge patch into one config file (patch overrides values; empty/default fields are pruned). |
+| `DELETE` | [/internal/services/configs/{service_name}/{config_name}](src/api/internal/service_config_routes.py) | Remove one config file and reload the registry. |
+| `POST` | [/internal/services/configs/{service_name}/enable-configurations](src/api/internal/service_config_routes.py) | Enable selected config files for one service. |
+| `POST` | [/internal/services/configs/{service_name}/disable-configurations](src/api/internal/service_config_routes.py) | Disable selected config files for one service. |
+| `POST` | [/internal/services/configs/{service_name}/enable-all-configurations](src/api/internal/service_config_routes.py) | Enable all config files in the service config directory. |
+| `POST` | [/internal/services/configs/{service_name}/disable-all-configurations](src/api/internal/service_config_routes.py) | Disable all config files in the service config directory. |
 
 
-On success, both return JSON with `config_name`, `accepted`, and `error` (null when there is no error), matching `ConfigApplyResult`.
+`/apply` and `/upload` are runtime-only and return `config_name`, `accepted`, and `error`, matching `ConfigApplyResult`.
+Persisted CRUD and batch toggle routes operate on `config/<service_subdir>/*.json`, validate payloads against
+service acceptance criteria, and call `ServiceRegistryBuilder.load_all_from_disk()` after successful mutations.
 
 ## Architecture
 
@@ -300,7 +310,7 @@ Paths are relative to `backend/` (set `PYTHONPATH` to `src` when running uvicorn
 src/
 ├── main.py                       # FastAPI app factory, lifespan, router registration
 ├── api/
-│   ├── dependencies.py           # get_registry, get_registry_builder, get_job_store, auth deps
+│   ├── dependencies.py           # get_registry, builder/store deps, get_job_store, auth deps
 │   ├── internal/                 # Internal routes (internal JWT or admin)
 │   │   ├── jobs_routes.py        # /internal/generate, /generate/{id}/status
 │   │   ├── text_to_speech_routes.py
@@ -308,7 +318,7 @@ src/
 │   │   ├── optimizers_routes.py
 │   │   ├── text_translation_routes.py
 │   │   ├── logging_routes.py     # /internal/logging/emit, provider-request, translator-request
-│   │   ├── service_config_routes.py   # /internal/services/configs/apply, /upload
+│   │   ├── service_config_routes.py   # runtime apply/upload + persisted CRUD/batch config routes
 │   │   └── schemas/              # Internal OpenAPI contract models (Pydantic)
 │   │       ├── text_to_speech.py
 │   │       ├── text_translation.py   # Translate* + TranslationFileSourceWord (translate-file)
@@ -346,6 +356,7 @@ src/
     ├── service_registry.py       # Subpackage discovery, get_service
     ├── registry_builder.py       # load_all_from_disk, hot-reload
     ├── models.py                 # Service / ServiceProvider bases
+    ├── config_file_store/        # JSON CRUD store + merge/prune helpers for service configs
     ├── text_to_speech/
     │   ├── models.py
     │   ├── service.py

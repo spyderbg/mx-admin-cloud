@@ -6,31 +6,20 @@ All endpoints require a JWT with role ``internal`` or ``admin``.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends
 
-from src.api.dependencies import require_internal
+from src.api.dependencies import get_registry, require_internal
 from src.api.internal.schemas.logging import (
     LogEmitRequest,
     LogProviderRequest,
     LogTranslatorRequest,
 )
+from src.api.service_resolver import get_typed_service
+from src.services import logging
 from src.services.logging.service import LoggingService
+from src.services.service_registry import ServiceRegistry
 
 router = APIRouter(prefix="/internal", tags=["internal-logging"])
-
-
-def _get_logging_service(request: Request) -> LoggingService:
-    """Resolve the: class:`LoggingService` from the service registry."""
-    from src.services.service_registry import ServiceRegistry  # pylint: disable=import-outside-toplevel
-
-    registry: ServiceRegistry = request.app.state.registry
-    service = registry.get_service("logging")
-    if not isinstance(service, LoggingService):
-        raise HTTPException(
-            status_code=500,
-            detail="Logging service not available in the registry.",
-        )
-    return service
 
 
 @router.post(
@@ -44,11 +33,15 @@ def _get_logging_service(request: Request) -> LoggingService:
 )
 async def emit_log(
         body: LogEmitRequest,
-        request: Request,
+        registry: ServiceRegistry = Depends(get_registry),
         _user: dict = Depends(require_internal),
 ) -> dict[str, str]:
     """Emit a structured log message through the logging service."""
-    service = _get_logging_service(request)
+    service = get_typed_service(
+        registry=registry,
+        service_name=logging.SERVICE_NAME,
+        expected_type=LoggingService,
+    )
     service.emit(body.logger_name, body.level, body.event, **body.fields)
     return {"status": "ok"}
 
@@ -63,11 +56,15 @@ async def emit_log(
 )
 async def log_provider_request(
         body: LogProviderRequest,
-        request: Request,
+        registry: ServiceRegistry = Depends(get_registry),
         _user: dict = Depends(require_internal),
 ) -> dict[str, str]:
     """Log a provider request through the logging service."""
-    service = _get_logging_service(request)
+    service = get_typed_service(
+        registry=registry,
+        service_name=logging.SERVICE_NAME,
+        expected_type=LoggingService,
+    )
     service.log_provider_request(
         provider=body.provider,
         model=body.tts_model,
@@ -89,11 +86,15 @@ async def log_provider_request(
 )
 async def log_translator_request(
         body: LogTranslatorRequest,
-        request: Request,
+        registry: ServiceRegistry = Depends(get_registry),
         _user: dict = Depends(require_internal),
 ) -> dict[str, str]:
     """Log a translator request through the logging service."""
-    service = _get_logging_service(request)
+    service = get_typed_service(
+        registry=registry,
+        service_name=logging.SERVICE_NAME,
+        expected_type=LoggingService,
+    )
     service.log_translator_request(
         translator=body.translator,
         model=body.tts_model,

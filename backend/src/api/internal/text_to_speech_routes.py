@@ -15,6 +15,8 @@ from fastapi import APIRouter, Depends, HTTPException  # pylint: disable=import-
 from src.api.dependencies import get_registry, require_internal
 from src.api.internal.schemas.text_to_speech import GenerateRequest, GenerateWordRequest, TtsGenerateResult
 from src.core.config import settings
+from src.api.service_resolver import get_typed_service, require_active_providers
+from src.services import text_to_speech
 from src.services.service_registry import ServiceRegistry
 from src.services.text_to_speech.models import TTSRequest
 from src.services.text_to_speech.service import (
@@ -39,9 +41,7 @@ async def list_generators(
         registry: ServiceRegistry = Depends(get_registry),
 ) -> list[dict[str, Any]]:
     """Return configured generators with activation states."""
-    service = registry.get_service("text_to_speech")
-    if not isinstance(service, TextToSpeechService):
-        raise HTTPException(status_code=500, detail="Service registry mismatch for text_to_speech.")
+    service = get_typed_service(registry, text_to_speech.SERVICE_NAME, TextToSpeechService)
     configs = service.providers_snapshot()
     return [
         {
@@ -68,9 +68,7 @@ async def generate_single(
         registry: ServiceRegistry = Depends(get_registry),
 ) -> TtsGenerateResult:
     """Generate raw audio for a single text to speech request via the named text to speech service."""
-    service = registry.get_service("text_to_speech")
-    if not isinstance(service, TextToSpeechService):
-        raise HTTPException(status_code=500, detail="Service registry mismatch for text_to_speech.")
+    service = get_typed_service(registry, text_to_speech.SERVICE_NAME, TextToSpeechService)
 
     request_id = body.request_id or f"api-{body.row_index}-{body.column_index or 0}-{body.language_code}"
     tts_request = TTSRequest(
@@ -134,11 +132,12 @@ async def generate_word(
     if not body.word or not body.word.strip():
         raise HTTPException(status_code=400, detail="Word must be non-empty.")
 
-    service = registry.get_service("text_to_speech")
-    if not isinstance(service, TextToSpeechService):
-        raise HTTPException(status_code=500, detail="Service registry mismatch for text_to_speech.")
-    if not service.active_providers:
-        raise HTTPException(status_code=503, detail="No active text to speech services configured.")
+    service = get_typed_service(registry, text_to_speech.SERVICE_NAME, TextToSpeechService)
+    require_active_providers(
+        service,
+        service_name=text_to_speech.SERVICE_NAME,
+        detail="No active text to speech services configured.",
+    )
 
     lang_code = normalize_language_code(body.lang)
     lang_full = language_name(lang_code)

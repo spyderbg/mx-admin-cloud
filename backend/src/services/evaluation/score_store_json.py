@@ -6,11 +6,13 @@ import json
 from pathlib import Path
 from typing import Any
 
+from src.core.utils import JsonObjectReadError, read_json_object
 from src.core.models import EvaluationResult, GeneratedAudio, ProviderAggregate
 from .score_store import ScoreStore
 
 
-class JsonScoreStore(ScoreStore):
+class JsonScoreStore(ScoreStore):  # pylint: disable=too-few-public-methods
+    """Persist evaluation history and provider aggregates as JSON files."""
     def __init__(self, storage_dir: Path) -> None:
         self.storage_dir = storage_dir
         self.storage_dir.mkdir(parents=True, exist_ok=True)
@@ -42,8 +44,14 @@ class JsonScoreStore(ScoreStore):
             {"evaluation_count": 0, "total_score": 0.0, "average_score": 0.0},
         )
         provider_bucket["evaluation_count"] += 1
-        provider_bucket["total_score"] = round(provider_bucket["total_score"] + evaluation_result.pronunciation_accuracy, 4)
-        provider_bucket["average_score"] = round(provider_bucket["total_score"] / provider_bucket["evaluation_count"], 4)
+        provider_bucket["total_score"] = round(
+            provider_bucket["total_score"] + evaluation_result.pronunciation_accuracy,
+            4,
+        )
+        provider_bucket["average_score"] = round(
+            provider_bucket["total_score"] / provider_bucket["evaluation_count"],
+            4,
+        )
         aggregates[generated_audio.provider] = provider_bucket
 
         self.history_path.write_text(json.dumps(history, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -60,5 +68,12 @@ class JsonScoreStore(ScoreStore):
     def _load_json(path: Path, default: Any) -> Any:
         if not path.exists():
             return default
-        with path.open("r", encoding="utf-8") as handle:
-            return json.load(handle)
+        try:
+            payload = read_json_object(path, require_object=False)
+        except JsonObjectReadError:
+            return default
+        if isinstance(default, dict) and isinstance(payload, dict):
+            return payload
+        if isinstance(default, list) and isinstance(payload, list):
+            return payload
+        return default

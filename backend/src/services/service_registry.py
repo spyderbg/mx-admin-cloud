@@ -3,21 +3,23 @@
 from __future__ import annotations
 
 import importlib
-import json
 import pkgutil
 import threading
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import Any, TypeVar
 
 from rich.console import Console
 from rich.markup import escape
 from rich.text import Text
 
 import src.services as _services_pkg
+from src.core.utils import JsonObjectReadError, read_json_object
 from src.services.acceptance import ConfigApplyResult, ServiceAcceptCriteria
 from src.services.models import Service, ServiceProvider
+
+ServiceT = TypeVar("ServiceT", bound=Service)
 
 
 def _runtime_source_config_name(source: str) -> str:
@@ -117,6 +119,16 @@ class ServiceRegistry:
             service = self._services.get(service_name)
         if service is None:
             raise KeyError(f"Unknown service: {service_name!r}")
+        return service
+
+    def get_typed_service(self, service_name: str, expected_type: type[ServiceT]) -> ServiceT:
+        """Return *service_name* and validate it is an instance of *expected_type*."""
+        service = self.get_service(service_name)
+        if not isinstance(service, expected_type):
+            raise TypeError(
+                f"Service registry mismatch for {service_name}: "
+                f"expected {expected_type.__name__}, got {type(service).__name__}."
+            )
         return service
 
     def get_registered_services(self) -> dict[str, Service]:
@@ -236,6 +248,10 @@ class ServiceRegistryBuilder:
         self._base_dir = base_dir
         self._config_root = config_root
 
+    def get_accept_criteria(self) -> dict[str, ServiceAcceptCriteria]:
+        """Return acceptance criteria for all discovered services."""
+        return self._registry.get_accept_criteria()
+
     def load_all_from_disk(self):
         """Load all known config directories and replace each service provider set."""
         criteria_map = self._registry.get_accept_criteria()
@@ -314,6 +330,27 @@ class ServiceRegistryBuilder:
         self._registry.replace_service_providers(service_name, current)
         return apply_result
 
+    def validate_config_payload(
+            self,
+            service_name: str,
+            payload: dict[str, Any],
+            source: str = "<runtime-validate>",
+    ) -> ConfigApplyResult:
+        """Validate one payload against one registered service without mutating runtime state."""
+        criteria = self._registry.get_accept_criteria().get(service_name)
+        if criteria is None:
+            return ConfigApplyResult(
+                config_name=_runtime_source_config_name(source),
+                accepted=False,
+                error=f"Unknown service '{service_name}'.",
+            )
+        apply_result, _ = self._materialize_payload(
+            payload=payload,
+            source=Path(source),
+            criteria=criteria,
+        )
+        return apply_result
+
     @staticmethod
     def _log_apply_result(results: list[ConfigApplyResult]):
         console = Console()
@@ -367,13 +404,9 @@ class ServiceRegistryBuilder:
     @staticmethod
     def _read_json_file(config_path: Path) -> dict[str, Any] | None:
         try:
-            with config_path.open("r", encoding="utf-8") as handle:
-                payload = json.load(handle)
-        except (OSError, json.JSONDecodeError):
+            return read_json_object(config_path)
+        except JsonObjectReadError:
             return None
-        if not isinstance(payload, dict):
-            return None
-        return payload
 
     @staticmethod
     def _replace_provider_by_identity(providers: list[Any], new_provider: Any) -> list[Any]:

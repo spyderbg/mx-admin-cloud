@@ -13,6 +13,8 @@ from fastapi import APIRouter, Depends, HTTPException  # pylint: disable=import-
 
 from src.api.dependencies import get_registry, require_internal
 from src.api.internal.schemas.voice_optimization import OptimizeRequest
+from src.api.service_resolver import get_typed_service
+from src.services import voice_optimization
 from src.services.service_registry import ServiceRegistry
 from src.services.voice_optimization.service import VoiceOptimizationService
 
@@ -32,9 +34,7 @@ async def list_optimizers(
         registry: ServiceRegistry = Depends(get_registry),
 ) -> list[dict[str, Any]]:
     """Return configured optimizers with service metadata."""
-    service = registry.get_service("voice_optimization")
-    if not isinstance(service, VoiceOptimizationService):
-        raise HTTPException(status_code=500, detail="Service registry mismatch for voice_optimization.")
+    service = get_typed_service(registry, voice_optimization.SERVICE_NAME, VoiceOptimizationService)
     configs = service.providers_snapshot()
     configs.sort(key=lambda c: c.priority)
     return [
@@ -62,9 +62,7 @@ async def optimize_single(
         registry: ServiceRegistry = Depends(get_registry),
 ) -> dict[str, Any]:
     """Optimize an audio file using the named optimizer."""
-    service = registry.get_service("voice_optimization")
-    if not isinstance(service, VoiceOptimizationService):
-        raise HTTPException(status_code=500, detail="Service registry mismatch for voice_optimization.")
+    service = get_typed_service(registry, voice_optimization.SERVICE_NAME, VoiceOptimizationService)
     matched = [opt for opt in service.active_optimizers if opt.name == optimizer]
     if not matched:
         raise HTTPException(status_code=404, detail=f"Optimizer '{optimizer}' not found or not active.")

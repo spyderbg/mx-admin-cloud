@@ -10,7 +10,7 @@ import os
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile  # pylint: disable=import-error
+from fastapi import APIRouter, Depends, File, UploadFile  # pylint: disable=import-error
 
 from src.api.dependencies import get_registry, require_internal
 from src.api.internal.schemas.text_translation import (
@@ -22,6 +22,7 @@ from src.api.internal.schemas.text_translation import (
 )
 from src.core.languages import normalize_language_code
 from src.core.config import settings
+from src.api.service_resolver import get_typed_service, require_active_providers
 from src.services import text_translation
 from src.services.service_registry import ServiceRegistry
 from src.services.text_translation import TextTranslationService
@@ -42,9 +43,11 @@ async def list_translators(
         registry: ServiceRegistry = Depends(get_registry),
 ) -> list[dict[str, Any]]:
     """Return configured translators with service metadata."""
-    service = registry.get_service(text_translation.SERVICE_NAME)
-    if not isinstance(service, TextTranslationService):
-        raise HTTPException(status_code=500, detail="Service registry mismatch for text_translation.")
+    service = get_typed_service(
+        registry=registry,
+        service_name=text_translation.SERVICE_NAME,
+        expected_type=TextTranslationService,
+    )
     configs = service.providers_snapshot()
     configs.sort(key=lambda c: c.priority)
     return [
@@ -75,11 +78,16 @@ async def translate_text(
         registry: ServiceRegistry = Depends(get_registry),
 ) -> TranslateResponse:
     """Translate text via the registry's active translators."""
-    service = registry.get_service(text_translation.SERVICE_NAME)
-    if not isinstance(service, TextTranslationService):
-        raise HTTPException(status_code=500, detail=f"Service registry mismatch for {text_translation.SERVICE_NAME}.")
-    if not service.active_providers:
-        raise HTTPException(status_code=503, detail="No active translators are configured.")
+    service = get_typed_service(
+        registry=registry,
+        service_name=text_translation.SERVICE_NAME,
+        expected_type=TextTranslationService,
+    )
+    require_active_providers(
+        service,
+        service_name=text_translation.SERVICE_NAME,
+        detail="No active translators are configured.",
+    )
     result = await service.translate_text(
         text=body.text,
         input_lang_code=body.input_lang_code,
@@ -123,11 +131,16 @@ async def translate_file(
     """Translate words in an uploaded file via the registry's active translators."""
     from src.core.input_loader import load_words  # pylint: disable=import-outside-toplevel
 
-    service = registry.get_service(text_translation.SERVICE_NAME)
-    if not isinstance(service, TextTranslationService):
-        raise HTTPException(status_code=500, detail=f"Service registry mismatch for {text_translation.SERVICE_NAME}.")
-    if not service.active_providers:
-        raise HTTPException(status_code=503, detail="No active translators are configured.")
+    service = get_typed_service(
+        registry=registry,
+        service_name=text_translation.SERVICE_NAME,
+        expected_type=TextTranslationService,
+    )
+    require_active_providers(
+        service,
+        service_name=text_translation.SERVICE_NAME,
+        detail="No active translators are configured.",
+    )
 
     # Temporarily save the file to parse it
     job_id = str(uuid.uuid4())
