@@ -15,8 +15,8 @@ import time
 from typing import Any
 
 from src.core.languages import to_bcp47
+from src.core.log_client import log_provider_request
 from src.core.models import GeneratedAudio
-from src.services.logging import log_provider_request
 from ..models import TTSProvider, TTSRequest
 from ..service import TextToSpeechProviderFactory
 
@@ -115,8 +115,7 @@ class SpeaktorTTSProvider(TTSProvider):
             raise RuntimeError(
                 f"Speaktor API {response.status_code}: {body}"
             )
-        log_provider_request(
-            base_dir=self.base_dir,
+        await log_provider_request(
             provider=self.name,
             model=model_name,
             actor=voice_name,

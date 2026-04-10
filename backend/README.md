@@ -229,6 +229,20 @@ Internal endpoints are under `/internal/`*. They require `Authorization: Bearer 
 | `POST` | [/internal/translate-file](src/api/internal/text_translation_routes.py)  | Translate a file; loads segments via `load_words` (skips source = target lang); returns per-row results. |
 
 
+#### Logging
+
+
+| Method | Path                                                                                         | Description                                            |
+| ------ | -------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `POST` | [/internal/logging/emit](src/api/internal/logging_routes.py)                                 | Emit a structured log message to the named logger.     |
+| `POST` | [/internal/logging/provider-request](src/api/internal/logging_routes.py)                     | Log a TTS/STT provider request via the request logger. |
+| `POST` | [/internal/logging/translator-request](src/api/internal/logging_routes.py)                   | Log a translator request via the request logger.       |
+
+
+All logging endpoints accept a JSON body and delegate to the `LoggingService` (backed by the
+`struct_log` provider). The `logger_name` field in `/emit` selects which logger channel receives
+the message, mirroring structlog semantics with an explicit logger name.
+
 #### Runtime Service Configs
 
 
@@ -293,6 +307,7 @@ src/
 │   │   ├── evaluators_routes.py
 │   │   ├── optimizers_routes.py
 │   │   ├── text_translation_routes.py
+│   │   ├── logging_routes.py     # /internal/logging/emit, provider-request, translator-request
 │   │   ├── service_config_routes.py   # /internal/services/configs/apply, /upload
 │   │   └── schemas/              # Internal OpenAPI contract models (Pydantic)
 │   │       ├── text_to_speech.py
@@ -300,6 +315,7 @@ src/
 │   │       ├── evaluation.py
 │   │       ├── voice_optimization.py
 │   │       ├── jobs.py
+│   │       ├── logging.py
 │   │       └── service_config.py
 │   └── v1/                       # Public /api/v1
 │       ├── routes_auth.py
@@ -315,12 +331,11 @@ src/
 │   ├── content_naming.py         # Content folder / image id naming
 │   ├── content_service.py
 │   ├── job_store.py
+│   ├── log_client.py             # Async HTTP client for internal logging endpoints
 │   ├── pipeline.py               # TTS pipeline (internal HTTP)
 │   ├── tasks.py                  # ping, status, operation, list-files
 │   ├── utils.py                  # boolish, platform / debug helpers
-│   └── logging/
-│       ├── logging_system.py
-│       └── request_logger.py
+│   └── (logging/ removed — now in services/logging)
 ├── db/
 │   └── database.py               # SQLite user store
 ├── security/
@@ -350,10 +365,12 @@ src/
     │   ├── score_store.py
     │   ├── score_store_json.py
     │   └── score_store_sqlite.py
-    └── logging/                  # Service-layer logging adapters
-        ├── service.py
-        ├── logging_system.py
-        └── request_logger.py
+    └── logging/                  # Logging service (structlog + stdlib + request logger)
+        ├── __init__.py           # SERVICE_CLASS, SERVICE_NAME, SERVICE_ACCEPT_CRITERIA
+        ├── models.py             # LoggingServiceProvider base class
+        ├── service.py            # LoggingService + LoggingProviderFactory
+        └── providers/
+            └── struct_log.py     # Structlog-based provider: dictConfig, structlog, request log
 ```
 
 ## Adding a new service type
@@ -389,10 +406,9 @@ TTS providers and translators are configured via JSON files in `config/`:
 
 ```text
 config/
-├── loggers/
-│   ├── logging.json
-│   ├── request_logger.json
-│   └── structlog.json
+├── logging/
+│   ├── default.json              # struct_log provider (dictConfig + structlog)
+│   └── requests.json             # struct_log provider (request_log settings only)
 ├── voice_optimizers/
 │   ├── ffmpeg_high.json
 │   ├── ffmpeg_low.json
@@ -529,6 +545,65 @@ output/
 
 Requirements: `ffmpeg` must be on PATH for the ffmpeg optimizer type. The pydub type additionally  
 requires the `pydub` Python package (included in `requirements.txt`).
+
+### Logging
+
+Logging is a registered service (`SERVICE_NAME = "logging"`) configured via JSON files in
+`config/logging/`. Each file uses the standard `service_provider` envelope.
+
+The only provider implementation is `struct_log` (`src/services/logging/providers/struct_log.py`),
+which configures stdlib `dictConfig`, structlog processors, and the dedicated request-logger channel
+from a single config payload.
+
+`service_provider.config` sections:
+
+| Key            | Purpose                                                                                    |
+| -------------- | ------------------------------------------------------------------------------------------ |
+| `logging`      | Stdlib `dictConfig` blob (handlers, formatters, root logger). Supports `active` flag and   |
+|                | `${output_dir}` placeholder in handler `filename` values. Seq handlers are auto-disabled   |
+|                | when `seqlog` is missing or unreachable.                                                   |
+| `structlog`    | Structlog options. `renderer`: `console` (default in dev) or `json`.                       |
+| `request_log`  | Request-logger channel. `path`: log file relative to output dir (default                   |
+|                | `results/requests.log`). `fields`: per-field boolean toggles for request payload filtering.|
+
+Example (`config/logging/default.json`):
+
+```json
+{
+  "service_provider": {
+    "service": "logging",
+    "provider": "struct_log",
+    "enabled": true,
+    "priority": 1,
+    "config": {
+      "logging": { "version": 1, "handlers": { "console": { "class": "logging.StreamHandler" } } },
+      "structlog": { "renderer": "console" }
+    }
+  }
+}
+```
+
+Request logging config example (`config/logging/requests.json`):
+
+```json
+{
+  "service_provider": {
+    "service": "logging",
+    "provider": "struct_log",
+    "enabled": true,
+    "priority": 1,
+    "config": {
+      "request_log": { "path": "results/requests.log", "fields": { "provider": true } }
+    }
+  }
+}
+```
+
+At startup, after `ServiceRegistry.build_runtime()` and `load_all_from_disk()`, `main.py` calls
+`LoggingService.configure(output_dir=…, profile=…)` which delegates to the active `struct_log`
+provider. All structured application logs (provider requests, translator requests, and generic
+events) are emitted via internal HTTP endpoints under `/internal/logging/*`; callers use the async
+helpers in `src/core/log_client.py`.
 
 ## Example requests
 

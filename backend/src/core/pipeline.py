@@ -7,9 +7,9 @@ endpoints — ``core/`` never imports ``services/`` directly.
 
 # pylint: disable=duplicate-code
 
-from src.core.logging import get_logger
+import logging
 
-logger = get_logger("core.pipeline")
+logger = logging.getLogger("core.pipeline")
 #  #
 # async def run_pipeline(
 #     *,

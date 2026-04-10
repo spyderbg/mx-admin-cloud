@@ -13,10 +13,10 @@ from src.api.dependencies import require_admin, require_uds
 from src.api.v1 import routes_auth, routes_common, routes_content, routes_users
 from src.core.config import settings
 from src.core.job_store import JobStore
-from src.core.logging import LoggingSystem
 from src.core.utils import is_windows_platform, is_debug_mode
 from src.db.database import UsersDb
 from src.security.tokens import create_internal_token
+from src.services.logging.service import LoggingService
 from src.services.service_registry import ServiceRegistry, ServiceRegistryBuilder
 from starlette.concurrency import run_in_threadpool
 
@@ -26,20 +26,7 @@ async def lifespan(app_lifespan: FastAPI) -> AsyncIterator[None]:
     """Initialize shared services during application startup."""
     await run_in_threadpool(UsersDb.init_db)
 
-    # Logging system
-    log_config = settings.config_path / "loggers"
-    app_lifespan.state.logging_system = None
-    if log_config.exists():
-        logging_system = LoggingSystem(
-            base_dir=settings.BASE_DIR,
-            output_dir=settings.output_path,
-            config_path=log_config,
-            profile=settings.LOG_PROFILE,
-        )
-        await run_in_threadpool(logging_system.configure)
-        app_lifespan.state.logging_system = logging_system
-
-    # Service registry
+    # Service registry (includes logging service)
     registry = ServiceRegistry.build_runtime(settings.BASE_DIR)
     registry_builder = ServiceRegistryBuilder(registry, settings.BASE_DIR, settings.config_path)
     registry_builder.load_all_from_disk()
@@ -47,12 +34,30 @@ async def lifespan(app_lifespan: FastAPI) -> AsyncIterator[None]:
     app_lifespan.state.registry_builder = registry_builder
     registry.dump(settings.BASE_DIR)
 
+    # Configure logging via the registry's logging service
+    try:
+        logging_service = registry.get_service("logging")
+        if isinstance(logging_service, LoggingService):
+            logging_service.configure(
+                output_dir=settings.output_path,
+                profile=settings.LOG_PROFILE,
+            )
+    except KeyError:
+        logging.info("No logging service registered — using stdlib defaults")
+
     # Job store — in-memory with TTL eviction; swap for SQLite/Redis for multi-worker
     app_lifespan.state.job_store = JobStore(ttl_seconds=3600)
 
     # Internal service token — freshly signed on each startup, 24-hour lifetime
     app_lifespan.state.internal_token = create_internal_token(
         "backend-internal", timedelta(hours=24)
+    )
+
+    # Configure the logging HTTP client for inter-service log calls
+    from src.core import log_client as logging_client  # pylint: disable=import-outside-toplevel
+    logging_client.configure(
+        base_url=str(settings.API_BASE_URL),
+        internal_token=app_lifespan.state.internal_token,
     )
 
     # Background task: watch config dir for changes and hot-reload the registry
@@ -89,6 +94,8 @@ async def lifespan(app_lifespan: FastAPI) -> AsyncIterator[None]:
 
     yield
 
+    await logging_client.shutdown()
+
 
 app = FastAPI(title=settings.PROJECT_NAME, lifespan=lifespan)
 
@@ -99,6 +106,7 @@ app.include_router(routes_common.router, prefix=settings.API_V1_STR, tags=["task
 app.include_router(routes_content.router, prefix=settings.API_V1_STR, tags=["content"])
 app.include_router(routes_users.router, prefix=settings.API_V1_STR, tags=["users"])
 app.include_router(src.api.internal.jobs_routes.router)
+app.include_router(src.api.internal.logging_routes.router)
 app.include_router(src.api.internal.service_config_routes.router)
 app.include_router(src.api.internal.text_translation_routes.router)
 app.include_router(src.api.internal.text_to_speech_routes.router)

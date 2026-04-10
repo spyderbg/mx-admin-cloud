@@ -19,7 +19,7 @@ todos:
     status: pending
   - id: readme-pylint
     content: Sync README; pylint touched modules
-    status: pending
+    status: completed
 isProject: false
 ---
 

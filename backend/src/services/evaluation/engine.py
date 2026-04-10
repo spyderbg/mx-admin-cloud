@@ -16,8 +16,8 @@ from pathlib import Path
 from typing import Any
 
 from src.core.languages import to_bcp47
+from src.core.log_client import log_provider_request
 from src.core.models import EvaluationResult, GeneratedAudio
-from src.core.logging import log_provider_request
 
 
 def levenshtein_distance(left: str, right: str) -> int:
@@ -61,11 +61,11 @@ class EvaluationEngine:
         self.base_dir = base_dir
 
     async def evaluate(
-        self,
-        generated_audio: GeneratedAudio,
-        evaluate_config: dict[str, Any],
-        client: Any,
-        provider_name: str = "",
+            self,
+            generated_audio: GeneratedAudio,
+            evaluate_config: dict[str, Any],
+            client: Any,
+            provider_name: str = "",
     ) -> EvaluationResult:
         """Evaluate the generated audio against the expected text.
 
@@ -95,7 +95,8 @@ class EvaluationEngine:
         if stt_provider == "openai":
             transcription = await self._transcribe_openai(normalized_path, eval_cfg, api_key, generated_audio, client)
         elif stt_provider == "elevenlabs":
-            transcription = await self._transcribe_elevenlabs(normalized_path, eval_cfg, api_key, generated_audio, client)
+            transcription = await self._transcribe_elevenlabs(normalized_path, eval_cfg, api_key, generated_audio,
+                                                              client)
         elif stt_provider == "speaktor":
             transcription = await self._transcribe_speaktor(normalized_path, eval_cfg, api_key, generated_audio, client)
         else:
@@ -130,12 +131,12 @@ class EvaluationEngine:
         )
 
     async def _transcribe_openai(
-        self,
-        audio_path: Path,
-        eval_cfg: dict[str, Any],
-        api_key: str,
-        generated_audio: GeneratedAudio,
-        client: Any,
+            self,
+            audio_path: Path,
+            eval_cfg: dict[str, Any],
+            api_key: str,
+            generated_audio: GeneratedAudio,
+            client: Any,
     ) -> str:
         """Transcribe the audio file using the OpenAI API."""
         model = eval_cfg.get("model", "whisper-1")
@@ -162,7 +163,7 @@ class EvaluationEngine:
         )
         response_duration = time.perf_counter() - started_at
         response.raise_for_status()
-        self._log_request(
+        await self._log_request(
             provider="openai",
             model=str(model),
             actor="",
@@ -174,12 +175,12 @@ class EvaluationEngine:
         return str(response.json().get("text", "")).strip()
 
     async def _transcribe_elevenlabs(
-        self,
-        audio_path: Path,
-        eval_cfg: dict[str, Any],
-        api_key: str,
-        generated_audio: GeneratedAudio,
-        client: Any,
+            self,
+            audio_path: Path,
+            eval_cfg: dict[str, Any],
+            api_key: str,
+            generated_audio: GeneratedAudio,
+            client: Any,
     ) -> str:
         """Transcribe the audio file using the ElevenLabs API."""
         model = eval_cfg.get("model", "scribe_v1")
@@ -202,7 +203,7 @@ class EvaluationEngine:
         )
         response_duration = time.perf_counter() - started_at
         response.raise_for_status()
-        self._log_request(
+        await self._log_request(
             provider="elevenlabs",
             model=str(model),
             actor="",
@@ -214,12 +215,12 @@ class EvaluationEngine:
         return str(response.json().get("text", "")).strip()
 
     async def _transcribe_speaktor(
-        self,
-        audio_path: Path,
-        eval_cfg: dict[str, Any],
-        api_key: str,
-        generated_audio: GeneratedAudio,
-        client: Any,
+            self,
+            audio_path: Path,
+            eval_cfg: dict[str, Any],
+            api_key: str,
+            generated_audio: GeneratedAudio,
+            client: Any,
     ) -> str:
         """Transcribe via the Transkriptor 3-step local-file workflow.
 
@@ -301,7 +302,7 @@ class EvaluationEngine:
             )
 
         response_duration = time.perf_counter() - started_at
-        self._log_request(
+        await self._log_request(
             provider="speaktor",
             model="transkriptor-stt",
             actor="",
@@ -328,21 +329,18 @@ class EvaluationEngine:
             error=error,
         )
 
-    def _log_request(
-        self,
-        *,
-        provider: str,
-        model: str,
-        actor: str,
-        voice_id: str,
-        language: str,
-        request_input: Any,
-        response_duration: float,
+    async def _log_request(
+            self,
+            *,
+            provider: str,
+            model: str,
+            actor: str,
+            voice_id: str,
+            language: str,
+            request_input: Any,
+            response_duration: float,
     ) -> None:
-        if self.base_dir is None:
-            return
-        log_provider_request(
-            base_dir=self.base_dir,
+        await log_provider_request(
             provider=provider,
             model=model,
             actor=actor,

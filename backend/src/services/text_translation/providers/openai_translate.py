@@ -8,7 +8,7 @@ from typing import Any
 
 from openai import AsyncOpenAI
 
-from src.core.logging import log_translator_request
+from src.core.log_client import log_translator_request
 from src.services.text_translation.models import TextTranslationServiceProvider
 
 _CATEGORY_LINE_RE = re.compile(r"[^\n]*\{\{\s*category\s*\}\}[^\n]*\n?")
@@ -92,8 +92,7 @@ class OpenAITextTranslate(TextTranslationServiceProvider):
             temperature=self._temperature,
         )
         latency = time.perf_counter() - started_at
-        log_translator_request(
-            base_dir=self.base_dir,
+        await log_translator_request(
             translator=self.name,
             model=self._model,
             actor="translator",

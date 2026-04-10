@@ -72,7 +72,7 @@ docker compose -f docker/docker-compose.yml up -d --build
   - `models.py` — Core dataclasses (TTSRequest, GeneratedAudio, EvaluationResult, etc.)
   - `output_paths.py` — Stable output directory and filename helpers
   - `languages.py` — Language code/name lookups and BCP-47 conversion
-  - `logging/` — Centralized logging configuration (structlog, Seq, request logging)
+  - *(logging moved to `services/logging/` — registered service with `struct_log` provider)*
   - `input_loader.py` — `load_words()` parses CSV/XLSX/TXT for translation (source vs target language)
   - `result_writer.py` — Write per-run JSON and CSV reports
   - `pipeline.py` — Async TTS pipeline orchestration (calls internal HTTP endpoints)
@@ -87,6 +87,7 @@ docker compose -f docker/docker-compose.yml up -d --build
   - `voice_optimization/` — Audio post-processing (ffmpeg, pydub)
   - `voice_optimization/providers/` — FFmpeg and pydub optimizer implementations
   - `evaluation/` — STT transcription and Levenshtein-based scoring
+  - `logging/` — Logging service (structlog provider, HTTP emit client, request logger)
 - **`db/`** — SQLite user store (auto-creates `admin` on first run); passwords use SHA256 prehash + bcrypt
 - **`security/`** — JWT auth; HTTP login → 30 min token, CLI socket login → 30 sec token
 
@@ -99,7 +100,7 @@ The pipeline is driven by JSON config files in `backend/config/`:
 | `text_to_speech/` | TTS providers (OpenAI, ElevenLabs, Speaktor) — set `"active": "yes/no"` |
 | `text_translation/` | Translation configs (static CSV or OpenAI) per language pair |
 | `voice_optimizers/` | Audio post-processing (ffmpeg/pydub) — sample rate, mono, VBR |
-| `loggers/` | Structlog + Seqlog configuration |
+| `logging/` | Logging service provider config (structlog + stdlib dictConfig + request log) |
 
 Pipeline flow: `Input file (TXT/CSV/XLSX) → Translate → Generate audio → Optimize → Evaluate (STT scoring) → Write results`
 
