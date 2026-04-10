@@ -246,23 +246,21 @@ the message, mirroring structlog semantics with an explicit logger name.
 #### Runtime Service Configs
 
 
-| Method | Path                                                                           | Description                                                                      |
-| ------ | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
-| `POST` | [/internal/services/configs/apply](src/api/internal/service_config_routes.py)  | Validate and apply one JSON config payload in memory (no file persistence).      |
-| `POST` | [/internal/services/configs/upload](src/api/internal/service_config_routes.py) | Validate and apply uploaded JSON config content in memory (no file persistence). |
-| `GET` | [/internal/services/configs/{service_name}](src/api/internal/service_config_routes.py) | List all config files for one registered service. |
-| `POST` | [/internal/services/configs/{service_name}](src/api/internal/service_config_routes.py) | Create a new config JSON file for one service and reload the registry. |
-| `PATCH` | [/internal/services/configs/{service_name}/{config_name}](src/api/internal/service_config_routes.py) | Merge patch into one config file (patch overrides values; empty/default fields are pruned). |
-| `DELETE` | [/internal/services/configs/{service_name}/{config_name}](src/api/internal/service_config_routes.py) | Remove one config file and reload the registry. |
-| `POST` | [/internal/services/configs/{service_name}/enable-configurations](src/api/internal/service_config_routes.py) | Enable selected config files for one service. |
-| `POST` | [/internal/services/configs/{service_name}/disable-configurations](src/api/internal/service_config_routes.py) | Disable selected config files for one service. |
-| `POST` | [/internal/services/configs/{service_name}/enable-all-configurations](src/api/internal/service_config_routes.py) | Enable all config files in the service config directory. |
-| `POST` | [/internal/services/configs/{service_name}/disable-all-configurations](src/api/internal/service_config_routes.py) | Disable all config files in the service config directory. |
+- `POST` `/internal/configurations/apply` — validate and apply one JSON payload in memory.
+- `POST` `/internal/configurations/upload` — validate uploaded JSON in memory.
+- `GET` `/internal/configurations/{service_name}` — list config files for one service.
+- `POST` `/internal/configurations/{service_name}` — create one config file and reload the registry.
+- `PATCH` `/internal/configurations/{service_name}/{config_name}` — merge patch and prune defaults.
+- `DELETE` `/internal/configurations/{service_name}/{config_name}` — delete one config file.
+- `POST` `/internal/configurations/{service_name}/enable-configurations` — enable selected configs.
+- `POST` `/internal/configurations/{service_name}/disable-configurations` — disable selected configs.
+- `POST` `/internal/configurations/{service_name}/enable-all-configurations` — enable all configs.
+- `POST` `/internal/configurations/{service_name}/disable-all-configurations` — disable all configs.
 
-
-`/apply` and `/upload` are runtime-only and return `config_name`, `accepted`, and `error`, matching `ConfigApplyResult`.
-Persisted CRUD and batch toggle routes operate on `config/<service_subdir>/*.json`, validate payloads against
-service acceptance criteria, and call `ServiceRegistryBuilder.load_all_from_disk()` after successful mutations.
+`/apply` and `/upload` are runtime-only and return `config_name`, `accepted`, and `error`.
+Persisted CRUD and batch toggle routes operate on `config/<service_subdir>/*.json`,
+validate payloads against service acceptance criteria, and call
+`ServiceRegistryBuilder.load_all_from_disk()` after successful mutations.
 
 ## Architecture
 
@@ -318,7 +316,7 @@ src/
 │   │   ├── optimizers_routes.py
 │   │   ├── text_translation_routes.py
 │   │   ├── logging_routes.py     # /internal/logging/emit, provider-request, translator-request
-│   │   ├── service_config_routes.py   # runtime apply/upload + persisted CRUD/batch config routes
+│   │   ├── configuration_routes.py    # runtime apply/upload + persisted CRUD/batch config routes
 │   │   └── schemas/              # Internal OpenAPI contract models (Pydantic)
 │   │       ├── text_to_speech.py
 │   │       ├── text_translation.py   # Translate* + TranslationFileSourceWord (translate-file)
@@ -326,7 +324,7 @@ src/
 │   │       ├── voice_optimization.py
 │   │       ├── jobs.py
 │   │       ├── logging.py
-│   │       └── service_config.py
+│   │       └── configuration.py
 │   └── v1/                       # Public /api/v1
 │       ├── routes_auth.py
 │       ├── routes_common.py      # ping, status, operation, list-files
@@ -356,7 +354,7 @@ src/
     ├── service_registry.py       # Subpackage discovery, get_service
     ├── registry_builder.py       # load_all_from_disk, hot-reload
     ├── models.py                 # Service / ServiceProvider bases
-    ├── config_file_store/        # JSON CRUD store + merge/prune helpers for service configs
+    ├── configuration/            # Configuration service (factory + file_system provider)
     ├── text_to_speech/
     │   ├── models.py
     │   ├── service.py

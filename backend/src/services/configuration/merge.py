@@ -1,4 +1,4 @@
-"""JSON merge and prune helpers for service config files."""
+"""JSON merge and prune helpers for configuration payloads."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ def deep_merge(base: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
 
 
 def prune_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    """Drop empty/default values from a service config payload."""
+    """Drop empty/default values from a service configuration payload."""
     pruned = _prune_value(payload)
     if not isinstance(pruned, dict):
         return {}

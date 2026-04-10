@@ -1,17 +1,17 @@
-"""Schemas for internal runtime service-config endpoints."""
+"""Schemas for internal runtime configuration endpoints."""
 
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 
-class ApplyConfigRequest(BaseModel):
+class ApplyConfigurationRequest(BaseModel):
     """Body model for direct JSON payload submission."""
 
     payload: dict[str, Any]
 
 
-class ApplyConfigResponse(BaseModel):
+class ApplyConfigurationResponse(BaseModel):
     """Result model for runtime config apply endpoints."""
 
     config_name: str
@@ -19,8 +19,8 @@ class ApplyConfigResponse(BaseModel):
     error: str | None = None
 
 
-class ConfigFileSummaryResponse(BaseModel):
-    """One config file entry returned by list operations."""
+class ConfigurationFileSummaryResponse(BaseModel):
+    """One configuration file entry returned by list operations."""
 
     config_name: str
     filename: str
@@ -31,7 +31,7 @@ class ConfigFileSummaryResponse(BaseModel):
     error: str | None = None
 
 
-class ConfigMutationResponse(BaseModel):
+class ConfigurationMutationResponse(BaseModel):
     """Result model for one add/remove/patch mutation."""
 
     config_name: str
@@ -39,15 +39,15 @@ class ConfigMutationResponse(BaseModel):
     error: str | None = None
 
 
-class AddConfigRequest(BaseModel):
-    """Body model for creating a new config file."""
+class AddConfigurationRequest(BaseModel):
+    """Body model for creating a new configuration file."""
 
     config_name: str = Field(min_length=1)
     payload: dict[str, Any]
 
 
-class PatchConfigRequest(BaseModel):
-    """Body model for merge-patching an existing config file."""
+class PatchConfigurationRequest(BaseModel):
+    """Body model for merge-patching an existing configuration file."""
 
     patch: dict[str, Any]
 
@@ -63,4 +63,4 @@ class BatchToggleConfigurationsResponse(BaseModel):
 
     service_name: str
     enabled: bool
-    results: list[ConfigMutationResponse]
+    results: list[ConfigurationMutationResponse]

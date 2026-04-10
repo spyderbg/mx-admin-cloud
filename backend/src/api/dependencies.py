@@ -4,7 +4,8 @@ from fastapi import Depends, HTTPException, Request, status  # pylint: disable=i
 
 from src.core.config import settings
 from src.core.job_store import JobStore
-from src.services.config_file_store import ServiceConfigFileStore
+from src.services.configuration import ConfigurationService
+from src.services.configuration.providers.file_system import FileSystemConfigurationProvider
 from src.services.service_registry import ServiceRegistry, ServiceRegistryBuilder
 from src.core.utils import is_windows_platform
 from src.security.auth import verify_token
@@ -65,11 +66,20 @@ def get_registry_builder(request: Request) -> ServiceRegistryBuilder:
     return request.app.state.registry_builder
 
 
-def get_config_file_store(
+def get_configuration_service(
         builder: ServiceRegistryBuilder = Depends(get_registry_builder),
-) -> ServiceConfigFileStore:
-    """Inject the service-config JSON file store."""
-    return ServiceConfigFileStore(config_root=settings.config_path, registry_builder=builder)
+) -> ConfigurationService:
+    """Inject the runtime configuration service with file-system provider."""
+    configuration_service = ConfigurationService(
+        service_name="configuration",
+        package_name="src.services.configuration",
+        service_dir=settings.BASE_DIR / "src/services/configuration",
+        base_dir=settings.BASE_DIR,
+    )
+    configuration_service.replace_providers(
+        [FileSystemConfigurationProvider.build_runtime(settings.config_path, builder)]
+    )
+    return configuration_service
 
 
 def get_job_store(request: Request) -> JobStore:
