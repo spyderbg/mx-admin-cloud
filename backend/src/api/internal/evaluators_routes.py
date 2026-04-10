@@ -9,15 +9,16 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends  # pylint: disable=import-error
+from fastapi import APIRouter, Depends, HTTPException  # pylint: disable=import-error
 
 from src.api.dependencies import get_registry, require_internal
 from src.api.internal.schemas.evaluation import EvaluateRequest
 from src.core.config import settings
 from src.core.models import GeneratedAudio
-from src.services.models import ServiceProvider
+from src.services import text_to_speech
 from src.services.service_registry import ServiceRegistry
 from src.services.evaluation import EvaluationEngine, JsonScoreStore, MultiScoreStore, SQLiteScoreStore
+from src.services.text_to_speech.service import TextToSpeechService
 
 router = APIRouter(prefix="/internal", tags=["internal-evaluators"])
 
@@ -32,10 +33,14 @@ router = APIRouter(prefix="/internal", tags=["internal-evaluators"])
 )
 async def list_evaluators(
         _user: dict = Depends(require_internal),
+        registry: ServiceRegistry = Depends(get_registry),
 ) -> list[dict[str, Any]]:
     """Return configured evaluators (from generators/providers) with activation states."""
-    from src.services.config_loader import load_service_configs  # pylint: disable=import-outside-toplevel
-    configs = load_service_configs(settings.config_path / "text_to_speech", ServiceProvider)
+    service = registry.get_service(text_to_speech.SERVICE_NAME)
+    if not isinstance(service, TextToSpeechService):
+        raise HTTPException(status_code=500, detail="Service registry mismatch for text_to_speech.")
+    configs = service.providers_snapshot()
+    configs.sort(key=lambda cfg: cfg.priority)
     return [
         {
             "name": c.name,

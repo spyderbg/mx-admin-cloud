@@ -30,6 +30,20 @@ pip install -r requirements.txt
 
 Use a virtual environment (see above); avoid `--break-system-packages` on system Python unless you intentionally install globally.
 
+## Validate backend code
+
+From the repository root, run:
+
+```bash
+./scripts/validate.sh
+```
+
+This script:
+- creates `backend/.venv` when missing,
+- installs `backend/requirements.txt`,
+- compiles all backend Python modules under `backend/src`,
+- runs `pylint` on `backend/src`.
+
 ## Run the backend
 
 From the backend directory:
@@ -317,7 +331,6 @@ src/
     ├── service_registry.py       # Subpackage discovery, get_service
     ├── registry_builder.py       # load_all_from_disk, hot-reload
     ├── models.py                 # Service / ServiceProvider bases
-    ├── config_loader.py          # Generic JSON config loader
     ├── text_to_speech/
     │   ├── models.py
     │   ├── service.py
