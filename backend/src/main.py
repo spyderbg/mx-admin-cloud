@@ -107,7 +107,7 @@ app.include_router(routes_content.router, prefix=settings.API_V1_STR, tags=["con
 app.include_router(routes_users.router, prefix=settings.API_V1_STR, tags=["users"])
 app.include_router(src.api.internal.jobs_routes.router)
 app.include_router(src.api.internal.logging_routes.router)
-app.include_router(src.api.internal.service_config_routes.router)
+app.include_router(src.api.internal.configuration_routes.router)
 app.include_router(src.api.internal.text_translation_routes.router)
 app.include_router(src.api.internal.text_to_speech_routes.router)
 app.include_router(src.api.internal.optimizers_routes.router)

@@ -32,11 +32,11 @@ class TextToSpeechService(Service):
     """
 
     def __init__(
-        self,
-        service_name: str,
-        package_name: str,
-        service_dir: Path,
-        base_dir: Path,
+            self,
+            service_name: str,
+            package_name: str,
+            service_dir: Path,
+            base_dir: Path,
     ) -> None:
         super().__init__(service_name, package_name, service_dir, base_dir)
         self._providers: list[TTSProvider] = []
@@ -69,11 +69,11 @@ class TextToSpeechService(Service):
         raise TTSProviderNotFoundError(f"Provider '{provider_name}' not found or not active.")
 
     async def generate(
-        self,
-        request: TTSRequest,
-        client: Any,
-        *,
-        provider_name: str | None = None,
+            self,
+            request: TTSRequest,
+            client: Any,
+            *,
+            provider_name: str | None = None,
     ) -> GeneratedAudio:
         """Generate audio with the requested provider or highest-priority active provider."""
         provider = self._resolve_active_provider(provider_name=provider_name)

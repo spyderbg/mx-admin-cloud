@@ -115,8 +115,8 @@ async def translate_text(
     response_model=TranslateFileResponse,
     summary="Translate words in a file using active translators",
     description=(
-        "Upload a file (TXT, CSV, or XLSX) and translate segments whose language differs from "
-        "*target_lang_code* (per row/column language) using active translators in priority order."
+            "Upload a file (TXT, CSV, or XLSX) and translate segments whose language differs from "
+            "*target_lang_code* (per row/column language) using active translators in priority order."
     ),
 )
 async def translate_file(
