@@ -20,7 +20,7 @@
         <div style="position: relative;">
           <input
             type="text"
-            class="form-control form-control-sm"
+            class="form-control form-control-sm cd-sidebar-filter-input"
             placeholder="Filter..."
             v-model="filterText"
             style="background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.2); color: #fff; padding-left: 2rem; padding-right: 2rem;"
@@ -221,6 +221,12 @@ const toggleCategory = (id: string): void => {
 </script>
 
 <style scoped>
+/* Placeholder defaults are dim; sidebar field needs high contrast on blue. */
+.cd-sidebar-filter-input::placeholder {
+  color: rgba(255, 255, 255, 0.9);
+  opacity: 1;
+}
+
 .cd-sidebar-tree-btn {
   color: rgba(255, 255, 255, 0.65);
   background: transparent;
