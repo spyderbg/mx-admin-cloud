@@ -12,7 +12,7 @@ npm run type-check  # vue-tsc --noEmit only
 npm run preview     # serve production build locally
 ```
 
-The dev server proxies **`/api`** to **`http://127.0.0.1:8000`** and serves the monorepo **`content/`** tree at **`/content`** (see `vite.config.ts`). Run the FastAPI backend on port 8000 for a full API-backed app.
+The dev server proxies `**/api**` to `**http://127.0.0.1:8000**` and serves the monorepo `**content/**` tree at `**/content**` (see `vite.config.ts`). Run the FastAPI backend on port 8000 for a full API-backed app.
 
 **Optional offline UI:** If `VITE_DEBUG_MODE=true` (e.g. in `.env.development.local`), the app starts [MSW](https://mswjs.io/) (`src/mocks/`), seeds a placeholder token when none is set, and unhandled requests bypass the worker so real APIs still work when reachable.
 
@@ -56,13 +56,15 @@ src/
 
 ## Routes
 
-| Path | View | Layout | Description |
-|------|------|--------|-------------|
-| `/login` | `LoginView` | None (full-page) | Authentication screen |
-| `/` | — | — | Redirects to `/categories` |
-| `/categories` | `CategoriesView` | `AppLayout` | Shows first category by default |
-| `/categories/:categoryId` | `CategoriesView` | `AppLayout` | Selected category details + image grid |
-| `/categories/:categoryId/images/:imageId` | `ImageDetailView` | `AppLayout` | Image detail: files, voices, name editing |
+
+| Path                                      | View              | Layout           | Description                               |
+| ----------------------------------------- | ----------------- | ---------------- | ----------------------------------------- |
+| `/login`                                  | `LoginView`       | None (full-page) | Authentication screen                     |
+| `/`                                       | —                 | —                | Redirects to `/categories`                |
+| `/categories`                             | `CategoriesView`  | `AppLayout`      | Shows first category by default           |
+| `/categories/:categoryId`                 | `CategoriesView`  | `AppLayout`      | Selected category details + image grid    |
+| `/categories/:categoryId/images/:imageId` | `ImageDetailView` | `AppLayout`      | Image detail: files, voices, name editing |
+
 
 All `/categories` routes require authentication (token in localStorage). Unauthenticated users are redirected to `/login`.
 
@@ -101,7 +103,7 @@ Full-page authentication screen (Star Admin auth theme). Uses `LoginForm` compon
 Displayed when a category is selected (or defaults to first category):
 
 - **Page header** with category name
-- **CategoryDetail card** -- category icon, name, description, Edit/Delete buttons, voice list per language with Edit/Delete per voice; rename / delete / upload / voice-upload modals close each other so only one overlay is open at a time
+- **CategoryDetail card** -- two-row layout: **Category Name** on the first row; second row places **Category Icon** (square `width: 100%`, `aspect-ratio: 1 / 1`, `object-fit: contain`) and **Category Voices** side by side so those section labels share one baseline; description under the icon; Edit/Delete on the icon; voice cards in a **wrapping** CSS grid (`repeat(auto-fit, minmax(7.5rem, 1fr))`; play + **Upload**; pencil opens upload); rename / delete / upload / voice-upload modals are mutually exclusive
 - **ImageGrid** -- responsive 4-column grid of image thumbnails, each with a pencil edit-icon badge. Clicking navigates to ImageDetailView.
 
 ### ImageDetailView
@@ -111,16 +113,18 @@ Displayed for a specific image within a category:
 - **Breadcrumb** navigation: root + category + image labels follow the **navbar content language** (same as the sidebar). Category and image segments use the matching `Voice.name`, then the **English** voice if that language is missing, then the stored `name`. The root crumb is translated for en/es/fr/bg (unknown codes fall back to English).
 - **Page title** (`h3.page-title`) uses the same localized image label as the last breadcrumb segment, formatted with **per-word Pascal-style casing** (first letter of each word uppercased, the rest lowercased via `toLocaleUpperCase` / `toLocaleLowerCase`).
 - **Image name** editable input
-- **Files section** -- grid of the image's file variants with replace/delete actions. At least one file must remain (delete disabled when only one). **Add File** opens the system file picker (`image/*`); selection is logged until upload is wired to the API.
+- **Files section** -- grid of the image's file variants with replace/delete actions. At least one file must remain (delete disabled when only one). **Add File** opens the system file picker (`image/`*); selection is logged until upload is wired to the API.
 - **Voices table** -- one row per supported language (en, es, fr, bg) showing flag, voice name (text only), type badge, and replace/upload button.
 
 ## Components
 
-| Component | Props | Emits | Purpose |
-|-----------|-------|-------|---------|
-| `CategoryDetail` | `category: Category` | `edit`, `delete`, `edit-voice`, `delete-voice` | Category info card with voice list |
-| `ImageGrid` | `images: Image[]`, `categoryId: string` | — | Responsive thumbnail grid with edit badges |
-| `LoginForm` | — | — | Login form with auth API integration |
+
+| Component        | Props                                   | Emits                                          | Purpose                                    |
+| ---------------- | --------------------------------------- | ---------------------------------------------- | ------------------------------------------ |
+| `CategoryDetail` | `category: Category`                    | `edit`, `delete`, `edit-voice`, `delete-voice` | Category info card with voice list         |
+| `ImageGrid`      | `images: Image[]`, `categoryId: string` | —                                              | Responsive thumbnail grid with edit badges |
+| `LoginForm`      | —                                       | —                                              | Login form with auth API integration       |
+
 
 ## Domain Types
 
@@ -174,3 +178,4 @@ Imported from `src/main.ts` (Star Admin / vue3-demo lineage):
 - `assets/css/demo_1/style.css` -- Demo skin overrides (sidebar, navbar, cards)
 - `assets/css/auth.css` -- Login page styles
 - Icon fonts under `assets/vendors/`: MDI, Font Awesome 4.7, flag-icon-css
+

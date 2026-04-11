@@ -1,18 +1,22 @@
 <template>
   <div class="card mb-2" style="width: 100%;">
     <div class="card-body">
+      <!-- Row 1: name spans left; empty cell on md+ keeps column grid for row 2 -->
       <div class="row">
-        <!-- Left: Category Name, Icon, Description -->
-        <div class="col-lg-5 col-md-5 mb-3 mb-md-0">
-          <div class="mb-3">
-            <label class="text-muted small mb-1 d-block">Category Name</label>
-            <div class="d-flex align-items-center">
-              <h5 class="mb-0">{{ category.name }}</h5>
-              <button class="btn btn-link btn-sm text-primary p-0 ml-2" title="Rename category" @click="openRenameModal">
-                <i class="mdi mdi-pencil" style="font-size: 1rem;"></i>
-              </button>
-            </div>
+        <div class="col-lg-5 col-md-5 mb-2 mb-md-3">
+          <label class="text-muted small mb-1 d-block">Category Name</label>
+          <div class="d-flex align-items-center">
+            <h5 class="mb-0">{{ category.name }}</h5>
+            <button class="btn btn-link btn-sm text-primary p-0 ml-2" title="Rename category" @click="openRenameModal">
+              <i class="mdi mdi-pencil" style="font-size: 1rem;"></i>
+            </button>
           </div>
+        </div>
+        <div class="col-lg-7 col-md-7 d-none d-md-block" aria-hidden="true"></div>
+      </div>
+      <!-- Row 2: "Category Icon" and "Category Voices" labels share one baseline -->
+      <div class="row">
+        <div class="col-lg-5 col-md-5 mb-3 mb-md-0">
           <div class="mb-3">
             <label class="text-muted small mb-1 d-block">Category Icon</label>
             <div class="category-icon-wrap">
@@ -44,9 +48,8 @@
           <p class="text-muted mb-0" style="font-size: 0.9rem;">{{ category.description }}</p>
         </div>
 
-        <!-- Right: Category Voices -->
         <div class="col-lg-7 col-md-7">
-          <label class="text-muted small mb-2 d-block">Category Voices</label>
+          <label class="text-muted small mb-1 d-block">Category Voices</label>
           <div class="voice-cards-grid">
             <div v-for="voice in category.voices" :key="voice.id" class="voice-card">
               <button
@@ -81,7 +84,7 @@
                 type="button"
                 @click="openVoiceUpload(voice)"
               >
-                Edit Voice
+                Upload
               </button>
             </div>
           </div>
@@ -320,13 +323,16 @@ function togglePlay(voice: Voice): void {
 /* Category icon */
 .category-icon-wrap {
   position: relative;
-  width: 330px;
+  width: 100%;
   max-width: 100%;
+  aspect-ratio: 1 / 1;
+  background: rgba(0, 0, 0, 0.04);
 }
 .category-icon-wrap img {
   width: 100%;
-  height: 345px;
-  object-fit: cover;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
   display: block;
 }
 .category-icon-actions {
@@ -363,14 +369,15 @@ function togglePlay(voice: Voice): void {
   background: #b91c1c;
 }
 
-/* Voice cards grid */
+/* Voice cards: wrap to extra rows when the column is narrow (was fixed 4 columns). */
 .voice-cards-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
   gap: 0.75rem;
 }
 .voice-card {
   position: relative;
+  min-width: 0;
   border: 1.5px solid #b8d4f0;
   border-radius: 10px;
   padding: 1rem 0.75rem 0.75rem;
