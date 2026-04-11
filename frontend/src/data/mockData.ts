@@ -329,7 +329,7 @@ export const mockCategories: Category[] = [
       { id: 'vegetables-v-en', name: 'vegetables', language: 'en', type: 'male', iconUrl: face(1), audioUrl: '/content/vegetables/vegetables_en.mp3' },
       { id: 'vegetables-v-es', name: 'vegetables', language: 'es', type: 'female', iconUrl: face(2), audioUrl: '/content/vegetables/vegetables_es.mp3' },
       { id: 'vegetables-v-fr', name: 'vegetables', language: 'fr', type: 'male', iconUrl: face(3), audioUrl: '/content/vegetables/vegetables_fr.mp3' },
-      { id: 'vegetables-v-bg', name: 'vegetables', language: 'bg', type: 'female', iconUrl: face(4), audioUrl: '/content/vegetables/vegetables_bg.mp3' },
+      { id: 'vegetables-v-bg', name: 'зеленчуци', language: 'bg', type: 'female', iconUrl: face(4), audioUrl: '/content/vegetables/vegetables_bg.mp3' },
     ],
     images: [
       {
@@ -559,7 +559,7 @@ export const mockCategories: Category[] = [
       { id: 'toys-v-en', name: 'toys', language: 'en', type: 'male', iconUrl: face(1), audioUrl: '/content/toys/toys_en.mp3' },
       { id: 'toys-v-es', name: 'toys', language: 'es', type: 'female', iconUrl: face(2), audioUrl: '/content/toys/toys_es.mp3' },
       { id: 'toys-v-fr', name: 'toys', language: 'fr', type: 'male', iconUrl: face(3), audioUrl: '/content/toys/toys_fr.mp3' },
-      { id: 'toys-v-bg', name: 'toys', language: 'bg', type: 'female', iconUrl: face(4), audioUrl: '/content/toys/toys_bg.mp3' },
+      { id: 'toys-v-bg', name: 'играчки', language: 'bg', type: 'female', iconUrl: face(4), audioUrl: '/content/toys/toys_bg.mp3' },
     ],
     images: [],
   },

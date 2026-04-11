@@ -17,7 +17,7 @@ export function localizedImageLabel(image: Image, lang: Language): string {
   return labelFromVoices(image.voices, lang) ?? image.name
 }
 
-/** First segment of category breadcrumbs; unknown `lang` falls back to English. */
+/** The first segment of category breadcrumbs; unknown `lang` falls back to English. */
 export function breadcrumbCategoriesLabel(lang: Language): string {
   const labels: Record<Language, string> = {
     en: 'Categories',

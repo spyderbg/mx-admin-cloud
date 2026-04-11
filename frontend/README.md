@@ -28,6 +28,7 @@ src/
 │   └── vendors/      # Bootstrap, MDI, Font Awesome, flag-icons, etc.
 ├── components/       # Reusable UI components
 │   ├── CategoryDetail.vue
+│   ├── ServerWord.vue
 │   ├── ImageGrid.vue
 │   └── LoginForm.vue
 ├── composables/      # Shared composition helpers (e.g. content UI language)
@@ -102,8 +103,8 @@ Full-page authentication screen (Star Admin auth theme). Uses `LoginForm` compon
 
 Displayed when a category is selected (or defaults to first category):
 
-- **Page header** with category name
-- **CategoryDetail card** -- two-row layout: **Category Name** on the first row; second row places **Category Icon** (square `width: 100%`, `aspect-ratio: 1 / 1`, `object-fit: contain`) and **Category Voices** side by side so those section labels share one baseline; description under the icon; Edit/Delete on the icon; voice cards in a **wrapping** CSS grid (`repeat(auto-fit, minmax(7.5rem, 1fr))`; play + **Upload**; pencil opens upload); rename / delete / upload / voice-upload modals are mutually exclusive
+- **Page header** -- `h3.page-title` with localized category label + `toPascalCaseWords` (navbar content language; no edit control on the title)
+- **CategoryDetail card** -- **Category Name** and each **voice-card** word use `ServerWord` (category row: localized + rename modal; voice row: `voice.name` as-is, pencil → **Edit word** modal, `rename-voice` emit). Two-row layout: **Category Icon** (`aspect-ratio: 1 / 1`, `object-fit: contain`) and **Category Voices** share a baseline; voice grid `repeat(auto-fit, minmax(7.5rem, 1fr))`; play + **Upload** (audio); corner **delete** icon opens **Delete or reset voice** confirmation, then `delete-voice` emit; modals mutually exclusive
 - **ImageGrid** -- responsive 4-column grid of image thumbnails, each with a pencil edit-icon badge. Clicking navigates to ImageDetailView.
 
 ### ImageDetailView
@@ -121,10 +122,12 @@ Displayed for a specific image within a category:
 
 | Component        | Props                                   | Emits                                          | Purpose                                    |
 | ---------------- | --------------------------------------- | ---------------------------------------------- | ------------------------------------------ |
-| `CategoryDetail` | `category: Category`                    | `edit`, `delete`, `edit-voice`, `delete-voice` | Category info card with voice list         |
+| `ServerWord`     | `category` and/or `text` + style props  | `edit`                                    | Label + pencil; `text` overrides display source |
+| `CategoryDetail` | `category: Category`                    | `edit`, `delete`, `rename`, `edit-voice`, `rename-voice`, `delete-voice` | Category info card with voice list         |
 | `ImageGrid`      | `images: Image[]`, `categoryId: string` | —                                              | Responsive thumbnail grid with edit badges |
 | `LoginForm`      | —                                       | —                                              | Login form with auth API integration       |
 
+**ServerWord** — Source: non-empty `text` is shown as-is; otherwise `localizedCategoryLabel(category, content language)`. `pascalCase` runs `toPascalCaseWords` on that raw string. Styling: `rootClass`, `textClass`, `buttonClass`, `iconClass`, `iconStyle`; `textTag` (default `h5`, `mb-0` only for `h5`); `inheritAttrs: false` with class/style on the root merged from `$attrs` + `rootClass`. DOM hooks: `server-word-root`, `server-word-text`, `server-word-edit`, `server-word-icon`.
 
 ## Domain Types
 

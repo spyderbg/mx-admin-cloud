@@ -5,12 +5,7 @@
       <div class="row">
         <div class="col-lg-5 col-md-5 mb-2 mb-md-3">
           <label class="text-muted small mb-1 d-block">Category Name</label>
-          <div class="d-flex align-items-center">
-            <h5 class="mb-0">{{ category.name }}</h5>
-            <button class="btn btn-link btn-sm text-primary p-0 ml-2" title="Rename category" @click="openRenameModal">
-              <i class="mdi mdi-pencil" style="font-size: 1rem;"></i>
-            </button>
-          </div>
+          <ServerWord :category="category" @edit="openRenameModal" />
         </div>
         <div class="col-lg-7 col-md-7 d-none d-md-block" aria-hidden="true"></div>
       </div>
@@ -53,18 +48,27 @@
           <div class="voice-cards-grid">
             <div v-for="voice in category.voices" :key="voice.id" class="voice-card">
               <button
-                class="voice-card-edit-icon"
-                title="Upload voice file"
-                @click="openVoiceUpload(voice)"
+                type="button"
+                class="voice-card-delete-icon"
+                title="Delete or reset voice"
+                @click="openVoiceDeleteModal(voice)"
               >
-                <i class="mdi mdi-pencil"></i>
+                <i class="mdi mdi-delete"></i>
               </button>
               <div class="voice-card-flag">
                 <i
                   :class="'flag-icon flag-icon-' + langFlag(voice.language)"
                 ></i>
               </div>
-              <div class="voice-card-name">{{ voice.name }}</div>
+              <ServerWord
+                :text="voice.name"
+                text-tag="div"
+                text-class="voice-card-name"
+                root-class="justify-content-center"
+                edit-title="Edit word"
+                :icon-style="{ fontSize: '0.8rem' }"
+                @edit="openVoiceWordModal(voice)"
+              />
               <div class="voice-card-type">{{ voiceTypeLabel(voice.type) }}</div>
               <div class="voice-card-controls">
                 <button
@@ -166,6 +170,66 @@
     </div>
   </Teleport>
 
+  <!-- Edit voice word (label) modal -->
+  <Teleport to="body">
+    <div v-if="showVoiceWordEdit" class="cd-modal-overlay" @click.self="closeVoiceWordEdit">
+      <div class="cd-modal-box">
+        <div class="cd-modal-header">
+          <h5 class="cd-modal-title">Edit word</h5>
+          <button type="button" class="cd-modal-close" @click="closeVoiceWordEdit">&times;</button>
+        </div>
+        <div class="cd-modal-body">
+          <p v-if="voiceWordEditTarget" class="text-muted small mb-2">
+            <i :class="'flag-icon flag-icon-' + langFlag(voiceWordEditTarget.language)" class="mr-1"></i>
+            {{ voiceWordEditTarget.language.toUpperCase() }}
+          </p>
+          <div class="form-group mb-0">
+            <label class="col-form-label">Word</label>
+            <input
+              v-model="voiceWordValue"
+              type="text"
+              class="form-control"
+              placeholder="Enter word"
+              @keyup.enter="confirmVoiceWordEdit"
+            />
+          </div>
+        </div>
+        <div class="cd-modal-footer">
+          <button type="button" class="btn btn-secondary" @click="closeVoiceWordEdit">Cancel</button>
+          <button type="button" class="btn btn-primary" @click="confirmVoiceWordEdit">Save</button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
+
+  <!-- Delete / reset voice confirmation -->
+  <Teleport to="body">
+    <div v-if="showVoiceDeleteConfirm" class="cd-modal-overlay" @click.self="closeVoiceDeleteModal">
+      <div class="cd-modal-box">
+        <div class="cd-modal-header">
+          <h5 class="cd-modal-title">Delete or reset voice</h5>
+          <button type="button" class="cd-modal-close" @click="closeVoiceDeleteModal">&times;</button>
+        </div>
+        <div class="cd-modal-body">
+          <template v-if="voiceDeleteTarget">
+            <p class="mb-2">
+              Are you sure you want to delete or reset the voice for
+              <strong>{{ voiceDeleteTarget.name }}</strong>
+              (<span class="text-uppercase">{{ voiceDeleteTarget.language }}</span>)?
+            </p>
+            <p class="text-muted small mb-0">
+              This is intended to remove or clear the uploaded audio for that language. You can upload again afterward.
+            </p>
+          </template>
+        </div>
+        <div class="cd-modal-footer">
+          <button type="button" class="btn btn-secondary" @click="closeVoiceDeleteModal">Cancel</button>
+          <button type="button" class="btn btn-danger" @click="confirmVoiceDelete">Delete / reset</button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
+
   <!-- Upload voice file modal -->
   <Teleport to="body">
     <div v-if="showVoiceUpload" class="cd-modal-overlay" @click.self="closeVoiceUpload">
@@ -196,6 +260,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import ServerWord from './ServerWord.vue'
 import type { Category, Language, Voice } from '../types'
 
 const props = defineProps<{
@@ -208,6 +273,7 @@ const emit = defineEmits<{
   rename: [name: string]
   'edit-voice': [voice: Voice]
   'delete-voice': [voice: Voice]
+  'rename-voice': [voice: Voice, name: string]
 }>()
 
 const langFlagMap: Record<Language, string> = { en: 'us', es: 'es', fr: 'fr', bg: 'bg' }
@@ -224,6 +290,11 @@ const showDelete = ref(false)
 const showUpload = ref(false)
 const showRename = ref(false)
 const showVoiceUpload = ref(false)
+const showVoiceWordEdit = ref(false)
+const voiceWordEditTarget = ref<Voice | null>(null)
+const voiceWordValue = ref('')
+const showVoiceDeleteConfirm = ref(false)
+const voiceDeleteTarget = ref<Voice | null>(null)
 const editingVoice = ref<Voice | null>(null)
 const renameValue = ref('')
 const playingVoiceId = ref<string | null>(null)
@@ -247,7 +318,54 @@ function closeAllModals(): void {
   showUpload.value = false
   showRename.value = false
   showVoiceUpload.value = false
+  showVoiceWordEdit.value = false
+  showVoiceDeleteConfirm.value = false
   editingVoice.value = null
+  voiceWordEditTarget.value = null
+  voiceDeleteTarget.value = null
+}
+
+function openVoiceDeleteModal(voice: Voice): void {
+  closeAllModals()
+  voiceDeleteTarget.value = voice
+  showVoiceDeleteConfirm.value = true
+}
+
+function closeVoiceDeleteModal(): void {
+  showVoiceDeleteConfirm.value = false
+  voiceDeleteTarget.value = null
+}
+
+function confirmVoiceDelete(): void {
+  const voice = voiceDeleteTarget.value
+  showVoiceDeleteConfirm.value = false
+  voiceDeleteTarget.value = null
+  if (voice) {
+    if (playingVoiceId.value === voice.id) stopAudio()
+    emit('delete-voice', voice)
+  }
+}
+
+function openVoiceWordModal(voice: Voice): void {
+  closeAllModals()
+  voiceWordEditTarget.value = voice
+  voiceWordValue.value = voice.name
+  showVoiceWordEdit.value = true
+}
+
+function closeVoiceWordEdit(): void {
+  showVoiceWordEdit.value = false
+  voiceWordEditTarget.value = null
+}
+
+function confirmVoiceWordEdit(): void {
+  const voice = voiceWordEditTarget.value
+  const trimmed = voiceWordValue.value.trim()
+  showVoiceWordEdit.value = false
+  voiceWordEditTarget.value = null
+  if (voice && trimmed && trimmed !== voice.name) {
+    emit('rename-voice', voice, trimmed)
+  }
 }
 
 function openUploadModal(): void {
@@ -317,6 +435,7 @@ function togglePlay(voice: Voice): void {
   audio.addEventListener('ended', stopAudio, { once: true })
   audio.play()
 }
+
 </script>
 
 <style scoped>
@@ -387,7 +506,7 @@ function togglePlay(voice: Voice): void {
   flex-direction: column;
   align-items: center;
 }
-.voice-card-edit-icon {
+.voice-card-delete-icon {
   position: absolute;
   top: 6px;
   right: 6px;
@@ -399,8 +518,8 @@ function togglePlay(voice: Voice): void {
   padding: 2px;
   line-height: 1;
 }
-.voice-card-edit-icon:hover {
-  color: #4f46e5;
+.voice-card-delete-icon:hover {
+  color: #dc2626;
 }
 .voice-card-flag {
   width: 56px;
@@ -416,7 +535,7 @@ function togglePlay(voice: Voice): void {
 .voice-card-flag .flag-icon {
   font-size: 1.6rem;
 }
-.voice-card-name {
+:deep(.voice-card-name) {
   font-weight: 600;
   font-size: 0.85rem;
   color: #1e293b;

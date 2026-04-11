@@ -1,7 +1,7 @@
 <template>
   <div v-if="category" style="width: 100%;">
     <div class="page-header" style="margin-bottom: 0.5rem;">
-      <h3 class="page-title">{{ category.name }}</h3>
+      <h3 class="page-title">{{ pageTitle }}</h3>
     </div>
     <CategoryDetail
       :category="category"
@@ -9,6 +9,7 @@
       @delete="onDeleteCategory"
       @rename="onRenameCategory"
       @edit-voice="onEditVoice"
+      @rename-voice="onRenameVoice"
       @delete-voice="onDeleteVoice"
     />
     <div class="d-flex justify-content-between align-items-center mt-4 mb-3">
@@ -46,9 +47,14 @@ import { getCategories } from '../api/categories'
 import type { Category, Voice } from '../types'
 import CategoryDetail from '../components/CategoryDetail.vue'
 import ImageGrid from '../components/ImageGrid.vue'
+import { useContentLanguage } from '../composables/useContentLanguage'
+import { localizedCategoryLabel } from '../utils/localizedLabels'
+import { toPascalCaseWords } from '../utils/pascalCaseWords'
 
 const route = useRoute()
 const router = useRouter()
+
+const contentLanguage = useContentLanguage()
 
 const gridColumns = ref(3)
 const categories = ref<Category[]>([])
@@ -58,6 +64,12 @@ const category = computed(() => {
   const id = route.params.categoryId as string
   if (id) return categories.value.find(c => c.id === id) ?? null
   return categories.value[0] ?? null
+})
+
+const pageTitle = computed(() => {
+  const cat = category.value
+  if (!cat) return ''
+  return toPascalCaseWords(localizedCategoryLabel(cat, contentLanguage.value))
 })
 
 watch(category, (cat) => {
@@ -77,6 +89,9 @@ const onRenameCategory = (name: string): void => {
 }
 const onEditVoice = (voice: Voice): void => {
   console.log('Edit voice:', voice.id)
+}
+const onRenameVoice = (voice: Voice, name: string): void => {
+  console.log('Rename voice word:', voice.id, 'to', name)
 }
 const onDeleteVoice = (voice: Voice): void => {
   console.log('Delete voice:', voice.id)
