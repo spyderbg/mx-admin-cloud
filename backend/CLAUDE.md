@@ -40,44 +40,40 @@ docker compose -f docker/docker-compose.yml up -d --build
 
 ### Backend (`src/`)
 
-- **`api/v1/`** — Public REST routes: login, cli-login, content CRUD, user management, common utils
+- **`api/v1/`** — Public REST routes: login, cli-login, content CRUD, user management (UDS+admin), common utils
 - **`api/internal/`** — Internal HTTP endpoints for TTS generation, evaluation, optimization, and translation
-  (requires admin JWT or internal service token)
+  (requires internal service token or admin JWT)
 - **`core/`** — Shared infrastructure with **zero** `src.services` imports (HTTP boundary enforced):
   - `config.py` — Pydantic Settings; all env vars and defaults
-  - `config_loader.py` — Loads and validates JSON configs from `backend/config/`
   - `models.py` — Core dataclasses (TTSRequest, GeneratedAudio, EvaluationResult, etc.)
-  - `output_paths.py` — Stable output directory and filename helpers
+  - `content_naming.py` — Slugification and output filename helpers
   - `languages.py` — Language code/name lookups and BCP-47 conversion
-  - *(logging moved to `services/logging/` — registered service with `struct_log` provider)*
-  - `input_loader.py` — `load_words()` parses CSV/XLSX/TXT for translation (source vs target language)
+  - `input_loader.py` — `load_words()` parses CSV/XLSX/TXT for translation
   - `result_writer.py` — Write per-run JSON and CSV reports
   - `pipeline.py` — Async TTS pipeline orchestration (calls internal HTTP endpoints)
-  - `content_service.py` — Filesystem ops for categories/images; DALL-E icons; internal translate/TTS helpers
+  - `content_service.py` — Filesystem ops for categories/images; DALL-E icons
+  - `job_store.py` — In-memory store for async pipeline jobs
 - **`services/`** — Business logic implementations (providers, translators, optimizers, evaluation)
-  - `service_registry.py` — Unified registry: package descriptors (class-level) + runtime instances (lock-protected)
-  - `registry_builder.py` — Builds and reloads ServiceRegistry from config files
-  - `text_to_speech/` — TTS provider implementations (OpenAI, ElevenLabs, Speaktor)
-  - `text_to_speech/providers/` — OpenAI, ElevenLabs, and Speaktor provider implementations
-  - `text_translation/` — Translator implementations (OpenAI, static CSV)
-  - `text_translation/providers/` — OpenAI and static translator implementations
-  - `voice_optimization/` — Audio post-processing (ffmpeg, pydub)
-  - `voice_optimization/providers/` — FFmpeg and pydub optimizer implementations
+  - `service_registry.py` — Unified registry and builder for all runtime services
+  - `configuration/` — Runtime configuration service (merges disk JSON with runtime updates)
+  - `text_to_speech/` — TTS provider implementations (OpenAI, ElevenLabs, Speaktor, Static)
+  - `text_translation/` — Translator implementations (OpenAI, Static CSV)
+  - `voice_optimization/` — Audio post-processing (FFmpeg, Pydub, Normalizer)
   - `evaluation/` — STT transcription and Levenshtein-based scoring
   - `logging/` — Logging service (structlog provider, HTTP emit client, request logger)
-- **`db/`** — SQLite user store (auto-creates `admin` on first run); passwords use SHA256 prehash + bcrypt
-- **`security/`** — JWT auth; HTTP login → 30 min token, CLI socket login → 30 sec token
+- **`db/`** — SQLite user store; passwords use SHA256 prehash + bcrypt
+- **`security/`** — JWT auth and token generation
 
 ### TTS Pipeline
 
-The pipeline is driven by JSON config files in `backend/config/`:
+The pipeline is driven by JSON config files in `backend/config/` and managed by the `ConfigurationService`:
 
 | Directory | Purpose |
 |-----------|---------|
-| `text_to_speech/` | TTS providers (OpenAI, ElevenLabs, Speaktor) — set `"active": "yes/no"` |
-| `text_translation/` | Translation configs (static CSV or OpenAI) per language pair |
-| `voice_optimizers/` | Audio post-processing (ffmpeg/pydub) — sample rate, mono, VBR |
-| `logging/` | Logging service provider config (structlog + stdlib dictConfig + request log) |
+| `text_to_speech/` | TTS providers (OpenAI, ElevenLabs, Speaktor, Static) |
+| `text_translation/` | Translation configs (static CSV or OpenAI) |
+| `voice_optimizers/` | Audio post-processing (ffmpeg/pydub) |
+| `logging/` | Logging service provider config |
 
 Pipeline flow: `Input file (TXT/CSV/XLSX) → Translate → Generate audio → Optimize → Evaluate (STT scoring) → Write results`
 
@@ -103,21 +99,43 @@ archive/<category>_<unix_timestamp>/   # Deleted categories
 ### Authentication
 
 - **Frontend** → HTTP login → long-lived JWT (30 min) → `Authorization: Bearer <token>`
-- **CLI** → Unix socket (`/tmp/kiddo-backend.sock`) → short-lived JWT (30 sec) → subsequent HTTP calls
-- **Internal services** → `X-Internal-Token` header or admin JWT
-- **User roles**: `admin` (full access), `viewer` (read-only)
+- **CLI** → Unix socket (`/tmp/kiddo-backend.sock`) → short-lived JWT (30 sec) → subsequent HTTP calls.
+  - `cli-login` and all `users` commands **strictly** require the Unix socket.
+- **Internal services** → JWT with role `internal` or `admin`.
+- **User roles**: `admin` (full access), `viewer` (read-only).
 
 ---
 
 ## Key Environment Variables
 
-Set in `backend/.env` (provider keys can start from repo root `.env.example`):
+Set in `backend/.env` or repository root `.env`:
 
-```
+```bash
+# Provider API Keys
 OPENAI_API_KEY=
 ELEVENLABS_API_KEY=
 SPEAKTOR_API_KEY=
-SECRET_KEY=
+
+# Security
+SECRET_KEY=             # JWT secret
+ALGORITHM=HS256
+
+# Auth
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+CLI_TOKEN_EXPIRE_SECONDS=30
+DEFAULT_ADMIN_PASSWORD=MarXman2025
+
+# Paths (absolute or relative to backend/)
+CONFIG_DIR=config
+CONTENT_DIR=../content
+ARCHIVE_DIR=../archive
+OUTPUT_DIR=../output
+DB_PATH=data/users.db
+
+# Logging & Pipeline
+LOG_PROFILE=dev         # dev (pretty) or prod (JSON)
+TTS_MAX_CONCURRENCY=5
+API_BASE_URL=http://127.0.0.1:8000
 ```
 
-Internal `/internal/*` routes accept a JWT with role `internal` (created at backend startup) or `admin` (from `/api/v1/login`). Docker Compose may still define `INTERNAL_SERVICE_TOKEN`; it is not read by `Settings` unless you add it to the model.
+Internal `/internal/*` routes accept a JWT with role `internal` (created at backend startup) or `admin`.
