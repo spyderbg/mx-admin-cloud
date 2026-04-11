@@ -308,7 +308,7 @@ Paths are relative to `backend/` (set `PYTHONPATH` to `src` when running uvicorn
 src/
 ├── main.py                       # FastAPI app factory, lifespan, router registration
 ├── api/
-│   ├── dependencies.py           # get_registry, builder/store deps, get_job_store, auth deps
+│   ├── dependencies.py           # get_registry, builder/service deps, get_job_store, auth deps
 │   ├── internal/                 # Internal routes (internal JWT or admin)
 │   │   ├── jobs_routes.py        # /internal/generate, /generate/{id}/status
 │   │   ├── text_to_speech_routes.py
@@ -384,7 +384,9 @@ src/
 
 ## Adding a new service type
 
-**1. Add a subpackage** under `src/services/` (e.g. `voice_cloning/`) with a `Service` subclass in `service.py` whose constructor matches the existing orchestrators: `(name, service_dir, base_dir)`.
+**1. Add a subpackage** under `src/services/` (e.g. `voice_cloning/`) with a
+`Service` subclass in `service.py` whose constructor matches existing orchestrators:
+`(service_name, package_name, service_dir, base_dir)`.
 
 **2. Implement** provider attachment hooks on that subclass:
 
@@ -401,7 +403,7 @@ src/
 
 - validate accepted `service_provider` envelopes for that service
 - build concrete provider instances via the service factory
-- point `config_subdir` to the service config directory
+- point `config_subdir` to the service configuration directory
 
 **5. Add JSON configs** under the service criteria `config_subdir`, using the `service_provider` envelope.
 
