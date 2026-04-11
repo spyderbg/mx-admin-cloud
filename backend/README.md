@@ -1,6 +1,7 @@
 # Kiddo Backend
 
-FastAPI backend for Kiddo content management. All public API routes are under `/api/v1`. Protected endpoints require a Bearer token (obtained via `/login` or `/cli-login`). Internal service routes are under `/internal/*`.
+FastAPI backend for Kiddo content management. All public API routes are under `/api/v1`. Protected endpoints require a
+Bearer token (obtained via `/login` or `/cli-login`). Internal service routes are under `/internal/*`.
 
 ## Create .venv
 
@@ -28,7 +29,8 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Use a virtual environment (see above); avoid `--break-system-packages` on system Python unless you intentionally install globally.
+Use a virtual environment (see above); avoid `--break-system-packages` on system Python unless you intentionally install
+globally.
 
 ## Validate backend code
 
@@ -39,6 +41,7 @@ From the repository root, run:
 ```
 
 This script:
+
 - creates `backend/.venv` when missing,
 - installs `backend/requirements.txt` (including `pylint`),
 - compiles all backend Python modules under `backend/src`,
@@ -52,7 +55,8 @@ From the backend directory:
 ./uvicorn_start.sh
 ```
 
-This starts the HTTP server and the CLI Unix socket, records both PIDs in `uvicorn.pid`, and uses `python -m uvicorn` (prefers `.venv/bin/python`, or set `UVICORN_PYTHON`). `nohup` keeps the servers running after the script exits.
+This starts the HTTP server and the CLI Unix socket, records both PIDs in `uvicorn.pid`, and uses `python -m uvicorn` (
+prefers `.venv/bin/python`, or set `UVICORN_PYTHON`). `nohup` keeps the servers running after the script exits.
 
 To stop:
 
@@ -78,7 +82,8 @@ From the backend directory:
 PYTHONPATH="$PWD/src" .venv/bin/python -m pytest -v
 ```
 
-Tests for a feature module live under a sibling `__tests__` tree (no `__init__.py` there, so it stays out of the installable package). Example for internal translation routes:
+Tests for a feature module live under a sibling `__tests__` tree (no `__init__.py` there, so it stays out of the
+installable package). Example for internal translation routes:
 
 ```
 src/api/internal/
@@ -98,9 +103,13 @@ PYTHONPATH="$PWD/src" .venv/bin/python -m pytest src/api/internal/__tests__ -v
 
 ## Auth
 
-- **HTTP login:** `POST /api/v1/login` with `application/x-www-form-urlencoded` body `username` and `password` (default `admin` / value of `DEFAULT_ADMIN_PASSWORD`). Returns `access_token`; use as `Authorization: Bearer <token>`.
-- **CLI login:** `POST /api/v1/cli-login` is allowed only when the request is made over the backend’s Unix socket (e.g. by the CLI). Returns a short-lived token.
-- **Internal auth:** Internal endpoints require a JWT with role `"internal"` or `"admin"`. An internal token is generated at startup (stored in `app.state.internal_token`, 24-hour lifetime) and never shared as a static secret. Admin JWTs also satisfy the check, so the CLI can call internal endpoints with its normal login token.
+- **HTTP login:** `POST /api/v1/login` with `application/x-www-form-urlencoded` body `username` and `password` (default
+  `admin` / value of `DEFAULT_ADMIN_PASSWORD`). Returns `access_token`; use as `Authorization: Bearer <token>`.
+- **CLI login:** `POST /api/v1/cli-login` is allowed only when the request is made over the backend’s Unix socket (e.g.
+  by the CLI). Returns a short-lived token.
+- **Internal auth:** Internal endpoints require a JWT with role `"internal"` or `"admin"`. An internal token is
+  generated at startup (stored in `app.state.internal_token`, 24-hour lifetime) and never shared as a static secret.
+  Admin JWTs also satisfy the check, so the CLI can call internal endpoints with its normal login token.
 
 Env (see `src/core/config.py`):
 
@@ -108,8 +117,10 @@ Env (see `src/core/config.py`):
 - `AUTH_DISABLED` — if true, auth checks are skipped
 - `DEBUG_MODE` — if true, `/api/v1/users` skips Unix socket + admin dependency checks
 - `CONTENT_DIR` — content data path
-- `ARCHIVE_DIR` — directory for archived (removed) categories. If empty, remove deletes categories permanently instead of archiving.
-- `OPENAI_API_KEY` — required for TTS, translation, and category icon generation (create/rename category, create object).
+- `ARCHIVE_DIR` — directory for archived (removed) categories. If empty, remove deletes categories permanently instead
+  of archiving.
+- `OPENAI_API_KEY` — required for TTS, translation, and category icon generation (create/rename category, create
+  object).
 - `ELEVENLABS_API_KEY` — ElevenLabs TTS provider (optional)
 - `SPEAKTOR_API_KEY` — Speaktor TTS provider (optional)
 - `CONFIG_DIR` — path to TTS config directory (default `config`)
@@ -124,29 +135,24 @@ Base URL for all routes below: `/api/v1`. Protected routes require `Authorizatio
 
 ### Auth
 
-
 | Method | Path                                                  | Auth | Description                                               |
-| ------ | ----------------------------------------------------- | ---- | --------------------------------------------------------- |
+|--------|-------------------------------------------------------|------|-----------------------------------------------------------|
 | `POST` | [/login → login()](src/api/v1/routes_auth.py)         | No   | Login with username/password; returns JWT.                |
 | `POST` | [/cli-login → cli_login()](src/api/v1/routes_auth.py) | No   | CLI-only login over Unix socket; returns short-lived JWT. |
 
-
 ### Tasks
 
-
 | Method | Path                                           | Auth | Description                                                                              |
-| ------ | ---------------------------------------------- | ---- | ---------------------------------------------------------------------------------------- |
+|--------|------------------------------------------------|------|------------------------------------------------------------------------------------------|
 | `GET`  | [/ping](src/api/v1/routes_common.py#L11)       | No   | Health check; returns PONG with backend platform info.                                   |
 | `GET`  | [/status](src/api/v1/routes_common.py#L16)     | Yes  | Service status.                                                                          |
 | `POST` | [/operation](src/api/v1/routes_common.py#L21)  | Yes  | Perform a service operation. Query param: `name`.                                        |
 | `POST` | [/list-files](src/api/v1/routes_common.py#L30) | Yes  | List files in the configured directory. Body: `{"depth": int}` (depth < 1 treated as 1). |
 
-
 ### Content
 
-
 | Method   | Path                                                                     | Auth | Description                                                                                                                       |
-| -------- | ------------------------------------------------------------------------ | ---- | --------------------------------------------------------------------------------------------------------------------------------- |
+|----------|--------------------------------------------------------------------------|------|-----------------------------------------------------------------------------------------------------------------------------------|
 | `GET`    | [/content/categories](src/api/v1/routes_content.py#L38)                  | Yes  | List content categories. Query: `include_archived`, `archived_only` (bool) to include or list only archived categories.           |
 | `POST`   | [/content/categories](src/api/v1/routes_content.py#L51)                  | Yes  | Create a category. Body: `{"name": "<category_name>"}`. Creates folder, voice files per language, and category icon. Returns 201. |
 | `POST`   | [/content/categories/restore](src/api/v1/routes_content.py#L62)          | Yes  | Restore a category from archive. Body: `{"name": "<category_name_or_archive_folder>"}` (e.g. `foods` or `foods_1738456789`).      |
@@ -155,34 +161,31 @@ Base URL for all routes below: `/api/v1`. Protected routes require `Authorizatio
 | `DELETE` | [/content/categories/{category_name}](src/api/v1/routes_content.py#L90)  | Yes  | Remove category. If `ARCHIVE_DIR` is set, archives it (date suffix); otherwise deletes permanently.                               |
 | `POST`   | [/content/objects](src/api/v1/routes_content.py#L114)                    | Yes  | Create a content object. Multipart: `image` (file), `category` (form), `object` (form, English word). Returns 201.                |
 
-
 ### Users
 
 User routes are under `/api/v1/users`* and require both admin role and Unix socket access.  
 When `DEBUG_MODE=true`, those two dependencies are overridden at startup for local debugging.
 
-
 | Method   | Path                                                          | Auth              | Description                                                       |
-| -------- | ------------------------------------------------------------- | ----------------- | ----------------------------------------------------------------- |
+|----------|---------------------------------------------------------------|-------------------|-------------------------------------------------------------------|
 | `POST`   | [/users](src/api/v1/routes_users.py#L45)                      | Yes (admin + UDS) | Create a user with role `admin` or `viewer`.                      |
 | `GET`    | [/users](src/api/v1/routes_users.py#L66)                      | Yes (admin + UDS) | List all users. Query: `username` (fuzzy), `role` (admin/viewer). |
 | `DELETE` | [/users/{username}](src/api/v1/routes_users.py#L77)           | Yes (admin + UDS) | Delete a user (cannot remove the last admin).                     |
 | `PATCH`  | [/users/{username}/password](src/api/v1/routes_users.py#L107) | Yes (admin + UDS) | Change a user’s password.                                         |
 | `PATCH`  | [/users/{username}/role](src/api/v1/routes_users.py#L131)     | Yes (admin + UDS) | Change a user’s role (cannot demote the last admin).              |
 
-
 ### Internal
 
-Internal endpoints are under `/internal/`*. They require `Authorization: Bearer <token>` where the token’s role is `"internal"` or `"admin"`. An internal token is automatically generated at startup; admin JWTs (from `/login`) also work.
+Internal endpoints are under `/internal/`*. They require `Authorization: Bearer <token>` where the token’s role is
+`"internal"` or `"admin"`. An internal token is automatically generated at startup; admin JWTs (from `/login`) also
+work.
 
 #### Jobs
 
-
 | Method | Path                                                                  | Description                                                              |
-| ------ | --------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+|--------|-----------------------------------------------------------------------|--------------------------------------------------------------------------|
 | `POST` | [/internal/generate](src/api/internal/jobs_routes.py)                 | Upload input file, trigger TTS pipeline in background; returns `job_id`. |
 | `GET`  | [/internal/generate/{job_id}/status](src/api/internal/jobs_routes.py) | Poll job status (`pending`, `running`, `completed`, `failed`).           |
-
 
 **Generate request (multipart form):**
 
@@ -193,51 +196,41 @@ Internal endpoints are under `/internal/`*. They require `Authorization: Bearer 
 
 #### Generators
 
-
 | Method | Path                                                                                      | Description                                                                                                                                                                                                        |
-| ------ | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+|--------|-------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `GET`  | [/internal/generators](src/api/internal/text_to_speech_routes.py#L45)                     | List all configured TTS providers with activation state and settings.                                                                                                                                              |
 | `POST` | [/internal/generators/{provider}/generate](src/api/internal/text_to_speech_routes.py#L64) | Generate raw audio for a single TTS request via the named provider. JSON response is the `TtsGenerateResult` model in `src/api/internal/schemas/text_to_speech.py` (handler return type matches `response_model`). |
 | `POST` | [/internal/generators/generate-word](src/api/internal/text_to_speech_routes.py#L128)      | Generate raw audio for a single word using the highest-priority active provider; returns `audio/mpeg` bytes.                                                                                                       |
 
-
 #### Evaluators
 
-
 | Method | Path                                                                       | Description                                                          |
-| ------ | -------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+|--------|----------------------------------------------------------------------------|----------------------------------------------------------------------|
 | `GET`  | [/internal/evaluators](src/api/internal/evaluators_routes.py#L43)          | List all configured STT evaluators with activation state.            |
 | `POST` | [/internal/evaluators/evaluate](src/api/internal/evaluators_routes.py#L70) | Run STT transcription, score, persist, and return evaluation result. |
 
-
 #### Optimizers
 
-
 | Method | Path                                                                                   | Description                                                              |
-| ------ | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+|--------|----------------------------------------------------------------------------------------|--------------------------------------------------------------------------|
 | `GET`  | [/internal/optimizers](src/api/internal/optimizers_routes.py#L28)                      | List all configured audio optimizers with activation state and priority. |
 | `POST` | [/internal/optimizers/{optimizer}/optimize](src/api/internal/optimizers_routes.py#L57) | Run the named optimizer on a given audio file.                           |
 
-
 #### Translators
 
-
 | Method | Path                                                                     | Description                                                                                              |
-| ------ | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+|--------|--------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------|
 | `GET`  | [/internal/translators](src/api/internal/text_translation_routes.py#L40) | List all configured translation services with activation state.                                          |
 | `POST` | [/internal/translate](src/api/internal/text_translation_routes.py#L69)   | Translate text via all active translators; returns `success` and `lang_text` (`lang_code` + `text`).     |
 | `POST` | [/internal/translate-file](src/api/internal/text_translation_routes.py)  | Translate a file; loads segments via `load_words` (skips source = target lang); returns per-row results. |
 
-
 #### Logging
 
-
-| Method | Path                                                                                         | Description                                            |
-| ------ | -------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| `POST` | [/internal/logging/emit](src/api/internal/logging_routes.py)                                 | Emit a structured log message to the named logger.     |
-| `POST` | [/internal/logging/provider-request](src/api/internal/logging_routes.py)                     | Log a TTS/STT provider request via the request logger. |
-| `POST` | [/internal/logging/translator-request](src/api/internal/logging_routes.py)                   | Log a translator request via the request logger.       |
-
+| Method | Path                                                                       | Description                                            |
+|--------|----------------------------------------------------------------------------|--------------------------------------------------------|
+| `POST` | [/internal/logging/emit](src/api/internal/logging_routes.py)               | Emit a structured log message to the named logger.     |
+| `POST` | [/internal/logging/provider-request](src/api/internal/logging_routes.py)   | Log a TTS/STT provider request via the request logger. |
+| `POST` | [/internal/logging/translator-request](src/api/internal/logging_routes.py) | Log a translator request via the request logger.       |
 
 All logging endpoints accept a JSON body and delegate to the `LoggingService` (backed by the
 `struct_log` provider). The `logger_name` field in `/emit` selects which logger channel receives
@@ -245,17 +238,18 @@ the message, mirroring structlog semantics with an explicit logger name.
 
 #### Runtime Service Configs
 
-
-- `POST` `/internal/configurations/apply` — validate and apply one JSON payload in memory.
-- `POST` `/internal/configurations/upload` — validate uploaded JSON in memory.
-- `GET` `/internal/configurations/{service_name}` — list config files for one service.
-- `POST` `/internal/configurations/{service_name}` — create one config file and reload the registry.
-- `PATCH` `/internal/configurations/{service_name}/{config_name}` — merge patch and prune defaults.
-- `DELETE` `/internal/configurations/{service_name}/{config_name}` — delete one config file.
-- `POST` `/internal/configurations/{service_name}/enable-configurations` — enable selected configs.
-- `POST` `/internal/configurations/{service_name}/disable-configurations` — disable selected configs.
-- `POST` `/internal/configurations/{service_name}/enable-all-configurations` — enable all configs.
-- `POST` `/internal/configurations/{service_name}/disable-all-configurations` — disable all configs.
+| Method   | Path                                                                                                             | Description                                     |
+|----------|------------------------------------------------------------------------------------------------------------------|-------------------------------------------------|
+| `POST`   | [/internal/configurations/apply](src/api/internal/configuration_routes.py)                                     | Validate and apply one JSON payload in memory.  |
+| `POST`   | [/internal/configurations/upload](src/api/internal/configuration_routes.py)                                    | Validate uploaded JSON in memory.               |
+| `GET`    | [/internal/configurations/{service_name}](src/api/internal/configuration_routes.py)                            | List config files for one service.              |
+| `POST`   | [/internal/configurations/{service_name}](src/api/internal/configuration_routes.py)                            | Create one config file and reload the registry. |
+| `PATCH`  | [/internal/configurations/{service_name}/{config_name}](src/api/internal/configuration_routes.py)              | Merge patch and prune defaults.                 |
+| `DELETE` | [/internal/configurations/{service_name}/{config_name}](src/api/internal/configuration_routes.py)              | Delete one config file.                         |
+| `POST`   | [/internal/configurations/{service_name}/enable-configurations](src/api/internal/configuration_routes.py)      | Enable selected configs.                        |
+| `POST`   | [/internal/configurations/{service_name}/disable-configurations](src/api/internal/configuration_routes.py)     | Disable selected configs.                       |
+| `POST`   | [/internal/configurations/{service_name}/enable-all-configurations](src/api/internal/configuration_routes.py)  | Enable all configs.                             |
+| `POST`   | [/internal/configurations/{service_name}/disable-all-configurations](src/api/internal/configuration_routes.py) | Disable all configs.                            |                        |
 
 `/apply` and `/upload` are runtime-only and return `config_name`, `accepted`, and `error`.
 Persisted CRUD and batch toggle routes operate on `config/<service_subdir>/*.json`,
@@ -266,23 +260,29 @@ validate payloads against service acceptance criteria, and call
 
 ### Service Registry
 
-When `src/services/service_registry.py` is imported, it scans immediate subpackages of `src.services` (via `pkgutil`) and records packages that export all three fields:
+When `src/services/service_registry.py` is imported, it scans immediate subpackages of `src.services` (via `pkgutil`)and
+records packages that export all three fields:
 
 - `SERVICE_CLASS` (orchestrator class)
 - `SERVICE_NAME` (registry identity string)
 - `SERVICE_ACCEPT_CRITERIA` (validation + materialization contract)
 
-`ServiceRegistry` itself is generic: it does not contain service-specific getters. Consumers resolve services by name with `registry.get_service(service_name)`.
+`ServiceRegistry` itself is generic: it does not contain service-specific getters. Consumers resolve services by name
+with `registry.get_service(service_name)`.
 
-At startup, `main.py` calls `ServiceRegistry.build_runtime(settings.BASE_DIR)`, then `ServiceRegistryBuilder(...).load_all_from_disk()`. The builder reads config files one by one, validates each file with `ServiceAcceptCriteria`, materializes provider instances, and atomically replaces provider sets in services.
+At startup, `main.py` calls `ServiceRegistry.build_runtime(settings.BASE_DIR)`, then
+`ServiceRegistryBuilder(...).load_all_from_disk()`. The builder reads config files one by one, validates each file with
+`ServiceAcceptCriteria`, materializes provider instances, and atomically replaces provider sets in services.
 
 This avoids per-request JSON parsing for provider endpoints while keeping config ingestion outside service classes.
 
-**Hot-reload:** If `watchfiles` is installed, a background task triggers `builder.load_all_from_disk()` when files under `config/` change.
+**Hot-reload:** If `watchfiles` is installed, a background task triggers `builder.load_all_from_disk()` when files under
+`config/` change.
 
 ### Job Store
 
-Async job tracking (`src/core/job_store.py`) is stored in `app.state.job_store` and injected via `Depends(get_job_store)`.
+Async job tracking (`src/core/job_store.py`) is stored in `app.state.job_store` and injected via
+`Depends(get_job_store)`.
 
 - Jobs expire after 1 hour (TTL eviction runs every 5 minutes via background task)
 - Thread-safe via `asyncio.Lock`
@@ -290,7 +290,9 @@ Async job tracking (`src/core/job_store.py`) is stored in `app.state.job_store` 
 
 ### HTTP Boundary
 
-`core/` has zero imports from `services/`. The pipeline and content service call internal HTTP endpoints instead of importing service implementations directly. This keeps the core infrastructure layer decoupled from provider-specific code.
+`core/` has zero imports from `services/`. The pipeline and content service call internal HTTP endpoints instead of
+importing service implementations directly. This keeps the core infrastructure layer decoupled from provider-specific
+code.
 
 ### Output path helpers
 
@@ -435,7 +437,8 @@ config/
     └── static.json
 ```
 
-Set `service_provider.enabled` to `true` or `false` in each config file to enable/disable entries. For texttospeech providers, `service_provider.config.generate.enabled` can optionally override generation activation per provider.
+Set `service_provider.enabled` to `true` or `false` in each config file to enable/disable entries. For texttospeech
+providers, `service_provider.config.generate.enabled` can optionally override generation activation per provider.
 
 ### Translators
 
@@ -444,9 +447,8 @@ Each file uses a top-level `service_provider` object containing both metadata an
 
 `service_provider` fields:
 
-
 | Field      | Type   | Description                                                                       |
-| ---------- | ------ | --------------------------------------------------------------------------------- |
+|------------|--------|-----------------------------------------------------------------------------------|
 | `service`  | string | Service type (`text_translation`). Must match the service package `SERVICE_NAME`. |
 | `provider` | string | Translator implementation name (`openai`, `static_translate`).                    |
 | `enabled`  | bool   | Set `true` to enable the translator.                                              |
@@ -454,16 +456,13 @@ Each file uses a top-level `service_provider` object containing both metadata an
 | `version`  | string | Config schema version (typically `1.0`).                                          |
 | `config`   | object | Translator-specific settings.                                                     |
 
-
 Common `service_provider.config` fields:
 
-
 | Field             | Type   | Description                                                |
-| ----------------- | ------ | ---------------------------------------------------------- |
+|-------------------|--------|------------------------------------------------------------|
 | `input_language`  | string | Default source language when request/CLI value is missing. |
 | `output_language` | string | Default output language when request/CLI value is missing. |
 | `content_dir`     | string | Optional path used by `static_translate` provider.         |
-
 
 Example (`config/text_translation/openai_en_fr.json`):
 
@@ -502,9 +501,8 @@ Each file uses a top-level `service_provider` object containing both metadata an
 
 `service_provider` fields:
 
-
 | Field      | Type   | Description                                                                         |
-| ---------- | ------ | ----------------------------------------------------------------------------------- |
+|------------|--------|-------------------------------------------------------------------------------------|
 | `service`  | string | Service type (`voice_optimization`). Must match the service package `SERVICE_NAME`. |
 | `provider` | string | Optimizer implementation name (`ffmpeg`, `pydub`).                                  |
 | `enabled`  | bool   | Set `true` to enable the optimizer.                                                 |
@@ -512,16 +510,13 @@ Each file uses a top-level `service_provider` object containing both metadata an
 | `version`  | string | Config schema version (typically `1.0`).                                            |
 | `config`   | object | Optimizer-specific settings.                                                        |
 
-
 Common `service_provider.config` fields:
 
-
 | Field         | Type | Description                                          |
-| ------------- | ---- | ---------------------------------------------------- |
+|---------------|------|------------------------------------------------------|
 | `sample_rate` | int  | Output sample rate (default `22050`).                |
 | `mono`        | bool | Convert output to mono when `true` (default `true`). |
 | `vbr_quality` | int  | MP3 VBR quality `0-9` (default `9`).                 |
-
 
 Example (`config/voice_optimizers/ffmpeg_high.json`):
 
@@ -568,14 +563,14 @@ from a single config payload.
 
 `service_provider.config` sections:
 
-| Key            | Purpose                                                                                    |
-| -------------- | ------------------------------------------------------------------------------------------ |
-| `logging`      | Stdlib `dictConfig` blob (handlers, formatters, root logger). Supports `active` flag and   |
-|                | `${output_dir}` placeholder in handler `filename` values. Seq handlers are auto-disabled   |
-|                | when `seqlog` is missing or unreachable.                                                   |
-| `structlog`    | Structlog options. `renderer`: `console` (default in dev) or `json`.                       |
-| `request_log`  | Request-logger channel. `path`: log file relative to output dir (default                   |
-|                | `results/requests.log`). `fields`: per-field boolean toggles for request payload filtering.|
+| Key           | Purpose                                                                                     |
+|---------------|---------------------------------------------------------------------------------------------|
+| `logging`     | Stdlib `dictConfig` blob (handlers, formatters, root logger). Supports `active` flag and    |
+|               | `${output_dir}` placeholder in handler `filename` values. Seq handlers are auto-disabled    |
+|               | when `seqlog` is missing or unreachable.                                                    |
+| `structlog`   | Structlog options. `renderer`: `console` (default in dev) or `json`.                        |
+| `request_log` | Request-logger channel. `path`: log file relative to output dir (default                    |
+|               | `results/requests.log`). `fields`: per-field boolean toggles for request payload filtering. |
 
 Example (`config/logging/default.json`):
 
@@ -587,8 +582,17 @@ Example (`config/logging/default.json`):
     "enabled": true,
     "priority": 1,
     "config": {
-      "logging": { "version": 1, "handlers": { "console": { "class": "logging.StreamHandler" } } },
-      "structlog": { "renderer": "console" }
+      "logging": {
+        "version": 1,
+        "handlers": {
+          "console": {
+            "class": "logging.StreamHandler"
+          }
+        }
+      },
+      "structlog": {
+        "renderer": "console"
+      }
     }
   }
 }
@@ -604,7 +608,12 @@ Request logging config example (`config/logging/requests.json`):
     "enabled": true,
     "priority": 1,
     "config": {
-      "request_log": { "path": "results/requests.log", "fields": { "provider": true } }
+      "request_log": {
+        "path": "results/requests.log",
+        "fields": {
+          "provider": true
+        }
+      }
     }
   }
 }
