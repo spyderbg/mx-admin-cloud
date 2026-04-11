@@ -39,11 +39,6 @@
           </div>
         </li>
       </ul>
-      <form class="ml-auto search-form d-none d-md-block" action="#" @submit.prevent>
-        <div class="form-group">
-          <input type="search" class="form-control" placeholder="Search Here" />
-        </div>
-      </form>
       <ul class="navbar-nav ml-auto">
         <li class="nav-item dropdown d-none d-xl-inline-block user-dropdown">
           <a class="nav-link dropdown-toggle" href="#" @click.prevent="userOpen = !userOpen">

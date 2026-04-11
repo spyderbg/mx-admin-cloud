@@ -1,0 +1,8 @@
+{
+  "folders": [
+    { "path": ".", "name": "mx-admin (root)" },
+    { "path": "frontend", "name": "frontend" },
+    { "path": "backend", "name": "backend" }
+  ],
+  "settings": {}
+}

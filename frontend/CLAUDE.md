@@ -1,6 +1,12 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in the frontend directory.
+
+## Project Overview
+
+**mx-admin** is a content management and voice synthesis platform for the Kiddo language learning app. It manages multilingual categories/images and orchestrates a TTS pipeline across multiple providers.
+
+Three components: **FastAPI backend**, **Vue 3 frontend SPA**, **Typer CLI client**.
 
 ## Commands
 
@@ -11,11 +17,21 @@ npm run build      # Type-check + production build
 npm run type-check # vue-tsc --noEmit only
 ```
 
+### Docker (all services, from project root)
+
+```bash
+./scripts/app.sh start       # Backend :9000, Frontend :9001
+./scripts/app.sh stop
+# Or directly:
+docker compose -f docker/docker-compose.yml up -d --build
+```
+
 No test framework is configured.
 
 ## Architecture
 
-Vue 3 + TypeScript + Vite SPA. No state management library (no Pinia/Vuex) — data flows via props.
+Vue 3 + TypeScript + Vite SPA. API proxied to `:8000` in dev via `vite.config.ts`.
+No state management library (no Pinia/Vuex) — data flows via props.
 
 ### Routing & Auth
 

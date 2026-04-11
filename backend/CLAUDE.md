@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in the backend directory.
 
 ## Project Overview
 
@@ -8,14 +8,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Three components: **FastAPI backend**, **Vue 3 frontend SPA**, **Typer CLI client**.
 
----
-
 ## Commands
 
-### Backend
-
 ```bash
-cd backend
 python3.10 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
@@ -30,25 +25,7 @@ PYTHONPATH="$PWD/src" uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 pylint src/
 ```
 
-### Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev        # Dev server at http://localhost:5173 (proxies API to :8000)
-npm run build      # Production build with type-check
-npm run type-check
-```
-
-### CLI
-
-```bash
-./scripts/cli.sh install     # pip install -e cli/
-./scripts/cli.sh uninstall
-kiddo-cli --help
-```
-
-### Docker (all services)
+### Docker (all services, from project root)
 
 ```bash
 ./scripts/app.sh start       # Backend :9000, Frontend :9001
@@ -61,7 +38,7 @@ docker compose -f docker/docker-compose.yml up -d --build
 
 ## Architecture
 
-### Backend (`backend/src/`)
+### Backend (`src/`)
 
 - **`api/v1/`** — Public REST routes: login, cli-login, content CRUD, user management, common utils
 - **`api/internal/`** — Internal HTTP endpoints for TTS generation, evaluation, optimization, and translation
@@ -110,7 +87,7 @@ imports `services/` directly.
 
 Output lands in `output/tts_audio_<lang>/<provider>/` and `output/optimized_<optimizer>/`.
 
-### Content Filesystem Layout
+### Content Filesystem Layout (relative to project root)
 
 ```
 content/<category>/
@@ -129,20 +106,6 @@ archive/<category>_<unix_timestamp>/   # Deleted categories
 - **CLI** → Unix socket (`/tmp/kiddo-backend.sock`) → short-lived JWT (30 sec) → subsequent HTTP calls
 - **Internal services** → `X-Internal-Token` header or admin JWT
 - **User roles**: `admin` (full access), `viewer` (read-only)
-
-### Frontend (`frontend/src/`)
-
-- Vue 3 + TypeScript + Vite; API proxied to `:8000` in dev via `vite.config.ts`
-- Routes: `/login`, `/categories`, `/categories/:id`, `/categories/:id/images/:imageId`
-- Auth guard in `router/index.ts`; token in `localStorage`
-- Star Admin Bootstrap theme (vendor CSS in `assets/`)
-- Supported languages: `en`, `es`, `fr`, `bg`
-
-### CLI (`cli/src/kiddo_cli/`)
-
-- Pure HTTP client — no backend code shared
-- Subcommands: `common`, `content`, `generate`, `list`, `translate`, `users`
-- Auth priority: `KIDDO_TOKEN` env var → Unix socket login → HTTP login (`BACKEND_URL` + `KIDDO_USER`/`KIDDO_PASSWORD`)
 
 ---
 

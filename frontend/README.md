@@ -84,7 +84,7 @@ The main authenticated shell, wrapping all `/categories` routes:
 └──────────┴───────────────────────────────────┘
 ```
 
-- **AppNavbar** -- Brand logo, language selector (en/es/fr/bg with flags), user avatar dropdown with sign-out.
+- **AppNavbar** -- Brand logo, language selector (en/es/fr/bg with flags), user avatar dropdown with sign-out. There is no global header search bar; use the sidebar filter on category routes.
 - **AppSidebar** -- User profile (avatar, name, role), fuzzy-filter input, expandable category tree with child images. Next to the **Categories** heading, **Expand all** / **Collapse all** toggle every top-level category open or closed. Clicking a category navigates to its detail; clicking an image navigates to its detail page.
 - **AppFooter** -- Simple branded footer.
 
