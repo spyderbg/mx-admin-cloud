@@ -1,4 +1,5 @@
 services:
+
   backend:
     container_name: kiddo-backend
     build:
@@ -22,13 +23,18 @@ services:
       - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN}
       - CONFIG_DIR=/app/config
       - OUTPUT_DIR=/app/tts-output
+
   frontend:
     container_name: kiddo-frontend
     build:
       context: ..
       dockerfile: docker/frontend.Dockerfile
+      args:
+        VITE_DEBUG_MODE: "true"
     ports:
       - "9001:80"
+    volumes:
+      - ../content:/app/content:ro
     depends_on:
       - backend
 
