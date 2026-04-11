@@ -20,7 +20,7 @@ export const mockCategories: Category[] = [
       { id: 'drinks-v-en', name: 'drinks', language: 'en', type: 'male', iconUrl: face(1), audioUrl: '/content/drinks/drinks_en.mp3' },
       { id: 'drinks-v-es', name: 'drinks', language: 'es', type: 'female', iconUrl: face(2), audioUrl: '/content/drinks/drinks_es.mp3' },
       { id: 'drinks-v-fr', name: 'drinks', language: 'fr', type: 'male', iconUrl: face(3), audioUrl: '/content/drinks/drinks_fr.mp3' },
-      { id: 'drinks-v-bg', name: 'drinks', language: 'bg', type: 'female', iconUrl: face(4), audioUrl: '/content/drinks/drinks_bg.mp3' },
+      { id: 'drinks-v-bg', name: 'напитки', language: 'bg', type: 'female', iconUrl: face(4), audioUrl: '/content/drinks/drinks_bg.mp3' },
     ],
     images: [
       {
@@ -38,7 +38,7 @@ export const mockCategories: Category[] = [
       {
         id: 'drinks-hot_chocolate',
         name: 'Hot Chocolate',
-        files: ['/content/drinks/hot_chocolate/hot_chocolate_01.png'],
+        files: ['/content/drinks/hot_chocolate/hot_chocolate_01.png', '/content/drinks/hot_chocolate/hot_chocolate_02.jpg'],
         thumbnailUrl: '/content/drinks/hot_chocolate/hot_chocolate_01.png',
         voices: [
           { id: 'hot_chocolate-en', name: 'hot chocolate', language: 'en', type: 'male', iconUrl: face(1), audioUrl: '/content/drinks/hot_chocolate/hot_chocolate_en.mp3' },
@@ -74,7 +74,7 @@ export const mockCategories: Category[] = [
       {
         id: 'drinks-milk',
         name: 'Milk',
-        files: ['/content/drinks/milk/milk_01.png'],
+        files: ['/content/drinks/milk/milk_01.png', '/content/drinks/milk/milk_02.jpg'],
         thumbnailUrl: '/content/drinks/milk/milk_01.png',
         voices: [
           { id: 'milk-en', name: 'milk', language: 'en', type: 'male', iconUrl: face(1), audioUrl: '/content/drinks/milk/milk_en.mp3' },
@@ -98,7 +98,7 @@ export const mockCategories: Category[] = [
       {
         id: 'drinks-orange_juice',
         name: 'Orange Juice',
-        files: ['/content/drinks/orange_juice/orange_juice_01.png'],
+        files: ['/content/drinks/orange_juice/orange_juice_01.png', '/content/drinks/orange_juice/orange_juice_02.jpg'],
         thumbnailUrl: '/content/drinks/orange_juice/orange_juice_01.png',
         voices: [
           { id: 'orange_juice-en', name: 'orange juice', language: 'en', type: 'male', iconUrl: face(1), audioUrl: '/content/drinks/orange_juice/orange_juice_en.mp3' },
@@ -110,7 +110,7 @@ export const mockCategories: Category[] = [
       {
         id: 'drinks-soda',
         name: 'Soda',
-        files: ['/content/drinks/soda/soda_01.png'],
+        files: ['/content/drinks/soda/soda_01.png', '/content/drinks/soda/soda_02.png'],
         thumbnailUrl: '/content/drinks/soda/soda_01.png',
         voices: [
           { id: 'soda-en', name: 'soda', language: 'en', type: 'male', iconUrl: face(1), audioUrl: '/content/drinks/soda/soda_en.mp3' },
@@ -122,7 +122,7 @@ export const mockCategories: Category[] = [
       {
         id: 'drinks-tea',
         name: 'Tea',
-        files: ['/content/drinks/tea/tea_01.png'],
+        files: ['/content/drinks/tea/tea_01.png', '/content/drinks/tea/tea_02.jpg'],
         thumbnailUrl: '/content/drinks/tea/tea_01.png',
         voices: [
           { id: 'tea-en', name: 'tea', language: 'en', type: 'male', iconUrl: face(1), audioUrl: '/content/drinks/tea/tea_en.mp3' },
@@ -134,7 +134,7 @@ export const mockCategories: Category[] = [
       {
         id: 'drinks-water',
         name: 'Water',
-        files: ['/content/drinks/water/water_01.png'],
+        files: ['/content/drinks/water/water_01.png', '/content/drinks/water/water_02.jpg'],
         thumbnailUrl: '/content/drinks/water/water_01.png',
         voices: [
           { id: 'water-en', name: 'water', language: 'en', type: 'male', iconUrl: face(1), audioUrl: '/content/drinks/water/water_en.mp3' },
@@ -154,7 +154,7 @@ export const mockCategories: Category[] = [
       { id: 'foods-v-en', name: 'foods', language: 'en', type: 'male', iconUrl: face(1), audioUrl: '/content/foods/foods_en.mp3' },
       { id: 'foods-v-es', name: 'foods', language: 'es', type: 'female', iconUrl: face(2), audioUrl: '/content/foods/foods_es.mp3' },
       { id: 'foods-v-fr', name: 'foods', language: 'fr', type: 'male', iconUrl: face(3), audioUrl: '/content/foods/foods_fr.mp3' },
-      { id: 'foods-v-bg', name: 'foods', language: 'bg', type: 'female', iconUrl: face(4), audioUrl: '/content/foods/foods_bg.mp3' },
+      { id: 'foods-v-bg', name: 'храни', language: 'bg', type: 'female', iconUrl: face(4), audioUrl: '/content/foods/foods_bg.mp3' },
     ],
     images: [
       {
@@ -244,7 +244,12 @@ export const mockCategories: Category[] = [
       {
         id: 'foods-ice_cream',
         name: 'Ice Cream',
-        files: ['/content/foods/ice_cream/ice_cream_01.png', '/content/foods/ice_cream/ice_cream_03.png', '/content/foods/ice_cream/ice_cream_04.png'],
+        files: [
+          '/content/foods/ice_cream/ice_cream_01.png',
+          '/content/foods/ice_cream/ice_cream_02.jpg',
+          '/content/foods/ice_cream/ice_cream_03.png',
+          '/content/foods/ice_cream/ice_cream_04.png',
+        ],
         thumbnailUrl: '/content/foods/ice_cream/ice_cream_01.png',
         voices: [
           { id: 'ice_cream-en', name: 'ice cream', language: 'en', type: 'male', iconUrl: face(1), audioUrl: '/content/foods/ice_cream/ice_cream_en.mp3' },
@@ -311,6 +316,236 @@ export const mockCategories: Category[] = [
           { id: 'pudding-es', name: 'pudín', language: 'es', type: 'female', iconUrl: face(2), audioUrl: '/content/foods/pudding/pudding_es.mp3' },
           { id: 'pudding-fr', name: 'pudding', language: 'fr', type: 'male', iconUrl: face(3), audioUrl: '/content/foods/pudding/pudding_fr.mp3' },
           { id: 'pudding-bg', name: 'пудинг', language: 'bg', type: 'female', iconUrl: face(4), audioUrl: '/content/foods/pudding/pudding_bg.mp3' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'vegetables',
+    name: 'Vegetables',
+    description: 'Fresh vegetables',
+    iconUrl: '/content/vegetables/tomato/tomato.png',
+    voices: [
+      { id: 'vegetables-v-en', name: 'vegetables', language: 'en', type: 'male', iconUrl: face(1), audioUrl: '/content/vegetables/vegetables_en.mp3' },
+      { id: 'vegetables-v-es', name: 'vegetables', language: 'es', type: 'female', iconUrl: face(2), audioUrl: '/content/vegetables/vegetables_es.mp3' },
+      { id: 'vegetables-v-fr', name: 'vegetables', language: 'fr', type: 'male', iconUrl: face(3), audioUrl: '/content/vegetables/vegetables_fr.mp3' },
+      { id: 'vegetables-v-bg', name: 'vegetables', language: 'bg', type: 'female', iconUrl: face(4), audioUrl: '/content/vegetables/vegetables_bg.mp3' },
+    ],
+    images: [
+      {
+        id: 'vegetables-asparagus',
+        name: 'Asparagus',
+        files: ['/content/vegetables/asparagus/asparagus.png'],
+        thumbnailUrl: '/content/vegetables/asparagus/asparagus.png',
+        voices: [
+          { id: 'asparagus-en', name: 'asparagus', language: 'en', type: 'male', iconUrl: face(1), audioUrl: '/content/vegetables/asparagus/asparagus_en.mp3' },
+          { id: 'asparagus-es', name: 'espárragos', language: 'es', type: 'female', iconUrl: face(2), audioUrl: '/content/vegetables/asparagus/asparagus_es.mp3' },
+          { id: 'asparagus-fr', name: 'asperges', language: 'fr', type: 'male', iconUrl: face(3), audioUrl: '/content/vegetables/asparagus/asparagus_fr.mp3' },
+          { id: 'asparagus-bg', name: 'аспержи', language: 'bg', type: 'female', iconUrl: face(4), audioUrl: '/content/vegetables/asparagus/asparagus_bg.mp3' },
+        ],
+      },
+      {
+        id: 'vegetables-broccoli',
+        name: 'Broccoli',
+        files: ['/content/vegetables/broccoli/broccoli.png'],
+        thumbnailUrl: '/content/vegetables/broccoli/broccoli.png',
+        voices: [
+          { id: 'broccoli-en', name: 'broccoli', language: 'en', type: 'male', iconUrl: face(1), audioUrl: '/content/vegetables/broccoli/broccoli_en.mp3' },
+          { id: 'broccoli-es', name: 'brócoli', language: 'es', type: 'female', iconUrl: face(2), audioUrl: '/content/vegetables/broccoli/broccoli_es.mp3' },
+          { id: 'broccoli-fr', name: 'brocoli', language: 'fr', type: 'male', iconUrl: face(3), audioUrl: '/content/vegetables/broccoli/broccoli_fr.mp3' },
+          { id: 'broccoli-bg', name: 'броколи', language: 'bg', type: 'female', iconUrl: face(4), audioUrl: '/content/vegetables/broccoli/broccoli_bg.mp3' },
+        ],
+      },
+      {
+        id: 'vegetables-brussels_sprouts',
+        name: 'Brussels Sprouts',
+        files: ['/content/vegetables/brussels_sprouts/brussels_sprouts.png'],
+        thumbnailUrl: '/content/vegetables/brussels_sprouts/brussels_sprouts.png',
+        voices: [
+          { id: 'brussels_sprouts-en', name: 'brussels sprouts', language: 'en', type: 'male', iconUrl: face(1), audioUrl: '/content/vegetables/brussels_sprouts/brussels_sprouts_en.mp3' },
+          { id: 'brussels_sprouts-es', name: 'coles de Bruselas', language: 'es', type: 'female', iconUrl: face(2), audioUrl: '/content/vegetables/brussels_sprouts/brussels_sprouts_es.mp3' },
+          { id: 'brussels_sprouts-fr', name: 'choux de bruxelles', language: 'fr', type: 'male', iconUrl: face(3), audioUrl: '/content/vegetables/brussels_sprouts/brussels_sprouts_fr.mp3' },
+          { id: 'brussels_sprouts-bg', name: 'брюкселско зеле', language: 'bg', type: 'female', iconUrl: face(4), audioUrl: '/content/vegetables/brussels_sprouts/brussels_sprouts_bg.mp3' },
+        ],
+      },
+      {
+        id: 'vegetables-cabbage',
+        name: 'Cabbage',
+        files: ['/content/vegetables/cabbage/cabbage.png'],
+        thumbnailUrl: '/content/vegetables/cabbage/cabbage.png',
+        voices: [
+          { id: 'cabbage-en', name: 'cabbage', language: 'en', type: 'male', iconUrl: face(1), audioUrl: '/content/vegetables/cabbage/cabbage_en.mp3' },
+          { id: 'cabbage-es', name: 'col', language: 'es', type: 'female', iconUrl: face(2), audioUrl: '/content/vegetables/cabbage/cabbage_es.mp3' },
+          { id: 'cabbage-fr', name: 'chou', language: 'fr', type: 'male', iconUrl: face(3), audioUrl: '/content/vegetables/cabbage/cabbage_fr.mp3' },
+          { id: 'cabbage-bg', name: 'зеле', language: 'bg', type: 'female', iconUrl: face(4), audioUrl: '/content/vegetables/cabbage/cabbage_bg.mp3' },
+        ],
+      },
+      {
+        id: 'vegetables-cauliflower',
+        name: 'Cauliflower',
+        files: ['/content/vegetables/cauliflower/cauliflower.png'],
+        thumbnailUrl: '/content/vegetables/cauliflower/cauliflower.png',
+        voices: [
+          { id: 'cauliflower-en', name: 'cauliflower', language: 'en', type: 'male', iconUrl: face(1), audioUrl: '/content/vegetables/cauliflower/cauliflower_en.mp3' },
+          { id: 'cauliflower-es', name: 'coliflor', language: 'es', type: 'female', iconUrl: face(2), audioUrl: '/content/vegetables/cauliflower/cauliflower_es.mp3' },
+          { id: 'cauliflower-fr', name: 'chou-fleur', language: 'fr', type: 'male', iconUrl: face(3), audioUrl: '/content/vegetables/cauliflower/cauliflower_fr.mp3' },
+          { id: 'cauliflower-bg', name: 'карфиол', language: 'bg', type: 'female', iconUrl: face(4), audioUrl: '/content/vegetables/cauliflower/cauliflower_bg.mp3' },
+        ],
+      },
+      {
+        id: 'vegetables-celery',
+        name: 'Celery',
+        files: ['/content/vegetables/celery/celery.png'],
+        thumbnailUrl: '/content/vegetables/celery/celery.png',
+        voices: [
+          { id: 'celery-en', name: 'celery', language: 'en', type: 'male', iconUrl: face(1), audioUrl: '/content/vegetables/celery/celery_en.mp3' },
+          { id: 'celery-es', name: 'apio', language: 'es', type: 'female', iconUrl: face(2), audioUrl: '/content/vegetables/celery/celery_es.mp3' },
+          { id: 'celery-fr', name: 'céleri', language: 'fr', type: 'male', iconUrl: face(3), audioUrl: '/content/vegetables/celery/celery_fr.mp3' },
+          { id: 'celery-bg', name: 'целина', language: 'bg', type: 'female', iconUrl: face(4), audioUrl: '/content/vegetables/celery/celery_bg.mp3' },
+        ],
+      },
+      {
+        id: 'vegetables-corn',
+        name: 'Corn',
+        files: ['/content/vegetables/corn/corn.png'],
+        thumbnailUrl: '/content/vegetables/corn/corn.png',
+        voices: [
+          { id: 'corn-en', name: 'corn', language: 'en', type: 'male', iconUrl: face(1), audioUrl: '/content/vegetables/corn/corn_en.mp3' },
+          { id: 'corn-es', name: 'maíz', language: 'es', type: 'female', iconUrl: face(2), audioUrl: '/content/vegetables/corn/corn_es.mp3' },
+          { id: 'corn-fr', name: 'maïs', language: 'fr', type: 'male', iconUrl: face(3), audioUrl: '/content/vegetables/corn/corn_fr.mp3' },
+          { id: 'corn-bg', name: 'царевица', language: 'bg', type: 'female', iconUrl: face(4), audioUrl: '/content/vegetables/corn/corn_bg.mp3' },
+        ],
+      },
+      {
+        id: 'vegetables-cucumber',
+        name: 'Cucumber',
+        files: ['/content/vegetables/cucumber/cucumber.png'],
+        thumbnailUrl: '/content/vegetables/cucumber/cucumber.png',
+        voices: [
+          { id: 'cucumber-en', name: 'cucumber', language: 'en', type: 'male', iconUrl: face(1), audioUrl: '/content/vegetables/cucumber/cucumber_en.mp3' },
+          { id: 'cucumber-es', name: 'pepino', language: 'es', type: 'female', iconUrl: face(2), audioUrl: '/content/vegetables/cucumber/cucumber_es.mp3' },
+          { id: 'cucumber-fr', name: 'concombre', language: 'fr', type: 'male', iconUrl: face(3), audioUrl: '/content/vegetables/cucumber/cucumber_fr.mp3' },
+          { id: 'cucumber-bg', name: 'краставица', language: 'bg', type: 'female', iconUrl: face(4), audioUrl: '/content/vegetables/cucumber/cucumber_bg.mp3' },
+        ],
+      },
+      {
+        id: 'vegetables-garlic',
+        name: 'Garlic',
+        files: ['/content/vegetables/garlic/garlic.png'],
+        thumbnailUrl: '/content/vegetables/garlic/garlic.png',
+        voices: [
+          { id: 'garlic-en', name: 'garlic', language: 'en', type: 'male', iconUrl: face(1), audioUrl: '/content/vegetables/garlic/garlic_en.mp3' },
+          { id: 'garlic-es', name: 'ajo', language: 'es', type: 'female', iconUrl: face(2), audioUrl: '/content/vegetables/garlic/garlic_es.mp3' },
+          { id: 'garlic-fr', name: 'ail', language: 'fr', type: 'male', iconUrl: face(3), audioUrl: '/content/vegetables/garlic/garlic_fr.mp3' },
+          { id: 'garlic-bg', name: 'чесън', language: 'bg', type: 'female', iconUrl: face(4), audioUrl: '/content/vegetables/garlic/garlic_bg.mp3' },
+        ],
+      },
+      {
+        id: 'vegetables-green_beans',
+        name: 'Green Beans',
+        files: ['/content/vegetables/green_beans/green_beans.png'],
+        thumbnailUrl: '/content/vegetables/green_beans/green_beans.png',
+        voices: [
+          { id: 'green_beans-en', name: 'green beans', language: 'en', type: 'male', iconUrl: face(1), audioUrl: '/content/vegetables/green_beans/green_beans_en.mp3' },
+          { id: 'green_beans-es', name: 'judías verdes', language: 'es', type: 'female', iconUrl: face(2), audioUrl: '/content/vegetables/green_beans/green_beans_es.mp3' },
+          { id: 'green_beans-fr', name: 'haricots verts', language: 'fr', type: 'male', iconUrl: face(3), audioUrl: '/content/vegetables/green_beans/green_beans_fr.mp3' },
+          { id: 'green_beans-bg', name: 'зелен фасул', language: 'bg', type: 'female', iconUrl: face(4), audioUrl: '/content/vegetables/green_beans/green_beans_bg.mp3' },
+        ],
+      },
+      {
+        id: 'vegetables-lettuce',
+        name: 'Lettuce',
+        files: ['/content/vegetables/lettuce/lettuce.png'],
+        thumbnailUrl: '/content/vegetables/lettuce/lettuce.png',
+        voices: [
+          { id: 'lettuce-en', name: 'lettuce', language: 'en', type: 'male', iconUrl: face(1), audioUrl: '/content/vegetables/lettuce/lettuce_en.mp3' },
+          { id: 'lettuce-es', name: 'lechuga', language: 'es', type: 'female', iconUrl: face(2), audioUrl: '/content/vegetables/lettuce/lettuce_es.mp3' },
+          { id: 'lettuce-fr', name: 'laitue', language: 'fr', type: 'male', iconUrl: face(3), audioUrl: '/content/vegetables/lettuce/lettuce_fr.mp3' },
+          { id: 'lettuce-bg', name: 'маруля', language: 'bg', type: 'female', iconUrl: face(4), audioUrl: '/content/vegetables/lettuce/lettuce_bg.mp3' },
+        ],
+      },
+      {
+        id: 'vegetables-mushroom',
+        name: 'Mushroom',
+        files: ['/content/vegetables/mushroom/mushroom.png'],
+        thumbnailUrl: '/content/vegetables/mushroom/mushroom.png',
+        voices: [
+          { id: 'mushroom-en', name: 'mushroom', language: 'en', type: 'male', iconUrl: face(1), audioUrl: '/content/vegetables/mushroom/mushroom_en.mp3' },
+          { id: 'mushroom-es', name: 'champiñones', language: 'es', type: 'female', iconUrl: face(2), audioUrl: '/content/vegetables/mushroom/mushroom_es.mp3' },
+          { id: 'mushroom-fr', name: 'champignon', language: 'fr', type: 'male', iconUrl: face(3), audioUrl: '/content/vegetables/mushroom/mushroom_fr.mp3' },
+          { id: 'mushroom-bg', name: 'гъби', language: 'bg', type: 'female', iconUrl: face(4), audioUrl: '/content/vegetables/mushroom/mushroom_bg.mp3' },
+        ],
+      },
+      {
+        id: 'vegetables-onion',
+        name: 'Onion',
+        files: ['/content/vegetables/onion/onion.png'],
+        thumbnailUrl: '/content/vegetables/onion/onion.png',
+        voices: [
+          { id: 'onion-en', name: 'onion', language: 'en', type: 'male', iconUrl: face(1), audioUrl: '/content/vegetables/onion/onion_en.mp3' },
+          { id: 'onion-es', name: 'cebolla', language: 'es', type: 'female', iconUrl: face(2), audioUrl: '/content/vegetables/onion/onion_es.mp3' },
+          { id: 'onion-fr', name: 'oignon', language: 'fr', type: 'male', iconUrl: face(3), audioUrl: '/content/vegetables/onion/onion_fr.mp3' },
+          { id: 'onion-bg', name: 'лук', language: 'bg', type: 'female', iconUrl: face(4), audioUrl: '/content/vegetables/onion/onion_bg.mp3' },
+        ],
+      },
+      {
+        id: 'vegetables-pepper',
+        name: 'Pepper',
+        files: ['/content/vegetables/pepper/pepper.png'],
+        thumbnailUrl: '/content/vegetables/pepper/pepper.png',
+        voices: [
+          { id: 'pepper-en', name: 'pepper', language: 'en', type: 'male', iconUrl: face(1), audioUrl: '/content/vegetables/pepper/pepper_en.mp3' },
+          { id: 'pepper-es', name: 'pimiento', language: 'es', type: 'female', iconUrl: face(2), audioUrl: '/content/vegetables/pepper/pepper_es.mp3' },
+          { id: 'pepper-fr', name: 'poivron', language: 'fr', type: 'male', iconUrl: face(3), audioUrl: '/content/vegetables/pepper/pepper_fr.mp3' },
+          { id: 'pepper-bg', name: 'чушка', language: 'bg', type: 'female', iconUrl: face(4), audioUrl: '/content/vegetables/pepper/pepper_bg.mp3' },
+        ],
+      },
+      {
+        id: 'vegetables-potato',
+        name: 'Potato',
+        files: ['/content/vegetables/potato/potato.png'],
+        thumbnailUrl: '/content/vegetables/potato/potato.png',
+        voices: [
+          { id: 'potato-en', name: 'potato', language: 'en', type: 'male', iconUrl: face(1), audioUrl: '/content/vegetables/potato/potato_en.mp3' },
+          { id: 'potato-es', name: 'patata', language: 'es', type: 'female', iconUrl: face(2), audioUrl: '/content/vegetables/potato/potato_es.mp3' },
+          { id: 'potato-fr', name: 'pomme de terre', language: 'fr', type: 'male', iconUrl: face(3), audioUrl: '/content/vegetables/potato/potato_fr.mp3' },
+          { id: 'potato-bg', name: 'картофи', language: 'bg', type: 'female', iconUrl: face(4), audioUrl: '/content/vegetables/potato/potato_bg.mp3' },
+        ],
+      },
+      {
+        id: 'vegetables-spinach',
+        name: 'Spinach',
+        files: ['/content/vegetables/spinach/spinach.png'],
+        thumbnailUrl: '/content/vegetables/spinach/spinach.png',
+        voices: [
+          { id: 'spinach-en', name: 'spinach', language: 'en', type: 'male', iconUrl: face(1), audioUrl: '/content/vegetables/spinach/spinach_en.mp3' },
+          { id: 'spinach-es', name: 'espinacas', language: 'es', type: 'female', iconUrl: face(2), audioUrl: '/content/vegetables/spinach/spinach_es.mp3' },
+          { id: 'spinach-fr', name: 'épinard', language: 'fr', type: 'male', iconUrl: face(3), audioUrl: '/content/vegetables/spinach/spinach_fr.mp3' },
+          { id: 'spinach-bg', name: 'спанак', language: 'bg', type: 'female', iconUrl: face(4), audioUrl: '/content/vegetables/spinach/spinach_bg.mp3' },
+        ],
+      },
+      {
+        id: 'vegetables-squash',
+        name: 'Squash',
+        files: ['/content/vegetables/squash/squash.png'],
+        thumbnailUrl: '/content/vegetables/squash/squash.png',
+        voices: [
+          { id: 'squash-en', name: 'squash', language: 'en', type: 'male', iconUrl: face(1), audioUrl: '/content/vegetables/squash/squash_en.mp3' },
+          { id: 'squash-es', name: 'calabaza', language: 'es', type: 'female', iconUrl: face(2), audioUrl: '/content/vegetables/squash/squash_es.mp3' },
+          { id: 'squash-fr', name: 'squash', language: 'fr', type: 'male', iconUrl: face(3), audioUrl: '/content/vegetables/squash/squash_fr.mp3' },
+          { id: 'squash-bg', name: 'тиква', language: 'bg', type: 'female', iconUrl: face(4), audioUrl: '/content/vegetables/squash/squash_bg.mp3' },
+        ],
+      },
+      {
+        id: 'vegetables-tomato',
+        name: 'Tomato',
+        files: ['/content/vegetables/tomato/tomato.png'],
+        thumbnailUrl: '/content/vegetables/tomato/tomato.png',
+        voices: [
+          { id: 'tomato-en', name: 'tomato', language: 'en', type: 'male', iconUrl: face(1), audioUrl: '/content/vegetables/tomato/tomato_en.mp3' },
+          { id: 'tomato-es', name: 'tomate', language: 'es', type: 'female', iconUrl: face(2), audioUrl: '/content/vegetables/tomato/tomato_es.mp3' },
+          { id: 'tomato-fr', name: 'tomate', language: 'fr', type: 'male', iconUrl: face(3), audioUrl: '/content/vegetables/tomato/tomato_fr.mp3' },
+          { id: 'tomato-bg', name: 'домати', language: 'bg', type: 'female', iconUrl: face(4), audioUrl: '/content/vegetables/tomato/tomato_bg.mp3' },
         ],
       },
     ],

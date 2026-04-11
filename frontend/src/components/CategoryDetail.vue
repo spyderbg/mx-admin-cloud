@@ -26,7 +26,7 @@
                   type="button"
                   class="btn-icon btn-icon-edit"
                   title="Upload category icon"
-                  @click="showUpload = true"
+                  @click="openUploadModal"
                 >
                   <i class="mdi mdi-pencil"></i>
                 </button>
@@ -34,7 +34,7 @@
                   type="button"
                   class="btn-icon btn-icon-delete"
                   title="Delete category"
-                  @click="showDelete = true"
+                  @click="openDeleteModal"
                 >
                   <i class="mdi mdi-delete"></i>
                 </button>
@@ -239,7 +239,26 @@ function stopAudio(): void {
   playingVoiceId.value = null
 }
 
+function closeAllModals(): void {
+  showDelete.value = false
+  showUpload.value = false
+  showRename.value = false
+  showVoiceUpload.value = false
+  editingVoice.value = null
+}
+
+function openUploadModal(): void {
+  closeAllModals()
+  showUpload.value = true
+}
+
+function openDeleteModal(): void {
+  closeAllModals()
+  showDelete.value = true
+}
+
 function openVoiceUpload(voice: Voice): void {
+  closeAllModals()
   editingVoice.value = voice
   showVoiceUpload.value = true
 }
@@ -260,6 +279,7 @@ function onVoiceFileSelected(e: Event): void {
 }
 
 function openRenameModal(): void {
+  closeAllModals()
   renameValue.value = props.category.name
   showRename.value = true
 }

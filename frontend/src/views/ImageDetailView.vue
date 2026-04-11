@@ -4,17 +4,17 @@
     <nav aria-label="breadcrumb">
       <ol class="breadcrumb bg-transparent p-0 mb-3">
         <li class="breadcrumb-item">
-          <router-link to="/categories">Categories</router-link>
+          <router-link to="/categories">{{ breadcrumbRoot }}</router-link>
         </li>
         <li class="breadcrumb-item">
-          <router-link :to="`/categories/${category.id}`">{{ category.name }}</router-link>
+          <router-link :to="`/categories/${category.id}`">{{ breadcrumbCategory }}</router-link>
         </li>
-        <li class="breadcrumb-item active" aria-current="page">{{ image.name }}</li>
+        <li class="breadcrumb-item active" aria-current="page">{{ breadcrumbImage }}</li>
       </ol>
     </nav>
 
     <div class="page-header">
-      <h3 class="page-title">{{ image.name }}</h3>
+      <h3 class="page-title">{{ imagePageTitle }}</h3>
     </div>
 
     <!-- Image name edit -->
@@ -143,8 +143,16 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { getCategory } from '../api/categories'
 import type { Category, Language, Voice } from '../types'
+import { useContentLanguage } from '../composables/useContentLanguage'
+import {
+  breadcrumbCategoriesLabel,
+  localizedCategoryLabel,
+  localizedImageLabel,
+} from '../utils/localizedLabels'
+import { toPascalCaseWords } from '../utils/pascalCaseWords'
 
 const route = useRoute()
+const contentLanguage = useContentLanguage()
 
 const categoryData = ref<Category | null>(null)
 
@@ -166,6 +174,21 @@ const category = computed(() => categoryData.value)
 const image = computed(() => {
   const imgId = route.params.imageId as string
   return category.value?.images.find(i => i.id === imgId) ?? null
+})
+
+const breadcrumbRoot = computed(() => breadcrumbCategoriesLabel(contentLanguage.value))
+
+const breadcrumbCategory = computed(() =>
+  category.value ? localizedCategoryLabel(category.value, contentLanguage.value) : '',
+)
+
+const breadcrumbImage = computed(() =>
+  image.value ? localizedImageLabel(image.value, contentLanguage.value) : '',
+)
+
+const imagePageTitle = computed(() => {
+  if (!image.value) return ''
+  return toPascalCaseWords(localizedImageLabel(image.value, contentLanguage.value))
 })
 
 const langFlagMap: Record<Language, string> = { en: 'us', es: 'es', fr: 'fr', bg: 'bg' }

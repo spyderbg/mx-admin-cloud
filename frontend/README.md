@@ -30,8 +30,10 @@ src/
 │   ├── CategoryDetail.vue
 │   ├── ImageGrid.vue
 │   └── LoginForm.vue
+├── composables/      # Shared composition helpers (e.g. content UI language)
+├── utils/            # Pure helpers (labels from voices, title-case formatting, etc.)
 ├── data/
-│   └── mockData.ts   # Fallback / dev sample data where views are not API-only
+│   └── mockData.ts   # Sidebar / MSW sample categories aligned with repo ../content (drinks, foods, vegetables, toys)
 ├── mocks/            # MSW handlers (used when VITE_DEBUG_MODE=true)
 ├── layouts/          # Application shell components
 │   ├── AppLayout.vue
@@ -84,8 +86,8 @@ The main authenticated shell, wrapping all `/categories` routes:
 └──────────┴───────────────────────────────────┘
 ```
 
-- **AppNavbar** -- Brand logo, language selector (en/es/fr/bg with flags), user avatar dropdown with sign-out. There is no global header search bar; use the sidebar filter on category routes.
-- **AppSidebar** -- User profile (avatar, name, role), fuzzy-filter input, expandable category tree with child images. Next to the **Categories** heading, **Expand all** / **Collapse all** toggle every top-level category open or closed. Clicking a category navigates to its detail; clicking an image navigates to its detail page.
+- **AppNavbar** -- Brand logo; **content language** selector (en/es/fr/bg with flags) and user avatar / sign-out are grouped on the **right** of the bar (`navbar-menu-wrapper` uses remaining width with end alignment; both controls stay visible at all breakpoints). Scoped styles in `AppNavbar.vue` fix vendor + Bootstrap rules that otherwise stretch language and user dropdowns to the full `navbar-menu-wrapper` width under narrow layouts, and anchor menus under their toggles (`top: 100%`, `right: 0`), overriding the theme language rule `left: -15px !important`. Opening one header dropdown closes the other. On small viewports, opening either dropdown closes the off-canvas category sidebar, and opening the sidebar closes both dropdowns. At **max-width 991px**, the logo / mini-logo area toggles the off-canvas categories drawer (home links apply at wider widths; there is no separate header menu button). The drawer slides in from the **left** with a short eased transition (see `AppSidebar.vue` scoped overrides). The selected language is shared with the sidebar (via `AppLayout` provide/inject), persisted in `localStorage` under `mx-admin-content-language`, and controls which `Voice.name` is shown for each category and image in the tree. There is no global header search bar; use the sidebar filter on category routes.
+- **AppSidebar** -- User profile (avatar, name, role), fuzzy-filter input, expandable category tree with child image labels in the **navbar-selected language** (`Voice.name` for that language, else **English** `Voice.name`, else the stored category/image `name`). Choosing a category or image emits `close-sidebar` so the off-canvas drawer closes on narrow viewports. Next to the **Categories** heading, **Expand all** / **Collapse all** toggle every top-level category open or closed. Clicking a category navigates to its detail; clicking an image navigates to its detail page.
 - **AppFooter** -- Simple branded footer.
 
 ## Views
@@ -99,14 +101,15 @@ Full-page authentication screen (Star Admin auth theme). Uses `LoginForm` compon
 Displayed when a category is selected (or defaults to first category):
 
 - **Page header** with category name
-- **CategoryDetail card** -- category icon, name, description, Edit/Delete buttons, voice list per language with Edit/Delete per voice
+- **CategoryDetail card** -- category icon, name, description, Edit/Delete buttons, voice list per language with Edit/Delete per voice; rename / delete / upload / voice-upload modals close each other so only one overlay is open at a time
 - **ImageGrid** -- responsive 4-column grid of image thumbnails, each with a pencil edit-icon badge. Clicking navigates to ImageDetailView.
 
 ### ImageDetailView
 
 Displayed for a specific image within a category:
 
-- **Breadcrumb** navigation: Categories > Category Name > Image Name
+- **Breadcrumb** navigation: root + category + image labels follow the **navbar content language** (same as the sidebar). Category and image segments use the matching `Voice.name`, then the **English** voice if that language is missing, then the stored `name`. The root crumb is translated for en/es/fr/bg (unknown codes fall back to English).
+- **Page title** (`h3.page-title`) uses the same localized image label as the last breadcrumb segment, formatted with **per-word Pascal-style casing** (first letter of each word uppercased, the rest lowercased via `toLocaleUpperCase` / `toLocaleLowerCase`).
 - **Image name** editable input
 - **Files section** -- grid of the image's file variants with replace/delete actions. At least one file must remain (delete disabled when only one). **Add File** opens the system file picker (`image/*`); selection is logged until upload is wired to the API.
 - **Voices table** -- one row per supported language (en, es, fr, bg) showing flag, voice name (text only), type badge, and replace/upload button.

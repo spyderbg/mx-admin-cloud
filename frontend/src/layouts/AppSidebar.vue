@@ -95,6 +95,7 @@
                 class="nav-link"
                 :to="`/categories/${cat.id}/images/${img.id}`"
                 :class="{ active: img.id === activeImageId }"
+                @click="requestCloseSidebar"
               >
                 {{ img.name }}
               </router-link>
@@ -117,14 +118,25 @@
 import { ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { mockUser, mockCategories } from '../data/mockData'
+import { useContentLanguage } from '../composables/useContentLanguage'
+import { localizedCategoryLabel, localizedImageLabel } from '../utils/localizedLabels'
 
 defineProps<{
   isActive: boolean
 }>()
 
+const emit = defineEmits<{
+  'close-sidebar': []
+}>()
+
+const requestCloseSidebar = (): void => {
+  emit('close-sidebar')
+}
+
 const route = useRoute()
 const router = useRouter()
 const user = mockUser
+const contentLanguage = useContentLanguage()
 const filterText = ref('')
 const expandedIds = ref(new Set<string>())
 
@@ -138,25 +150,32 @@ interface FilteredCategory {
 }
 
 const filteredCategories = computed((): FilteredCategory[] => {
+  const lang = contentLanguage.value
   const q = filterText.value.toLowerCase().trim()
   if (!q) {
-    return mockCategories.map(c => ({
+    return mockCategories.map((c) => ({
       id: c.id,
-      name: c.name,
-      filteredImages: c.images.map(i => ({ id: i.id, name: i.name })),
+      name: localizedCategoryLabel(c, lang),
+      filteredImages: c.images.map((i) => ({
+        id: i.id,
+        name: localizedImageLabel(i, lang),
+      })),
     }))
   }
   const result: FilteredCategory[] = []
   for (const cat of mockCategories) {
-    const catMatch = cat.name.toLowerCase().includes(q)
-    const matchedImages = cat.images.filter(i => i.name.toLowerCase().includes(q))
+    const catLabel = localizedCategoryLabel(cat, lang)
+    const catMatch = catLabel.toLowerCase().includes(q)
+    const matchedImages = cat.images.filter((i) =>
+      localizedImageLabel(i, lang).toLowerCase().includes(q),
+    )
     if (catMatch || matchedImages.length > 0) {
       result.push({
         id: cat.id,
-        name: cat.name,
+        name: catLabel,
         filteredImages: catMatch
-          ? cat.images.map(i => ({ id: i.id, name: i.name }))
-          : matchedImages.map(i => ({ id: i.id, name: i.name })),
+          ? cat.images.map((i) => ({ id: i.id, name: localizedImageLabel(i, lang) }))
+          : matchedImages.map((i) => ({ id: i.id, name: localizedImageLabel(i, lang) })),
       })
     }
   }
@@ -197,6 +216,7 @@ const toggleCategory = (id: string): void => {
   }
   expandedIds.value = next
   router.push(`/categories/${id}`)
+  requestCloseSidebar()
 }
 </script>
 
@@ -212,5 +232,21 @@ const toggleCategory = (id: string): void => {
   color: #fff;
   background: rgba(255, 255, 255, 0.12);
   box-shadow: none;
+}
+
+/* Theme slides off-canvas sidebar from the right; slide from the left instead. */
+@media (max-width: 991px) {
+  nav.sidebar.sidebar-offcanvas {
+    right: auto !important;
+    left: -270px;
+    transition:
+      left 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+      box-shadow 0.28s ease;
+  }
+  nav.sidebar.sidebar-offcanvas.active {
+    right: auto !important;
+    left: 0;
+    box-shadow: 8px 0 28px rgba(0, 0, 0, 0.2);
+  }
 }
 </style>
