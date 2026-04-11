@@ -38,7 +38,34 @@
         </div>
       </li>
 
-      <li class="nav-item nav-category">Categories</li>
+      <li class="nav-item nav-category">
+        <div
+          class="d-flex align-items-center justify-content-between flex-nowrap"
+          style="gap: 0.35rem;"
+        >
+          <span class="text-truncate">Categories</span>
+          <div class="d-flex align-items-center flex-shrink-0" style="gap: 2px;">
+            <button
+              type="button"
+              class="btn btn-sm border-0 rounded-0 p-1 cd-sidebar-tree-btn"
+              title="Expand all categories"
+              aria-label="Expand all categories"
+              @click.stop="expandAllCategories"
+            >
+              <i class="mdi mdi-unfold-more-horizontal" aria-hidden="true"></i>
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm border-0 rounded-0 p-1 cd-sidebar-tree-btn"
+              title="Collapse all categories"
+              aria-label="Collapse all categories"
+              @click.stop="collapseAllCategories"
+            >
+              <i class="mdi mdi-unfold-less-horizontal" aria-hidden="true"></i>
+            </button>
+          </div>
+        </div>
+      </li>
 
       <!-- Category tree -->
       <li
@@ -138,22 +165,52 @@ const filteredCategories = computed((): FilteredCategory[] => {
 
 watch(filterText, (q) => {
   if (q.trim()) {
+    const next = new Set(expandedIds.value)
     for (const cat of filteredCategories.value) {
-      expandedIds.value.add(cat.id)
+      next.add(cat.id)
     }
+    expandedIds.value = next
   }
 })
 
 watch(activeCategoryId, (id) => {
-  if (id) expandedIds.value.add(id)
+  if (!id) return
+  const next = new Set(expandedIds.value)
+  next.add(id)
+  expandedIds.value = next
 }, { immediate: true })
 
+const expandAllCategories = (): void => {
+  expandedIds.value = new Set(mockCategories.map((c) => c.id))
+}
+
+const collapseAllCategories = (): void => {
+  expandedIds.value = new Set()
+}
+
 const toggleCategory = (id: string): void => {
-  if (expandedIds.value.has(id)) {
-    expandedIds.value.delete(id)
+  const next = new Set(expandedIds.value)
+  if (next.has(id)) {
+    next.delete(id)
   } else {
-    expandedIds.value.add(id)
+    next.add(id)
   }
+  expandedIds.value = next
   router.push(`/categories/${id}`)
 }
 </script>
+
+<style scoped>
+.cd-sidebar-tree-btn {
+  color: rgba(255, 255, 255, 0.65);
+  background: transparent;
+  line-height: 1;
+  min-width: 1.75rem;
+}
+.cd-sidebar-tree-btn:hover,
+.cd-sidebar-tree-btn:focus {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: none;
+}
+</style>
