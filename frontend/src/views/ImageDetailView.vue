@@ -37,7 +37,16 @@
       <div class="card-body">
         <div class="d-flex justify-content-between align-items-center mb-3">
           <h4 class="card-title mb-0">Files</h4>
-          <button class="btn btn-primary btn-sm" @click="onAddFile">
+          <input
+            ref="addFileInputRef"
+            type="file"
+            accept="image/*"
+            class="d-none"
+            aria-hidden="true"
+            tabindex="-1"
+            @change="onAddFilePicked"
+          />
+          <button type="button" class="btn btn-primary btn-sm" @click="onAddFile">
             <i class="mdi mdi-plus mr-1"></i>Add File
           </button>
         </div>
@@ -86,7 +95,7 @@
             <thead>
               <tr>
                 <th>Language</th>
-                <th>Voice Name</th>
+                <th>Word</th>
                 <th>Type</th>
                 <th style="width: 120px;">Actions</th>
               </tr>
@@ -97,17 +106,7 @@
                   <i :class="'flag-icon flag-icon-' + langFlag(voice.language)" style="margin-right: 8px;"></i>
                   {{ langLabel(voice.language) }}
                 </td>
-                <td>
-                  <div class="d-flex align-items-center" style="gap: 0.5rem;">
-                    <img
-                      :src="voice.iconUrl"
-                      alt=""
-                      class="rounded-circle"
-                      style="width: 28px; height: 28px; object-fit: cover;"
-                    />
-                    {{ voice.name }}
-                  </div>
-                </td>
+                <td>{{ voice.name }}</td>
                 <td><span class="badge badge-light">{{ voice.type }}</span></td>
                 <td>
                   <div class="d-flex align-items-center" style="gap: 0.4rem;">
@@ -179,8 +178,19 @@ const onNameChange = (e: Event): void => {
   const val = (e.target as HTMLInputElement).value
   console.log('Name changed to:', val)
 }
+const addFileInputRef = ref<HTMLInputElement | null>(null)
+
 const onAddFile = (): void => {
-  console.log('Add file to image:', image.value?.id)
+  addFileInputRef.value?.click()
+}
+
+const onAddFilePicked = (e: Event): void => {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (file) {
+    console.log('Add file to image:', image.value?.id, file.name)
+  }
+  input.value = ''
 }
 const onReplaceFile = (index: number): void => {
   console.log('Replace file at index:', index)

@@ -108,8 +108,8 @@ Displayed for a specific image within a category:
 
 - **Breadcrumb** navigation: Categories > Category Name > Image Name
 - **Image name** editable input
-- **Files section** -- grid of the image's file variants with replace/delete actions. At least one file must remain (delete disabled when only one).
-- **Voices table** -- one row per supported language (en, es, fr, bg) showing flag, voice name, type badge, and replace/upload button.
+- **Files section** -- grid of the image's file variants with replace/delete actions. At least one file must remain (delete disabled when only one). **Add File** opens the system file picker (`image/*`); selection is logged until upload is wired to the API.
+- **Voices table** -- one row per supported language (en, es, fr, bg) showing flag, voice name (text only), type badge, and replace/upload button.
 
 ## Components
 
