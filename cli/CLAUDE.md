@@ -25,10 +25,11 @@ kiddo-cli --help
 
 - Pure HTTP client — no backend code shared
 - Subcommands: `common`, `content`, `generate`, `list`, `translate`, `users`
-- Auth priority: `KIDDO_TOKEN` env var → Unix socket login → HTTP login (`BACKEND_URL` + `KIDDO_USER`/`KIDDO_PASSWORD`)
+- Auth priority: `--token` option → `KIDDO_TOKEN` env var → Unix socket login → HTTP login (`KIDDO_API_BASE_URL` + `KIDDO_USER`/`KIDDO_PASSWORD`)
 
 ### Authentication
 
-- **CLI** → Unix socket (`/tmp/kiddo-backend.sock`) → short-lived JWT (30 sec) → subsequent HTTP calls
+- **CLI** → Unix socket (`/tmp/kiddo-backend.sock` or `KIDDO_CLI_SOCKET`) → short-lived JWT (30 sec) → subsequent HTTP calls
 - **Alternative** → HTTP login → long-lived JWT (30 min) → `Authorization: Bearer <token>`
+- **User Management**: Strictly requires Unix socket (UDS) on Linux/macOS for `users` commands.
 - **User roles**: `admin` (full access), `viewer` (read-only)
