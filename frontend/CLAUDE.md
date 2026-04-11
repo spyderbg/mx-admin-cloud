@@ -4,7 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**mx-admin** is a content management and voice synthesis platform for the Kiddo language learning app. It manages multilingual categories/images and orchestrates a TTS pipeline across multiple providers.
+**mx-admin** is a content management and voice synthesis platform for the Kiddo language learning app. It manages
+multilingual categories/images and orchestrates a TTS pipeline across multiple providers.
 
 Three components: **FastAPI backend**, **Vue 3 frontend SPA**, **Typer CLI client**.
 
@@ -36,16 +37,23 @@ No state management library (no Pinia/Vuex) — data flows via props.
 ### Routing & Auth
 
 `src/router/index.ts` defines two top-level trees:
-- `/login` — unauthenticated, renders `LoginView`
-- `/categories` — requires auth (`meta: { requiresAuth: true }`), uses `AppLayout` as shell; children are `CategoriesView` and `ImageDetailView`
 
-Auth guard checks `localStorage.getItem('token')`. Token is written by `src/api/auth.ts` on successful login (POST `/api/v1/login` with `application/x-www-form-urlencoded`).
+- `/login` — unauthenticated, renders `LoginView`
+- `/categories` — requires auth (`meta: { requiresAuth: true }`), uses `AppLayout` as shell; children are
+  `CategoriesView` and `ImageDetailView`
+
+Auth guard checks `localStorage.getItem('token')`. Token is written by `src/api/auth.ts` on successful login (POST
+`/api/v1/login` with `application/x-www-form-urlencoded`).
 
 ### Data Layer
 
-**All views currently use mock data from `src/data/mockData.ts`** — `CategoriesView` and `ImageDetailView` import `mockCategories` directly; action handlers (`onEditCategory`, `onDeleteCategory`, etc.) only `console.log`. The real API integration is not yet wired up. `src/api/auth.ts` is the only real API module.
+**All views currently use mock data from `src/data/mockData.ts`** — `AppSidebar` and `AppNavbar` import `mockCategories`
+and `mockUser` directly. `CategoriesView` and `ImageDetailView` use `src/api/categories.ts` which calls the real backend
+`/api/v1/content/categories` but action handlers (e.g., `onEditCategory`, `onDeleteCategory`) still only `console.log`.
+The full API integration is still in progress.
 
-When replacing mock data with real API calls, add new modules to `src/api/` and inject the `Authorization: Bearer <token>` header (token from `localStorage`).
+When replacing mock data with real API calls, update existing modules in `src/api/` or add new ones. Note that
+`src/api/auth.ts` handles the token and `src/api/client.ts` defines the base axios instance.
 
 ### Component Structure
 
@@ -54,14 +62,19 @@ When replacing mock data with real API calls, add new modules to `src/api/` and 
 - `src/components/` — reusable components (`CategoryDetail`, `ImageGrid`, `LoginForm`)
 - `src/types/index.ts` — shared types: `Category`, `Image`, `Voice`, `User`, `Language`
 
-`AppSidebar` renders a filterable category tree; expanding a category navigates to `/categories/:id`; clicking an image navigates to `/categories/:id/images/:imageId`.
+`AppSidebar` renders a filterable category tree; expanding a category navigates to `/categories/:id`; clicking an image
+navigates to `/categories/:id/images/:imageId`.
 
 ### UI Framework
 
-Star Admin Bootstrap 4 theme (vendor CSS/JS in `src/assets/vendors/`). Use Bootstrap 4 utility classes and MDI icons (`mdi mdi-*`). Flag icons use `flag-icon flag-icon-<code>` with the mapping `en → us`.
+Star Admin Bootstrap 4 theme (vendor CSS/JS in `src/assets/vendors/`). Use Bootstrap 4 utility classes and MDI icons (
+`mdi mdi-*`). Flag icons use `flag-icon flag-icon-<code>` with the mapping `en → us`.
 
-**Modal pattern**: All modals are implemented with `<Teleport to="body">` and `cd-` prefixed CSS classes (e.g. `cd-modal-overlay`, `cd-modal-box`) to avoid conflicts with Bootstrap's `.close` and `.modal` styles. Follow this pattern for any new modals.
+**Modal pattern**: All modals are implemented with `<Teleport to="body">` and `cd-` prefixed CSS classes (e.g.
+`cd-modal-overlay`, `cd-modal-box`) to avoid conflicts with Bootstrap's `.close` and `.modal` styles. Follow this
+pattern for any new modals.
 
 ### Types
 
-`Language = 'en' | 'es' | 'fr' | 'bg'` — supported languages. A `Voice` with an absent or empty `audioUrl` is considered missing; play controls must be disabled in that case.
+`Language = 'en' | 'es' | 'fr' | 'bg'` — supported languages. A `Voice` with an absent or empty `audioUrl` is considered
+missing; play controls must be disabled in that case.
