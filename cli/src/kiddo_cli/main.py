@@ -17,7 +17,7 @@ from kiddo_cli.commands import users_commands as users_commands  # pylint: disab
 app = typer.Typer(no_args_is_help=True)
 
 common_app = typer.Typer(help="Task commands: ping, status, operation, list-files.")
-content_app = typer.Typer(help="Content commands: categories, category-details, create-object.")
+content_app = typer.Typer(help="Content commands: categories, category-details, create-item.")
 list_app = typer.Typer(help="List configured components: generators, translators, optimizers, evaluators.")
 translate_app = typer.Typer(help="Translation commands: translate words.")
 users_app = typer.Typer(help="User management: list, create, delete, update.")

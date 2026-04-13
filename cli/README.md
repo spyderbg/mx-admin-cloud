@@ -61,7 +61,7 @@ Run `kiddo-cli --help`, `kiddo-cli common --help`, `kiddo-cli content --help`, `
 | [`content remove-category <name>`](cli/src/kiddo_cli/commands/content_commands.py#L75) | Remove a category (archive if `ARCHIVE_DIR` is set, else delete permanently). |
 | [`content restore-category <name>`](cli/src/kiddo_cli/commands/content_commands.py#L62) | Restore a category from archive (name or archive folder like `foods_1738...`). |
 | [`content category-details <name>`](cli/src/kiddo_cli/commands/content_commands.py#L88) | Show category details. |
-| [`content create-object`](cli/src/kiddo_cli/commands/content_commands.py#L101) | Create a new content object (image). |
+| [`content create-item`](cli/src/kiddo_cli/commands/content_commands.py#L100) | Create a new content item (image). |
 
 ### Generate (backend voice generation via HTTP)
 
@@ -132,7 +132,7 @@ kiddo-cli content rename-category animals --to creatures
 kiddo-cli content remove-category creatures
 kiddo-cli content restore-category creatures
 kiddo-cli content category-details foods
-kiddo-cli content create-object --image ./pic.png --category foods --object "apple pie"
+kiddo-cli content create-item --image ./pic.png --category foods --item "apple pie"
 
 # Generate
 kiddo-cli generate run -l bg -f mp3 words.txt

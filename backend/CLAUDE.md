@@ -40,7 +40,8 @@ docker compose -f docker/docker-compose.yml up -d --build
 
 ### Backend (`src/`)
 
-- **`api/v1/`** — Public REST routes: login, cli-login, content CRUD, user management (UDS+admin), common utils
+- **`api/v1/`** — Public REST routes (`routes_*.py`) and Pydantic request/response models in **`schemas/`**
+  (login, cli-login, content CRUD, user management over UDS+admin, common utils)
 - **`api/internal/`** — Internal HTTP endpoints for TTS generation, evaluation, optimization, and translation
   (requires internal service token or admin JWT)
 - **`core/`** — Shared infrastructure with **zero** `src.services` imports (HTTP boundary enforced):

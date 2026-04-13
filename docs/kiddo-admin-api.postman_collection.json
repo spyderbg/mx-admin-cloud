@@ -469,7 +469,7 @@
       "name": "5. Images (Objects)",
       "item": [
         {
-          "name": "5.1 Create Object",
+          "name": "5.1 Create Item",
           "request": {
             "method": "POST",
             "body": {
@@ -477,25 +477,25 @@
               "formdata": [
                 { "key": "image", "type": "file", "src": "" },
                 { "key": "category", "value": "nature_scenes", "type": "text" },
-                { "key": "object", "value": "Mountain Peak", "type": "text" }
+                { "key": "item", "value": "Mountain Peak", "type": "text" }
               ]
             },
             "url": {
-              "raw": "{{baseUrl}}/api/v1/content/objects",
+              "raw": "{{baseUrl}}/api/v1/content/items",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "content", "objects"]
+              "path": ["api", "v1", "content", "items"]
             },
-            "description": "Create a new image/object. Saves image, translates name to all languages, generates per-language voice files."
+            "description": "Create a new image/item. Saves image, translates name to all languages, generates per-language voice files."
           },
           "response": [
             {
-              "name": "201 - Object created",
+              "name": "201 - Item created",
               "status": "Created",
               "code": 201,
               "header": [
                 { "key": "Content-Type", "value": "application/json" }
               ],
-              "body": "{\n  \"category\": \"nature_scenes\",\n  \"object\": \"Mountain Peak\",\n  \"folder\": \"mountain_peak\",\n  \"image_id\": \"mountain_peak\"\n}",
+              "body": "{\n  \"category\": \"nature_scenes\",\n  \"item\": \"Mountain Peak\",\n  \"folder\": \"mountain_peak\",\n  \"image_id\": \"mountain_peak\"\n}",
               "_postman_previewlanguage": "json"
             },
             {

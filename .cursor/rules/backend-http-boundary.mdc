@@ -13,6 +13,7 @@ defined HTTP endpoint. No service may call another by importing its internals di
 
 - All inter-service communication MUST use HTTP requests to defined FastAPI endpoints.
 - Internal routes in `api/internal/` expose the contract — treat them as the sole integration surface.
+- Pydantic models under `src.api.internal.schemas` and `src.api.v1.schemas` are the shared wire contracts for internal and public routes; `core/` and `services/` may import **only** those schema packages (see layered rules in `backend-general.mdc`).
 - Never import business logic from one service module into another; call its endpoint instead.
 - FastAPI auto-generates OpenAPI specs for internal routes — keep schemas accurate so endpoints are
   curl-testable and integration-testable in isolation.

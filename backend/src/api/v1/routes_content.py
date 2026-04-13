@@ -2,34 +2,22 @@
 
 from fastapi import APIRouter, Depends, HTTPException, status  # pylint: disable=import-error
 from fastapi import File, Form, UploadFile  # pylint: disable=import-error
-from pydantic import BaseModel
 
 from src.api.dependencies import get_current_user
+from src.api.v1.schemas.content import (
+    CreateCategoryBody,
+    RenameCategoryBody,
+    RestoreCategoryBody,
+)
 from src.core.content_service import (
     list_categories as svc_list_categories,
     category_details as svc_category_details,
     create_category as svc_create_category,
-    create_object as svc_create_object,
+    create_item as svc_create_item,
     remove_category as svc_remove_category,
     rename_category as svc_rename_category,
     restore_category as svc_restore_category,
 )
-
-
-class CreateCategoryBody(BaseModel):
-    """Request body for creating a new category."""
-    name: str
-
-
-class RenameCategoryBody(BaseModel):
-    """Request body for renaming a category."""
-    name: str
-
-
-class RestoreCategoryBody(BaseModel):
-    """Request body for restoring a category."""
-    name: str
-
 
 router = APIRouter()
 
@@ -110,14 +98,14 @@ def category_details(category_name: str, _user: dict = Depends(get_current_user)
     return result
 
 
-@router.post("/content/objects", status_code=status.HTTP_201_CREATED)
-def create_object(
+@router.post("/content/items", status_code=status.HTTP_201_CREATED)
+def create_item_endpoint(
         _user: dict = Depends(get_current_user),
         image: UploadFile = File(...),  # pylint: disable=invalid-name
         category: str = Form(...),
-        object: str = Form(..., alias="object"),
+        item: str = Form(...),
 ):
-    """Create a new object."""
+    """Create a new content item (image + voices)."""
     if not image.filename:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Image file is required")
     image_data = image.read()
@@ -128,9 +116,9 @@ def create_object(
         ext = "." + image.filename.rsplit(".", 1)[-1].lower()
     if ext not in (".png", ".jpg", ".jpeg"):
         ext = ".png"
-    result = svc_create_object(
+    result = svc_create_item(
         category_name=category.strip(),
-        english_word=object.strip(),
+        english_word=item.strip(),
         image_data=image_data,
         image_extension=ext,
     )

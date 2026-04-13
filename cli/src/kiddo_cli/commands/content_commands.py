@@ -1,4 +1,4 @@
-"""Content commands (backend routes_content): list-categories, category-details, create-object."""
+"""Content commands (backend routes_content): list-categories, category-details, create-item."""
 from pathlib import Path
 
 import requests
@@ -97,15 +97,15 @@ def register(app: typer.Typer) -> None:
 
         run_with_auth(url, token, run)
 
-    @app.command("create-object")
-    def create_object(
+    @app.command("create-item")
+    def create_item(
             image_path: Path = typer.Option(..., "--image", help="Path to image file", path_type=Path),
             category: str = typer.Option(..., "--category", help="Category name"),
-            object_word: str = typer.Option(..., "--object", help="English word for the object"),
+            item: str = typer.Option(..., "--item", help="English word for the item"),
             url: str = typer.Option(None, "--url", help="Backend base URL"),
             token: str | None = typer.Option(None, "--token", help="Bearer token (else auth via CLI socket)"),
     ):
-        """Create a new content object (calls backend API)."""
+        """Create a new content item (calls backend API)."""
         if not image_path.exists() or not image_path.is_file():
             print_error("Image file not found", str(image_path))
             raise typer.Exit(1)
@@ -114,8 +114,8 @@ def register(app: typer.Typer) -> None:
             try:
                 with open(image_path, "rb") as f:
                     files = {"image": (image_path.name, f, "application/octet-stream")}
-                    data = {"category": category, "object": object_word}
-                    result = post("/content/objects", data=data, files=files, token=t, timeout=120)
+                    data = {"category": category, "item": item}
+                    result = post("/content/items", data=data, files=files, token=t, timeout=120)
                     print_json(result)
             except requests.RequestException as e:
                 print_request_error(e)

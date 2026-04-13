@@ -3,43 +3,20 @@
 from sqlite3 import IntegrityError  # pylint: disable=import-error
 
 from fastapi import APIRouter, Depends, HTTPException, status  # pylint: disable=import-error
-from pydantic import BaseModel, Field
 
 from src.api.dependencies import require_uds, require_admin
+from src.api.v1.schemas.users import (
+    ChangePasswordRequest,
+    ChangeRoleRequest,
+    CreateUserRequest,
+    UserOut,
+)
 from src.db.database import UsersDb
 
 router = APIRouter(
     dependencies=[Depends(require_uds), Depends(require_admin)],
 )
 
-
-# --------------- schemas ---------------
-
-class CreateUserRequest(BaseModel):
-    """Request body for creating a new user."""
-    username: str = Field(min_length=1, max_length=150)
-    password: str = Field(min_length=1)
-    role: str = Field(default="viewer", pattern=r"^(admin|viewer)$")
-
-
-class ChangePasswordRequest(BaseModel):
-    """Request body for changing a user's password."""
-    password: str = Field(min_length=1)
-
-
-class ChangeRoleRequest(BaseModel):
-    """Request body for changing a user's role."""
-    role: str = Field(pattern=r"^(admin|viewer)$")
-
-
-class UserOut(BaseModel):
-    """Response body for a user."""
-    id: int
-    username: str
-    role: str
-
-
-# --------------- endpoints ---------------
 
 @router.post("/users", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 def create_user(body: CreateUserRequest):
@@ -48,11 +25,11 @@ def create_user(body: CreateUserRequest):
         hashed = UsersDb.hash_password(body.password)
         last_id = UsersDb.create_user(body.username, body.role, hashed)
         return UserOut(id=last_id, username=body.username, role=body.role)
-    except IntegrityError:
+    except IntegrityError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"User '{body.username}' already exists.",
-        )
+        ) from exc
 
 
 @router.get("/users", response_model=list[UserOut])

@@ -26,9 +26,15 @@ It must be followed for all new features, refactors, and fixes.
 ### Rules
 
 * ❌ `core/` MUST NOT import from `services/`
-* ❌ `services/` MUST NOT depend on `api/`
 * ✅ `api/` can depend on `core/` and `services/`
-* ✅ Dependencies must flow inward
+* ✅ Dependencies must flow inward, with the **API route schemas** exception below.
+
+#### API route schemas (narrow exception)
+
+* ✅ `core/` and `services/` MAY import Pydantic models **only** from:
+  * `src.api.internal.schemas` (and submodules) — request/response bodies for internal HTTP routes, or
+  * `src.api.v1.schemas` (and submodules) — request/response bodies for public `/api/v1` routes.
+* ❌ `core/` and `services/` MUST NOT import other `src.api` code (route modules, `src.api.dependencies`, app factory, `src.api.v1.routes_*`, etc.).
 
 ---
 
@@ -45,8 +51,8 @@ It must be followed for all new features, refactors, and fixes.
 
 ## Structure
 
-* Public API → `/api/v1/`
-* Internal API → `/api/internal/`
+* Public API → `/api/v1/` (request/response models in `src/api/v1/schemas/`)
+* Internal API → `/api/internal/` (request/response models in `src/api/internal/schemas/`)
 
 ## Validation
 

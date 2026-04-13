@@ -159,7 +159,7 @@ Base URL for all routes below: `/api/v1`. Protected routes require `Authorizatio
 | `GET`    | [/content/categories/{category_name}](src/api/v1/routes_content.py#L103) | Yes  | Category details by name.                                                                                                         |
 | `PATCH`  | [/content/categories/{category_name}](src/api/v1/routes_content.py#L77)  | Yes  | Rename category. Body: `{"name": "<new_name>"}`. Renames folder and regenerates category voice files.                             |
 | `DELETE` | [/content/categories/{category_name}](src/api/v1/routes_content.py#L90)  | Yes  | Remove category. If `ARCHIVE_DIR` is set, archives it (date suffix); otherwise deletes permanently.                               |
-| `POST`   | [/content/objects](src/api/v1/routes_content.py#L114)                    | Yes  | Create a content object. Multipart: `image` (file), `category` (form), `object` (form, English word). Returns 201.                |
+| `POST`   | [/content/items](src/api/v1/routes_content.py#L101)                      | Yes  | Create a content item. Multipart: `image` (file), `category` (form), `item` (form, English word). Returns 201.                  |
 
 ### Users
 
@@ -331,7 +331,11 @@ src/
 │       ├── routes_auth.py
 │       ├── routes_common.py      # ping, status, operation, list-files
 │       ├── routes_content.py
-│       └── routes_users.py
+│       ├── routes_users.py
+│       └── schemas/              # Public OpenAPI contract models (Pydantic)
+│           ├── common.py
+│           ├── content.py
+│           └── users.py
 ├── core/                         # No src.services imports (HTTP boundary)
 │   ├── config.py                 # Settings + output path helpers
 │   ├── models.py                 # e.g. TranslationSourceWord, GeneratedAudio, RunSummary
@@ -666,10 +670,10 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/jso
   -d '{"name": "creatures"}' \
   http://localhost:8000/api/v1/content/categories/restore
 
-# Create object (multipart)
+# Create item (multipart)
 curl -X POST -H "Authorization: Bearer $TOKEN" \
-  -F "image=@./pic.png" -F "category=foods" -F "object=apple pie" \
-  http://localhost:8000/api/v1/content/objects
+  -F "image=@./pic.png" -F "category=foods" -F "item=apple pie" \
+  http://localhost:8000/api/v1/content/items
 
 # List generators — admin JWT satisfies require_internal
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/internal/generators

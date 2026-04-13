@@ -491,11 +491,11 @@ audio: <binary file>
 
 ## 5. Images (Objects)
 
-### 5.1 `POST /api/v1/content/objects`
+### 5.1 `POST /api/v1/content/items`
 
 | | |
 |---|---|
-| **Purpose** | Create a new image/object in a category (saves image, auto-translates, generates per-language voice files). |
+| **Purpose** | Create a new image/item in a category (saves image, auto-translates, generates per-language voice files). |
 | **When called** | User clicks "Add New Image" button on the category view. |
 | **Backend status** | EXISTS |
 
@@ -508,8 +508,8 @@ audio: <binary file>
 
 **Backend code:**
 
-- Route: [`routes_content.py:113-142`](../backend/src/api/v1/routes_content.py#L113-L142)
-- Service: [`content_service.py:256-337`](../backend/src/core/content_service.py#L256-L337)
+- Route: [`routes_content.py`](../backend/src/api/v1/routes_content.py) (`POST /content/items`)
+- Service: [`content_service.create_item`](../backend/src/core/content_service.py)
 
 **Request:**
 
@@ -518,7 +518,7 @@ Content-Type: multipart/form-data
 
 image:    <binary file (.png/.jpg)>
 category: nature_scenes
-object:   Mountain Peak
+item:     Mountain Peak
 ```
 
 **Response (201):**
@@ -526,7 +526,7 @@ object:   Mountain Peak
 ```json
 {
   "category": "nature_scenes",
-  "object": "Mountain Peak",
+  "item": "Mountain Peak",
   "folder": "mountain_peak",
   "image_id": "mountain_peak"
 }
@@ -806,7 +806,7 @@ audio: <binary file>
 |---|---|
 | **Purpose** | Regenerate a voice file for one language using the TTS pipeline. |
 | **When called** | Could be triggered from a "Regenerate" action in the voices table (not yet in UI). |
-| **Backend status** | MISSING (logic exists in `create_object`) |
+| **Backend status** | MISSING (logic exists in `create_item`) |
 
 **Backend reference:**
 
@@ -871,7 +871,7 @@ app.mount("/content", StaticFiles(directory=settings.CONTENT_DIR), name="content
 | 4.1 | GET | `/api/v1/content/categories/{name}/voices` | List category voices | MISSING |
 | 4.2 | PUT | `/api/v1/content/categories/{name}/voices/{lang}` | Upload category voice | MISSING |
 | 4.3 | POST | `.../voices/{lang}/regenerate` | Regenerate category voice | MISSING |
-| 5.1 | POST | `/api/v1/content/objects` | Create image/object | EXISTS |
+| 5.1 | POST | `/api/v1/content/items` | Create image/item | EXISTS |
 | 5.2 | GET | `.../categories/{name}/objects/{obj}` | Object details | MISSING |
 | 5.3 | PATCH | `.../categories/{name}/objects/{obj}` | Rename object | MISSING |
 | 5.4 | DELETE | `.../categories/{name}/objects/{obj}` | Delete object | MISSING |

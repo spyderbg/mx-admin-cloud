@@ -1,5 +1,5 @@
 """
-Content service: list categories, category details, create object, archive and restore category.
+Content service: list categories, category details, create item, archive and restore category.
 Orchestrates filesystem, CSVs, translation, TTS, and icon generation.
 """
 import base64
@@ -253,43 +253,43 @@ def _first_available_image_index(object_folder: Path) -> int:
     return 1
 
 
-def create_object(
+def create_item(
     category_name: str,
     english_word: str,
     image_data: bytes,
     image_extension: str = ".png",
 ) -> dict[str, Any]:
     """
-    Create object folder, save image, update CSVs, translate, generate voices.
-    Returns result dict with category, object, folder, image_id or error.
+    Create an item folder, save image, update CSVs, translate, generate voices.
+    Returns result dict with category, item, folder, image_id, or error.
     """
     if not _is_safe_category_name(category_name):
         return {"error": "Invalid category name", "category": category_name}
     if not english_word or not english_word.strip():
-        return {"error": "Object word is required"}
+        return {"error": "Item word is required"}
     english_word = english_word.strip()
 
     folder_name = english_word_to_folder_name(english_word)
     image_id = english_word_to_image_id(english_word)
     if not folder_name:
-        return {"error": "Could not derive folder name from object word"}
+        return {"error": "Could not derive folder name from item word"}
 
     root = _content_root()
     cat_path = root / category_name
-    object_path = cat_path / folder_name
+    item_path = cat_path / folder_name
 
-    if object_path.exists():
-        return {"error": f"Object folder already exists: {folder_name}", "category": category_name}
+    if item_path.exists():
+        return {"error": f"Item folder already exists: {folder_name}", "category": category_name}
 
     cat_path.mkdir(parents=True, exist_ok=True)
-    object_path.mkdir(parents=True, exist_ok=True)
+    item_path.mkdir(parents=True, exist_ok=True)
 
-    idx = _first_available_image_index(object_path)
+    idx = _first_available_image_index(item_path)
     ext = image_extension if image_extension.startswith(".") else f".{image_extension}"
     if ext.lower() not in (".png", ".jpg", ".jpeg"):
         ext = ".png"
     image_filename = f"{idx:02d}{ext}"
-    image_path = object_path / image_filename
+    image_path = item_path / image_filename
     with open(image_path, "wb") as f:
         f.write(image_data)
 
@@ -308,7 +308,7 @@ def create_object(
             return {
                 "error": f"Translation failed for {lang}: {e}",
                 "category": category_name,
-                "object": english_word,
+                "item": english_word,
                 "folder": folder_name,
                 "image_id": image_id,
             }
@@ -317,21 +317,21 @@ def create_object(
         word = words_by_lang.get(lang) or english_word
         try:
             audio_bytes = generate_audio(word, lang)
-            voice_path = object_path / f"{folder_name}_{lang}_01.mp3"
+            voice_path = item_path / f"{folder_name}_{lang}_01.mp3"
             with open(voice_path, "wb") as f:
                 f.write(audio_bytes)
         except Exception as e:
             return {
                 "error": f"TTS failed for {lang}: {e}",
                 "category": category_name,
-                "object": english_word,
+                "item": english_word,
                 "folder": folder_name,
                 "image_id": image_id,
             }
 
     return {
         "category": category_name,
-        "object": english_word,
+        "item": english_word,
         "folder": folder_name,
         "image_id": image_id,
     }

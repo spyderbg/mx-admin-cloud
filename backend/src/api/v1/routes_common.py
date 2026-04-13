@@ -1,9 +1,10 @@
 """Common API routes."""
 
-from pydantic import BaseModel
 from fastapi import APIRouter, Depends  # pylint: disable=import-error
-from src.core.tasks import ping, status, operation, list_files
+
 from src.api.dependencies import get_current_user
+from src.api.v1.schemas.common import ListFilesRequest
+from src.core.tasks import ping, status, operation, list_files
 
 router = APIRouter()
 
@@ -22,9 +23,6 @@ def post_operation(name: str, _user: dict = Depends(get_current_user)):
     """Perform an operation."""
     return operation(name)
 
-class ListFilesRequest(BaseModel):
-    """Request body for listing files."""
-    depth: int
 
 @router.post("/list-files")
 def post_list_files(data: ListFilesRequest, _user: dict = Depends(get_current_user)):

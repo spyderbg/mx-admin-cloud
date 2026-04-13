@@ -9,7 +9,7 @@ Summary of backend and CLI layout:
 **CLI** – separate project under `cli/src/kiddo_cli/`:
 - All commands call the FastAPI backend over HTTP only (no backend code imports).
 - Install as terminal command `kiddo-cli` via `scripts/cli.sh install` or `pip install -e cli/`.
-- Commands: run-test, run-task, status, do-operation, list, list-categories, category-details, create-object. Use `--url` and `--token` (or env BACKEND_URL, KIDDO_TOKEN).
+- Commands: run-test, run-task, status, do-operation, list, list-categories, category-details, create-item. Use `--url` and `--token` (or env BACKEND_URL, KIDDO_TOKEN).
 
 **Running the backend**
 - From repo root: `cd backend && ./uvicorn_start.sh` (sets PYTHONPATH=backend/src), or `PYTHONPATH=backend/src uvicorn kiddo_app.main:app --reload --host 0.0.0.0 --port 8000`.
