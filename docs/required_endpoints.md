@@ -855,9 +855,9 @@ app.mount("/content", StaticFiles(directory=settings.CONTENT_DIR), name="content
 
 ---
 
-## Summary
+## Summar~~~~y
 
-| # | Method | Path | Purpose | Backend |
+| # | Method | Path | Purpose | Backend ~~~~|
 |---|--------|------|---------|---------|
 | 1.1 | POST | `/api/v1/login` | Authenticate user | EXISTS |
 | 1.2 | GET | `/api/v1/me` | Current user profile | MISSING |
