@@ -20,7 +20,7 @@ class StaticTTSProvider(TTSProvider):
 
     @classmethod
     def register(cls) -> None:
-        """Register this provider under the key ``"static"`` in the ProviderFactory."""
+        """Register this provider under the key "static" in the ProviderFactory."""
         TextToSpeechProviderFactory.register("static", cls)
 
     def api_key_env_name(self) -> str:

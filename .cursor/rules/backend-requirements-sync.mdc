@@ -1,5 +1,6 @@
 ---
 description: Keep requirements.txt in sync when new packages are used in code
+globs: backend/src/**/*.py
 alwaysApply: true
 ---
 

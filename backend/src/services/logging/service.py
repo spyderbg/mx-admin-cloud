@@ -22,9 +22,9 @@ class LoggingProviderFactory(ServiceProviderFactory[LoggingServiceProvider]):
 class LoggingService(Service):
     """Orchestrator for all logging providers.
 
-    After the registry loads config files the service holds materialised
-    provider instances.  Call :meth:`configure` once at startup so the
-    active provider(s) can wire stdlib ``dictConfig``, structlog, and the
+    After the registry loads config files, the service holds materialised
+    provider instances.  Call `configure` once at startup so the
+    active provider(s) can wire stdlib "dictConfig", structlog, and the
     request logger.
     """
 

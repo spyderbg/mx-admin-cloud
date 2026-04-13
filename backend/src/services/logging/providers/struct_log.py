@@ -1,7 +1,7 @@
 """Structlog-based logging provider.
 
-Configures stdlib ``dictConfig``, structlog processors, and the
-dedicated request logger channel from a single ``service_provider``
+Configures stdlib "dictConfig", structlog processors, and the
+dedicated request logger channel from a single "service_provider"
 config envelope.
 """
 
@@ -47,16 +47,16 @@ _DEFAULT_REQUEST_FIELDS: dict[str, bool] = {
 class StructLogProvider(LoggingServiceProvider):
     """Logging provider backed by structlog + stdlib logging.
 
-    Provider ``config`` sections
+    Provider "config" sections
     ----------------------------
-    ``logging``
-        A stdlib ``dictConfig`` blob (version, formatters, handlers, root …).
-        Custom extensions: ``active`` flag on handlers, ``${output_dir}``
+    "logging"
+        A stdlib "dictConfig" blob (version, formatters, handlers, root …).
+        Custom extensions: "active" flag on handlers, "${output_dir}"
         path placeholder, automatic Seq availability check.
-    ``structlog``
-        ``renderer`` (``console`` | ``json``) and optional processor list.
-    ``request_log``
-        ``path`` (relative to output dir) and per-field ``fields`` toggles
+    "structlog"
+        "renderer" ("console" | "json") and optional processor list.
+    "request_log"
+        "path" (relative to output dir) and per-field "fields" toggles
         for the dedicated request logger channel.
     """
 
@@ -70,7 +70,7 @@ class StructLogProvider(LoggingServiceProvider):
 
     @classmethod
     def register(cls) -> None:
-        """Register under ``struct_log`` in the :class:`LoggingProviderFactory`."""
+        """Register under "struct_log" in the: class:`LoggingProviderFactory`."""
         LoggingProviderFactory.register("struct_log", cls)
 
     # ------------------------------------------------------------------

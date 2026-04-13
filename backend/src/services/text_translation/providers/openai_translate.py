@@ -17,19 +17,20 @@ _CATEGORY_LINE_RE = re.compile(r"[^\n]*\{\{\s*category\s*\}\}[^\n]*\n?")
 class OpenAITextTranslate(TextTranslationServiceProvider):
     """OpenAI-powered translator using the Chat Completions API.
 
-    Config keys (from ``self.config``):
-        ``input_language``  — source language code (default ``"en"``)
-        ``output_language`` — target language code (default ``"en"``)
-        ``model``           — OpenAI model ID (default ``"gpt-4o"``)
-        ``temperature``     — sampling temperature (default ``0.0``)
-        ``prompt``          — system-prompt template (supports ``{{ input_language }}``,
-                              ``{{ output_language }}``, and ``{{ category }}`` placeholders)
+    Config keys (from "self.config"):
+        "input_language"  — source language code (default ""en"")
+        "output_language" — target language code (default ""en"")
+        "model"           — OpenAI model ID (default ""gpt-4o"")
+        "temperature"     — sampling temperature (default "0.0")
+        "prompt"          — system-prompt template (supports "{{ input_language }}",
+                              "{{ output_language }}", and "{{ category }}" placeholders)
     """
 
     @classmethod
     def register(cls) -> None:
         """Register this provider with the TranslatorFactory."""
-        from src.services.text_translation.service import TextTranslationProviderFactory  # pylint: disable=import-outside-toplevel
+        from src.services.text_translation.service import \
+            TextTranslationProviderFactory  # pylint: disable=import-outside-toplevel
         TextTranslationProviderFactory.register("openai_translate", cls)
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -50,10 +51,10 @@ class OpenAITextTranslate(TextTranslationServiceProvider):
         self._prompt = str(self.config.get("prompt", ""))
 
     def _render_prompt(
-        self,
-        input_lang_code: str,
-        target_lang_code: str,
-        category: str | None,
+            self,
+            input_lang_code: str,
+            target_lang_code: str,
+            category: str | None,
     ) -> str:
         rendered = self._prompt.replace("{{ input_language }}", self.language_name(input_lang_code))
         rendered = rendered.replace("{{ output_language }}", self.language_name(target_lang_code))
@@ -66,11 +67,11 @@ class OpenAITextTranslate(TextTranslationServiceProvider):
         return rendered.strip()
 
     async def translate_text(
-        self,
-        text: str,
-        input_lang_code: str,
-        target_lang_code: str,
-        category: str | None = None,
+            self,
+            text: str,
+            input_lang_code: str,
+            target_lang_code: str,
+            category: str | None = None,
     ) -> str | None:
         if not text.strip():
             return None

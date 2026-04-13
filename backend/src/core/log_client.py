@@ -17,7 +17,7 @@ _client: Any | None = None  # httpx.AsyncClient when configured
 
 
 def configure(base_url: str, internal_token: str) -> None:
-    """Create the persistent ``httpx.AsyncClient`` for logging calls."""
+    """Create the persistent "httpx.AsyncClient" for logging calls."""
     global _client  # pylint: disable=global-statement
     try:
         import httpx  # pylint: disable=import-outside-toplevel
@@ -44,7 +44,7 @@ async def emit(
     event: str,
     **fields: Any,
 ) -> None:
-    """Post a structured log message to ``/internal/logging/emit``."""
+    """Post a structured log message to "/internal/logging/emit"."""
     if _client is None:
         return
     try:
@@ -71,7 +71,7 @@ async def log_provider_request(
     input: Any | None = None,  # pylint: disable=redefined-builtin
     response_duration: float | None = None,
 ) -> None:
-    """Post a provider-request log to ``/internal/logging/provider-request``."""
+    """Post a provider-request log to "/internal/logging/provider-request"."""
     if _client is None:
         return
     payload: dict[str, Any] = {}

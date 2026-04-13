@@ -6,13 +6,13 @@ Ensure that Cursor must NOT rename any existing class, struct, or interface fiel
 ## Requirements
 - Cursor MUST preserve the exact names of all existing class fields.
 - Cursor MUST NOT:
-  - Rename class fields.
+  - Rename class fields, except it is specificly requested by the user.
   - Change casing or apply naming conventions to existing fields.
   - Replace fields with new identifiers.
   - Split or merge fields.
 - Cursor MAY:
   - Modify logic that uses the fields, as long as field names stay unchanged.
-  - Add new fields (only if explicitly requested by the user).
+  - Add new fields and rename them if needed.
   - Rename local variables, function parameters, or method names, unless restricted by other rules.
 
 ## Detection Logic

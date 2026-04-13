@@ -1,4 +1,10 @@
-# GENERAL.md
+---
+description: Enforce FastAPI
+globs: backend/src/**/*.py
+alwaysApply: false
+---
+
+# Backend general standarts
 
 ## Purpose
 

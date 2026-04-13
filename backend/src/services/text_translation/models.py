@@ -47,11 +47,11 @@ class TextTranslationServiceProvider(ServiceProvider, ABC):
 
     @abstractmethod
     async def translate_text(
-        self,
-        text: str,
-        input_lang_code: str,
-        target_lang_code: str,
-        category: str | None = None,
+            self,
+            text: str,
+            input_lang_code: str,
+            target_lang_code: str,
+            category: str | None = None,
     ) -> str | None:
         """Translate a single word/phrase.
 

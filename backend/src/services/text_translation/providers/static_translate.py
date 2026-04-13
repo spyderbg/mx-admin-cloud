@@ -23,12 +23,12 @@ class StaticTextTranslate(TextTranslationServiceProvider):
             images_en.csv
             images_bg.csv
 
-    Config keys (from ``self.config``):
-        ``input_language``  — source language code (default ``"en"``)
-        ``output_language`` — target language code (default ``"bg"``)
-        ``content_dir``     — path to the content directory (relative to
-                              ``base_dir`` or absolute); falls back to
-                              ``settings.content_path`` when absent.
+    Config keys (from "self.config"):
+        "input_language" — source language code (default ""en"")
+        "output_language" — target language code (default ""bg"")
+        "content_dir" — path to the content directory (relative to
+                              "base_dir" or absolute); falls back to
+                              "settings.content_path" when absent.
     """
 
     @classmethod
