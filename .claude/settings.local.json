@@ -5,7 +5,9 @@
       "Bash(PYTHONPATH=src python3 -c \":*)",
       "Bash(PYTHONPATH=src python3 -c \"\nfrom services.models import Service, ProviderConfig, TranslatorConfig, OptimizerConfig\nfrom services.config_loader import load_provider_configs, load_translator_configs, load_optimizer_configs\nfrom pathlib import Path\n\nbase = Path\\('.'\\)\nproviders = load_provider_configs\\(base_dir=base\\)\ntranslators = load_translator_configs\\(base_dir=base\\)\noptimizers = load_optimizer_configs\\(base_dir=base\\)\n\nprint\\('Providers:'\\)\nfor p in providers:\n    print\\(f'  {p.service.name}: active={p.service.active}, generate keys={list\\(p.service.config.get\\(\\\\\"generate\\\\\", {}\\).keys\\(\\)\\)[:3]}'\\)\n\nprint\\('Translators:'\\)\nfor t in translators:\n    print\\(f'  {t.service.name}: active={t.service.active}, priority={t.service.priority}'\\)\n\nprint\\('Optimizers:'\\)\nfor o in optimizers:\n    print\\(f'  {o.service.name}: active={o.service.active}, config={o.service.config}'\\)\n\" 2>&1)",
       "Bash(source .venv/bin/activate)",
-      "Bash(python3 -c \":*)"
+      "Bash(python3 -c \":*)",
+      "Bash(python:*)",
+      "Bash(PYTHONPATH=. python scripts/export_openapi.py)"
     ]
   }
 }

@@ -12,7 +12,7 @@ from src.core.models import TranslationSourceWord
 
 
 class TranslationFileSourceWord(BaseModel):
-    """One text unit loaded for ``/internal/translate-file`` (HTTP contract for the translation flow)."""
+    """One text unit loaded for "/internal/translate-file" (HTTP contract for the translation flow)."""
 
     text: str
     source_language_code: str
@@ -30,7 +30,7 @@ class TranslationFileSourceWord(BaseModel):
 
     @classmethod
     def from_core(cls, word: TranslationSourceWord) -> TranslationFileSourceWord:
-        """Build schema instance from a :class:`TranslationSourceWord` loaded by ``load_words``."""
+        """Build a schema instance from a: class:`TranslationSourceWord` loaded by "load_words"."""
         return cls(
             text=word.text,
             source_language_code=word.source_language_code,
@@ -75,3 +75,14 @@ class TranslateFileResponse(BaseModel):
     """Response body for the translation file endpoint."""
 
     results: list[dict[str, str]]
+
+
+class TranslatorProviderInfo(BaseModel):
+    """Metadata for one configured translator provider (GET /internal/translators)."""
+
+    name: str
+    service: str
+    provider: str
+    enabled: bool
+    priority: int
+    config_path: str

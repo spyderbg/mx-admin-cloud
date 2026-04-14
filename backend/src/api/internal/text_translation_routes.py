@@ -19,6 +19,7 @@ from src.api.internal.schemas.text_translation import (
     TranslateRequest,
     TranslateResponse,
     TranslationFileSourceWord,
+    TranslatorProviderInfo,
 )
 from src.core.languages import normalize_language_code
 from src.core.config import settings
@@ -32,11 +33,19 @@ router = APIRouter(prefix="/internal", tags=["internal-translators"])
 
 @router.get(
     "/translators",
+    response_model=list[TranslatorProviderInfo],
     summary="List text translation service configurations",
     description=(
             "Return all configured text translation services with their service type, "
             "activation state, priority, and config path."
     ),
+    responses={
+        200: {"model": list[TranslatorProviderInfo],
+              "description": "Configured translator providers sorted by priority"},
+        401: {"model": ErrorDetail, "description": "Missing or invalid JWT token"},
+        403: {"model": ErrorDetail,
+              "description": "JWT is valid but does not carry the &#x60;internal&#x60; or &#x60;admin&#x60; role"},
+    },
 )
 async def list_translators(
         _user: dict = Depends(require_internal),

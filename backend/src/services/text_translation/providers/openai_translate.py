@@ -91,6 +91,7 @@ class OpenAITextTranslate(TextTranslationServiceProvider):
         )
         latency = time.perf_counter() - started_at
         await log_text_translation_request(
+            # provider, TranslateText
             LogTranslatorRequest(
                 translator=self.name,
                 tts_model=self._model,

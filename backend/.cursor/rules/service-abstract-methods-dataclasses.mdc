@@ -1,0 +1,45 @@
+---
+description: Service abstract methods — prefer dataclass params over long argument lists
+globs: src/services/**/*.py
+alwaysApply: false
+---
+
+# Service abstract methods: dataclasses over many parameters
+
+When defining **abstract methods** on service base classes (ABC mixins, provider interfaces, orchestration services under `src/services/`), **prefer a single dataclass (or Pydantic model where the stack already uses it) for inputs** instead of **many positional or keyword parameters**.
+
+## Why
+
+- Call sites stay readable and self-documenting.
+- Adding optional fields is a single dataclass change instead of threading new parameters through every implementation.
+- Implementations and tests construct one object; order mistakes are less likely than with long signatures.
+
+## Pattern
+
+```python
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True, slots=True)
+class GenerateAudioInput:
+    text: str
+    language: str
+    voice_id: str | None = None
+
+
+class TextToSpeechProvider(ABC):
+    @abstractmethod
+    async def generate(self, inp: GenerateAudioInput) -> bytes:
+        """Return raw audio bytes."""
+```
+
+## When a plain signature is fine
+
+- **Very small, stable arity** (e.g. one or two obvious parameters) where a dataclass adds only noise.
+- **Framework-required** signatures (e.g. FastAPI dependency callables) — follow the framework contract.
+
+## Naming
+
+- Suffix input types with `Input`, `Request`, or `Params` consistently with nearby code (e.g. `TranslateBatchInput`).
+- Keep dataclasses **immutable** (`frozen=True`) when they are value-like inputs; use `slots=True` when supported and consistent with the codebase.
