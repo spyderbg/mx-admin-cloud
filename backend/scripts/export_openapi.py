@@ -17,6 +17,7 @@ Options:
 
 from __future__ import annotations
 
+import inspect
 import os
 import sys
 from dataclasses import dataclass, field
@@ -69,6 +70,53 @@ SERVICES: dict[str, ServiceSpec] = {
         output=ROOT / "docs" / "text_to_speech_openapi.yaml",
     ),
 }
+
+# ---------------------------------------------------------------------------
+# Source-file discovery
+# ---------------------------------------------------------------------------
+
+def _source_files_for_service(spec: ServiceSpec, schema_names: set[str]) -> list[Path]:
+    """Return sorted relative paths of every source file that contributes to *spec*.
+
+    Covers two categories:
+    - Route files  — the .py file that defines each matching endpoint function.
+    - Schema files — the .py file that defines each Pydantic model class used
+                     by those endpoints (found by name in already-loaded modules).
+    """
+    from fastapi.routing import APIRoute  # pylint: disable=import-outside-toplevel
+
+    files: set[Path] = set()
+
+    # Route endpoint files
+    for route in app.routes:
+        if isinstance(route, APIRoute) and any(
+            route.path.startswith(p) for p in spec.path_prefixes
+        ):
+            try:
+                files.add(Path(inspect.getfile(route.endpoint)))
+            except (TypeError, OSError):
+                pass
+
+    # Pydantic model (schema) files — search all loaded modules by class name
+    for module in sys.modules.values():
+        if module is None:
+            continue
+        for attr_name, obj in vars(module).items():
+            if attr_name in schema_names and isinstance(obj, type):
+                try:
+                    files.add(Path(inspect.getfile(obj)))
+                except (TypeError, OSError):
+                    pass
+
+    # Keep only project-owned files (under ROOT); skip site-packages and extensions
+    result = []
+    for f in sorted(files):
+        try:
+            result.append(f.relative_to(ROOT))
+        except ValueError:
+            pass  # outside the project tree — framework/library file, skip
+    return result
+
 
 # ---------------------------------------------------------------------------
 # $ref crawler helpers
@@ -137,7 +185,16 @@ def export_service(spec: ServiceSpec, full_schema: dict) -> None:
     with spec.output.open("w", encoding="utf-8") as fh:
         yaml.dump(out, fh, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
-    print(f"[{spec.title}]  {len(paths)} path(s), {len(schemas)} schema(s) → {spec.output}")
+    source_files = _source_files_for_service(spec, reachable)
+    try:
+        output_rel = spec.output.relative_to(ROOT)
+    except ValueError:
+        output_rel = spec.output
+
+    print(f"[{spec.title}]  {len(paths)} path(s), {len(schemas)} schema(s) → {output_rel}")
+    print(f"  Source files ({len(source_files)}):")
+    for f in source_files:
+        print(f"    {f}")
 
 
 def export_all(full_schema: dict) -> None:
