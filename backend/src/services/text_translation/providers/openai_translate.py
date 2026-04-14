@@ -10,7 +10,7 @@ from openai import AsyncOpenAI
 
 from src.api.internal.schemas.logging import LogTranslatorRequest
 from src.core.log_client import log_text_translation_request
-from src.services.text_translation.models import TextTranslationServiceProvider
+from src.services.text_translation.models import TextTranslationServiceProvider, TranslateTextRequest
 
 _CATEGORY_LINE_RE = re.compile(r"[^\n]*\{\{\s*category\s*\}\}[^\n]*\n?")
 
@@ -67,21 +67,17 @@ class OpenAITextTranslate(TextTranslationServiceProvider):
 
         return rendered.strip()
 
-    async def translate_text(
-            self,
-            text: str,
-            input_lang_code: str,
-            target_lang_code: str,
-            category: str | None = None,
-    ) -> str | None:
-        if not text.strip():
+    async def translate_text(self, request: TranslateTextRequest) -> str | None:
+        if not request.text.strip():
             return None
 
         api_key = self.resolve_api_key()
         if not api_key:
             raise RuntimeError("OPENAI_API_KEY is not set.")
 
-        system_content = self._render_prompt(input_lang_code, target_lang_code, category)
+        system_content = self._render_prompt(
+            request.input_lang_code, request.target_lang_code, request.category
+        )
 
         client = AsyncOpenAI(api_key=api_key)
         started_at = time.perf_counter()
@@ -89,7 +85,7 @@ class OpenAITextTranslate(TextTranslationServiceProvider):
             model=self._model,
             messages=[
                 {"role": "system", "content": system_content},
-                {"role": "user", "content": text.strip()},
+                {"role": "user", "content": request.text.strip()},
             ],
             temperature=self._temperature,
         )
@@ -100,11 +96,11 @@ class OpenAITextTranslate(TextTranslationServiceProvider):
                 tts_model=self._model,
                 actor="translator",
                 voice_id="",
-                language=f"{input_lang_code}->{target_lang_code}",
+                language=f"{request.input_lang_code}->{request.target_lang_code}",
                 input_data={
                     "system": system_content,
-                    "text": text.strip(),
-                    "category": category,
+                    "text": request.text.strip(),
+                    "category": request.category,
                 },
                 response_duration=latency,
             )

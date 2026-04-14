@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from src.core.config import settings
-from src.services.text_translation.models import TextTranslationServiceProvider
+from src.services.text_translation.models import TextTranslationServiceProvider, TranslateTextRequest
 
 
 class StaticTextTranslate(TextTranslationServiceProvider):
@@ -79,16 +79,10 @@ class StaticTextTranslate(TextTranslationServiceProvider):
                         if idx < len(tgt_words):
                             target_map[tgt_lang] = tgt_words[idx]
 
-    async def translate_text(
-        self,
-        text: str,
-        input_lang_code: str,
-        target_lang_code: str,
-        category: str | None = None,
-    ) -> str | None:
-        src = input_lang_code.lower()
-        tgt = target_lang_code.lower()
-        word = text.strip().lower()
+    async def translate_text(self, request: TranslateTextRequest) -> str | None:
+        src = request.input_lang_code.lower()
+        tgt = request.target_lang_code.lower()
+        word = request.text.strip().lower()
 
         targets = self._lookup.get(src, {}).get(word)
         if targets is None:

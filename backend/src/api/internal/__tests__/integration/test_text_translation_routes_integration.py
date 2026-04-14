@@ -17,7 +17,7 @@ from httpx import ASGITransport, AsyncClient
 from src.api.dependencies import get_registry, require_internal
 from src.api.internal import text_translation_routes
 from src.services import text_translation as text_translation_pkg
-from src.services.text_translation.models import TextTranslationServiceProvider
+from src.services.text_translation.models import TextTranslationServiceProvider, TranslateTextRequest
 from src.services.text_translation.service import TextTranslationService
 
 
@@ -53,16 +53,10 @@ class _StubTranslatorProvider(TextTranslationServiceProvider):
         self._skip_text = text
         return self
 
-    async def translate_text(  # pylint: disable=unused-argument
-            self,
-            text: str,
-            input_lang_code: str,
-            target_lang_code: str,
-            category: str | None = None,
-    ) -> str | None:
-        if self._skip_text is not None and text == self._skip_text:
+    async def translate_text(self, request: TranslateTextRequest) -> str | None:  # pylint: disable=unused-argument
+        if self._skip_text is not None and request.text == self._skip_text:
             return None
-        return f"es::{text}"
+        return f"es::{request.text}"
 
 
 def _make_translation_service(

@@ -17,6 +17,16 @@ class TranslateResult:
     lang_text: LangCodeText | None = None
 
 
+@dataclass
+class TranslateTextRequest:
+    """Parameters for a single translation call."""
+
+    text: str
+    input_lang_code: str
+    target_lang_code: str
+    category: str | None = None
+
+
 class TextTranslationServiceProvider(ServiceProvider, ABC):
     """Base class for translator service providers.
 
@@ -46,13 +56,7 @@ class TextTranslationServiceProvider(ServiceProvider, ABC):
         return LANG_MAP.get(lang_code.lower(), lang_code)
 
     @abstractmethod
-    async def translate_text(
-            self,
-            text: str,
-            input_lang_code: str,
-            target_lang_code: str,
-            category: str | None = None,
-    ) -> str | None:
+    async def translate_text(self, request: TranslateTextRequest) -> str | None:
         """Translate a single word/phrase.
 
         Returns the translated string, or "None" when this translator cannot

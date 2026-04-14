@@ -7,7 +7,11 @@ from typing_extensions import override
 
 from src.services.models import LangCodeText, Service, ServiceProvider
 from src.services.provider_factory import ServiceProviderFactory
-from src.services.text_translation.models import TextTranslationServiceProvider, TranslateResult
+from src.services.text_translation.models import (
+    TextTranslationServiceProvider,
+    TranslateResult,
+    TranslateTextRequest,
+)
 
 
 class TextTranslationProviderFactory(ServiceProviderFactory[TextTranslationServiceProvider]):
@@ -79,7 +83,14 @@ class TextTranslationService(Service):
             if current_lang_code is None:
                 current_lang_code = inp
             try:
-                result = await provider.translate_text(current, inp, tgt, category)
+                result = await provider.translate_text(
+                    TranslateTextRequest(
+                        text=current,
+                        input_lang_code=inp,
+                        target_lang_code=tgt,
+                        category=category,
+                    )
+                )
                 if result is not None:
                     current = result
                     current_lang_code = tgt
