@@ -1,0 +1,282 @@
+openapi: 3.1.0
+info:
+  title: Text Translation Internal API
+  version: 0.1.0
+servers: []
+paths:
+  /internal/translators:
+    get:
+      tags:
+      - internal-translators
+      summary: List text translation service configurations
+      description: Return all configured text translation services with their service
+        type, activation state, priority, and config path.
+      operationId: list_translators_internal_translators_get
+      responses:
+        '200':
+          description: Configured translator providers sorted by priority
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/TranslatorProviderInfo'
+                type: array
+                title: Response 200 List Translators Internal Translators Get
+        '401':
+          description: Missing or invalid JWT token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+        '403':
+          description: JWT is valid but does not carry the &#x60;internal&#x60; or
+            &#x60;admin&#x60; role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorDetail'
+      security:
+      - OAuth2PasswordBearer: []
+  /internal/translate:
+    post:
+      tags:
+      - internal-translators
+      summary: Translate text using active translators
+      description: Translate *text* from *input_lang_code* to *target_lang_code* using
+        all active translators in priority order. Returns the last successful translation.
+      operationId: translate_text_internal_translate_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TranslateRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranslateResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /internal/translate-file:
+    post:
+      tags:
+      - internal-translators
+      summary: Translate words in a file using active translators
+      description: Upload a file (TXT, CSV, or XLSX) and translate segments whose
+        language differs from *target_lang_code* (per row/column language) using active
+        translators in priority order.
+      operationId: translate_file_internal_translate_file_post
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: input_lang_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Input Lang Code
+      - name: target_lang_code
+        in: query
+        required: false
+        schema:
+          type: string
+          default: en
+          title: Target Lang Code
+      - name: category
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Category
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_translate_file_internal_translate_file_post'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranslateFileResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+components:
+  securitySchemes:
+    OAuth2PasswordBearer:
+      type: oauth2
+      flows:
+        password:
+          scopes: {}
+          tokenUrl: /api/v1/login
+  schemas:
+    Body_translate_file_internal_translate_file_post:
+      properties:
+        file:
+          type: string
+          contentMediaType: application/octet-stream
+          title: File
+      type: object
+      required:
+      - file
+      title: Body_translate_file_internal_translate_file_post
+    ErrorDetail:
+      properties:
+        detail:
+          type: string
+          title: Detail
+          description: Human-readable error message
+      type: object
+      required:
+      - detail
+      title: ErrorDetail
+      description: ErrorDetail
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    LangCodeText:
+      properties:
+        lang_code:
+          type: string
+          title: Lang Code
+        text:
+          type: string
+          title: Text
+      type: object
+      required:
+      - lang_code
+      - text
+      title: LangCodeText
+      description: Serialized language-code/text pair used in translation responses.
+    TranslateFileResponse:
+      properties:
+        results:
+          items:
+            additionalProperties:
+              type: string
+            type: object
+          type: array
+          title: Results
+      type: object
+      required:
+      - results
+      title: TranslateFileResponse
+      description: Response body for the translation file endpoint.
+    TranslateRequest:
+      properties:
+        text:
+          type: string
+          title: Text
+        input_lang_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Input Lang Code
+        target_lang_code:
+          type: string
+          title: Target Lang Code
+        category:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Category
+      type: object
+      required:
+      - text
+      - target_lang_code
+      title: TranslateRequest
+      description: Request body for the translation endpoint.
+    TranslateResponse:
+      properties:
+        success:
+          type: boolean
+          title: Success
+        lang_text:
+          $ref: '#/components/schemas/LangCodeText'
+      type: object
+      required:
+      - success
+      - lang_text
+      title: TranslateResponse
+      description: Response body for the translation endpoint.
+    TranslatorProviderInfo:
+      properties:
+        name:
+          type: string
+          title: Name
+        service:
+          type: string
+          title: Service
+        provider:
+          type: string
+          title: Provider
+        enabled:
+          type: boolean
+          title: Enabled
+        priority:
+          type: integer
+          title: Priority
+        config_path:
+          type: string
+          title: Config Path
+      type: object
+      required:
+      - name
+      - service
+      - provider
+      - enabled
+      - priority
+      - config_path
+      title: TranslatorProviderInfo
+      description: Metadata for one configured translator provider (GET /internal/translators).
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
