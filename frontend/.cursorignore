@@ -1,0 +1,39 @@
+# --- Dependencies ---
+node_modules/
+vendor/
+packages/
+
+# --- Build & Output ---
+dist/
+build/
+out/
+.next/
+
+# --- Environment & Secrets ---
+.env
+.env.local
+.env.*.local
+*.pem
+credentials.json
+
+# --- Logs & Temp ---
+*.log
+npm-debug.log*
+yarn-debug.log*
+.DS_Store
+
+# --- IDE Config ---
+.vscode/
+.idea/
+
+
+# --- Project specific ---
+frontend/
+
+.git/
+.claude/
+content/
+docs/
+existing_scripts/
+output/
+workspaces/
