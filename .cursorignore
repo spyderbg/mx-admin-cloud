@@ -26,3 +26,17 @@ yarn-debug.log*
 .vscode/
 .idea/
 
+
+# --- Project specific ---
+backend/
+
+.claude/
+content/
+cli/
+content/
+docs/
+existing_scripts/
+.git/
+output/
+scripts/
+workspaces/
