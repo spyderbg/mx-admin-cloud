@@ -28,6 +28,8 @@ yarn-debug.log*
 
 
 # --- Project specific ---
+backend/
+
 .git/
 .claude/
 content/
