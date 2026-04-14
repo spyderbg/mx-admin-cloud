@@ -7,6 +7,12 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
+class StatusResponse(BaseModel):
+    """Generic acknowledgement returned by fire-and-forget logging endpoints."""
+
+    status: str
+
+
 class LogEmitRequest(BaseModel):
     """Body for ``POST /internal/logging/emit``."""
 

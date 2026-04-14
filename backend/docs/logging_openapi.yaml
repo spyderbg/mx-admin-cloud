@@ -1,0 +1,248 @@
+openapi: 3.1.0
+info:
+  title: Logging Internal API
+  version: 0.1.0
+servers: []
+paths:
+  /internal/logging/emit:
+    post:
+      tags:
+      - internal-logging
+      summary: Emit a structured log message
+      description: Post a structured log message to the named logger. The ``logger_name``
+        selects the target channel; ``level`` and ``event`` mirror structlog semantics.
+      operationId: emit_log_internal_logging_emit_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogEmitRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /internal/logging/provider-request:
+    post:
+      tags:
+      - internal-logging
+      summary: Log a TTS/STT provider request
+      description: Record a provider request (model, actor, latency, …) through the
+        request-logger channel.
+      operationId: log_provider_request_internal_logging_provider_request_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogProviderRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /internal/logging/translator-request:
+    post:
+      tags:
+      - internal-logging
+      summary: Log a translator request
+      description: Record a translator request through the request-logger channel.
+      operationId: log_text_translation_request_internal_logging_translator_request_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogTranslatorRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+components:
+  securitySchemes:
+    OAuth2PasswordBearer:
+      type: oauth2
+      flows:
+        password:
+          scopes: {}
+          tokenUrl: /api/v1/login
+  schemas:
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    LogEmitRequest:
+      properties:
+        logger_name:
+          type: string
+          title: Logger Name
+        level:
+          type: string
+          title: Level
+          default: info
+        event:
+          type: string
+          title: Event
+        fields:
+          additionalProperties: true
+          type: object
+          title: Fields
+      type: object
+      required:
+      - logger_name
+      - event
+      title: LogEmitRequest
+      description: Body for ``POST /internal/logging/emit``.
+    LogProviderRequest:
+      properties:
+        provider:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Provider
+        model:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model
+        actor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Actor
+        voice_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Voice Id
+        language:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Language
+        input:
+          anyOf:
+          - {}
+          - type: 'null'
+          title: Input
+        response_duration:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Response Duration
+      type: object
+      title: LogProviderRequest
+      description: Body for ``POST /internal/logging/provider-request``.
+    LogTranslatorRequest:
+      properties:
+        translator:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Translator
+        model:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model
+        actor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Actor
+        voice_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Voice Id
+        language:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Language
+        input:
+          anyOf:
+          - {}
+          - type: 'null'
+          title: Input
+        response_duration:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Response Duration
+      type: object
+      title: LogTranslatorRequest
+      description: Body for ``POST /internal/logging/translator-request``.
+    StatusResponse:
+      properties:
+        status:
+          type: string
+          title: Status
+      type: object
+      required:
+      - status
+      title: StatusResponse
+      description: Generic acknowledgement returned by fire-and-forget logging endpoints.
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError

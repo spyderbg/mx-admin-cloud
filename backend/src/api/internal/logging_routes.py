@@ -13,6 +13,7 @@ from src.api.internal.schemas.logging import (
     LogEmitRequest,
     LogProviderRequest,
     LogTranslatorRequest,
+    StatusResponse,
 )
 from src.api.service_resolver import get_typed_service
 from src.services import logging
@@ -24,6 +25,7 @@ router = APIRouter(prefix="/internal", tags=["internal-logging"])
 
 @router.post(
     "/logging/emit",
+    response_model=StatusResponse,
     summary="Emit a structured log message",
     description=(
             "Post a structured log message to the named logger. "
@@ -48,6 +50,7 @@ async def emit_log(
 
 @router.post(
     "/logging/provider-request",
+    response_model=StatusResponse,
     summary="Log a TTS/STT provider request",
     description=(
             "Record a provider request (model, actor, latency, …) through the "
@@ -79,6 +82,7 @@ async def log_provider_request(
 
 @router.post(
     "/logging/translator-request",
+    response_model=StatusResponse,
     summary="Log a translator request",
     description=(
             "Record a translator request through the request-logger channel."
