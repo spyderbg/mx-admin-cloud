@@ -52,7 +52,8 @@ src/
 │   └── DashboardView.vue   # present but not registered in the router
 ├── App.vue           # Root component (bare router-view)
 ├── env.d.ts          # Vite/Vue/SVG type declarations
-└── main.ts           # App entry point and CSS imports
+├── main.ts           # App entry point and CSS imports
+└── .cursorignore     # Cursor ignore file NOTE: the file is different in each *-sync branch !!!
 ```
 
 ## Routes
