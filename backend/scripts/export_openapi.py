@@ -63,6 +63,11 @@ SERVICES: dict[str, ServiceSpec] = {
         path_prefixes=("/internal/logging",),
         output=ROOT / "docs" / "logging_openapi.yaml",
     ),
+    "tts": ServiceSpec(
+        title="Text to Speech Internal API",
+        path_prefixes=("/internal/generators",),
+        output=ROOT / "docs" / "text_to_speech_openapi.yaml",
+    ),
 }
 
 # ---------------------------------------------------------------------------

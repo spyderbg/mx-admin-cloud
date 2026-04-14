@@ -13,7 +13,12 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException  # pylint: disable=import-error
 
 from src.api.dependencies import get_registry, require_internal
-from src.api.internal.schemas.text_to_speech import GenerateRequest, GenerateWordRequest, TtsGenerateResult
+from src.api.internal.schemas.text_to_speech import (
+    GenerateRequest,
+    GenerateWordRequest,
+    GeneratorProviderInfo,
+    TtsGenerateResult,
+)
 from src.core.config import settings
 from src.api.service_resolver import get_typed_service, require_active_providers
 from src.services import text_to_speech
@@ -30,6 +35,7 @@ router = APIRouter(prefix="/internal", tags=["internal-generators"])
 
 @router.get(
     "/generators",
+    response_model=list[GeneratorProviderInfo],
     summary="List text to speech service configurations",
     description=(
             "Return all configured text to speech services with their activation state, "
@@ -119,6 +125,15 @@ async def generate_single(
     "/generators/generate-word",
     summary="Generate text to speech audio for a single word",
     description="Generate raw audio using the highest-priority active text to speech service and return raw bytes.",
+    responses={
+        200: {
+            "content": {"audio/mpeg": {}},
+            "description": "Raw MP3 audio bytes",
+        },
+        400: {"description": "Word is empty"},
+        500: {"description": "TTS generation failed"},
+        503: {"description": "No active TTS providers configured"},
+    },
 )
 async def generate_word(
         body: GenerateWordRequest,

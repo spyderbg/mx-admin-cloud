@@ -1,6 +1,18 @@
 """Schemas for internal text-to-speech endpoints."""
 
+from typing import Any
+
 from pydantic import BaseModel
+
+
+class GeneratorProviderInfo(BaseModel):
+    """Metadata for one configured TTS provider (GET /internal/generators)."""
+
+    name: str
+    enabled: bool
+    config_path: str
+    generate: dict[str, Any]
+    evaluate_enabled: bool
 
 
 class GenerateRequest(BaseModel):
