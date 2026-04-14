@@ -28,7 +28,7 @@ yarn-debug.log*
 
 
 # --- Project specific ---
-frontend/
+backend/
 
 .git/
 .claude/
