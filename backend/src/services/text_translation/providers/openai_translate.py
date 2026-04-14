@@ -8,7 +8,8 @@ from typing import Any
 
 from openai import AsyncOpenAI
 
-from src.core.log_client import log_translator_request
+from src.api.internal.schemas.logging import LogTranslatorRequest
+from src.core.log_client import log_text_translation_request
 from src.services.text_translation.models import TextTranslationServiceProvider
 
 _CATEGORY_LINE_RE = re.compile(r"[^\n]*\{\{\s*category\s*\}\}[^\n]*\n?")
@@ -93,18 +94,20 @@ class OpenAITextTranslate(TextTranslationServiceProvider):
             temperature=self._temperature,
         )
         latency = time.perf_counter() - started_at
-        await log_translator_request(
-            translator=self.name,
-            model=self._model,
-            actor="translator",
-            voice_id="",
-            language=f"{input_lang_code}->{target_lang_code}",
-            input={
-                "system": system_content,
-                "text": text.strip(),
-                "category": category,
-            },
-            response_duration=latency,
+        await log_text_translation_request(
+            LogTranslatorRequest(
+                translator=self.name,
+                tts_model=self._model,
+                actor="translator",
+                voice_id="",
+                language=f"{input_lang_code}->{target_lang_code}",
+                input_data={
+                    "system": system_content,
+                    "text": text.strip(),
+                    "category": category,
+                },
+                response_duration=latency,
+            )
         )
 
         result = (response.choices[0].message.content or "").strip()

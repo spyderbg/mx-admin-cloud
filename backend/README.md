@@ -627,7 +627,8 @@ At startup, after `ServiceRegistry.build_runtime()` and `load_all_from_disk()`, 
 `LoggingService.configure(output_dir=…, profile=…)` which delegates to the active `struct_log`
 provider. All structured application logs (provider requests, translator requests, and generic
 events) are emitted via internal HTTP endpoints under `/internal/logging/*`; callers use the async
-helpers in `src/core/log_client.py`.
+helpers in `src/core/log_client.py` (`emit` accepts `LogEmitRequest`, `log_provider_request`
+accepts `LogProviderRequest`, and `log_translator_request` accepts `LogTranslatorRequest`).
 
 ## Example requests
 

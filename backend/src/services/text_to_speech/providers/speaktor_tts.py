@@ -14,6 +14,7 @@ import logging
 import time
 from typing import Any
 
+from src.api.internal.schemas.logging import LogProviderRequest
 from src.core.languages import to_bcp47
 from src.core.log_client import log_provider_request
 from src.core.models import GeneratedAudio
@@ -116,13 +117,15 @@ class SpeaktorTTSProvider(TTSProvider):
                 f"Speaktor API {response.status_code}: {body}"
             )
         await log_provider_request(
-            provider=self.name,
-            model=model_name,
-            actor=voice_name,
-            voice_id=str(gen.get("voice_id", "")),
-            language=str(request.language_code),
-            input=prompt_text,
-            response_duration=latency,
+            LogProviderRequest(
+                provider=self.name,
+                tts_model=model_name,
+                actor=voice_name,
+                voice_id=str(gen.get("voice_id", "")),
+                language=str(request.language_code),
+                input_data=prompt_text,
+                response_duration=latency,
+            )
         )
 
         if response_mode == "json_url":

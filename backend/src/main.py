@@ -6,10 +6,18 @@ from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import AsyncIterator
 
-import src.api.internal
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from src.api.dependencies import require_admin, require_uds
+from src.api.internal import (
+    configuration_routes,
+    evaluators_routes,
+    jobs_routes,
+    logging_routes,
+    optimizers_routes,
+    text_to_speech_routes,
+    text_translation_routes,
+)
 from src.api.v1 import routes_auth, routes_common, routes_content, routes_users
 from src.core.config import settings
 from src.core.job_store import JobStore
@@ -64,7 +72,6 @@ async def lifespan(app_lifespan: FastAPI) -> AsyncIterator[None]:
     async def _watch_configs() -> None:
         try:
             from watchfiles import awatch  # pylint: disable=import-outside-toplevel
-            reg: ServiceRegistry = app_lifespan.state.registry
             builder: ServiceRegistryBuilder = app_lifespan.state.registry_builder
             async for _ in awatch(settings.config_path):
                 logging.info("config_changed reloading_registry")
@@ -105,13 +112,13 @@ app.include_router(routes_auth.router, prefix=settings.API_V1_STR, tags=["auth"]
 app.include_router(routes_common.router, prefix=settings.API_V1_STR, tags=["tasks"])
 app.include_router(routes_content.router, prefix=settings.API_V1_STR, tags=["content"])
 app.include_router(routes_users.router, prefix=settings.API_V1_STR, tags=["users"])
-app.include_router(src.api.internal.jobs_routes.router)
-app.include_router(src.api.internal.logging_routes.router)
-app.include_router(src.api.internal.configuration_routes.router)
-app.include_router(src.api.internal.text_translation_routes.router)
-app.include_router(src.api.internal.text_to_speech_routes.router)
-app.include_router(src.api.internal.optimizers_routes.router)
-app.include_router(src.api.internal.evaluators_routes.router)
+app.include_router(jobs_routes.router)
+app.include_router(logging_routes.router)
+app.include_router(configuration_routes.router)
+app.include_router(text_translation_routes.router)
+app.include_router(text_to_speech_routes.router)
+app.include_router(optimizers_routes.router)
+app.include_router(evaluators_routes.router)
 
 
 @app.get("/")

@@ -6,6 +6,7 @@ import logging
 import time
 from typing import Any
 
+from src.api.internal.schemas.logging import LogProviderRequest
 from src.core.log_client import log_provider_request
 from src.core.models import GeneratedAudio
 from ..models import TTSProvider, TTSRequest
@@ -79,13 +80,15 @@ class OpenAITTSProvider(TTSProvider):
         latency = time.perf_counter() - started_at
         response.raise_for_status()
         await log_provider_request(
-            provider=self.name,
-            model=str(model),
-            actor=str(voice),
-            voice_id="",
-            language=str(request.language_code),
-            input=payload.get("input", ""),
-            response_duration=latency,
+            LogProviderRequest(
+                provider=self.name,
+                tts_model=str(model),
+                actor=str(voice),
+                voice_id="",
+                language=str(request.language_code),
+                input_data=payload.get("input", ""),
+                response_duration=latency,
+            )
         )
         output_path.write_bytes(response.content)
 

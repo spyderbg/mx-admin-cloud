@@ -84,7 +84,7 @@ async def log_provider_request(
             "Record a translator request through the request-logger channel."
     ),
 )
-async def log_translator_request(
+async def log_text_translation_request(
         body: LogTranslatorRequest,
         registry: ServiceRegistry = Depends(get_registry),
         _user: dict = Depends(require_internal),

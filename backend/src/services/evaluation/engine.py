@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from src.api.internal.schemas.logging import LogProviderRequest
 from src.core.languages import to_bcp47
 from src.core.log_client import log_provider_request
 from src.core.models import EvaluationResult, GeneratedAudio
@@ -341,11 +342,13 @@ class EvaluationEngine:
             response_duration: float,
     ) -> None:
         await log_provider_request(
-            provider=provider,
-            model=model,
-            actor=actor,
-            voice_id=voice_id,
-            language=language,
-            input=request_input,
-            response_duration=response_duration,
+            LogProviderRequest(
+                provider=provider,
+                tts_model=model,
+                actor=actor,
+                voice_id=voice_id,
+                language=language,
+                input_data=request_input,
+                response_duration=response_duration,
+            )
         )
