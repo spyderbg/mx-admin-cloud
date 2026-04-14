@@ -13,6 +13,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, UploadFile  # pylint: disable=import-error
 
 from src.api.dependencies import get_registry, require_internal
+from src.api.internal.schemas.error_detail import ErrorDetail
 from src.api.internal.schemas.text_translation import (
     LangCodeText,
     TranslateFileResponse,
@@ -45,7 +46,7 @@ router = APIRouter(prefix="/internal", tags=["internal-translators"])
         401: {"model": ErrorDetail, "description": "Missing or invalid JWT token"},
         403: {"model": ErrorDetail,
               "description": "JWT is valid but does not carry the &#x60;internal&#x60; or &#x60;admin&#x60; role"},
-    },
+    }
 )
 async def list_translators(
         _user: dict = Depends(require_internal),

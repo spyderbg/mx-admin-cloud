@@ -32,7 +32,7 @@ os.environ.setdefault("DB_PATH", str(ROOT / "data" / "users.db"))
 # ---------------------------------------------------------------------------
 # Import the FastAPI app (no lifespan runs; app.openapi() is synchronous)
 # ---------------------------------------------------------------------------
-from src.main import app  # noqa: E402  pylint: disable=wrong-import-position
+from src.main import app  # noqa: E402 pylint: disable=wrong-import-position
 
 try:
     import yaml  # PyYAML — already in requirements.txt via structlog/other deps
