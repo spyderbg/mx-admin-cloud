@@ -28,15 +28,10 @@ yarn-debug.log*
 
 
 # --- Project specific ---
-frontend/
-
+.git/
 .claude/
-content/
-cli/
 content/
 docs/
 existing_scripts/
-.git/
 output/
-scripts/
 workspaces/
