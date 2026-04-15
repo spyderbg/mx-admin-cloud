@@ -142,10 +142,12 @@ components:
         level:
           type: string
           title: Level
+          description: Log level, defaults to 'info'
           default: info
         event:
           type: string
           title: Event
+          description: Log event name
         fields:
           additionalProperties: true
           type: object
@@ -153,6 +155,7 @@ components:
         logger_name:
           type: string
           title: Logger Name
+          description: Logger name
       type: object
       required:
       - event
@@ -204,10 +207,12 @@ components:
         level:
           type: string
           title: Level
+          description: Log level, defaults to 'info'
           default: info
         event:
           type: string
           title: Event
+          description: Log event name
         fields:
           additionalProperties: true
           type: object
@@ -216,7 +221,6 @@ components:
       required:
       - event
       title: LogRequest
-      description: Body for ``POST /internal/logging/api-request``.
     LogTranslatorRequest:
       properties:
         translator:
