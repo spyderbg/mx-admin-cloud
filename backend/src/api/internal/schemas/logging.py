@@ -2,9 +2,18 @@
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+
+class LogLevel(str, Enum):
+    DEBUG = "debug"
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+    CRITICAL = "critical"
 
 
 class StatusResponse(BaseModel):
@@ -14,7 +23,7 @@ class StatusResponse(BaseModel):
 
 
 class LogRequest(BaseModel):
-    level: str = Field("info", description="Log level, defaults to 'info'")
+    level: LogLevel = Field(LogLevel.INFO, description="Log level, defaults to 'info'")
     event: str = Field(..., description="Log event name")
     fields: dict[str, Any] = Field(default_factory=dict)
 

@@ -140,8 +140,7 @@ components:
     LogEmitRequest:
       properties:
         level:
-          type: string
-          title: Level
+          $ref: '#/components/schemas/LogLevel'
           description: Log level, defaults to 'info'
           default: info
         event:
@@ -162,6 +161,15 @@ components:
       - logger_name
       title: LogEmitRequest
       description: Body for ``POST /internal/logging/emit``.
+    LogLevel:
+      type: string
+      enum:
+      - debug
+      - info
+      - warning
+      - error
+      - critical
+      title: LogLevel
     LogProviderRequest:
       properties:
         provider:
@@ -205,8 +213,7 @@ components:
     LogRequest:
       properties:
         level:
-          type: string
-          title: Level
+          $ref: '#/components/schemas/LogLevel'
           description: Log level, defaults to 'info'
           default: info
         event:
