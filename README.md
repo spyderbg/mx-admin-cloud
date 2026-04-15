@@ -2,6 +2,8 @@
 
 Vue 3 + TypeScript + Vite application for managing image categories, their voices, and associated image assets.
 
+Browser page title is set to `KiddoWords Admin`.
+
 ## Quick Start
 
 ```bash
