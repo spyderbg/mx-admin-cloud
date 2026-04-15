@@ -21,11 +21,14 @@ from src.services.service_registry import ServiceRegistry
 from src.services.evaluation import EvaluationEngine, JsonScoreStore, MultiScoreStore, SQLiteScoreStore
 from src.services.text_to_speech.service import TextToSpeechService
 
+EVALUATORS_LIST = "/evaluators"
+EVALUATE_AUDIO = "/evaluators/evaluate"
+
 router = APIRouter(prefix="/internal", tags=["internal-evaluators"])
 
 
 @router.get(
-    "/evaluators",
+    EVALUATORS_LIST,
     summary="List STT evaluator configurations",
     description=(
             "Return all configured STT evaluators (derived from generator/provider configs) "
@@ -55,7 +58,7 @@ async def list_evaluators(
 
 
 @router.post(
-    "/evaluators/evaluate",
+    EVALUATE_AUDIO,
     summary="Evaluate generated audio against expected text",
     description="Run STT transcription, score, persist, and return the evaluation result.",
 )

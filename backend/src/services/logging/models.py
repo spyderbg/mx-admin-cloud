@@ -43,31 +43,3 @@ class LoggingServiceProvider(ServiceProvider, ABC):
         self, message: str, level: int = logging.INFO,
     ) -> None:
         """Broadcast *message* to root and all standalone active loggers."""
-
-    @abstractmethod
-    def log_provider_request(
-        self,
-        *,
-        provider: str | None = None,
-        model: str | None = None,
-        actor: str | None = None,
-        voice_id: str | None = None,
-        language: str | None = None,
-        input_data: Any | None = None,
-        response_duration: float | None = None,
-    ) -> None:
-        """Log a TTS/STT provider request through the request logger."""
-
-    @abstractmethod
-    def log_translator_request(
-        self,
-        *,
-        translator: str | None = None,
-        model: str | None = None,
-        actor: str | None = None,
-        voice_id: str | None = None,
-        language: str | None = None,
-        input_data: Any | None = None,
-        response_duration: float | None = None,
-    ) -> None:
-        """Log a translator request through the request logger."""

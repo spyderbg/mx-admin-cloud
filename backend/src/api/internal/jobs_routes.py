@@ -19,9 +19,11 @@ from src.core.job_store import JobStore
 # from src.core.pipeline import run_pipeline
 from src.services.service_registry import ServiceRegistry
 
-router = APIRouter(prefix="/internal", tags=["internal-jobs"])
-
 ALLOWED_EXTENSIONS = {".txt", ".csv", ".xlsx"}
+GENERATE_JOB = "/generate"
+GENERATE_JOB_STATUS = "/generate/{job_id}/status"
+
+router = APIRouter(prefix="/internal", tags=["internal-jobs"])
 
 
 async def _save_upload(upload: UploadFile, job_id: str) -> Path:
@@ -68,7 +70,7 @@ async def _save_upload(upload: UploadFile, job_id: str) -> Path:
 
 
 @router.post(
-    "/generate",
+    GENERATE_JOB,
     response_model=GenerateJobResponse,
     summary="Start async TTS pipeline job",
     description=(
@@ -99,7 +101,7 @@ async def generate(  # pylint: disable=too-many-positional-arguments
 
 
 @router.get(
-    "/generate/{job_id}/status",
+    GENERATE_JOB_STATUS,
     response_model=JobStatusResponse,
     summary="Poll TTS pipeline job status",
     description=(

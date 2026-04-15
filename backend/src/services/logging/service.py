@@ -29,11 +29,11 @@ class LoggingService(Service):
     """
 
     def __init__(
-        self,
-        service_name: str,
-        package_name: str,
-        service_dir: Path,
-        base_dir: Path,
+            self,
+            service_name: str,
+            package_name: str,
+            service_dir: Path,
+            base_dir: Path,
     ) -> None:
         super().__init__(service_name, package_name, service_dir, base_dir)
         self._providers: list[LoggingServiceProvider] = []
@@ -96,57 +96,9 @@ class LoggingService(Service):
             provider.clear_request_context()
 
     def log_to_all_active_loggers(
-        self, message: str, level: int = logging.INFO,
+            self, message: str, level: int = logging.INFO,
     ) -> None:
         """Broadcast *message* through the active provider."""
         provider = self._active()
         if provider is not None:
             provider.log_to_all_active_loggers(message, level)
-
-    def log_provider_request(
-        self,
-        *,
-        provider: str | None = None,
-        model: str | None = None,
-        actor: str | None = None,
-        voice_id: str | None = None,
-        language: str | None = None,
-        input_data: Any | None = None,
-        response_duration: float | None = None,
-    ) -> None:
-        """Log a provider request through the active provider."""
-        active = self._active()
-        if active is not None:
-            active.log_provider_request(
-                provider=provider,
-                model=model,
-                actor=actor,
-                voice_id=voice_id,
-                language=language,
-                input_data=input_data,
-                response_duration=response_duration,
-            )
-
-    def log_translator_request(
-        self,
-        *,
-        translator: str | None = None,
-        model: str | None = None,
-        actor: str | None = None,
-        voice_id: str | None = None,
-        language: str | None = None,
-        input_data: Any | None = None,
-        response_duration: float | None = None,
-    ) -> None:
-        """Log a translator request through the active provider."""
-        active = self._active()
-        if active is not None:
-            active.log_translator_request(
-                translator=translator,
-                model=model,
-                actor=actor,
-                voice_id=voice_id,
-                language=language,
-                input_data=input_data,
-                response_duration=response_duration,
-            )

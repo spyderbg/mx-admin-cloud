@@ -26,10 +26,19 @@ from src.services.configuration import (
 )
 from src.services.service_registry import ServiceRegistryBuilder
 
+CONFIG_APPLY = "/apply"
+CONFIG_UPLOAD = "/upload"
+CONFIG_SERVICE = "/{service_name}"
+CONFIG_SERVICE_ITEM = "/{service_name}/{config_name}"
+CONFIG_ENABLE_CONFIGURATIONS = "/{service_name}/enable-configurations"
+CONFIG_DISABLE_CONFIGURATIONS = "/{service_name}/disable-configurations"
+CONFIG_ENABLE_ALL_CONFIGURATIONS = "/{service_name}/enable-all-configurations"
+CONFIG_DISABLE_ALL_CONFIGURATIONS = "/{service_name}/disable-all-configurations"
+
 router = APIRouter(prefix="/internal/configurations", tags=["internal-configuration"])
 
 
-@router.post("/apply", response_model=ApplyConfigurationResponse)
+@router.post(CONFIG_APPLY, response_model=ApplyConfigurationResponse)
 async def apply_config_payload(
         body: ApplyConfigurationRequest,
         _user: dict = Depends(require_internal),
@@ -46,7 +55,7 @@ async def apply_config_payload(
     )
 
 
-@router.post("/upload", response_model=ApplyConfigurationResponse)
+@router.post(CONFIG_UPLOAD, response_model=ApplyConfigurationResponse)
 async def upload_config_file(
         file: UploadFile = File(...),
         _user: dict = Depends(require_internal),
@@ -70,7 +79,7 @@ async def upload_config_file(
     )
 
 
-@router.get("/{service_name}", response_model=list[ConfigurationFileSummaryResponse])
+@router.get(CONFIG_SERVICE, response_model=list[ConfigurationFileSummaryResponse])
 def list_service_configs(
         service_name: str,
         _user: dict = Depends(require_internal),
@@ -84,7 +93,7 @@ def list_service_configs(
     return [ConfigurationFileSummaryResponse(**summary.__dict__) for summary in summaries]
 
 
-@router.post("/{service_name}", response_model=ConfigurationMutationResponse)
+@router.post(CONFIG_SERVICE, response_model=ConfigurationMutationResponse)
 def add_service_config(
         service_name: str,
         body: AddConfigurationRequest,
@@ -107,7 +116,7 @@ def add_service_config(
     return ConfigurationMutationResponse(**result.__dict__)
 
 
-@router.delete("/{service_name}/{config_name}", response_model=ConfigurationMutationResponse)
+@router.delete(CONFIG_SERVICE_ITEM, response_model=ConfigurationMutationResponse)
 def remove_service_config(
         service_name: str,
         config_name: str,
@@ -124,7 +133,7 @@ def remove_service_config(
     return ConfigurationMutationResponse(**result.__dict__)
 
 
-@router.patch("/{service_name}/{config_name}", response_model=ConfigurationMutationResponse)
+@router.patch(CONFIG_SERVICE_ITEM, response_model=ConfigurationMutationResponse)
 def patch_service_config(
         service_name: str,
         config_name: str,
@@ -146,7 +155,7 @@ def patch_service_config(
     return ConfigurationMutationResponse(**result.__dict__)
 
 
-@router.post("/{service_name}/enable-configurations", response_model=BatchToggleConfigurationsResponse)
+@router.post(CONFIG_ENABLE_CONFIGURATIONS, response_model=BatchToggleConfigurationsResponse)
 def enable_configurations(
         service_name: str,
         body: BatchToggleConfigurationsRequest,
@@ -162,7 +171,7 @@ def enable_configurations(
     )
 
 
-@router.post("/{service_name}/disable-configurations", response_model=BatchToggleConfigurationsResponse)
+@router.post(CONFIG_DISABLE_CONFIGURATIONS, response_model=BatchToggleConfigurationsResponse)
 def disable_configurations(
         service_name: str,
         body: BatchToggleConfigurationsRequest,
@@ -178,7 +187,7 @@ def disable_configurations(
     )
 
 
-@router.post("/{service_name}/enable-all-configurations", response_model=BatchToggleConfigurationsResponse)
+@router.post(CONFIG_ENABLE_ALL_CONFIGURATIONS, response_model=BatchToggleConfigurationsResponse)
 def enable_all_configurations(
         service_name: str,
         _user: dict = Depends(require_internal),
@@ -192,7 +201,7 @@ def enable_all_configurations(
     )
 
 
-@router.post("/{service_name}/disable-all-configurations", response_model=BatchToggleConfigurationsResponse)
+@router.post(CONFIG_DISABLE_ALL_CONFIGURATIONS, response_model=BatchToggleConfigurationsResponse)
 def disable_all_configurations(
         service_name: str,
         _user: dict = Depends(require_internal),

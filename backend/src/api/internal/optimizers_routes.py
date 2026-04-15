@@ -18,11 +18,14 @@ from src.services import voice_optimization
 from src.services.service_registry import ServiceRegistry
 from src.services.voice_optimization.service import VoiceOptimizationService
 
+OPTIMIZERS_LIST = "/optimizers"
+OPTIMIZER_SINGLE = "/optimizers/{optimizer}/optimize"
+
 router = APIRouter(prefix="/internal", tags=["internal-optimizers"])
 
 
 @router.get(
-    "/optimizers",
+    OPTIMIZERS_LIST,
     summary="List audio optimizer configurations",
     description=(
             "Return all configured audio post-processing optimizers with their service type, "
@@ -51,7 +54,7 @@ async def list_optimizers(
 
 
 @router.post(
-    "/optimizers/{optimizer}/optimize",
+    OPTIMIZER_SINGLE,
     summary="Optimize a single audio file",
     description="Run the named optimizer on the given raw audio file.",
 )

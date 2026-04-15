@@ -30,11 +30,15 @@ from src.services.text_to_speech.service import (
     TextToSpeechService,
 )
 
+GENERATORS_LIST = "/generators"
+GENERATOR_SINGLE_GENERATE = "/generators/{provider}/generate"
+GENERATE_WORD = "/generators/generate-word"
+
 router = APIRouter(prefix="/internal", tags=["internal-generators"])
 
 
 @router.get(
-    "/generators",
+    GENERATORS_LIST,
     response_model=list[GeneratorProviderInfo],
     summary="List text to speech service configurations",
     description=(
@@ -62,7 +66,7 @@ async def list_generators(
 
 
 @router.post(
-    "/generators/{provider}/generate",
+    GENERATOR_SINGLE_GENERATE,
     response_model=TtsGenerateResult,
     summary="Generate text to speech audio for one request",
     description="Generate raw audio using the named text to speech service and return the result as JSON.",
@@ -122,7 +126,7 @@ async def generate_single(
 
 
 @router.post(
-    "/generators/generate-word",
+    GENERATE_WORD,
     summary="Generate text to speech audio for a single word",
     description="Generate raw audio using the highest-priority active text to speech service and return raw bytes.",
     responses={

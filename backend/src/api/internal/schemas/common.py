@@ -10,17 +10,6 @@ from pydantic import BaseModel, Field
 ################################################################################
 # Common models
 
-class ServiceProviderInfo(BaseModel):
-    """Metadata for one configured translator provider (GET /internal/translators)."""
-
-    name: str = Field(..., description="Human-readable name")
-    service: str = Field(..., description="Service name")
-    provider: str = Field(..., description="Provider name")
-    enabled: bool = Field(..., description="Whether the provider is enabled")
-    priority: int = Field(..., description="Priority of the provider")
-    config_path: str = Field(..., description="Path to the provider's config file")
-
-
 ################################################################################
 # Error models
 
