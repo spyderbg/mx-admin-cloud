@@ -1,0 +1,276 @@
+/* Login / Auth screen styles (from vue3-demo, standalone - no Bootstrap) */
+
+/* Layout */
+.full-page-wrapper {
+  min-height: 100vh;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.page-body-wrapper.full-page-wrapper {
+  width: 100%;
+  min-height: 100vh;
+}
+
+.content-wrapper {
+  width: 100%;
+  flex-grow: 1;
+  display: flex;
+  align-items: center;
+}
+
+.auth {
+  min-height: 100vh;
+  width: 100%;
+}
+
+.auth.auth-bg-1 {
+  background: url("../images/auth/login_1.jpg") center center no-repeat;
+  background-size: cover;
+}
+
+.auth.theme-one .auto-form-wrapper {
+  background: #fff;
+  padding: 40px 40px 10px;
+  border-radius: 4px;
+  box-shadow: 0 -25px 37.7px 11.3px rgba(8, 143, 220, 0.07);
+}
+
+.auth.theme-one .auto-form-wrapper .form-group {
+  margin-bottom: 1rem;
+}
+
+.auth.theme-one .auto-form-wrapper .form-group .label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #374151;
+}
+
+.auth.theme-one .auto-form-wrapper .form-group .input-group {
+  height: 44px;
+  display: flex;
+}
+
+.auth.theme-one .auto-form-wrapper .form-group .input-group .form-control {
+  border: 1px solid #cfd5db;
+  border-right: none;
+  border-radius: 6px 0 0 6px;
+  height: 44px;
+  flex: 1;
+  padding: 0 12px;
+  font-size: 14px;
+  line-height: 44px;
+}
+
+.auth.theme-one .auto-form-wrapper .form-group .input-group .form-control:focus {
+  outline: none;
+  border-color: #cfd5db;
+}
+
+.auth.theme-one .auto-form-wrapper .form-group .input-group .input-group-append {
+  border: 1px solid #cfd5db;
+  border-left: none;
+  border-radius: 0 6px 6px 0;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  background: #fff;
+}
+
+.auth.theme-one .auto-form-wrapper .form-group .input-group .input-group-append .input-group-text {
+  border: none;
+  background: transparent;
+  color: #b6b6b6;
+  padding: 0;
+  font-size: 1.1rem;
+}
+
+.auth.theme-one .auto-form-wrapper .form-group .submit-btn {
+  font-family: "Roboto", sans-serif;
+  font-size: 13px;
+  padding: 12px 8px;
+  font-weight: 600;
+  width: 100%;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  background: #4f46e5;
+  color: #fff;
+}
+
+.auth.theme-one .auto-form-wrapper .form-group .submit-btn:hover {
+  background: #4338ca;
+}
+
+.auth.theme-one .auto-form-wrapper .g-login {
+  border: 1px solid #dee2e6;
+  padding: 13px;
+  font-size: 12px;
+  font-weight: 600;
+  background: transparent;
+  width: 100%;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.auth.theme-one .auto-form-wrapper .g-login:hover {
+  background: #f8f9fa;
+}
+
+.auth.theme-one .auth-footer {
+  list-style-type: none;
+  padding-left: 0;
+  margin-top: 20px;
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: center;
+}
+
+.auth.theme-one .auth-footer li {
+  margin-right: 10px;
+  line-height: 1;
+  padding-right: 10px;
+  border-right: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+.auth.theme-one .auth-footer li:last-child {
+  margin-right: 0;
+  border-right: none;
+}
+
+.auth.theme-one .auth-footer li a {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.4);
+  text-decoration: none;
+}
+
+.auth.theme-one .auth-footer li a:hover {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+@media (max-width: 576px) {
+  .auth.theme-one .auth-footer {
+    justify-content: center;
+  }
+}
+
+.auth.theme-one .footer-text {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 13px;
+  margin: 0.25rem 0;
+}
+
+.auth.theme-one .footer-text a {
+  color: rgba(255, 255, 255, 0.6);
+  text-decoration: none;
+}
+
+/* Utility classes used by login template */
+.auth-page.container-fluid {
+  padding-left: 1rem;
+  padding-right: 1rem;
+  margin: 0 auto;
+}
+
+.auth-page .w-100 {
+  width: 100%;
+}
+
+.auth-page .row {
+  display: flex;
+  flex-wrap: wrap;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.auth-page .col-lg-4.mx-auto {
+  flex: 0 0 auto;
+  width: 100%;
+  max-width: 400px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.auth-page .d-flex {
+  display: flex;
+}
+
+.auth-page .align-items-center {
+  align-items: center;
+}
+
+.auth-page .form-check-flat {
+  margin: 0;
+}
+
+.auth-page .form-check-label {
+  font-size: 13px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.auth-page .form-check-input {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+}
+
+.auth-page .text-small {
+  font-size: 13px;
+}
+
+.auth-page .forgot-password {
+  color: #374151;
+  text-decoration: none;
+}
+
+.auth-page .forgot-password:hover {
+  text-decoration: underline;
+}
+
+.auth-page .text-block {
+  margin: 1rem 0;
+}
+
+.auth-page .text-center {
+  text-align: center;
+}
+
+.auth-page .my-3 {
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+}
+
+.auth-page .font-weight-semibold {
+  font-weight: 600;
+}
+
+.auth-page .text-black {
+  color: #111;
+}
+
+.auth-page .justify-content-between {
+  justify-content: space-between;
+}
+
+.auth-page .mt-0 {
+  margin-top: 0;
+}
+
+.auth-page .mr-3 {
+  margin-right: 0.5rem;
+}
+
+.auth-page .error-msg {
+  color: #dc2626;
+  font-size: 13px;
+  margin-top: 0.5rem;
+}

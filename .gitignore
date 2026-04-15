@@ -1,0 +1,32 @@
+
+# Build artifacts
+build/
+dist/
+
+# Environment costants and secure keys
+.env
+
+# Virtual environments
+venv/
+.venv/
+.venv_wsl/
+
+# JetBrain Rider folder 
+.idea/
+.run/
+
+# Visual Studio cache directory
+.vs/
+.vsconfig 
+
+# Python packaging
+*.egg-info/
+.eggs/
+
+# Bytecode
+__pycache__/
+*.pyc
+
+# node modules
+/node_modules/
+
