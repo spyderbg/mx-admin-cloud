@@ -14,6 +14,7 @@ import logging as _stdlib_logging
 from typing import Any
 
 from src.api.internal.schemas.logging import (
+    LogRequest,
     LogEmitRequest,
     LogProviderRequest,
     LogTranslatorRequest,
@@ -57,8 +58,20 @@ async def emit(request: LogEmitRequest) -> None:
         _stdlib_logging.debug("logging HTTP emit failed", exc_info=True)
 
 
+async def log_api_request(request: LogRequest) -> None:
+    if _client is None:
+        return
+    try:
+        await _client.post(
+            "/internal/logging/api-request",
+            json=request.model_dump(mode="json"),
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        _stdlib_logging.debug("logging HTTP api-request failed", exc_info=True)
+
+
 async def log_provider_request(
-    request: LogProviderRequest,
+        request: LogProviderRequest,
 ) -> None:
     """Post a provider-request log to "/internal/logging/provider-request"."""
     if _client is None:
@@ -75,7 +88,7 @@ async def log_provider_request(
 
 
 async def log_text_translation_request(
-    request: LogTranslatorRequest,
+        request: LogTranslatorRequest,
 ) -> None:
     """Post a translator-request log to "/internal/logging/translator-request"."""
     if _client is None:

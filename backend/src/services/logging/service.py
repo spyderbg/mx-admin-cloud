@@ -22,7 +22,7 @@ class LoggingProviderFactory(ServiceProviderFactory[LoggingServiceProvider]):
 class LoggingService(Service):
     """Orchestrator for all logging providers.
 
-    After the registry loads config files, the service holds materialised
+    After the registry loads config files, the service holds materialized
     provider instances.  Call `configure` once at startup so the
     active provider(s) can wire stdlib "dictConfig", structlog, and the
     request logger.

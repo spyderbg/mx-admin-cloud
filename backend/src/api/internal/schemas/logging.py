@@ -13,15 +13,21 @@ class StatusResponse(BaseModel):
     status: str
 
 
-class LogEmitRequest(BaseModel):
-    """Body for ``POST /internal/logging/emit``."""
+class LogRequest(BaseModel):
+    """Body for ``POST /internal/logging/api-request``."""
 
-    logger_name: str
-    level: str = "info"
-    event: str
+    level: str = Field("info", description="Log level, defaults to 'info'")
+    event: str = Field(..., description="Log event name")
     fields: dict[str, Any] = Field(default_factory=dict)
 
 
+class LogEmitRequest(LogRequest):
+    """Body for ``POST /internal/logging/emit``."""
+
+    logger_name: str = Field(..., description="Logger name")
+
+
+# TODO: not final
 class LogProviderRequest(BaseModel):
     """Body for ``POST /internal/logging/provider-request``."""
 
@@ -36,6 +42,7 @@ class LogProviderRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+# TODO: not final
 class LogTranslatorRequest(BaseModel):
     """Body for ``POST /internal/logging/translator-request``."""
 

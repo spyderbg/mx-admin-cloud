@@ -141,10 +141,6 @@ components:
       title: Body_translate_file_internal_translate_file_post
     ErrorMessage:
       properties:
-        http_code:
-          type: integer
-          title: Http Code
-          description: HTTP status code
         message:
           type: string
           title: Message
@@ -156,10 +152,9 @@ components:
           title: Error
       type: object
       required:
-      - http_code
       - message
       title: ErrorMessage
-      description: Error message returned by the API.
+      description: Error message returned by the API
     HTTPValidationError:
       properties:
         detail:
@@ -188,21 +183,27 @@ components:
         name:
           type: string
           title: Name
+          description: Human-readable name
         service:
           type: string
           title: Service
+          description: Service name
         provider:
           type: string
           title: Provider
+          description: Provider name
         enabled:
           type: boolean
           title: Enabled
+          description: Whether the provider is enabled
         priority:
           type: integer
           title: Priority
+          description: Priority of the provider
         config_path:
           type: string
           title: Config Path
+          description: Path to the provider's config file
       type: object
       required:
       - name

@@ -1,7 +1,7 @@
 """Internal logging endpoints.
 
-Exposes structured-log emission through the ``LoggingService``.
-All endpoints require a JWT with role ``internal`` or ``admin``.
+Exposes structured-log emission through the "LoggingService".
+All endpoints require a JWT with role "internal" or "admin".
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends
 
 from src.api.dependencies import get_registry, require_internal
 from src.api.internal.schemas.logging import (
+    LogRequest,
     LogEmitRequest,
     LogProviderRequest,
     LogTranslatorRequest,
@@ -45,6 +46,30 @@ async def emit_log(
         expected_type=LoggingService,
     )
     service.emit(body.logger_name, body.level, body.event, **body.fields)
+    return {"status": "ok"}
+
+
+@router.post(
+    "/logging/api-request",
+    response_model=StatusResponse,
+    summary="Emit an API request log message",
+    description=(
+            "Post a structured log message to the 'requests' logger. "
+            "``level`` and ``event`` mirror structlog semantics."
+    ),
+)
+async def emit_api_request_log(
+        body: LogRequest,
+        registry: ServiceRegistry = Depends(get_registry),
+        _user: dict = Depends(require_internal),
+) -> dict[str, str]:
+    """Emit an API request log message through the logging service."""
+    service = get_typed_service(
+        registry=registry,
+        service_name=logging.SERVICE_NAME,
+        expected_type=LoggingService,
+    )
+    service.emit("requests", body.level, body.event, **body.fields)
     return {"status": "ok"}
 
 
