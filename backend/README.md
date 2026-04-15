@@ -37,6 +37,12 @@ globally.
 From the repository root, run:
 
 ```bash
+python scripts/validate_buld.py
+```
+
+On Unix-like systems you can still use:
+
+```bash
 ./scripts/validate.sh
 ```
 

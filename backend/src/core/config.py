@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from src.core.models import GeneratedAudio
 
-# Load .env into os.environ so Settings defaults are overridden by .env values
+# Load .env into os.environ so.env values override Settings defaults
 load_dotenv()
 
 
@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     # Logging settings
     LOG_PROFILE: str = "dev"
 
-    # Directories settings
+    # Directory settings
     CONFIG_DIR: str = "config"
     CONTENT_DIR: str = "../content"
     ARCHIVE_DIR: str = "../archive"

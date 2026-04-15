@@ -4,11 +4,11 @@
 The spec is derived directly from route decorators and Pydantic models — no manual
 editing required. Run this script after any change to routes or schemas.
 
-Usage (from backend/):
-    PYTHONPATH=. python scripts/export_openapi.py # all services
-    PYTHONPATH=. python scripts/export_openapi.py --service translation # one service
-    PYTHONPATH=. python scripts/export_openapi.py --service logging
-    PYTHONPATH=. python scripts/export_openapi.py --all # full app spec
+Usage:
+    python scripts/export_openapi.py # all-services
+    python scripts/export_openapi.py --service translation # one service
+    python scripts/export_openapi.py --service logging
+    python scripts/export_openapi.py --all # full app spec
 
 Options:
     --service <name> Export only the named service (see SERVICES below).
@@ -24,17 +24,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Path setup — allow running from backend/ without installing the package
+# Path setup — allow running from project root without installing the package
 # ---------------------------------------------------------------------------
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+ROOT = Path(__file__).resolve().parent.parent  # Project root: mx-admin/
+BACKEND_ROOT = ROOT / "backend"
+sys.path.insert(0, str(BACKEND_ROOT))
 
 # Minimum env vars so Settings loads without a real .env file.
 # No server is started; app.openapi() is a synchronous introspection call.
 os.environ.setdefault("SECRET_KEY", "export-script-placeholder")
-os.environ.setdefault("DB_PATH", str(ROOT / "data" / "users.db"))
+os.environ.setdefault("DB_PATH", str(BACKEND_ROOT / "data" / "users.db"))
 
-from src.main import app  # noqa: E402  pylint: disable=wrong-import-position
+from src.main import app  # noqa: E402 pylint: disable=wrong-import-position
 
 try:
     import yaml
@@ -57,17 +58,17 @@ SERVICES: dict[str, ServiceSpec] = {
     "translation": ServiceSpec(
         title="Text Translation Internal API",
         path_prefixes=("/internal/translat",),
-        output=ROOT / "docs" / "text_translation_openapi.yaml",
+        output=BACKEND_ROOT / "docs" / "text_translation_openapi.yaml",
     ),
     "logging": ServiceSpec(
         title="Logging Internal API",
         path_prefixes=("/internal/logging",),
-        output=ROOT / "docs" / "logging_openapi.yaml",
+        output=BACKEND_ROOT / "docs" / "logging_openapi.yaml",
     ),
     "tts": ServiceSpec(
         title="Text to Speech Internal API",
         path_prefixes=("/internal/generators",),
-        output=ROOT / "docs" / "text_to_speech_openapi.yaml",
+        output=BACKEND_ROOT / "docs" / "text_to_speech_openapi.yaml",
     ),
 }
 
@@ -108,11 +109,11 @@ def _source_files_for_service(spec: ServiceSpec, schema_names: set[str]) -> list
                 except (TypeError, OSError):
                     pass
 
-    # Keep only project-owned files (under ROOT); skip site-packages and extensions
+    # Keep only project-owned files (under BACKEND_ROOT); skip site-packages and extensions
     result = []
     for f in sorted(files):
         try:
-            result.append(f.relative_to(ROOT))
+            result.append(f.relative_to(BACKEND_ROOT))
         except ValueError:
             pass  # outside the project tree — framework/library file, skip
     return result
@@ -187,7 +188,7 @@ def export_service(spec: ServiceSpec, full_schema: dict) -> None:
 
     source_files = _source_files_for_service(spec, reachable)
     try:
-        output_rel = spec.output.relative_to(ROOT)
+        output_rel = spec.output.relative_to(BACKEND_ROOT)
     except ValueError:
         output_rel = spec.output
 
@@ -199,7 +200,7 @@ def export_service(spec: ServiceSpec, full_schema: dict) -> None:
 
 def export_all(full_schema: dict) -> None:
     """Write the complete app spec to docs/openapi.yaml."""
-    output = ROOT / "docs" / "openapi.yaml"
+    output = BACKEND_ROOT / "docs" / "openapi.yaml"
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("w", encoding="utf-8") as fh:
         yaml.dump(full_schema, fh, default_flow_style=False, allow_unicode=True, sort_keys=False)

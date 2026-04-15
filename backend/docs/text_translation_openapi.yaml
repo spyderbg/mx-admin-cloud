@@ -19,7 +19,7 @@ paths:
             application/json:
               schema:
                 items:
-                  $ref: '#/components/schemas/TranslatorProviderInfo'
+                  $ref: '#/components/schemas/ServiceProviderInfo'
                 type: array
                 title: Response 200 List Translators Internal Translators Get
         '401':
@@ -141,6 +141,10 @@ components:
       title: Body_translate_file_internal_translate_file_post
     ErrorMessage:
       properties:
+        http_code:
+          type: integer
+          title: Http Code
+          description: HTTP status code
         message:
           type: string
           title: Message
@@ -152,6 +156,7 @@ components:
           title: Error
       type: object
       required:
+      - http_code
       - message
       title: ErrorMessage
       description: Error message returned by the API.
@@ -178,6 +183,36 @@ components:
       - text
       title: LangCodeText
       description: Serialized language-code/text pair used in translation responses.
+    ServiceProviderInfo:
+      properties:
+        name:
+          type: string
+          title: Name
+        service:
+          type: string
+          title: Service
+        provider:
+          type: string
+          title: Provider
+        enabled:
+          type: boolean
+          title: Enabled
+        priority:
+          type: integer
+          title: Priority
+        config_path:
+          type: string
+          title: Config Path
+      type: object
+      required:
+      - name
+      - service
+      - provider
+      - enabled
+      - priority
+      - config_path
+      title: ServiceProviderInfo
+      description: Metadata for one configured translator provider (GET /internal/translators).
     TranslateFileResponse:
       properties:
         results:
@@ -229,36 +264,6 @@ components:
       - lang_text
       title: TranslateResponse
       description: Response body for the translation endpoint.
-    TranslatorProviderInfo:
-      properties:
-        name:
-          type: string
-          title: Name
-        service:
-          type: string
-          title: Service
-        provider:
-          type: string
-          title: Provider
-        enabled:
-          type: boolean
-          title: Enabled
-        priority:
-          type: integer
-          title: Priority
-        config_path:
-          type: string
-          title: Config Path
-      type: object
-      required:
-      - name
-      - service
-      - provider
-      - enabled
-      - priority
-      - config_path
-      title: TranslatorProviderInfo
-      description: Metadata for one configured translator provider (GET /internal/translators).
     ValidationError:
       properties:
         loc:

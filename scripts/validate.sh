@@ -7,7 +7,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BACKEND_DIR="$REPO_ROOT/backend"
-VENV_DIR="$BACKEND_DIR/.venv"
+if [ -d "$REPO_ROOT/.venv" ]; then
+  VENV_DIR="$REPO_ROOT/.venv"
+elif [ -d "$BACKEND_DIR/.venv" ]; then
+  VENV_DIR="$BACKEND_DIR/.venv"
+else
+  VENV_DIR="$BACKEND_DIR/.venv"
+fi
 
 if command -v python3.10 >/dev/null 2>&1; then
   PYTHON_BIN="python3.10"
