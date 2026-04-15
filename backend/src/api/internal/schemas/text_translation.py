@@ -75,14 +75,3 @@ class TranslateFileResponse(BaseModel):
     """Response body for the translation file endpoint."""
 
     results: list[dict[str, str]]
-
-
-class TranslatorProviderInfo(BaseModel):
-    """Metadata for one configured translator provider (GET /internal/translators)."""
-
-    name: str
-    service: str
-    provider: str
-    enabled: bool
-    priority: int
-    config_path: str

@@ -11,20 +11,24 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, UploadFile  # pylint: disable=import-error
-
-from src.api.dependencies import get_registry, require_internal
-from src.api.internal.schemas.error_detail import ErrorDetail
+from src.api.dependencies import (
+    get_registry,
+    require_internal
+)
+from src.api.internal.schemas.common import (
+    ErrorMessage,
+    ServiceProviderInfo,
+)
 from src.api.internal.schemas.text_translation import (
     LangCodeText,
     TranslateFileResponse,
     TranslateRequest,
     TranslateResponse,
     TranslationFileSourceWord,
-    TranslatorProviderInfo,
 )
-from src.core.languages import normalize_language_code
-from src.core.config import settings
 from src.api.service_resolver import get_typed_service, require_active_providers
+from src.core.config import settings
+from src.core.languages import normalize_language_code
 from src.services import text_translation
 from src.services.service_registry import ServiceRegistry
 from src.services.text_translation import TextTranslationService
@@ -34,17 +38,17 @@ router = APIRouter(prefix="/internal", tags=["internal-translators"])
 
 @router.get(
     "/translators",
-    response_model=list[TranslatorProviderInfo],
+    response_model=list[ServiceProviderInfo],
     summary="List text translation service configurations",
     description=(
             "Return all configured text translation services with their service type, "
             "activation state, priority, and config path."
     ),
     responses={
-        200: {"model": list[TranslatorProviderInfo],
+        200: {"model": list[ServiceProviderInfo],
               "description": "Configured translator providers sorted by priority"},
-        401: {"model": ErrorDetail, "description": "Missing or invalid JWT token"},
-        403: {"model": ErrorDetail,
+        401: {"model": ErrorMessage, "description": "Missing or invalid JWT token"},
+        403: {"model": ErrorMessage,
               "description": "JWT is valid but does not carry the &#x60;internal&#x60; or &#x60;admin&#x60; role"},
     }
 )

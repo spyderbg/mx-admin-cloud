@@ -14,7 +14,7 @@ class LoggingServiceProvider(ServiceProvider, ABC):
     """Base class for logging service providers.
 
     Subclasses configure logging subsystems (stdlib, structlog, request logging)
-    from the ``config`` dict stored by ``ServiceProvider`` and expose runtime
+    from the "config" dict stored by "ServiceProvider" and expose runtime
     helpers for structured log emission.
     """
 

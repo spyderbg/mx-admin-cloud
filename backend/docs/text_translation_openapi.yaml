@@ -27,14 +27,14 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorDetail'
+                $ref: '#/components/schemas/ErrorMessage'
         '403':
           description: JWT is valid but does not carry the &#x60;internal&#x60; or
             &#x60;admin&#x60; role
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorDetail'
+                $ref: '#/components/schemas/ErrorMessage'
       security:
       - OAuth2PasswordBearer: []
   /internal/translate:
@@ -139,17 +139,22 @@ components:
       required:
       - file
       title: Body_translate_file_internal_translate_file_post
-    ErrorDetail:
+    ErrorMessage:
       properties:
-        detail:
+        message:
           type: string
-          title: Detail
+          title: Message
           description: Human-readable error message
+        error:
+          anyOf:
+          - {}
+          - type: 'null'
+          title: Error
       type: object
       required:
-      - detail
-      title: ErrorDetail
-      description: ErrorDetail
+      - message
+      title: ErrorMessage
+      description: Error message returned by the API.
     HTTPValidationError:
       properties:
         detail:
