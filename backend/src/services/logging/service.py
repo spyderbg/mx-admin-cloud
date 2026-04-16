@@ -37,12 +37,18 @@ class LoggingService(Service):
     ) -> None:
         super().__init__(service_name, package_name, service_dir, base_dir)
         self._providers: list[LoggingServiceProvider] = []
+        self._configure_kwargs: dict | None = None
 
     @override
     def replace_providers(self, providers: list[ServiceProvider]) -> None:
         self._providers = [
             p for p in providers if isinstance(p, LoggingServiceProvider)
         ]
+        # If the service was already configured (startup has completed), apply
+        # the new providers' level changes immediately so a restart isn't required.
+        if self._configure_kwargs is not None:
+            for provider in self.active_providers:
+                provider.apply_levels()
 
     @override
     def providers_snapshot(self) -> list[ServiceProvider]:
@@ -59,6 +65,7 @@ class LoggingService(Service):
 
     def configure(self, *, output_dir: Path, profile: str) -> None:
         """Ask each active provider to apply its logging configuration."""
+        self._configure_kwargs = {"output_dir": output_dir, "profile": profile}
         for provider in self.active_providers:
             provider.configure(output_dir=output_dir, profile=profile)
 

@@ -22,6 +22,13 @@ class LoggingServiceProvider(ServiceProvider, ABC):
     def configure(self, *, output_dir: Path, profile: str) -> None:
         """Apply logging configuration using this provider's config dict."""
 
+    def apply_levels(self) -> None:
+        """Patch handler/logger levels from the current config without recreating handlers.
+
+        Default implementation is a no-op; providers that support live level
+        updates should override this.
+        """
+
     @abstractmethod
     def get_logger(self, name: str) -> Any:
         """Return a logger instance for *name*."""

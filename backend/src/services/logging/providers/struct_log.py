@@ -30,6 +30,12 @@ def _optional_import(module_name: str) -> Any | None:
 
 _structlog = _optional_import("structlog")
 
+# Register non-stdlib levels so dictConfig can resolve them by name.
+_CUSTOM_LEVELS: dict[str, int] = {"TRACE": 5, "FATAL": 50}
+for _name, _value in _CUSTOM_LEVELS.items():
+    if not isinstance(logging.getLevelName(_name), int):
+        logging.addLevelName(_value, _name)
+
 _LEVEL_STYLES: dict[str, str] = {
     "TRC": "\033[90m",    # grey
     "DBG": "\033[34m",    # blue
@@ -108,6 +114,46 @@ class StructLogProvider(LoggingServiceProvider):
         structlog_config = self.config.get("structlog")
         if isinstance(structlog_config, dict):
             self._configure_structlog(structlog_config)
+
+    def apply_levels(self) -> None:
+        """Patch handler and logger levels from the current config without recreating handlers.
+
+        Directly updates live stdlib ``Logger`` and ``Handler`` objects so no
+        new handlers are created and no existing log records are lost.  Safe
+        to call at any time after the initial :meth:`configure`.
+        """
+        # Resolve handler-name → desired level from config.
+        handler_levels: dict[str, int] = {}
+        for h_name, h_conf in (self.config.get("handlers") or {}).items():
+            if not isinstance(h_conf, dict):
+                continue
+            level_str = h_conf.get("level")
+            if not level_str:
+                continue
+            level_int = logging.getLevelName(str(level_str).upper())
+            if isinstance(level_int, int):
+                handler_levels[h_name] = level_int
+
+        for l_name, l_conf in (self.config.get("loggers") or {}).items():
+            if not isinstance(l_conf, dict):
+                continue
+            logger = logging.getLogger(l_name)
+            # Update logger level.
+            level_str = l_conf.get("level")
+            if level_str:
+                level_int = logging.getLevelName(str(level_str).upper())
+                if isinstance(level_int, int):
+                    logger.setLevel(level_int)
+            # Update levels on handlers that belong to this logger and appear
+            # in the config.  Handlers are matched by their .name attribute
+            # (set by dictConfig when the handler was first created).
+            config_handler_names: set[str] = set(l_conf.get("handlers", []))
+            for handler in logger.handlers:
+                if handler.name not in config_handler_names:
+                    continue
+                new_level = handler_levels.get(handler.name)
+                if new_level is not None:
+                    handler.setLevel(new_level)
 
     # ------------------------------------------------------------------
     # Runtime interface
