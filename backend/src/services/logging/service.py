@@ -63,12 +63,26 @@ class LoggingService(Service):
             provider.configure(output_dir=output_dir, profile=profile)
 
     # ------------------------------------------------------------------
-    # Runtime helpers delegated to the first active provider
+    # Runtime helpers — name-based provider routing
     # ------------------------------------------------------------------
 
-    def _active(self) -> LoggingServiceProvider | None:
-        providers = self.active_providers
-        return providers[0] if providers else None
+    def _provider_by_name(self, name: str) -> LoggingServiceProvider | None:
+        """Look up an active provider whose config-file stem matches *name*."""
+        for provider in self.active_providers:
+            if provider.name == name:
+                return provider
+        return None
+
+    def _resolve_provider(self, name: str) -> LoggingServiceProvider | None:
+        """Find a provider by *name*, fall back to "default", then first active."""
+        provider = self._provider_by_name(name)
+        if provider is not None:
+            return provider
+        provider = self._provider_by_name("default")
+        if provider is not None:
+            return provider
+        active = self.active_providers
+        return active[0] if active else None
 
     @staticmethod
     def list_logging_managers(*, include_all: bool = False) -> list[dict]:
@@ -109,8 +123,8 @@ class LoggingService(Service):
         return result
 
     def get_logger(self, name: str) -> Any:
-        """Return a logger for *name* via the active provider (or stdlib)."""
-        provider = self._active()
+        """Return a logger for *name* via the matching provider (or stdlib)."""
+        provider = self._resolve_provider(name)
         if provider is not None:
             return provider.get_logger(name)
         return logging.getLogger(name)
@@ -138,27 +152,28 @@ class LoggingService(Service):
         ]
 
     def emit(self, logger_name: str, level: str, event: str, **fields: Any) -> None:
-        """Emit a structured log through the active provider."""
-        provider = self._active()
+        """Emit a structured log through the provider matching *logger_name*.
+
+        Falls back to the ""default"" provider, then the first active
+        provider if no name match is found.
+        """
+        provider = self._resolve_provider(logger_name)
         if provider is not None:
             provider.emit(logger_name, level, event, **fields)
 
     def bind_request_id(self, request_id: str) -> None:
-        """Bind a request ID to the logging context."""
-        provider = self._active()
-        if provider is not None:
+        """Bind a request ID to the logging context (all active providers)."""
+        for provider in self.active_providers:
             provider.bind_request_id(request_id)
 
     def clear_request_context(self) -> None:
-        """Clear the logging request context."""
-        provider = self._active()
-        if provider is not None:
+        """Clear the logging request context (all active providers)."""
+        for provider in self.active_providers:
             provider.clear_request_context()
 
     def log_to_all_active_loggers(
             self, message: str, level: int = logging.INFO,
     ) -> None:
-        """Broadcast *message* through the active provider."""
-        provider = self._active()
-        if provider is not None:
+        """Broadcast *message* through every active provider."""
+        for provider in self.active_providers:
             provider.log_to_all_active_loggers(message, level)

@@ -1,15 +1,15 @@
 """Structlog-based logging provider.
 
-Configures stdlib "dictConfig", structlog processors, and the
-dedicated request logger channel from a single "service_provider"
-config envelope.
+Configures stdlib "dictConfig", structlog processors, and optional
+request-event field filtering from a "service_provider" config
+envelope whose "config" section uses flat "formatters",
+"handlers", and "loggers" keys.
 """
 
 from __future__ import annotations
 
 import copy
 import importlib
-import json
 import logging
 import logging.config
 import urllib.request
@@ -47,25 +47,32 @@ _DEFAULT_REQUEST_FIELDS: dict[str, bool] = {
 class StructLogProvider(LoggingServiceProvider):
     """Logging provider backed by structlog + stdlib logging.
 
-    Provider "config" sections
-    ----------------------------
-    "logging"
-        A stdlib "dictConfig" blob (version, formatters, handlers, root …).
-        Custom extensions: "active" flag on handlers, "${output_dir}"
-        path placeholder, automatic Seq availability check.
+    Provider "config" keys (all optional except "handlers")
+    ------------------------------------------------------------
+    "formatters"
+        Python logging formatter definitions.
+    "handlers"
+        Handler definitions.  Custom "active" flag (default "true")
+        controls whether the handler is included; the "$ {output_dir}"
+        placeholder is expanded in "filename" values.
+    "loggers"
+        Named stdlib logger definitions (e.g. "requests" with
+        "propagate: false").
     "structlog"
-        "renderer" ("console" | "json") and optional processor list.
+        "renderer" (""console"" | ""json"") selection.
     "request_log"
-        "path" (relative to output dir) and per-field "fields" toggle
-        for the dedicated request logger channel.
+        Per-field "fields" toggle for request-event logging.
+
+    The provider auto-injects "version: 1" and
+    "disable_existing_loggers: false" into the "dictConfig" dict.
+    Active handlers **not** assigned to any named logger are
+    automatically added to "root.handlers".
     """
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self._output_dir: Path | None = None
         self._profile: str = "dev"
-        self._requests_logger: Any = None
-        self._request_log_rel_path: str = "results/requests.log"
         self._request_fields: dict[str, bool] = dict(_DEFAULT_REQUEST_FIELDS)
 
     @classmethod
@@ -81,24 +88,16 @@ class StructLogProvider(LoggingServiceProvider):
         self._output_dir = output_dir
         self._profile = profile
 
-        logging_config = self.config.get("logging")
-        structlog_config = self.config.get("structlog")
-        request_log_config = self.config.get("request_log", {})
+        self._apply_request_log_config(self.config.get("request_log", {}))
 
-        self._apply_request_log_config(request_log_config)
-
-        if isinstance(logging_config, dict):
-            prepared = self._prepare_logging_config(logging_config)
+        handlers = self.config.get("handlers")
+        if isinstance(handlers, dict) and handlers:
+            prepared = self._prepare_logging_config()
             logging.config.dictConfig(prepared)
 
+        structlog_config = self.config.get("structlog")
         if isinstance(structlog_config, dict):
             self._configure_structlog(structlog_config)
-
-        self._requests_logger = (
-            _structlog.get_logger("request_logger")
-            if _structlog is not None
-            else logging.getLogger("request_logger")
-        )
 
     # ------------------------------------------------------------------
     # Runtime interface
@@ -110,15 +109,8 @@ class StructLogProvider(LoggingServiceProvider):
         return _structlog.get_logger(name)
 
     def emit(self, logger_name: str, level: str, event: str, **fields: Any) -> None:
-        if (
-            logger_name == "request_logger"
-            and event in ("provider_request", "translator_request")
-        ):
+        if event in ("provider_request", "translator_request"):
             fields = self._filtered_request_log_fields(event, fields)
-            if _structlog is None:
-                req_log = logging.getLogger("request_logger")
-                req_log.info("%s %s", event, json.dumps(fields, ensure_ascii=False))
-                return
         log = self.get_logger(logger_name)
         method = getattr(log, level.lower(), None) or log.info
         method(event, **fields)
@@ -141,7 +133,7 @@ class StructLogProvider(LoggingServiceProvider):
         for obj in manager.loggerDict.values():
             if not isinstance(obj, logging.Logger):
                 continue
-            if obj.name == "request_logger":
+            if obj.name == "requests":
                 continue
             if obj.disabled or obj.propagate or not obj.handlers:
                 continue
@@ -211,60 +203,55 @@ class StructLogProvider(LoggingServiceProvider):
     def _apply_request_log_config(self, config: dict[str, Any] | None) -> None:
         if not isinstance(config, dict):
             return
-        path_value = config.get("path")
-        if isinstance(path_value, str) and path_value.strip():
-            rel_path = Path(path_value.strip())
-            if rel_path.is_absolute():
-                raise ValueError(
-                    "request_log.path must be relative to the output directory.",
-                )
-            self._request_log_rel_path = rel_path.as_posix()
-
         fields = config.get("fields")
         if isinstance(fields, dict):
             for key, value in fields.items():
                 if key in self._request_fields:
                     self._request_fields[key] = bool(value)
 
-    def _resolve_requests_log_path(self) -> Path:
-        output_dir = self._output_dir or Path(".")
-        return output_dir / self._request_log_rel_path
-
     # ------------------------------------------------------------------
     # Internal helpers — stdlib dictConfig preparation
     # ------------------------------------------------------------------
 
-    def _prepare_logging_config(self, config: dict[str, Any]) -> dict[str, Any]:
-        prepared = copy.deepcopy(config)
-        handlers = prepared.setdefault("handlers", {})
+    def _prepare_logging_config(self) -> dict[str, Any]:
+        """Build an stdlib "dictConfig" dict from flat config keys.
+
+        Reads "formatters", "handlers", and "loggers" from
+        "self.config", injects "version" and
+        "disable_existing_loggers", processes handler "active"
+        flags / Seq availability, and auto-builds "root.handlers"
+        from active handlers not assigned to any named logger.
+        """
+        formatters = copy.deepcopy(self.config.get("formatters") or {})
+        handlers = copy.deepcopy(self.config.get("handlers") or {})
+        loggers = copy.deepcopy(self.config.get("loggers") or {})
+
         if not isinstance(handlers, dict):
             raise ValueError("`handlers` in logging config must be an object.")
 
-        self._normalize_file_handler_paths(handlers)
+        prepared: dict[str, Any] = {
+            "version": 1,
+            "disable_existing_loggers": False,
+            "formatters": formatters if isinstance(formatters, dict) else {},
+            "handlers": handlers,
+            "loggers": loggers if isinstance(loggers, dict) else {},
+        }
+
         self._resolve_file_handler_paths(handlers)
         self._disable_inactive_handlers(handlers, prepared)
         self._disable_unavailable_seq_handlers(handlers, prepared)
-        self._ensure_requests_handler(prepared)
-        return prepared
 
-    def _normalize_file_handler_paths(self, handlers: dict[str, Any]) -> None:
-        output_dir = self._output_dir or Path(".")
-        logs_root = (output_dir / "results" / "logs").resolve()
-        logs_root.mkdir(parents=True, exist_ok=True)
-        for handler in handlers.values():
-            if not isinstance(handler, dict):
-                continue
-            class_name = str(handler.get("class", ""))
-            if "FileHandler" not in class_name:
-                continue
-            filename = handler.get("filename")
-            if not isinstance(filename, str) or not filename:
-                continue
-            path_text = filename.replace(
-                "${output_dir}", str(self._output_dir or "."),
-            )
-            path = Path(path_text)
-            handler["filename"] = str(logs_root / (path.name or "app.log"))
+        assigned: set[str] = set()
+        for logger_conf in prepared.get("loggers", {}).values():
+            if isinstance(logger_conf, dict):
+                for h_name in logger_conf.get("handlers", []):
+                    assigned.add(h_name)
+
+        root_handlers = [name for name in handlers if name not in assigned]
+        if root_handlers:
+            prepared["root"] = {"handlers": root_handlers, "level": "INFO"}
+
+        return prepared
 
     def _resolve_file_handler_paths(self, handlers: dict[str, Any]) -> None:
         output_dir = self._output_dir or Path(".")
@@ -345,40 +332,6 @@ class StructLogProvider(LoggingServiceProvider):
                         for h in logger_conf.get("handlers", [])
                         if h != handler_name
                     ]
-
-    def _ensure_requests_handler(self, config: dict[str, Any]) -> None:
-        handlers = config.setdefault("handlers", {})
-        formatters = config.setdefault("formatters", {})
-        loggers = config.setdefault("loggers", {})
-        if (
-            not isinstance(handlers, dict)
-            or not isinstance(formatters, dict)
-            or not isinstance(loggers, dict)
-        ):
-            raise ValueError("Invalid logging config structure.")
-
-        requests_path = self._resolve_requests_log_path().resolve()
-        requests_path.parent.mkdir(parents=True, exist_ok=True)
-        formatters.setdefault("plain", {"format": "%(message)s"})
-        handlers.setdefault(
-            "requests_file",
-            {
-                "class": "logging.handlers.RotatingFileHandler",
-                "filename": str(requests_path),
-                "maxBytes": 10_485_760,
-                "backupCount": 5,
-                "formatter": "plain",
-                "level": "INFO",
-            },
-        )
-        loggers.setdefault(
-            "request_logger",
-            {
-                "handlers": ["requests_file"],
-                "level": "INFO",
-                "propagate": False,
-            },
-        )
 
     # ------------------------------------------------------------------
     # Internal helpers — structlog

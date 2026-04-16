@@ -1,7 +1,7 @@
 """HTTP client helpers for structured logging via internal endpoints.
 
-Call: func:'configure' once during application startup (after the internal
-token is created) so that: func:`emit` and the typed request helpers can post
+Call: `configure` function once during application startup (after the internal
+token is created) so that: `emit` function and the typed request helpers can post
 to the logging service.
 
 When the client is not yet configured, every function is a silent no-op so that
@@ -13,19 +13,21 @@ from __future__ import annotations
 import logging as _stdlib_logging
 from typing import Any
 
-from src.api.internal.logging_routes import LOGGING_EMIT
+from src.api.internal.logging_routes import LOGGING_EMIT, LOGGING_API_REQUEST
 from src.api.internal.schemas.logging import (
-    LogRequest,
-    LogApiRequest,
     LogEmitRequest,
     LogProviderRequest,
-    LogTranslatorRequest, LogLevel,
+    LogTranslatorRequest,
+    LogApiRequest,
+    LogLevel,
 )
 
 _client: Any | None = None  # pylint: disable=invalid-name # httpx.AsyncClient when configured
 
+
 def _internal_endpoint(endpoint: str) -> str:
     return f"/internal{endpoint}"
+
 
 def configure(base_url: str, internal_token: str) -> None:
     """Create the persistent "httpx.AsyncClient" for logging calls."""
@@ -67,7 +69,7 @@ async def log_api_request(request: LogApiRequest) -> None:
         return
     try:
         await _client.post(
-            "/internal/logging/api-request",
+            _internal_endpoint(LOGGING_API_REQUEST),
             json=request.model_dump(mode="json"),
         )
     except Exception:  # pylint: disable=broad-exception-caught
@@ -81,7 +83,7 @@ async def log_provider_request(
     fields = request.to_request_emit_fields()
     await emit(
         LogEmitRequest(
-            logger_name="request_logger",
+            logger_name="requests",
             level=LogLevel.INFO,
             event="provider_request",
             fields=fields,
@@ -96,7 +98,7 @@ async def log_text_translation_request(
     fields = request.to_request_emit_fields()
     await emit(
         LogEmitRequest(
-            logger_name="request_logger",
+            logger_name="requests",
             level=LogLevel.INFO,
             event="translator_request",
             fields=fields,

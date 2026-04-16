@@ -125,7 +125,7 @@ async def log_provider_request(
         expected_type=LoggingService,
     )
     service.emit(
-        "request_logger",
+        "requests",
         "info",
         "provider_request",
         **body.to_request_emit_fields(),
@@ -153,7 +153,7 @@ async def log_text_translation_request(
         expected_type=LoggingService,
     )
     service.emit(
-        "request_logger",
+        "requests",
         "info",
         "translator_request",
         **body.to_request_emit_fields(),

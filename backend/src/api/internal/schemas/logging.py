@@ -53,7 +53,7 @@ class LoggerInfo(BaseModel):
 
 
 def _request_emit_kw_fields(body: BaseModel) -> dict[str, Any]:
-    """Shared dump for provider/translator bodies → ``request_logger`` ``emit`` kwargs."""
+    """Shared dump for provider/translator bodies → ``requests`` provider ``emit`` kwargs."""
     fields = body.model_dump(mode="json", by_alias=True, exclude_none=True)
     if "input" in fields:
         fields["input_data"] = fields.pop("input")
@@ -75,7 +75,7 @@ class LogProviderRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
     def to_request_emit_fields(self) -> dict[str, Any]:
-        """Build ``**fields`` for ``request_logger`` structured emit (``input`` → ``input_data``)."""
+        """Build ``**fields`` for ``requests`` provider structured emit (``input`` → ``input_data``)."""
         return _request_emit_kw_fields(self)
 
 
@@ -94,5 +94,5 @@ class LogTranslatorRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
     def to_request_emit_fields(self) -> dict[str, Any]:
-        """Build ``**fields`` for ``request_logger`` structured emit (``input`` → ``input_data``)."""
+        """Build ``**fields`` for ``requests`` provider structured emit (``input`` → ``input_data``)."""
         return _request_emit_kw_fields(self)
