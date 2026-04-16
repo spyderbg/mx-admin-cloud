@@ -76,7 +76,8 @@ async def emit_log(
         service_name=logging.SERVICE_NAME,
         expected_type=LoggingService,
     )
-    service.emit(body.logger_name, body.level, body.event, **body.fields)
+    logger_name = body.logger_name or "default"
+    service.emit(logger_name, body.level, body.event, **body.fields)
     return {"status": "ok"}
 
 

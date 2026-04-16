@@ -20,7 +20,7 @@
         },
         "file": {
           "class": "logging.FileHandler",
-          "level": "INFO",
+          "level": "TRACE",
           "formatter": "plain",
           "filename": "${output_dir}/results/logs/app.log",
           "encoding": "utf-8"

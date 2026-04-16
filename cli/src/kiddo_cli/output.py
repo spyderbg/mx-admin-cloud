@@ -2,6 +2,8 @@
 import json
 import re
 import sys
+import textwrap
+from http import HTTPStatus
 import httpx
 import requests
 from typing import Optional, Dict
@@ -10,20 +12,16 @@ from typing import Optional, Dict
 _BOX_WIDTH = 70
 
 # HTTP status code -> description (RFC 7231 and common extensions)
-HTTP_STATUS_DESCRIPTIONS: dict[int, str] = {
-    400: "Bad Request",
-    401: "Unauthorized",
-    403: "Forbidden",
-    404: "Not Found",
-    405: "Method Not Allowed",
-    408: "Request Timeout",
-    409: "Conflict",
+_KNOWN_HTTP_STATUS_CODES = (
+    400, 401, 403, 404, 405, 408, 409, 422, 429, 500, 502, 503, 504,
+)
+_STATUS_PHRASE_OVERRIDES: dict[int, str] = {
+    # Keep legacy CLI wording unchanged while using stdlib status metadata.
     422: "Unprocessable Entity",
-    429: "Too Many Requests",
-    500: "Internal Server Error",
-    502: "Bad Gateway",
-    503: "Service Unavailable",
-    504: "Gateway Timeout",
+}
+HTTP_STATUS_DESCRIPTIONS: dict[int, str] = {
+    code: _STATUS_PHRASE_OVERRIDES.get(code, HTTPStatus(code).phrase)
+    for code in _KNOWN_HTTP_STATUS_CODES
 }
 
 
@@ -73,6 +71,32 @@ def _box_line(content: str) -> str:
     """One box row with right-side closing; exactly _BOX_WIDTH chars between the two │."""
     inner = (content + " " * _BOX_WIDTH)[:_BOX_WIDTH]
     return "  │" + inner + "│"
+
+
+def _wrapped_box_lines(
+        content: str,
+        initial_indent: str = "",
+        subsequent_indent: str = "",
+) -> list[str]:
+    """Wrap content into box-safe lines that fit the inner width."""
+    wrapped_lines: list[str] = []
+    segments = content.splitlines() or [""]
+    for segment in segments:
+        wrapped = textwrap.wrap(
+            segment,
+            width=_BOX_WIDTH,
+            initial_indent=initial_indent,
+            subsequent_indent=subsequent_indent,
+            replace_whitespace=False,
+            drop_whitespace=False,
+            break_long_words=True,
+            break_on_hyphens=False,
+        )
+        if wrapped:
+            wrapped_lines.extend(wrapped)
+        else:
+            wrapped_lines.append("")
+    return wrapped_lines
 
 
 def _border_top() -> str:
@@ -133,10 +157,24 @@ def print_http_auto_failed(url: str, details: str) -> None:
 
     for key, value in parsed_error.items():
         if value is not None:
-            details_lines.append(_box_line(f" '{key}': '{value}',"))
+            details_lines.extend(
+                _box_line(line)
+                for line in _wrapped_box_lines(
+                    f"'{key}': '{value}',",
+                    initial_indent="  ",
+                    subsequent_indent="  ",
+                )
+            )
 
     if len(details_lines) == 0:
-        details_lines.append(_box_line(f" {details}"))
+        details_lines.extend(
+            _box_line(line)
+            for line in _wrapped_box_lines(
+                details,
+                initial_indent="  ",
+                subsequent_indent="  ",
+            )
+        )
 
         # print(f"details: {parsed_error}")
 

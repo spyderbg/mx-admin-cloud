@@ -9,11 +9,13 @@ from pydantic import BaseModel, Field
 
 
 class LogLevel(str, Enum):
+    TRACE = "trace"
     DEBUG = "debug"
     INFO = "info"
     WARNING = "warning"
     ERROR = "error"
     CRITICAL = "critical"
+    FATAL = "fatal"
 
 
 class StatusResponse(BaseModel):
@@ -31,7 +33,7 @@ class LogRequest(BaseModel):
 class LogEmitRequest(LogRequest):
     """Body for ``POST /internal/logging/emit``."""
 
-    logger_name: str = Field(..., description="Logger name")
+    logger_name: str | None = Field(None, description="Logger name; omit to use the default logger")
 
 
 class LogApiRequest(LogRequest):

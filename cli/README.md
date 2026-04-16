@@ -27,6 +27,8 @@ Or: `pip uninstall kiddo-cli`
 - **Automatic (default):** The CLI resolves auth from `KIDDO_TOKEN` first; if not set, it tries Unix socket login (`/tmp/kiddo-backend.sock`) using `KIDDO_USER` / `KIDDO_PASSWORD` (default `admin` / `admin`), then falls back to HTTP login with the same credentials when no socket file exists (non-Windows).
 - **User management (`users` and `list users`):** On Linux and macOS, the backend only accepts these calls over the CLI Unix socket. Run the backend with `cd backend && ./uvicorn_start.sh` so both HTTP and the socket are up; the CLI sends those requests over the socket automatically when it exists.
 - **Manual token:** Set `KIDDO_TOKEN` or use `--token`.
+- **HTTP auth errors:** Long backend error details are wrapped to the CLI error box width with a two-space indent on each wrapped line, so the message stays readable without overflowing.
+- **HTTP status labels:** Request error status descriptions use Python stdlib `http.HTTPStatus` reason phrases, with a compatibility label for `422` (`Unprocessable Entity`).
 
 Env:
 

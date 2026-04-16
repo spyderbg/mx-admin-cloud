@@ -30,6 +30,16 @@ def _optional_import(module_name: str) -> Any | None:
 
 _structlog = _optional_import("structlog")
 
+_LEVEL_STYLES: dict[str, str] = {
+    "TRC": "\033[90m",    # grey
+    "DBG": "\033[34m",    # blue
+    "INF": "\033[32m",    # green
+    "WRN": "\033[33m",    # yellow
+    "ERR": "\033[31m",    # red
+    "CRT": "\033[1;31m",  # bold red
+    "FTL": "\033[1;35m",  # bold magenta
+}
+
 _DEFAULT_REQUEST_FIELDS: dict[str, bool] = {
     "provider": True,
     "translator": True,
@@ -108,11 +118,23 @@ class StructLogProvider(LoggingServiceProvider):
             return logging.getLogger(name)
         return _structlog.get_logger(name)
 
+    # Levels that stdlib/structlog silently alias to another level, losing
+    # the original name before processors run.  We inject "_original_level"
+    # so that _abbreviate_log_level can recover the intended abbreviation.
+    _ALIASED_LEVELS: dict[str, str] = {
+        "fatal": "critical",   # structlog: fatal = critical (same fn object)
+        "trace": "debug",      # not a stdlib level; closest equivalent
+    }
+
     def emit(self, logger_name: str, level: str, event: str, **fields: Any) -> None:
         if event in ("provider_request", "translator_request"):
             fields = self._filtered_request_log_fields(event, fields)
         log = self.get_logger(logger_name)
-        method = getattr(log, level.lower(), None) or log.info
+        level_lower = level.lower()
+        dispatch_level = self._ALIASED_LEVELS.get(level_lower, level_lower)
+        if dispatch_level != level_lower:
+            fields = {**fields, "_original_level": level_lower}
+        method = getattr(log, dispatch_level, None) or log.info
         method(event, **fields)
 
     def bind_request_id(self, request_id: str) -> None:
@@ -337,6 +359,27 @@ class StructLogProvider(LoggingServiceProvider):
     # Internal helpers — structlog
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _abbreviate_log_level(
+        _logger: Any, _method: str, event_dict: dict[str, Any],
+    ) -> dict[str, Any]:
+        _LEVEL_ABBREV: dict[str, str] = {
+            "trace":    "TRC",
+            "debug":    "DBG",
+            "info":     "INF",
+            "warning":  "WRN",
+            "error":    "ERR",
+            "critical": "CRT",
+            "fatal":    "FTL",
+        }
+        # Prefer the original level injected by emit() for aliased levels
+        # (e.g. "fatal" which structlog dispatches as "critical").
+        level = event_dict.pop("_original_level", event_dict.get("level", ""))
+        event_dict["level"] = _LEVEL_ABBREV.get(
+            level.lower(), level.upper()[:3],
+        )
+        return event_dict
+
     def _configure_structlog(self, structlog_config: dict[str, Any]) -> None:
         if _structlog is None:
             return
@@ -347,13 +390,16 @@ class StructLogProvider(LoggingServiceProvider):
         if renderer_name == "json":
             renderer = _structlog.processors.JSONRenderer()
         else:
-            renderer = _structlog.dev.ConsoleRenderer(colors=True)
+            renderer = _structlog.dev.ConsoleRenderer(
+                colors=True, level_styles=_LEVEL_STYLES,
+            )
 
         _structlog.configure(
             processors=[
                 _structlog.contextvars.merge_contextvars,
                 _structlog.stdlib.filter_by_level,
                 _structlog.processors.add_log_level,
+                self._abbreviate_log_level,
                 _structlog.processors.TimeStamper(fmt="iso", utc=True),
                 _structlog.processors.StackInfoRenderer(),
                 _structlog.processors.format_exc_info,

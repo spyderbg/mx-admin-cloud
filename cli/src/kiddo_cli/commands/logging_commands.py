@@ -15,15 +15,16 @@ def register(app: typer.Typer) -> None:
 
     @app.command("emit")
     def emit_log(
-            logger_name: str = typer.Argument(
-                None,
-                help="Logger name (target channel)",
-            ),
             event: str = typer.Argument(
                 None,
                 help="Log event name",
             ),
             *,
+            logger_name: Optional[str] = typer.Option(
+                None,
+                "--logger",
+                help="Logger name (target channel); omit to use the default logger",
+            ),
             level: str = typer.Option(
                 "info",
                 "--level",
@@ -50,7 +51,7 @@ def register(app: typer.Typer) -> None:
                 help="Auth token",
             ),
     ):
-        """Emit a structured log message to a named logger channel."""
+        """Emit a structured log message. Logger name is optional; omit to use the default logger."""
 
         if data:
             if data.startswith("@"):
@@ -59,16 +60,17 @@ def register(app: typer.Typer) -> None:
             else:
                 payload = json.loads(data)
         else:
-            if not all([logger_name, event]):
+            if not event:
                 raise typer.BadParameter(
-                    "Provide either positional arguments (logger_name event) or --json"
+                    "Provide either the positional argument (event) or --json"
                 )
             payload = {
-                "logger_name": logger_name,
                 "level": level,
                 "event": event,
                 "fields": json.loads(fields) if fields else {},
             }
+            if logger_name:
+                payload["logger_name"] = logger_name
 
         def _run(t: str):
             result = internal_post("/logging/emit", token=t, json=payload)
