@@ -2,9 +2,18 @@
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+
+class LogLevel(str, Enum):
+    DEBUG = "debug"
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+    CRITICAL = "critical"
 
 
 class StatusResponse(BaseModel):
@@ -13,15 +22,36 @@ class StatusResponse(BaseModel):
     status: str
 
 
-class LogEmitRequest(BaseModel):
-    """Body for ``POST /internal/logging/emit``."""
-
-    logger_name: str
-    level: str = "info"
-    event: str
+class LogRequest(BaseModel):
+    level: LogLevel = Field(LogLevel.INFO, description="Log level, defaults to 'info'")
+    event: str = Field(..., description="Log event name")
     fields: dict[str, Any] = Field(default_factory=dict)
 
 
+class LogEmitRequest(LogRequest):
+    """Body for ``POST /internal/logging/emit``."""
+
+    logger_name: str = Field(..., description="Logger name")
+
+
+class LogApiRequest(LogRequest):
+    """Body for ``POST /internal/logging/api-request``."""
+
+    api_path: str = Field(..., description="HTTP path")
+    api_method: str = Field(..., description="HTTP method")
+    api_status: int = Field(..., description="HTTP status code")
+    api_duration: float = Field(..., description="Request duration in seconds")
+
+
+def _request_emit_kw_fields(body: BaseModel) -> dict[str, Any]:
+    """Shared dump for provider/translator bodies → ``request_logger`` ``emit`` kwargs."""
+    fields = body.model_dump(mode="json", by_alias=True, exclude_none=True)
+    if "input" in fields:
+        fields["input_data"] = fields.pop("input")
+    return fields
+
+
+# TODO: not final
 class LogProviderRequest(BaseModel):
     """Body for ``POST /internal/logging/provider-request``."""
 
@@ -35,7 +65,12 @@ class LogProviderRequest(BaseModel):
 
     model_config = {"populate_by_name": True}
 
+    def to_request_emit_fields(self) -> dict[str, Any]:
+        """Build ``**fields`` for ``request_logger`` structured emit (``input`` → ``input_data``)."""
+        return _request_emit_kw_fields(self)
 
+
+# TODO: not final
 class LogTranslatorRequest(BaseModel):
     """Body for ``POST /internal/logging/translator-request``."""
 
@@ -48,3 +83,7 @@ class LogTranslatorRequest(BaseModel):
     response_duration: float | None = None
 
     model_config = {"populate_by_name": True}
+
+    def to_request_emit_fields(self) -> dict[str, Any]:
+        """Build ``**fields`` for ``request_logger`` structured emit (``input`` → ``input_data``)."""
+        return _request_emit_kw_fields(self)

@@ -33,6 +33,35 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - OAuth2PasswordBearer: []
+  /internal/logging/api-request:
+    post:
+      tags:
+      - internal-logging
+      summary: Emit an API request log message
+      description: Post a structured log message to the 'requests' logger. ``level``
+        and ``event`` mirror structlog semantics.
+      operationId: emit_api_request_log_internal_logging_api_request_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
   /internal/logging/provider-request:
     post:
       tags:
@@ -110,26 +139,37 @@ components:
       title: HTTPValidationError
     LogEmitRequest:
       properties:
-        logger_name:
-          type: string
-          title: Logger Name
         level:
-          type: string
-          title: Level
+          $ref: '#/components/schemas/LogLevel'
+          description: Log level, defaults to 'info'
           default: info
         event:
           type: string
           title: Event
+          description: Log event name
         fields:
           additionalProperties: true
           type: object
           title: Fields
+        logger_name:
+          type: string
+          title: Logger Name
+          description: Logger name
       type: object
       required:
-      - logger_name
       - event
+      - logger_name
       title: LogEmitRequest
       description: Body for ``POST /internal/logging/emit``.
+    LogLevel:
+      type: string
+      enum:
+      - debug
+      - info
+      - warning
+      - error
+      - critical
+      title: LogLevel
     LogProviderRequest:
       properties:
         provider:
@@ -170,6 +210,24 @@ components:
       type: object
       title: LogProviderRequest
       description: Body for ``POST /internal/logging/provider-request``.
+    LogRequest:
+      properties:
+        level:
+          $ref: '#/components/schemas/LogLevel'
+          description: Log level, defaults to 'info'
+          default: info
+        event:
+          type: string
+          title: Event
+          description: Log event name
+        fields:
+          additionalProperties: true
+          type: object
+          title: Fields
+      type: object
+      required:
+      - event
+      title: LogRequest
     LogTranslatorRequest:
       properties:
         translator:

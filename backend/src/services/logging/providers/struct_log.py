@@ -110,6 +110,15 @@ class StructLogProvider(LoggingServiceProvider):
         return _structlog.get_logger(name)
 
     def emit(self, logger_name: str, level: str, event: str, **fields: Any) -> None:
+        if (
+            logger_name == "request_logger"
+            and event in ("provider_request", "translator_request")
+        ):
+            fields = self._filtered_request_log_fields(event, fields)
+            if _structlog is None:
+                req_log = logging.getLogger("request_logger")
+                req_log.info("%s %s", event, json.dumps(fields, ensure_ascii=False))
+                return
         log = self.get_logger(logger_name)
         method = getattr(log, level.lower(), None) or log.info
         method(event, **fields)
@@ -142,47 +151,29 @@ class StructLogProvider(LoggingServiceProvider):
     # Request logging
     # ------------------------------------------------------------------
 
-    def log_provider_request(
-        self,
-        *,
-        provider: str | None = None,
-        model: str | None = None,
-        actor: str | None = None,
-        voice_id: str | None = None,
-        language: str | None = None,
-        input_data: Any | None = None,
-        response_duration: float | None = None,
-    ) -> None:
+    def _filtered_request_log_fields(
+        self, event: str, raw: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Apply ``request_log.fields`` toggles; used by :meth:`emit` for request events."""
         payload: dict[str, Any] = {}
-        if provider is not None and self._field_enabled("provider"):
-            payload["provider"] = provider
+        if event == "provider_request":
+            provider = raw.get("provider")
+            if provider is not None and self._field_enabled("provider"):
+                payload["provider"] = provider
+        else:
+            translator = raw.get("translator")
+            if translator is not None and self._field_enabled("translator"):
+                payload["translator"] = translator
         self._apply_common_fields(
-            payload, model=model, actor=actor, voice_id=voice_id,
-            language=language, input_data=input_data,
-            response_duration=response_duration,
+            payload,
+            model=raw.get("model"),
+            actor=raw.get("actor"),
+            voice_id=raw.get("voice_id"),
+            language=raw.get("language"),
+            input_data=raw.get("input_data"),
+            response_duration=raw.get("response_duration"),
         )
-        self._emit_request("provider_request", payload)
-
-    def log_translator_request(
-        self,
-        *,
-        translator: str | None = None,
-        model: str | None = None,
-        actor: str | None = None,
-        voice_id: str | None = None,
-        language: str | None = None,
-        input_data: Any | None = None,
-        response_duration: float | None = None,
-    ) -> None:
-        payload: dict[str, Any] = {}
-        if translator is not None and self._field_enabled("translator"):
-            payload["translator"] = translator
-        self._apply_common_fields(
-            payload, model=model, actor=actor, voice_id=voice_id,
-            language=language, input_data=input_data,
-            response_duration=response_duration,
-        )
-        self._emit_request("translator_request", payload)
+        return payload
 
     # ------------------------------------------------------------------
     # Internal helpers — request logging
@@ -216,16 +207,6 @@ class StructLogProvider(LoggingServiceProvider):
             payload["response_duration"] = round(float(response_duration), 6)
         if self._field_enabled("timestamp"):
             payload["timestamp"] = datetime.now(timezone.utc).isoformat()
-
-    def _emit_request(self, event_name: str, payload: dict[str, Any]) -> None:
-        if self._requests_logger is None:
-            return
-        if _structlog is not None:
-            self._requests_logger.info(event_name, **payload)
-            return
-        self._requests_logger.info(
-            "%s %s", event_name, json.dumps(payload, ensure_ascii=False),
-        )
 
     def _apply_request_log_config(self, config: dict[str, Any] | None) -> None:
         if not isinstance(config, dict):

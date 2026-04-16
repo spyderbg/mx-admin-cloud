@@ -13,6 +13,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from pydantic import BaseModel, Field
 
 from src.core.languages import normalize_language_code
 
@@ -55,6 +56,17 @@ class Service:
         )
 
 
+class ServiceProviderInfo(BaseModel):
+    """Metadata for one configured translator provider (GET /internal/translators)."""
+
+    name: str = Field(..., description="Human-readable name")
+    service: str = Field(..., description="Service name")
+    provider: str = Field(..., description="Provider name")
+    enabled: bool = Field(..., description="Whether the provider is enabled")
+    priority: int = Field(..., description="Priority of the provider")
+    config_path: str = Field(..., description="Path to the provider's config file")
+
+
 class ServiceProvider:
     """Data representation of one `service_provider` config JSON file.
 
@@ -70,22 +82,22 @@ class ServiceProvider:
     """
 
     def __init__(
-        self,
-        name: str,
-        service_name: str,
-        provider_name: str,
-        enabled: bool,
-        priority: int,
-        config: dict[str, Any],
-        config_path: Path,
-        base_dir: Path,
+            self,
+            name: str,
+            service_name: str,
+            provider_name: str,
+            enabled: bool,
+            priority: int,
+            config: dict[str, Any],
+            config_path: Path,
+            base_dir: Path,
     ) -> None:
         self.name = name
         self.service = service_name
         self.provider = provider_name
         self.enabled = enabled
         self.priority = priority
-        self.config = config          # raw "config" dict, stored as-is
+        self.config = config  # raw "config" dict, stored as-is
         self.config_path = config_path
         self.base_dir = base_dir
 
@@ -131,6 +143,10 @@ class ServiceProvider:
         """Return whether this provider instance should run."""
         return bool(self.enabled)
 
+    def get_priority(self) -> int:
+        """Return the priority of this provider instance."""
+        return self.priority
+
     def api_key_env_name(self) -> str:
         """Return the expected environment-variable name for this provider's API key."""
         return f"{self.name.upper()}_API_KEY"
@@ -138,3 +154,13 @@ class ServiceProvider:
     def resolve_api_key(self) -> str:
         """Read and return the provider API key from the environment."""
         return os.getenv(self.api_key_env_name(), "")
+
+    def get_info(self) -> ServiceProviderInfo:
+        """Return a structured representation of this provider."""
+        return ServiceProviderInfo(
+            name=self.name,
+            service=self.service,
+            provider=self.provider,
+            enabled=self.enabled,
+            priority=self.priority,
+        )

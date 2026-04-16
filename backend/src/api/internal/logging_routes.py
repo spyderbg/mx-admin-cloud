@@ -1,7 +1,7 @@
 """Internal logging endpoints.
 
-Exposes structured-log emission through the ``LoggingService``.
-All endpoints require a JWT with role ``internal`` or ``admin``.
+Exposes structured-log emission through the "LoggingService".
+All endpoints require a JWT with role "internal" or "admin".
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends
 
 from src.api.dependencies import get_registry, require_internal
 from src.api.internal.schemas.logging import (
+    LogRequest,
     LogEmitRequest,
     LogProviderRequest,
     LogTranslatorRequest,
@@ -20,11 +21,16 @@ from src.services import logging
 from src.services.logging.service import LoggingService
 from src.services.service_registry import ServiceRegistry
 
+LOGGING_EMIT = "/logging/emit"
+LOGGING_API_REQUEST = "/logging/api-request"
+LOGGING_PROVIDER_REQUEST = "/logging/provider-request"
+LOGGING_TRANSLATOR_REQUEST = "/logging/translator-request"
+
 router = APIRouter(prefix="/internal", tags=["internal-logging"])
 
 
 @router.post(
-    "/logging/emit",
+    LOGGING_EMIT,
     response_model=StatusResponse,
     summary="Emit a structured log message",
     description=(
@@ -49,7 +55,31 @@ async def emit_log(
 
 
 @router.post(
-    "/logging/provider-request",
+    LOGGING_API_REQUEST,
+    response_model=StatusResponse,
+    summary="Emit an API request log message",
+    description=(
+            "Post a structured log message to the 'requests' logger. "
+            "``level`` and ``event`` mirror structlog semantics."
+    ),
+)
+async def emit_api_request_log(
+        body: LogRequest,
+        registry: ServiceRegistry = Depends(get_registry),
+        _user: dict = Depends(require_internal),
+) -> dict[str, str]:
+    """Emit an API request log message through the logging service."""
+    service = get_typed_service(
+        registry=registry,
+        service_name=logging.SERVICE_NAME,
+        expected_type=LoggingService,
+    )
+    service.emit("requests", body.level, body.event, **body.fields)
+    return {"status": "ok"}
+
+
+@router.post(
+    LOGGING_PROVIDER_REQUEST,
     response_model=StatusResponse,
     summary="Log a TTS/STT provider request",
     description=(
@@ -68,20 +98,17 @@ async def log_provider_request(
         service_name=logging.SERVICE_NAME,
         expected_type=LoggingService,
     )
-    service.log_provider_request(
-        provider=body.provider,
-        model=body.tts_model,
-        actor=body.actor,
-        voice_id=body.voice_id,
-        language=body.language,
-        input_data=body.input_data,
-        response_duration=body.response_duration,
+    service.emit(
+        "request_logger",
+        "info",
+        "provider_request",
+        **body.to_request_emit_fields(),
     )
     return {"status": "ok"}
 
 
 @router.post(
-    "/logging/translator-request",
+    LOGGING_TRANSLATOR_REQUEST,
     response_model=StatusResponse,
     summary="Log a translator request",
     description=(
@@ -99,13 +126,10 @@ async def log_text_translation_request(
         service_name=logging.SERVICE_NAME,
         expected_type=LoggingService,
     )
-    service.log_translator_request(
-        translator=body.translator,
-        model=body.tts_model,
-        actor=body.actor,
-        voice_id=body.voice_id,
-        language=body.language,
-        input_data=body.input_data,
-        response_duration=body.response_duration,
+    service.emit(
+        "request_logger",
+        "info",
+        "translator_request",
+        **body.to_request_emit_fields(),
     )
     return {"status": "ok"}

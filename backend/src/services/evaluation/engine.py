@@ -1,9 +1,9 @@
 """Audio evaluation with transcription and Levenshtein-based scoring.
 
-Each provider's evaluate config specifies which STT backend to use via
-``stt_provider``. Currently supported: ``openai``, ``elevenlabs``, and
-``speaktor`` (Transkriptor local-file transcription workflow).
-API keys are resolved by convention from ``{PROVIDER_NAME}_API_KEY``
+Each provider's evaluated config specifies which STT backend to use via
+"stt_provider". Currently supported: "openai", "elevenlabs", and
+"speaktor" (Transkriptor local-file transcription workflow).
+API keys are resolved by convention from "{PROVIDER_NAME}_API_KEY"
 environment variables.
 """
 
@@ -72,7 +72,7 @@ class EvaluationEngine:
 
         Args:
             generated_audio: The audio to evaluate.
-            evaluate_config: The ``evaluate`` sub-dict from the provider config.
+            evaluate_config: The "evaluate" sub-dict from the provider config.
             client: An async HTTP client.
             provider_name: Fallback STT provider name when not set in *evaluate_config*.
         """
@@ -225,10 +225,10 @@ class EvaluationEngine:
     ) -> str:
         """Transcribe via the Transkriptor 3-step local-file workflow.
 
-        1. POST  /local_file/get_upload_url  -> upload_url, public_url
-        2. PUT   upload_url                  -> upload raw audio bytes
-        3. POST  /local_file/initiate_transcription -> order_id
-        4. Poll  GET /files/{order_id}/content until status == "Completed"
+        1. POST /local_file/get_upload_url -> upload_url, public_url
+        2. PUT upload_url -> upload raw audio bytes
+        3. POST /local_file/initiate_transcription -> order_id
+        4. Poll GET /files/{order_id}/content until status == "Completed"
         """
         base_url = "https://api.tor.app/developer"
         language = to_bcp47(
@@ -244,7 +244,7 @@ class EvaluationEngine:
 
         started_at = time.perf_counter()
 
-        # Step 1 -- obtain a pre-signed upload URL
+        # Step 1 -- get a pre-signed upload URL
         upload_meta_resp = await client.post(
             f"{base_url}/transcription/local_file/get_upload_url",
             headers=headers,
