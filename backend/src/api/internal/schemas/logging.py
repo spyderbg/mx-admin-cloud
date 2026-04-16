@@ -43,6 +43,15 @@ class LogApiRequest(LogRequest):
     api_duration: float = Field(..., description="Request duration in seconds")
 
 
+class LoggerInfo(BaseModel):
+    """Info about a single stdlib logger returned by "GET /internal/logging/loggers"."""
+
+    name: str = Field(..., description="Logger name ('root' for the root logger)")
+    level: str = Field(..., description="Effective log level name (e.g. 'DEBUG', 'INFO', 'NOTSET')")
+    active: bool = Field(..., description="True when the logger has at least one handler and is not disabled")
+    handlers: list[str] = Field(default_factory=list, description="Handler class names attached to this logger")
+
+
 def _request_emit_kw_fields(body: BaseModel) -> dict[str, Any]:
     """Shared dump for provider/translator bodies → ``request_logger`` ``emit`` kwargs."""
     fields = body.model_dump(mode="json", by_alias=True, exclude_none=True)

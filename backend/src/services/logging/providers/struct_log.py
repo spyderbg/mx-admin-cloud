@@ -56,7 +56,7 @@ class StructLogProvider(LoggingServiceProvider):
     "structlog"
         "renderer" ("console" | "json") and optional processor list.
     "request_log"
-        "path" (relative to output dir) and per-field "fields" toggles
+        "path" (relative to output dir) and per-field "fields" toggle
         for the dedicated request logger channel.
     """
 
@@ -154,7 +154,7 @@ class StructLogProvider(LoggingServiceProvider):
     def _filtered_request_log_fields(
         self, event: str, raw: dict[str, Any],
     ) -> dict[str, Any]:
-        """Apply ``request_log.fields`` toggles; used by :meth:`emit` for request events."""
+        """Apply "request_log.fields" toggles; used by :meth:`emit` for request events."""
         payload: dict[str, Any] = {}
         if event == "provider_request":
             provider = raw.get("provider")

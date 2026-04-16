@@ -19,14 +19,40 @@ from src.api.internal.schemas.logging import (
 from src.api.service_resolver import get_typed_service
 from src.services import logging
 from src.services.logging.service import LoggingService
+from src.services.models import ServiceProviderInfo
 from src.services.service_registry import ServiceRegistry
 
+LOGGING_LOGGERS = "/logging/loggers"
 LOGGING_EMIT = "/logging/emit"
 LOGGING_API_REQUEST = "/logging/api-request"
 LOGGING_PROVIDER_REQUEST = "/logging/provider-request"
 LOGGING_TRANSLATOR_REQUEST = "/logging/translator-request"
 
 router = APIRouter(prefix="/internal", tags=["internal-logging"])
+
+
+@router.get(
+    LOGGING_LOGGERS,
+    response_model=list[ServiceProviderInfo],
+    summary="List logging service providers",
+    description=(
+        "Return the logging service providers that the emit endpoint routes through. "
+        "By default only enabled providers are returned. "
+        "Pass 'all=true' to include every configured provider regardless of state."
+    ),
+)
+async def list_loggers(
+        all: bool = False,
+        registry: ServiceRegistry = Depends(get_registry),
+        _user: dict = Depends(require_internal),
+) -> list[dict]:
+    """Return enabled (or all) logging service providers."""
+    service = get_typed_service(
+        registry=registry,
+        service_name=logging.SERVICE_NAME,
+        expected_type=LoggingService,
+    )
+    return service.get_all_loggers() if all else service.get_active_loggers()
 
 
 @router.post(

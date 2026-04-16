@@ -66,6 +66,41 @@ def register(app: typer.Typer) -> None:
 
         run_with_auth(url, token, _run)
 
+    @app.command("loggers")
+    def list_loggers(
+            include_all: bool = typer.Option(False, "--all", help="Include all loggers, not just active ones"),
+            url: str = typer.Option(None, "--url", help="Backend URL"),
+            token: str | None = typer.Option(None, "--token", help="Auth token"),
+    ):
+        """List registered stdlib loggers. By default, shows only active loggers (those with handlers)."""
+
+        def _run(t: str):
+            params = {"all": "true"} if include_all else None
+            result = internal_get("/logging/loggers", token=t, params=params)
+            if not isinstance(result, list):
+                print_json(result)
+                return
+
+            label = "All loggers:" if include_all else "Active loggers:"
+            print(f"[bold green]{label} ({len(result)})[/bold green]")
+            for p in result:
+                name = escape(str(p.get("name", "<unnamed>")))
+                provider = str(p.get("provider", "—"))
+                enabled = bool(p.get("enabled", False))
+                priority = p.get("priority")
+
+                state_color = "green" if enabled else "red"
+                state_text = "enabled" if enabled else "disabled"
+                priority_suffix = f"  [dim](priority: {priority})[/dim]" if priority is not None else ""
+                print(
+                    f"- [bold]{name}[/bold]  "
+                    f"[{state_color}]{state_text}[/{state_color}]  "
+                    f"[dim]provider:[/dim] [cyan]{escape(provider)}[/cyan]"
+                    f"{priority_suffix}"
+                )
+
+        run_with_auth(url, token, _run)
+
     @app.command("services")
     def list_services(
             enabled: bool | None = typer.Option(None, "--enabled/--disabled", help="Filter by enabled state"),
