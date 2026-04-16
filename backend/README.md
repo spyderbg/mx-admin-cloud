@@ -37,7 +37,7 @@ globally.
 From the repository root, run:
 
 ```bash
-python scripts/validate_buld.py
+python scripts/validate_build.py
 ```
 
 On Unix-like systems you can still use:
@@ -170,7 +170,8 @@ Base URL for all routes below: `/api/v1`. Protected routes require `Authorizatio
 ### Users
 
 User routes are under `/api/v1/users`* and require both admin role and Unix socket access.  
-When `DEBUG_MODE=true`, those two dependencies are overridden at startup for local debugging.
+On Windows, Unix socket checks are bypassed automatically.  
+When `DEBUG_MODE=true`, both Unix socket and admin-role dependencies are overridden at startup for local debugging.
 
 | Method   | Path                                                          | Auth              | Description                                                       |
 |----------|---------------------------------------------------------------|-------------------|-------------------------------------------------------------------|
@@ -234,7 +235,9 @@ work.
 
 | Method | Path                                                                       | Description                                            |
 |--------|----------------------------------------------------------------------------|--------------------------------------------------------|
+| `GET`  | [/internal/logging/loggers](src/api/internal/logging_routes.py)           | List active logging providers (or all with `?all=true`). |
 | `POST` | [/internal/logging/emit](src/api/internal/logging_routes.py)               | Emit a structured log message to the named logger.     |
+| `POST` | [/internal/logging/api-request](src/api/internal/logging_routes.py)        | Emit a structured API request log to the `requests` logger. |
 | `POST` | [/internal/logging/provider-request](src/api/internal/logging_routes.py)   | Log a TTS/STT provider request via the request logger. |
 | `POST` | [/internal/logging/translator-request](src/api/internal/logging_routes.py) | Log a translator request via the request logger.       |
 
@@ -430,8 +433,8 @@ TTS providers and translators are configured via JSON files in `config/`:
 ```text
 config/
 ├── logging/
-│   ├── default.json              # struct_log provider (dictConfig + structlog)
-│   └── requests.json             # struct_log provider (request_log settings only)
+│   ├── default.json              # struct_log provider (console + file handlers, structlog)
+│   └── requests.json             # struct_log provider (request file handler, field filtering)
 ├── voice_optimizers/
 │   ├── ffmpeg_high.json
 │   ├── ffmpeg_low.json
@@ -439,7 +442,8 @@ config/
 ├── text_to_speech/
 │   ├── openai.json
 │   ├── elevenlabs.json
-│   └── speaktor.json
+│   ├── speaktor.json
+│   └── static.json
 └── text_translation/
     ├── openai_en_es.json
     ├── openai_en_fr.json
@@ -565,24 +569,45 @@ requires the `pydub` Python package (included in `requirements.txt`).
 ### Logging
 
 Logging is a registered service (`SERVICE_NAME = "logging"`) configured via JSON files in
-`config/logging/`. Each file uses the standard `service_provider` envelope.
+`config/logging/`. Each file uses the standard `service_provider` envelope and creates an
+independent provider instance. The only implementation is `struct_log`
+(`src/services/logging/providers/struct_log.py`).
 
-The only provider implementation is `struct_log` (`src/services/logging/providers/struct_log.py`),
-which configures stdlib `dictConfig`, structlog processors, and the dedicated request-logger channel
-from a single config payload.
+**Name-based routing.** `LoggingService.emit(logger_name, …)` looks up the provider whose
+config-file name matches `logger_name`. If no match, falls back to the provider named `"default"`.
+For example, `emit("requests", …)` routes to the provider from `requests.json`; any unmatched
+name routes to `default.json`.
 
-`service_provider.config` sections:
+`service_provider.config` keys (all optional except `handlers`):
 
-| Key           | Purpose                                                                                     |
-|---------------|---------------------------------------------------------------------------------------------|
-| `logging`     | Stdlib `dictConfig` blob (handlers, formatters, root logger). Supports `active` flag and    |
-|               | `${output_dir}` placeholder in handler `filename` values. Seq handlers are auto-disabled    |
-|               | when `seqlog` is missing or unreachable.                                                    |
-| `structlog`   | Structlog options. `renderer`: `console` (default in dev) or `json`.                        |
-| `request_log` | Request-logger channel. `path`: log file relative to output dir (default                    |
-|               | `results/requests.log`). `fields`: per-field boolean toggles for request payload filtering. |
+| Key           | Purpose                                                                           |
+|---------------|-----------------------------------------------------------------------------------|
+| `formatters`  | Python logging formatter definitions.                                             |
+| `handlers`    | Handler definitions. Custom `active` flag (default `true`) controls inclusion.    |
+|               | `${output_dir}` placeholder is expanded in `filename` values. Seq handlers are    |
+|               | auto-disabled when `seqlog` is missing or unreachable.                            |
+| `loggers`     | Named stdlib logger definitions (e.g. `requests` with `propagate: false`).        |
+| `structlog`   | Structlog options. `renderer`: `"console"` (default in dev) or `"json"`.          |
+| `request_log` | Per-field `fields` boolean toggles for request-event payload filtering.            |
 
-Example (`config/logging/default.json`):
+The provider auto-injects `version: 1` and `disable_existing_loggers: false` into the
+`dictConfig` dict. Active handlers not assigned to any named logger in `loggers` are
+automatically added to `root.handlers`.
+
+Each handler may reference its own formatter, allowing different output formats per handler:
+
+```json
+"formatters": {
+  "plain": { "format": "%(message)s" },
+  "detailed": { "format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s" }
+},
+"handlers": {
+  "console": { "formatter": "plain", "..." : "..." },
+  "file":    { "formatter": "detailed", "..." : "..." }
+}
+```
+
+General logging config (`config/logging/default.json`):
 
 ```json
 {
@@ -590,25 +615,41 @@ Example (`config/logging/default.json`):
     "service": "logging",
     "provider": "struct_log",
     "enabled": true,
-    "priority": 1,
+    "priority": 2,
+    "version": "1.0",
     "config": {
-      "logging": {
-        "version": 1,
-        "handlers": {
-          "console": {
-            "class": "logging.StreamHandler"
-          }
+      "formatters": {
+        "plain": { "format": "%(message)s" }
+      },
+      "handlers": {
+        "console": {
+          "class": "logging.StreamHandler",
+          "level": "INFO",
+          "formatter": "plain",
+          "stream": "ext://sys.stdout"
+        },
+        "file": {
+          "class": "logging.FileHandler",
+          "level": "INFO",
+          "formatter": "plain",
+          "filename": "${output_dir}/results/logs/app.log",
+          "encoding": "utf-8"
+        },
+        "seq": {
+          "active": false,
+          "class": "seqlog.structured_logging.SeqLogHandler",
+          "level": "INFO",
+          "server_url": "http://localhost:5341",
+          "api_key": ""
         }
       },
-      "structlog": {
-        "renderer": "console"
-      }
+      "structlog": { "renderer": "console" }
     }
   }
 }
 ```
 
-Request logging config example (`config/logging/requests.json`):
+Request logging config (`config/logging/requests.json`):
 
 ```json
 {
@@ -617,11 +658,39 @@ Request logging config example (`config/logging/requests.json`):
     "provider": "struct_log",
     "enabled": true,
     "priority": 1,
+    "version": "1.0",
     "config": {
+      "formatters": {
+        "plain": { "format": "%(message)s" }
+      },
+      "handlers": {
+        "requests_file": {
+          "class": "logging.handlers.RotatingFileHandler",
+          "level": "INFO",
+          "formatter": "plain",
+          "filename": "${output_dir}/results/requests.log",
+          "maxBytes": 10485760,
+          "backupCount": 5
+        }
+      },
+      "loggers": {
+        "requests": {
+          "handlers": ["requests_file"],
+          "level": "INFO",
+          "propagate": false
+        }
+      },
       "request_log": {
-        "path": "results/requests.log",
         "fields": {
-          "provider": true
+          "provider": true,
+          "translator": true,
+          "model": true,
+          "actor": true,
+          "voice_id": true,
+          "language": true,
+          "input": true,
+          "response_duration": true,
+          "timestamp": true
         }
       }
     }
@@ -629,15 +698,11 @@ Request logging config example (`config/logging/requests.json`):
 }
 ```
 
-At startup, after `ServiceRegistry.build_runtime()` and `load_all_from_disk()`, `main.py` calls
-`LoggingService.configure(output_dir=…, profile=…)` which delegates to the active `struct_log`
-provider. All structured application logs (provider requests, translator requests, and generic
-events) are emitted via internal HTTP endpoints under `/internal/logging/*`; callers use the async
-helpers in `src/core/log_client.py` (`emit` accepts `LogEmitRequest`; `log_provider_request` /
-`log_text_translation_request` accept `LogProviderRequest` / `LogTranslatorRequest` and post via
-`/internal/logging/emit`). In-process, `LoggingService.emit_provider_request` /
-`emit_translator_request` use the same schema types and delegate to `emit` on the active
-`LoggingServiceProvider`.
+At startup, `LoggingService.configure(output_dir=…, profile=…)` calls `configure()` on each
+active provider. Each provider calls `dictConfig` independently; with
+`disable_existing_loggers: false`, the calls are additive. Structured application logs are
+emitted via internal HTTP endpoints under `/internal/logging/*`; callers use the async helpers
+in `src/core/log_client.py`.
 
 ## Example requests
 
@@ -716,4 +781,3 @@ JOB=$(
 # Poll job status
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/internal/generate/$JOB/status
 ```
-
