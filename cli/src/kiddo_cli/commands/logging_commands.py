@@ -1,0 +1,305 @@
+"""Logging commands: emit structured log messages through the backend logging service."""
+
+import json
+from typing import Optional
+
+import typer
+
+from kiddo_cli.api.client import internal_post
+from kiddo_cli.auth_flow import run_with_auth
+from kiddo_cli.output import print_json
+
+
+def register(app: typer.Typer) -> None:
+    """Register logging commands on the given Typer app."""
+
+    @app.command("emit")
+    def emit_log(
+            logger_name: str = typer.Argument(
+                None,
+                help="Logger name (target channel)",
+            ),
+            event: str = typer.Argument(
+                None,
+                help="Log event name",
+            ),
+            *,
+            level: str = typer.Option(
+                "info",
+                "--level",
+                help="Log level: debug, info, warning, error, critical",
+            ),
+            fields: Optional[str] = typer.Option(
+                None,
+                "--fields",
+                help="Extra fields as a JSON object string (e.g. '{\"key\": \"value\"}')",
+            ),
+            data: Optional[str] = typer.Option(
+                None,
+                "--json",
+                help="Full JSON body string or @file.json",
+            ),
+            url: Optional[str] = typer.Option(
+                None,
+                "--url",
+                help="Backend URL",
+            ),
+            token: Optional[str] = typer.Option(
+                None,
+                "--token",
+                help="Auth token",
+            ),
+    ):
+        """Emit a structured log message to a named logger channel."""
+
+        if data:
+            if data.startswith("@"):
+                with open(data[1:], "r", encoding="utf-8") as f:
+                    payload = json.load(f)
+            else:
+                payload = json.loads(data)
+        else:
+            if not all([logger_name, event]):
+                raise typer.BadParameter(
+                    "Provide either positional arguments (logger_name event) or --json"
+                )
+            payload = {
+                "logger_name": logger_name,
+                "level": level,
+                "event": event,
+                "fields": json.loads(fields) if fields else {},
+            }
+
+        def _run(t: str):
+            result = internal_post("/logging/emit", token=t, json=payload)
+            print_json(result)
+
+        run_with_auth(url, token, _run)
+
+    @app.command("api-request")
+    def emit_api_request(
+            event: str = typer.Argument(
+                None,
+                help="Log event name",
+            ),
+            *,
+            level: str = typer.Option(
+                "info",
+                "--level",
+                help="Log level: debug, info, warning, error, critical",
+            ),
+            fields: Optional[str] = typer.Option(
+                None,
+                "--fields",
+                help="Extra fields as a JSON object string",
+            ),
+            data: Optional[str] = typer.Option(
+                None,
+                "--json",
+                help="Full JSON body string or @file.json",
+            ),
+            url: Optional[str] = typer.Option(
+                None,
+                "--url",
+                help="Backend URL",
+            ),
+            token: Optional[str] = typer.Option(
+                None,
+                "--token",
+                help="Auth token",
+            ),
+    ):
+        """Emit an API request log message to the 'requests' logger."""
+
+        if data:
+            if data.startswith("@"):
+                with open(data[1:], "r", encoding="utf-8") as f:
+                    payload = json.load(f)
+            else:
+                payload = json.loads(data)
+        else:
+            if not event:
+                raise typer.BadParameter(
+                    "Provide either the positional argument (event) or --json"
+                )
+            payload = {
+                "level": level,
+                "event": event,
+                "fields": json.loads(fields) if fields else {},
+            }
+
+        def _run(t: str):
+            result = internal_post("/logging/api-request", token=t, json=payload)
+            print_json(result)
+
+        run_with_auth(url, token, _run)
+
+    @app.command("provider-request")
+    def log_provider_request(
+            *,
+            provider: Optional[str] = typer.Option(
+                None,
+                "--provider",
+                help="TTS/STT provider name",
+            ),
+            model: Optional[str] = typer.Option(
+                None,
+                "--model",
+                help="Provider model identifier",
+            ),
+            actor: Optional[str] = typer.Option(
+                None,
+                "--actor",
+                help="Actor name",
+            ),
+            voice_id: Optional[str] = typer.Option(
+                None,
+                "--voice-id",
+                help="Voice identifier",
+            ),
+            language: Optional[str] = typer.Option(
+                None,
+                "--language",
+                help="Language code",
+            ),
+            input_data: Optional[str] = typer.Option(
+                None,
+                "--input",
+                help="Input text or data passed to the provider",
+            ),
+            response_duration: Optional[float] = typer.Option(
+                None,
+                "--response-duration",
+                help="Provider response latency in seconds",
+            ),
+            data: Optional[str] = typer.Option(
+                None,
+                "--json",
+                help="Full JSON body string or @file.json",
+            ),
+            url: Optional[str] = typer.Option(
+                None,
+                "--url",
+                help="Backend URL",
+            ),
+            token: Optional[str] = typer.Option(
+                None,
+                "--token",
+                help="Auth token",
+            ),
+    ):
+        """Log a TTS/STT provider request (model, actor, latency, …)."""
+
+        if data:
+            if data.startswith("@"):
+                with open(data[1:], "r", encoding="utf-8") as f:
+                    payload = json.load(f)
+            else:
+                payload = json.loads(data)
+        else:
+            payload = {}
+            if provider is not None:
+                payload["provider"] = provider
+            if model is not None:
+                payload["model"] = model
+            if actor is not None:
+                payload["actor"] = actor
+            if voice_id is not None:
+                payload["voice_id"] = voice_id
+            if language is not None:
+                payload["language"] = language
+            if input_data is not None:
+                payload["input"] = input_data
+            if response_duration is not None:
+                payload["response_duration"] = response_duration
+
+        def _run(t: str):
+            result = internal_post("/logging/provider-request", token=t, json=payload)
+            print_json(result)
+
+        run_with_auth(url, token, _run)
+
+    @app.command("translator-request")
+    def log_translator_request(
+            *,
+            translator: Optional[str] = typer.Option(
+                None,
+                "--translator",
+                help="Translator name",
+            ),
+            model: Optional[str] = typer.Option(
+                None,
+                "--model",
+                help="Translator model identifier",
+            ),
+            actor: Optional[str] = typer.Option(
+                None,
+                "--actor",
+                help="Actor name",
+            ),
+            voice_id: Optional[str] = typer.Option(
+                None,
+                "--voice-id",
+                help="Voice identifier",
+            ),
+            language: Optional[str] = typer.Option(
+                None,
+                "--language",
+                help="Language code",
+            ),
+            input_data: Optional[str] = typer.Option(
+                None,
+                "--input",
+                help="Input text passed to the translator",
+            ),
+            response_duration: Optional[float] = typer.Option(
+                None,
+                "--response-duration",
+                help="Translator response latency in seconds",
+            ),
+            data: Optional[str] = typer.Option(
+                None,
+                "--json",
+                help="Full JSON body string or @file.json",
+            ),
+            url: Optional[str] = typer.Option(
+                None,
+                "--url",
+                help="Backend URL",
+            ),
+            token: Optional[str] = typer.Option(
+                None,
+                "--token",
+                help="Auth token",
+            ),
+    ):
+        """Log a text translator request through the request-logger channel."""
+
+        if data:
+            if data.startswith("@"):
+                with open(data[1:], "r", encoding="utf-8") as f:
+                    payload = json.load(f)
+            else:
+                payload = json.loads(data)
+        else:
+            payload = {}
+            if translator is not None:
+                payload["translator"] = translator
+            if model is not None:
+                payload["model"] = model
+            if actor is not None:
+                payload["actor"] = actor
+            if voice_id is not None:
+                payload["voice_id"] = voice_id
+            if language is not None:
+                payload["language"] = language
+            if input_data is not None:
+                payload["input"] = input_data
+            if response_duration is not None:
+                payload["response_duration"] = response_duration
+
+        def _run(t: str):
+            result = internal_post("/logging/translator-request", token=t, json=payload)
+            print_json(result)
+
+        run_with_auth(url, token, _run)
