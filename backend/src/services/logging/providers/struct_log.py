@@ -134,19 +134,13 @@ class StructLogProvider(LoggingServiceProvider):
             if isinstance(level_int, int):
                 handler_levels[h_name] = level_int
 
+        # Update levels on handlers attached to named loggers.
+        # Logger-level is intentionally left at NOTSET — the handler level
+        # is the sole filter gate.
         for l_name, l_conf in (self.config.get("loggers") or {}).items():
             if not isinstance(l_conf, dict):
                 continue
             logger = logging.getLogger(l_name)
-            # Update logger level.
-            level_str = l_conf.get("level")
-            if level_str:
-                level_int = logging.getLevelName(str(level_str).upper())
-                if isinstance(level_int, int):
-                    logger.setLevel(level_int)
-            # Update levels on handlers that belong to this logger and appear
-            # in the config.  Handlers are matched by their .name attribute
-            # (set by dictConfig when the handler was first created).
             config_handler_names: set[str] = set(l_conf.get("handlers", []))
             for handler in logger.handlers:
                 if handler.name not in config_handler_names:

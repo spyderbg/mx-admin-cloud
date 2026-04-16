@@ -24,7 +24,6 @@
       "loggers": {
         "requests": {
           "handlers": ["requests_file"],
-          "level": "TRACE",
           "propagate": false
         }
       },
