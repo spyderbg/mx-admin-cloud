@@ -8,6 +8,8 @@ from typing import AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
+
 from src.api.dependencies import require_admin, require_uds
 from src.api.internal import (
     configuration_routes,
@@ -15,7 +17,6 @@ from src.api.internal import (
     jobs_routes,
     optimizers_routes,
     text_to_speech_routes,
-    text_translation_routes,
 )
 from src.api.v1 import routes_auth, routes_common, routes_content, routes_users
 from src.core.config import settings
@@ -26,7 +27,7 @@ from src.security.tokens import create_internal_token
 from src.services.logging import routes as logging_routes
 from src.services.logging.service import LoggingService
 from src.services.service_registry import ServiceRegistry, ServiceRegistryBuilder
-from starlette.concurrency import run_in_threadpool
+from src.services.text_translation import routes as text_translation_routes
 
 
 @asynccontextmanager

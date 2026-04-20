@@ -89,31 +89,44 @@ PYTHONPATH="$PWD/src" .venv/bin/python -m pytest -v
 ```
 
 Tests for a feature module usually live under a sibling `__tests__` tree. For `src/api/internal/`, omit
-`__tests__/__init__.py` so it stays out of the installable package. Co-located services (e.g. logging) may use
-`src/services/<name>/__tests__/` with a package `__init__.py` for pytest discovery.
+`__tests__/__init__.py` so it stays out of the installable package. Co-located services
+(e.g. `logging`, `text_translation`) use `src/services/<name>/__tests__/` with a package `__init__.py`
+for pytest discovery.
 
-Example for internal translation routes:
+Example for the co-located text_translation service:
 
 ```
-src/api/internal/
-├── text_translation_routes.py
+src/services/text_translation/
+├── routes.py
+├── schemas.py
+├── service.py
 └── __tests__/
+    ├── __init__.py
     ├── unit/
+    │   ├── __init__.py
     │   └── test_text_translation_routes.py          # Schemas / pure logic
     └── integration/
+        ├── __init__.py
         └── test_text_translation_routes_integration.py   # HTTP + ASGI
 ```
 
 Run only those tests:
 
 ```bash
-PYTHONPATH="$PWD/src" .venv/bin/python -m pytest src/api/internal/__tests__ -v
+PYTHONPATH="$PWD/src" .venv/bin/python -m pytest src/services/text_translation/__tests__ -v
 ```
 
 Logging service tests (when added):
 
 ```bash
 PYTHONPATH="$PWD/src" .venv/bin/python -m pytest src/services/logging/__tests__ -v
+```
+
+Remaining internal routes still under `src/api/internal/` keep their `__tests__/` tree without an
+`__init__.py`:
+
+```bash
+PYTHONPATH="$PWD/src" .venv/bin/python -m pytest src/api/internal/__tests__ -v
 ```
 
 ## Auth
@@ -236,9 +249,9 @@ work.
 
 | Method | Path                                                                     | Description                                                                                              |
 |--------|--------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------|
-| `GET`  | [/internal/translators](src/api/internal/text_translation_routes.py#L40) | List all configured translation services with activation state.                                          |
-| `POST` | [/internal/translate](src/api/internal/text_translation_routes.py#L69)   | Translate text via all active translators; returns `success` and `lang_text` (`lang_code` + `text`).     |
-| `POST` | [/internal/translate-file](src/api/internal/text_translation_routes.py)  | Translate a file; loads segments via `load_words` (skips source = target lang); returns per-row results. |
+| `GET`  | [/internal/translators](src/services/text_translation/routes.py) | List all configured translation services with activation state.                                          |
+| `POST` | [/internal/translate](src/services/text_translation/routes.py)   | Translate text via all active translators; returns `success` and `lang_text` (`lang_code` + `text`).     |
+| `POST` | [/internal/translate-file](src/services/text_translation/routes.py)  | Translate a file; loads segments via `load_words` (skips source = target lang); returns per-row results. |
 
 #### Logging
 
@@ -334,11 +347,9 @@ src/
 │   │   ├── text_to_speech_routes.py
 │   │   ├── evaluators_routes.py
 │   │   ├── optimizers_routes.py
-│   │   ├── text_translation_routes.py
 │   │   ├── configuration_routes.py    # runtime apply/upload + persisted CRUD/batch config routes
 │   │   └── schemas/              # Internal OpenAPI contract models (Pydantic)
 │   │       ├── text_to_speech.py
-│   │       ├── text_translation.py   # Translate* + TranslationFileSourceWord (translate-file)
 │   │       ├── evaluation.py
 │   │       ├── voice_optimization.py
 │   │       ├── jobs.py
@@ -381,9 +392,16 @@ src/
     │   ├── models.py
     │   ├── service.py
     │   └── providers/            # openai_tts, elevenlabs_tts, speaktor_tts
-    ├── text_translation/
+    ├── text_translation/         # Co-located service (routes + schemas live next to service.py)
+    │   ├── __init__.py            # SERVICE_CLASS, SERVICE_NAME, SERVICE_ACCEPT_CRITERIA
     │   ├── models.py
+    │   ├── schemas.py             # Pydantic bodies for /internal/translators, /translate, /translate-file
+    │   ├── routes.py              # /internal/translators, /translate, /translate-file
     │   ├── service.py
+    │   ├── __tests__/             # Pytest tree (unit + integration)
+    │   │   ├── __init__.py
+    │   │   ├── unit/
+    │   │   └── integration/
     │   └── providers/            # openai_translate, static_translate
     ├── voice_optimization/
     │   ├── base.py

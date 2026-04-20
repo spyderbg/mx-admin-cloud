@@ -10,13 +10,6 @@ from src.api.internal.schemas.configuration import (
     ApplyConfigurationResponse,
 )
 from src.api.internal.schemas.text_to_speech import GenerateRequest, GenerateWordRequest, TtsGenerateResult
-from src.api.internal.schemas.text_translation import (
-    LangCodeText,
-    TranslateFileResponse,
-    TranslateRequest,
-    TranslateResponse,
-    TranslationFileSourceWord,
-)
 from src.api.internal.schemas.voice_optimization import OptimizeRequest
 
 __all__ = [
@@ -27,11 +20,6 @@ __all__ = [
     "GenerateRequest",
     "GenerateWordRequest",
     "JobStatusResponse",
-    "LangCodeText",
     "OptimizeRequest",
-    "TranslateFileResponse",
-    "TranslateRequest",
-    "TranslateResponse",
-    "TranslationFileSourceWord",
     "TtsGenerateResult",
 ]

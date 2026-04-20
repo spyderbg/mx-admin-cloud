@@ -34,7 +34,7 @@ It must be followed for all new features, refactors, and fixes.
 * ✅ `core/` and `services/` MAY import Pydantic models **only** from:
   * `src.api.internal.schemas` (and submodules) — legacy/co-existing internal HTTP contract models, or
   * `src.api.v1.schemas` (and submodules) — request/response bodies for public `/api/v1` routes, or
-  * `src.services.<service_name>.schemas` — co-located wire models for that service’s internal routes (pilot: `logging`).
+  * `src.services.<service_name>.schemas` — co-located wire models for that service’s internal routes (migrated: `logging`, `text_translation`).
 * ❌ `core/` and `services/` MUST NOT import other `src.api` code (route modules, `src.api.dependencies`, app factory, `src.api.v1.routes_*`, etc.) except the schema modules above.
 
 ---

@@ -1,4 +1,4 @@
-"""HTTP integration tests for ``text_translation_routes`` (ASGI + httpx).
+"""HTTP integration tests for the text_translation routes (ASGI + httpx).
 
 Kept under ``__tests__/integration`` so runtime code stays free of ``test_*.py`` siblings.
 """
@@ -15,8 +15,8 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from src.api.dependencies import get_registry, require_internal
-from src.api.internal import text_translation_routes
 from src.services import text_translation as text_translation_pkg
+from src.services.text_translation import routes as text_translation_routes
 from src.services.text_translation.models import TextTranslationServiceProvider, TranslateTextRequest
 from src.services.text_translation.service import TextTranslationService
 

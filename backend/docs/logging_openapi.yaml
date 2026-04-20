@@ -4,6 +4,41 @@ info:
   version: 0.1.0
 servers: []
 paths:
+  /internal/logging/loggers:
+    get:
+      tags:
+      - internal-logging
+      summary: List logging service providers
+      description: Return the logging service providers that the emit endpoint routes
+        through. By default only enabled providers are returned. Pass 'all=true' to
+        include every configured provider regardless of state.
+      operationId: list_loggers_internal_logging_loggers_get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: all
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: All
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ServiceProviderInfo'
+                title: Response List Loggers Internal Logging Loggers Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /internal/logging/emit:
     post:
       tags:
@@ -152,23 +187,26 @@ components:
           type: object
           title: Fields
         logger_name:
-          type: string
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Logger Name
-          description: Logger name
+          description: Logger name; omit to use the default logger
       type: object
       required:
       - event
-      - logger_name
       title: LogEmitRequest
       description: Body for ``POST /internal/logging/emit``.
     LogLevel:
       type: string
       enum:
+      - trace
       - debug
       - info
       - warning
       - error
       - critical
+      - fatal
       title: LogLevel
     LogProviderRequest:
       properties:
@@ -268,6 +306,42 @@ components:
       type: object
       title: LogTranslatorRequest
       description: Body for ``POST /internal/logging/translator-request``.
+    ServiceProviderInfo:
+      properties:
+        name:
+          type: string
+          title: Name
+          description: Human-readable name
+        service:
+          type: string
+          title: Service
+          description: Service name
+        provider:
+          type: string
+          title: Provider
+          description: Provider name
+        enabled:
+          type: boolean
+          title: Enabled
+          description: Whether the provider is enabled
+        priority:
+          type: integer
+          title: Priority
+          description: Priority of the provider
+        config_path:
+          type: string
+          title: Config Path
+          description: Path to the provider's config file
+      type: object
+      required:
+      - name
+      - service
+      - provider
+      - enabled
+      - priority
+      - config_path
+      title: ServiceProviderInfo
+      description: Metadata for one configured translator provider (GET /internal/translators).
     StatusResponse:
       properties:
         status:

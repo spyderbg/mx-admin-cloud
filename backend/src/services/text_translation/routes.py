@@ -17,13 +17,6 @@ from src.api.dependencies import (
     require_internal
 )
 from src.api.internal.schemas.common import ErrorMessage
-from src.api.internal.schemas.text_translation import (
-    LangCodeText,
-    TranslateFileResponse,
-    TranslateRequest,
-    TranslateResponse,
-    TranslationFileSourceWord,
-)
 from src.api.service_resolver import get_typed_service, require_active_providers
 from src.core.config import settings
 from src.core.languages import normalize_language_code
@@ -31,6 +24,13 @@ from src.services import text_translation
 from src.services.models import ServiceProviderInfo
 from src.services.service_registry import ServiceRegistry
 from src.services.text_translation import TextTranslationService
+from src.services.text_translation.schemas import (
+    LangCodeText,
+    TranslateFileResponse,
+    TranslateRequest,
+    TranslateResponse,
+    TranslationFileSourceWord,
+)
 
 TRANSLATORS_LIST = "/translators"
 TRANSLATE_TEXT = "/translate"

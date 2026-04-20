@@ -1,4 +1,4 @@
-"""Unit tests for ``text_translation_routes`` schemas (no HTTP, no registry).
+"""Unit tests for ``text_translation`` route schemas (no HTTP, no registry).
 
 Small surface area keeps runs fast and context small for tooling.
 """
@@ -12,15 +12,15 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from src.api.internal.schemas.text_translation import (
+from src.core.input_loader import load_words
+from src.core.models import TranslationSourceWord
+from src.services.text_translation.schemas import (
     LangCodeText,
     TranslateFileResponse,
     TranslateRequest,
     TranslateResponse,
     TranslationFileSourceWord,
 )
-from src.core.input_loader import load_words
-from src.core.models import TranslationSourceWord
 
 
 def test_translate_request_accepts_optional_fields() -> None:
