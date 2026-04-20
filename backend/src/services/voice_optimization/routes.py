@@ -12,10 +12,10 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException  # pylint: disable=import-error
 
 from src.api.dependencies import get_registry, require_internal
-from src.api.internal.schemas.voice_optimization import OptimizeRequest
 from src.api.service_resolver import get_typed_service
 from src.services import voice_optimization
 from src.services.service_registry import ServiceRegistry
+from src.services.voice_optimization.schemas import OptimizeRequest
 from src.services.voice_optimization.service import VoiceOptimizationService
 
 OPTIMIZERS_LIST = "/optimizers"

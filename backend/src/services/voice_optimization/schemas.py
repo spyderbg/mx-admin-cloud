@@ -1,4 +1,4 @@
-"""Schemas for internal optimization endpoints."""
+"""Pydantic request/response schemas for internal voice-optimization endpoints."""
 
 from pydantic import BaseModel
 

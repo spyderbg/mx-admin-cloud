@@ -14,7 +14,6 @@ from src.api.dependencies import require_admin, require_uds
 from src.api.internal import (
     evaluators_routes,
     jobs_routes,
-    optimizers_routes,
 )
 from src.api.v1 import routes_auth, routes_common, routes_content, routes_users
 from src.core.config import settings
@@ -28,6 +27,7 @@ from src.services.logging.service import LoggingService
 from src.services.service_registry import ServiceRegistry, ServiceRegistryBuilder
 from src.services.text_to_speech import routes as text_to_speech_routes
 from src.services.text_translation import routes as text_translation_routes
+from src.services.voice_optimization import routes as optimizers_routes
 
 
 @asynccontextmanager

@@ -248,8 +248,8 @@ work.
 
 | Method | Path                                                                                   | Description                                                              |
 |--------|----------------------------------------------------------------------------------------|--------------------------------------------------------------------------|
-| `GET`  | [/internal/optimizers](src/api/internal/optimizers_routes.py#L28)                      | List all configured audio optimizers with activation state and priority. |
-| `POST` | [/internal/optimizers/{optimizer}/optimize](src/api/internal/optimizers_routes.py#L57) | Run the named optimizer on a given audio file.                           |
+| `GET`  | [/internal/optimizers](src/services/voice_optimization/routes.py)                      | List all configured audio optimizers with activation state and priority. |
+| `POST` | [/internal/optimizers/{optimizer}/optimize](src/services/voice_optimization/routes.py) | Run the named optimizer on a given audio file.                           |
 
 #### Translators
 
@@ -351,10 +351,8 @@ src/
 │   ├── internal/                 # Internal routes (internal JWT or admin)
 │   │   ├── jobs_routes.py        # /internal/generate, /generate/{id}/status
 │   │   ├── evaluators_routes.py
-│   │   ├── optimizers_routes.py
 │   │   └── schemas/              # Internal OpenAPI contract models (Pydantic)
 │   │       ├── evaluation.py
-│   │       ├── voice_optimization.py
 │   │       └── jobs.py
 │   └── v1/                       # Public /api/v1
 │       ├── routes_auth.py
@@ -421,11 +419,16 @@ src/
     │   │   ├── unit/
     │   │   └── integration/
     │   └── providers/            # openai_translate, static_translate
-    ├── voice_optimization/
-    │   ├── base.py
+    ├── voice_optimization/       # Co-located service (routes + schemas live next to service.py)
+    │   ├── __init__.py            # SERVICE_CLASS, SERVICE_NAME, SERVICE_ACCEPT_CRITERIA
+    │   ├── models.py              # AudioOptimizerBase
+    │   ├── schemas.py             # Pydantic bodies for /internal/optimizers/*
+    │   ├── routes.py              # /internal/optimizers, /optimizers/{optimizer}/optimize
+    │   ├── service.py             # VoiceOptimizationService + AudioOptimizerFactory
     │   ├── normalizer.py
-    │   ├── service.py
-    │   └── providers/            # ffmpeg_optimizer, pydub_optimizer
+    │   ├── __tests__/             # Pytest tree (co-located with service)
+    │   │   └── __init__.py
+    │   └── providers/             # ffmpeg_optimizer, pydub_optimizer
     ├── evaluation/
     │   ├── engine.py
     │   ├── service.py
