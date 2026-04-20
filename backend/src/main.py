@@ -12,7 +12,6 @@ from starlette.concurrency import run_in_threadpool
 
 from src.api.dependencies import require_admin, require_uds
 from src.api.internal import (
-    evaluators_routes,
     jobs_routes,
 )
 from src.api.v1 import routes_auth, routes_common, routes_content, routes_users
@@ -22,6 +21,7 @@ from src.core.utils import is_windows_platform, is_debug_mode
 from src.db.database import UsersDb
 from src.security.tokens import create_internal_token
 from src.services.configuration import routes as configuration_routes
+from src.services.evaluation import routes as evaluators_routes
 from src.services.logging import routes as logging_routes
 from src.services.logging.service import LoggingService
 from src.services.service_registry import ServiceRegistry, ServiceRegistryBuilder

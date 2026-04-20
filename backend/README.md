@@ -241,8 +241,8 @@ work.
 
 | Method | Path                                                                       | Description                                                          |
 |--------|----------------------------------------------------------------------------|----------------------------------------------------------------------|
-| `GET`  | [/internal/evaluators](src/api/internal/evaluators_routes.py#L43)          | List all configured STT evaluators with activation state.            |
-| `POST` | [/internal/evaluators/evaluate](src/api/internal/evaluators_routes.py#L70) | Run STT transcription, score, persist, and return evaluation result. |
+| `GET`  | [/internal/evaluators](src/services/evaluation/routes.py)          | List all configured STT evaluators with activation state.            |
+| `POST` | [/internal/evaluators/evaluate](src/services/evaluation/routes.py) | Run STT transcription, score, persist, and return evaluation result. |
 
 #### Optimizers
 
@@ -350,9 +350,7 @@ src/
 │   ├── dependencies.py           # get_registry, builder/service deps, get_job_store, auth deps
 │   ├── internal/                 # Internal routes (internal JWT or admin)
 │   │   ├── jobs_routes.py        # /internal/generate, /generate/{id}/status
-│   │   ├── evaluators_routes.py
 │   │   └── schemas/              # Internal OpenAPI contract models (Pydantic)
-│   │       ├── evaluation.py
 │   │       └── jobs.py
 │   └── v1/                       # Public /api/v1
 │       ├── routes_auth.py
@@ -429,12 +427,18 @@ src/
     │   ├── __tests__/             # Pytest tree (co-located with service)
     │   │   └── __init__.py
     │   └── providers/             # ffmpeg_optimizer, pydub_optimizer
-    ├── evaluation/
+    ├── evaluation/               # Co-located service (routes + schemas live next to service.py)
+    │   ├── __init__.py            # Re-exports engine + score stores
+    │   ├── models.py              # EvaluationServiceProvider base
+    │   ├── schemas.py             # Pydantic bodies for /internal/evaluators/*
+    │   ├── routes.py              # /internal/evaluators, /evaluators/evaluate
+    │   ├── service.py             # EvaluationService + EvaluationProviderFactory
     │   ├── engine.py
-    │   ├── service.py
     │   ├── score_store.py
     │   ├── score_store_json.py
-    │   └── score_store_sqlite.py
+    │   ├── score_store_sqlite.py
+    │   └── __tests__/             # Pytest tree (co-located with service)
+    │       └── __init__.py
     └── logging/                  # Logging service (structlog + stdlib + request logger)
         ├── __init__.py           # SERVICE_CLASS, SERVICE_NAME, SERVICE_ACCEPT_CRITERIA
         ├── models.py             # LoggingServiceProvider base class

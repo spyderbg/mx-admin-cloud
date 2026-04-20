@@ -1,4 +1,6 @@
-"""Schemas for internal evaluation endpoints."""
+"""Pydantic request/response schemas for internal evaluation endpoints."""
+
+from __future__ import annotations
 
 from typing import Any
 
