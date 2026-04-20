@@ -1,4 +1,4 @@
-"""Pydantic request/response schemas for internal logging endpoints."""
+"""Shared Pydantic response schemas used across service routes."""
 
 from __future__ import annotations
 
@@ -6,12 +6,6 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-
-################################################################################
-# Common models
-
-################################################################################
-# Error models
 
 class ErrorMessage(BaseModel):
     """Error message returned by the API"""

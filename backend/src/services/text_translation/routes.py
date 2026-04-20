@@ -16,7 +16,7 @@ from src.api.dependencies import (
     get_registry,
     require_internal
 )
-from src.api.internal.schemas.common import ErrorMessage
+from src.services.schemas import ErrorMessage
 from src.api.service_resolver import get_typed_service, require_active_providers
 from src.core.config import settings
 from src.core.languages import normalize_language_code
