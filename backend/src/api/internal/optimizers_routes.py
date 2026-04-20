@@ -1,7 +1,7 @@
 """Internal optimizer-configuration and optimization endpoints.
 
-Exposes audio post-processing (optimizer) configs loaded from ``backend/config/voice_optimizers/``.
-All endpoints require a JWT with role ``internal`` or ``admin``.
+Exposes audio post-processing (optimizer) configs loaded from "backend/config/voice_optimizers/".
+All endpoints require a JWT with the role "internal" or "admin".
 """
 
 from __future__ import annotations
