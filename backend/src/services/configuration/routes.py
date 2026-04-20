@@ -5,16 +5,6 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile  # pylint: disable=import-error
 
 from src.api.dependencies import get_configuration_service, get_registry_builder, require_internal
-from src.api.internal.schemas.configuration import (
-    AddConfigurationRequest,
-    ApplyConfigurationRequest,
-    ApplyConfigurationResponse,
-    BatchToggleConfigurationsRequest,
-    BatchToggleConfigurationsResponse,
-    ConfigurationFileSummaryResponse,
-    ConfigurationMutationResponse,
-    PatchConfigurationRequest,
-)
 from src.core.utils import JsonObjectReadError, read_json_object
 from src.services.configuration import (
     ConfigurationConflictError,
@@ -23,6 +13,16 @@ from src.services.configuration import (
     ConfigurationValidationError,
     InvalidConfigurationNameError,
     UnknownConfigurationServiceError,
+)
+from src.services.configuration.schemas import (
+    AddConfigurationRequest,
+    ApplyConfigurationRequest,
+    ApplyConfigurationResponse,
+    BatchToggleConfigurationsRequest,
+    BatchToggleConfigurationsResponse,
+    ConfigurationFileSummaryResponse,
+    ConfigurationMutationResponse,
+    PatchConfigurationRequest,
 )
 from src.services.service_registry import ServiceRegistryBuilder
 
