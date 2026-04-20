@@ -6,12 +6,12 @@ import logging
 import time
 from typing import Any
 
-from src.api.internal.schemas.logging import LogProviderRequest
 from src.core.log_client import log_provider_request
 from src.core.models import GeneratedAudio
-from .elevenlabs_tts import API_BASE, ELEVENLABS_OUTPUT_MAP, _to_bool, _to_float
-from ..models import TTSProvider, TTSRequest
-from ..service import TextToSpeechProviderFactory
+from src.services.logging.schemas import LogProviderRequest
+from src.services.text_to_speech.models import TTSProvider, TTSRequest
+from src.services.text_to_speech.providers.elevenlabs_tts import API_BASE, ELEVENLABS_OUTPUT_MAP, _to_bool, _to_float
+from src.services.text_to_speech.service import TextToSpeechProviderFactory
 
 logger = logging.getLogger(__name__)
 
@@ -80,10 +80,10 @@ class StaticTTSProvider(TTSProvider):
         return voice_settings
 
     async def _generate_with_english_config(
-        self,
-        request: TTSRequest,
-        client: Any,
-        gen: dict[str, Any],
+            self,
+            request: TTSRequest,
+            client: Any,
+            gen: dict[str, Any],
     ) -> GeneratedAudio:
         """Call ElevenLabs with resolved English voice config and persist audio."""
         output_format = request.output_format

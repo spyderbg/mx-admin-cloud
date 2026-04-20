@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from src.api.internal.schemas.logging import LogProviderRequest
+from src.services.logging.schemas import LogProviderRequest
 from src.core.languages import to_bcp47
 from src.core.log_client import log_provider_request
 from src.core.models import EvaluationResult, GeneratedAudio

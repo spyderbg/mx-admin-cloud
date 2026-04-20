@@ -13,7 +13,6 @@ from src.api.internal import (
     configuration_routes,
     evaluators_routes,
     jobs_routes,
-    logging_routes,
     optimizers_routes,
     text_to_speech_routes,
     text_translation_routes,
@@ -24,6 +23,7 @@ from src.core.job_store import JobStore
 from src.core.utils import is_windows_platform, is_debug_mode
 from src.db.database import UsersDb
 from src.security.tokens import create_internal_token
+from src.services.logging import routes as logging_routes
 from src.services.logging.service import LoggingService
 from src.services.service_registry import ServiceRegistry, ServiceRegistryBuilder
 from starlette.concurrency import run_in_threadpool

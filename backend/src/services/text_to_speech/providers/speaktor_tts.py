@@ -14,12 +14,12 @@ import logging
 import time
 from typing import Any
 
-from src.api.internal.schemas.logging import LogProviderRequest
 from src.core.languages import to_bcp47
 from src.core.log_client import log_provider_request
 from src.core.models import GeneratedAudio
-from ..models import TTSProvider, TTSRequest
-from ..service import TextToSpeechProviderFactory
+from src.services.logging.schemas import LogProviderRequest
+from src.services.text_to_speech.models import TTSProvider, TTSRequest
+from src.services.text_to_speech.service import TextToSpeechProviderFactory
 
 logger = logging.getLogger(__name__)
 
@@ -154,5 +154,6 @@ class SpeaktorTTSProvider(TTSProvider):
             latency_seconds=latency,
             success=True,
         )
+
 
 SpeaktorTTSProvider.register()

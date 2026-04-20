@@ -8,7 +8,7 @@ from typing import Any
 
 from openai import AsyncOpenAI
 
-from src.api.internal.schemas.logging import LogTranslatorRequest
+from src.services.logging.schemas import LogTranslatorRequest
 from src.core.log_client import log_text_translation_request
 from src.services.text_translation.models import TextTranslationServiceProvider, TranslateTextRequest
 

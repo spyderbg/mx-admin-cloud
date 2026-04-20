@@ -9,15 +9,15 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from src.api.dependencies import get_registry, require_internal
-from src.api.internal.schemas.logging import (
-    LogRequest,
+from src.api.service_resolver import get_typed_service
+from src.services import logging
+from src.services.logging.schemas import (
     LogEmitRequest,
     LogProviderRequest,
+    LogRequest,
     LogTranslatorRequest,
     StatusResponse,
 )
-from src.api.service_resolver import get_typed_service
-from src.services import logging
 from src.services.logging.service import LoggingService
 from src.services.models import ServiceProviderInfo
 from src.services.service_registry import ServiceRegistry

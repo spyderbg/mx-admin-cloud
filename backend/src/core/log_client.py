@@ -13,13 +13,13 @@ from __future__ import annotations
 import logging as _stdlib_logging
 from typing import Any
 
-from src.api.internal.logging_routes import LOGGING_EMIT, LOGGING_API_REQUEST
-from src.api.internal.schemas.logging import (
+from src.services.logging.routes import LOGGING_API_REQUEST, LOGGING_EMIT
+from src.services.logging.schemas import (
+    LogApiRequest,
     LogEmitRequest,
+    LogLevel,
     LogProviderRequest,
     LogTranslatorRequest,
-    LogApiRequest,
-    LogLevel,
 )
 
 _client: Any | None = None  # pylint: disable=invalid-name # httpx.AsyncClient when configured

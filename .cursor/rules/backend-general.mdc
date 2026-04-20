@@ -17,9 +17,9 @@ It must be followed for all new features, refactors, and fixes.
 
 ## Layered Structure (STRICT)
 
-* `api/` → HTTP layer only (FastAPI routes, request/response handling)
+* `api/` → HTTP layer for cross-cutting and not-yet-migrated routers (FastAPI, shared deps); many internal routes still live here.
 * `core/` → business logic, utilities, pipelines (NO service imports)
-* `services/` → provider-based implementations (pluggable logic)
+* `services/` → provider-based implementations (pluggable logic); a service package **may** co-locate its internal HTTP surface (`routes.py`, `schemas.py`) next to `service.py` (see `src/services/logging/` as the reference layout).
 * `db/` → persistence layer
 * `security/` → authentication & authorization
 
@@ -27,14 +27,15 @@ It must be followed for all new features, refactors, and fixes.
 
 * ❌ `core/` MUST NOT import from `services/`
 * ✅ `api/` can depend on `core/` and `services/`
-* ✅ Dependencies must flow inward, with the **API route schemas** exception below.
+* ✅ Dependencies must flow inward, with the **HTTP wire schemas** exception below.
 
-#### API route schemas (narrow exception)
+#### HTTP wire schemas (narrow exception)
 
 * ✅ `core/` and `services/` MAY import Pydantic models **only** from:
-  * `src.api.internal.schemas` (and submodules) — request/response bodies for internal HTTP routes, or
-  * `src.api.v1.schemas` (and submodules) — request/response bodies for public `/api/v1` routes.
-* ❌ `core/` and `services/` MUST NOT import other `src.api` code (route modules, `src.api.dependencies`, app factory, `src.api.v1.routes_*`, etc.).
+  * `src.api.internal.schemas` (and submodules) — legacy/co-existing internal HTTP contract models, or
+  * `src.api.v1.schemas` (and submodules) — request/response bodies for public `/api/v1` routes, or
+  * `src.services.<service_name>.schemas` — co-located wire models for that service’s internal routes (pilot: `logging`).
+* ❌ `core/` and `services/` MUST NOT import other `src.api` code (route modules, `src.api.dependencies`, app factory, `src.api.v1.routes_*`, etc.) except the schema modules above.
 
 ---
 
@@ -52,7 +53,7 @@ It must be followed for all new features, refactors, and fixes.
 ## Structure
 
 * Public API → `/api/v1/` (request/response models in `src/api/v1/schemas/`)
-* Internal API → `/api/internal/` (request/response models in `src/api/internal/schemas/`)
+* Internal API → URL prefix `/internal/` on the FastAPI app; route modules may live under `src/api/internal/` **or** under `src/services/<name>/routes.py` when co-located with that service (wire models in `src/services/<name>/schemas.py` or `src/api/internal/schemas/` during migration).
 
 ## Validation
 
@@ -142,6 +143,10 @@ Each provider MUST:
 ## Services
 
 * `service.py` → orchestration
+* `models.py` → service/provider domain types when needed
+* `schemas.py` → Pydantic wire contract for that service’s HTTP endpoints (optional; use when routes are co-located)
+* `routes.py` → FastAPI `APIRouter` for that service’s internal HTTP surface (optional)
+* `__tests__/` → pytest tree next to the service (optional)
 * `base.py` → abstract definitions
 * `providers/` → service providers implementations
 
