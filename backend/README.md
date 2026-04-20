@@ -90,8 +90,8 @@ PYTHONPATH="$PWD/src" .venv/bin/python -m pytest -v
 
 Tests for a feature module usually live under a sibling `__tests__` tree. For `src/api/internal/`, omit
 `__tests__/__init__.py` so it stays out of the installable package. Co-located services
-(e.g. `logging`, `text_translation`) use `src/services/<name>/__tests__/` with a package `__init__.py`
-for pytest discovery.
+(e.g. `logging`, `text_translation`, `text_to_speech`) use `src/services/<name>/__tests__/` with a package
+`__init__.py` for pytest discovery.
 
 Example for the co-located text_translation service:
 
@@ -114,6 +114,12 @@ Run only those tests:
 
 ```bash
 PYTHONPATH="$PWD/src" .venv/bin/python -m pytest src/services/text_translation/__tests__ -v
+```
+
+Text-to-speech service tests:
+
+```bash
+PYTHONPATH="$PWD/src" .venv/bin/python -m pytest src/services/text_to_speech/__tests__ -v
 ```
 
 Logging service tests (when added):
@@ -227,9 +233,9 @@ work.
 
 | Method | Path                                                                                      | Description                                                                                                                                                                                                        |
 |--------|-------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `GET`  | [/internal/generators](src/api/internal/text_to_speech_routes.py#L45)                     | List all configured TTS providers with activation state and settings.                                                                                                                                              |
-| `POST` | [/internal/generators/{provider}/generate](src/api/internal/text_to_speech_routes.py#L64) | Generate raw audio for a single TTS request via the named provider. JSON response is the `TtsGenerateResult` model in `src/api/internal/schemas/text_to_speech.py` (handler return type matches `response_model`). |
-| `POST` | [/internal/generators/generate-word](src/api/internal/text_to_speech_routes.py#L128)      | Generate raw audio for a single word using the highest-priority active provider; returns `audio/mpeg` bytes.                                                                                                       |
+| `GET`  | [/internal/generators](src/services/text_to_speech/routes.py)                     | List all configured TTS providers with activation state and settings.                                                                                                                                              |
+| `POST` | [/internal/generators/{provider}/generate](src/services/text_to_speech/routes.py) | Generate raw audio for a single TTS request via the named provider. JSON response is the `TtsGenerateResult` model in `src/services/text_to_speech/schemas.py` (handler return type matches `response_model`). |
+| `POST` | [/internal/generators/generate-word](src/services/text_to_speech/routes.py)      | Generate raw audio for a single word using the highest-priority active provider; returns `audio/mpeg` bytes.                                                                                                       |
 
 #### Evaluators
 
@@ -344,12 +350,10 @@ src/
 │   ├── dependencies.py           # get_registry, builder/service deps, get_job_store, auth deps
 │   ├── internal/                 # Internal routes (internal JWT or admin)
 │   │   ├── jobs_routes.py        # /internal/generate, /generate/{id}/status
-│   │   ├── text_to_speech_routes.py
 │   │   ├── evaluators_routes.py
 │   │   ├── optimizers_routes.py
 │   │   ├── configuration_routes.py    # runtime apply/upload + persisted CRUD/batch config routes
 │   │   └── schemas/              # Internal OpenAPI contract models (Pydantic)
-│   │       ├── text_to_speech.py
 │   │       ├── evaluation.py
 │   │       ├── voice_optimization.py
 │   │       ├── jobs.py
@@ -388,9 +392,16 @@ src/
     ├── registry_builder.py       # load_all_from_disk, hot-reload
     ├── models.py                 # Service / ServiceProvider bases
     ├── configuration/            # Configuration service (factory + file_system provider)
-    ├── text_to_speech/
+    ├── text_to_speech/           # Co-located service (routes + schemas live next to service.py)
+    │   ├── __init__.py           # SERVICE_CLASS, SERVICE_NAME, SERVICE_ACCEPT_CRITERIA
     │   ├── models.py
+    │   ├── schemas.py            # Pydantic bodies for /internal/generators/*
+    │   ├── routes.py             # /internal/generators, /generators/{provider}/generate, /generators/generate-word
     │   ├── service.py
+    │   ├── __tests__/            # Pytest tree (unit + integration)
+    │   │   ├── __init__.py
+    │   │   ├── unit/
+    │   │   └── integration/
     │   └── providers/            # openai_tts, elevenlabs_tts, speaktor_tts
     ├── text_translation/         # Co-located service (routes + schemas live next to service.py)
     │   ├── __init__.py            # SERVICE_CLASS, SERVICE_NAME, SERVICE_ACCEPT_CRITERIA

@@ -13,17 +13,17 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException  # pylint: disable=import-error
 
 from src.api.dependencies import get_registry, require_internal
-from src.api.internal.schemas.text_to_speech import (
+from src.api.service_resolver import get_typed_service, require_active_providers
+from src.core.config import settings
+from src.services import text_to_speech
+from src.services.service_registry import ServiceRegistry
+from src.services.text_to_speech.models import TTSRequest
+from src.services.text_to_speech.schemas import (
     GenerateRequest,
     GenerateWordRequest,
     GeneratorProviderInfo,
     TtsGenerateResult,
 )
-from src.core.config import settings
-from src.api.service_resolver import get_typed_service, require_active_providers
-from src.services import text_to_speech
-from src.services.service_registry import ServiceRegistry
-from src.services.text_to_speech.models import TTSRequest
 from src.services.text_to_speech.service import (
     NoActiveTTSProvidersError,
     TTSProviderNotFoundError,

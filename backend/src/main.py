@@ -16,7 +16,6 @@ from src.api.internal import (
     evaluators_routes,
     jobs_routes,
     optimizers_routes,
-    text_to_speech_routes,
 )
 from src.api.v1 import routes_auth, routes_common, routes_content, routes_users
 from src.core.config import settings
@@ -27,6 +26,7 @@ from src.security.tokens import create_internal_token
 from src.services.logging import routes as logging_routes
 from src.services.logging.service import LoggingService
 from src.services.service_registry import ServiceRegistry, ServiceRegistryBuilder
+from src.services.text_to_speech import routes as text_to_speech_routes
 from src.services.text_translation import routes as text_translation_routes
 
 

@@ -9,7 +9,6 @@ from src.api.internal.schemas.configuration import (
     ApplyConfigurationRequest,
     ApplyConfigurationResponse,
 )
-from src.api.internal.schemas.text_to_speech import GenerateRequest, GenerateWordRequest, TtsGenerateResult
 from src.api.internal.schemas.voice_optimization import OptimizeRequest
 
 __all__ = [
@@ -17,9 +16,6 @@ __all__ = [
     "ApplyConfigurationResponse",
     "EvaluateRequest",
     "GenerateJobResponse",
-    "GenerateRequest",
-    "GenerateWordRequest",
     "JobStatusResponse",
     "OptimizeRequest",
-    "TtsGenerateResult",
 ]
