@@ -10,6 +10,8 @@ from typing import Optional, Dict
 
 # Box inner width (chars between the two vertical bars)
 _BOX_WIDTH = 70
+_BOX_MARGIN_LEFT = 1
+_BOX_MARGIN_RIGHT = 1
 
 # HTTP status code -> description (RFC 7231 and common extensions)
 _KNOWN_HTTP_STATUS_CODES = (
@@ -70,7 +72,7 @@ def parse_http_error(error_text: str) -> Dict[str, Optional[str]]:
 def _box_line(content: str) -> str:
     """One box row with right-side closing; exactly _BOX_WIDTH chars between the two │."""
     inner = (content + " " * _BOX_WIDTH)[:_BOX_WIDTH]
-    return "  │" + inner + "│"
+    return (" " * _BOX_MARGIN_LEFT) + "│" + inner + "│" + (" " * _BOX_MARGIN_RIGHT)
 
 
 def _wrapped_box_lines(
@@ -101,17 +103,17 @@ def _wrapped_box_lines(
 
 def _border_top() -> str:
     """Return the top border line of a box."""
-    return "  ┌" + "─" * _BOX_WIDTH + "┐"
+    return (" " * _BOX_MARGIN_LEFT) + "┌" + "─" * _BOX_WIDTH + "┐" + (" " * _BOX_MARGIN_RIGHT)
 
 
 def _border_mid() -> str:
     """Return a mid-section separator line of a box."""
-    return "  ├" + "─" * _BOX_WIDTH + "┤"
+    return (" " * _BOX_MARGIN_LEFT) + "├" + "─" * _BOX_WIDTH + "┤" + (" " * _BOX_MARGIN_RIGHT)
 
 
 def _border_bot() -> str:
     """Return the bottom border line of a box."""
-    return "  └" + "─" * _BOX_WIDTH + "┘"
+    return (" " * _BOX_MARGIN_LEFT) + "└" + "─" * _BOX_WIDTH + "┘" + (" " * _BOX_MARGIN_RIGHT)
 
 
 def format_json(data: object) -> str:

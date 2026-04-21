@@ -13,6 +13,7 @@ from starlette.concurrency import run_in_threadpool
 from src.api.dependencies import require_admin, require_uds
 from src.api.internal import (
     jobs_routes,
+    services_routes,
 )
 from src.api.v1 import routes_auth, routes_common, routes_content, routes_users
 from src.core.config import settings
@@ -114,6 +115,7 @@ app.include_router(routes_common.router, prefix=settings.API_V1_STR, tags=["task
 app.include_router(routes_content.router, prefix=settings.API_V1_STR, tags=["content"])
 app.include_router(routes_users.router, prefix=settings.API_V1_STR, tags=["users"])
 app.include_router(jobs_routes.router)
+app.include_router(services_routes.router)
 app.include_router(logging_routes.router)
 app.include_router(configuration_routes.router)
 app.include_router(text_translation_routes.router)

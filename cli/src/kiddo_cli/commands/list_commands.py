@@ -115,13 +115,17 @@ def register(app: typer.Typer) -> None:
         def _run(t: str):
             nonlocal enabled, name, category
 
-            category_routes = {
-                "translators": "/translators",
-                "generators": "/generators",
-                "optimizers": "/optimizers",
-                "evaluators": "/evaluators",
+            service_to_category = {
+                "logging": "loggers",
+                "text_translation": "translators",
+                "text_to_speech": "generators",
+                "voice_optimization": "optimizers",
+                "evaluation": "evaluators",
             }
+
+            valid_categories = set(service_to_category.values())
             category_aliases = {
+                "logging": "loggers",
                 "translator": "translators",
                 "generator": "generators",
                 "optimizer": "optimizers",
@@ -148,24 +152,18 @@ def register(app: typer.Typer) -> None:
             if category:
                 raw_category = category.lower().strip()
                 normalized_category = category_aliases.get(raw_category, raw_category)
-                if normalized_category not in category_routes:
-                    valid_values = ", ".join(category_routes)
+                if normalized_category not in valid_categories:
+                    valid_values = ", ".join(sorted(valid_categories))
                     raise typer.BadParameter(
                         f"Invalid category '{category}'. Use one of: {valid_values}"
                     )
 
-            selected_categories = [normalized_category] if normalized_category else list(category_routes.keys())
+            response = internal_get("/services", token=t)
+            if not isinstance(response, list):
+                print("[red]Unexpected response from backend.[/red]")
+                return
 
-            services = []
-            for service_category in selected_categories:
-                response = internal_get(category_routes[service_category], token=t)
-                if not isinstance(response, list):
-                    continue
-
-                for service in response:
-                    service_copy = dict(service)
-                    service_copy["category"] = service_category
-                    services.append(service_copy)
+            services = [dict(s) for s in response]
 
             filtered = []
             for s in services:
@@ -178,9 +176,10 @@ def register(app: typer.Typer) -> None:
                     if name.lower() not in s.get("name", "").lower():
                         continue
 
-                # Filter by category
+                # Filter by category (mapped from the "service" field)
                 if normalized_category:
-                    if normalized_category != s.get("category", "").lower():
+                    mapped = service_to_category.get(s.get("service", ""), "")
+                    if normalized_category != mapped:
                         continue
 
                 filtered.append(s)
@@ -191,6 +190,7 @@ def register(app: typer.Typer) -> None:
 
             print(f"[bold green]Services ({len(filtered)})[/bold green]")
             category_colors = {
+                "loggers": "grey50",
                 "translators": "magenta",
                 "generators": "cyan",
                 "optimizers": "blue",
@@ -199,7 +199,7 @@ def register(app: typer.Typer) -> None:
 
             for service in filtered:
                 service_name = str(service.get("name", "<unnamed>"))
-                category_name = str(service.get("category", "unknown")).lower()
+                category_name = service_to_category.get(service.get("service", ""), "unknown")
                 enabled_state = bool(service.get("enabled"))
 
                 escaped_name = escape(service_name)

@@ -46,7 +46,12 @@ class TextToSpeechService(Service):
         self._providers = [p for p in providers if isinstance(p, TTSProvider)]
 
     def providers_snapshot(self) -> list[ServiceProvider]:
-        """Return loaded TTS providers, including disabled ones."""
+        """Return loaded providers, including disabled ones."""
+        return self.all_providers
+
+    @property
+    def all_providers(self) -> list[TTSProvider]:
+        """Return all loaded providers, including disabled ones."""
         return list(self._providers)
 
     @property

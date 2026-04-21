@@ -37,14 +37,23 @@ class VoiceOptimizationService(Service):
         """Replace loaded optimizers with *providers*."""
         self._optimizers = [o for o in providers if isinstance(o, AudioOptimizerBase)]
 
-    def providers_snapshot(self) -> list[ServiceProvider]:
-        """Return loaded optimizers, including disabled ones."""
+    @property
+    def all_providers(self) -> list[AudioOptimizerBase]:
+        """Return all loaded optimizers, including disabled ones."""
         return list(self._optimizers)
+
+    def providers_snapshot(self) -> list[ServiceProvider]:
+        return self.all_providers
+
+    @property
+    def active_providers(self) -> list[AudioOptimizerBase]:
+        """Return optimizers that report themselves as active."""
+        return [o for o in self._optimizers if o.is_active()]
 
     @property
     def active_optimizers(self) -> list[AudioOptimizerBase]:
-        """Return optimizers that report themselves as active."""
-        return [o for o in self._optimizers if o.is_active()]
+        """Alias for active_providers; kept for call-site compatibility."""
+        return self.active_providers
 
     async def optimize(self, input_path: Path, output_path: Path) -> Path:
         """Run all active optimizers in sequence.
