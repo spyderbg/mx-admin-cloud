@@ -182,7 +182,7 @@ nav.navbar.default-layout .navbar-menu-wrapper .navbar-nav .nav-item.language-dr
   position: absolute !important;
   top: 100% !important;
   left: auto !important;
-  right: 0 !important;
+  right: -8px !important;
   min-width: 170px !important;
   width: 170px !important;
   max-width: calc(100vw - 1rem);
