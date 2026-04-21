@@ -115,8 +115,17 @@ def register(app: typer.Typer) -> None:
         def _run(t: str):
             nonlocal enabled, name, category
 
-            valid_categories = {"translators", "generators", "optimizers", "evaluators"}
+            service_to_category = {
+                "logging": "loggers",
+                "text_translation": "translators",
+                "text_to_speech": "generators",
+                "voice_optimization": "optimizers",
+                "evaluation": "evaluators",
+            }
+
+            valid_categories = set(service_to_category.values())
             category_aliases = {
+                "logging": "loggers",
                 "translator": "translators",
                 "generator": "generators",
                 "optimizer": "optimizers",
@@ -167,9 +176,10 @@ def register(app: typer.Typer) -> None:
                     if name.lower() not in s.get("name", "").lower():
                         continue
 
-                # Filter by category
+                # Filter by category (mapped from the "service" field)
                 if normalized_category:
-                    if normalized_category != s.get("category", "").lower():
+                    mapped = service_to_category.get(s.get("service", ""), "")
+                    if normalized_category != mapped:
                         continue
 
                 filtered.append(s)
@@ -180,6 +190,7 @@ def register(app: typer.Typer) -> None:
 
             print(f"[bold green]Services ({len(filtered)})[/bold green]")
             category_colors = {
+                "loggers": "grey50",
                 "translators": "magenta",
                 "generators": "cyan",
                 "optimizers": "blue",
@@ -188,7 +199,7 @@ def register(app: typer.Typer) -> None:
 
             for service in filtered:
                 service_name = str(service.get("name", "<unnamed>"))
-                category_name = str(service.get("category", "unknown")).lower()
+                category_name = service_to_category.get(service.get("service", ""), "unknown")
                 enabled_state = bool(service.get("enabled"))
 
                 escaped_name = escape(service_name)

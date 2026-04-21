@@ -213,7 +213,7 @@ components:
       - priority
       - config_path
       title: ServiceProviderInfo
-      description: Metadata for one configured translator provider (GET /internal/translators).
+      description: Metadata for one configured service provider.
     TranslateFileResponse:
       properties:
         results:

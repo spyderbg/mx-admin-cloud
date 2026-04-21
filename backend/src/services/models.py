@@ -57,7 +57,7 @@ class Service:
 
 
 class ServiceProviderInfo(BaseModel):
-    """Metadata for one configured translator provider (GET /internal/translators)."""
+    """Metadata for one configured service provider."""
 
     name: str = Field(..., description="Human-readable name")
     service: str = Field(..., description="Service name")
@@ -163,4 +163,5 @@ class ServiceProvider:
             provider=self.provider,
             enabled=self.enabled,
             priority=self.priority,
+            config_path=str(self.config_path),
         )
