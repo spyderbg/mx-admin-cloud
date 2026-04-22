@@ -18,17 +18,6 @@ class LogLevel(str, Enum):
     FATAL = "fatal"
 
 
-class LoggingProviderInfo(BaseModel):
-    """Info about a single stdlib logger returned by "GET /internal/logging/loggers"."""
-
-    name: str = Field(..., description="Logger name ('root' for the root logger)")
-    service: str = Field(..., description="Service name")
-    provider: str = Field(..., description="Provider name")
-    level: str = Field(..., description="Effective log level name (e.g. 'DEBUG', 'INFO', 'NOTSET')")
-    active: bool = Field(..., description="True when the logger has at least one handler and is not disabled")
-    handlers: list[str] = Field(default_factory=list, description="Handler class names attached to this logger")
-
-
 class StatusResponse(BaseModel):
     """Generic acknowledgement returned by fire-and-forget logging endpoints."""
 
