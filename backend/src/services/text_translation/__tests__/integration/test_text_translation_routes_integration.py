@@ -146,7 +146,7 @@ async def test_list_translators_sorted_by_priority(client_two_translators: Async
     assert len(data) == 2
     assert [row["priority"] for row in data] == [5, 50]
     for row in data:
-        assert set(row.keys()) == {"name", "service", "provider", "enabled", "priority", "config_path"}
+        assert set(row.keys()) == {"name", "service", "provider", "enabled", "priority"}
 
 
 @pytest.mark.asyncio

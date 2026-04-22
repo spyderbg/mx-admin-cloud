@@ -8,7 +8,7 @@ from typing import Any
 
 from typing_extensions import override
 
-from src.services.models import Service, ServiceProvider
+from src.services.models import Service, ServiceProvider, ServiceProviderInfo
 from src.services.provider_factory import ServiceProviderFactory
 from src.services.logging.models import LoggingServiceProvider
 
@@ -136,25 +136,18 @@ class LoggingService(Service):
             return provider.get_logger(name)
         return logging.getLogger(name)
 
-    def get_active_loggers(self) -> list[dict]:
+    def get_active_loggers(self) -> list[ServiceProviderInfo]:
         """Return info about enabled logging service providers, sorted by priority."""
         return self._provider_info_list(self.active_providers)
 
-    def get_all_loggers(self) -> list[dict]:
+    def get_all_loggers(self) -> list[ServiceProviderInfo]:
         """Return info about every configured logging service provider, sorted by priority."""
         return self._provider_info_list(self._providers)
 
     @staticmethod
-    def _provider_info_list(providers: list[LoggingServiceProvider]) -> list[dict]:
+    def _provider_info_list(providers: list[LoggingServiceProvider]) -> list[ServiceProviderInfo]:
         return [
-            {
-                "name": p.name,
-                "service": p.service,
-                "provider": p.provider,
-                "enabled": p.enabled,
-                "priority": p.priority,
-                "config_path": str(p.config_path),
-            }
+            p.get_info()
             for p in sorted(providers, key=lambda p: p.priority)
         ]
 

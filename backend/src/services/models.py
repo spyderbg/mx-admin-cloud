@@ -64,7 +64,6 @@ class ServiceProviderInfo(BaseModel):
     provider: str = Field(..., description="Provider name")
     enabled: bool = Field(..., description="Whether the provider is enabled")
     priority: int = Field(..., description="Priority of the provider")
-    config_path: str = Field(..., description="Path to the provider's config file")
 
 
 class ServiceProvider:
@@ -163,5 +162,4 @@ class ServiceProvider:
             provider=self.provider,
             enabled=self.enabled,
             priority=self.priority,
-            config_path=str(self.config_path),
         )

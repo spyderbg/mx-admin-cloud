@@ -43,7 +43,7 @@ async def list_loggers(
         all: bool = False,
         registry: ServiceRegistry = Depends(get_registry),
         _user: dict = Depends(require_internal),
-) -> list[dict]:
+) -> list[ServiceProviderInfo]:
     """Return enabled (or all) logging service providers."""
     service = get_typed_service(
         registry=registry,
