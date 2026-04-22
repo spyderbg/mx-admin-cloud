@@ -266,8 +266,7 @@ work.
 | `GET`  | [/internal/logging/loggers](src/services/logging/routes.py)           | List active logging providers (or all with `?all=true`). |
 | `POST` | [/internal/logging/emit](src/services/logging/routes.py)               | Emit a structured log message to the named logger.     |
 | `POST` | [/internal/logging/api-request](src/services/logging/routes.py)        | Emit a structured API request log to the `requests` logger. |
-| `POST` | [/internal/logging/provider-request](src/services/logging/routes.py)   | Log a TTS/STT provider request via the request logger. |
-| `POST` | [/internal/logging/translator-request](src/services/logging/routes.py) | Log a translator request via the request logger.       |
+| `POST` | [/internal/logging/provider-request](src/services/logging/routes.py)   | Log a provider request (TTS, STT, translator) via the request logger. |
 
 All logging endpoints accept a JSON body and delegate to the `LoggingService` (backed by the
 `struct_log` provider). The `logger_name` field in `/emit` selects which logger channel receives
@@ -443,7 +442,7 @@ src/
         ├── __init__.py           # SERVICE_CLASS, SERVICE_NAME, SERVICE_ACCEPT_CRITERIA
         ├── models.py             # LoggingServiceProvider base class
         ├── schemas.py            # Pydantic bodies for /internal/logging/* (wire contract)
-        ├── routes.py             # /internal/logging/emit, provider-request, translator-request, …
+        ├── routes.py             # /internal/logging/emit, provider-request, …
         ├── service.py            # LoggingService + LoggingProviderFactory
         ├── __tests__/            # Pytest tree (co-located with service)
         │   └── __init__.py
@@ -738,7 +737,6 @@ Request logging config (`config/logging/requests.json`):
       "request_log": {
         "fields": {
           "provider": true,
-          "translator": true,
           "model": true,
           "actor": true,
           "voice_id": true,

@@ -19,7 +19,6 @@ from src.services.logging.schemas import (
     LogEmitRequest,
     LogLevel,
     LogProviderRequest,
-    LogTranslatorRequest,
 )
 
 _client: Any | None = None  # pylint: disable=invalid-name # httpx.AsyncClient when configured
@@ -86,21 +85,6 @@ async def log_provider_request(
             logger_name="requests",
             level=LogLevel.INFO,
             event="provider_request",
-            fields=fields,
-        ),
-    )
-
-
-async def log_text_translation_request(
-        request: LogTranslatorRequest,
-) -> None:
-    """Post a translator request log via "POST /internal/logging/emit"."""
-    fields = request.to_request_emit_fields()
-    await emit(
-        LogEmitRequest(
-            logger_name="requests",
-            level=LogLevel.INFO,
-            event="translator_request",
             fields=fields,
         ),
     )

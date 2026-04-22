@@ -3,7 +3,7 @@
     "service": "logging",
     "provider": "struct_log",
     "enabled": true,
-    "priority": 2,
+    "priority": 10,
     "version": "1.0",
     "config": {
       "formatters": {
@@ -20,7 +20,7 @@
         },
         "file": {
           "class": "logging.FileHandler",
-          "level": "TRACE",
+          "level": "INFO",
           "formatter": "plain",
           "filename": "${output_dir}/results/logs/app.log",
           "encoding": "utf-8"

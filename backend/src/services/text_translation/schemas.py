@@ -30,7 +30,7 @@ class TranslationFileSourceWord(BaseModel):
 
     @classmethod
     def from_core(cls, word: TranslationSourceWord) -> TranslationFileSourceWord:
-        """Build a schema instance from a: class:`TranslationSourceWord` loaded by "load_words"."""
+        """Build a schema instance from a "TranslationSourceWord" loaded by "load_words"."""
         return cls(
             text=word.text,
             source_language_code=word.source_language_code,

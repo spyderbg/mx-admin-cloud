@@ -25,7 +25,7 @@ class LoggingServiceProvider(ServiceProvider, ABC):
     def apply_levels(self) -> None:
         """Patch handler/logger levels from the current config without recreating handlers.
 
-        Default implementation is a no-op; providers that support live level
+        The default implementation is a no-op; providers that support live level
         updates should override this.
         """
 

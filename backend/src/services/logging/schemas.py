@@ -25,19 +25,21 @@ class StatusResponse(BaseModel):
 
 
 class LogRequest(BaseModel):
+    """Base body for "POST /internal/logging/emit" and "POST /internal/logging/api-request"."""
+
     level: LogLevel = Field(LogLevel.INFO, description="Log level, defaults to 'info'")
     event: str = Field(..., description="Log event name")
     fields: dict[str, Any] = Field(default_factory=dict)
 
 
 class LogEmitRequest(LogRequest):
-    """Body for ``POST /internal/logging/emit``."""
+    """Body for "POST /internal/logging/emit"."""
 
     logger_name: str | None = Field(None, description="Logger name; omit to use the default logger")
 
 
 class LogApiRequest(LogRequest):
-    """Body for ``POST /internal/logging/api-request``."""
+    """Body for "POST /internal/logging/api-request"."""
 
     api_path: str = Field(..., description="HTTP path")
     api_method: str = Field(..., description="HTTP method")
@@ -54,17 +56,9 @@ class LoggerInfo(BaseModel):
     handlers: list[str] = Field(default_factory=list, description="Handler class names attached to this logger")
 
 
-def _request_emit_kw_fields(body: BaseModel) -> dict[str, Any]:
-    """Shared dump for provider/translator bodies → ``requests`` provider ``emit`` kwargs."""
-    fields = body.model_dump(mode="json", by_alias=True, exclude_none=True)
-    if "input" in fields:
-        fields["input_data"] = fields.pop("input")
-    return fields
-
-
 # TODO: not final
 class LogProviderRequest(BaseModel):
-    """Body for ``POST /internal/logging/provider-request``."""
+    """Body for "POST /internal/logging/provider-request"."""
 
     provider: str | None = None
     tts_model: str | None = Field(None, alias="model")
@@ -77,24 +71,8 @@ class LogProviderRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
     def to_request_emit_fields(self) -> dict[str, Any]:
-        """Build ``**fields`` for ``requests`` provider structured emit (``input`` → ``input_data``)."""
-        return _request_emit_kw_fields(self)
-
-
-# TODO: not final
-class LogTranslatorRequest(BaseModel):
-    """Body for ``POST /internal/logging/translator-request``."""
-
-    translator: str | None = None
-    tts_model: str | None = Field(None, alias="model")
-    actor: str | None = None
-    voice_id: str | None = None
-    language: str | None = None
-    input_data: Any | None = Field(None, alias="input")
-    response_duration: float | None = None
-
-    model_config = {"populate_by_name": True}
-
-    def to_request_emit_fields(self) -> dict[str, Any]:
-        """Build ``**fields`` for ``requests`` provider structured emit (``input`` → ``input_data``)."""
-        return _request_emit_kw_fields(self)
+        """Build "**fields" for "requests" provider structured emit ("input" -> "input_data")."""
+        fields = self.model_dump(mode="json", by_alias=True, exclude_none=True)
+        if "input" in fields:
+            fields["input_data"] = fields.pop("input")
+        return fields

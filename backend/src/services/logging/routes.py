@@ -15,7 +15,6 @@ from src.services.logging.schemas import (
     LogEmitRequest,
     LogProviderRequest,
     LogRequest,
-    LogTranslatorRequest,
     StatusResponse,
 )
 from src.services.logging.service import LoggingService
@@ -26,7 +25,6 @@ LOGGING_LOGGERS = "/logging/loggers"
 LOGGING_EMIT = "/logging/emit"
 LOGGING_API_REQUEST = "/logging/api-request"
 LOGGING_PROVIDER_REQUEST = "/logging/provider-request"
-LOGGING_TRANSLATOR_REQUEST = "/logging/translator-request"
 
 router = APIRouter(prefix="/internal", tags=["internal-logging"])
 
@@ -129,34 +127,6 @@ async def log_provider_request(
         "requests",
         "info",
         "provider_request",
-        **body.to_request_emit_fields(),
-    )
-    return {"status": "ok"}
-
-
-@router.post(
-    LOGGING_TRANSLATOR_REQUEST,
-    response_model=StatusResponse,
-    summary="Log a translator request",
-    description=(
-            "Record a translator request through the request-logger channel."
-    ),
-)
-async def log_text_translation_request(
-        body: LogTranslatorRequest,
-        registry: ServiceRegistry = Depends(get_registry),
-        _user: dict = Depends(require_internal),
-) -> dict[str, str]:
-    """Log a translator request through the logging service."""
-    service = get_typed_service(
-        registry=registry,
-        service_name=logging.SERVICE_NAME,
-        expected_type=LoggingService,
-    )
-    service.emit(
-        "requests",
-        "info",
-        "translator_request",
         **body.to_request_emit_fields(),
     )
     return {"status": "ok"}
