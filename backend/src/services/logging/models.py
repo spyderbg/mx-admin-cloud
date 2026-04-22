@@ -47,6 +47,6 @@ class LoggingServiceProvider(ServiceProvider, ABC):
 
     @abstractmethod
     def log_to_all_active_loggers(
-        self, message: str, level: int = logging.INFO,
+            self, message: str, level: int = logging.INFO,
     ) -> None:
         """Broadcast *message* to root and all standalone active loggers."""

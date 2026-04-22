@@ -34,9 +34,9 @@ router = APIRouter(prefix="/internal", tags=["internal-logging"])
     response_model=list[ServiceProviderInfo],
     summary="List logging service providers",
     description=(
-        "Return the logging service providers that the emit endpoint routes through. "
-        "By default only enabled providers are returned. "
-        "Pass 'all=true' to include every configured provider regardless of state."
+            "Return the logging service providers that the emit endpoint routes through. "
+            "By default only enabled providers are returned. "
+            "Pass 'all=true' to include every configured provider regardless of state."
     ),
 )
 async def list_loggers(
