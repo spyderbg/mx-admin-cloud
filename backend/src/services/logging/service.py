@@ -59,6 +59,16 @@ class LoggingService(Service):
         """Return providers that report themselves as active."""
         return [p for p in self._providers if p.is_active()]
 
+    @override
+    def get_all_providers(self) -> list[LoggingServiceProvider]:
+        """Return all loaded providers, including disabled ones."""
+        return list(self._providers)
+
+    @override
+    def get_active_providers(self) -> list[LoggingServiceProvider]:
+        """Return active providers."""
+        return self.active_providers
+
     # ------------------------------------------------------------------
     # Startup configuration
     # ------------------------------------------------------------------

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing_extensions import override
 
 from src.services.models import Service, ServiceProvider
 from src.services.provider_factory import ServiceProviderFactory
@@ -24,15 +25,16 @@ class VoiceOptimizationService(Service):
     """
 
     def __init__(
-        self,
-        service_name: str,
-        package_name: str,
-        service_dir: Path,
-        base_dir: Path,
+            self,
+            service_name: str,
+            package_name: str,
+            service_dir: Path,
+            base_dir: Path,
     ) -> None:
         super().__init__(service_name, package_name, service_dir, base_dir)
         self._optimizers: list[AudioOptimizerBase] = []
 
+    @override
     def replace_providers(self, providers: list[ServiceProvider]) -> None:
         """Replace loaded optimizers with *providers*."""
         self._optimizers = [o for o in providers if isinstance(o, AudioOptimizerBase)]
@@ -42,6 +44,7 @@ class VoiceOptimizationService(Service):
         """Return all loaded optimizers, including disabled ones."""
         return list(self._optimizers)
 
+    @override
     def providers_snapshot(self) -> list[ServiceProvider]:
         return self.all_providers
 
@@ -49,6 +52,18 @@ class VoiceOptimizationService(Service):
     def active_providers(self) -> list[AudioOptimizerBase]:
         """Return optimizers that report themselves as active."""
         return [o for o in self._optimizers if o.is_active()]
+
+    @override
+    def get_all_providers(self) -> list[AudioOptimizerBase]:
+        """Return all loaded providers, including disabled ones."""
+        return self.all_providers
+
+    @override
+    def get_active_providers(self) -> list[AudioOptimizerBase]:
+        """Return active providers."""
+        return self.active_providers
+
+    ################################################################################
 
     @property
     def active_optimizers(self) -> list[AudioOptimizerBase]:

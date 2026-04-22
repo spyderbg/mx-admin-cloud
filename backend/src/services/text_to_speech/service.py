@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from typing_extensions import override
 
 from src.core.models import GeneratedAudio
 from src.services.models import Service, ServiceProvider
@@ -41,10 +42,12 @@ class TextToSpeechService(Service):
         super().__init__(service_name, package_name, service_dir, base_dir)
         self._providers: list[TTSProvider] = []
 
+    @override
     def replace_providers(self, providers: list[ServiceProvider]) -> None:
         """Replace loaded TTS providers with *providers*."""
         self._providers = [p for p in providers if isinstance(p, TTSProvider)]
 
+    @override
     def providers_snapshot(self) -> list[ServiceProvider]:
         """Return loaded providers, including disabled ones."""
         return self.all_providers
@@ -59,8 +62,18 @@ class TextToSpeechService(Service):
         """Return active providers ordered by ascending priority."""
         return [p for p in self._providers if p.is_active()]
 
+    @override
+    def get_all_providers(self) -> list[TTSProvider]:
+        """Return all loaded providers, including disabled ones."""
+        return self.all_providers
+
+    @override
+    def get_active_providers(self) -> list[TTSProvider]:
+        """Return active providers."""
+        return self.active_providers
+
     def _resolve_active_provider(self, provider_name: str | None = None) -> TTSProvider:
-        """Return requested active provider or first active by priority."""
+        """Return the requested active provider or first active by priority."""
         providers = self.active_providers
         if not providers:
             raise NoActiveTTSProvidersError("No active TTS providers configured.")

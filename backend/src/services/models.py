@@ -10,12 +10,13 @@ Typed per-provider parsing happens inside each provider subclass using "self.con
 from __future__ import annotations
 
 import os
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from pydantic import BaseModel, Field
 
 from src.core.languages import normalize_language_code
+from src.services.schemas import ServiceProviderInfo
 
 
 @dataclass
@@ -29,7 +30,7 @@ class LangCodeText:
         self.lang_code = normalize_language_code(self.lang_code)
 
 
-class Service:
+class Service(ABC):
     """Root contract for all service implementations.
 
     Subclasses are business-logic orchestrators that hold providers and expose
@@ -43,27 +44,44 @@ class Service:
         self.service_dir: Path = service_dir
         self.base_dir: Path = base_dir
 
+    @abstractmethod
     def replace_providers(self, providers: list["ServiceProvider"]) -> None:
         """Replace runtime providers for this service."""
         raise NotImplementedError(
             f"{type(self).__name__} must implement replace_providers()",
         )
 
+    @abstractmethod
     def providers_snapshot(self) -> list["ServiceProvider"]:
         """Return a copy of currently loaded providers."""
         raise NotImplementedError(
             f"{type(self).__name__} must implement providers_snapshot()",
         )
 
+    @abstractmethod
+    def get_all_providers(self) -> list["ServiceProvider"]:
+        """Return a list of all providers."""
+        raise NotImplementedError(
+            f"{type(self).__name__} must implement get_all_providers()",
+        )
 
-class ServiceProviderInfo(BaseModel):
-    """Metadata for one configured service provider."""
+    @abstractmethod
+    def get_active_providers(self) -> list["ServiceProvider"]:
+        """Return a list of active providers."""
+        raise NotImplementedError(
+            f"{type(self).__name__} must implement get_active_providers()",
+        )
 
-    name: str = Field(..., description="Human-readable name")
-    service: str = Field(..., description="Service name")
-    provider: str = Field(..., description="Provider name")
-    enabled: bool = Field(..., description="Whether the provider is enabled")
-    priority: int = Field(..., description="Priority of the provider")
+    def get_provider(self, provider_name: str) -> "ServiceProvider | None":
+        """Return a provider by name, or None if not found."""
+        normalized = provider_name.strip().lower()
+        for provider in self.get_active_providers():
+            if provider.name.strip().lower() == normalized:
+                return provider
+        for provider in self.get_all_providers():
+            if provider.name.strip().lower() == normalized:
+                return provider
+        return None
 
 
 class ServiceProvider:

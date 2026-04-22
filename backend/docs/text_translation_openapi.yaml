@@ -200,10 +200,6 @@ components:
           type: integer
           title: Priority
           description: Priority of the provider
-        config_path:
-          type: string
-          title: Config Path
-          description: Path to the provider's config file
       type: object
       required:
       - name
@@ -211,7 +207,6 @@ components:
       - provider
       - enabled
       - priority
-      - config_path
       title: ServiceProviderInfo
       description: Metadata for one configured service provider.
     TranslateFileResponse:

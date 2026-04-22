@@ -126,34 +126,6 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - OAuth2PasswordBearer: []
-  /internal/logging/translator-request:
-    post:
-      tags:
-      - internal-logging
-      summary: Log a translator request
-      description: Record a translator request through the request-logger channel.
-      operationId: log_text_translation_request_internal_logging_translator_request_post
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/LogTranslatorRequest'
-        required: true
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StatusResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - OAuth2PasswordBearer: []
 components:
   securitySchemes:
     OAuth2PasswordBearer:
@@ -196,7 +168,7 @@ components:
       required:
       - event
       title: LogEmitRequest
-      description: Body for ``POST /internal/logging/emit``.
+      description: Body for "POST /internal/logging/emit".
     LogLevel:
       type: string
       enum:
@@ -247,7 +219,7 @@ components:
           title: Response Duration
       type: object
       title: LogProviderRequest
-      description: Body for ``POST /internal/logging/provider-request``.
+      description: Body for "POST /internal/logging/provider-request".
     LogRequest:
       properties:
         level:
@@ -266,46 +238,7 @@ components:
       required:
       - event
       title: LogRequest
-    LogTranslatorRequest:
-      properties:
-        translator:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Translator
-        model:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Model
-        actor:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Actor
-        voice_id:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Voice Id
-        language:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Language
-        input:
-          anyOf:
-          - {}
-          - type: 'null'
-          title: Input
-        response_duration:
-          anyOf:
-          - type: number
-          - type: 'null'
-          title: Response Duration
-      type: object
-      title: LogTranslatorRequest
-      description: Body for ``POST /internal/logging/translator-request``.
+      description: Base body for "POST /internal/logging/emit" and "POST /internal/logging/api-request".
     ServiceProviderInfo:
       properties:
         name:
@@ -328,10 +261,6 @@ components:
           type: integer
           title: Priority
           description: Priority of the provider
-        config_path:
-          type: string
-          title: Config Path
-          description: Path to the provider's config file
       type: object
       required:
       - name
@@ -339,7 +268,6 @@ components:
       - provider
       - enabled
       - priority
-      - config_path
       title: ServiceProviderInfo
       description: Metadata for one configured service provider.
     StatusResponse:

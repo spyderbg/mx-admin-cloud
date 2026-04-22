@@ -56,6 +56,30 @@ class ConfigurationService(Service):
         """Return configuration providers that are enabled."""
         return [provider for provider in self._providers if provider.is_active()]
 
+    @override
+    def get_all_providers(self) -> list[ConfigurationProvider]:
+        """Return all loaded providers, including disabled ones."""
+        return self.all_providers
+
+    @override
+    def get_active_providers(self) -> list[ConfigurationProvider]:
+        """Return active providers."""
+        return self.active_providers
+
+    @override
+    def get_provider(self, provider_name: str) -> ConfigurationProvider | None:
+        """Return a provider by name, or None if not found."""
+        normalized = provider_name.strip().lower()
+        for provider in self.active_providers:
+            if provider.name.strip().lower() == normalized:
+                return provider
+        for provider in self.all_providers:
+            if provider.name.strip().lower() == normalized:
+                return provider
+        return None
+
+    ################################################################################
+
     def list_configurations(self, service_name: str) -> list[ConfigurationSummary]:
         """Return configuration summaries for one registered service."""
         return self._select_provider().list_configurations(service_name)
@@ -107,19 +131,9 @@ class ConfigurationService(Service):
         return self._select_provider().set_all_configurations_enabled(service_name, enabled=False)
 
     def _select_provider(self) -> ConfigurationProvider:
-        provider = self._provider_by_name("file_system")
+        provider = self.get_provider("file_system")
         if provider is None:
             provider = self._providers[0] if self._providers else None
         if provider is None:
             raise ConfigurationProviderUnavailableError("No configuration provider is available.")
         return provider
-
-    def _provider_by_name(self, provider_name: str) -> ConfigurationProvider | None:
-        normalized = provider_name.strip().lower()
-        for provider in self.active_providers:
-            if provider.provider.strip().lower() == normalized:
-                return provider
-        for provider in self.all_providers:
-            if provider.provider.strip().lower() == normalized:
-                return provider
-        return None

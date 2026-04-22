@@ -7,6 +7,16 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
+class ServiceProviderInfo(BaseModel):
+    """Metadata for one configured service provider."""
+
+    name: str = Field(..., description="Human-readable name")
+    service: str = Field(..., description="Service name")
+    provider: str = Field(..., description="Provider name")
+    enabled: bool = Field(..., description="Whether the provider is enabled")
+    priority: int = Field(..., description="Priority of the provider")
+
+
 class ErrorMessage(BaseModel):
     """Error message returned by the API"""
 

@@ -18,7 +18,7 @@ from src.services.logging.schemas import (
     StatusResponse,
 )
 from src.services.logging.service import LoggingService
-from src.services.models import ServiceProviderInfo
+from src.services.schemas import ServiceProviderInfo
 from src.services.service_registry import ServiceRegistry
 
 LOGGING_LOGGERS = "/logging/loggers"
@@ -50,7 +50,8 @@ async def list_loggers(
         service_name=logging.SERVICE_NAME,
         expected_type=LoggingService,
     )
-    return service.get_all_loggers() if all else service.get_active_loggers()
+    providers = service.get_all_loggers() if all else service.get_active_loggers()
+
 
 
 @router.post(

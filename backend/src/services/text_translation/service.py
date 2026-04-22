@@ -1,7 +1,6 @@
 """Text translation service business logic: factory and orchestration."""
 
 from __future__ import annotations
-from collections.abc import Sequence
 from pathlib import Path
 from typing_extensions import override
 
@@ -59,6 +58,18 @@ class TextTranslationService(Service):
     def active_providers(self) -> list[TextTranslationServiceProvider]:
         """Return providers that report themselves as active."""
         return [p for p in self._providers if p.is_active()]
+
+    @override
+    def get_all_providers(self) -> list[TextTranslationServiceProvider]:
+        """Return all loaded providers, including disabled ones."""
+        return self.all_providers
+
+    @override
+    def get_active_providers(self) -> list[TextTranslationServiceProvider]:
+        """Return active providers."""
+        return self.active_providers
+
+    ################################################################################
 
     async def translate_text(
             self,
