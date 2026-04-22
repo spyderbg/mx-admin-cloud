@@ -38,22 +38,12 @@ class EvaluationService(Service):
         """Return loaded evaluation providers, including disabled ones."""
         return list(self._providers)
 
-    @property
-    def all_providers(self) -> list[EvaluationServiceProvider]:
-        """Return all loaded providers, including disabled ones."""
-        return list(self._providers)
-
-    @property
-    def active_providers(self) -> list[EvaluationServiceProvider]:
-        """Return providers that report themselves as active (generate.enabled=true)."""
-        return [p for p in self._providers if p.is_active()]
-
     @override
     def get_all_providers(self) -> list[EvaluationServiceProvider]:
         """Return all loaded providers, including disabled ones."""
-        return self.all_providers
+        return list(self._providers)
 
     @override
     def get_active_providers(self) -> list[EvaluationServiceProvider]:
-        """Return active providers."""
-        return self.active_providers
+        """Return providers that report themselves as active (generate.enabled=true)."""
+        return [p for p in self._providers if p.is_active()]

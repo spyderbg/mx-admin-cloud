@@ -49,25 +49,15 @@ class TextTranslationService(Service):
         """Return loaded translation providers, including disabled ones."""
         return list(self._providers)
 
-    @property
-    def all_providers(self) -> list[TextTranslationServiceProvider]:
+    @override
+    def get_all_providers(self) -> list[TextTranslationServiceProvider]:
         """Return all loaded translation providers, including disabled ones."""
         return list(self._providers)
 
-    @property
-    def active_providers(self) -> list[TextTranslationServiceProvider]:
-        """Return providers that report themselves as active."""
-        return [p for p in self._providers if p.is_active()]
-
-    @override
-    def get_all_providers(self) -> list[TextTranslationServiceProvider]:
-        """Return all loaded providers, including disabled ones."""
-        return self.all_providers
-
     @override
     def get_active_providers(self) -> list[TextTranslationServiceProvider]:
-        """Return active providers."""
-        return self.active_providers
+        """Return providers that report themselves as active."""
+        return [p for p in self._providers if p.is_active()]
 
     ################################################################################
 
@@ -86,7 +76,7 @@ class TextTranslationService(Service):
         current = text
         current_lang_code = input_lang_code
         success = False
-        for provider in self.active_providers:
+        for provider in self.get_active_providers():
             inp = input_lang_code or provider.default_input_language()
             tgt = target_lang_code or provider.default_output_language()
             if not inp or not tgt:

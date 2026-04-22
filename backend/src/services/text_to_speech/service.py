@@ -50,31 +50,23 @@ class TextToSpeechService(Service):
     @override
     def providers_snapshot(self) -> list[ServiceProvider]:
         """Return loaded providers, including disabled ones."""
-        return self.all_providers
-
-    @property
-    def all_providers(self) -> list[TTSProvider]:
-        """Return all loaded providers, including disabled ones."""
-        return list(self._providers)
-
-    @property
-    def active_providers(self) -> list[TTSProvider]:
-        """Return active providers ordered by ascending priority."""
-        return [p for p in self._providers if p.is_active()]
+        return self.get_all_providers()
 
     @override
     def get_all_providers(self) -> list[TTSProvider]:
         """Return all loaded providers, including disabled ones."""
-        return self.all_providers
+        return list(self._providers)
 
     @override
     def get_active_providers(self) -> list[TTSProvider]:
-        """Return active providers."""
-        return self.active_providers
+        """Return active providers ordered by ascending priority."""
+        return [p for p in self._providers if p.is_active()]
+
+    ################################################################################
 
     def _resolve_active_provider(self, provider_name: str | None = None) -> TTSProvider:
         """Return the requested active provider or first active by priority."""
-        providers = self.active_providers
+        providers = self.get_active_providers()
         if not providers:
             raise NoActiveTTSProvidersError("No active TTS providers configured.")
 

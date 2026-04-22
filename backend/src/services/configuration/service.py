@@ -46,37 +46,15 @@ class ConfigurationService(Service):
         """Return loaded configuration providers, including disabled ones."""
         return list(self._providers)
 
-    @property
-    def all_providers(self) -> list[ConfigurationProvider]:
-        """Return all loaded configuration providers."""
-        return list(self._providers)
-
-    @property
-    def active_providers(self) -> list[ConfigurationProvider]:
-        """Return configuration providers that are enabled."""
-        return [provider for provider in self._providers if provider.is_active()]
-
     @override
     def get_all_providers(self) -> list[ConfigurationProvider]:
-        """Return all loaded providers, including disabled ones."""
-        return self.all_providers
+        """Return all loaded configuration providers, including disabled ones."""
+        return list(self._providers)
 
     @override
     def get_active_providers(self) -> list[ConfigurationProvider]:
-        """Return active providers."""
-        return self.active_providers
-
-    @override
-    def get_provider(self, provider_name: str) -> ConfigurationProvider | None:
-        """Return a provider by name, or None if not found."""
-        normalized = provider_name.strip().lower()
-        for provider in self.active_providers:
-            if provider.name.strip().lower() == normalized:
-                return provider
-        for provider in self.all_providers:
-            if provider.name.strip().lower() == normalized:
-                return provider
-        return None
+        """Return configuration providers that are enabled."""
+        return [provider for provider in self._providers if provider.is_active()]
 
     ################################################################################
 

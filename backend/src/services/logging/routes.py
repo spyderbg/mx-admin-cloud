@@ -40,7 +40,7 @@ router = APIRouter(prefix="/internal", tags=["internal-logging"])
     ),
 )
 async def list_loggers(
-        all: bool = False,
+        all_loggers: bool = False,
         registry: ServiceRegistry = Depends(get_registry),
         _user: dict = Depends(require_internal),
 ) -> list[ServiceProviderInfo]:
@@ -50,8 +50,7 @@ async def list_loggers(
         service_name=logging.SERVICE_NAME,
         expected_type=LoggingService,
     )
-    providers = service.get_all_loggers() if all else service.get_active_loggers()
-
+    return service.get_all_loggers() if all_loggers else service.get_active_loggers()
 
 
 @router.post(
