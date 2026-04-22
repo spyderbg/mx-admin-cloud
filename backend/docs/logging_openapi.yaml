@@ -4,7 +4,7 @@ info:
   version: 0.1.0
 servers: []
 paths:
-  /internal/logging/loggers:
+  /internal/loggers:
     get:
       tags:
       - internal-logging
@@ -12,7 +12,7 @@ paths:
       description: Return the logging service providers that the emit endpoint routes
         through. By default only enabled providers are returned. Pass 'all=true' to
         include every configured provider regardless of state.
-      operationId: list_loggers_internal_logging_loggers_get
+      operationId: list_loggers_internal_loggers_get
       security:
       - OAuth2PasswordBearer: []
       parameters:
@@ -32,7 +32,7 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/ServiceProviderInfo'
-                title: Response List Loggers Internal Logging Loggers Get
+                title: Response List Loggers Internal Loggers Get
         '422':
           description: Validation Error
           content:

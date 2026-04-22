@@ -62,7 +62,7 @@ SERVICES: dict[str, ServiceSpec] = {
     ),
     "logging": ServiceSpec(
         title="Logging Internal API",
-        path_prefixes=("/internal/logging",),
+        path_prefixes=("/internal/log",),
         output=BACKEND_ROOT / "docs" / "logging_openapi.yaml",
     ),
     "tts": ServiceSpec(
@@ -80,7 +80,7 @@ def _source_files_for_service(spec: ServiceSpec, schema_names: set[str]) -> list
     """Return sorted relative paths of every source file that contributes to *spec*.
 
     Covers two categories:
-    - Route files  — the .py file that defines each matching endpoint function.
+    - Route files — the .py file that defines each matching endpoint function.
     - Schema files — the .py file that defines each Pydantic model class used
                      by those endpoints (found by name in already-loaded modules).
     """

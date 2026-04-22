@@ -21,7 +21,7 @@ from src.services.logging.service import LoggingService
 from src.services.schemas import ServiceProviderInfo
 from src.services.service_registry import ServiceRegistry
 
-LOGGERS_LIST = "/logging/loggers"
+LOGGERS_LIST = "/loggers"
 LOGGING_EMIT = "/logging/emit"
 LOGGING_API_REQUEST = "/logging/api-request"
 LOGGING_PROVIDER_REQUEST = "/logging/provider-request"
