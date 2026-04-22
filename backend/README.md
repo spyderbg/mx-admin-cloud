@@ -263,7 +263,7 @@ work.
 
 | Method | Path                                                                       | Description                                            |
 |--------|----------------------------------------------------------------------------|--------------------------------------------------------|
-| `GET`  | [/internal/logging/loggers](src/services/logging/routes.py)           | List active logging providers (or all with `?all=true`). |
+| `GET`  | [/internal//loggers](src/services/logging/routes.py)           | List active logging providers (or all with `?all=true`). |
 | `POST` | [/internal/logging/emit](src/services/logging/routes.py)               | Emit a structured log message to the named logger.     |
 | `POST` | [/internal/logging/api-request](src/services/logging/routes.py)        | Emit a structured API request log to the `requests` logger. |
 | `POST` | [/internal/logging/provider-request](src/services/logging/routes.py)   | Log a provider request (TTS, STT, translator) via the request logger. |

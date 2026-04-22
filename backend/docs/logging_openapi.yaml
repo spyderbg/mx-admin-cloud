@@ -16,13 +16,13 @@ paths:
       security:
       - OAuth2PasswordBearer: []
       parameters:
-      - name: all
+      - name: all_loggers
         in: query
         required: false
         schema:
           type: boolean
           default: false
-          title: All
+          title: All Loggers
       responses:
         '200':
           description: Successful Response

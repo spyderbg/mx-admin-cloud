@@ -76,7 +76,7 @@ def register(app: typer.Typer) -> None:
 
         def _run(t: str):
             params = {"all": "true"} if include_all else None
-            result = internal_get("/logging/loggers", token=t, params=params)
+            result = internal_get("/loggers", token=t, params=params)
             if not isinstance(result, list):
                 print_json(result)
                 return

@@ -1,7 +1,7 @@
 """Internal logging endpoints.
 
 Exposes structured-log emission through the "LoggingService".
-All endpoints require a JWT with role "internal" or "admin".
+All endpoints require a JWT with the role "internal" or "admin".
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from src.services.logging.service import LoggingService
 from src.services.schemas import ServiceProviderInfo
 from src.services.service_registry import ServiceRegistry
 
-LOGGING_LOGGERS = "/logging/loggers"
+LOGGERS_LIST = "/logging/loggers"
 LOGGING_EMIT = "/logging/emit"
 LOGGING_API_REQUEST = "/logging/api-request"
 LOGGING_PROVIDER_REQUEST = "/logging/provider-request"
@@ -30,7 +30,7 @@ router = APIRouter(prefix="/internal", tags=["internal-logging"])
 
 
 @router.get(
-    LOGGING_LOGGERS,
+    LOGGERS_LIST,
     response_model=list[ServiceProviderInfo],
     summary="List logging service providers",
     description=(
