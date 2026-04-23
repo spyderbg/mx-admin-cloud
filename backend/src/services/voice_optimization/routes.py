@@ -18,10 +18,12 @@ from src.services.service_registry import ServiceRegistry
 from src.services.voice_optimization.schemas import OptimizeRequest
 from src.services.voice_optimization.service import VoiceOptimizationService
 
-OPTIMIZERS_LIST = "/optimizers"
-OPTIMIZER_SINGLE = "/optimizers/{optimizer}/optimize"
+ROUTER_PREFIX = "/internal/optimizers"
 
-router = APIRouter(prefix="/internal", tags=["internal-optimizers"])
+router = APIRouter(prefix=ROUTER_PREFIX, tags=["internal-optimizers"])
+
+OPTIMIZERS_LIST = "/"
+OPTIMIZER_SINGLE = "/{optimizer}/optimize"
 
 
 @router.get(

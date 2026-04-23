@@ -30,11 +30,11 @@ from src.services.text_to_speech.service import (
     TextToSpeechService,
 )
 
-GENERATORS_LIST = "/generators"
-GENERATOR_SINGLE_GENERATE = "/generators/{provider}/generate"
-GENERATE_WORD = "/generators/generate-word"
+router = APIRouter(prefix="/internal/generators", tags=["internal-generators"])
 
-router = APIRouter(prefix="/internal", tags=["internal-generators"])
+GENERATORS_LIST = "/"
+GENERATOR_SINGLE_GENERATE = "/{provider}/generate"
+GENERATE_WORD = "/generate-word"
 
 
 @router.get(

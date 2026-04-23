@@ -32,11 +32,11 @@ from src.services.text_translation.schemas import (
     TranslationFileSourceWord,
 )
 
-TRANSLATORS_LIST = "/translators"
+router = APIRouter(prefix="/internal/translators", tags=["internal-translators"])
+
+TRANSLATORS_LIST = "/"
 TRANSLATE_TEXT = "/translate"
 TRANSLATE_FILE = "/translate-file"
-
-router = APIRouter(prefix="/internal", tags=["internal-translators"])
 
 
 @router.get(

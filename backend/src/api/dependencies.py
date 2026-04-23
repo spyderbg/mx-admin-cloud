@@ -62,14 +62,14 @@ def get_registry(request: Request) -> ServiceRegistry:
 
 
 def get_registry_builder(request: Request) -> ServiceRegistryBuilder:
-    """Inject the shared ServiceRegistryBuilder from app state."""
+    """Inject the shared ServiceRegistryBuilder from the app state."""
     return request.app.state.registry_builder
 
 
 def get_configuration_service(
         builder: ServiceRegistryBuilder = Depends(get_registry_builder),
 ) -> ConfigurationService:
-    """Inject the runtime configuration service with file-system provider."""
+    """Inject the runtime configuration service with a file-system provider."""
     configuration_service = ConfigurationService(
         service_name="configuration",
         package_name="src.services.configuration",

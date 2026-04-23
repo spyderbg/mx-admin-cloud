@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging as _stdlib_logging
 from typing import Any
 
-from src.services.logging.routes import LOGGING_API_REQUEST, LOGGING_EMIT
+from src.services.logging.routes import LOGGING_API_REQUEST, LOGGING_EMIT, ROUTER_PREFIX
 from src.services.logging.schemas import (
     LogApiRequest,
     LogEmitRequest,
@@ -25,7 +25,7 @@ _client: Any | None = None  # pylint: disable=invalid-name # httpx.AsyncClient w
 
 
 def _internal_endpoint(endpoint: str) -> str:
-    return f"/internal{endpoint}"
+    return f"{ROUTER_PREFIX}{endpoint}"
 
 
 def configure(base_url: str, internal_token: str) -> None:
@@ -51,7 +51,7 @@ async def shutdown() -> None:
 
 
 async def emit(request: LogEmitRequest) -> None:
-    """Post a structured log message to "/internal/logging/emit"."""
+    """Post a structured log message to "/internal/loggers/logging/emit"."""
     if _client is None:
         return
     try:
@@ -78,7 +78,7 @@ async def log_api_request(request: LogApiRequest) -> None:
 async def log_provider_request(
         request: LogProviderRequest,
 ) -> None:
-    """Post a provider request log via "POST /internal/logging/emit"."""
+    """Post a provider request log via "POST /internal/loggers/logging/emit"."""
     fields = request.to_request_emit_fields()
     await emit(
         LogEmitRequest(

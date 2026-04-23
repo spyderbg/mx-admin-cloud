@@ -21,12 +21,14 @@ from src.services.logging.service import LoggingService
 from src.services.schemas import ServiceProviderInfo
 from src.services.service_registry import ServiceRegistry
 
-LOGGERS_LIST = "/loggers"
+ROUTER_PREFIX = "/internal/loggers"
+
+router = APIRouter(prefix=ROUTER_PREFIX, tags=["internal-loggers"])
+
+LOGGERS_LIST = "/"
 LOGGING_EMIT = "/logging/emit"
 LOGGING_API_REQUEST = "/logging/api-request"
 LOGGING_PROVIDER_REQUEST = "/logging/provider-request"
-
-router = APIRouter(prefix="/internal", tags=["internal-logging"])
 
 
 @router.get(

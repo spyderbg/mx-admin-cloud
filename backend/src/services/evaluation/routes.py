@@ -21,10 +21,10 @@ from src.services.evaluation.schemas import EvaluateRequest
 from src.services.service_registry import ServiceRegistry
 from src.services.text_to_speech.service import TextToSpeechService
 
-EVALUATORS_LIST = "/evaluators"
-EVALUATE_AUDIO = "/evaluators/evaluate"
+router = APIRouter(prefix="/internal/evaluators", tags=["internal-evaluators"])
 
-router = APIRouter(prefix="/internal", tags=["internal-evaluators"])
+EVALUATORS_LIST = "/"
+EVALUATE_AUDIO = "/evaluate"
 
 
 @router.get(

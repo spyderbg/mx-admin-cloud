@@ -68,7 +68,7 @@ class StructLogProvider(LoggingServiceProvider):
     "formatters"
         Python logging formatter definitions.
     "handlers"
-        Handler definitions.  Custom "active" flag (default "true")
+        Handler definitions. A custom "active" flag (default "true")
         controls whether the handler is included; the "$ {output_dir}"
         placeholder is expanded in "filename" values.
     "loggers"
@@ -208,7 +208,7 @@ class StructLogProvider(LoggingServiceProvider):
     def _filtered_request_log_fields(
         self, event: str, raw: dict[str, Any],
     ) -> dict[str, Any]:
-        """Apply "request_log.fields" toggles; used by :meth:`emit` for request events."""
+        """Apply "request_log.fields" toggles; used by emit() for request events."""
         payload: dict[str, Any] = {}
         if event == "provider_request":
             provider = raw.get("provider")
