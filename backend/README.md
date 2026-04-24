@@ -518,6 +518,7 @@ Each file uses a top-level `service_provider` object containing both metadata an
 |------------|--------|-----------------------------------------------------------------------------------|
 | `service`  | string | Service type (`text_translation`). Must match the service package `SERVICE_NAME`. |
 | `provider` | string | Translator implementation name (`openai`, `static_translate`).                    |
+| `provider_category` | string | Optional provider grouping label (default: empty string).                  |
 | `enabled`  | bool   | Set `true` to enable the translator.                                              |
 | `priority` | int    | Execution order (lower runs first).                                               |
 | `version`  | string | Config schema version (typically `1.0`).                                          |
@@ -572,6 +573,7 @@ Each file uses a top-level `service_provider` object containing both metadata an
 |------------|--------|-------------------------------------------------------------------------------------|
 | `service`  | string | Service type (`voice_optimization`). Must match the service package `SERVICE_NAME`. |
 | `provider` | string | Optimizer implementation name (`ffmpeg`, `pydub`).                                  |
+| `provider_category` | string | Optional provider grouping label (default: empty string).                    |
 | `enabled`  | bool   | Set `true` to enable the optimizer.                                                 |
 | `priority` | int    | Execution order (lower runs first).                                                 |
 | `version`  | string | Config schema version (typically `1.0`).                                            |
@@ -668,6 +670,7 @@ General logging config (`config/logging/default.json`):
   "service_provider": {
     "service": "logging",
     "provider": "struct_log",
+    "provider_category": "normal",
     "enabled": true,
     "priority": 2,
     "version": "1.0",
@@ -710,6 +713,7 @@ Request logging config (`config/logging/requests.json`):
   "service_provider": {
     "service": "logging",
     "provider": "struct_log",
+    "provider_category": "normal",
     "enabled": true,
     "priority": 1,
     "version": "1.0",

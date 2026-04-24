@@ -23,7 +23,7 @@ list_app = typer.Typer(help="List configured components: generators, translators
 translate_app = typer.Typer(help="Translation commands: translate words.")
 users_app = typer.Typer(help="User management: list, create, delete, update.")
 generate_app = typer.Typer(help="Voice generation: run pipeline.")
-logging_app = typer.Typer(help="Logging commands: emit, api-request, provider-request, translator-request.")
+logging_app = typer.Typer(help="Logging commands: emit, log, api-request, service, provider-request, payment.")
 
 
 @app.callback()

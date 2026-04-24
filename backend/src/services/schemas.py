@@ -13,7 +13,7 @@ class ServiceProviderInfo(BaseModel):
     name: str = Field(..., description="Human-readable name")
     service: str = Field(..., description="Service name")
     provider: str = Field(..., description="Provider name")
-    provider_category: str = Field("normal", description="Category of the provider")
+    provider_category: str = Field(..., description="Category of the provider")
     enabled: bool = Field(..., description="Whether the provider is enabled")
     priority: int = Field(..., description="Priority of the provider")
 

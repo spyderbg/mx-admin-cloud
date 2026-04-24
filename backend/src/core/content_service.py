@@ -32,10 +32,10 @@ def _archive_root() -> Path:
 
 
 def translate_word(
-    text: str,
-    target_lang_code: str | None = None,
-    category: str | None = None,
-    input_lang_code: str | None = None,
+        text: str,
+        target_lang_code: str | None = None,
+        category: str | None = None,
+        input_lang_code: str | None = None,
 ) -> str:
     """Translate text by calling the internal /internal/translate endpoint."""
     if not text or not text.strip():
@@ -117,8 +117,8 @@ def _list_archived_entries() -> list[dict[str, Any]]:
 
 
 def list_categories(
-    include_archived: bool = False,
-    archived_only: bool = False,
+        include_archived: bool = False,
+        archived_only: bool = False,
 ) -> dict[str, Any]:
     """List immediate subdirs of content root (exclude hidden). Optionally include or list only archived categories."""
     archived = _list_archived_entries() if (include_archived or archived_only) else []
@@ -246,18 +246,18 @@ def _first_available_image_index(object_folder: Path) -> int:
     """First index (1-based) such that no 01.png, 01.jpg, 02.png, ... exists yet."""
     for i in range(1, 1000):
         if not any(
-            (object_folder / f"{i:02d}{ext}").exists()
-            for ext in (".png", ".jpg", ".jpeg")
+                (object_folder / f"{i:02d}{ext}").exists()
+                for ext in (".png", ".jpg", ".jpeg")
         ):
             return i
     return 1
 
 
 def create_item(
-    category_name: str,
-    english_word: str,
-    image_data: bytes,
-    image_extension: str = ".png",
+        category_name: str,
+        english_word: str,
+        image_data: bytes,
+        image_extension: str = ".png",
 ) -> dict[str, Any]:
     """
     Create an item folder, save image, update CSVs, translate, generate voices.
@@ -424,8 +424,10 @@ def rename_category(old_name: str, new_name: str) -> dict[str, Any]:
             voice_path = new_path / f"{new_name}_{lang}.mp3"
             with open(voice_path, "wb") as f:
                 f.write(audio_bytes)
-        except Exception as e:
+        except (ValueError, RuntimeError) as e:
             return {"error": f"TTS failed for {lang}: {e}", "name": new_name}
+        except OSError as e:
+            return {"error": f"File write failed for {lang}: {e}", "name": new_name}
 
     # Rename icon file to match new category name (no regeneration)
     new_icon_path = new_path / f"{new_name}.png"

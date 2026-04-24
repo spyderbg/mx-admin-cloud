@@ -44,6 +44,7 @@ class ServiceProviderFactory(Generic[ProviderT]):
             name=service_provider.name,
             service_name=service_provider.service,
             provider_name=service_provider.provider,
+            provider_category=service_provider.provider_category,
             enabled=service_provider.enabled,
             priority=service_provider.priority,
             config=service_provider.config,

@@ -39,6 +39,7 @@ class _StubConfigurationProvider(ConfigurationProvider):
             name="stub",
             service_name="configuration",
             provider_name="file_system",
+            provider_category="",
             enabled=True,
             priority=1,
             config={},

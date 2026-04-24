@@ -13,6 +13,29 @@ from kiddo_cli.output import print_json
 def register(app: typer.Typer) -> None:
     """Register logging commands on the given Typer app."""
 
+    def _build_log_payload(
+            event: Optional[str],
+            level: str,
+            fields: Optional[str],
+            data: Optional[str],
+    ) -> dict:
+        if data:
+            if data.startswith("@"):
+                with open(data[1:], "r", encoding="utf-8") as f:
+                    return json.load(f)
+            return json.loads(data)
+
+        if not event:
+            raise typer.BadParameter(
+                "Provide either the positional argument (event) or --json"
+            )
+
+        return {
+            "level": level,
+            "event": event,
+            "fields": json.loads(fields) if fields else {},
+        }
+
     @app.command("emit")
     def emit_log(
             event: str = typer.Argument(
@@ -20,11 +43,6 @@ def register(app: typer.Typer) -> None:
                 help="Log event",
             ),
             *,
-            logger_name: Optional[str] = typer.Option(
-                None,
-                "--logger",
-                help="Logger name (target channel); omit to use the default logger",
-            ),
             level: str = typer.Option(
                 "info",
                 "--level",
@@ -51,29 +69,59 @@ def register(app: typer.Typer) -> None:
                 help="Auth token",
             ),
     ):
-        """Emit a structured log message. Logger name is optional; omit to use the default logger."""
+        """Emit a structured log message through the default logger."""
 
-        if data:
-            if data.startswith("@"):
-                with open(data[1:], "r", encoding="utf-8") as f:
-                    payload = json.load(f)
-            else:
-                payload = json.loads(data)
-        else:
-            if not event:
-                raise typer.BadParameter(
-                    "Provide either the positional argument (event) or --json"
-                )
-            payload = {
-                "level": level,
-                "event": event,
-                "fields": json.loads(fields) if fields else {},
-            }
-            if logger_name:
-                payload["logger_name"] = logger_name
+        payload = _build_log_payload(event, level, fields, data)
 
         def _run(t: str):
             result = internal_post("/loggers/emit", token=t, json=payload)
+            print_json(result)
+
+        run_with_auth(url, token, _run)
+
+    @app.command("log")
+    def emit_log_by_name(
+            logger_name: str = typer.Argument(
+                ...,
+                help="Logger name (target channel)",
+            ),
+            event: str = typer.Argument(
+                None,
+                help="Log event",
+            ),
+            *,
+            level: str = typer.Option(
+                "info",
+                "--level",
+                help="Log level: debug, info, warning, error, critical",
+            ),
+            fields: Optional[str] = typer.Option(
+                None,
+                "--fields",
+                help="Extra fields as a JSON object string",
+            ),
+            data: Optional[str] = typer.Option(
+                None,
+                "--json",
+                help="Full JSON body string or @file.json",
+            ),
+            url: Optional[str] = typer.Option(
+                None,
+                "--url",
+                help="Backend URL",
+            ),
+            token: Optional[str] = typer.Option(
+                None,
+                "--token",
+                help="Auth token",
+            ),
+    ):
+        """Emit a structured log message to a specific logger."""
+
+        payload = _build_log_payload(event, level, fields, data)
+
+        def _run(t: str):
+            result = internal_post(f"/loggers/{logger_name}/log", token=t, json=payload)
             print_json(result)
 
         run_with_auth(url, token, _run)
@@ -113,25 +161,53 @@ def register(app: typer.Typer) -> None:
     ):
         """Emit an API request log message to the 'requests' logger."""
 
-        if data:
-            if data.startswith("@"):
-                with open(data[1:], "r", encoding="utf-8") as f:
-                    payload = json.load(f)
-            else:
-                payload = json.loads(data)
-        else:
-            if not event:
-                raise typer.BadParameter(
-                    "Provide either the positional argument (event) or --json"
-                )
-            payload = {
-                "level": level,
-                "event": event,
-                "fields": json.loads(fields) if fields else {},
-            }
+        payload = _build_log_payload(event, level, fields, data)
 
         def _run(t: str):
             result = internal_post("/loggers/logging/log/api-request", token=t, json=payload)
+            print_json(result)
+
+        run_with_auth(url, token, _run)
+
+    @app.command("service")
+    def emit_service_log(
+            event: str = typer.Argument(
+                None,
+                help="Log event",
+            ),
+            *,
+            level: str = typer.Option(
+                "info",
+                "--level",
+                help="Log level: debug, info, warning, error, critical",
+            ),
+            fields: Optional[str] = typer.Option(
+                None,
+                "--fields",
+                help="Extra fields as a JSON object string",
+            ),
+            data: Optional[str] = typer.Option(
+                None,
+                "--json",
+                help="Full JSON body string or @file.json",
+            ),
+            url: Optional[str] = typer.Option(
+                None,
+                "--url",
+                help="Backend URL",
+            ),
+            token: Optional[str] = typer.Option(
+                None,
+                "--token",
+                help="Auth token",
+            ),
+    ):
+        """Emit a service log message to the 'service' logger."""
+
+        payload = _build_log_payload(event, level, fields, data)
+
+        def _run(t: str):
+            result = internal_post("/loggers/logging/log/service", token=t, json=payload)
             print_json(result)
 
         run_with_auth(url, token, _run)
@@ -221,43 +297,22 @@ def register(app: typer.Typer) -> None:
 
         run_with_auth(url, token, _run)
 
-    @app.command("translator-request")
-    def log_translator_request(
+    @app.command("payment")
+    def emit_payment_log(
+            event: str = typer.Argument(
+                None,
+                help="Log event",
+            ),
             *,
-            translator: Optional[str] = typer.Option(
-                None,
-                "--translator",
-                help="Translator name",
+            level: str = typer.Option(
+                "info",
+                "--level",
+                help="Log level: debug, info, warning, error, critical",
             ),
-            model: Optional[str] = typer.Option(
+            fields: Optional[str] = typer.Option(
                 None,
-                "--model",
-                help="Translator model identifier",
-            ),
-            actor: Optional[str] = typer.Option(
-                None,
-                "--actor",
-                help="Actor name",
-            ),
-            voice_id: Optional[str] = typer.Option(
-                None,
-                "--voice-id",
-                help="Voice identifier",
-            ),
-            language: Optional[str] = typer.Option(
-                None,
-                "--language",
-                help="Language code",
-            ),
-            input_data: Optional[str] = typer.Option(
-                None,
-                "--input",
-                help="Input text passed to the translator",
-            ),
-            response_duration: Optional[float] = typer.Option(
-                None,
-                "--response-duration",
-                help="Translator response latency in seconds",
+                "--fields",
+                help="Extra fields as a JSON object string",
             ),
             data: Optional[str] = typer.Option(
                 None,
@@ -275,33 +330,12 @@ def register(app: typer.Typer) -> None:
                 help="Auth token",
             ),
     ):
-        """Log a text translator request through the request-logger channel."""
+        """Emit a payment log message to the 'payment' logger."""
 
-        if data:
-            if data.startswith("@"):
-                with open(data[1:], "r", encoding="utf-8") as f:
-                    payload = json.load(f)
-            else:
-                payload = json.loads(data)
-        else:
-            payload = {}
-            if translator is not None:
-                payload["translator"] = translator
-            if model is not None:
-                payload["model"] = model
-            if actor is not None:
-                payload["actor"] = actor
-            if voice_id is not None:
-                payload["voice_id"] = voice_id
-            if language is not None:
-                payload["language"] = language
-            if input_data is not None:
-                payload["input"] = input_data
-            if response_duration is not None:
-                payload["response_duration"] = response_duration
+        payload = _build_log_payload(event, level, fields, data)
 
         def _run(t: str):
-            result = internal_post("/loggers/logging/translator-request", token=t, json=payload)
+            result = internal_post("/loggers/logging/log/payment", token=t, json=payload)
             print_json(result)
 
         run_with_auth(url, token, _run)

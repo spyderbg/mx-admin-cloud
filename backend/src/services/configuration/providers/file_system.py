@@ -36,6 +36,8 @@ class FileSystemConfigurationProvider(ConfigurationProvider):
             name: str,
             service_name: str,
             provider_name: str,
+            provider_category: str,
+            *,
             enabled: bool,
             priority: int,
             config: dict[str, Any],
@@ -44,7 +46,17 @@ class FileSystemConfigurationProvider(ConfigurationProvider):
             config_root: Path | None = None,
             registry_builder: ServiceRegistryBuilder | None = None,
     ) -> None:
-        super().__init__(name, service_name, provider_name, enabled, priority, config, config_path, base_dir)
+        super().__init__(
+            name=name,
+            service_name=service_name,
+            provider_name=provider_name,
+            provider_category=provider_category,
+            enabled=enabled,
+            priority=priority,
+            config=config,
+            config_path=config_path,
+            base_dir=base_dir,
+        )
         self._config_root = config_root if config_root is not None else self._resolve_config_root(config, base_dir)
         self._builder = registry_builder
 
@@ -59,6 +71,7 @@ class FileSystemConfigurationProvider(ConfigurationProvider):
             name="configuration_file_system",
             service_name="configuration",
             provider_name="file_system",
+            provider_category="",
             enabled=True,
             priority=1,
             config={},

@@ -53,6 +53,7 @@ class _StubTTSProvider(TTSProvider):
             name="stub",
             service_name="text_to_speech",
             provider_name="stub",
+            provider_category="",
             enabled=enabled,
             priority=priority,
             config={

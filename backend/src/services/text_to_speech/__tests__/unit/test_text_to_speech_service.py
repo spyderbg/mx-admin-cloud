@@ -26,6 +26,7 @@ class _StubTTSProvider(TTSProvider):
             name=name,
             service_name="text_to_speech",
             provider_name=name,
+            provider_category="",
             enabled=enabled,
             priority=1,
             config={"generate": {"enabled": enabled}},

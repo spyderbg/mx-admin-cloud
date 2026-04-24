@@ -40,6 +40,7 @@ class _StubProvider(ConfigurationProvider):
             name=name,
             service_name="configuration",
             provider_name=provider_name,
+            provider_category="",
             enabled=enabled,
             priority=1,
             config={},
@@ -112,7 +113,7 @@ def _make_service(tmp_path: Path, providers: list[Any] | None = None) -> Configu
 def test_replace_providers_keeps_configuration_providers(tmp_path: Path) -> None:
     stub = _StubProvider(tmp_path)
     foreign = ServiceProvider(
-        name="other", service_name="x", provider_name="x",
+        name="other", service_name="x", provider_name="x", provider_category="",
         enabled=True, priority=1, config={},
         config_path=tmp_path / "other.json", base_dir=tmp_path,
     )
@@ -138,14 +139,14 @@ def test_all_providers_includes_disabled(tmp_path: Path) -> None:
     active = _StubProvider(tmp_path, name="a", enabled=True)
     disabled = _StubProvider(tmp_path, name="b", enabled=False)
     svc = _make_service(tmp_path, [active, disabled])
-    assert len(svc.all_providers) == 2
+    assert len(svc.get_all_providers()) == 2
 
 
 def test_active_providers_excludes_disabled(tmp_path: Path) -> None:
     active = _StubProvider(tmp_path, name="a", enabled=True)
     disabled = _StubProvider(tmp_path, name="b", enabled=False)
     svc = _make_service(tmp_path, [active, disabled])
-    assert svc.active_providers == [active]
+    assert svc.get_active_providers() == [active]
 
 
 # ---------------------------------------------------------------------------

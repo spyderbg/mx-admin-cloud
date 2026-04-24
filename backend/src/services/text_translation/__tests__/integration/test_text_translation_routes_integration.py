@@ -41,6 +41,7 @@ class _StubTranslatorProvider(TextTranslationServiceProvider):
             name="stub",
             service_name="text_translation",
             provider_name="stub",
+            provider_category="",
             enabled=enabled,
             priority=priority,
             config={"input_language": "en", "output_language": "es"},
