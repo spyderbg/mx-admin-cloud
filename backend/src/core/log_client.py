@@ -18,7 +18,6 @@ from src.services.logging.schemas import (
     LogApiRequest,
     LogLevel,
     LogRequest,
-    LogNameRequest,
     LogServiceRequest,
     LogProviderRequest,
 )
