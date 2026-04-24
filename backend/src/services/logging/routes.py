@@ -16,9 +16,12 @@ from src.api.service_resolver import get_typed_service
 from src.services import logging
 from src.services.logging.models import LogMessage
 from src.services.logging.schemas import (
-    LogProviderRequest,
     LogRequest,
     StatusResponse,
+    LogApiRequest,
+    LogServiceRequest,
+    LogProviderRequest,
+    LogPaymentRequest,
 )
 from src.services.logging.service import LoggingService
 from src.services.schemas import ServiceProviderInfo
@@ -106,12 +109,31 @@ async def emit_log_by_name(
     ),
 )
 async def emit_api_request_log(
-        body: LogRequest,
+        body: LogApiRequest,
         service: LoggingServiceDep,
         _user: dict = Depends(require_internal),
 ) -> dict[str, str]:
     """Emit an API request log message through the logging service."""
     service.log("requests", _log_message_from_request(body))
+    return {"status": "ok"}
+
+
+@router.post(
+    LOGGING_SERVICE,
+    response_model=StatusResponse,
+    summary="Emit a service log message",
+    description=(
+            "Post a structured log message to the 'service' logger. "
+            "``level`` and ``event`` mirror structlog semantics."
+    ),
+)
+async def emit_service_log(
+        body: LogServiceRequest,
+        service: LoggingServiceDep,
+        _user: dict = Depends(require_internal),
+) -> dict[str, str]:
+    """Emit a service log message through the logging service."""
+    service.log("service", _log_message_from_request(body))
     return {"status": "ok"}
 
 
@@ -135,25 +157,6 @@ async def log_provider_request(
         level=_logging.INFO,
         fields=body.to_request_emit_fields(),
     ))
-    return {"status": "ok"}
-
-
-@router.post(
-    LOGGING_SERVICE,
-    response_model=StatusResponse,
-    summary="Emit a service log message",
-    description=(
-            "Post a structured log message to the 'service' logger. "
-            "``level`` and ``event`` mirror structlog semantics."
-    ),
-)
-async def emit_service_log(
-        body: LogRequest,
-        service: LoggingServiceDep,
-        _user: dict = Depends(require_internal),
-) -> dict[str, str]:
-    """Emit a service log message through the logging service."""
-    service.log("service", _log_message_from_request(body))
     return {"status": "ok"}
 
 

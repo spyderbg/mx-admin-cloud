@@ -14,7 +14,6 @@ from src.services.models import ServiceProvider
 @dataclass
 class LogMessage:
     """Structured log message data model."""
-
     event: str
     level: int = logging.INFO
     fields: dict[str, Any] = field(default_factory=dict)

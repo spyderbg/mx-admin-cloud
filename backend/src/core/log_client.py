@@ -17,8 +17,10 @@ from src.services.logging.routes import LOGGING_API_REQUEST, LOGGING_EMIT, ROUTE
 from src.services.logging.schemas import (
     LogApiRequest,
     LogLevel,
-    LogProviderRequest,
     LogRequest,
+    LogNameRequest,
+    LogServiceRequest,
+    LogProviderRequest,
 )
 
 _client: Any | None = None  # pylint: disable=invalid-name # httpx.AsyncClient when configured
@@ -49,6 +51,7 @@ async def shutdown() -> None:
         await _client.aclose()
         _client = None
 
+################################################################################
 
 async def emit(request: LogRequest) -> None:
     """Post a structured log message to "/internal/loggers/emit"."""
@@ -74,6 +77,19 @@ async def log_api_request(request: LogApiRequest) -> None:
     except Exception:  # pylint: disable=broad-exception-caught
         _stdlib_logging.debug("logging HTTP api-request failed", exc_info=True)
 
+
+async def log_service_request(
+        request: LogServiceRequest,
+) -> None:
+    if _client is None:
+        return
+    try:
+        await _client.post(
+            _internal_endpoint(LOGGING_API_REQUEST),
+            json=request.model_dump(mode="json"),
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        _stdlib_logging.debug("logging HTTP api-request failed", exc_info=True)
 
 async def log_provider_request(
         request: LogProviderRequest,

@@ -20,15 +20,13 @@ class LogLevel(str, Enum):
 
 class StatusResponse(BaseModel):
     """Generic acknowledgement returned by fire-and-forget logging endpoints."""
-
     status: str
 
 
 class LogRequest(BaseModel):
     """Base body for "POST /internal/loggers/emit" and "POST /internal/loggers/log/api-request"."""
-
     level: LogLevel = Field(LogLevel.INFO, description="Log level, defaults to 'info'")
-    event: str = Field(..., description="Log event name")
+    event: str = Field(..., description="Log event")
     fields: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -40,11 +38,15 @@ class LogNameRequest(LogRequest):
 
 class LogApiRequest(LogRequest):
     """Body for "POST /internal/loggers/logging/log/api-request"."""
-
     api_path: str = Field(..., description="HTTP path")
     api_method: str = Field(..., description="HTTP method")
     api_status: int = Field(..., description="HTTP status code")
     api_duration: float = Field(..., description="Request duration in seconds")
+
+
+class LogServiceRequest(LogRequest):
+    """Body for "POST /internal/loggers/log/service"."""
+    service: str = Field(..., description="Service name")
 
 
 # TODO: not final
@@ -66,3 +68,12 @@ class LogProviderRequest(BaseModel):
         if "input" in fields:
             fields["input_data"] = fields.pop("input")
         return fields
+
+
+class LogPaymentRequest(LogRequest):
+    """Body for "POST /internal/loggers/log/payment"."""
+    payment_id: str = Field(..., description="Payment ID")
+    payment_status: str = Field(..., description="Payment status")
+    payment_amount: float = Field(..., description="Payment amount")
+    payment_currency: str = Field(..., description="Payment currency")
+    payment_provider: str = Field(..., description="Payment provider")

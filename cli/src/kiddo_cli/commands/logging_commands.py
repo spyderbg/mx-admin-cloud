@@ -17,7 +17,7 @@ def register(app: typer.Typer) -> None:
     def emit_log(
             event: str = typer.Argument(
                 None,
-                help="Log event name",
+                help="Log event",
             ),
             *,
             logger_name: Optional[str] = typer.Option(
@@ -82,7 +82,7 @@ def register(app: typer.Typer) -> None:
     def emit_api_request(
             event: str = typer.Argument(
                 None,
-                help="Log event name",
+                help="Log event",
             ),
             *,
             level: str = typer.Option(
