@@ -58,7 +58,7 @@ class UsersDb:
                     ("admin", "admin", hashed),
                 )
                 conn.commit()
-        except Exception as e:
+        except (OSError, sqlite3.Error, ValueError) as e:
             print(f"Error initializing database: {e}")
         finally:
             conn.close()

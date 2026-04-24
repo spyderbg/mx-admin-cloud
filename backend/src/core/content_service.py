@@ -166,7 +166,7 @@ def category_details(category_name: str) -> dict[str, Any]:
                     rows = list(csv.reader(f))
                     words = [r[0].strip() for r in rows if r and r[0].strip()]
                     result[f"images_{lang}"] = words
-            except Exception:
+            except (OSError, csv.Error):
                 result[f"images_{lang}"] = []
     names_path = cat_path / "images_names.csv"
     if names_path.exists():
@@ -174,7 +174,7 @@ def category_details(category_name: str) -> dict[str, Any]:
             with open(names_path, newline="", encoding="utf-8") as f:
                 rows = list(csv.reader(f))
                 result["images_names"] = [r[0].strip() for r in rows if r and r[0].strip()]
-        except Exception:
+        except (OSError, csv.Error):
             result["images_names"] = []
     return result
 
@@ -213,15 +213,17 @@ def create_category(category_name: str) -> dict[str, Any]:
         else:
             try:
                 label = translate_word(category_name.replace("_", " ").strip() or category_name, lang, category_name)
-            except Exception as e:
+            except (ValueError, RuntimeError, httpx.HTTPError, KeyError) as e:
                 return {"error": f"Translation failed for {lang}: {e}", "name": category_name}
         try:
             audio_bytes = generate_audio(label, lang)
             voice_path = cat_path / f"{category_name}_{lang}.mp3"
             with open(voice_path, "wb") as f:
                 f.write(audio_bytes)
-        except Exception as e:
+        except (ValueError, RuntimeError, httpx.HTTPError) as e:
             return {"error": f"TTS failed for {lang}: {e}", "name": category_name}
+        except OSError as e:
+            return {"error": f"File write failed for {lang}: {e}", "name": category_name}
 
     # Icon: prompt derived from category_name
     try:
@@ -230,8 +232,10 @@ def create_category(category_name: str) -> dict[str, Any]:
         icon_path = cat_path / f"{category_name}.png"
         with open(icon_path, "wb") as f:
             f.write(icon_bytes)
-    except Exception as e:
+    except (ValueError, RuntimeError) as e:
         return {"error": f"Icon generation failed: {e}", "name": category_name}
+    except OSError as e:
+        return {"error": f"Icon file write failed: {e}", "name": category_name}
 
     return {"category": category_name, "message": f"Category '{category_name}' created."}
 
@@ -304,7 +308,7 @@ def create_item(
             translated = translate_word(english_word, lang, category_name)
             words_by_lang[lang] = translated
             _append_csv_line(cat_path / f"images_{lang}.csv", translated)
-        except Exception as e:
+        except (ValueError, RuntimeError, httpx.HTTPError, KeyError) as e:
             return {
                 "error": f"Translation failed for {lang}: {e}",
                 "category": category_name,
@@ -320,9 +324,17 @@ def create_item(
             voice_path = item_path / f"{folder_name}_{lang}_01.mp3"
             with open(voice_path, "wb") as f:
                 f.write(audio_bytes)
-        except Exception as e:
+        except (ValueError, RuntimeError, httpx.HTTPError) as e:
             return {
                 "error": f"TTS failed for {lang}: {e}",
+                "category": category_name,
+                "item": english_word,
+                "folder": folder_name,
+                "image_id": image_id,
+            }
+        except OSError as e:
+            return {
+                "error": f"File write failed for {lang}: {e}",
                 "category": category_name,
                 "item": english_word,
                 "folder": folder_name,
@@ -371,7 +383,7 @@ def archive_category(category_name: str) -> dict[str, Any]:
             "destination": str(dest),
             "message": f"Category '{category_name}' has been archived to {archive_folder_name} and removed from content.",
         }
-    except Exception as e:
+    except (OSError, shutil.Error) as e:
         return {
             "error": str(e),
             "name": category_name,
@@ -396,7 +408,7 @@ def rename_category(old_name: str, new_name: str) -> dict[str, Any]:
         return {"error": f"Target category already exists: {new_name}", "name": new_name}
     try:
         shutil.move(str(old_path), str(new_path))
-    except Exception as e:
+    except (OSError, shutil.Error) as e:
         return {"error": str(e), "name": old_name, "message": f"Failed to rename: {e}"}
 
     # Delete previously generated voice files (old category name)
@@ -417,7 +429,7 @@ def rename_category(old_name: str, new_name: str) -> dict[str, Any]:
         else:
             try:
                 label = translate_word(new_name.replace("_", " ").strip() or new_name, lang, new_name)
-            except Exception as e:
+            except (ValueError, RuntimeError, httpx.HTTPError, KeyError) as e:
                 return {"error": f"Translation failed for {lang}: {e}", "name": new_name}
         try:
             audio_bytes = generate_audio(label, lang)
@@ -471,7 +483,7 @@ def remove_category(category_name: str) -> dict[str, Any]:
             "name": category_name,
             "message": f"Category '{category_name}' was permanently deleted (ARCHIVE_DIR not set).",
         }
-    except Exception as e:
+    except (OSError, shutil.Error) as e:
         return {
             "error": str(e),
             "name": category_name,
@@ -556,7 +568,7 @@ def restore_category(category_name: str) -> dict[str, Any]:
             "from_archive": archive_folder,
             "message": f"Restored category '{base_name}' from archive '{archive_folder}'.",
         }
-    except Exception as e:
+    except (OSError, shutil.Error) as e:
         return {
             "restored": False,
             "error": str(e),
