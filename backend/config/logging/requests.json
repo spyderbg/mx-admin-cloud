@@ -2,7 +2,7 @@
   "service_provider": {
     "service": "logging",
     "provider": "struct_log",
-    "provider_category": "normal",
+    "provider_category": "requests",
     "enabled": true,
     "priority": 1,
     "version": "1.0",

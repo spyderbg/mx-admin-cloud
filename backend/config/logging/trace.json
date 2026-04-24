@@ -3,7 +3,7 @@
     "service": "logging",
     "provider": "struct_log",
     "provider_category": "normal",
-    "enabled": false,
+    "enabled": true,
     "priority": 9,
     "version": "1.0",
     "config": {
@@ -23,7 +23,7 @@
           "class": "logging.FileHandler",
           "level": "TRACE",
           "formatter": "plain",
-          "filename": "${output_dir}/results/logs/app.log",
+          "filename": "${output_dir}/results/logs/trace.log",
           "encoding": "utf-8"
         },
         "seq": {
