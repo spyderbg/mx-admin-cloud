@@ -4,15 +4,15 @@ info:
   version: 0.1.0
 servers: []
 paths:
-  /internal/loggers:
+  /internal/loggers/:
     get:
       tags:
-      - internal-logging
+      - internal-loggers
       summary: List logging service providers
       description: Return the logging service providers that the emit endpoint routes
         through. By default only enabled providers are returned. Pass 'all=true' to
         include every configured provider regardless of state.
-      operationId: list_loggers_internal_loggers_get
+      operationId: list_loggers_internal_loggers__get
       security:
       - OAuth2PasswordBearer: []
       parameters:
@@ -32,21 +32,21 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/ServiceProviderInfo'
-                title: Response List Loggers Internal Loggers Get
+                title: Response List Loggers Internal Loggers  Get
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /internal/logging/emit:
+  /internal/loggers/logging/emit:
     post:
       tags:
-      - internal-logging
+      - internal-loggers
       summary: Emit a structured log message
       description: Post a structured log message to the named logger. The ``logger_name``
         selects the target channel; ``level`` and ``event`` mirror structlog semantics.
-      operationId: emit_log_internal_logging_emit_post
+      operationId: emit_log_internal_loggers_logging_emit_post
       requestBody:
         content:
           application/json:
@@ -68,14 +68,14 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - OAuth2PasswordBearer: []
-  /internal/logging/api-request:
+  /internal/loggers/logging/api-request:
     post:
       tags:
-      - internal-logging
+      - internal-loggers
       summary: Emit an API request log message
       description: Post a structured log message to the 'requests' logger. ``level``
         and ``event`` mirror structlog semantics.
-      operationId: emit_api_request_log_internal_logging_api_request_post
+      operationId: emit_api_request_log_internal_loggers_logging_api_request_post
       requestBody:
         content:
           application/json:
@@ -97,14 +97,14 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - OAuth2PasswordBearer: []
-  /internal/logging/provider-request:
+  /internal/loggers/logging/provider-request:
     post:
       tags:
-      - internal-logging
+      - internal-loggers
       summary: Log a TTS/STT provider request
       description: Record a provider request (model, actor, latency, …) through the
         request-logger channel.
-      operationId: log_provider_request_internal_logging_provider_request_post
+      operationId: log_provider_request_internal_loggers_logging_provider_request_post
       requestBody:
         content:
           application/json:
@@ -168,7 +168,7 @@ components:
       required:
       - event
       title: LogEmitRequest
-      description: Body for "POST /internal/logging/emit".
+      description: Body for "POST /internal/loggers/logging/emit".
     LogLevel:
       type: string
       enum:
@@ -219,7 +219,7 @@ components:
           title: Response Duration
       type: object
       title: LogProviderRequest
-      description: Body for "POST /internal/logging/provider-request".
+      description: Body for "POST /internal/loggers/logging/provider-request".
     LogRequest:
       properties:
         level:
@@ -238,7 +238,7 @@ components:
       required:
       - event
       title: LogRequest
-      description: Base body for "POST /internal/logging/emit" and "POST /internal/logging/api-request".
+      description: Base body for "POST /internal/loggers/logging/emit" and "POST /internal/loggers/logging/api-request".
     ServiceProviderInfo:
       properties:
         name:

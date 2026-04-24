@@ -73,7 +73,7 @@ def register(app: typer.Typer) -> None:
                 payload["logger_name"] = logger_name
 
         def _run(t: str):
-            result = internal_post("/loggers/logging/emit", token=t, json=payload)
+            result = internal_post("/loggers/emit", token=t, json=payload)
             print_json(result)
 
         run_with_auth(url, token, _run)
@@ -131,7 +131,7 @@ def register(app: typer.Typer) -> None:
             }
 
         def _run(t: str):
-            result = internal_post("/loggers/logging/api-request", token=t, json=payload)
+            result = internal_post("/loggers/logging/log/api-request", token=t, json=payload)
             print_json(result)
 
         run_with_auth(url, token, _run)
@@ -216,7 +216,7 @@ def register(app: typer.Typer) -> None:
                 payload["response_duration"] = response_duration
 
         def _run(t: str):
-            result = internal_post("/loggers/logging/provider-request", token=t, json=payload)
+            result = internal_post("/loggers/logging/log/provider", token=t, json=payload)
             print_json(result)
 
         run_with_auth(url, token, _run)

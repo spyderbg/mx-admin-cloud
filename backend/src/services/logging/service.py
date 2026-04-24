@@ -10,7 +10,7 @@ from typing_extensions import override
 
 from src.services.models import Service, ServiceProvider, ServiceProviderInfo
 from src.services.provider_factory import ServiceProviderFactory
-from src.services.logging.models import LoggingServiceProvider
+from src.services.logging.models import LogMessage, LoggingServiceProvider
 
 
 class LoggingProviderFactory(ServiceProviderFactory[LoggingServiceProvider]):
@@ -97,6 +97,13 @@ class LoggingService(Service):
         return active[0] if active else None
 
     @staticmethod
+    def _provider_info_list(providers: list[LoggingServiceProvider]) -> list[ServiceProviderInfo]:
+        return [
+            p.get_info()
+            for p in sorted(providers, key=lambda p: p.priority)
+        ]
+
+    @staticmethod
     def list_logging_managers(*, include_all: bool = False) -> list[dict]:
         """Return info about stdlib loggers registered in the logging manager.
 
@@ -149,23 +156,6 @@ class LoggingService(Service):
         """Return info about every configured logging service provider, sorted by priority."""
         return self._provider_info_list(self._providers)
 
-    @staticmethod
-    def _provider_info_list(providers: list[LoggingServiceProvider]) -> list[ServiceProviderInfo]:
-        return [
-            p.get_info()
-            for p in sorted(providers, key=lambda p: p.priority)
-        ]
-
-    def emit(self, logger_name: str, level: str, event: str, **fields: Any) -> None:
-        """Emit a structured log through the provider matching *logger_name*.
-
-        Falls back to the ""default"" provider, then the first active
-        provider if no name match is found.
-        """
-        provider = self._resolve_provider(logger_name)
-        if provider is not None:
-            provider.emit(logger_name, level, event, **fields)
-
     def bind_request_id(self, request_id: str) -> None:
         """Bind a request ID to the logging context (all active providers)."""
         for provider in self.get_active_providers():
@@ -176,9 +166,26 @@ class LoggingService(Service):
         for provider in self.get_active_providers():
             provider.clear_request_context()
 
-    def log_to_all_active_loggers(
-            self, message: str, level: int = logging.INFO,
-    ) -> None:
-        """Broadcast *message* through every active provider."""
+    def emit(self, msg: LogMessage) -> None:
+        """Emit *msg* to the highest-priority active provider(s)."""
+        active = self.get_active_providers()
+        if not active:
+            return
+        highest_priority = min(p.priority for p in active)
+        for provider in active:
+            if provider.priority == highest_priority:
+                provider.log("default", msg)
+
+    def log(self, logger_name: str, msg: LogMessage) -> None:
+        """Emit *msg* through the provider matching *logger_name*.
+
+        Falls back to the "default" provider, then the first active provider.
+        """
+        provider = self._resolve_provider(logger_name)
+        if provider is not None:
+            provider.log(logger_name, msg)
+
+    def log_to_all_active_loggers(self, msg: LogMessage) -> None:
+        """Broadcast *msg* through every active provider."""
         for provider in self.get_active_providers():
-            provider.log_to_all_active_loggers(message, level)
+            provider.log_to_all_active_loggers(msg)

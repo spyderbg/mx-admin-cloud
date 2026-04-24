@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from src.services.logging.models import LoggingServiceProvider
+from src.services.logging.models import LogMessage, LoggingServiceProvider
 from src.services.logging.service import LoggingProviderFactory
 
 
@@ -166,16 +166,17 @@ class StructLogProvider(LoggingServiceProvider):
         "trace": "debug",      # not a stdlib level; closest equivalent
     }
 
-    def emit(self, logger_name: str, level: str, event: str, **fields: Any) -> None:
-        if event in ("provider_request", "translator_request"):
-            fields = self._filtered_request_log_fields(event, fields)
-        log = self.get_logger(logger_name)
-        level_lower = level.lower()
-        dispatch_level = self._ALIASED_LEVELS.get(level_lower, level_lower)
-        if dispatch_level != level_lower:
-            fields = {**fields, "_original_level": level_lower}
-        method = getattr(log, dispatch_level, None) or log.info
-        method(event, **fields)
+    def log(self, logger_name: str, msg: LogMessage) -> None:
+        fields = dict(msg.fields)
+        if msg.event in ("provider_request", "translator_request"):
+            fields = self._filtered_request_log_fields(msg.event, fields)
+        logger = self.get_logger(logger_name)
+        level_name = logging.getLevelName(msg.level).lower()
+        dispatch_level = self._ALIASED_LEVELS.get(level_name, level_name)
+        if dispatch_level != level_name:
+            fields = {**fields, "_original_level": level_name}
+        method = getattr(logger, dispatch_level, None) or logger.info
+        method(msg.event, **fields)
 
     def bind_request_id(self, request_id: str) -> None:
         if _structlog is not None:
@@ -185,11 +186,9 @@ class StructLogProvider(LoggingServiceProvider):
         if _structlog is not None:
             _structlog.contextvars.clear_contextvars()
 
-    def log_to_all_active_loggers(
-        self, message: str, level: int = logging.INFO,
-    ) -> None:
+    def log_to_all_active_loggers(self, msg: LogMessage) -> None:
         root_logger = logging.getLogger()
-        root_logger.log(level, message)
+        root_logger.log(msg.level, msg.event)
 
         manager = logging.Logger.manager
         for obj in manager.loggerDict.values():
@@ -199,7 +198,7 @@ class StructLogProvider(LoggingServiceProvider):
                 continue
             if obj.disabled or obj.propagate or not obj.handlers:
                 continue
-            obj.log(level, message)
+            obj.log(msg.level, msg.event)
 
     # ------------------------------------------------------------------
     # Request logging

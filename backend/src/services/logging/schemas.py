@@ -25,21 +25,21 @@ class StatusResponse(BaseModel):
 
 
 class LogRequest(BaseModel):
-    """Base body for "POST /internal/loggers/logging/emit" and "POST /internal/loggers/logging/api-request"."""
+    """Base body for "POST /internal/loggers/emit" and "POST /internal/loggers/log/api-request"."""
 
     level: LogLevel = Field(LogLevel.INFO, description="Log level, defaults to 'info'")
     event: str = Field(..., description="Log event name")
     fields: dict[str, Any] = Field(default_factory=dict)
 
 
-class LogEmitRequest(LogRequest):
-    """Body for "POST /internal/loggers/logging/emit"."""
+class LogNameRequest(LogRequest):
+    """Body for "POST /internal/loggers/emit"."""
 
     logger_name: str | None = Field(None, description="Logger name; omit to use the default logger")
 
 
 class LogApiRequest(LogRequest):
-    """Body for "POST /internal/loggers/logging/api-request"."""
+    """Body for "POST /internal/loggers/logging/log/api-request"."""
 
     api_path: str = Field(..., description="HTTP path")
     api_method: str = Field(..., description="HTTP method")
@@ -49,8 +49,7 @@ class LogApiRequest(LogRequest):
 
 # TODO: not final
 class LogProviderRequest(BaseModel):
-    """Body for "POST /internal/loggers/logging/provider-request"."""
-
+    """Body for "POST /internal/loggers/log/provider"."""
     provider: str | None = None
     tts_model: str | None = Field(None, alias="model")
     actor: str | None = None

@@ -6,13 +6,16 @@ All endpoints require a JWT with the role "internal" or "admin".
 
 from __future__ import annotations
 
+import logging as _logging
+from typing import Annotated
+
 from fastapi import APIRouter, Depends
 
 from src.api.dependencies import get_registry, require_internal
 from src.api.service_resolver import get_typed_service
 from src.services import logging
+from src.services.logging.models import LogMessage
 from src.services.logging.schemas import (
-    LogEmitRequest,
     LogProviderRequest,
     LogRequest,
     StatusResponse,
@@ -23,12 +26,15 @@ from src.services.service_registry import ServiceRegistry
 
 ROUTER_PREFIX = "/internal/loggers"
 
-router = APIRouter(prefix=ROUTER_PREFIX, tags=["internal-loggers"])
-
 LOGGERS_LIST = "/"
-LOGGING_EMIT = "/logging/emit"
-LOGGING_API_REQUEST = "/logging/api-request"
-LOGGING_PROVIDER_REQUEST = "/logging/provider-request"
+LOGGING_EMIT = "/emit"
+LOGGING_LOG = "/{logger_name}/log"
+LOGGING_API_REQUEST = "/logging/log/api-request"
+LOGGING_SERVICE = "/logging/log/service"
+LOGGING_PROVIDER = "/logging/log/provider"
+LOGGING_PAYMENT = "/logging/log/payment"
+
+router = APIRouter(prefix=ROUTER_PREFIX, tags=["internal-loggers"])
 
 
 @router.get(
@@ -42,16 +48,11 @@ LOGGING_PROVIDER_REQUEST = "/logging/provider-request"
     ),
 )
 async def list_loggers(
+        service: LoggingServiceDep,
         all_loggers: bool = False,
-        registry: ServiceRegistry = Depends(get_registry),
         _user: dict = Depends(require_internal),
 ) -> list[ServiceProviderInfo]:
     """Return enabled (or all) logging service providers."""
-    service = get_typed_service(
-        registry=registry,
-        service_name=logging.SERVICE_NAME,
-        expected_type=LoggingService,
-    )
     return service.get_all_loggers() if all_loggers else service.get_active_loggers()
 
 
@@ -66,18 +67,32 @@ async def list_loggers(
     ),
 )
 async def emit_log(
-        body: LogEmitRequest,
-        registry: ServiceRegistry = Depends(get_registry),
+        body: LogRequest,
+        service: LoggingServiceDep,
         _user: dict = Depends(require_internal),
 ) -> dict[str, str]:
     """Emit a structured log message through the logging service."""
-    service = get_typed_service(
-        registry=registry,
-        service_name=logging.SERVICE_NAME,
-        expected_type=LoggingService,
-    )
-    logger_name = body.logger_name or "default"
-    service.emit(logger_name, body.level, body.event, **body.fields)
+    service.emit(_log_message_from_request(body))
+    return {"status": "ok"}
+
+
+@router.post(
+    LOGGING_LOG,
+    response_model=StatusResponse,
+    summary="Emit a log message to a specific logger",
+    description=(
+            "Post a structured log message to the logger specified by path parameter. "
+            "``level`` and ``event`` mirror structlog semantics."
+    ),
+)
+async def emit_log_by_name(
+        logger_name: str,
+        body: LogRequest,
+        service: LoggingServiceDep,
+        _user: dict = Depends(require_internal),
+) -> dict[str, str]:
+    """Emit a log message to a specific logger through the logging service."""
+    service.log(logger_name, _log_message_from_request(body))
     return {"status": "ok"}
 
 
@@ -92,21 +107,16 @@ async def emit_log(
 )
 async def emit_api_request_log(
         body: LogRequest,
-        registry: ServiceRegistry = Depends(get_registry),
+        service: LoggingServiceDep,
         _user: dict = Depends(require_internal),
 ) -> dict[str, str]:
     """Emit an API request log message through the logging service."""
-    service = get_typed_service(
-        registry=registry,
-        service_name=logging.SERVICE_NAME,
-        expected_type=LoggingService,
-    )
-    service.emit("requests", body.level, body.event, **body.fields)
+    service.log("requests", _log_message_from_request(body))
     return {"status": "ok"}
 
 
 @router.post(
-    LOGGING_PROVIDER_REQUEST,
+    LOGGING_PROVIDER,
     response_model=StatusResponse,
     summary="Log a TTS/STT provider request",
     description=(
@@ -116,19 +126,74 @@ async def emit_api_request_log(
 )
 async def log_provider_request(
         body: LogProviderRequest,
-        registry: ServiceRegistry = Depends(get_registry),
+        service: LoggingServiceDep,
         _user: dict = Depends(require_internal),
 ) -> dict[str, str]:
     """Log a provider request through the logging service."""
-    service = get_typed_service(
+    service.log("requests", LogMessage(
+        event="provider_request",
+        level=_logging.INFO,
+        fields=body.to_request_emit_fields(),
+    ))
+    return {"status": "ok"}
+
+
+@router.post(
+    LOGGING_SERVICE,
+    response_model=StatusResponse,
+    summary="Emit a service log message",
+    description=(
+            "Post a structured log message to the 'service' logger. "
+            "``level`` and ``event`` mirror structlog semantics."
+    ),
+)
+async def emit_service_log(
+        body: LogRequest,
+        service: LoggingServiceDep,
+        _user: dict = Depends(require_internal),
+) -> dict[str, str]:
+    """Emit a service log message through the logging service."""
+    service.log("service", _log_message_from_request(body))
+    return {"status": "ok"}
+
+
+@router.post(
+    LOGGING_PAYMENT,
+    response_model=StatusResponse,
+    summary="Emit a payment log message",
+    description=(
+            "Post a structured log message to the 'payment' logger. "
+            "``level`` and ``event`` mirror structlog semantics."
+    ),
+)
+async def emit_payment_log(
+        body: LogRequest,
+        service: LoggingServiceDep,
+        _user: dict = Depends(require_internal),
+) -> dict[str, str]:
+    """Emit a payment log message through the logging service."""
+    service.log("payment", _log_message_from_request(body))
+    return {"status": "ok"}
+
+
+################################################################################
+
+def _log_message_from_request(body: LogRequest) -> LogMessage:
+    return LogMessage(
+        event=body.event,
+        level=_logging.getLevelName(body.level.value.upper()),
+        fields=body.fields,
+    )
+
+
+def get_logging_service(
+        registry: ServiceRegistry = Depends(get_registry),
+) -> LoggingService:
+    return get_typed_service(
         registry=registry,
         service_name=logging.SERVICE_NAME,
         expected_type=LoggingService,
     )
-    service.emit(
-        "requests",
-        "info",
-        "provider_request",
-        **body.to_request_emit_fields(),
-    )
-    return {"status": "ok"}
+
+
+LoggingServiceDep = Annotated[LoggingService, Depends(get_logging_service)]

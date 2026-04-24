@@ -16,9 +16,9 @@ from typing import Any
 from src.services.logging.routes import LOGGING_API_REQUEST, LOGGING_EMIT, ROUTER_PREFIX
 from src.services.logging.schemas import (
     LogApiRequest,
-    LogEmitRequest,
     LogLevel,
     LogProviderRequest,
+    LogRequest,
 )
 
 _client: Any | None = None  # pylint: disable=invalid-name # httpx.AsyncClient when configured
@@ -50,8 +50,8 @@ async def shutdown() -> None:
         _client = None
 
 
-async def emit(request: LogEmitRequest) -> None:
-    """Post a structured log message to "/internal/loggers/logging/emit"."""
+async def emit(request: LogRequest) -> None:
+    """Post a structured log message to "/internal/loggers/emit"."""
     if _client is None:
         return
     try:
@@ -78,11 +78,10 @@ async def log_api_request(request: LogApiRequest) -> None:
 async def log_provider_request(
         request: LogProviderRequest,
 ) -> None:
-    """Post a provider request log via "POST /internal/loggers/logging/emit"."""
+    """Post a provider request log via "POST /internal/loggers/emit"."""
     fields = request.to_request_emit_fields()
     await emit(
-        LogEmitRequest(
-            logger_name="requests",
+        LogRequest(
             level=LogLevel.INFO,
             event="provider_request",
             fields=fields,

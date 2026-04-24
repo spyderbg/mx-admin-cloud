@@ -4,10 +4,20 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from src.services.models import ServiceProvider
+
+
+@dataclass
+class LogMessage:
+    """Structured log message data model."""
+
+    event: str
+    level: int = logging.INFO
+    fields: dict[str, Any] = field(default_factory=dict)
 
 
 class LoggingServiceProvider(ServiceProvider, ABC):
@@ -34,7 +44,7 @@ class LoggingServiceProvider(ServiceProvider, ABC):
         """Return a logger instance for *name*."""
 
     @abstractmethod
-    def emit(self, logger_name: str, level: str, event: str, **fields: Any) -> None:
+    def log(self, logger_name: str, msg: LogMessage) -> None:
         """Emit a structured log message through the named logger."""
 
     @abstractmethod
@@ -46,7 +56,5 @@ class LoggingServiceProvider(ServiceProvider, ABC):
         """Clear the logging request context."""
 
     @abstractmethod
-    def log_to_all_active_loggers(
-            self, message: str, level: int = logging.INFO,
-    ) -> None:
-        """Broadcast *message* to root and all standalone active loggers."""
+    def log_to_all_active_loggers(self, msg: LogMessage) -> None:
+        """Broadcast *msg* to root and all standalone active loggers."""
