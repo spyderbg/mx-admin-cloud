@@ -449,7 +449,9 @@ src/
         ├── routes.py             # /internal/loggers/emit, /internal/loggers/reset, …
         ├── service.py            # LoggingService + LoggingProviderFactory
         ├── __tests__/            # Pytest tree (co-located with service)
-        │   └── __init__.py
+        │   ├── __init__.py
+        │   └── unit/
+        │       └── test_logging_service.py
         └── providers/
             └── struct_log.py     # Structlog-based provider: dictConfig, structlog, request log
 ```
@@ -633,9 +635,14 @@ independent provider instance. The only implementation is `struct_log`
 (`src/services/logging/providers/struct_log.py`). Internal HTTP handlers and request/response models live in
 `src/services/logging/routes.py` and `src/services/logging/schemas.py` (mounted at `/internal/loggers/*`).
 
-**Name-based routing.** `LoggingService.emit(logger_name, …)` looks up the provider whose
+**Priority-ordered emit.** `LoggingService.emit(msg)` filters active providers to those with
+`provider_category == "normal"` and tries them in ascending priority order (1 = highest).
+When a provider successfully logs the message, every other provider at the same priority is also
+invoked. Lower-priority groups are only attempted when all providers in the current group fail.
+
+**Name-based routing.** `LoggingService.log(logger_name, …)` looks up the provider whose
 config-file name matches `logger_name`. If no match, falls back to the provider named `"default"`.
-For example, `emit("requests", …)` routes to the provider from `requests.json`; any unmatched
+For example, `log("requests", …)` routes to the provider from `requests.json`; any unmatched
 name routes to `default.json`.
 
 `service_provider.config` keys (all optional except `handlers`):

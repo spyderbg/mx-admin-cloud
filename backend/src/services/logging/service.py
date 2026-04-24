@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from itertools import groupby
 from pathlib import Path
 from typing import Any
 
@@ -174,14 +175,54 @@ class LoggingService(Service):
             provider.clear_request_context()
 
     def emit(self, msg: LogMessage) -> None:
-        """Emit *msg* to the highest-priority active provider(s)."""
-        active = self.get_active_providers()
-        if not active:
+        """Emit *msg* through "normal"-category providers using priority-ordered fallback.
+
+        Providers are tried in ascending priority order (1 = highest).  When a
+        provider logs the message successfully, every *other* provider that
+        shares the same priority is also invoked, then the method returns.
+        Lower-priority groups are only attempted when all providers in a
+        higher-priority group fail.
+        """
+        normal = [
+            p for p in self.get_active_providers()
+            if p.provider_category == "normal"
+        ]
+        if not normal:
             return
-        highest_priority = min(p.priority for p in active)
-        for provider in active:
-            if provider.priority == highest_priority:
+
+        sorted_providers = sorted(normal, key=lambda p: p.priority)
+        for _priority, group_iter in groupby(sorted_providers, key=lambda p: p.priority):
+            group = list(group_iter)
+            success_idx = self._try_emit_group(group, msg)
+            if success_idx is not None:
+                self._emit_remaining(group, msg, skip=success_idx)
+                return
+
+    @staticmethod
+    def _try_emit_group(
+            group: list[LoggingServiceProvider], msg: LogMessage,
+    ) -> int | None:
+        """Try each provider in *group*; return the index of the first success."""
+        for idx, provider in enumerate(group):
+            try:
                 provider.log("default", msg)
+                return idx
+            except Exception:  # pylint: disable=broad-exception-caught
+                continue
+        return None
+
+    @staticmethod
+    def _emit_remaining(
+            group: list[LoggingServiceProvider], msg: LogMessage, *, skip: int,
+    ) -> None:
+        """Log through every provider in *group* except the one at *skip*."""
+        for idx, provider in enumerate(group):
+            if idx == skip:
+                continue
+            try:
+                provider.log("default", msg)
+            except Exception:  # pylint: disable=broad-exception-caught
+                continue
 
     def log(self, logger_name: str, msg: LogMessage) -> None:
         """Emit *msg* through the provider matching *logger_name*.
