@@ -74,6 +74,13 @@ class LoggingService(Service):
         for provider in self.get_active_providers():
             provider.configure(output_dir=output_dir, profile=profile)
 
+    def reset(self) -> list[str]:
+        """Reset all active logging providers and return affected file paths/details."""
+        reset_items: list[str] = []
+        for provider in self.get_active_providers():
+            reset_items.extend(provider.reset())
+        return sorted(set(reset_items))
+
     # ------------------------------------------------------------------
     # Runtime helpers — name-based provider routing
     # ------------------------------------------------------------------

@@ -18,6 +18,7 @@ from src.services.logging.models import LogMessage
 from src.services.logging.schemas import (
     LogRequest,
     StatusResponse,
+    ResetLogsResponse,
     LogApiRequest,
     LogServiceRequest,
     LogProviderRequest,
@@ -36,6 +37,7 @@ LOGGING_API_REQUEST = "/logging/log/api-request"
 LOGGING_SERVICE = "/logging/log/service"
 LOGGING_PROVIDER = "/logging/log/provider"
 LOGGING_PAYMENT = "/logging/log/payment"
+LOGGING_RESET = "/reset"
 
 router = APIRouter(prefix=ROUTER_PREFIX, tags=["internal-loggers"])
 
@@ -177,6 +179,23 @@ async def emit_payment_log(
     """Emit a payment log message through the logging service."""
     service.log("payment", _log_message_from_request(body))
     return {"status": "ok"}
+
+
+@router.post(
+    LOGGING_RESET,
+    response_model=ResetLogsResponse,
+    summary="Reset active logger providers",
+    description=(
+            "Trigger reset on all active logging providers. "
+            "For file-backed providers this truncates active log files."
+    ),
+)
+async def reset_loggers(
+        service: LoggingServiceDep,
+        _user: dict = Depends(require_internal),
+) -> ResetLogsResponse:
+    """Reset active logging providers and return affected files."""
+    return ResetLogsResponse(status="ok", reset_files=service.reset())
 
 
 ################################################################################

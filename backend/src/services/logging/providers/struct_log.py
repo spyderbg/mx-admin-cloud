@@ -12,6 +12,7 @@ import copy
 import importlib
 import logging
 import logging.config
+import logging.handlers
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -149,6 +150,20 @@ class StructLogProvider(LoggingServiceProvider):
                 if new_level is not None:
                     handler.setLevel(new_level)
 
+    def reset(self) -> list[str]:
+        """Reset file-backed handlers across all active stdlib loggers.
+
+        Returns:
+            list[str]: Sorted paths to active log files that were truncated.
+        """
+        reset_files: set[str] = set()
+        for logger in self._iter_runtime_loggers():
+            for handler in logger.handlers:
+                file_path = self._reset_file_handler(handler)
+                if file_path is not None:
+                    reset_files.add(file_path)
+        return sorted(reset_files)
+
     # ------------------------------------------------------------------
     # Runtime interface
     # ------------------------------------------------------------------
@@ -234,6 +249,53 @@ class StructLogProvider(LoggingServiceProvider):
 
     def _field_enabled(self, name: str) -> bool:
         return bool(self._request_fields.get(name, True))
+
+    @staticmethod
+    def _iter_runtime_loggers() -> list[logging.Logger]:
+        loggers: list[logging.Logger] = [logging.getLogger()]
+        manager = logging.Logger.manager
+        for obj in manager.loggerDict.values():
+            if isinstance(obj, logging.Logger):
+                loggers.append(obj)
+        return loggers
+
+    @staticmethod
+    def _reset_file_handler(handler: logging.Handler) -> str | None:
+        if not isinstance(handler, logging.FileHandler):
+            return None
+
+        file_path = Path(handler.baseFilename)
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+
+        handler.acquire()
+        try:
+            stream = handler.stream
+            if stream is None:
+                with file_path.open("w", encoding="utf-8"):
+                    pass
+            else:
+                stream.flush()
+                stream.seek(0)
+                stream.truncate(0)
+        finally:
+            handler.release()
+
+        StructLogProvider._remove_rotating_backups(handler)
+        return str(file_path)
+
+    @staticmethod
+    def _remove_rotating_backups(handler: logging.Handler) -> None:
+        if not isinstance(handler, logging.handlers.RotatingFileHandler):
+            return
+        if handler.backupCount <= 0:
+            return
+
+        base_path = Path(handler.baseFilename)
+        for idx in range(1, handler.backupCount + 1):
+            backup_path = Path(f"{base_path}.{idx}")
+            if not backup_path.exists():
+                continue
+            backup_path.unlink(missing_ok=True)
 
     def _apply_common_fields(
         self,

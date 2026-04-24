@@ -39,6 +39,10 @@ class LoggingServiceProvider(ServiceProvider, ABC):
         """
 
     @abstractmethod
+    def reset(self) -> list[str]:
+        """Reset provider-managed logging resources and return affected paths/details."""
+
+    @abstractmethod
     def get_logger(self, name: str) -> Any:
         """Return a logger instance for *name*."""
 

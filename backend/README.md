@@ -263,10 +263,14 @@ work.
 
 | Method | Path                                                                       | Description                                            |
 |--------|----------------------------------------------------------------------------|--------------------------------------------------------|
-| `GET`  | [/internal//loggers](src/services/logging/routes.py)           | List active logging providers (or all with `?all=true`). |
-| `POST` | [/internal/logging/emit](src/services/logging/routes.py)               | Emit a structured log message to the named logger.     |
-| `POST` | [/internal/logging/api-request](src/services/logging/routes.py)        | Emit a structured API request log to the `requests` logger. |
-| `POST` | [/internal/logging/provider-request](src/services/logging/routes.py)   | Log a provider request (TTS, STT, translator) via the request logger. |
+| `GET`  | [/internal/loggers](src/services/logging/routes.py)            | List active logging providers (or all with `?all=true`). |
+| `POST` | [/internal/loggers/emit](src/services/logging/routes.py)       | Emit a structured log message to the default logger route. |
+| `POST` | [/internal/loggers/{logger_name}/log](src/services/logging/routes.py) | Emit a structured log message to a specific logger route. |
+| `POST` | [/internal/loggers/logging/log/api-request](src/services/logging/routes.py) | Emit a structured API request log to the `requests` logger. |
+| `POST` | [/internal/loggers/logging/log/provider](src/services/logging/routes.py) | Log a provider request (TTS, STT, translator) via the request logger. |
+| `POST` | [/internal/loggers/logging/log/service](src/services/logging/routes.py) | Emit a structured service log to the `service` logger. |
+| `POST` | [/internal/loggers/logging/log/payment](src/services/logging/routes.py) | Emit a structured payment log to the `payment` logger. |
+| `POST` | [/internal/loggers/reset](src/services/logging/routes.py)      | Reset all active logging providers; file-based ones truncate log files. |
 
 All logging endpoints accept a JSON body and delegate to the `LoggingService` (backed by the
 `struct_log` provider). The `logger_name` field in `/emit` selects which logger channel receives
@@ -369,7 +373,7 @@ src/
 │   ├── content_naming.py         # Content folder / image id naming
 │   ├── content_service.py
 │   ├── job_store.py
-│   ├── log_client.py             # Async HTTP client → `/internal/logging/*` (see services/logging/routes.py)
+│   ├── log_client.py             # Async HTTP client → `/internal/loggers/*` (see services/logging/routes.py)
 │   ├── pipeline.py               # TTS pipeline (internal HTTP)
 │   ├── tasks.py                  # ping, status, operation, list-files
 │   ├── utils.py                  # boolish, platform / debug helpers
@@ -441,8 +445,8 @@ src/
     └── logging/                  # Logging service (structlog + stdlib + request logger)
         ├── __init__.py           # SERVICE_CLASS, SERVICE_NAME, SERVICE_ACCEPT_CRITERIA
         ├── models.py             # LoggingServiceProvider base class
-        ├── schemas.py            # Pydantic bodies for /internal/logging/* (wire contract)
-        ├── routes.py             # /internal/logging/emit, provider-request, …
+        ├── schemas.py            # Pydantic bodies for /internal/loggers/* (wire contract)
+        ├── routes.py             # /internal/loggers/emit, /internal/loggers/reset, …
         ├── service.py            # LoggingService + LoggingProviderFactory
         ├── __tests__/            # Pytest tree (co-located with service)
         │   └── __init__.py
@@ -627,7 +631,7 @@ Logging is a registered service (`SERVICE_NAME = "logging"`) configured via JSON
 `config/logging/`. Each file uses the standard `service_provider` envelope and creates an
 independent provider instance. The only implementation is `struct_log`
 (`src/services/logging/providers/struct_log.py`). Internal HTTP handlers and request/response models live in
-`src/services/logging/routes.py` and `src/services/logging/schemas.py` (still mounted at `/internal/logging/*`).
+`src/services/logging/routes.py` and `src/services/logging/schemas.py` (mounted at `/internal/loggers/*`).
 
 **Name-based routing.** `LoggingService.emit(logger_name, …)` looks up the provider whose
 config-file name matches `logger_name`. If no match, falls back to the provider named `"default"`.
@@ -758,7 +762,7 @@ Request logging config (`config/logging/requests.json`):
 At startup, `LoggingService.configure(output_dir=…, profile=…)` calls `configure()` on each
 active provider. Each provider calls `dictConfig` independently; with
 `disable_existing_loggers: false`, the calls are additive. Structured application logs are
-emitted via internal HTTP endpoints under `/internal/logging/*` (see `src/services/logging/routes.py`); callers use the async helpers
+emitted via internal HTTP endpoints under `/internal/loggers/*` (see `src/services/logging/routes.py`); callers use the async helpers
 in `src/core/log_client.py`, which posts JSON built from `src/services/logging/schemas.py`.
 
 ## Example requests

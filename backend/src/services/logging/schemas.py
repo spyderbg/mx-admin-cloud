@@ -23,6 +23,12 @@ class StatusResponse(BaseModel):
     status: str
 
 
+class ResetLogsResponse(StatusResponse):
+    """Acknowledgement payload for reset endpoint with affected files."""
+
+    reset_files: list[str] = Field(default_factory=list)
+
+
 class LogRequest(BaseModel):
     """Base body for "POST /internal/loggers/emit" and "POST /internal/loggers/log/api-request"."""
     level: LogLevel = Field(LogLevel.INFO, description="Log level, defaults to 'info'")
