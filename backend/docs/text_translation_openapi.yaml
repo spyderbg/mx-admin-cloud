@@ -192,6 +192,11 @@ components:
           type: string
           title: Provider
           description: Provider name
+        provider_category:
+          type: string
+          title: Provider Category
+          description: Category of the provider
+          default: normal
         enabled:
           type: boolean
           title: Enabled
