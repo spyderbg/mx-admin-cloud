@@ -339,3 +339,24 @@ def register(app: typer.Typer) -> None:
             print_json(result)
 
         run_with_auth(url, token, _run)
+
+    @app.command("reset")
+    def reset_loggers(
+            url: Optional[str] = typer.Option(
+                None,
+                "--url",
+                help="Backend URL",
+            ),
+            token: Optional[str] = typer.Option(
+                None,
+                "--token",
+                help="Auth token",
+            ),
+    ):
+        """Reset active logging providers."""
+
+        def _run(t: str):
+            result = internal_post("/loggers/reset", token=t, json={})
+            print_json(result)
+
+        run_with_auth(url, token, _run)

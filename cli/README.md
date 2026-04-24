@@ -39,10 +39,10 @@ Env:
 
 ## Commands
 
-The CLI is organized into sub-apps: **common**, **content**, **list**, **translate**, **users**, and **generate**.
+The CLI is organized into sub-apps: **common**, **content**, **list**, **translate**, **users**, **generate**, and **logging**.
 Commands that call the backend accept optional `--url` (backend base URL) and `--token` (bearer token). `common ping` uses no auth.
 Use global `--verbose` (or `-v`) before subcommands to show HTTP/debug messages from the client.
-Run `kiddo-cli --help`, `kiddo-cli common --help`, `kiddo-cli content --help`, `kiddo-cli list --help`, `kiddo-cli translate --help`, `kiddo-cli users --help`, or `kiddo-cli generate --help` for details.
+Run `kiddo-cli --help`, `kiddo-cli common --help`, `kiddo-cli content --help`, `kiddo-cli list --help`, `kiddo-cli translate --help`, `kiddo-cli users --help`, `kiddo-cli generate --help`, or `kiddo-cli logging --help` for details.
 
 ### Common (backend routes_common)
 
@@ -99,6 +99,18 @@ Run `kiddo-cli --help`, `kiddo-cli common --help`, `kiddo-cli content --help`, `
 | [`users delete <user>`](cli/src/kiddo_cli/commands/users_commands.py#L52) | Delete a user by username. |
 | [`users update <user>`](cli/src/kiddo_cli/commands/users_commands.py#L65) | Update user password or role. Options: `--password`, `--role`. |
 
+### Logging (backend internal loggers routes)
+
+| Command | Description |
+|---------|-------------|
+| [`logging emit <event>`](cli/src/kiddo_cli/commands/logging_commands.py#L39) | Emit a structured log message through the default logger. Options: `--level`, `--fields`, `--json`. |
+| [`logging log <logger_name> <event>`](cli/src/kiddo_cli/commands/logging_commands.py#L82) | Emit a structured log message to a specific logger. Options: `--level`, `--fields`, `--json`. |
+| [`logging api-request <event>`](cli/src/kiddo_cli/commands/logging_commands.py#L129) | Emit an API request log message to the `requests` logger. Options: `--level`, `--fields`, `--json`. |
+| [`logging service <event>`](cli/src/kiddo_cli/commands/logging_commands.py#L172) | Emit a service log message to the `service` logger. Options: `--level`, `--fields`, `--json`. |
+| [`logging provider-request`](cli/src/kiddo_cli/commands/logging_commands.py#L215) | Log a provider request payload. Accepts provider fields via options or `--json`. |
+| [`logging payment <event>`](cli/src/kiddo_cli/commands/logging_commands.py#L300) | Emit a payment log message to the `payment` logger. Options: `--level`, `--fields`, `--json`. |
+| [`logging reset`](cli/src/kiddo_cli/commands/logging_commands.py#L343) | Reset active logging providers. |
+
 Options for `generate run`:
 
 - `-l`, `--lang` -- Default language code (default: en)
@@ -117,6 +129,7 @@ kiddo-cli content --help
 kiddo-cli list --help
 kiddo-cli translate --help
 kiddo-cli generate --help
+kiddo-cli logging --help
 
 # Common
 kiddo-cli common ping
@@ -162,4 +175,13 @@ kiddo-cli users list --username ali --role admin
 kiddo-cli users create new_user secret_pass --role viewer
 kiddo-cli users update new_user --password new_secret --role admin
 kiddo-cli users delete old_user
+
+# Logging
+kiddo-cli logging emit app_started --level info --fields '{"service":"cli"}'
+kiddo-cli logging log requests request_completed --fields '{"status":200}'
+kiddo-cli logging api-request request_received --fields '{"path":"/internal/translators"}'
+kiddo-cli logging service worker_ready --fields '{"worker":"tts"}'
+kiddo-cli logging provider-request --provider openai --model gpt-4o-mini --actor tts --input "hello" --response-duration 0.42
+kiddo-cli logging payment invoice_created --fields '{"amount":12.99,"currency":"USD"}'
+kiddo-cli logging reset
 ```
