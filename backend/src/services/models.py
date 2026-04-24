@@ -92,6 +92,7 @@ class ServiceProvider:
     * `name` - name of the configuration file, without extension
     * `service_name` - value of the `service` key
     * `provider_name` - value of the `provider` key
+    * `provider_category` - value of the `provider_category` key
     * `enabled` - value of the `enabled` key
     * `priority` - value of the `priority` key (defaults to 999)
     * `config` - raw dict from the `config` key, stored as-is
@@ -103,15 +104,17 @@ class ServiceProvider:
             name: str,
             service_name: str,
             provider_name: str,
+            provider_category: str,
             enabled: bool,
             priority: int,
             config: dict[str, Any],
             config_path: Path,
-            base_dir: Path,
+            base_dir: Path
     ) -> None:
         self.name = name
         self.service = service_name
         self.provider = provider_name
+        self.provider_category = provider_category
         self.enabled = enabled
         self.priority = priority
         self.config = config  # raw "config" dict, stored as-is
@@ -139,6 +142,7 @@ class ServiceProvider:
 
         service_name = str(service.get("service", "")).strip().lower()
         provider_name = str(service.get("provider", "")).strip().lower()
+        provider_category = str(service.get("provider_category", "")).strip().lower()
         enabled = boolish(service.get("enabled", False))
         priority = int(service.get("priority", 999))
         raw_config = service.get("config", {})
@@ -149,11 +153,12 @@ class ServiceProvider:
             name=name,
             service_name=service_name,
             provider_name=provider_name,
+            provider_category=provider_category,
             enabled=enabled,
             priority=priority,
             config=raw_config,
             config_path=config_path,
-            base_dir=config_path.parent,
+            base_dir=config_path.parent
         )
 
     def is_active(self) -> bool:
@@ -178,6 +183,7 @@ class ServiceProvider:
             name=self.name,
             service=self.service,
             provider=self.provider,
+            provider_category=self.provider_category,
             enabled=self.enabled,
             priority=self.priority,
         )
