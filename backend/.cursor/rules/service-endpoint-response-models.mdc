@@ -1,0 +1,38 @@
+---
+description: Service endpoints must return declared Pydantic response models
+globs: src/services/**/routes.py
+alwaysApply: false
+---
+
+# Service endpoints: return typed response models
+
+All service route handlers must return a predefined Pydantic model class declared in:
+
+- The same service's `schemas` module/file, or
+- A shared/global schemas module already used by the project
+
+## Required pattern
+
+- Add a concrete `response_model=` on the route decorator.
+- Return an instance (or serializable equivalent) of that model.
+- Prefer explicit success/error response models instead of ad-hoc dict payloads.
+
+## Not allowed
+
+```python
+@router.get("/health")
+async def health():
+    return {"status": "ok"}
+```
+
+## Allowed
+
+```python
+class HealthResponse(BaseModel):
+    status: Literal["ok"]
+
+
+@router.get("/health", response_model=HealthResponse)
+async def health() -> HealthResponse:
+    return HealthResponse(status="ok")
+```
