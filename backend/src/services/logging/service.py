@@ -45,11 +45,16 @@ class LoggingService(Service):
         self._providers = [
             p for p in providers if isinstance(p, LoggingServiceProvider)
         ]
-        # If the service was already configured (startup has completed), apply
-        # the new providers' level changes immediately so a restart isn't required.
+        # If startup has completed, apply config changes to active providers immediately.
+        # Fresh provider instances (from a runtime config update) have never had configure()
+        # called, so we run it now to recreate their handlers with the new settings.
+        # Already-configured providers (unchanged config) only need a level patch.
         if self._configure_kwargs is not None:
             for provider in self.get_active_providers():
-                provider.apply_levels()
+                if not getattr(provider, "_is_configured", True):
+                    provider.configure(**self._configure_kwargs)
+                else:
+                    provider.apply_levels()
 
     @override
     def providers_snapshot(self) -> list[ServiceProvider]:

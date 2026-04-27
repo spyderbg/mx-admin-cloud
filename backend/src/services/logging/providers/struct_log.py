@@ -91,6 +91,7 @@ class StructLogProvider(LoggingServiceProvider):
         self._output_dir: Path | None = None
         self._profile: str = "dev"
         self._request_fields: dict[str, bool] = dict(_DEFAULT_REQUEST_FIELDS)
+        self._is_configured: bool = False
 
     @classmethod
     def register(cls) -> None:
@@ -115,6 +116,8 @@ class StructLogProvider(LoggingServiceProvider):
         structlog_config = self.config.get("structlog")
         if isinstance(structlog_config, dict):
             self._configure_structlog(structlog_config)
+
+        self._is_configured = True
 
     def apply_levels(self) -> None:
         """Patch handler and logger levels from the current config without recreating handlers.
