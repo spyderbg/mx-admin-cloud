@@ -77,7 +77,7 @@ async def emit_log(
         _user: dict = Depends(require_internal),
 ) -> dict[str, str]:
     """Emit a structured log message through the logging service."""
-    service.emit(_log_message_from_request(body))
+    service.emit(log_message_from_request(body))
     return {"status": "ok"}
 
 
@@ -97,7 +97,7 @@ async def emit_log_by_name(
         _user: dict = Depends(require_internal),
 ) -> dict[str, str]:
     """Emit a log message to a specific logger through the logging service."""
-    service.log(logger_name, _log_message_from_request(body))
+    service.log(logger_name, log_message_from_request(body))
     return {"status": "ok"}
 
 
@@ -116,7 +116,7 @@ async def emit_api_request_log(
         _user: dict = Depends(require_internal),
 ) -> dict[str, str]:
     """Emit an API request log message through the logging service."""
-    service.log("requests", _log_message_from_request(body))
+    service.log("requests", log_message_from_request(body))
     return {"status": "ok"}
 
 
@@ -135,7 +135,7 @@ async def emit_service_log(
         _user: dict = Depends(require_internal),
 ) -> dict[str, str]:
     """Emit a service log message through the logging service."""
-    service.log("service", _log_message_from_request(body))
+    service.log("service", log_message_from_request(body))
     return {"status": "ok"}
 
 
@@ -177,7 +177,7 @@ async def emit_payment_log(
         _user: dict = Depends(require_internal),
 ) -> dict[str, str]:
     """Emit a payment log message through the logging service."""
-    service.log("payment", _log_message_from_request(body))
+    service.log("payment", log_message_from_request(body))
     return {"status": "ok"}
 
 
@@ -200,7 +200,7 @@ async def reset_loggers(
 
 ################################################################################
 
-def _log_message_from_request(body: LogRequest) -> LogMessage:
+def log_message_from_request(body: LogRequest) -> LogMessage:
     return LogMessage(
         event=body.event,
         level=_logging.getLevelName(body.level.value.upper()),
