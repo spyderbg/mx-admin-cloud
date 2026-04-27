@@ -217,7 +217,7 @@ class LoggingService(Service):
         """Try each provider in *group*; return the index of the first success."""
         for idx, provider in enumerate(group):
             try:
-                provider.log("default", msg)
+                provider.log(provider.name, msg)
                 return idx
             except Exception:  # pylint: disable=broad-exception-caught
                 continue
@@ -232,7 +232,7 @@ class LoggingService(Service):
             if idx == skip:
                 continue
             try:
-                provider.log("default", msg)
+                provider.log(provider.name, msg)
             except Exception:  # pylint: disable=broad-exception-caught
                 continue
 

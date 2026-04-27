@@ -3,7 +3,7 @@
     "service": "logging",
     "provider": "struct_log",
     "provider_category": "normal",
-    "enabled": true,
+    "enabled": false,
     "priority": 9,
     "version": "1.0",
     "config": {
