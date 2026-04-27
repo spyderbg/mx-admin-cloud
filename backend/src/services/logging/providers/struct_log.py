@@ -110,7 +110,7 @@ class StructLogProvider(LoggingServiceProvider):
         handlers = self.config.get("handlers")
         if isinstance(handlers, dict) and handlers:
             prepared = self._prepare_logging_config()
-            logging.config.dictConfig(prepared)
+            self._apply_logging_config(prepared)
 
         structlog_config = self.config.get("structlog")
         if isinstance(structlog_config, dict):
@@ -335,6 +335,47 @@ class StructLogProvider(LoggingServiceProvider):
     # ------------------------------------------------------------------
     # Internal helpers — stdlib dictConfig preparation
     # ------------------------------------------------------------------
+
+    def _apply_logging_config(self, prepared: dict[str, Any]) -> None:
+        """Apply a prepared logging config additively.
+
+        Calls ``logging.config.dictConfig`` but then restores any root-logger
+        handlers that were added by previously configured providers and are not
+        duplicates of the new handlers.  This allows multiple active
+        ``StructLogProvider`` instances to coexist without clobbering each
+        other's file/stream handlers.
+        """
+        root = logging.getLogger()
+        pre_handlers = list(root.handlers)
+
+        logging.config.dictConfig(prepared)
+
+        for handler in pre_handlers:
+            if not self._handler_already_present(handler, root.handlers):
+                root.addHandler(handler)
+
+    @staticmethod
+    def _handler_already_present(
+        candidate: logging.Handler,
+        handlers: list[logging.Handler],
+    ) -> bool:
+        """Return True if an equivalent handler is already in *handlers*.
+
+        File handlers are matched by absolute filename; stream handlers by
+        stream identity; all others by object identity.
+        """
+        for h in handlers:
+            if isinstance(candidate, logging.FileHandler) or isinstance(h, logging.FileHandler):
+                if (isinstance(candidate, logging.FileHandler)
+                        and isinstance(h, logging.FileHandler)
+                        and h.baseFilename == candidate.baseFilename):
+                    return True
+            elif isinstance(candidate, logging.StreamHandler) and isinstance(h, logging.StreamHandler):
+                if h.stream is candidate.stream:
+                    return True
+            elif h is candidate:
+                return True
+        return False
 
     def _prepare_logging_config(self) -> dict[str, Any]:
         """Build an stdlib "dictConfig" dict from flat config keys.
