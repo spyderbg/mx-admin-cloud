@@ -22,12 +22,6 @@
           "backupCount": 5
         }
       },
-      "loggers": {
-        "requests": {
-          "handlers": ["requests_file"],
-          "propagate": false
-        }
-      },
       "request_log": {
         "fields": {
           "provider": true,

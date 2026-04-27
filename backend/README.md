@@ -643,9 +643,9 @@ invoked. Lower-priority groups are only attempted when all providers in the curr
 **Name-based routing.** `LoggingService.log(logger_name, …)` looks up the provider whose
 config-file name matches `logger_name`. If no match, falls back to the provider named `"default"`.
 For example, `log("requests", …)` routes to the provider from `requests.json`; any unmatched
-name routes to `default.json`. To keep a provider's output isolated from the root logger,
-define a named stdlib logger in the config's `loggers` section with `"propagate": false`
-(see `trace.json` and `requests.json` for examples).
+name routes to `default.json`. Non-default providers automatically receive a named stdlib
+logger (keyed by the config-file stem) with `propagate=False`, isolating their handlers from
+the root logger where the `"default"` provider's handlers live.
 
 `service_provider.config` keys (all optional except `handlers`):
 
@@ -655,13 +655,15 @@ define a named stdlib logger in the config's `loggers` section with `"propagate"
 | `handlers`    | Handler definitions. Custom `active` flag (default `true`) controls inclusion.    |
 |               | `${output_dir}` placeholder is expanded in `filename` values. Seq handlers are    |
 |               | auto-disabled when `seqlog` is missing or unreachable.                            |
-| `loggers`     | Named stdlib logger definitions (e.g. `requests` with `propagate: false`).        |
+| `loggers`     | Optional named stdlib logger overrides; auto-generated for non-default providers. |
 | `structlog`   | Structlog options. `renderer`: `"console"` (default in dev) or `"json"`.          |
 | `request_log` | Per-field `fields` boolean toggles for request-event payload filtering.            |
 
 The provider auto-injects `version: 1` and `disable_existing_loggers: false` into the
-`dictConfig` dict. Active handlers not assigned to any named logger in `loggers` are
-automatically added to `root.handlers`.
+`dictConfig` dict. For non-default providers, a named stdlib logger matching the config-file
+stem is auto-generated with all active handlers and `propagate: false`, keeping their output
+isolated from root. The `"default"` provider is exempt: its handlers are added to
+`root.handlers` so they serve as the application-wide catch-all.
 
 Each handler may reference its own formatter, allowing different output formats per handler:
 
@@ -744,13 +746,6 @@ Request logging config (`config/logging/requests.json`):
           "backupCount": 5
         }
       },
-      "loggers": {
-        "requests": {
-          "handlers": ["requests_file"],
-          "level": "INFO",
-          "propagate": false
-        }
-      },
       "request_log": {
         "fields": {
           "provider": true,
@@ -798,20 +793,14 @@ Trace logging config (`config/logging/trace.json`):
           "encoding": "utf-8"
         }
       },
-      "loggers": {
-        "trace": {
-          "handlers": ["console", "file"],
-          "propagate": false
-        }
-      },
       "structlog": { "renderer": "console" }
     }
   }
 }
 ```
 
-The named `"trace"` logger with `"propagate": false` ensures messages sent to the trace
-provider stay isolated from the default root logger handlers.
+No `"loggers"` section is needed: the provider auto-generates a `"trace"` named logger with
+`propagate=false` at runtime, keeping trace output isolated from the default root handlers.
 
 At startup, `LoggingService.configure(output_dir=…, profile=…)` calls `configure()` on each
 active provider. Each provider calls `dictConfig` independently; with

@@ -122,11 +122,10 @@ class StructLogProvider(LoggingServiceProvider):
     def apply_levels(self) -> None:
         """Patch handler and logger levels from the current config without recreating handlers.
 
-        Directly updates live stdlib ``Logger`` and ``Handler`` objects so no
+        Directly updates live stdlib "Logger" and "Handler" objects so no
         new handlers are created and no existing log records are lost.  Safe
-        to call at any time after the initial :meth:`configure`.
+        to call at any time after the initial configure().
         """
-        # Resolve handler-name → desired level from config.
         handler_levels: dict[str, int] = {}
         for h_name, h_conf in (self.config.get("handlers") or {}).items():
             if not isinstance(h_conf, dict):
@@ -138,7 +137,7 @@ class StructLogProvider(LoggingServiceProvider):
             if isinstance(level_int, int):
                 handler_levels[h_name] = level_int
 
-        # Update levels on handlers attached to named loggers.
+        # Update levels on handlers attached to named loggers (config-defined).
         # Logger-level is intentionally left at NOTSET — the handler level
         # is the sole filter gate.
         for l_name, l_conf in (self.config.get("loggers") or {}).items():
@@ -149,6 +148,15 @@ class StructLogProvider(LoggingServiceProvider):
             for handler in logger.handlers:
                 if handler.name not in config_handler_names:
                     continue
+                new_level = handler_levels.get(handler.name)
+                if new_level is not None:
+                    handler.setLevel(new_level)
+
+        # Also patch the auto-injected named logger for non-default providers
+        # that have no explicit loggers section in their config.
+        if self.name != "default" and self.name not in (self.config.get("loggers") or {}):
+            logger = logging.getLogger(self.name)
+            for handler in logger.handlers:
                 new_level = handler_levels.get(handler.name)
                 if new_level is not None:
                     handler.setLevel(new_level)
@@ -388,6 +396,11 @@ class StructLogProvider(LoggingServiceProvider):
         "disable_existing_loggers", processes handler "active"
         flags / Seq availability, and auto-builds "root.handlers"
         from active handlers not assigned to any named logger.
+
+        Non-default providers automatically receive a named stdlib
+        logger (keyed by the config-file stem) that references all
+        active handlers with propagate=False, isolating them from
+        the root logger where the "default" provider's handlers live.
         """
         formatters = copy.deepcopy(self.config.get("formatters") or {})
         handlers = copy.deepcopy(self.config.get("handlers") or {})
@@ -407,6 +420,7 @@ class StructLogProvider(LoggingServiceProvider):
         self._resolve_file_handler_paths(handlers)
         self._disable_inactive_handlers(handlers, prepared)
         self._disable_unavailable_seq_handlers(handlers, prepared)
+        self._auto_inject_named_logger(prepared, handlers)
 
         assigned: set[str] = set()
         for logger_conf in prepared.get("loggers", {}).values():
@@ -419,6 +433,28 @@ class StructLogProvider(LoggingServiceProvider):
             prepared["root"] = {"handlers": root_handlers, "level": "INFO"}
 
         return prepared
+
+    def _auto_inject_named_logger(
+            self, prepared: dict[str, Any], handlers: dict[str, Any],
+    ) -> None:
+        """Auto-inject a named stdlib logger for non-default providers.
+
+        When the config file does not explicitly define a logger matching the
+        provider name, one is created referencing all active handlers with
+        propagate=False.  The "default" provider is exempt because its handlers
+        intentionally sit on the root logger as the application catch-all.
+        """
+        if self.name == "default":
+            return
+        loggers = prepared.setdefault("loggers", {})
+        if self.name in loggers:
+            return
+        active_handler_names = list(handlers.keys())
+        if active_handler_names:
+            loggers[self.name] = {
+                "handlers": active_handler_names,
+                "propagate": False,
+            }
 
     def _resolve_file_handler_paths(self, handlers: dict[str, Any]) -> None:
         output_dir = self._output_dir or Path(".")

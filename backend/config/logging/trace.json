@@ -34,12 +34,6 @@
           "api_key": ""
         }
       },
-      "loggers": {
-        "trace": {
-          "handlers": ["console", "file"],
-          "propagate": false
-        }
-      },
       "structlog": {
         "renderer": "console"
       }
