@@ -643,7 +643,9 @@ invoked. Lower-priority groups are only attempted when all providers in the curr
 **Name-based routing.** `LoggingService.log(logger_name, …)` looks up the provider whose
 config-file name matches `logger_name`. If no match, falls back to the provider named `"default"`.
 For example, `log("requests", …)` routes to the provider from `requests.json`; any unmatched
-name routes to `default.json`.
+name routes to `default.json`. To keep a provider's output isolated from the root logger,
+define a named stdlib logger in the config's `loggers` section with `"propagate": false`
+(see `trace.json` and `requests.json` for examples).
 
 `service_provider.config` keys (all optional except `handlers`):
 
@@ -765,6 +767,51 @@ Request logging config (`config/logging/requests.json`):
   }
 }
 ```
+
+Trace logging config (`config/logging/trace.json`):
+
+```json
+{
+  "service_provider": {
+    "service": "logging",
+    "provider": "struct_log",
+    "provider_category": "normal",
+    "enabled": true,
+    "priority": 9,
+    "version": "1.0",
+    "config": {
+      "formatters": {
+        "plain": { "format": "%(message)s" }
+      },
+      "handlers": {
+        "console": {
+          "class": "logging.StreamHandler",
+          "level": "TRACE",
+          "formatter": "plain",
+          "stream": "ext://sys.stdout"
+        },
+        "file": {
+          "class": "logging.FileHandler",
+          "level": "TRACE",
+          "formatter": "plain",
+          "filename": "${output_dir}/results/logs/trace.log",
+          "encoding": "utf-8"
+        }
+      },
+      "loggers": {
+        "trace": {
+          "handlers": ["console", "file"],
+          "propagate": false
+        }
+      },
+      "structlog": { "renderer": "console" }
+    }
+  }
+}
+```
+
+The named `"trace"` logger with `"propagate": false` ensures messages sent to the trace
+provider stay isolated from the default root logger handlers.
 
 At startup, `LoggingService.configure(output_dir=…, profile=…)` calls `configure()` on each
 active provider. Each provider calls `dictConfig` independently; with

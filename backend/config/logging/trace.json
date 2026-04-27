@@ -4,7 +4,7 @@
     "provider": "struct_log",
     "provider_category": "normal",
     "enabled": true,
-    "priority": 19,
+    "priority": 9,
     "version": "1.0",
     "config": {
       "formatters": {
@@ -32,6 +32,12 @@
           "level": "TRACE",
           "server_url": "http://localhost:5341",
           "api_key": ""
+        }
+      },
+      "loggers": {
+        "trace": {
+          "handlers": ["console", "file"],
+          "propagate": false
         }
       },
       "structlog": {

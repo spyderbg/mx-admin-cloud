@@ -196,7 +196,6 @@ components:
           type: string
           title: Provider Category
           description: Category of the provider
-          default: normal
         enabled:
           type: boolean
           title: Enabled
@@ -210,6 +209,7 @@ components:
       - name
       - service
       - provider
+      - provider_category
       - enabled
       - priority
       title: ServiceProviderInfo
