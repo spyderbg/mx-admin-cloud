@@ -93,6 +93,13 @@ class LoggingService(Service):
                 return provider
         return None
 
+    def find_provider(self, name: str) -> LoggingServiceProvider | None:
+        """Find a provider by name from all providers, including disabled ones."""
+        for provider in self._providers:
+            if provider.name == name:
+                return provider
+        return None
+
     def _resolve_provider(self, name: str) -> LoggingServiceProvider | None:
         """Find a provider by *name*, fall back to "default", then first active."""
         provider = self._provider_by_name(name)
