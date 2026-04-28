@@ -130,7 +130,7 @@ class Settings(BaseSettings):
         return self.output_path / "results" / "normalized" / language_code / provider
 
     def reports_output_dir(self) -> Path:
-        """Get the reports directory."""
+        """Get the reports' directory."""
         return self.output_path / "results" / "reports"
 
     def logs_output_dir(self) -> Path:

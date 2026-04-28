@@ -41,7 +41,7 @@ docker compose -f docker/docker-compose.yml up -d --build
 ### Backend (`src/`)
 
 - **`api/v1/`** — Public REST routes (`routes_*.py`) and Pydantic request/response models in **`schemas/`**
-  (login, cli-login, content CRUD, user management over UDS+admin, common utils)
+  (login, cli-login, user management over UDS+admin, common utils)
 - **`api/internal/`** — Internal HTTP endpoints for TTS generation, evaluation, optimization, and translation
   (requires internal service token or admin JWT)
 - **`core/`** — Shared infrastructure with **zero** `src.services` imports (HTTP boundary enforced):
@@ -52,11 +52,11 @@ docker compose -f docker/docker-compose.yml up -d --build
   - `input_loader.py` — `load_words()` parses CSV/XLSX/TXT for translation
   - `result_writer.py` — Write per-run JSON and CSV reports
   - `pipeline.py` — Async TTS pipeline orchestration (calls internal HTTP endpoints)
-  - `content_service.py` — Filesystem ops for categories/images; DALL-E icons
   - `job_store.py` — In-memory store for async pipeline jobs
 - **`services/`** — Business logic implementations (providers, translators, optimizers, evaluation)
   - `service_registry.py` — Unified registry and builder for all runtime services
   - `configuration/` — Runtime configuration service (merges disk JSON with runtime updates)
+  - `content/` — Content management service (categories, items, filesystem, DALL-E icons)
   - `text_to_speech/` — TTS provider implementations (OpenAI, ElevenLabs, Speaktor, Static)
   - `text_translation/` — Translator implementations (OpenAI, Static CSV)
   - `voice_optimization/` — Audio post-processing (FFmpeg, Pydub, Normalizer)
@@ -71,6 +71,7 @@ The pipeline is driven by JSON config files in `backend/config/` and managed by 
 
 | Directory | Purpose |
 |-----------|---------|
+| `content/` | Content management provider (file_system) |
 | `text_to_speech/` | TTS providers (OpenAI, ElevenLabs, Speaktor, Static) |
 | `text_translation/` | Translation configs (static CSV or OpenAI) |
 | `voice_optimizers/` | Audio post-processing (ffmpeg/pydub) |

@@ -32,7 +32,7 @@ frontend/
 
 .git/
 .claude/
-content/
+/content/
 docs/
 existing_scripts/
 output/

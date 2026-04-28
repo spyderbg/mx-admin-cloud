@@ -187,13 +187,13 @@ Base URL for all routes below: `/api/v1`. Protected routes require `Authorizatio
 
 | Method   | Path                                                                     | Auth | Description                                                                                                                       |
 |----------|--------------------------------------------------------------------------|------|-----------------------------------------------------------------------------------------------------------------------------------|
-| `GET`    | [/content/categories](src/api/v1/routes_content.py#L38)                  | Yes  | List content categories. Query: `include_archived`, `archived_only` (bool) to include or list only archived categories.           |
-| `POST`   | [/content/categories](src/api/v1/routes_content.py#L51)                  | Yes  | Create a category. Body: `{"name": "<category_name>"}`. Creates folder, voice files per language, and category icon. Returns 201. |
-| `POST`   | [/content/categories/restore](src/api/v1/routes_content.py#L62)          | Yes  | Restore a category from archive. Body: `{"name": "<category_name_or_archive_folder>"}` (e.g. `foods` or `foods_1738456789`).      |
-| `GET`    | [/content/categories/{category_name}](src/api/v1/routes_content.py#L103) | Yes  | Category details by name.                                                                                                         |
-| `PATCH`  | [/content/categories/{category_name}](src/api/v1/routes_content.py#L77)  | Yes  | Rename category. Body: `{"name": "<new_name>"}`. Renames folder and regenerates category voice files.                             |
-| `DELETE` | [/content/categories/{category_name}](src/api/v1/routes_content.py#L90)  | Yes  | Remove category. If `ARCHIVE_DIR` is set, archives it (date suffix); otherwise deletes permanently.                               |
-| `POST`   | [/content/items](src/api/v1/routes_content.py#L101)                      | Yes  | Create a content item. Multipart: `image` (file), `category` (form), `item` (form, English word). Returns 201.                  |
+| `GET`    | [/content/categories](src/services/content/routes.py)         | Yes  | List content categories. Query: `include_archived`, `archived_only` (bool).           |
+| `POST`   | [/content/categories](src/services/content/routes.py)         | Yes  | Create a category. Body: `{"name": "<category_name>"}`. Creates folder, voices, icon. Returns 201. |
+| `POST`   | [/content/categories/restore](src/services/content/routes.py) | Yes  | Restore a category from archive. Body: `{"name": "<name_or_archive_folder>"}`.      |
+| `GET`    | [/content/categories/{name}](src/services/content/routes.py)  | Yes  | Category details by name.                                                                                                         |
+| `PATCH`  | [/content/categories/{name}](src/services/content/routes.py)  | Yes  | Rename category. Body: `{"name": "<new_name>"}`. Renames folder and regenerates voices.                             |
+| `DELETE` | [/content/categories/{name}](src/services/content/routes.py)  | Yes  | Remove category. If `ARCHIVE_DIR` is set, archives it; otherwise deletes permanently.                               |
+| `POST`   | [/content/items](src/services/content/routes.py)              | Yes  | Create a content item. Multipart: `image` (file), `category` (form), `item` (form). Returns 201.                  |
 
 ### Users
 
@@ -330,9 +330,10 @@ Async job tracking (`src/core/job_store.py`) is stored in `app.state.job_store` 
 
 ### HTTP Boundary
 
-`core/` has zero imports from `services/`. The pipeline and content service call internal HTTP endpoints instead of
-importing service implementations directly. This keeps the core infrastructure layer decoupled from provider-specific
-code.
+`core/` has zero imports from `services/`. The pipeline calls internal HTTP endpoints instead of
+importing service implementations directly. The content service lives in `services/content/` and
+also communicates with TTS and translation via internal HTTP calls. This keeps the core
+infrastructure layer decoupled from provider-specific code.
 
 ### Output path helpers
 
@@ -358,11 +359,9 @@ src/
 │   └── v1/                       # Public /api/v1
 │       ├── routes_auth.py
 │       ├── routes_common.py      # ping, status, operation, list-files
-│       ├── routes_content.py
 │       ├── routes_users.py
 │       └── schemas/              # Public OpenAPI contract models (Pydantic)
 │           ├── common.py
-│           ├── content.py
 │           └── users.py
 ├── core/                         # No src.services imports (HTTP boundary)
 │   ├── config.py                 # Settings + output path helpers
@@ -371,7 +370,6 @@ src/
 │   ├── input_loader.py           # load_words() for translate-file (TXT/CSV/XLSX)
 │   ├── result_writer.py
 │   ├── content_naming.py         # Content folder / image id naming
-│   ├── content_service.py
 │   ├── job_store.py
 │   ├── log_client.py             # Async HTTP client → `/internal/loggers/*` (see services/logging/routes.py)
 │   ├── pipeline.py               # TTS pipeline (internal HTTP)
@@ -388,6 +386,13 @@ src/
     ├── service_registry.py       # Subpackage discovery, get_service
     ├── registry_builder.py       # load_all_from_disk, hot-reload
     ├── models.py                 # Service / ServiceProvider bases
+    ├── content/                  # Content management service (co-located routes + schemas)
+    │   ├── __init__.py           # SERVICE_CLASS, SERVICE_NAME, SERVICE_ACCEPT_CRITERIA
+    │   ├── models.py             # ContentProvider base + error classes
+    │   ├── schemas.py            # Pydantic bodies for /api/v1/content/*
+    │   ├── routes.py             # /api/v1/content/categories, /content/items
+    │   ├── service.py            # ContentService + ContentProviderFactory
+    │   └── providers/            # file_system provider
     ├── configuration/            # Co-located service (routes + schemas live next to service.py)
     │   ├── __init__.py           # SERVICE_CLASS, SERVICE_NAME, SERVICE_ACCEPT_CRITERIA
     │   ├── models.py             # ConfigurationProvider base + error/result dataclasses
@@ -491,6 +496,8 @@ TTS providers and translators are configured via JSON files in `config/`:
 
 ```text
 config/
+├── content/
+│   └── file_system.json          # file_system content provider
 ├── logging/
 │   ├── default.json              # struct_log provider (console + file handlers, structlog)
 │   └── requests.json             # struct_log provider (request file handler, field filtering)
