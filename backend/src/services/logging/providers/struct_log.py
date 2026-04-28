@@ -350,20 +350,47 @@ class StructLogProvider(LoggingServiceProvider):
     def _apply_logging_config(self, prepared: dict[str, Any]) -> None:
         """Apply a prepared logging config additively.
 
-        Calls ``logging.config.dictConfig`` but then restores any root-logger
+        Calls "logging.config.dictConfig" but then restores any root-logger
         handlers that were added by previously configured providers and are not
         duplicates of the new handlers.  This allows multiple active
-        ``StructLogProvider`` instances to coexist without clobbering each
+        "StructLogProvider" instances to coexist without clobbering each
         other's file/stream handlers.
+
+        Handlers whose names appear in this provider's own config (including
+        inactive ones) are never restored — their presence is governed solely
+        by the current prepared config.
         """
         root = logging.getLogger()
         pre_handlers = list(root.handlers)
 
+        # All handler names declared by this provider (active or inactive).
+        owned_names: set[str] = set((self.config.get("handlers") or {}).keys())
+        # Names of handlers that are active in the new config.
+        active_names: set[str] = set(prepared.get("handlers", {}).keys())
+
         logging.config.dictConfig(prepared)
 
+        # dictConfig only reconfigures the root when a "root" key is present in
+        # prepared. When all root-bound handlers are inactive, the "root" key is
+        # omitted, so dictConfig never touches the root logger and stale handlers
+        # remain. Explicitly remove any owned handler that is no longer active.
+        inactive_owned = owned_names - active_names
+        if inactive_owned:
+            self._evict_handlers(inactive_owned)
+
         for handler in pre_handlers:
+            if handler.name in owned_names:
+                continue
             if not self._handler_already_present(handler, root.handlers):
                 root.addHandler(handler)
+
+    @staticmethod
+    def _evict_handlers(names: set[str]) -> None:
+        """Remove handlers with the given names from root and all named loggers."""
+        for logger in StructLogProvider._iter_runtime_loggers():
+            for handler in list(logger.handlers):
+                if handler.name in names:
+                    logger.removeHandler(handler)
 
     @staticmethod
     def _handler_already_present(
