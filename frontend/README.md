@@ -59,13 +59,13 @@ src/
 ## Routes
 
 
-| Path                                      | View              | Layout           | Description                               |
-| ----------------------------------------- | ----------------- | ---------------- | ----------------------------------------- |
-| `/login`                                  | `LoginView`       | None (full-page) | Authentication screen                     |
-| `/`                                       | —                 | —                | Redirects to `/categories`                |
-| `/categories`                             | [`CategoriesView`](#categoriesview)  | [`AppLayout`](#applayout)      | Shows first category by default           |
-| `/categories/:categoryId`                 | [`CategoriesView`](#categoriesview)  | [`AppLayout`](#applayout)      | Selected category details + image grid    |
-| `/categories/:categoryId/images/:imageId` | [`ImageDetailView`](#imagedetailview) | [`AppLayout`](#applayout)      | Image detail: files, voices, name editing |
+| Path                                      | View                                  | Layout                    | Description                               |
+| ----------------------------------------- | ------------------------------------- | ------------------------- | ----------------------------------------- |
+| `/login`                                  | `LoginView`                           | None (full-page)          | Authentication screen                     |
+| `/`                                       | —                                     | —                         | Redirects to `/categories`                |
+| `/categories`                             | `[CategoriesView](#categoriesview)`   | `[AppLayout](#applayout)` | Shows first category by default           |
+| `/categories/:categoryId`                 | `[CategoriesView](#categoriesview)`   | `[AppLayout](#applayout)` | Selected category details + image grid    |
+| `/categories/:categoryId/images/:imageId` | `[ImageDetailView](#imagedetailview)` | `[AppLayout](#applayout)` | Image detail: files, voices, name editing |
 
 
 All `/categories` routes require authentication (token in localStorage). Unauthenticated users are redirected to `/login`.
@@ -121,14 +121,23 @@ Displayed for a specific image within a category:
 ## Components
 
 
-| Component        | Props                                   | Emits                                          | Purpose                                    |
-| ---------------- | --------------------------------------- | ---------------------------------------------- | ------------------------------------------ |
-| `ServerWord`     | `category` and/or `text` + style props  | `edit` | Label + pencil; `text` overrides display source |
-| `CategoryDetail` | `category: Category`                    | `edit`, `delete`, `rename`, `edit-voice`, `rename-voice`, `delete-voice` | Category info card with voice list         |
-| `ImageGrid`      | `images: Image[]`, `categoryId: string` | — | Responsive thumbnail grid with edit badges |
-| `LoginForm`      | —                                       | — | Login form with auth API integration       |
+| Component        | Props                                   | Emits                                                                    | Purpose                                         |
+| ---------------- | --------------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------- |
+| `ServerWord`     | `category` and/or `text` + style props  | `edit`                                                                   | Label + pencil; `text` overrides display source |
+| `CategoryDetail` | `category: Category`                    | `edit`, `delete`, `rename`, `edit-voice`, `rename-voice`, `delete-voice` | Category info card with voice list              |
+| `ImageGrid`      | `images: Image[]`, `categoryId: string` | —                                                                        | Responsive thumbnail grid with edit badges      |
+| `LoginForm`      | —                                       | —                                                                        | Login form with auth API integration            |
+
 
 **ServerWord** — Source: non-empty `text` is shown as-is; otherwise `localizedCategoryLabel(category, content language)`. `pascalCase` runs `toPascalCaseWords` on that raw string. Styling: `rootClass`, `textClass`, `buttonClass`, `iconClass`, `iconStyle`; `textTag` (default `h5`, `mb-0` only for `h5`); `inheritAttrs: false` with class/style on the root merged from `$attrs` + `rootClass`. DOM hooks: `server-word-root`, `server-word-text`, `server-word-edit`, `server-word-icon`.
+
+## API Specification
+
+The full REST API contract is defined in [`openapi.yaml`](openapi.yaml) (OpenAPI 3.1). It covers every endpoint the
+frontend relies on — derived from the MSW handlers (`src/mocks/handlers.ts`), API client modules (`src/api/`), mock
+data shapes (`src/data/mockData.ts`), and the UI actions exposed by components.
+
+**Tag groups:** Auth, Categories, Category Voices, Images, Image Files, Image Voices.
 
 ## Domain Types
 
