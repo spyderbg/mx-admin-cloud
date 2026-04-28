@@ -46,13 +46,22 @@
             tabindex="-1"
             @change="onAddFilePicked"
           />
-          <button type="button" class="btn btn-primary btn-sm" @click="onAddFile">
+          <button v-if="hasFiles" type="button" class="btn btn-primary btn-sm" @click="onAddFile">
             <i class="mdi mdi-plus mr-1"></i>Add File
           </button>
         </div>
-        <div class="row">
+        <input
+          ref="replaceFileInputRef"
+          type="file"
+          accept="image/*"
+          class="d-none"
+          aria-hidden="true"
+          tabindex="-1"
+          @change="onReplaceFilePicked"
+        />
+        <div v-if="hasFiles" class="row">
           <div
-            v-for="(file, index) in image.files"
+            v-for="(file, index) in imageFiles"
             :key="index"
             class="col-xl-4 col-lg-6 col-md-6 col-sm-12 col-12 mb-3"
           >
@@ -74,12 +83,30 @@
                 <button
                   class="btn btn-sm btn-outline-light"
                   title="Delete"
-                  :disabled="image.files.length <= 1"
                   @click="onDeleteFile(index)"
                 >
                   <i class="mdi mdi-delete"></i>
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+        <div v-else class="file-empty">
+          <div class="file-card file-card-empty">
+            <img
+              :src="cameraPlaceholderUrl"
+              alt="No image available"
+              class="img-fluid rounded"
+              style="width: 100%; aspect-ratio: 1/1; object-fit: cover;"
+            />
+            <div class="file-actions">
+              <button
+                class="btn btn-sm btn-outline-light"
+                title="Edit"
+                @click="onAddFile"
+              >
+                <i class="mdi mdi-pencil"></i>
+              </button>
             </div>
           </div>
         </div>
@@ -136,6 +163,24 @@
     <h4 class="text-muted">Image not found</h4>
     <router-link to="/categories" class="btn btn-primary mt-3">Back to Categories</router-link>
   </div>
+
+  <Teleport to="body">
+    <div v-if="deleteConfirmVisible" class="cd-modal-overlay" @click.self="cancelDelete">
+      <div class="cd-modal-box">
+        <div class="cd-modal-header">
+          <h5 class="cd-modal-title">Delete File</h5>
+          <button type="button" class="cd-modal-close" @click="cancelDelete">&times;</button>
+        </div>
+        <div class="cd-modal-body">
+          Are you sure you want to delete this file from "{{ category.name }}"?
+        </div>
+        <div class="cd-modal-footer">
+          <button type="button" class="btn btn-secondary" @click="cancelDelete">Cancel</button>
+          <button type="button" class="btn btn-danger" @click="confirmDelete">Delete</button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
@@ -144,6 +189,7 @@ import { useRoute } from 'vue-router'
 import { getCategory } from '../api/categories'
 import type { Category, Language, Voice } from '../types'
 import { useContentLanguage } from '../composables/useContentLanguage'
+import cameraPlaceholderUrl from '../assets/images/samples/camera-placeholder.svg'
 import {
   breadcrumbCategoriesLabel,
   localizedCategoryLabel,
@@ -175,6 +221,8 @@ const image = computed(() => {
   const imgId = route.params.imageId as string
   return category.value?.images.find(i => i.id === imgId) ?? null
 })
+const imageFiles = computed(() => image.value?.files.filter((file) => file.trim().length > 0) ?? [])
+const hasFiles = computed(() => imageFiles.value.length > 0)
 
 const breadcrumbRoot = computed(() => breadcrumbCategoriesLabel(contentLanguage.value))
 
@@ -215,11 +263,39 @@ const onAddFilePicked = (e: Event): void => {
   }
   input.value = ''
 }
+const replaceFileInputRef = ref<HTMLInputElement | null>(null)
+const replaceFileIndex = ref<number>(-1)
+
 const onReplaceFile = (index: number): void => {
-  console.log('Replace file at index:', index)
+  replaceFileIndex.value = index
+  replaceFileInputRef.value?.click()
 }
+
+const onReplaceFilePicked = (e: Event): void => {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (file) {
+    console.log('Replace file at index:', replaceFileIndex.value, 'with:', file.name)
+  }
+  input.value = ''
+}
+const deleteConfirmVisible = ref(false)
+const deleteFileIndex = ref<number>(-1)
+
 const onDeleteFile = (index: number): void => {
-  console.log('Delete file at index:', index)
+  deleteFileIndex.value = index
+  deleteConfirmVisible.value = true
+}
+
+const cancelDelete = (): void => {
+  deleteConfirmVisible.value = false
+  deleteFileIndex.value = -1
+}
+
+const confirmDelete = (): void => {
+  console.log('Delete file at index:', deleteFileIndex.value)
+  deleteConfirmVisible.value = false
+  deleteFileIndex.value = -1
 }
 const onUploadVoice = (language: Language): void => {
   console.log('Upload voice for language:', language)
@@ -283,5 +359,64 @@ function togglePlay(voice: Voice): void {
 }
 .file-actions .btn:hover {
   background: rgba(0, 0, 0, 0.7);
+}
+.file-empty {
+  max-width: 320px;
+}
+.file-card-empty {
+  background: #eff3f8;
+}
+.cd-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1050;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cd-modal-box {
+  background: #fff;
+  border-radius: 6px;
+  box-shadow: 0 5px 30px rgba(0, 0, 0, 0.3);
+  width: 100%;
+  max-width: 480px;
+  margin: 1rem;
+  overflow: hidden;
+}
+.cd-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid #dee2e6;
+}
+.cd-modal-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+.cd-modal-close {
+  background: none;
+  border: none;
+  font-size: 1.4rem;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  color: #6b7280;
+  flex-shrink: 0;
+}
+.cd-modal-close:hover {
+  color: #111;
+}
+.cd-modal-body {
+  padding: 1.25rem;
+}
+.cd-modal-footer {
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid #dee2e6;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
 }
 </style>

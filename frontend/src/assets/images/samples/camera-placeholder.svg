@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Camera placeholder</title>
+  <desc id="desc">Placeholder image with a photo camera icon.</desc>
+  <rect width="256" height="256" fill="#eff3f8" />
+  <rect x="34" y="74" width="188" height="118" rx="16" fill="#d7e0eb" />
+  <rect x="68" y="60" width="46" height="22" rx="8" fill="#b7c4d3" />
+  <circle cx="128" cy="133" r="38" fill="#9aaabc" />
+  <circle cx="128" cy="133" r="24" fill="#edf2f8" />
+  <circle cx="128" cy="133" r="12" fill="#9aaabc" />
+  <circle cx="187" cy="98" r="8" fill="#eff3f8" />
+</svg>

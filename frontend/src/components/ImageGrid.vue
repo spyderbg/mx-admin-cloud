@@ -7,10 +7,11 @@
       @click="navigateToDetail(image.id)"
     >
       <img
-        :src="image.thumbnailUrl"
+        :src="resolveImageSrc(image)"
         :alt="image.name"
         class="image-card-thumb"
       />
+      <span class="file-count-badge">{{ image.files.length }}</span>
       <button
         class="edit-badge"
         @click.stop="navigateToDetail(image.id)"
@@ -25,6 +26,7 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
 import type { Image } from '../types'
+import cameraPlaceholderUrl from '../assets/images/samples/camera-placeholder.svg'
 
 const props = defineProps<{
   images: Image[]
@@ -33,6 +35,15 @@ const props = defineProps<{
 }>()
 
 const router = useRouter()
+
+const resolveImageSrc = (image: Image): string => {
+  if (image.thumbnailUrl.trim().length > 0) {
+    return image.thumbnailUrl
+  }
+
+  const firstFile = image.files.find((file) => file.trim().length > 0)
+  return firstFile ?? cameraPlaceholderUrl
+}
 
 const navigateToDetail = (imageId: string): void => {
   router.push(`/categories/${props.categoryId}/images/${imageId}`)
@@ -62,6 +73,22 @@ const navigateToDetail = (imageId: string): void => {
   aspect-ratio: 1/1;
   object-fit: cover;
   display: block;
+}
+.file-count-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  border-radius: 50%;
+  background: #e53e3e;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 22px;
+  text-align: center;
+  pointer-events: none;
 }
 .edit-badge {
   position: absolute;

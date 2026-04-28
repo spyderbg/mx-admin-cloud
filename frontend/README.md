@@ -34,7 +34,7 @@ src/
 ├── composables/      # Shared composition helpers (e.g. content UI language)
 ├── utils/            # Pure helpers (labels from voices, title-case formatting, etc.)
 ├── data/
-│   └── mockData.ts   # Sidebar / MSW sample categories aligned with repo ../content (drinks, foods, vegetables, toys)
+│   └── mockData.ts   # Sidebar / MSW sample categories; toys includes a no-image placeholder item for empty-state testing
 ├── mocks/            # MSW handlers (used when VITE_DEBUG_MODE=true)
 ├── layouts/          # Application shell components
 │   ├── AppLayout.vue
@@ -106,7 +106,7 @@ Displayed when a category is selected (or defaults to first category):
 
 - **Page header** -- `h3.page-title` with localized category label + `toPascalCaseWords` (navbar content language; no edit control on the title)
 - **CategoryDetail card** -- **Category Name** and each **voice-card** word use `ServerWord` (category row: localized + rename modal; voice row: `voice.name` as-is, pencil → **Edit word** modal, `rename-voice` emit). Two-row layout: **Category Icon** (`aspect-ratio: 1 / 1`, `object-fit: contain`) and **Category Voices** share a baseline; voice grid `repeat(auto-fit, minmax(7.5rem, 1fr))`; play + **Upload** (audio); corner **delete** icon opens **Delete or reset voice** confirmation, then `delete-voice` emit; modals mutually exclusive
-- **ImageGrid** -- responsive 4-column grid of image thumbnails, each with a pencil edit-icon badge. Clicking navigates to ImageDetailView.
+- **ImageGrid** -- responsive 4-column grid of image thumbnails, each with a pencil edit-icon badge. If an image has no `thumbnailUrl` or file entries, a built-in camera placeholder is shown. Clicking navigates to ImageDetailView.
 
 ### ImageDetailView
 
@@ -115,7 +115,7 @@ Displayed for a specific image within a category:
 - **Breadcrumb** navigation: root + category + image labels follow the **navbar content language** (same as the sidebar). Category and image segments use the matching `Voice.name`, then the **English** voice if that language is missing, then the stored `name`. The root crumb is translated for en/es/fr/bg (unknown codes fall back to English).
 - **Page title** (`h3.page-title`) uses the same localized image label as the last breadcrumb segment, formatted with **per-word Pascal-style casing** (first letter of each word uppercased, the rest lowercased via `toLocaleUpperCase` / `toLocaleLowerCase`).
 - **Image name** editable input
-- **Files section** -- grid of the image's file variants with replace/delete actions. At least one file must remain (delete disabled when only one). **Add File** opens the system file picker (`image/`*); selection is logged until upload is wired to the API.
+- **Files section** -- grid of the image's file variants with replace/delete actions. Delete opens a confirmation modal and is available even when only one file is shown; selection/confirmation actions are currently logged until API wiring is completed. **Add File** opens the system file picker (`image/`*). If an image has no files, this section shows a camera placeholder card and only a single pencil **Edit** action.
 - **Voices table** -- one row per supported language (en, es, fr, bg) showing flag, voice name (text only), type badge, and replace/upload button.
 
 ## Components
@@ -125,7 +125,7 @@ Displayed for a specific image within a category:
 | ---------------- | --------------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------- |
 | `ServerWord`     | `category` and/or `text` + style props  | `edit`                                                                   | Label + pencil; `text` overrides display source |
 | `CategoryDetail` | `category: Category`                    | `edit`, `delete`, `rename`, `edit-voice`, `rename-voice`, `delete-voice` | Category info card with voice list              |
-| `ImageGrid`      | `images: Image[]`, `categoryId: string` | —                                                                        | Responsive thumbnail grid with edit badges      |
+| `ImageGrid`      | `images: Image[]`, `categoryId: string` | —                                                                        | Thumbnail grid with camera fallback for missing images |
 | `LoginForm`      | —                                       | —                                                                        | Login form with auth API integration            |
 
 
