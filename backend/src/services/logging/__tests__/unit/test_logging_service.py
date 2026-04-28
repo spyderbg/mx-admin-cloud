@@ -20,7 +20,7 @@ class _StubLoggingProvider(LoggingServiceProvider):
             *,
             name: str,
             priority: int = 10,
-            category: str = "normal",
+            category: str = "",
             enabled: bool = True,
             should_fail: bool = False,
             base_dir: Path | None = None,
@@ -78,14 +78,14 @@ def _make_service(providers: list[LoggingServiceProvider]) -> LoggingService:
 _MSG = LogMessage(event="test_event", level=logging.INFO)
 
 
-def test_emit_ignores_non_normal_category() -> None:
+def test_emit_ignores_providers_with_category() -> None:
     requests_prov = _StubLoggingProvider(name="requests", priority=1, category="requests")
-    normal_prov = _StubLoggingProvider(name="default", priority=10, category="normal")
-    service = _make_service([requests_prov, normal_prov])
+    no_category_prov = _StubLoggingProvider(name="default", priority=10, category="")
+    service = _make_service([requests_prov, no_category_prov])
 
     service.emit(_MSG)
 
-    assert len(normal_prov.logged) == 1
+    assert len(no_category_prov.logged) == 1
     assert len(requests_prov.logged) == 0
 
 
@@ -155,7 +155,7 @@ def test_emit_noop_when_no_active_providers() -> None:
     service.emit(_MSG)  # should not raise
 
 
-def test_emit_noop_when_no_normal_category() -> None:
+def test_emit_noop_when_all_providers_have_category() -> None:
     prov = _StubLoggingProvider(name="special", priority=1, category="requests")
     service = _make_service([prov])
 

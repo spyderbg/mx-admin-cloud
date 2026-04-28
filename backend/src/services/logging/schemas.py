@@ -9,13 +9,13 @@ from pydantic import BaseModel, Field
 
 
 class LogLevel(str, Enum):
-    TRACE = "trace"
-    DEBUG = "debug"
-    INFO = "info"
-    WARNING = "warning"
-    ERROR = "error"
-    CRITICAL = "critical"
-    FATAL = "fatal"
+    TRACE = "trace"         # 10
+    DEBUG = "debug"         # 20
+    INFO = "info"           # 30
+    WARNING = "warning"     # 40
+    ERROR = "error"         # 50
+    CRITICAL = "critical"   # 100
+    FATAL = "fatal"         # 200
 
 
 class StatusResponse(BaseModel):

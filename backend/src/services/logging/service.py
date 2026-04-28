@@ -187,7 +187,7 @@ class LoggingService(Service):
             provider.clear_request_context()
 
     def emit(self, msg: LogMessage) -> None:
-        """Emit *msg* through "normal"-category providers using priority-ordered fallback.
+        """Emit *msg* through providers with no category using priority-ordered fallback.
 
         Providers are tried in ascending priority order (1 = highest).  When a
         provider logs the message successfully, every *other* provider that
@@ -197,7 +197,7 @@ class LoggingService(Service):
         """
         normal = [
             p for p in self.get_active_providers()
-            if p.provider_category == "normal"
+            if not p.provider_category
         ]
         if not normal:
             return
