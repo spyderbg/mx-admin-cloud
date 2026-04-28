@@ -185,15 +185,52 @@ Base URL for all routes below: `/api/v1`. Protected routes require `Authorizatio
 
 ### Content
 
-| Method   | Path                                                                     | Auth | Description                                                                                                                       |
-|----------|--------------------------------------------------------------------------|------|-----------------------------------------------------------------------------------------------------------------------------------|
-| `GET`    | [/content/categories](src/services/content/routes.py)         | Yes  | List content categories. Query: `include_archived`, `archived_only` (bool).           |
-| `POST`   | [/content/categories](src/services/content/routes.py)         | Yes  | Create a category. Body: `{"name": "<category_name>"}`. Creates folder, voices, icon. Returns 201. |
-| `POST`   | [/content/categories/restore](src/services/content/routes.py) | Yes  | Restore a category from archive. Body: `{"name": "<name_or_archive_folder>"}`.      |
-| `GET`    | [/content/categories/{name}](src/services/content/routes.py)  | Yes  | Category details by name.                                                                                                         |
-| `PATCH`  | [/content/categories/{name}](src/services/content/routes.py)  | Yes  | Rename category. Body: `{"name": "<new_name>"}`. Renames folder and regenerates voices.                             |
-| `DELETE` | [/content/categories/{name}](src/services/content/routes.py)  | Yes  | Remove category. If `ARCHIVE_DIR` is set, archives it; otherwise deletes permanently.                               |
-| `POST`   | [/content/items](src/services/content/routes.py)              | Yes  | Create a content item. Multipart: `image` (file), `category` (form), `item` (form). Returns 201.                  |
+| Method   | Path                                                          | Auth | Description                                                                      |
+|----------|---------------------------------------------------------------|------|----------------------------------------------------------------------------------|
+| `GET`    | [/content/categories](src/services/content/routes.py)         | Yes  | List categories. Query: `include_archived`, `archived_only`.                     |
+| `POST`   | [/content/categories](src/services/content/routes.py)         | Yes  | Create a category. Body: `{"name": "..."}`. Returns 201.                         |
+| `POST`   | [/content/categories/restore](src/services/content/routes.py) | Yes  | Restore a category from archive. Body: `{"name": "..."}`.                        |
+| `GET`    | [/content/categories/{name}](src/services/content/routes.py)  | Yes  | Category details by name.                                                        |
+| `PUT`    | [/content/categories/{name}](src/services/content/routes.py)  | Yes  | Update category name or description. **Stub (501).**                             |
+| `PATCH`  | [/content/categories/{name}](src/services/content/routes.py)  | Yes  | Rename category. Body: `{"name": "..."}`.                                        |
+| `DELETE` | [/content/categories/{name}](src/services/content/routes.py)  | Yes  | Remove category. Archives if `ARCHIVE_DIR` set; otherwise deletes.               |
+| `POST`   | [/content/items](src/services/content/routes.py)              | Yes  | Create a content item. Multipart: `image`, `category`, `item`. Returns 201.      |
+
+#### Category Voices (stub — 501)
+
+| Method   | Path                                                                          | Auth | Description                        |
+|----------|-------------------------------------------------------------------------------|------|------------------------------------|
+| `GET`    | [/content/categories/{name}/voices](src/services/content/routes.py)           | Yes  | List voices for a category.        |
+| `PUT`    | [/.../voices/{voiceId}](src/services/content/routes.py)                       | Yes  | Rename a category voice.           |
+| `DELETE` | [/.../voices/{voiceId}](src/services/content/routes.py)                       | Yes  | Delete or reset a category voice.  |
+| `PUT`    | [/.../voices/{voiceId}/audio](src/services/content/routes.py)                 | Yes  | Upload audio for a category voice. |
+
+#### Images (stub — 501)
+
+| Method   | Path                                                                          | Auth | Description                     |
+|----------|-------------------------------------------------------------------------------|----- |---------------------------------|
+| `GET`    | [/content/categories/{name}/images](src/services/content/routes.py)           | Yes  | List images for a category.     |
+| `POST`   | [/content/categories/{name}/images](src/services/content/routes.py)           | Yes  | Add an image to a category.     |
+| `GET`    | [/.../images/{imageId}](src/services/content/routes.py)                       | Yes  | Get a single image by ID.       |
+| `PUT`    | [/.../images/{imageId}](src/services/content/routes.py)                       | Yes  | Update image name.              |
+| `DELETE` | [/.../images/{imageId}](src/services/content/routes.py)                       | Yes  | Delete an image.                |
+
+#### Image Files (stub — 501)
+
+| Method   | Path                                                                          | Auth | Description              |
+|----------|-------------------------------------------------------------------------------|------|--------------------------| 
+| `POST`   | [/.../images/{imageId}/files](src/services/content/routes.py)                 | Yes  | Upload a file variant.   |
+| `PUT`    | [/.../images/{imageId}/files/{idx}](src/services/content/routes.py)           | Yes  | Replace a file variant.  |
+| `DELETE` | [/.../images/{imageId}/files/{idx}](src/services/content/routes.py)           | Yes  | Delete a file variant.   |
+
+#### Image Voices (stub — 501)
+
+| Method   | Path                                                                          | Auth | Description                      |
+|----------|-------------------------------------------------------------------------------|------|----------------------------------|
+| `GET`    | [/.../images/{imageId}/voices](src/services/content/routes.py)                | Yes  | List voices for an image.        |
+| `PUT`    | [/.../images/{imageId}/voices/{voiceId}](src/services/content/routes.py)      | Yes  | Rename an image voice.           |
+| `DELETE` | [/.../images/{imageId}/voices/{voiceId}](src/services/content/routes.py)      | Yes  | Delete or reset an image voice.  |
+| `PUT`    | [/.../images/{imageId}/voices/{voiceId}/audio](src/services/content/routes.py)| Yes  | Upload audio for an image voice. |
 
 ### Users
 
@@ -390,7 +427,7 @@ src/
     │   ├── __init__.py           # SERVICE_CLASS, SERVICE_NAME, SERVICE_ACCEPT_CRITERIA
     │   ├── models.py             # ContentProvider base + error classes
     │   ├── schemas.py            # Pydantic bodies for /api/v1/content/*
-    │   ├── routes.py             # /api/v1/content/categories, /content/items
+    │   ├── routes.py             # /api/v1/content/* (categories, voices, images, files)
     │   ├── service.py            # ContentService + ContentProviderFactory
     │   └── providers/            # file_system provider
     ├── configuration/            # Co-located service (routes + schemas live next to service.py)
