@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -72,3 +73,25 @@ class ContentProvider(ServiceProvider, ABC):
     @abstractmethod
     def restore_category(self, category_name: str) -> dict[str, Any]:
         """Restore a category from the archive to the content directory."""
+
+    # ------------------------------------------------------------------
+    # Naming helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _to_pascal(s: str) -> str:
+        parts = [p for p in re.split(r"[^A-Za-z0-9]+", s) if p]
+        return "".join(p[:1].upper() + p[1:].lower() for p in parts)
+
+    @staticmethod
+    def _english_word_to_folder_name(word: str) -> str:
+        if not word or not word.strip():
+            return ""
+        normalized = word.strip().replace(" ", "_")
+        normalized = re.sub(r"_+", "_", normalized).strip("_")
+        return normalized.lower()
+
+    def _english_word_to_image_id(self, word: str) -> str:
+        if not word or not word.strip():
+            return ""
+        return "I_" + self._to_pascal(word.strip())

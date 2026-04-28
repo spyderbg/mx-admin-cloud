@@ -33,7 +33,8 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/CategoryListResponse'
         '422':
           description: Validation Error
           content:
@@ -59,7 +60,8 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/CreateCategoryResponse'
         '422':
           description: Validation Error
           content:
@@ -71,7 +73,7 @@ paths:
       tags:
       - content
       summary: Restore Category Endpoint
-      description: Restore a category.
+      description: Restore a category from archive.
       operationId: restore_category_endpoint_api_v1_content_categories_restore_post
       requestBody:
         content:
@@ -84,7 +86,8 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/RestoreCategoryResponse'
         '422':
           description: Validation Error
           content:
@@ -120,7 +123,8 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/RenameCategoryResponse'
         '422':
           description: Validation Error
           content:
@@ -147,7 +151,8 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/RemoveCategoryResponse'
         '422':
           description: Validation Error
           content:
@@ -174,7 +179,8 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/CategoryDetailResponse'
         '422':
           description: Validation Error
           content:
@@ -199,7 +205,8 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/CreateItemResponse'
         '422':
           description: Validation Error
           content:
@@ -217,6 +224,24 @@ components:
           scopes: {}
           tokenUrl: /api/v1/login
   schemas:
+    ArchivedEntry:
+      properties:
+        base_name:
+          type: string
+          title: Base Name
+        archive_folder:
+          type: string
+          title: Archive Folder
+        archived_at:
+          type: integer
+          title: Archived At
+      type: object
+      required:
+      - base_name
+      - archive_folder
+      - archived_at
+      title: ArchivedEntry
+      description: Single archived category entry.
     Body_create_item_endpoint_api_v1_content_items_post:
       properties:
         image:
@@ -235,6 +260,59 @@ components:
       - category
       - item
       title: Body_create_item_endpoint_api_v1_content_items_post
+    CategoryDetailResponse:
+      properties:
+        name:
+          type: string
+          title: Name
+        objects:
+          items:
+            type: string
+          type: array
+          title: Objects
+          default: []
+        images_names:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Images Names
+      additionalProperties: true
+      type: object
+      required:
+      - name
+      title: CategoryDetailResponse
+      description: 'Response for GET /content/categories/{name}.
+
+
+        Language-specific CSV word lists are dynamic keys (images_en, images_fr, ...)
+
+        so extra fields are allowed.'
+    CategoryListResponse:
+      properties:
+        categories:
+          items:
+            type: string
+          type: array
+          title: Categories
+        archived:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/ArchivedEntry'
+            type: array
+          - type: 'null'
+          title: Archived
+        error:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error
+      type: object
+      required:
+      - categories
+      title: CategoryListResponse
+      description: Response for GET /content/categories.
     CreateCategoryBody:
       properties:
         name:
@@ -245,6 +323,42 @@ components:
       - name
       title: CreateCategoryBody
       description: Request body for creating a new category.
+    CreateCategoryResponse:
+      properties:
+        category:
+          type: string
+          title: Category
+        message:
+          type: string
+          title: Message
+      type: object
+      required:
+      - category
+      - message
+      title: CreateCategoryResponse
+      description: Response for POST /content/categories.
+    CreateItemResponse:
+      properties:
+        category:
+          type: string
+          title: Category
+        item:
+          type: string
+          title: Item
+        folder:
+          type: string
+          title: Folder
+        image_id:
+          type: string
+          title: Image Id
+      type: object
+      required:
+      - category
+      - item
+      - folder
+      - image_id
+      title: CreateItemResponse
+      description: Response for POST /content/items.
     HTTPValidationError:
       properties:
         detail:
@@ -254,6 +368,45 @@ components:
           title: Detail
       type: object
       title: HTTPValidationError
+    RemoveCategoryResponse:
+      properties:
+        archived:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Archived
+        removed:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Removed
+        name:
+          type: string
+          title: Name
+        archive_folder:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Archive Folder
+        destination:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Destination
+        message:
+          type: string
+          title: Message
+      type: object
+      required:
+      - name
+      - message
+      title: RemoveCategoryResponse
+      description: 'Response for DELETE /content/categories/{name}.
+
+
+        May be an archive result or a permanent delete result, so both
+
+        ``archived`` and ``removed`` are optional.'
     RenameCategoryBody:
       properties:
         name:
@@ -264,6 +417,20 @@ components:
       - name
       title: RenameCategoryBody
       description: Request body for renaming a category.
+    RenameCategoryResponse:
+      properties:
+        category:
+          type: string
+          title: Category
+        message:
+          type: string
+          title: Message
+      type: object
+      required:
+      - category
+      - message
+      title: RenameCategoryResponse
+      description: Response for PATCH /content/categories/{name}.
     RestoreCategoryBody:
       properties:
         name:
@@ -274,6 +441,30 @@ components:
       - name
       title: RestoreCategoryBody
       description: Request body for restoring a category.
+    RestoreCategoryResponse:
+      properties:
+        restored:
+          type: boolean
+          title: Restored
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        from_archive:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: From Archive
+        message:
+          type: string
+          title: Message
+      type: object
+      required:
+      - restored
+      - message
+      title: RestoreCategoryResponse
+      description: Response for POST /content/categories/restore.
     ValidationError:
       properties:
         loc:

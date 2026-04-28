@@ -19,7 +19,6 @@ import httpx
 from openai import OpenAI
 
 from src.core.config import settings
-from src.core.content_naming import english_word_to_folder_name, english_word_to_image_id
 from src.security.tokens import create_internal_token
 from src.services.content.models import ContentProvider
 from src.services.content.service import ContentProviderFactory
@@ -298,8 +297,8 @@ class FileSystemContentProvider(ContentProvider):
             return {"error": "Item word is required"}
         english_word = english_word.strip()
 
-        folder_name = english_word_to_folder_name(english_word)
-        image_id = english_word_to_image_id(english_word)
+        folder_name = self._english_word_to_folder_name(english_word)
+        image_id = self._english_word_to_image_id(english_word)
         if not folder_name:
             return {"error": "Could not derive folder name from item word"}
 

@@ -21,7 +21,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 def create_internal_token(service_name: str, expires_delta: timedelta) -> str:
     """Issue a short-lived JWT for internal service-to-service calls.
 
-    The token carries ``role: "internal"`` which is accepted by ``require_internal``.
+    The token carries role: "internal" which is accepted by "require_internal".
     A new token is generated each time the server starts; there is no static shared secret.
     """
     return create_access_token({"sub": service_name, "role": "internal"}, expires_delta)
