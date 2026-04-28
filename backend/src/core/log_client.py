@@ -11,7 +11,6 @@ early startup code never crashes.
 from __future__ import annotations
 
 import logging as _stdlib_logging
-from typing import Any
 
 import httpx
 

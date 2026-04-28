@@ -32,7 +32,7 @@ def login(username: str, password: str) -> str:
 
 
 def login_via_uds(username: str, password: str) -> str:
-    """Authenticate via CLI-only Unix socket. Returns access_token. Raises on failure."""
+    """Authenticate via CLI-only Unix socket. Returns access_token. Rises on failure."""
     if is_windows_platform():
         raise RuntimeError("UDS authentication is not supported on Windows.")
     print("Authenticating via UDS...")
