@@ -219,7 +219,7 @@ class LoggingService(Service):
             try:
                 provider.log(provider.name, msg)
                 return idx
-            except Exception:  # pylint: disable=broad-exception-caught
+            except (OSError, AttributeError, TypeError):
                 continue
         return None
 
@@ -233,7 +233,7 @@ class LoggingService(Service):
                 continue
             try:
                 provider.log(provider.name, msg)
-            except Exception:  # pylint: disable=broad-exception-caught
+            except (OSError, AttributeError, TypeError):
                 continue
 
     def log(self, logger_name: str, msg: LogMessage) -> None:
