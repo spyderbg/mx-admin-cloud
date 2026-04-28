@@ -70,6 +70,11 @@ SERVICES: dict[str, ServiceSpec] = {
         path_prefixes=("/internal/generators",),
         output=BACKEND_ROOT / "docs" / "text_to_speech_openapi.yaml",
     ),
+    "configuration": ServiceSpec(
+        title="Configuration Internal API",
+        path_prefixes=("/internal/configurations",),
+        output=BACKEND_ROOT / "docs" / "configuration_openapi.yaml",
+    ),
 }
 
 # ---------------------------------------------------------------------------
