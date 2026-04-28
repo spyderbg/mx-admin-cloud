@@ -13,6 +13,7 @@ import importlib
 import logging
 import logging.config
 import logging.handlers
+import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,7 +26,7 @@ from src.services.logging.service import LoggingProviderFactory
 def _optional_import(module_name: str) -> Any | None:
     try:
         return importlib.import_module(module_name)
-    except Exception:  # pylint: disable=broad-exception-caught
+    except ImportError:
         return None
 
 
@@ -627,7 +628,7 @@ class StructLogProvider(LoggingServiceProvider):
     def _import_available(module_name: str) -> bool:
         try:
             importlib.import_module(module_name)
-        except Exception:  # pylint: disable=broad-exception-caught
+        except ImportError:
             return False
         return True
 
@@ -640,7 +641,7 @@ class StructLogProvider(LoggingServiceProvider):
             req = urllib.request.Request(url, method="GET")
             urllib.request.urlopen(req, timeout=timeout)  # noqa: S310  # pylint: disable=consider-using-with
             return True
-        except Exception:  # pylint: disable=broad-exception-caught
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ValueError, OSError):
             return False
 
     @staticmethod
@@ -650,7 +651,7 @@ class StructLogProvider(LoggingServiceProvider):
             feature_flag = getattr(feature_flags, "FeatureFlag")
             enable_feature = getattr(feature_flags, "enable_feature")
             enable_feature(feature_flag.IGNORE_SEQ_SUBMISSION_ERRORS)
-        except Exception:  # pylint: disable=broad-exception-caught
+        except (ImportError, AttributeError):
             pass
 
 

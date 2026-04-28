@@ -191,7 +191,7 @@ class LoggingService(Service):
 
         Providers are tried in ascending priority order (1 = highest).  When a
         provider logs the message successfully, every *other* provider that
-        shares the same priority is also invoked, then the method returns.
+        shares the same priority is also invoked; then the method returns.
         Lower-priority groups are only attempted when all providers in a
         higher-priority group fail.
         """
