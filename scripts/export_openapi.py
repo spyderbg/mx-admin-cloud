@@ -75,6 +75,11 @@ SERVICES: dict[str, ServiceSpec] = {
         path_prefixes=("/internal/configurations",),
         output=BACKEND_ROOT / "docs" / "configuration_openapi.yaml",
     ),
+    "content": ServiceSpec(
+        title="Content Management API",
+        path_prefixes=("/api/v1/content",),
+        output=BACKEND_ROOT / "docs" / "content_openapi.yaml",
+    ),
 }
 
 # ---------------------------------------------------------------------------

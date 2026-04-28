@@ -34,8 +34,8 @@ _SEVERITY_ORDER = ["Compile Error", "Fatal", "Error", "Warning", "Refactor", "Co
 # Pylint exit codes are a bitmask; 32 means a usage/config error.
 _PYLINT_USAGE_ERROR = 32
 
-# (file, line, message, code)
-type Issue = tuple[str, int, str, str]
+from typing import TypeAlias
+Issue: TypeAlias = tuple[str, int, str, str]
 
 
 def _resolve_paths() -> tuple[Path, Path, Path]:

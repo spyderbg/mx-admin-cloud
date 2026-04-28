@@ -561,6 +561,19 @@ export const mockCategories: Category[] = [
       { id: 'toys-v-fr', name: 'toys', language: 'fr', type: 'male', iconUrl: face(3), audioUrl: '/content/toys/toys_fr.mp3' },
       { id: 'toys-v-bg', name: 'играчки', language: 'bg', type: 'female', iconUrl: face(4), audioUrl: '/content/toys/toys_bg.mp3' },
     ],
-    images: [],
+    images: [
+      {
+        id: 'toys-placeholder',
+        name: 'Placeholder Toy',
+        files: [],
+        thumbnailUrl: '',
+        voices: [
+          { id: 'toys-placeholder-en', name: 'placeholder toy', language: 'en', type: 'male', iconUrl: face(1), audioUrl: '/content/toys/placeholder_toy_en.mp3' },
+          { id: 'toys-placeholder-es', name: 'juguete de prueba', language: 'es', type: 'female', iconUrl: face(2), audioUrl: '/content/toys/placeholder_toy_es.mp3' },
+          { id: 'toys-placeholder-fr', name: 'jouet de test', language: 'fr', type: 'male', iconUrl: face(3), audioUrl: '/content/toys/placeholder_toy_fr.mp3' },
+          { id: 'toys-placeholder-bg', name: 'играчка за тест', language: 'bg', type: 'female', iconUrl: face(4), audioUrl: '/content/toys/placeholder_toy_bg.mp3' },
+        ],
+      },
+    ],
   },
 ]
