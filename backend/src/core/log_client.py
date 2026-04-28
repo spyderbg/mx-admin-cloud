@@ -17,6 +17,7 @@ import httpx
 from src.services.logging.routes import (
     LOGGING_API_REQUEST,
     LOGGING_EMIT,
+    LOGGING_LOG,
     LOGGING_PAYMENT,
     LOGGING_PROVIDER,
     LOGGING_SERVICE,
@@ -53,6 +54,7 @@ async def shutdown() -> None:
         await _client.aclose()
         _client = None
 
+
 ################################################################################
 
 async def emit(request: LogRequest) -> None:
@@ -66,6 +68,28 @@ async def emit(request: LogRequest) -> None:
         )
     except httpx.RequestError:
         _stdlib_logging.debug("logging HTTP emit failed", exc_info=True)
+
+
+async def log(request: LogRequest, logger_name: str | None = None) -> None:
+    """Post a structured log message to a specific logger or emit to default.
+
+    Args:
+        request: The log request to send.
+        logger_name: Optional logger name. If not provided, calls emit() instead.
+    """
+    if logger_name is None:
+        await emit(request)
+        return
+
+    if _client is None:
+        return
+    try:
+        await _client.post(
+            _internal_endpoint(LOGGING_LOG.replace("{logger_name}", logger_name)),
+            json=request.model_dump(mode="json"),
+        )
+    except httpx.RequestError:
+        _stdlib_logging.debug(f"logging HTTP log to '{logger_name}' failed", exc_info=True)
 
 
 async def log_api_request(request: LogApiRequest) -> None:
