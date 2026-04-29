@@ -1,12 +1,11 @@
 """HTTP integration tests for text_to_speech routes (ASGI + httpx)."""
 
-# pylint: disable=missing-function-docstring,redefined-outer-name,too-few-public-methods
+# pylint: disable=duplicate-code,missing-function-docstring,redefined-outer-name,too-few-public-methods
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -29,13 +28,14 @@ class _FakeRegistry:
             return self._tts_service
         raise KeyError(name)
 
-    def get_typed_service(self, name: str, expected_type: type) -> Any:
-        svc = self.get_service(name)
-        if not isinstance(svc, expected_type):
+    def get_typed_service(self, service_name: str, expected_type: type[Any]) -> Any:
+        service = self.get_service(service_name)
+        if not isinstance(service, expected_type):
             raise TypeError(
-                f"Service '{name}' is {type(svc).__name__}, expected {expected_type.__name__}."
+                f"Service registry mismatch for {service_name}: "
+                f"expected {expected_type.__name__}, got {type(service).__name__}.",
             )
-        return svc
+        return service
 
 
 class _StubTTSProvider(TTSProvider):
@@ -198,12 +198,12 @@ async def client_no_internal_auth() -> AsyncClient:
 
 
 # ---------------------------------------------------------------------------
-# GET /internal/generators
+# GET /internal/generators/
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
 async def test_list_generators_returns_all_providers(client_two_providers: AsyncClient) -> None:
-    response = await client_two_providers.get("/internal/generators")
+    response = await client_two_providers.get("/internal/generators/")
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 2
@@ -213,7 +213,7 @@ async def test_list_generators_returns_all_providers(client_two_providers: Async
 
 @pytest.mark.asyncio
 async def test_list_generators_enabled_field(client_active: AsyncClient) -> None:
-    response = await client_active.get("/internal/generators")
+    response = await client_active.get("/internal/generators/")
     assert response.status_code == 200
     row = response.json()[0]
     assert row["enabled"] is True
@@ -222,7 +222,7 @@ async def test_list_generators_enabled_field(client_active: AsyncClient) -> None
 
 @pytest.mark.asyncio
 async def test_list_generators_includes_disabled(client_no_active: AsyncClient) -> None:
-    response = await client_no_active.get("/internal/generators")
+    response = await client_no_active.get("/internal/generators/")
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 1
@@ -231,13 +231,13 @@ async def test_list_generators_includes_disabled(client_no_active: AsyncClient) 
 
 @pytest.mark.asyncio
 async def test_list_generators_registry_mismatch_returns_500(client_bad_registry: AsyncClient) -> None:
-    response = await client_bad_registry.get("/internal/generators")
+    response = await client_bad_registry.get("/internal/generators/")
     assert response.status_code == 500
 
 
 @pytest.mark.asyncio
 async def test_list_generators_requires_auth(client_no_internal_auth: AsyncClient) -> None:
-    response = await client_no_internal_auth.get("/internal/generators")
+    response = await client_no_internal_auth.get("/internal/generators/")
     assert response.status_code == 401
 
 
