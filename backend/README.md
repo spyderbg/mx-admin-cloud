@@ -118,6 +118,12 @@ Text-to-speech service tests:
 PYTHONPATH="$PWD/src" .venv/bin/python -m pytest src/services/text_to_speech/__tests__ -v
 ```
 
+Configuration service tests:
+
+```bash
+PYTHONPATH="$PWD/src" .venv/bin/python -m pytest src/services/configuration/__tests__ -v
+```
+
 Logging service tests (when added):
 
 ```bash
@@ -433,8 +439,10 @@ src/
     │   ├── routes.py             # runtime apply/upload + persisted CRUD/batch config routes
     │   ├── service.py
     │   ├── merge.py
-    │   ├── __tests__/            # Pytest tree (co-located with service)
-    │   │   └── __init__.py
+    │   ├── __tests__/             # `test_configuration_service*.py` only (see service-tests-layout rule)
+    │   │   ├── __init__.py
+    │   │   ├── test_configuration_service.py
+    │   │   └── test_configuration_service_integration.py
     │   └── providers/            # file_system provider
     ├── text_to_speech/           # Co-located service (routes + schemas live next to service.py)
     │   ├── __init__.py           # SERVICE_CLASS, SERVICE_NAME, SERVICE_ACCEPT_CRITERIA
