@@ -1,7 +1,4 @@
-"""HTTP integration tests for the text_translation routes (ASGI + httpx).
-
-Kept under ``__tests__/integration`` so runtime code stays free of ``test_*.py`` siblings.
-"""
+"""HTTP integration tests for the text_translation routes (ASGI + httpx)."""
 
 # pylint: disable=missing-function-docstring,redefined-outer-name,too-few-public-methods
 
@@ -31,6 +28,15 @@ class _FakeRegistry:
         if name == text_translation_pkg.SERVICE_NAME:
             return self._translation_service
         raise KeyError(name)
+
+    def get_typed_service(self, service_name: str, expected_type: type[Any]) -> Any:
+        service = self.get_service(service_name)
+        if not isinstance(service, expected_type):
+            raise TypeError(
+                f"Service registry mismatch for {service_name}: "
+                f"expected {expected_type.__name__}, got {type(service).__name__}.",
+            )
+        return service
 
 
 class _StubTranslatorProvider(TextTranslationServiceProvider):
@@ -141,19 +147,21 @@ async def client_no_internal_auth() -> AsyncClient:
 
 @pytest.mark.asyncio
 async def test_list_translators_sorted_by_priority(client_two_translators: AsyncClient) -> None:
-    response = await client_two_translators.get("/internal/translators")
+    response = await client_two_translators.get("/internal/translators/")
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 2
     assert [row["priority"] for row in data] == [5, 50]
     for row in data:
-        assert set(row.keys()) == {"name", "service", "provider", "enabled", "priority"}
+        assert set(row.keys()) == {
+            "name", "service", "provider", "provider_category", "enabled", "priority",
+        }
 
 
 @pytest.mark.asyncio
 async def test_translate_success(client_active: AsyncClient) -> None:
     response = await client_active.post(
-        "/internal/translate",
+        "/internal/translators/translate",
         json={
             "text": "hello",
             "input_lang_code": "en",
@@ -170,7 +178,7 @@ async def test_translate_success(client_active: AsyncClient) -> None:
 @pytest.mark.asyncio
 async def test_translate_no_active_translators_returns_503(client_no_active: AsyncClient) -> None:
     response = await client_no_active.post(
-        "/internal/translate",
+        "/internal/translators/translate",
         json={"text": "hello", "target_lang_code": "es"},
     )
     assert response.status_code == 503
@@ -180,7 +188,7 @@ async def test_translate_no_active_translators_returns_503(client_no_active: Asy
 @pytest.mark.asyncio
 async def test_translate_registry_mismatch_returns_500(client_bad_registry: AsyncClient) -> None:
     response = await client_bad_registry.post(
-        "/internal/translate",
+        "/internal/translators/translate",
         json={"text": "x", "target_lang_code": "es"},
     )
     assert response.status_code == 500
@@ -196,7 +204,7 @@ async def test_translate_failure_returns_original_with_normalized_input_lang(
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
-            "/internal/translate",
+            "/internal/translators/translate",
             json={
                 "text": "hello",
                 "input_lang_code": "EN",
@@ -226,7 +234,7 @@ async def test_translate_file_txt(monkeypatch: pytest.MonkeyPatch, tmp_path_reso
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
-            "/internal/translate-file",
+            "/internal/translators/translate-file",
             files={"file": ("words.txt", b"one\ntwo\n", "text/plain")},
             params={"input_lang_code": "en", "target_lang_code": "es"},
         )
@@ -258,7 +266,7 @@ async def test_translate_file_no_active_returns_503(
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
-            "/internal/translate-file",
+            "/internal/translators/translate-file",
             files={"file": ("w.txt", b"a\n", "text/plain")},
         )
     assert response.status_code == 503
@@ -266,5 +274,5 @@ async def test_translate_file_no_active_returns_503(
 
 @pytest.mark.asyncio
 async def test_internal_routes_require_auth(client_no_internal_auth: AsyncClient) -> None:
-    response = await client_no_internal_auth.get("/internal/translators")
+    response = await client_no_internal_auth.get("/internal/translators/")
     assert response.status_code == 401

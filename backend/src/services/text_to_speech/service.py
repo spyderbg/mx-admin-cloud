@@ -28,7 +28,7 @@ class TextToSpeechProviderFactory(ServiceProviderFactory[TTSProvider]):
 class TextToSpeechService(Service):
     """Orchestrator for all TTS providers.
 
-    Loads providers from config files and exposes: meth:`active_providers`
+    Loads providers from config files and exposes: "get_active_providers()"
     which routes and the pipeline use to iterate enabled providers.
     """
 

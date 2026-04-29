@@ -72,6 +72,7 @@ async def list_translators(
             "name": c.name,
             "service": c.service,
             "provider": c.provider,
+            "provider_category": c.provider_category,
             "enabled": c.enabled,
             "priority": c.priority,
             "config_path": str(c.config_path),
