@@ -3,7 +3,210 @@ info:
   title: Configuration Internal API
   version: 0.1.0
 servers: []
+components:
+  securitySchemes:
+    OAuth2PasswordBearer:
+      type: oauth2
+      flows:
+        password:
+          scopes: {}
+          tokenUrl: /api/v1/login
+  schemas:
+    AddConfigurationRequest:
+      properties:
+        config_name:
+          type: string
+          minLength: 1
+          title: Config Name
+        payload:
+          additionalProperties: true
+          type: object
+          title: Payload
+      type: object
+      required:
+      - config_name
+      - payload
+      title: AddConfigurationRequest
+      description: Body model for creating a new configuration file.
+    ApplyConfigurationRequest:
+      properties:
+        payload:
+          additionalProperties: true
+          type: object
+          title: Payload
+      type: object
+      required:
+      - payload
+      title: ApplyConfigurationRequest
+      description: Body model for direct JSON payload submission.
+    ApplyConfigurationResponse:
+      properties:
+        config_name:
+          type: string
+          title: Config Name
+        accepted:
+          type: boolean
+          title: Accepted
+        error:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error
+      type: object
+      required:
+      - config_name
+      - accepted
+      title: ApplyConfigurationResponse
+      description: Result model for runtime config apply endpoints.
+    BatchToggleConfigurationsRequest:
+      properties:
+        config_names:
+          items:
+            type: string
+          type: array
+          title: Config Names
+      type: object
+      required:
+      - config_names
+      title: BatchToggleConfigurationsRequest
+      description: Body model for enabling/disabling selected config files.
+    BatchToggleConfigurationsResponse:
+      properties:
+        service_name:
+          type: string
+          title: Service Name
+        enabled:
+          type: boolean
+          title: Enabled
+        results:
+          items:
+            $ref: '#/components/schemas/ConfigurationMutationResponse'
+          type: array
+          title: Results
+      type: object
+      required:
+      - service_name
+      - enabled
+      - results
+      title: BatchToggleConfigurationsResponse
+      description: Result model for batch enable/disable operations.
+    Body_upload_config_file_internal_configurations_upload_post:
+      properties:
+        file:
+          type: string
+          contentMediaType: application/octet-stream
+          title: File
+      type: object
+      required:
+      - file
+      title: Body_upload_config_file_internal_configurations_upload_post
+    ConfigurationFileSummaryResponse:
+      properties:
+        config_name:
+          type: string
+          title: Config Name
+        filename:
+          type: string
+          title: Filename
+        provider:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Provider
+        enabled:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Enabled
+        priority:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Priority
+        valid_json:
+          type: boolean
+          title: Valid Json
+        error:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error
+      type: object
+      required:
+      - config_name
+      - filename
+      - valid_json
+      title: ConfigurationFileSummaryResponse
+      description: One configuration file entry returned by list operations.
+    ConfigurationMutationResponse:
+      properties:
+        config_name:
+          type: string
+          title: Config Name
+        changed:
+          type: boolean
+          title: Changed
+        error:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error
+      type: object
+      required:
+      - config_name
+      - changed
+      title: ConfigurationMutationResponse
+      description: Result model for one add/remove/patch mutation.
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    PatchConfigurationRequest:
+      properties:
+        patch:
+          additionalProperties: true
+          type: object
+          title: Patch
+      type: object
+      required:
+      - patch
+      title: PatchConfigurationRequest
+      description: Body model for merge-patching an existing configuration file.
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+
 paths:
+
+  # ─── internal-configuration ─────────────────────────────────────────
   /internal/configurations/apply:
     post:
       tags:
@@ -330,203 +533,3 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-components:
-  securitySchemes:
-    OAuth2PasswordBearer:
-      type: oauth2
-      flows:
-        password:
-          scopes: {}
-          tokenUrl: /api/v1/login
-  schemas:
-    AddConfigurationRequest:
-      properties:
-        config_name:
-          type: string
-          minLength: 1
-          title: Config Name
-        payload:
-          additionalProperties: true
-          type: object
-          title: Payload
-      type: object
-      required:
-      - config_name
-      - payload
-      title: AddConfigurationRequest
-      description: Body model for creating a new configuration file.
-    ApplyConfigurationRequest:
-      properties:
-        payload:
-          additionalProperties: true
-          type: object
-          title: Payload
-      type: object
-      required:
-      - payload
-      title: ApplyConfigurationRequest
-      description: Body model for direct JSON payload submission.
-    ApplyConfigurationResponse:
-      properties:
-        config_name:
-          type: string
-          title: Config Name
-        accepted:
-          type: boolean
-          title: Accepted
-        error:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Error
-      type: object
-      required:
-      - config_name
-      - accepted
-      title: ApplyConfigurationResponse
-      description: Result model for runtime config apply endpoints.
-    BatchToggleConfigurationsRequest:
-      properties:
-        config_names:
-          items:
-            type: string
-          type: array
-          title: Config Names
-      type: object
-      required:
-      - config_names
-      title: BatchToggleConfigurationsRequest
-      description: Body model for enabling/disabling selected config files.
-    BatchToggleConfigurationsResponse:
-      properties:
-        service_name:
-          type: string
-          title: Service Name
-        enabled:
-          type: boolean
-          title: Enabled
-        results:
-          items:
-            $ref: '#/components/schemas/ConfigurationMutationResponse'
-          type: array
-          title: Results
-      type: object
-      required:
-      - service_name
-      - enabled
-      - results
-      title: BatchToggleConfigurationsResponse
-      description: Result model for batch enable/disable operations.
-    Body_upload_config_file_internal_configurations_upload_post:
-      properties:
-        file:
-          type: string
-          contentMediaType: application/octet-stream
-          title: File
-      type: object
-      required:
-      - file
-      title: Body_upload_config_file_internal_configurations_upload_post
-    ConfigurationFileSummaryResponse:
-      properties:
-        config_name:
-          type: string
-          title: Config Name
-        filename:
-          type: string
-          title: Filename
-        provider:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Provider
-        enabled:
-          anyOf:
-          - type: boolean
-          - type: 'null'
-          title: Enabled
-        priority:
-          anyOf:
-          - type: integer
-          - type: 'null'
-          title: Priority
-        valid_json:
-          type: boolean
-          title: Valid Json
-        error:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Error
-      type: object
-      required:
-      - config_name
-      - filename
-      - valid_json
-      title: ConfigurationFileSummaryResponse
-      description: One configuration file entry returned by list operations.
-    ConfigurationMutationResponse:
-      properties:
-        config_name:
-          type: string
-          title: Config Name
-        changed:
-          type: boolean
-          title: Changed
-        error:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Error
-      type: object
-      required:
-      - config_name
-      - changed
-      title: ConfigurationMutationResponse
-      description: Result model for one add/remove/patch mutation.
-    HTTPValidationError:
-      properties:
-        detail:
-          items:
-            $ref: '#/components/schemas/ValidationError'
-          type: array
-          title: Detail
-      type: object
-      title: HTTPValidationError
-    PatchConfigurationRequest:
-      properties:
-        patch:
-          additionalProperties: true
-          type: object
-          title: Patch
-      type: object
-      required:
-      - patch
-      title: PatchConfigurationRequest
-      description: Body model for merge-patching an existing configuration file.
-    ValidationError:
-      properties:
-        loc:
-          items:
-            anyOf:
-            - type: string
-            - type: integer
-          type: array
-          title: Location
-        msg:
-          type: string
-          title: Message
-        type:
-          type: string
-          title: Error Type
-        input:
-          title: Input
-        ctx:
-          type: object
-          title: Context
-      type: object
-      required:
-      - loc
-      - msg
-      - type
-      title: ValidationError

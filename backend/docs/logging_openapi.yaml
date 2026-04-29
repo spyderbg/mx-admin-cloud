@@ -3,240 +3,6 @@ info:
   title: Logging Internal API
   version: 0.1.0
 servers: []
-paths:
-  /internal/loggers/:
-    get:
-      tags:
-      - internal-loggers
-      summary: List logging service providers
-      description: Return the logging service providers that the emit endpoint routes
-        through. By default only enabled providers are returned. Pass 'all=true' to
-        include every configured provider regardless of state.
-      operationId: list_loggers_internal_loggers__get
-      security:
-      - OAuth2PasswordBearer: []
-      parameters:
-      - name: all_loggers
-        in: query
-        required: false
-        schema:
-          type: boolean
-          default: false
-          title: All Loggers
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/ServiceProviderInfo'
-                title: Response List Loggers Internal Loggers  Get
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /internal/loggers/reset:
-    post:
-      tags:
-      - internal-loggers
-      summary: Reset active logger providers
-      description: Trigger reset on all active logging providers. For file-backed
-        providers this truncates active log files.
-      operationId: reset_loggers_internal_loggers_reset_post
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ResetLogsResponse'
-      security:
-      - OAuth2PasswordBearer: []
-  /internal/loggers/emit:
-    post:
-      tags:
-      - internal-loggers
-      summary: Emit a structured log message
-      description: Post a structured log message to the named logger. The ``logger_name``
-        selects the target channel; ``level`` and ``event`` mirror structlog semantics.
-      operationId: emit_log_internal_loggers_emit_post
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/LogRequest'
-        required: true
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StatusResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - OAuth2PasswordBearer: []
-  /internal/loggers/{logger_name}/log:
-    post:
-      tags:
-      - internal-loggers
-      summary: Emit a log message to a specific logger
-      description: Post a structured log message to the logger specified by path parameter.
-        ``level`` and ``event`` mirror structlog semantics.
-      operationId: log_by_logger_name_internal_loggers__logger_name__log_post
-      security:
-      - OAuth2PasswordBearer: []
-      parameters:
-      - name: logger_name
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Logger Name
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/LogRequest'
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StatusResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /internal/loggers/logging/log/api-request:
-    post:
-      tags:
-      - internal-loggers
-      summary: Emit an API request log message
-      description: Post a structured log message to the 'requests' logger. ``level``
-        and ``event`` mirror structlog semantics.
-      operationId: log_api_request_internal_loggers_logging_log_api_request_post
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/LogApiRequest'
-        required: true
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StatusResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - OAuth2PasswordBearer: []
-  /internal/loggers/logging/log/service:
-    post:
-      tags:
-      - internal-loggers
-      summary: Emit a service log message
-      description: Post a structured log message to the 'service' logger. ``level``
-        and ``event`` mirror structlog semantics.
-      operationId: log_service_request_internal_loggers_logging_log_service_post
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/LogServiceRequest'
-        required: true
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StatusResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - OAuth2PasswordBearer: []
-  /internal/loggers/logging/log/provider:
-    post:
-      tags:
-      - internal-loggers
-      summary: Log a TTS/STT provider request
-      description: Record a provider request (model, actor, latency, …) through the
-        request-logger channel.
-      operationId: log_provider_request_internal_loggers_logging_log_provider_post
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/LogProviderRequest'
-        required: true
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StatusResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - OAuth2PasswordBearer: []
-  /internal/loggers/logging/log/payment:
-    post:
-      tags:
-      - internal-loggers
-      summary: Emit a payment log message
-      description: Post a structured log message to the 'payment' logger. ``level``
-        and ``event`` mirror structlog semantics.
-      operationId: log_payment_request_internal_loggers_logging_log_payment_post
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/LogRequest'
-        required: true
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StatusResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - OAuth2PasswordBearer: []
 components:
   securitySchemes:
     OAuth2PasswordBearer:
@@ -475,3 +241,240 @@ components:
       - msg
       - type
       title: ValidationError
+
+paths:
+
+  # ─── internal-loggers ───────────────────────────────────────────────
+  /internal/loggers/:
+    get:
+      tags:
+      - internal-loggers
+      summary: List logging service providers
+      description: Return the logging service providers that the emit endpoint routes
+        through. By default only enabled providers are returned. Pass 'all=true' to
+        include every configured provider regardless of state.
+      operationId: list_loggers_internal_loggers__get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: all_loggers
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: All Loggers
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ServiceProviderInfo'
+                title: Response List Loggers Internal Loggers  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /internal/loggers/reset:
+    post:
+      tags:
+      - internal-loggers
+      summary: Reset active logger providers
+      description: Trigger reset on all active logging providers. For file-backed providers
+        this truncates active log files.
+      operationId: reset_loggers_internal_loggers_reset_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResetLogsResponse'
+      security:
+      - OAuth2PasswordBearer: []
+  /internal/loggers/emit:
+    post:
+      tags:
+      - internal-loggers
+      summary: Emit a structured log message
+      description: Post a structured log message to the named logger. The ``logger_name``
+        selects the target channel; ``level`` and ``event`` mirror structlog semantics.
+      operationId: emit_log_internal_loggers_emit_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /internal/loggers/{logger_name}/log:
+    post:
+      tags:
+      - internal-loggers
+      summary: Emit a log message to a specific logger
+      description: Post a structured log message to the logger specified by path parameter.
+        ``level`` and ``event`` mirror structlog semantics.
+      operationId: log_by_logger_name_internal_loggers__logger_name__log_post
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: logger_name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Logger Name
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /internal/loggers/logging/log/api-request:
+    post:
+      tags:
+      - internal-loggers
+      summary: Emit an API request log message
+      description: Post a structured log message to the 'requests' logger. ``level``
+        and ``event`` mirror structlog semantics.
+      operationId: log_api_request_internal_loggers_logging_log_api_request_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogApiRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /internal/loggers/logging/log/service:
+    post:
+      tags:
+      - internal-loggers
+      summary: Emit a service log message
+      description: Post a structured log message to the 'service' logger. ``level``
+        and ``event`` mirror structlog semantics.
+      operationId: log_service_request_internal_loggers_logging_log_service_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogServiceRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /internal/loggers/logging/log/provider:
+    post:
+      tags:
+      - internal-loggers
+      summary: Log a TTS/STT provider request
+      description: Record a provider request (model, actor, latency, …) through the
+        request-logger channel.
+      operationId: log_provider_request_internal_loggers_logging_log_provider_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogProviderRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /internal/loggers/logging/log/payment:
+    post:
+      tags:
+      - internal-loggers
+      summary: Emit a payment log message
+      description: Post a structured log message to the 'payment' logger. ``level``
+        and ``event`` mirror structlog semantics.
+      operationId: log_payment_request_internal_loggers_logging_log_payment_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []

@@ -26,17 +26,26 @@ from src.services.content.schemas import (
 from src.services.content.service import ContentService
 from src.services.service_registry import ServiceRegistry
 
-router = APIRouter(
-    prefix=f"{settings.API_V1_STR}/content",
-    tags=["content"],
-)
+TAG_CATEGORIES = "Categories"
+TAG_CATEGORY_IMAGES = "Category Images"
+TAG_CATEGORY_VOICES = "Category Voices"
+TAG_ITEMS = "Items"
+TAG_ITEMS_IMAGES = "Items Image Files"
+TAG_ITEMS_VOICES = "Items Voice Files"
 
 
 def _content_service(registry: ServiceRegistry = Depends(get_registry)) -> ContentService:
     return get_typed_service(registry, "content", ContentService)
 
+# router = APIRouter(prefix=f"{settings.API_V1_STR}/content" )
+router = APIRouter(prefix=f"{settings.API_V1_STR}/content" )
 
-@router.get("/categories", response_model=CategoryListResponse)
+
+@router.get(
+    "/categories",
+    response_model=CategoryListResponse,
+    tags=[TAG_CATEGORIES]
+)
 def list_categories(
         service: ContentService = Depends(_content_service),
         _user: dict = Depends(get_current_user),
@@ -60,6 +69,7 @@ def list_categories(
     "/categories",
     status_code=status.HTTP_201_CREATED,
     response_model=CreateCategoryResponse,
+    tags=[TAG_CATEGORIES]
 )
 def create_category_endpoint(
         body: CreateCategoryBody,
@@ -75,7 +85,11 @@ def create_category_endpoint(
     return CreateCategoryResponse(**result)
 
 
-@router.post("/categories/restore", response_model=RestoreCategoryResponse)
+@router.post(
+    "/categories/restore",
+    response_model=RestoreCategoryResponse,
+    tags=[TAG_CATEGORIES]
+)
 def restore_category_endpoint(
         body: RestoreCategoryBody,
         service: ContentService = Depends(_content_service),
@@ -95,7 +109,11 @@ def restore_category_endpoint(
     return RestoreCategoryResponse(**result)
 
 
-@router.patch("/categories/{category_name}", response_model=RenameCategoryResponse)
+@router.patch(
+    "/categories/{category_name}",
+    response_model=RenameCategoryResponse,
+    tags=[TAG_CATEGORIES]
+)
 def rename_category_endpoint(
         category_name: str,
         body: RenameCategoryBody,
@@ -114,7 +132,11 @@ def rename_category_endpoint(
     return RenameCategoryResponse(**result)
 
 
-@router.delete("/categories/{category_name}", response_model=RemoveCategoryResponse)
+@router.delete(
+    "/categories/{category_name}",
+    response_model=RemoveCategoryResponse,
+    tags=[TAG_CATEGORIES]
+)
 def remove_category(
         category_name: str,
         service: ContentService = Depends(_content_service),
@@ -130,7 +152,11 @@ def remove_category(
     return RemoveCategoryResponse(**result)
 
 
-@router.get("/categories/{category_name}", response_model=CategoryDetailResponse)
+@router.get(
+    "/categories/{category_name}",
+    response_model=CategoryDetailResponse,
+    tags=[TAG_CATEGORIES]
+)
 def category_details(
         category_name: str,
         service: ContentService = Depends(_content_service),
@@ -145,7 +171,10 @@ def category_details(
     return CategoryDetailResponse(**result)
 
 
-@router.put("/categories/{category_name}")
+@router.put(
+    "/categories/{category_name}",
+    tags=[TAG_CATEGORIES]
+)
 def update_category(
         category_name: str,
         _user: dict = Depends(get_current_user),
@@ -158,10 +187,79 @@ def update_category(
 
 
 # ---------------------------------------------------------------------------
+# Category Images
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/categories/{category_name}/images",
+    tags=[TAG_CATEGORY_IMAGES]
+)
+def list_category_images(
+        category_name: str,
+        _user: dict = Depends(get_current_user),
+) -> None:
+    """List images for a category."""
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail=f"Not implemented: list images for category '{category_name}'",
+    )
+
+@router.post("/categories/{category_name}/images",
+             status_code=status.HTTP_201_CREATED)
+def add_image_to_category(
+        category_name: str,
+        file: UploadFile = File(...),
+        name: str = Form(...),
+        _user: dict = Depends(get_current_user),
+) -> None:
+    """Add a new image to a category."""
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail=f"Not implemented: add image to category '{category_name}'",
+    )
+
+@router.put(
+    "/categories/{category_name}/images/{image_id}",
+    tags=[TAG_CATEGORY_IMAGES]
+)
+def update_category_image(
+        category_name: str,
+        image_id: str,
+        _user: dict = Depends(get_current_user),
+) -> None:
+    """Rename a category image."""
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail=f"Not implemented: update image '{image_id}' in category '{category_name}'",
+    )
+
+
+@router.delete(
+    "/categories/{category_name}/images/{image_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=[TAG_CATEGORY_IMAGES]
+)
+def delete_category_image(
+        category_name: str,
+        image_id: str,
+        _user: dict = Depends(get_current_user),
+) -> None:
+    """Delete or reset a category image."""
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail=f"Not implemented: delete image '{image_id}' in category '{category_name}'",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Category Voices
 # ---------------------------------------------------------------------------
 
-@router.get("/categories/{category_name}/voices")
+@router.get(
+    "/categories/{category_name}/voices",
+    tags=[TAG_CATEGORY_VOICES]
+)
 def list_category_voices(
         category_name: str,
         _user: dict = Depends(get_current_user),
@@ -173,7 +271,10 @@ def list_category_voices(
     )
 
 
-@router.put("/categories/{category_name}/voices/{voice_id}")
+@router.put(
+    "/categories/{category_name}/voices/{voice_id}",
+    tags=[TAG_CATEGORY_VOICES]
+)
 def update_category_voice(
         category_name: str,
         voice_id: str,
@@ -204,7 +305,7 @@ def delete_category_voice(
 def upload_category_voice_audio(
         category_name: str,
         voice_id: str,
-        _file: UploadFile = File(...),
+        file: UploadFile = File(...),
         _user: dict = Depends(get_current_user),
 ) -> None:
     """Upload or replace audio for a category voice."""
@@ -218,31 +319,8 @@ def upload_category_voice_audio(
 # Images
 # ---------------------------------------------------------------------------
 
-@router.get("/categories/{category_name}/images")
-def list_category_images(
-        category_name: str,
-        _user: dict = Depends(get_current_user),
-) -> None:
-    """List images for a category."""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=f"Not implemented: list images for category '{category_name}'",
-    )
 
 
-@router.post("/categories/{category_name}/images",
-             status_code=status.HTTP_201_CREATED)
-def add_image_to_category(
-        category_name: str,
-        _file: UploadFile = File(...),
-        _name: str = Form(...),
-        _user: dict = Depends(get_current_user),
-) -> None:
-    """Add a new image to a category."""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=f"Not implemented: add image to category '{category_name}'",
-    )
 
 
 @router.get("/categories/{category_name}/images/{image_id}")
@@ -294,7 +372,7 @@ def delete_image(
 def add_image_file(
         category_name: str,
         image_id: str,
-        _file: UploadFile = File(...),
+        file: UploadFile = File(...),
         _user: dict = Depends(get_current_user),
 ) -> None:
     """Upload an additional file variant for an image."""
@@ -309,7 +387,7 @@ def replace_image_file(
         category_name: str,
         image_id: str,
         file_index: int,
-        _file: UploadFile = File(...),
+        file: UploadFile = File(...),
         _user: dict = Depends(get_current_user),
 ) -> None:
     """Replace a specific file variant."""
@@ -390,7 +468,7 @@ def upload_image_voice_audio(
         category_name: str,
         image_id: str,
         voice_id: str,
-        _file: UploadFile = File(...),
+        file: UploadFile = File(...),
         _user: dict = Depends(get_current_user),
 ) -> None:
     """Upload or replace audio for an image voice."""
@@ -440,3 +518,8 @@ def create_item_endpoint(
             detail=result["error"],
         )
     return CreateItemResponse(**result)
+
+################################################################################
+
+
+

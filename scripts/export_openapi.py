@@ -169,6 +169,38 @@ def _collect_all_refs(names: set[str], all_schemas: dict) -> set[str]:
 # Export helpers
 # ---------------------------------------------------------------------------
 
+_YAML_OPTS: dict = dict(default_flow_style=False, allow_unicode=True, sort_keys=False)
+_SEP_WIDTH = 70
+
+
+def _tag_separator(label: str) -> str:
+    prefix = f"# ─── {label} "
+    return prefix + "─" * max(4, _SEP_WIDTH - len(prefix))
+
+
+def _first_tag(path_item: dict) -> str:
+    for method in ("get", "post", "put", "patch", "delete", "head", "options"):
+        tags = path_item.get(method, {}).get("tags", [])
+        if tags:
+            return tags[0]
+    return ""
+
+
+def _paths_yaml(paths: dict) -> str:
+    """Serialize the paths dict with tag-based comment separators."""
+    lines: list[str] = ["paths:"]
+    current_tag: str | None = None
+    for path, defn in paths.items():
+        tag = _first_tag(defn)
+        if tag and tag != current_tag:
+            lines.append("")
+            lines.append(f"  {_tag_separator(tag)}")
+            current_tag = tag
+        for line in yaml.dump({path: defn}, **_YAML_OPTS).splitlines():
+            lines.append(("  " + line) if line.strip() else "")
+    return "\n".join(lines) + "\n"
+
+
 def export_service(spec: ServiceSpec, full_schema: dict) -> None:
     """Write a focused spec for one service (filtered paths + reachable schemas)."""
     paths = {
@@ -181,11 +213,10 @@ def export_service(spec: ServiceSpec, full_schema: dict) -> None:
     reachable = _collect_all_refs(_used_schema_names(paths), all_schemas)
     schemas = {k: v for k, v in all_schemas.items() if k in reachable}
 
-    out: dict = {
+    header = {
         "openapi": full_schema["openapi"],
         "info": {**full_schema["info"], "title": spec.title},
         "servers": full_schema.get("servers", []),
-        "paths": paths,
         "components": {
             "securitySchemes": full_schema.get("components", {}).get("securitySchemes", {}),
             "schemas": schemas,
@@ -194,7 +225,9 @@ def export_service(spec: ServiceSpec, full_schema: dict) -> None:
 
     spec.output.parent.mkdir(parents=True, exist_ok=True)
     with spec.output.open("w", encoding="utf-8") as fh:
-        yaml.dump(out, fh, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        fh.write(yaml.dump(header, **_YAML_OPTS))
+        fh.write("\n")
+        fh.write(_paths_yaml(paths))
 
     source_files = _source_files_for_service(spec, reachable)
     try:
@@ -213,7 +246,7 @@ def export_all(full_schema: dict) -> None:
     output = BACKEND_ROOT / "docs" / "openapi.yaml"
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("w", encoding="utf-8") as fh:
-        yaml.dump(full_schema, fh, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        yaml.dump(full_schema, fh, **_YAML_OPTS)
     paths = full_schema.get("paths", {})
     schemas = full_schema.get("components", {}).get("schemas", {})
     print(f"[Full app]  {len(paths)} path(s), {len(schemas)} schema(s) → {output}")

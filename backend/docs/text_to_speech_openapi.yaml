@@ -3,99 +3,6 @@ info:
   title: Text to Speech Internal API
   version: 0.1.0
 servers: []
-paths:
-  /internal/generators/:
-    get:
-      tags:
-      - internal-generators
-      summary: List text to speech service configurations
-      description: Return all configured text to speech services with their activation
-        state, config path, and generation settings. Language lists are omitted from
-        the response.
-      operationId: list_generators_internal_generators__get
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                items:
-                  $ref: '#/components/schemas/GeneratorProviderInfo'
-                type: array
-                title: Response List Generators Internal Generators  Get
-      security:
-      - OAuth2PasswordBearer: []
-  /internal/generators/{provider}/generate:
-    post:
-      tags:
-      - internal-generators
-      summary: Generate text to speech audio for one request
-      description: Generate raw audio using the named text to speech service and return
-        the result as JSON.
-      operationId: generate_single_internal_generators__provider__generate_post
-      security:
-      - OAuth2PasswordBearer: []
-      parameters:
-      - name: provider
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Provider
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/GenerateRequest'
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TtsGenerateResult'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /internal/generators/generate-word:
-    post:
-      tags:
-      - internal-generators
-      summary: Generate text to speech audio for a single word
-      description: Generate raw audio using the highest-priority active text to speech
-        service and return raw bytes.
-      operationId: generate_word_internal_generators_generate_word_post
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/GenerateWordRequest'
-        required: true
-      responses:
-        '200':
-          description: Raw MP3 audio bytes
-          content:
-            application/json:
-              schema: {}
-            audio/mpeg: {}
-        '400':
-          description: Word is empty
-        '500':
-          description: TTS generation failed
-        '503':
-          description: No active TTS providers configured
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - OAuth2PasswordBearer: []
 components:
   securitySchemes:
     OAuth2PasswordBearer:
@@ -298,3 +205,99 @@ components:
       - msg
       - type
       title: ValidationError
+
+paths:
+
+  # ─── internal-generators ────────────────────────────────────────────
+  /internal/generators/:
+    get:
+      tags:
+      - internal-generators
+      summary: List text to speech service configurations
+      description: Return all configured text to speech services with their activation
+        state, config path, and generation settings. Language lists are omitted from
+        the response.
+      operationId: list_generators_internal_generators__get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/GeneratorProviderInfo'
+                type: array
+                title: Response List Generators Internal Generators  Get
+      security:
+      - OAuth2PasswordBearer: []
+  /internal/generators/{provider}/generate:
+    post:
+      tags:
+      - internal-generators
+      summary: Generate text to speech audio for one request
+      description: Generate raw audio using the named text to speech service and return
+        the result as JSON.
+      operationId: generate_single_internal_generators__provider__generate_post
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: provider
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Provider
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TtsGenerateResult'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /internal/generators/generate-word:
+    post:
+      tags:
+      - internal-generators
+      summary: Generate text to speech audio for a single word
+      description: Generate raw audio using the highest-priority active text to speech
+        service and return raw bytes.
+      operationId: generate_word_internal_generators_generate_word_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateWordRequest'
+        required: true
+      responses:
+        '200':
+          description: Raw MP3 audio bytes
+          content:
+            application/json:
+              schema: {}
+            audio/mpeg: {}
+        '400':
+          description: Word is empty
+        '500':
+          description: TTS generation failed
+        '503':
+          description: No active TTS providers configured
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []

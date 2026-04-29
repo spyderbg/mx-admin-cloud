@@ -3,123 +3,6 @@ info:
   title: Text Translation Internal API
   version: 0.1.0
 servers: []
-paths:
-  /internal/translators/:
-    get:
-      tags:
-      - internal-translators
-      summary: List text translation service configurations
-      description: Return all configured text translation services with their service
-        type, activation state, priority, and config path.
-      operationId: list_translators_internal_translators__get
-      responses:
-        '200':
-          description: Configured translator providers sorted by priority
-          content:
-            application/json:
-              schema:
-                items:
-                  $ref: '#/components/schemas/ServiceProviderInfo'
-                type: array
-                title: Response 200 List Translators Internal Translators  Get
-        '401':
-          description: Missing or invalid JWT token
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorMessage'
-        '403':
-          description: JWT is valid but does not carry the &#x60;internal&#x60; or
-            &#x60;admin&#x60; role
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorMessage'
-      security:
-      - OAuth2PasswordBearer: []
-  /internal/translators/translate:
-    post:
-      tags:
-      - internal-translators
-      summary: Translate text using active translators
-      description: Translate *text* from *input_lang_code* to *target_lang_code* using
-        all active translators in priority order. Returns the last successful translation.
-      operationId: translate_text_internal_translators_translate_post
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/TranslateRequest'
-        required: true
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TranslateResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - OAuth2PasswordBearer: []
-  /internal/translators/translate-file:
-    post:
-      tags:
-      - internal-translators
-      summary: Translate words in a file using active translators
-      description: Upload a file (TXT, CSV, or XLSX) and translate segments whose
-        language differs from *target_lang_code* (per row/column language) using active
-        translators in priority order.
-      operationId: translate_file_internal_translators_translate_file_post
-      security:
-      - OAuth2PasswordBearer: []
-      parameters:
-      - name: input_lang_code
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Input Lang Code
-      - name: target_lang_code
-        in: query
-        required: false
-        schema:
-          type: string
-          default: en
-          title: Target Lang Code
-      - name: category
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Category
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/Body_translate_file_internal_translators_translate_file_post'
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TranslateFileResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
 components:
   securitySchemes:
     OAuth2PasswordBearer:
@@ -291,3 +174,123 @@ components:
       - msg
       - type
       title: ValidationError
+
+paths:
+
+  # ─── internal-translators ───────────────────────────────────────────
+  /internal/translators/:
+    get:
+      tags:
+      - internal-translators
+      summary: List text translation service configurations
+      description: Return all configured text translation services with their service
+        type, activation state, priority, and config path.
+      operationId: list_translators_internal_translators__get
+      responses:
+        '200':
+          description: Configured translator providers sorted by priority
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/ServiceProviderInfo'
+                type: array
+                title: Response 200 List Translators Internal Translators  Get
+        '401':
+          description: Missing or invalid JWT token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+        '403':
+          description: JWT is valid but does not carry the &#x60;internal&#x60; or &#x60;admin&#x60;
+            role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorMessage'
+      security:
+      - OAuth2PasswordBearer: []
+  /internal/translators/translate:
+    post:
+      tags:
+      - internal-translators
+      summary: Translate text using active translators
+      description: Translate *text* from *input_lang_code* to *target_lang_code* using
+        all active translators in priority order. Returns the last successful translation.
+      operationId: translate_text_internal_translators_translate_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TranslateRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranslateResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /internal/translators/translate-file:
+    post:
+      tags:
+      - internal-translators
+      summary: Translate words in a file using active translators
+      description: Upload a file (TXT, CSV, or XLSX) and translate segments whose language
+        differs from *target_lang_code* (per row/column language) using active translators
+        in priority order.
+      operationId: translate_file_internal_translators_translate_file_post
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: input_lang_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Input Lang Code
+      - name: target_lang_code
+        in: query
+        required: false
+        schema:
+          type: string
+          default: en
+          title: Target Lang Code
+      - name: category
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Category
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_translate_file_internal_translators_translate_file_post'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranslateFileResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
