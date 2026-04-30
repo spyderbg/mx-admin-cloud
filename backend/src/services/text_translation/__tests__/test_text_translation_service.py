@@ -1,4 +1,4 @@
-"""Unit tests for ``text_translation`` route schemas (no HTTP, no registry).
+"""Unit tests for ``text_translation`` schemas and related pure logic (no HTTP, no registry).
 
 Small surface area keeps runs fast and context small for tooling.
 """
@@ -40,9 +40,9 @@ def test_translate_request_accepts_optional_fields() -> None:
 
 def test_translate_request_requires_text_and_target() -> None:
     with pytest.raises(ValidationError):
-        TranslateRequest(target_lang_code="es") # type: ignore[call-arg]
+        TranslateRequest(target_lang_code="es")  # type: ignore[call-arg]
     with pytest.raises(ValidationError):
-        TranslateRequest(text="hi") # type: ignore[call-arg]
+        TranslateRequest(text="hi")  # type: ignore[call-arg]
 
 
 def test_translate_response_serializes_lang_text() -> None:
@@ -83,4 +83,4 @@ def test_translation_file_source_word_from_core() -> None:
 def test_load_words_txt_skips_when_source_equals_target(tmp_path: Path) -> None:
     path = tmp_path / "w.txt"
     path.write_text("one\ntwo\n", encoding="utf-8")
-    assert load_words(path, source_language="en", target_language="en") == []
+    assert not load_words(path, source_language="en", target_language="en")

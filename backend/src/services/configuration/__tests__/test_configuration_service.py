@@ -15,6 +15,7 @@ from src.services.configuration.models import (
     ConfigurationProvider,
     ConfigurationProviderUnavailableError,
     ConfigurationSummary,
+    InvalidConfigurationNameError,
 )
 from src.services.configuration.providers.file_system import FileSystemConfigurationProvider
 from src.services.configuration.service import ConfigurationService
@@ -123,7 +124,7 @@ def test_replace_providers_keeps_configuration_providers(tmp_path: Path) -> None
 
 def test_replace_providers_empty_list(tmp_path: Path) -> None:
     svc = _make_service(tmp_path, [])
-    assert svc.providers_snapshot() == []
+    assert not svc.providers_snapshot()
 
 
 def test_providers_snapshot_returns_copy(tmp_path: Path) -> None:
@@ -160,7 +161,7 @@ def test_select_provider_raises_when_no_providers(tmp_path: Path) -> None:
 
 
 def test_select_provider_prefers_file_system_provider(tmp_path: Path) -> None:
-    fs = _StubProvider(tmp_path, name="fs", provider_name="file_system", enabled=True)
+    fs = _StubProvider(tmp_path, name="file_system", provider_name="file_system", enabled=True)
     other = _StubProvider(tmp_path, name="other", provider_name="custom", enabled=True)
     svc = _make_service(tmp_path, [other, fs])
     svc.list_configurations("text_to_speech")
@@ -178,7 +179,7 @@ def test_select_provider_falls_back_to_first_when_no_file_system(tmp_path: Path)
 
 
 def test_select_provider_returns_disabled_file_system_when_no_active(tmp_path: Path) -> None:
-    fs_disabled = _StubProvider(tmp_path, name="fs", provider_name="file_system", enabled=False)
+    fs_disabled = _StubProvider(tmp_path, name="file_system", provider_name="file_system", enabled=False)
     svc = _make_service(tmp_path, [fs_disabled])
     svc.list_configurations("svc")
     assert "list_configurations" in fs_disabled.calls
@@ -234,7 +235,7 @@ def test_enable_configurations_delegates(tmp_path: Path) -> None:
 def test_disable_configurations_delegates(tmp_path: Path) -> None:
     stub = _StubProvider(tmp_path)
     svc = _make_service(tmp_path, [stub])
-    results = svc.disable_configurations("svc", ["cfg_a"])
+    svc.disable_configurations("svc", ["cfg_a"])
     assert stub.calls["set_configurations_enabled"] == [("svc", ["cfg_a"], False)]
 
 
@@ -366,7 +367,6 @@ def test_validate_config_name_valid(name: str) -> None:
     "config@name",
 ])
 def test_validate_config_name_invalid(name: str) -> None:
-    from src.services.configuration.models import InvalidConfigurationNameError
     with pytest.raises(InvalidConfigurationNameError):
         FileSystemConfigurationProvider._validate_config_name(name)  # pylint: disable=protected-access
 

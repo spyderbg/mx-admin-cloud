@@ -93,7 +93,7 @@ Tests for a feature module usually live under a sibling `__tests__` tree. For `s
 (e.g. `logging`, `text_translation`, `text_to_speech`) use `src/services/<name>/__tests__/` with a package
 `__init__.py` for pytest discovery.
 
-Example for the co-located text_translation service:
+Example for the co-located text_translation service (see `.cursor/rules/service-tests-layout.mdc`):
 
 ```
 src/services/text_translation/
@@ -102,12 +102,8 @@ src/services/text_translation/
 ├── service.py
 └── __tests__/
     ├── __init__.py
-    ├── unit/
-    │   ├── __init__.py
-    │   └── test_text_translation_routes.py          # Schemas / pure logic
-    └── integration/
-        ├── __init__.py
-        └── test_text_translation_routes_integration.py   # HTTP + ASGI
+    ├── test_text_translation_service.py              # Unit (schemas / pure logic)
+    └── test_text_translation_service_integration.py  # HTTP + ASGI
 ```
 
 Run only those tests:
@@ -120,6 +116,12 @@ Text-to-speech service tests:
 
 ```bash
 PYTHONPATH="$PWD/src" .venv/bin/python -m pytest src/services/text_to_speech/__tests__ -v
+```
+
+Configuration service tests:
+
+```bash
+PYTHONPATH="$PWD/src" .venv/bin/python -m pytest src/services/configuration/__tests__ -v
 ```
 
 Logging service tests (when added):
@@ -270,7 +272,7 @@ work.
 
 | Method | Path                                                                                      | Description                                                                                                                                                                                                        |
 |--------|-------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `GET`  | [/internal/generators](src/services/text_to_speech/routes.py)                     | List all configured TTS providers with activation state and settings.                                                                                                                                              |
+| `GET`  | [/internal/generators/](src/services/text_to_speech/routes.py)                     | List all configured TTS providers with activation state and settings.                                                                                                                                              |
 | `POST` | [/internal/generators/{provider}/generate](src/services/text_to_speech/routes.py) | Generate raw audio for a single TTS request via the named provider. JSON response is the `TtsGenerateResult` model in `src/services/text_to_speech/schemas.py` (handler return type matches `response_model`). |
 | `POST` | [/internal/generators/generate-word](src/services/text_to_speech/routes.py)      | Generate raw audio for a single word using the highest-priority active provider; returns `audio/mpeg` bytes.                                                                                                       |
 
@@ -292,9 +294,9 @@ work.
 
 | Method | Path                                                                     | Description                                                                                              |
 |--------|--------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------|
-| `GET`  | [/internal/translators](src/services/text_translation/routes.py) | List all configured translation services with activation state.                                          |
-| `POST` | [/internal/translate](src/services/text_translation/routes.py)   | Translate text via all active translators; returns `success` and `lang_text` (`lang_code` + `text`).     |
-| `POST` | [/internal/translate-file](src/services/text_translation/routes.py)  | Translate a file; loads segments via `load_words` (skips source = target lang); returns per-row results. |
+| `GET`  | [/internal/translators/](src/services/text_translation/routes.py) | List all configured translation services with activation state.                                          |
+| `POST` | [/internal/translators/translate](src/services/text_translation/routes.py)   | Translate text via all active translators; returns `success` and `lang_text` (`lang_code` + `text`).     |
+| `POST` | [/internal/translators/translate-file](src/services/text_translation/routes.py)  | Translate a file; loads segments via `load_words` (skips source = target lang); returns per-row results. |
 
 #### Logging
 
@@ -350,8 +352,12 @@ with `registry.get_service(service_name)`.
 At startup, `main.py` calls `ServiceRegistry.build_runtime(settings.BASE_DIR)`, then
 `ServiceRegistryBuilder(...).load_all_from_disk()`. The builder reads config files one by one, validates each file with
 `ServiceAcceptCriteria`, materializes provider instances, and atomically replaces provider sets in services.
+The configuration HTTP routes resolve the shared `ConfigurationService` directly from this registry
+instead of constructing a new service per request.
 
 This avoids per-request JSON parsing for provider endpoints while keeping config ingestion outside service classes.
+For the configuration domain specifically, each registry reload also restores one runtime-wired
+`file_system` provider so CRUD operations can validate payloads and trigger in-memory reloads consistently.
 
 **Hot-reload:** If `watchfiles` is installed, a background task triggers `builder.load_all_from_disk()` when files under
 `config/` change.
@@ -437,30 +443,32 @@ src/
     │   ├── routes.py             # runtime apply/upload + persisted CRUD/batch config routes
     │   ├── service.py
     │   ├── merge.py
-    │   ├── __tests__/            # Pytest tree (co-located with service)
-    │   │   └── __init__.py
+    │   ├── __tests__/             # `test_configuration_service*.py` only (see service-tests-layout rule)
+    │   │   ├── __init__.py
+    │   │   ├── test_configuration_service.py
+    │   │   └── test_configuration_service_integration.py
     │   └── providers/            # file_system provider
     ├── text_to_speech/           # Co-located service (routes + schemas live next to service.py)
     │   ├── __init__.py           # SERVICE_CLASS, SERVICE_NAME, SERVICE_ACCEPT_CRITERIA
     │   ├── models.py
     │   ├── schemas.py            # Pydantic bodies for /internal/generators/*
-    │   ├── routes.py             # /internal/generators, /generators/{provider}/generate, /generators/generate-word
+    │   ├── routes.py             # /internal/generators/, /{provider}/generate, /generate-word
     │   ├── service.py
-    │   ├── __tests__/            # Pytest tree (unit + integration)
+    │   ├── __tests__/             # `test_text_to_speech_service*.py` only (see service-tests-layout rule)
     │   │   ├── __init__.py
-    │   │   ├── unit/
-    │   │   └── integration/
+    │   │   ├── test_text_to_speech_service.py
+    │   │   └── test_text_to_speech_service_integration.py
     │   └── providers/            # openai_tts, elevenlabs_tts, speaktor_tts
     ├── text_translation/         # Co-located service (routes + schemas live next to service.py)
     │   ├── __init__.py            # SERVICE_CLASS, SERVICE_NAME, SERVICE_ACCEPT_CRITERIA
     │   ├── models.py
-    │   ├── schemas.py             # Pydantic bodies for /internal/translators, /translate, /translate-file
-    │   ├── routes.py              # /internal/translators, /translate, /translate-file
+    │   ├── schemas.py             # Pydantic bodies for /internal/translators/* routes
+    │   ├── routes.py              # /internal/translators/, /translate, /translate-file (under that prefix)
     │   ├── service.py
-    │   ├── __tests__/             # Pytest tree (unit + integration)
+    │   ├── __tests__/             # `test_text_translation_service*.py` only (see service-tests-layout rule)
     │   │   ├── __init__.py
-    │   │   ├── unit/
-    │   │   └── integration/
+    │   │   ├── test_text_translation_service.py
+    │   │   └── test_text_translation_service_integration.py
     │   └── providers/            # openai_translate, static_translate
     ├── voice_optimization/       # Co-located service (routes + schemas live next to service.py)
     │   ├── __init__.py            # SERVICE_CLASS, SERVICE_NAME, SERVICE_ACCEPT_CRITERIA
@@ -899,15 +907,15 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://localhost:8000/api/v1/content/items
 
 # List generators — admin JWT satisfies require_internal
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/internal/generators
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/internal/generators/
 
 # List translators
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/internal/translators
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/internal/translators/
 
 # Translate text
 curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"text": "apple", "target_lang_code": "fr"}' \
-  http://localhost:8000/internal/translate
+  http://localhost:8000/internal/translators/translate
 # Example response: {"success": true, "lang_text": {"lang_code": "fr", "text": "pomme"}}
 
 # generate-word returns raw audio bytes from highest-priority active provider

@@ -1,9 +1,10 @@
 """HTTP integration tests for configuration routes (ASGI + httpx)."""
 
-# pylint: disable=missing-function-docstring,redefined-outer-name,too-few-public-methods
+# pylint: disable=duplicate-code,missing-function-docstring,redefined-outer-name,too-few-public-methods
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +12,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from src.api.dependencies import get_configuration_service, get_registry_builder, require_internal
+from src.api.dependencies import get_registry_builder, require_internal
 from src.services.acceptance import ConfigApplyResult
 from src.services.configuration import routes as cfg_routes
 from src.services.configuration.models import (
@@ -24,7 +25,9 @@ from src.services.configuration.models import (
     InvalidConfigurationNameError,
     UnknownConfigurationServiceError,
 )
+from src.services.configuration.routes import get_configuration_service
 from src.services.configuration.service import ConfigurationService
+from src.services.service_registry import ServiceRegistry, ServiceRegistryBuilder
 
 
 # ---------------------------------------------------------------------------
@@ -70,6 +73,10 @@ class _StubConfigurationProvider(ConfigurationProvider):
 
     def raise_on_toggle(self, exc: Exception) -> "_StubConfigurationProvider":
         self._toggle_exc = exc
+        return self
+
+    def with_list_error(self, exc: Exception) -> "_StubConfigurationProvider":
+        self._list_result = exc  # type: ignore[assignment]
         return self
 
     def list_configurations(self, service_name: str) -> list[ConfigurationSummary]:
@@ -118,7 +125,11 @@ class _FakeRegistryBuilder:
         self._accepted = accepted
         self._error = error
 
-    def apply_runtime_payload(self, payload: dict[str, Any], source: str = "<test>") -> ConfigApplyResult:
+    def apply_runtime_payload(  # pylint: disable=unused-argument
+            self,
+            payload: dict[str, Any],
+            source: str = "<test>",
+    ) -> ConfigApplyResult:
         return ConfigApplyResult(
             config_name="stub_config",
             accepted=self._accepted,
@@ -173,6 +184,22 @@ _SUMMARY = ConfigurationSummary(
 @pytest.fixture
 def tmp_resolved(tmp_path: Path) -> Path:
     return tmp_path.resolve()
+
+
+def test_builder_keeps_runtime_configuration_provider(tmp_resolved: Path) -> None:
+    config_root = tmp_resolved / "config"
+    config_root.mkdir(parents=True, exist_ok=True)
+
+    registry = ServiceRegistry.build_runtime(tmp_resolved)
+    builder = ServiceRegistryBuilder(registry, tmp_resolved, config_root)
+    builder.load_all_from_disk()
+
+    typed_service = registry.get_typed_service("configuration", ConfigurationService)
+    assert typed_service is registry.get_service("configuration")
+    assert any(
+        provider.provider == "file_system"
+        for provider in typed_service.get_active_providers()
+    )
 
 
 @pytest.fixture
@@ -251,7 +278,6 @@ async def test_apply_requires_auth(client_no_auth: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_upload_valid_json_file_returns_200() -> None:
-    import json
     builder = _FakeRegistryBuilder(accepted=True)
     app = _make_app(builder=builder)
     transport = ASGITransport(app=app)
@@ -280,7 +306,6 @@ async def test_upload_invalid_json_returns_422() -> None:
 
 @pytest.mark.asyncio
 async def test_upload_rejected_payload_returns_422() -> None:
-    import json
     builder = _FakeRegistryBuilder(accepted=False, error="Bad provider")
     app = _make_app(builder=builder)
     transport = ASGITransport(app=app)
@@ -295,7 +320,6 @@ async def test_upload_rejected_payload_returns_422() -> None:
 
 @pytest.mark.asyncio
 async def test_upload_requires_auth(client_no_auth: AsyncClient) -> None:
-    import json
     payload_bytes = json.dumps({}).encode()
     response = await client_no_auth.post(
         "/internal/configurations/upload",
@@ -328,8 +352,9 @@ async def test_list_configs_returns_empty_list(client_empty: AsyncClient) -> Non
 
 @pytest.mark.asyncio
 async def test_list_configs_unknown_service_returns_404(tmp_resolved: Path) -> None:
-    stub = _StubConfigurationProvider(tmp_resolved)
-    stub._list_result = UnknownConfigurationServiceError("Unknown service 'foo'.")  # type: ignore[assignment]
+    stub = _StubConfigurationProvider(tmp_resolved).with_list_error(
+        UnknownConfigurationServiceError("Unknown service 'foo'."),
+    )
     app = _make_app(stub, tmp_resolved)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:

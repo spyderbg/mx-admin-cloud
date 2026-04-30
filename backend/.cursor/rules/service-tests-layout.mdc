@@ -1,0 +1,40 @@
+---
+description: Service test layout under src/services — only two test modules per service
+globs: src/services/**/*.py
+alwaysApply: false
+---
+
+# Service tests (`src/services/<service_name>/`)
+
+## Location
+
+- All tests for a service live in **`src/services/<service_name>/__tests__/`** at the **top level of `__tests__`** (no `unit/`, `integration/`, or other subfolders for tests).
+
+## Allowed test modules (exactly these two names)
+
+Replace `<service_name>` with the **service package directory name** (same as the folder under `src/services/`, e.g. `logging`, `text_to_speech`, `configuration`).
+
+| Role | Filename |
+|------|------------|
+| All unit tests | `test_<service_name>_service.py` |
+| All integration tests | `test_<service_name>_service_integration.py` |
+
+Examples:
+
+- `src/services/logging/__tests__/test_logging_service.py`
+- `src/services/logging/__tests__/test_logging_service_integration.py`
+- `src/services/text_to_speech/__tests__/test_text_to_speech_service.py`
+- `src/services/text_to_speech/__tests__/test_text_to_speech_service_integration.py`
+
+## Not allowed for the service
+
+- Any other **`test_*.py`** under that service’s `__tests__` tree (e.g. `test_*_routes.py`, split files per area).
+- **`unit/`** or **`integration/`** (or any) subdirectories whose purpose is holding tests.
+
+## Exceptions
+
+- **`__init__.py`** in `__tests__` is allowed if the package needs it; it is not a test module.
+
+## When editing or adding tests
+
+- Prefer **markers** (`@pytest.mark.integration`, etc.) or **class grouping** inside the two files to separate unit vs integration concerns if tooling needs it—do not add more test files to satisfy that.

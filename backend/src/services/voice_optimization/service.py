@@ -48,11 +48,6 @@ class VoiceOptimizationService(Service):
     def providers_snapshot(self) -> list[ServiceProvider]:
         return self.all_providers
 
-    @property
-    def active_providers(self) -> list[AudioOptimizerBase]:
-        """Return optimizers that report themselves as active."""
-        return [o for o in self._optimizers if o.is_active()]
-
     @override
     def get_all_providers(self) -> list[AudioOptimizerBase]:
         """Return all loaded providers, including disabled ones."""
@@ -61,14 +56,14 @@ class VoiceOptimizationService(Service):
     @override
     def get_active_providers(self) -> list[AudioOptimizerBase]:
         """Return active providers."""
-        return self.active_providers
+        return [o for o in self._optimizers if o.is_active()]
 
     ################################################################################
 
     @property
     def active_optimizers(self) -> list[AudioOptimizerBase]:
-        """Alias for active_providers; kept for call-site compatibility."""
-        return self.active_providers
+        """Alias for get_active_providers() kept for call-site compatibility."""
+        return self.get_active_providers()
 
     async def optimize(self, input_path: Path, output_path: Path) -> Path:
         """Run all active optimizers in sequence.

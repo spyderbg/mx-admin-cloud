@@ -287,6 +287,8 @@ class ServiceRegistryBuilder:
             providers.sort(key=lambda provider: getattr(provider, "priority", 999))
             self._registry.replace_service_providers(service_name, providers)
 
+        self._ensure_runtime_configuration_provider()
+
         # log results
         self._log_apply_result(results)
 
@@ -422,3 +424,26 @@ class ServiceRegistryBuilder:
         ]
         updated.append(new_provider)
         return updated
+
+    def _ensure_runtime_configuration_provider(self) -> None:
+        """Ensure the registry keeps one runtime-wired file-system configuration provider."""
+        try:
+            providers = self._registry.service_providers_snapshot("configuration")
+        except KeyError:
+            return
+
+        from src.services.configuration.providers.file_system import (  # pylint: disable=import-outside-toplevel
+            FileSystemConfigurationProvider,
+        )
+
+        runtime_provider = FileSystemConfigurationProvider.build_runtime(self._config_root, self)
+        merged = [
+            provider
+            for provider in providers
+            if str(
+                getattr(provider, "provider_name", getattr(provider, "provider", ""))
+            ).strip().lower() != "file_system"
+        ]
+        merged.append(runtime_provider)
+        merged.sort(key=lambda provider: getattr(provider, "priority", 999))
+        self._registry.replace_service_providers("configuration", merged)

@@ -12,9 +12,9 @@ ServiceT = TypeVar("ServiceT")
 
 
 def get_typed_service(
-    registry: ServiceRegistry,
-    service_name: str,
-    expected_type: type[ServiceT],
+        registry: ServiceRegistry,
+        service_name: str,
+        expected_type: type[ServiceT],
 ) -> ServiceT:
     """Fetch *service_name* and validate it matches *expected_type*."""
     try:
@@ -33,11 +33,11 @@ def get_typed_service(
 
 def require_active_providers(service: object, *, service_name: str, detail: str) -> None:
     """Raise an HTTP error when *service* has no active providers."""
-    active_providers = getattr(service, "active_providers", None)
-    if active_providers is None:
+    get_active_providers = getattr(service, "get_active_providers", None)
+    if get_active_providers is None or not callable(get_active_providers):
         raise HTTPException(
             status_code=500,
             detail=f"Service '{service_name}' does not expose active providers.",
         )
-    if not active_providers:
+    if not get_active_providers():
         raise HTTPException(status_code=503, detail=detail)
