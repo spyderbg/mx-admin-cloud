@@ -292,8 +292,10 @@ def update_category_voice(
     )
 
 
-@router.delete("/categories/{category_name}/voices/{voice_id}",
-               status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/categories/{category_name}/voices/{voice_id}",
+    status_code=status.HTTP_204_NO_CONTENT
+)
 def delete_category_voice(
         category_name: str,
         voice_id: str,
@@ -306,7 +308,9 @@ def delete_category_voice(
     )
 
 
-@router.put("/categories/{category_name}/voices/{voice_id}/audio")
+@router.put(
+    "/categories/{category_name}/voices/{voice_id}/audio"
+)
 def upload_category_voice_audio(
         category_name: str,
         voice_id: str,
@@ -325,7 +329,9 @@ def upload_category_voice_audio(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/categories/{category_name}/images/{image_id}")
+@router.get(
+    "/categories/{category_name}/images/{image_id}"
+)
 def get_image(
         category_name: str,
         image_id: str,
@@ -338,7 +344,9 @@ def get_image(
     )
 
 
-@router.put("/categories/{category_name}/images/{image_id}")
+@router.put(
+    "/categories/{category_name}/images/{image_id}"
+)
 def update_image(
         category_name: str,
         image_id: str,
@@ -351,8 +359,10 @@ def update_image(
     )
 
 
-@router.delete("/categories/{category_name}/images/{image_id}",
-               status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/categories/{category_name}/images/{image_id}",
+    status_code=status.HTTP_204_NO_CONTENT
+)
 def delete_image(
         category_name: str,
         image_id: str,
@@ -369,8 +379,10 @@ def delete_image(
 # Image Files
 # ---------------------------------------------------------------------------
 
-@router.post("/categories/{category_name}/images/{image_id}/files",
-             status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/categories/{category_name}/images/{image_id}/files",
+    status_code=status.HTTP_201_CREATED
+)
 def add_image_file(
         category_name: str,
         image_id: str,
@@ -384,7 +396,9 @@ def add_image_file(
     )
 
 
-@router.put("/categories/{category_name}/images/{image_id}/files/{file_index}")
+@router.put(
+    "/categories/{category_name}/images/{image_id}/files/{file_index}"
+)
 def replace_image_file(
         category_name: str,
         image_id: str,
@@ -400,8 +414,10 @@ def replace_image_file(
     )
 
 
-@router.delete("/categories/{category_name}/images/{image_id}/files/{file_index}",
-               status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/categories/{category_name}/images/{image_id}/files/{file_index}",
+    status_code=status.HTTP_204_NO_CONTENT
+)
 def delete_image_file(
         category_name: str,
         image_id: str,
@@ -420,7 +436,9 @@ def delete_image_file(
 # Image Voices
 # ---------------------------------------------------------------------------
 
-@router.get("/categories/{category_name}/images/{image_id}/voices")
+@router.get(
+    "/categories/{category_name}/images/{image_id}/voices"
+)
 def list_image_voices(
         category_name: str,
         image_id: str,
@@ -434,7 +452,9 @@ def list_image_voices(
     )
 
 
-@router.put("/categories/{category_name}/images/{image_id}/voices/{voice_id}")
+@router.put(
+    "/categories/{category_name}/images/{image_id}/voices/{voice_id}"
+)
 def update_image_voice(
         category_name: str,
         image_id: str,
@@ -449,8 +469,10 @@ def update_image_voice(
     )
 
 
-@router.delete("/categories/{category_name}/images/{image_id}/voices/{voice_id}",
-               status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/categories/{category_name}/images/{image_id}/voices/{voice_id}",
+    status_code=status.HTTP_204_NO_CONTENT
+)
 def delete_image_voice(
         category_name: str,
         image_id: str,
@@ -465,7 +487,9 @@ def delete_image_voice(
     )
 
 
-@router.put("/categories/{category_name}/images/{image_id}/voices/{voice_id}/audio")
+@router.put(
+    "/categories/{category_name}/images/{image_id}/voices/{voice_id}/audio"
+)
 def upload_image_voice_audio(
         category_name: str,
         image_id: str,
