@@ -280,23 +280,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /internal/loggers/reset:
-    post:
-      tags:
-      - internal-loggers
-      summary: Reset active logger providers
-      description: Trigger reset on all active logging providers. For file-backed providers
-        this truncates active log files.
-      operationId: reset_loggers_internal_loggers_reset_post
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ResetLogsResponse'
-      security:
-      - OAuth2PasswordBearer: []
   /internal/loggers/emit:
     post:
       tags:
@@ -326,42 +309,6 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - OAuth2PasswordBearer: []
-  /internal/loggers/{logger_name}/log:
-    post:
-      tags:
-      - internal-loggers
-      summary: Emit a log message to a specific logger
-      description: Post a structured log message to the logger specified by path parameter.
-        ``level`` and ``event`` mirror structlog semantics.
-      operationId: log_by_logger_name_internal_loggers__logger_name__log_post
-      security:
-      - OAuth2PasswordBearer: []
-      parameters:
-      - name: logger_name
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Logger Name
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/LogRequest'
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StatusResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
   /internal/loggers/logging/log/api-request:
     post:
       tags:
@@ -375,64 +322,6 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/LogApiRequest'
-        required: true
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StatusResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - OAuth2PasswordBearer: []
-  /internal/loggers/logging/log/service:
-    post:
-      tags:
-      - internal-loggers
-      summary: Emit a service log message
-      description: Post a structured log message to the 'service' logger. ``level``
-        and ``event`` mirror structlog semantics.
-      operationId: log_service_request_internal_loggers_logging_log_service_post
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/LogServiceRequest'
-        required: true
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StatusResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - OAuth2PasswordBearer: []
-  /internal/loggers/logging/log/provider:
-    post:
-      tags:
-      - internal-loggers
-      summary: Log a TTS/STT provider request
-      description: Record a provider request (model, actor, latency, …) through the
-        request-logger channel.
-      operationId: log_provider_request_internal_loggers_logging_log_provider_post
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/LogProviderRequest'
         required: true
       responses:
         '200':
@@ -478,3 +367,114 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - OAuth2PasswordBearer: []
+  /internal/loggers/logging/log/provider:
+    post:
+      tags:
+      - internal-loggers
+      summary: Log a TTS/STT provider request
+      description: Record a provider request (model, actor, latency, …) through the
+        request-logger channel.
+      operationId: log_provider_request_internal_loggers_logging_log_provider_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogProviderRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /internal/loggers/logging/log/service:
+    post:
+      tags:
+      - internal-loggers
+      summary: Emit a service log message
+      description: Post a structured log message to the 'service' logger. ``level``
+        and ``event`` mirror structlog semantics.
+      operationId: log_service_request_internal_loggers_logging_log_service_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogServiceRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /internal/loggers/reset:
+    post:
+      tags:
+      - internal-loggers
+      summary: Reset active logger providers
+      description: Trigger reset on all active logging providers. For file-backed providers
+        this truncates active log files.
+      operationId: reset_loggers_internal_loggers_reset_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResetLogsResponse'
+      security:
+      - OAuth2PasswordBearer: []
+  /internal/loggers/{logger_name}/log:
+    post:
+      tags:
+      - internal-loggers
+      summary: Emit a log message to a specific logger
+      description: Post a structured log message to the logger specified by path parameter.
+        ``level`` and ``event`` mirror structlog semantics.
+      operationId: log_by_logger_name_internal_loggers__logger_name__log_post
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: logger_name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Logger Name
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'

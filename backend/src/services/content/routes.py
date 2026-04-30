@@ -30,15 +30,15 @@ TAG_CATEGORIES = "Categories"
 TAG_CATEGORY_IMAGES = "Category Images"
 TAG_CATEGORY_VOICES = "Category Voices"
 TAG_ITEMS = "Items"
-TAG_ITEMS_IMAGES = "Items Image Files"
-TAG_ITEMS_VOICES = "Items Voice Files"
+TAG_ITEM_IMAGES = "Item Images"
+TAG_ITEM_VOICES = "Item Voices"
 
 
 def _content_service(registry: ServiceRegistry = Depends(get_registry)) -> ContentService:
     return get_typed_service(registry, "content", ContentService)
 
-# router = APIRouter(prefix=f"{settings.API_V1_STR}/content" )
-router = APIRouter(prefix=f"{settings.API_V1_STR}/content" )
+
+router = APIRouter(prefix=f"{settings.API_V1_STR}/content")
 
 
 @router.get(
@@ -205,8 +205,12 @@ def list_category_images(
         detail=f"Not implemented: list images for category '{category_name}'",
     )
 
-@router.post("/categories/{category_name}/images",
-             status_code=status.HTTP_201_CREATED)
+
+@router.post(
+    "/categories/{category_name}/images",
+    status_code=status.HTTP_201_CREATED,
+    tags=[TAG_CATEGORY_IMAGES],
+)
 def add_image_to_category(
         category_name: str,
         file: UploadFile = File(...),
@@ -218,6 +222,7 @@ def add_image_to_category(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
         detail=f"Not implemented: add image to category '{category_name}'",
     )
+
 
 @router.put(
     "/categories/{category_name}/images/{image_id}",
@@ -318,9 +323,6 @@ def upload_category_voice_audio(
 # ---------------------------------------------------------------------------
 # Images
 # ---------------------------------------------------------------------------
-
-
-
 
 
 @router.get("/categories/{category_name}/images/{image_id}")
@@ -520,6 +522,3 @@ def create_item_endpoint(
     return CreateItemResponse(**result)
 
 ################################################################################
-
-
-

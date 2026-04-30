@@ -330,88 +330,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /internal/configurations/{service_name}/{config_name}:
-    delete:
-      tags:
-      - internal-configuration
-      summary: Remove Service Config
-      description: Remove one JSON config file for one service.
-      operationId: remove_service_config_internal_configurations__service_name___config_name__delete
-      security:
-      - OAuth2PasswordBearer: []
-      parameters:
-      - name: service_name
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Service Name
-      - name: config_name
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Config Name
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ConfigurationMutationResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-    patch:
-      tags:
-      - internal-configuration
-      summary: Patch Service Config
-      description: Merge-patch one JSON config file for one service.
-      operationId: patch_service_config_internal_configurations__service_name___config_name__patch
-      security:
-      - OAuth2PasswordBearer: []
-      parameters:
-      - name: service_name
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Service Name
-      - name: config_name
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Config Name
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PatchConfigurationRequest'
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ConfigurationMutationResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /internal/configurations/{service_name}/enable-configurations:
+  /internal/configurations/{service_name}/disable-all-configurations:
     post:
       tags:
       - internal-configuration
-      summary: Enable Configurations
-      description: Enable selected configs for one service.
-      operationId: enable_configurations_internal_configurations__service_name__enable_configurations_post
+      summary: Disable All Configurations
+      description: Disable all configs for one service.
+      operationId: disable_all_configurations_internal_configurations__service_name__disable_all_configurations_post
       security:
       - OAuth2PasswordBearer: []
       parameters:
@@ -421,12 +346,6 @@ paths:
         schema:
           type: string
           title: Service Name
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/BatchToggleConfigurationsRequest'
       responses:
         '200':
           description: Successful Response
@@ -504,13 +423,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /internal/configurations/{service_name}/disable-all-configurations:
+  /internal/configurations/{service_name}/enable-configurations:
     post:
       tags:
       - internal-configuration
-      summary: Disable All Configurations
-      description: Disable all configs for one service.
-      operationId: disable_all_configurations_internal_configurations__service_name__disable_all_configurations_post
+      summary: Enable Configurations
+      description: Enable selected configs for one service.
+      operationId: enable_configurations_internal_configurations__service_name__enable_configurations_post
       security:
       - OAuth2PasswordBearer: []
       parameters:
@@ -520,6 +439,12 @@ paths:
         schema:
           type: string
           title: Service Name
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchToggleConfigurationsRequest'
       responses:
         '200':
           description: Successful Response
@@ -527,6 +452,81 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BatchToggleConfigurationsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /internal/configurations/{service_name}/{config_name}:
+    delete:
+      tags:
+      - internal-configuration
+      summary: Remove Service Config
+      description: Remove one JSON config file for one service.
+      operationId: remove_service_config_internal_configurations__service_name___config_name__delete
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: service_name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Service Name
+      - name: config_name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Config Name
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigurationMutationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - internal-configuration
+      summary: Patch Service Config
+      description: Merge-patch one JSON config file for one service.
+      operationId: patch_service_config_internal_configurations__service_name___config_name__patch
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: service_name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Service Name
+      - name: config_name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Config Name
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchConfigurationRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigurationMutationResponse'
         '422':
           description: Validation Error
           content:

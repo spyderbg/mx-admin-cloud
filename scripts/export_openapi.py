@@ -190,7 +190,8 @@ def _paths_yaml(paths: dict) -> str:
     """Serialize the paths dict with tag-based comment separators."""
     lines: list[str] = ["paths:"]
     current_tag: str | None = None
-    for path, defn in paths.items():
+    sorted_items = sorted(paths.items(), key=lambda kv: (not (t := _first_tag(kv[1])), t, kv[0]))
+    for path, defn in sorted_items:
         tag = _first_tag(defn)
         if tag and tag != current_tag:
             lines.append("")
@@ -235,10 +236,13 @@ def export_service(spec: ServiceSpec, full_schema: dict) -> None:
     except ValueError:
         output_rel = spec.output
 
-    print(f"[{spec.title}]  {len(paths)} path(s), {len(schemas)} schema(s) → {output_rel}")
+    print(f"[{spec.title}]  {len(paths)} path(s), {len(schemas)} schema(s)")
     print(f"  Source files ({len(source_files)}):")
     for f in source_files:
         print(f"    {f}")
+    print(f"  Output file:")
+    print(f"    {output_rel}")
+    print()
 
 
 def export_all(full_schema: dict) -> None:

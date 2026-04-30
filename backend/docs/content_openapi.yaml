@@ -578,6 +578,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
     post:
+      tags:
+      - Category Images
       summary: Add Image To Category
       description: Add a new image to a category.
       operationId: add_image_to_category_api_v1_content_categories__category_name__images_post
@@ -598,97 +600,6 @@ paths:
               $ref: '#/components/schemas/Body_add_image_to_category_api_v1_content_categories__category_name__images_post'
       responses:
         '201':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/content/categories/{category_name}/images/{image_id}:
-    put:
-      summary: Update Image
-      description: Update image name.
-      operationId: update_image_api_v1_content_categories__category_name__images__image_id__put
-      security:
-      - OAuth2PasswordBearer: []
-      parameters:
-      - name: category_name
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Category Name
-      - name: image_id
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Image Id
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-    delete:
-      summary: Delete Image
-      description: Delete an image from a category.
-      operationId: delete_image_api_v1_content_categories__category_name__images__image_id__delete
-      security:
-      - OAuth2PasswordBearer: []
-      parameters:
-      - name: category_name
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Category Name
-      - name: image_id
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Image Id
-      responses:
-        '204':
-          description: Successful Response
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-    get:
-      summary: Get Image
-      description: Get a single image by ID.
-      operationId: get_image_api_v1_content_categories__category_name__images__image_id__get
-      security:
-      - OAuth2PasswordBearer: []
-      parameters:
-      - name: category_name
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Category Name
-      - name: image_id
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Image Id
-      responses:
-        '200':
           description: Successful Response
           content:
             application/json:
@@ -791,11 +702,11 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/content/categories/{category_name}/voices/{voice_id}/audio:
+  /api/v1/content/categories/{category_name}/images/{image_id}:
     put:
-      summary: Upload Category Voice Audio
-      description: Upload or replace audio for a category voice.
-      operationId: upload_category_voice_audio_api_v1_content_categories__category_name__voices__voice_id__audio_put
+      summary: Update Image
+      description: Update image name.
+      operationId: update_image_api_v1_content_categories__category_name__images__image_id__put
       security:
       - OAuth2PasswordBearer: []
       parameters:
@@ -805,18 +716,71 @@ paths:
         schema:
           type: string
           title: Category Name
-      - name: voice_id
+      - name: image_id
         in: path
         required: true
         schema:
           type: string
-          title: Voice Id
-      requestBody:
+          title: Image Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      summary: Delete Image
+      description: Delete an image from a category.
+      operationId: delete_image_api_v1_content_categories__category_name__images__image_id__delete
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_name
+        in: path
         required: true
-        content:
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/Body_upload_category_voice_audio_api_v1_content_categories__category_name__voices__voice_id__audio_put'
+        schema:
+          type: string
+          title: Category Name
+      - name: image_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Image Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      summary: Get Image
+      description: Get a single image by ID.
+      operationId: get_image_api_v1_content_categories__category_name__images__image_id__get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Name
+      - name: image_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Image Id
       responses:
         '200':
           description: Successful Response
@@ -1081,6 +1045,44 @@ paths:
           multipart/form-data:
             schema:
               $ref: '#/components/schemas/Body_upload_image_voice_audio_api_v1_content_categories__category_name__images__image_id__voices__voice_id__audio_put'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/content/categories/{category_name}/voices/{voice_id}/audio:
+    put:
+      summary: Upload Category Voice Audio
+      description: Upload or replace audio for a category voice.
+      operationId: upload_category_voice_audio_api_v1_content_categories__category_name__voices__voice_id__audio_put
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Name
+      - name: voice_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Voice Id
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_upload_category_voice_audio_api_v1_content_categories__category_name__voices__voice_id__audio_put'
       responses:
         '200':
           description: Successful Response
