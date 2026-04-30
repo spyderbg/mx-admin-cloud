@@ -112,7 +112,7 @@ class RemoveCategoryResponse(BaseModel):
     """Response for DELETE /content/categories/{name}.
 
     May be an archive result or a permanent delete result, so both
-    ``archived`` and ``removed`` are optional.
+    "archived" and "removed" are optional.
     """
 
     archived: bool | None = None
