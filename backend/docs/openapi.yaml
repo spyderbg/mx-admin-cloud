@@ -874,7 +874,7 @@ paths:
   /internal/configurations/{service_name}:
     get:
       tags:
-      - internal-configuration
+      - internal-configurations
       summary: List Service Configs
       description: List JSON config files for one service.
       operationId: list_service_configs_internal_configurations__service_name__get
@@ -906,7 +906,7 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
     post:
       tags:
-      - internal-configuration
+      - internal-configurations
       summary: Add Service Config
       description: Create a new JSON config file for one service.
       operationId: add_service_config_internal_configurations__service_name__post
@@ -941,7 +941,7 @@ paths:
   /internal/configurations/{service_name}/{config_name}:
     delete:
       tags:
-      - internal-configuration
+      - internal-configurations
       summary: Remove Service Config
       description: Remove one JSON config file for one service.
       operationId: remove_service_config_internal_configurations__service_name___config_name__delete
@@ -975,7 +975,7 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
     patch:
       tags:
-      - internal-configuration
+      - internal-configurations
       summary: Patch Service Config
       description: Merge-patch one JSON config file for one service.
       operationId: patch_service_config_internal_configurations__service_name___config_name__patch
@@ -1016,7 +1016,7 @@ paths:
   /internal/configurations/{service_name}/enable-configurations:
     post:
       tags:
-      - internal-configuration
+      - internal-configurations
       summary: Enable Configurations
       description: Enable selected configs for one service.
       operationId: enable_configurations_internal_configurations__service_name__enable_configurations_post
@@ -1051,7 +1051,7 @@ paths:
   /internal/configurations/{service_name}/disable-configurations:
     post:
       tags:
-      - internal-configuration
+      - internal-configurations
       summary: Disable Configurations
       description: Disable selected configs for one service.
       operationId: disable_configurations_internal_configurations__service_name__disable_configurations_post
@@ -1086,7 +1086,7 @@ paths:
   /internal/configurations/{service_name}/enable-all-configurations:
     post:
       tags:
-      - internal-configuration
+      - internal-configurations
       summary: Enable All Configurations
       description: Enable all configs for one service.
       operationId: enable_all_configurations_internal_configurations__service_name__enable_all_configurations_post
@@ -1115,7 +1115,7 @@ paths:
   /internal/configurations/{service_name}/disable-all-configurations:
     post:
       tags:
-      - internal-configuration
+      - internal-configurations
       summary: Disable All Configurations
       description: Disable all configs for one service.
       operationId: disable_all_configurations_internal_configurations__service_name__disable_all_configurations_post

@@ -2,13 +2,10 @@
 
 from fastapi import Depends, HTTPException, Request, status  # pylint: disable=import-error
 
-from src.core.config import settings
 from src.core.job_store import JobStore
-from src.services.configuration import ConfigurationService
-from src.services.configuration.providers.file_system import FileSystemConfigurationProvider
-from src.services.service_registry import ServiceRegistry, ServiceRegistryBuilder
 from src.core.utils import is_windows_platform
 from src.security.auth import verify_token
+from src.services.service_registry import ServiceRegistry, ServiceRegistryBuilder
 
 
 def is_unix_socket_request(request: Request) -> bool:
@@ -64,22 +61,6 @@ def get_registry(request: Request) -> ServiceRegistry:
 def get_registry_builder(request: Request) -> ServiceRegistryBuilder:
     """Inject the shared ServiceRegistryBuilder from the app state."""
     return request.app.state.registry_builder
-
-
-def get_configuration_service(
-        builder: ServiceRegistryBuilder = Depends(get_registry_builder),
-) -> ConfigurationService:
-    """Inject the runtime configuration service with a file-system provider."""
-    configuration_service = ConfigurationService(
-        service_name="configuration",
-        package_name="src.services.configuration",
-        service_dir=settings.BASE_DIR / "src/services/configuration",
-        base_dir=settings.BASE_DIR,
-    )
-    configuration_service.replace_providers(
-        [FileSystemConfigurationProvider.build_runtime(settings.config_path, builder)]
-    )
-    return configuration_service
 
 
 def get_job_store(request: Request) -> JobStore:

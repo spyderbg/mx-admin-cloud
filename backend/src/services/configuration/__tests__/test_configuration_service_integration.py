@@ -12,7 +12,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from src.api.dependencies import get_configuration_service, get_registry_builder, require_internal
+from src.api.dependencies import get_registry_builder, require_internal
 from src.services.acceptance import ConfigApplyResult
 from src.services.configuration import routes as cfg_routes
 from src.services.configuration.models import (
@@ -25,7 +25,9 @@ from src.services.configuration.models import (
     InvalidConfigurationNameError,
     UnknownConfigurationServiceError,
 )
+from src.services.configuration.routes import get_configuration_service
 from src.services.configuration.service import ConfigurationService
+from src.services.service_registry import ServiceRegistry, ServiceRegistryBuilder
 
 
 # ---------------------------------------------------------------------------
@@ -182,6 +184,22 @@ _SUMMARY = ConfigurationSummary(
 @pytest.fixture
 def tmp_resolved(tmp_path: Path) -> Path:
     return tmp_path.resolve()
+
+
+def test_builder_keeps_runtime_configuration_provider(tmp_resolved: Path) -> None:
+    config_root = tmp_resolved / "config"
+    config_root.mkdir(parents=True, exist_ok=True)
+
+    registry = ServiceRegistry.build_runtime(tmp_resolved)
+    builder = ServiceRegistryBuilder(registry, tmp_resolved, config_root)
+    builder.load_all_from_disk()
+
+    typed_service = registry.get_typed_service("configuration", ConfigurationService)
+    assert typed_service is registry.get_service("configuration")
+    assert any(
+        provider.provider == "file_system"
+        for provider in typed_service.get_active_providers()
+    )
 
 
 @pytest.fixture

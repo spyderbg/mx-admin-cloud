@@ -352,8 +352,12 @@ with `registry.get_service(service_name)`.
 At startup, `main.py` calls `ServiceRegistry.build_runtime(settings.BASE_DIR)`, then
 `ServiceRegistryBuilder(...).load_all_from_disk()`. The builder reads config files one by one, validates each file with
 `ServiceAcceptCriteria`, materializes provider instances, and atomically replaces provider sets in services.
+The configuration HTTP routes resolve the shared `ConfigurationService` directly from this registry
+instead of constructing a new service per request.
 
 This avoids per-request JSON parsing for provider endpoints while keeping config ingestion outside service classes.
+For the configuration domain specifically, each registry reload also restores one runtime-wired
+`file_system` provider so CRUD operations can validate payloads and trigger in-memory reloads consistently.
 
 **Hot-reload:** If `watchfiles` is installed, a background task triggers `builder.load_all_from_disk()` when files under
 `config/` change.

@@ -9,13 +9,13 @@ from pydantic import BaseModel, Field
 
 
 class LogLevel(str, Enum):
-    TRACE = "trace"         # 10
-    DEBUG = "debug"         # 20
-    INFO = "info"           # 30
-    WARNING = "warning"     # 40
-    ERROR = "error"         # 50
-    CRITICAL = "critical"   # 100
-    FATAL = "fatal"         # 200
+    TRACE = "trace"  # 10
+    DEBUG = "debug"  # 20
+    INFO = "info"  # 30
+    WARNING = "warning"  # 40
+    ERROR = "error"  # 50
+    CRITICAL = "critical"  # 100
+    FATAL = "fatal"  # 200
 
 
 class StatusResponse(BaseModel):
@@ -55,7 +55,6 @@ class LogServiceRequest(LogRequest):
     service: str = Field(..., description="Service name")
 
 
-# TODO: not final
 class LogProviderRequest(BaseModel):
     """Body for "POST /internal/loggers/log/provider"."""
     provider: str | None = None

@@ -89,7 +89,7 @@ async def log(request: LogRequest, logger_name: str | None = None) -> None:
             json=request.model_dump(mode="json"),
         )
     except httpx.RequestError:
-        _stdlib_logging.debug(f"logging HTTP log to '{logger_name}' failed", exc_info=True)
+        _stdlib_logging.debug("logging HTTP log to '%s' failed", logger_name, exc_info=True)
 
 
 async def log_api_request(request: LogApiRequest) -> None:
