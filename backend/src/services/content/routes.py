@@ -27,11 +27,11 @@ from src.services.content.service import ContentService
 from src.services.service_registry import ServiceRegistry
 
 TAG_CATEGORIES = "Categories"
-TAG_CATEGORY_IMAGES = "Category Images"
-TAG_CATEGORY_VOICES = "Category Voices"
+TAG_CATEGORIES_IMAGES = "Categories Images"
+TAG_CATEGORIES_VOICES = "Categories Voices"
 TAG_ITEMS = "Items"
-TAG_ITEM_IMAGES = "Item Images"
-TAG_ITEM_VOICES = "Item Voices"
+TAG_ITEMS_IMAGES = "Items Images"
+TAG_ITEMS_VOICES = "Items Voices"
 
 
 def _content_service(registry: ServiceRegistry = Depends(get_registry)) -> ContentService:
@@ -40,6 +40,10 @@ def _content_service(registry: ServiceRegistry = Depends(get_registry)) -> Conte
 
 router = APIRouter(prefix=f"{settings.API_V1_STR}/content")
 
+
+# ---------------------------------------------------------------------------
+# Categories
+# ---------------------------------------------------------------------------
 
 @router.get(
     "/categories",
@@ -190,10 +194,9 @@ def update_category(
 # Category Images
 # ---------------------------------------------------------------------------
 
-
 @router.get(
     "/categories/{category_name}/images",
-    tags=[TAG_CATEGORY_IMAGES]
+    tags=[TAG_CATEGORIES_IMAGES]
 )
 def list_category_images(
         category_name: str,
@@ -209,7 +212,7 @@ def list_category_images(
 @router.post(
     "/categories/{category_name}/images",
     status_code=status.HTTP_201_CREATED,
-    tags=[TAG_CATEGORY_IMAGES],
+    tags=[TAG_CATEGORIES_IMAGES],
 )
 def add_image_to_category(
         category_name: str,
@@ -226,7 +229,7 @@ def add_image_to_category(
 
 @router.put(
     "/categories/{category_name}/images/{image_id}",
-    tags=[TAG_CATEGORY_IMAGES]
+    tags=[TAG_CATEGORIES_IMAGES]
 )
 def update_category_image(
         category_name: str,
@@ -243,7 +246,7 @@ def update_category_image(
 @router.delete(
     "/categories/{category_name}/images/{image_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    tags=[TAG_CATEGORY_IMAGES]
+    tags=[TAG_CATEGORIES_IMAGES]
 )
 def delete_category_image(
         category_name: str,
@@ -263,7 +266,7 @@ def delete_category_image(
 
 @router.get(
     "/categories/{category_name}/voices",
-    tags=[TAG_CATEGORY_VOICES]
+    tags=[TAG_CATEGORIES_VOICES]
 )
 def list_category_voices(
         category_name: str,
@@ -278,7 +281,7 @@ def list_category_voices(
 
 @router.put(
     "/categories/{category_name}/voices/{voice_id}",
-    tags=[TAG_CATEGORY_VOICES]
+    tags=[TAG_CATEGORIES_VOICES]
 )
 def update_category_voice(
         category_name: str,
@@ -294,7 +297,8 @@ def update_category_voice(
 
 @router.delete(
     "/categories/{category_name}/voices/{voice_id}",
-    status_code=status.HTTP_204_NO_CONTENT
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=[TAG_CATEGORIES_VOICES]
 )
 def delete_category_voice(
         category_name: str,
@@ -309,7 +313,8 @@ def delete_category_voice(
 
 
 @router.put(
-    "/categories/{category_name}/voices/{voice_id}/audio"
+    "/categories/{category_name}/voices/{voice_id}/audio",
+    tags=[TAG_CATEGORIES_VOICES]
 )
 def upload_category_voice_audio(
         category_name: str,
@@ -325,12 +330,12 @@ def upload_category_voice_audio(
 
 
 # ---------------------------------------------------------------------------
-# Images
+# Items
 # ---------------------------------------------------------------------------
 
-
 @router.get(
-    "/categories/{category_name}/images/{image_id}"
+    "/categories/{category_name}/images/{image_id}",
+    tags=[TAG_ITEMS]
 )
 def get_image(
         category_name: str,
@@ -345,7 +350,8 @@ def get_image(
 
 
 @router.put(
-    "/categories/{category_name}/images/{image_id}"
+    "/categories/{category_name}/images/{image_id}",
+    tags=[TAG_ITEMS]
 )
 def update_image(
         category_name: str,
@@ -361,7 +367,8 @@ def update_image(
 
 @router.delete(
     "/categories/{category_name}/images/{image_id}",
-    status_code=status.HTTP_204_NO_CONTENT
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=[TAG_ITEMS]
 )
 def delete_image(
         category_name: str,
@@ -376,12 +383,13 @@ def delete_image(
 
 
 # ---------------------------------------------------------------------------
-# Image Files
+# Item Images
 # ---------------------------------------------------------------------------
 
 @router.post(
     "/categories/{category_name}/images/{image_id}/files",
-    status_code=status.HTTP_201_CREATED
+    status_code=status.HTTP_201_CREATED,
+    tags=[TAG_ITEMS_IMAGES]
 )
 def add_image_file(
         category_name: str,
@@ -397,7 +405,8 @@ def add_image_file(
 
 
 @router.put(
-    "/categories/{category_name}/images/{image_id}/files/{file_index}"
+    "/categories/{category_name}/images/{image_id}/files/{file_index}",
+    tags=[TAG_ITEMS_IMAGES]
 )
 def replace_image_file(
         category_name: str,
@@ -416,7 +425,8 @@ def replace_image_file(
 
 @router.delete(
     "/categories/{category_name}/images/{image_id}/files/{file_index}",
-    status_code=status.HTTP_204_NO_CONTENT
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=[TAG_ITEMS_IMAGES]
 )
 def delete_image_file(
         category_name: str,
@@ -437,7 +447,8 @@ def delete_image_file(
 # ---------------------------------------------------------------------------
 
 @router.get(
-    "/categories/{category_name}/images/{image_id}/voices"
+    "/categories/{category_name}/images/{image_id}/voices",
+    tags=[TAG_ITEMS_VOICES]
 )
 def list_image_voices(
         category_name: str,
@@ -453,7 +464,8 @@ def list_image_voices(
 
 
 @router.put(
-    "/categories/{category_name}/images/{image_id}/voices/{voice_id}"
+    "/categories/{category_name}/images/{image_id}/voices/{voice_id}",
+    tags=[TAG_ITEMS_VOICES]
 )
 def update_image_voice(
         category_name: str,
@@ -471,7 +483,8 @@ def update_image_voice(
 
 @router.delete(
     "/categories/{category_name}/images/{image_id}/voices/{voice_id}",
-    status_code=status.HTTP_204_NO_CONTENT
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=[TAG_ITEMS_VOICES]
 )
 def delete_image_voice(
         category_name: str,
@@ -488,7 +501,8 @@ def delete_image_voice(
 
 
 @router.put(
-    "/categories/{category_name}/images/{image_id}/voices/{voice_id}/audio"
+    "/categories/{category_name}/images/{image_id}/voices/{voice_id}/audio",
+    tags=[TAG_ITEMS_VOICES]
 )
 def upload_image_voice_audio(
         category_name: str,

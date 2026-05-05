@@ -548,11 +548,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
 
-  # ─── Category Images ────────────────────────────────────────────────
+  # ─── Categories Images ──────────────────────────────────────────────
   /api/v1/content/categories/{category_name}/images:
     get:
       tags:
-      - Category Images
+      - Categories Images
       summary: List Category Images
       description: List images for a category.
       operationId: list_category_images_api_v1_content_categories__category_name__images_get
@@ -579,7 +579,7 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
     post:
       tags:
-      - Category Images
+      - Categories Images
       summary: Add Image To Category
       description: Add a new image to a category.
       operationId: add_image_to_category_api_v1_content_categories__category_name__images_post
@@ -611,11 +611,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
 
-  # ─── Category Voices ────────────────────────────────────────────────
+  # ─── Categories Voices ──────────────────────────────────────────────
   /api/v1/content/categories/{category_name}/voices:
     get:
       tags:
-      - Category Voices
+      - Categories Voices
       summary: List Category Voices
       description: List voices for a category.
       operationId: list_category_voices_api_v1_content_categories__category_name__voices_get
@@ -643,7 +643,7 @@ paths:
   /api/v1/content/categories/{category_name}/voices/{voice_id}:
     put:
       tags:
-      - Category Voices
+      - Categories Voices
       summary: Update Category Voice
       description: Rename a category voice.
       operationId: update_category_voice_api_v1_content_categories__category_name__voices__voice_id__put
@@ -675,6 +675,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
     delete:
+      tags:
+      - Categories Voices
       summary: Delete Category Voice
       description: Delete or reset a category voice.
       operationId: delete_category_voice_api_v1_content_categories__category_name__voices__voice_id__delete
@@ -702,8 +704,52 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/content/categories/{category_name}/voices/{voice_id}/audio:
+    put:
+      tags:
+      - Categories Voices
+      summary: Upload Category Voice Audio
+      description: Upload or replace audio for a category voice.
+      operationId: upload_category_voice_audio_api_v1_content_categories__category_name__voices__voice_id__audio_put
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Name
+      - name: voice_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Voice Id
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_upload_category_voice_audio_api_v1_content_categories__category_name__voices__voice_id__audio_put'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+
+  # ─── Items ──────────────────────────────────────────────────────────
   /api/v1/content/categories/{category_name}/images/{image_id}:
     put:
+      tags:
+      - Items
       summary: Update Image
       description: Update image name.
       operationId: update_image_api_v1_content_categories__category_name__images__image_id__put
@@ -735,6 +781,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
     delete:
+      tags:
+      - Items
       summary: Delete Image
       description: Delete an image from a category.
       operationId: delete_image_api_v1_content_categories__category_name__images__image_id__delete
@@ -763,6 +811,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
     get:
+      tags:
+      - Items
       summary: Get Image
       description: Get a single image by ID.
       operationId: get_image_api_v1_content_categories__category_name__images__image_id__get
@@ -793,8 +843,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+
+  # ─── Items Images ───────────────────────────────────────────────────
   /api/v1/content/categories/{category_name}/images/{image_id}/files:
     post:
+      tags:
+      - Items Images
       summary: Add Image File
       description: Upload an additional file variant for an image.
       operationId: add_image_file_api_v1_content_categories__category_name__images__image_id__files_post
@@ -833,6 +887,8 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/content/categories/{category_name}/images/{image_id}/files/{file_index}:
     put:
+      tags:
+      - Items Images
       summary: Replace Image File
       description: Replace a specific file variant.
       operationId: replace_image_file_api_v1_content_categories__category_name__images__image_id__files__file_index__put
@@ -876,6 +932,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
     delete:
+      tags:
+      - Items Images
       summary: Delete Image File
       description: Delete a file variant (at least one must remain).
       operationId: delete_image_file_api_v1_content_categories__category_name__images__image_id__files__file_index__delete
@@ -909,8 +967,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+
+  # ─── Items Voices ───────────────────────────────────────────────────
   /api/v1/content/categories/{category_name}/images/{image_id}/voices:
     get:
+      tags:
+      - Items Voices
       summary: List Image Voices
       description: List voices for an image.
       operationId: list_image_voices_api_v1_content_categories__category_name__images__image_id__voices_get
@@ -943,6 +1005,8 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/content/categories/{category_name}/images/{image_id}/voices/{voice_id}:
     put:
+      tags:
+      - Items Voices
       summary: Update Image Voice
       description: Rename an image voice.
       operationId: update_image_voice_api_v1_content_categories__category_name__images__image_id__voices__voice_id__put
@@ -980,6 +1044,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
     delete:
+      tags:
+      - Items Voices
       summary: Delete Image Voice
       description: Delete or reset an image voice.
       operationId: delete_image_voice_api_v1_content_categories__category_name__images__image_id__voices__voice_id__delete
@@ -1015,6 +1081,8 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/content/categories/{category_name}/images/{image_id}/voices/{voice_id}/audio:
     put:
+      tags:
+      - Items Voices
       summary: Upload Image Voice Audio
       description: Upload or replace audio for an image voice.
       operationId: upload_image_voice_audio_api_v1_content_categories__category_name__images__image_id__voices__voice_id__audio_put
@@ -1045,44 +1113,6 @@ paths:
           multipart/form-data:
             schema:
               $ref: '#/components/schemas/Body_upload_image_voice_audio_api_v1_content_categories__category_name__images__image_id__voices__voice_id__audio_put'
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/content/categories/{category_name}/voices/{voice_id}/audio:
-    put:
-      summary: Upload Category Voice Audio
-      description: Upload or replace audio for a category voice.
-      operationId: upload_category_voice_audio_api_v1_content_categories__category_name__voices__voice_id__audio_put
-      security:
-      - OAuth2PasswordBearer: []
-      parameters:
-      - name: category_name
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Category Name
-      - name: voice_id
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Voice Id
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/Body_upload_category_voice_audio_api_v1_content_categories__category_name__voices__voice_id__audio_put'
       responses:
         '200':
           description: Successful Response
