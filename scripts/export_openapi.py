@@ -58,27 +58,27 @@ SERVICES: dict[str, ServiceSpec] = {
     "translation": ServiceSpec(
         title="Text Translation Internal API",
         path_prefixes=("/internal/translat",),
-        output=BACKEND_ROOT / "docs" / "text_translation_openapi.yaml",
+        output=BACKEND_ROOT / "src" / "services" / "text_translation" / "text_translation_openapi.yaml",
     ),
     "logging": ServiceSpec(
         title="Logging Internal API",
         path_prefixes=("/internal/log",),
-        output=BACKEND_ROOT / "docs" / "logging_openapi.yaml",
+        output=BACKEND_ROOT / "src" / "services" / "logging" / "logging_openapi.yaml",
     ),
     "tts": ServiceSpec(
         title="Text to Speech Internal API",
         path_prefixes=("/internal/generators",),
-        output=BACKEND_ROOT / "docs" / "text_to_speech_openapi.yaml",
+        output=BACKEND_ROOT / "src" / "services" / "text_to_speech" / "text_to_speech_openapi.yaml",
     ),
     "configuration": ServiceSpec(
         title="Configuration Internal API",
         path_prefixes=("/internal/configurations",),
-        output=BACKEND_ROOT / "docs" / "configuration_openapi.yaml",
+        output=BACKEND_ROOT / "src" / "services" / "configuration" / "configuration_openapi.yaml",
     ),
     "content": ServiceSpec(
         title="Content Management API",
         path_prefixes=("/api/v1/content",),
-        output=BACKEND_ROOT / "docs" / "content_openapi.yaml",
+        output=BACKEND_ROOT / "src" / "services" / "content" / "content_openapi.yaml",
     ),
 }
 
