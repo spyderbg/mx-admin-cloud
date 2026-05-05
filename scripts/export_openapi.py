@@ -58,27 +58,32 @@ SERVICES: dict[str, ServiceSpec] = {
     "translation": ServiceSpec(
         title="Text Translation Internal API",
         path_prefixes=("/internal/translat",),
-        output=BACKEND_ROOT / "src" / "services" / "text_translation" / "text_translation_openapi.yaml",
+        output=BACKEND_ROOT / "src" / "services" / "text_translation" / "openapi.yaml",
     ),
     "logging": ServiceSpec(
         title="Logging Internal API",
         path_prefixes=("/internal/log",),
-        output=BACKEND_ROOT / "src" / "services" / "logging" / "logging_openapi.yaml",
+        output=BACKEND_ROOT / "src" / "services" / "logging" / "openapi.yaml",
     ),
     "tts": ServiceSpec(
         title="Text to Speech Internal API",
         path_prefixes=("/internal/generators",),
-        output=BACKEND_ROOT / "src" / "services" / "text_to_speech" / "text_to_speech_openapi.yaml",
+        output=BACKEND_ROOT / "src" / "services" / "text_to_speech" / "openapi.yaml",
     ),
     "configuration": ServiceSpec(
         title="Configuration Internal API",
         path_prefixes=("/internal/configurations",),
-        output=BACKEND_ROOT / "src" / "services" / "configuration" / "configuration_openapi.yaml",
+        output=BACKEND_ROOT / "src" / "services" / "configuration" / "openapi.yaml",
     ),
     "content": ServiceSpec(
         title="Content Management API",
         path_prefixes=("/api/v1/content",),
-        output=BACKEND_ROOT / "src" / "services" / "content" / "content_openapi.yaml",
+        output=BACKEND_ROOT / "src" / "services" / "content" / "openapi.yaml",
+    ),
+    "voice_optimization": ServiceSpec(
+        title="Voice Optimization Internal API",
+        path_prefixes=("/internal/optimizers",),
+        output=BACKEND_ROOT / "src" / "services" / "voice_optimization" / "openapi.yaml",
     ),
 }
 
