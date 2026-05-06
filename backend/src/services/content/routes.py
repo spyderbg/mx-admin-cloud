@@ -47,7 +47,9 @@ router = APIRouter(prefix=f"{settings.API_V1_STR}/content")
 @router.get(
     "/categories",
     response_model=CategoryListResponse,
+    status_code=status.HTTP_200_OK,
     tags=[TAG_CATEGORIES],
+    summary="List all content categories",
     description=(
             "Retrieve all content categories. "
             "By default returns only active categories. "
@@ -77,9 +79,17 @@ def categories_list(
 
 @router.post(
     "/categories",
-    status_code=status.HTTP_201_CREATED,
     response_model=CreateCategoryResponse,
-    tags=[TAG_CATEGORIES]
+    status_code=status.HTTP_201_CREATED,
+    tags=[TAG_CATEGORIES],
+    summary="Create a new content category",
+    description=(
+            "Create a new content category. "
+            "The category name must be unique and follow naming conventions. "
+            "Active categories are returned by default; use 'include_archived=true' to include archived categories "
+            "in the response or 'archived_only=true' to return only archived categories. "
+            "Requires authentication."
+    ),
 )
 def categories_create(
         body: CreateCategoryBody,
@@ -98,7 +108,13 @@ def categories_create(
 @router.post(
     "/categories/restore",
     response_model=RestoreCategoryResponse,
-    tags=[TAG_CATEGORIES]
+    tags=[TAG_CATEGORIES],
+    summary="Restore a category from archive",
+    description=(
+            "Restores a category from the archive directory."
+            "The category must exist in the archive with a .category extension."
+            "If a category with the same name already exists, it will be restored to its original state."
+    ),
 )
 def categories_restore(
         body: RestoreCategoryBody,
@@ -122,7 +138,14 @@ def categories_restore(
 @router.get(
     "/categories/{category_name}",
     response_model=CategoryDetailResponse,
-    tags=[TAG_CATEGORIES]
+    status_code=status.HTTP_200_OK,
+    tags=[TAG_CATEGORIES],
+    summary="Get details of a specific content category",
+    description=(
+            "Retrieve detailed information about a content category. "
+            "Returns the category name, description, and associated metadata. "
+            "Requires authentication."
+    ),
 )
 def categories_details(
         category_name: str,

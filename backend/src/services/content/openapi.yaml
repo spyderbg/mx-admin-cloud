@@ -299,7 +299,7 @@ paths:
     get:
       tags:
       - Categories
-      summary: Categories List
+      summary: List all content categories
       description: Retrieve all content categories. By default returns only active categories.
         Use 'include_archived=true' to append archived entries to the response, or 'archived_only=true'
         to return only archived categories. Requires authentication.
@@ -337,8 +337,11 @@ paths:
     post:
       tags:
       - Categories
-      summary: Categories Create
-      description: Create a new category.
+      summary: Create a new content category
+      description: Create a new content category. The category name must be unique and
+        follow naming conventions. Active categories are returned by default; use 'include_archived=true'
+        to include archived categories in the response or 'archived_only=true' to return
+        only archived categories. Requires authentication.
       operationId: categories_create_api_v1_content_categories_post
       security:
       - OAuth2PasswordBearer: []
@@ -365,8 +368,10 @@ paths:
     post:
       tags:
       - Categories
-      summary: Categories Restore
-      description: Restore a category from archive.
+      summary: Restore a category from archive
+      description: Restores a category from the archive directory.The category must
+        exist in the archive with a .category extension.If a category with the same
+        name already exists, it will be restored to its original state.
       operationId: categories_restore_api_v1_content_categories_restore_post
       requestBody:
         content:
@@ -393,8 +398,9 @@ paths:
     get:
       tags:
       - Categories
-      summary: Categories Details
-      description: Get category details.
+      summary: Get details of a specific content category
+      description: Retrieve detailed information about a content category. Returns the
+        category name, description, and associated metadata. Requires authentication.
       operationId: categories_details_api_v1_content_categories__category_name__get
       security:
       - OAuth2PasswordBearer: []
