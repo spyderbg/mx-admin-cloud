@@ -47,7 +47,14 @@ router = APIRouter(prefix=f"{settings.API_V1_STR}/content")
 @router.get(
     "/categories",
     response_model=CategoryListResponse,
-    tags=[TAG_CATEGORIES]
+    tags=[TAG_CATEGORIES],
+    description=(
+            "Retrieve all content categories. "
+            "By default returns only active categories. "
+            "Use 'include_archived=true' to append archived entries to the response, "
+            "or 'archived_only=true' to return only archived categories. "
+            "Requires authentication."
+    ),
 )
 def categories_list(
         service: ContentServiceDep,
@@ -112,6 +119,41 @@ def categories_restore(
     return RestoreCategoryResponse(**result)
 
 
+@router.get(
+    "/categories/{category_name}",
+    response_model=CategoryDetailResponse,
+    tags=[TAG_CATEGORIES]
+)
+def categories_details(
+        category_name: str,
+        service: ContentServiceDep,
+        _user: dict = Depends(get_current_user),
+) -> CategoryDetailResponse:
+    """Get category details."""
+    result = service.category_details(category_name)
+    if "error" in result and result.get("error") == "Category not found":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=result["error"])
+    if "error" in result and result.get("error") == "Invalid category name":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result["error"])
+    return CategoryDetailResponse(**result)
+
+
+@router.put(
+    "/categories/{category_name}",
+    tags=[TAG_CATEGORIES]
+)
+def categories_update(
+        category_name: str,
+        service: ContentServiceDep,
+        _user: dict = Depends(get_current_user),
+) -> None:
+    """Update category name or description."""
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail=f"Not implemented: update category '{category_name}'",
+    )
+
+
 @router.patch(
     "/categories/{category_name}",
     response_model=RenameCategoryResponse,
@@ -155,41 +197,6 @@ def categories_remove(
     return RemoveCategoryResponse(**result)
 
 
-@router.get(
-    "/categories/{category_name}",
-    response_model=CategoryDetailResponse,
-    tags=[TAG_CATEGORIES]
-)
-def categories_details(
-        category_name: str,
-        service: ContentServiceDep,
-        _user: dict = Depends(get_current_user),
-) -> CategoryDetailResponse:
-    """Get category details."""
-    result = service.category_details(category_name)
-    if "error" in result and result.get("error") == "Category not found":
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=result["error"])
-    if "error" in result and result.get("error") == "Invalid category name":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result["error"])
-    return CategoryDetailResponse(**result)
-
-
-@router.put(
-    "/categories/{category_name}",
-    tags=[TAG_CATEGORIES]
-)
-def categories_update(
-        category_name: str,
-        service: ContentServiceDep,
-        _user: dict = Depends(get_current_user),
-) -> None:
-    """Update category name or description."""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=f"Not implemented: update category '{category_name}'",
-    )
-
-
 # ---------------------------------------------------------------------------
 # Category Images
 # ---------------------------------------------------------------------------
@@ -230,37 +237,37 @@ def categories_images_add(
 
 
 @router.put(
-    "/categories/{category_name}/items/{item_id}",
+    "/categories/{category_name}/images/{image_id}",
     tags=[TAG_CATEGORIES_IMAGES]
 )
 def categories_images_update(
         category_name: str,
-        item_id: str,
+        image_id: str,
         service: ContentServiceDep,
         _user: dict = Depends(get_current_user),
 ) -> None:
     """Rename a category image."""
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=f"Not implemented: update image '{item_id}' in category '{category_name}'",
+        detail=f"Not implemented: update image '{image_id}' in category '{category_name}'",
     )
 
 
 @router.delete(
-    "/categories/{category_name}/items/{item_id}",
+    "/categories/{category_name}/images/{image_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     tags=[TAG_CATEGORIES_IMAGES]
 )
 def categories_images_delete(
         category_name: str,
-        item_id: str,
+        image_id: str,
         service: ContentServiceDep,
         _user: dict = Depends(get_current_user),
 ) -> None:
     """Delete or reset a category image."""
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=f"Not implemented: delete image '{item_id}' in category '{category_name}'",
+        detail=f"Not implemented: delete image '{image_id}' in category '{category_name}'",
     )
 
 
@@ -284,28 +291,28 @@ def categories_voices_list(
     )
 
 
-@router.put(
-    "/categories/{category_name}/voices/{voice_id}",
+@router.post(
+    "/categories/{category_name}/voices",
     tags=[TAG_CATEGORIES_VOICES]
 )
-def categories_voices_update(
+def categories_voices_add(
         category_name: str,
-        voice_id: str,
+        # file: UploadFile = File(...),
         service: ContentServiceDep,
         _user: dict = Depends(get_current_user),
 ) -> None:
     """Rename a category voice."""
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=f"Not implemented: update voice '{voice_id}' in category '{category_name}'",
+        detail=f"Not implemented: add voice to category '{category_name}'",
     )
 
 
 @router.put(
-    "/categories/{category_name}/voices/{voice_id}/audio",
+    "/categories/{category_name}/voices/{voice_id}",
     tags=[TAG_CATEGORIES_VOICES]
 )
-def categories_voices_upload(
+def categories_voices_update(
         category_name: str,
         voice_id: str,
         # file: UploadFile = File(...),

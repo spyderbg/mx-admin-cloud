@@ -300,7 +300,9 @@ paths:
       tags:
       - Categories
       summary: Categories List
-      description: List categories.
+      description: Retrieve all content categories. By default returns only active categories.
+        Use 'include_archived=true' to append archived entries to the response, or 'archived_only=true'
+        to return only archived categories. Requires authentication.
       operationId: categories_list_api_v1_content_categories_get
       security:
       - OAuth2PasswordBearer: []
@@ -388,6 +390,61 @@ paths:
       security:
       - OAuth2PasswordBearer: []
   /api/v1/content/categories/{category_name}:
+    get:
+      tags:
+      - Categories
+      summary: Categories Details
+      description: Get category details.
+      operationId: categories_details_api_v1_content_categories__category_name__get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Name
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryDetailResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - Categories
+      summary: Categories Update
+      description: Update category name or description.
+      operationId: categories_update_api_v1_content_categories__category_name__put
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Name
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
     patch:
       tags:
       - Categories
@@ -444,61 +501,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RemoveCategoryResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-    get:
-      tags:
-      - Categories
-      summary: Categories Details
-      description: Get category details.
-      operationId: categories_details_api_v1_content_categories__category_name__get
-      security:
-      - OAuth2PasswordBearer: []
-      parameters:
-      - name: category_name
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Category Name
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CategoryDetailResponse'
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-    put:
-      tags:
-      - Categories
-      summary: Categories Update
-      description: Update category name or description.
-      operationId: categories_update_api_v1_content_categories__category_name__put
-      security:
-      - OAuth2PasswordBearer: []
-      parameters:
-      - name: category_name
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Category Name
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
         '422':
           description: Validation Error
           content:
@@ -562,6 +564,70 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/content/categories/{category_name}/images/{image_id}:
+    put:
+      tags:
+      - Categories Images
+      summary: Categories Images Update
+      description: Rename a category image.
+      operationId: categories_images_update_api_v1_content_categories__category_name__images__image_id__put
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Name
+      - name: image_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Image Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Categories Images
+      summary: Categories Images Delete
+      description: Delete or reset a category image.
+      operationId: categories_images_delete_api_v1_content_categories__category_name__images__image_id__delete
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Name
+      - name: image_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Image Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
 
   # ─── Categories Voices ──────────────────────────────────────────────
   /api/v1/content/categories/{category_name}/voices:
@@ -592,12 +658,39 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - Categories Voices
+      summary: Categories Voices Add
+      description: Rename a category voice.
+      operationId: categories_voices_add_api_v1_content_categories__category_name__voices_post
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Name
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/content/categories/{category_name}/voices/{voice_id}:
     put:
       tags:
       - Categories Voices
       summary: Categories Voices Update
-      description: Rename a category voice.
+      description: Upload or replace audio for a category voice.
       operationId: categories_voices_update_api_v1_content_categories__category_name__voices__voice_id__put
       security:
       - OAuth2PasswordBearer: []
@@ -656,40 +749,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/content/categories/{category_name}/voices/{voice_id}/audio:
-    put:
-      tags:
-      - Categories Voices
-      summary: Categories Voices Upload
-      description: Upload or replace audio for a category voice.
-      operationId: categories_voices_upload_api_v1_content_categories__category_name__voices__voice_id__audio_put
-      security:
-      - OAuth2PasswordBearer: []
-      parameters:
-      - name: category_name
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Category Name
-      - name: voice_id
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Voice Id
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
 
   # ─── Items ──────────────────────────────────────────────────────────
   /api/v1/content/categories/{category_name}/items:
@@ -722,6 +781,39 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/content/categories/{category_name}/items/{item_id}:
+    get:
+      tags:
+      - Items
+      summary: Items Get
+      description: Get a single item by ID.
+      operationId: items_get_api_v1_content_categories__category_name__items__item_id__get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Name
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Item Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
     put:
       tags:
       - Items
@@ -779,39 +871,6 @@ paths:
       responses:
         '204':
           description: Successful Response
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-    get:
-      tags:
-      - Items
-      summary: Items Get
-      description: Get a single item by ID.
-      operationId: items_get_api_v1_content_categories__category_name__items__item_id__get
-      security:
-      - OAuth2PasswordBearer: []
-      parameters:
-      - name: category_name
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Category Name
-      - name: item_id
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Item Id
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
         '422':
           description: Validation Error
           content:
