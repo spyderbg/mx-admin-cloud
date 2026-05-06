@@ -19,7 +19,6 @@ from httpx import ASGITransport, AsyncClient
 from src.api.dependencies import get_current_user
 from src.services.content import routes as content_routes
 from src.services.content.models import ContentProvider
-from src.services.content.routes import _content_service
 from src.services.content.service import ContentService
 
 
@@ -141,11 +140,11 @@ def _make_app(
         app.dependency_overrides[get_current_user] = lambda: {"username": "tester", "role": "admin"}
     if provider is not None and tmp_path is not None:
         svc = _make_content_service(tmp_path, provider)
-        app.dependency_overrides[_content_service] = lambda: svc
+        # app.dependency_overrides[_content_service] = lambda: svc
     elif not auth:
         # Prevent get_registry AttributeError from racing with the 401 raised by
         # get_current_user. The dummy value is never used because auth blocks first.
-        app.dependency_overrides[_content_service] = lambda: None
+        # app.dependency_overrides[_content_service] = lambda: None
     return app
 
 

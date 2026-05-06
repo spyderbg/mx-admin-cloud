@@ -30,17 +30,7 @@ components:
       - archived_at
       title: ArchivedEntry
       description: Single archived category entry.
-    Body_add_image_file_api_v1_content_categories__category_name__images__image_id__files_post:
-      properties:
-        file:
-          type: string
-          contentMediaType: application/octet-stream
-          title: File
-      type: object
-      required:
-      - file
-      title: Body_add_image_file_api_v1_content_categories__category_name__images__image_id__files_post
-    Body_add_image_to_category_api_v1_content_categories__category_name__images_post:
+    Body_categories_images_add_api_v1_content_categories__category_name__images_post:
       properties:
         file:
           type: string
@@ -53,7 +43,17 @@ components:
       required:
       - file
       - name
-      title: Body_add_image_to_category_api_v1_content_categories__category_name__images_post
+      title: Body_categories_images_add_api_v1_content_categories__category_name__images_post
+    Body_categories_voices_upload_api_v1_content_categories__category_name__voices__voice_id__audio_put:
+      properties:
+        file:
+          type: string
+          contentMediaType: application/octet-stream
+          title: File
+      type: object
+      required:
+      - file
+      title: Body_categories_voices_upload_api_v1_content_categories__category_name__voices__voice_id__audio_put
     Body_create_item_endpoint_api_v1_content_items_post:
       properties:
         image:
@@ -72,7 +72,7 @@ components:
       - category
       - item
       title: Body_create_item_endpoint_api_v1_content_items_post
-    Body_replace_image_file_api_v1_content_categories__category_name__images__image_id__files__file_index__put:
+    Body_items_images_add_api_v1_content_categories__category_name__items__item_id__images_post:
       properties:
         file:
           type: string
@@ -81,8 +81,8 @@ components:
       type: object
       required:
       - file
-      title: Body_replace_image_file_api_v1_content_categories__category_name__images__image_id__files__file_index__put
-    Body_upload_category_voice_audio_api_v1_content_categories__category_name__voices__voice_id__audio_put:
+      title: Body_items_images_add_api_v1_content_categories__category_name__items__item_id__images_post
+    Body_items_images_replace_api_v1_content_categories__category_name__items__item_id__images__image_index__put:
       properties:
         file:
           type: string
@@ -91,8 +91,8 @@ components:
       type: object
       required:
       - file
-      title: Body_upload_category_voice_audio_api_v1_content_categories__category_name__voices__voice_id__audio_put
-    Body_upload_image_voice_audio_api_v1_content_categories__category_name__images__image_id__voices__voice_id__audio_put:
+      title: Body_items_images_replace_api_v1_content_categories__category_name__items__item_id__images__image_index__put
+    Body_items_voices_upload_api_v1_content_categories__category_name__items__item_id__voices__voice_id__audio_put:
       properties:
         file:
           type: string
@@ -101,7 +101,7 @@ components:
       type: object
       required:
       - file
-      title: Body_upload_image_voice_audio_api_v1_content_categories__category_name__images__image_id__voices__voice_id__audio_put
+      title: Body_items_voices_upload_api_v1_content_categories__category_name__items__item_id__voices__voice_id__audio_put
     CategoryDetailResponse:
       properties:
         name:
@@ -246,7 +246,7 @@ components:
       description: 'Response for DELETE /content/categories/{name}.
 
 
-        May be an archive result or a permanent delete result, so both
+        Maybe an archive result or a permanent delete result, so both
 
         "archived" and "removed" are optional.'
     RenameCategoryBody:
@@ -341,9 +341,9 @@ paths:
     get:
       tags:
       - Categories
-      summary: List Categories
+      summary: Categories List
       description: List categories.
-      operationId: list_categories_api_v1_content_categories_get
+      operationId: categories_list_api_v1_content_categories_get
       security:
       - OAuth2PasswordBearer: []
       parameters:
@@ -377,9 +377,9 @@ paths:
     post:
       tags:
       - Categories
-      summary: Create Category Endpoint
+      summary: Categories Create
       description: Create a new category.
-      operationId: create_category_endpoint_api_v1_content_categories_post
+      operationId: categories_create_api_v1_content_categories_post
       security:
       - OAuth2PasswordBearer: []
       requestBody:
@@ -405,9 +405,9 @@ paths:
     post:
       tags:
       - Categories
-      summary: Restore Category Endpoint
+      summary: Categories Restore
       description: Restore a category from archive.
-      operationId: restore_category_endpoint_api_v1_content_categories_restore_post
+      operationId: categories_restore_api_v1_content_categories_restore_post
       requestBody:
         content:
           application/json:
@@ -433,9 +433,9 @@ paths:
     patch:
       tags:
       - Categories
-      summary: Rename Category Endpoint
+      summary: Categories Rename
       description: Rename a category.
-      operationId: rename_category_endpoint_api_v1_content_categories__category_name__patch
+      operationId: categories_rename_api_v1_content_categories__category_name__patch
       security:
       - OAuth2PasswordBearer: []
       parameters:
@@ -467,9 +467,9 @@ paths:
     delete:
       tags:
       - Categories
-      summary: Remove Category
+      summary: Categories Remove
       description: Remove a category.
-      operationId: remove_category_api_v1_content_categories__category_name__delete
+      operationId: categories_remove_api_v1_content_categories__category_name__delete
       security:
       - OAuth2PasswordBearer: []
       parameters:
@@ -495,9 +495,9 @@ paths:
     get:
       tags:
       - Categories
-      summary: Category Details
+      summary: Categories Details
       description: Get category details.
-      operationId: category_details_api_v1_content_categories__category_name__get
+      operationId: categories_details_api_v1_content_categories__category_name__get
       security:
       - OAuth2PasswordBearer: []
       parameters:
@@ -523,9 +523,9 @@ paths:
     put:
       tags:
       - Categories
-      summary: Update Category
+      summary: Categories Update
       description: Update category name or description.
-      operationId: update_category_api_v1_content_categories__category_name__put
+      operationId: categories_update_api_v1_content_categories__category_name__put
       security:
       - OAuth2PasswordBearer: []
       parameters:
@@ -553,9 +553,9 @@ paths:
     get:
       tags:
       - Categories Images
-      summary: List Category Images
+      summary: Categories Images List
       description: List images for a category.
-      operationId: list_category_images_api_v1_content_categories__category_name__images_get
+      operationId: categories_images_list_api_v1_content_categories__category_name__images_get
       security:
       - OAuth2PasswordBearer: []
       parameters:
@@ -580,9 +580,9 @@ paths:
     post:
       tags:
       - Categories Images
-      summary: Add Image To Category
+      summary: Categories Images Add
       description: Add a new image to a category.
-      operationId: add_image_to_category_api_v1_content_categories__category_name__images_post
+      operationId: categories_images_add_api_v1_content_categories__category_name__images_post
       security:
       - OAuth2PasswordBearer: []
       parameters:
@@ -597,7 +597,7 @@ paths:
         content:
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/Body_add_image_to_category_api_v1_content_categories__category_name__images_post'
+              $ref: '#/components/schemas/Body_categories_images_add_api_v1_content_categories__category_name__images_post'
       responses:
         '201':
           description: Successful Response
@@ -616,9 +616,9 @@ paths:
     get:
       tags:
       - Categories Voices
-      summary: List Category Voices
+      summary: Categories Voices List
       description: List voices for a category.
-      operationId: list_category_voices_api_v1_content_categories__category_name__voices_get
+      operationId: categories_voices_list_api_v1_content_categories__category_name__voices_get
       security:
       - OAuth2PasswordBearer: []
       parameters:
@@ -644,9 +644,9 @@ paths:
     put:
       tags:
       - Categories Voices
-      summary: Update Category Voice
+      summary: Categories Voices Update
       description: Rename a category voice.
-      operationId: update_category_voice_api_v1_content_categories__category_name__voices__voice_id__put
+      operationId: categories_voices_update_api_v1_content_categories__category_name__voices__voice_id__put
       security:
       - OAuth2PasswordBearer: []
       parameters:
@@ -677,9 +677,9 @@ paths:
     delete:
       tags:
       - Categories Voices
-      summary: Delete Category Voice
+      summary: Categories Voices Delete
       description: Delete or reset a category voice.
-      operationId: delete_category_voice_api_v1_content_categories__category_name__voices__voice_id__delete
+      operationId: categories_voices_delete_api_v1_content_categories__category_name__voices__voice_id__delete
       security:
       - OAuth2PasswordBearer: []
       parameters:
@@ -708,9 +708,9 @@ paths:
     put:
       tags:
       - Categories Voices
-      summary: Upload Category Voice Audio
+      summary: Categories Voices Upload
       description: Upload or replace audio for a category voice.
-      operationId: upload_category_voice_audio_api_v1_content_categories__category_name__voices__voice_id__audio_put
+      operationId: categories_voices_upload_api_v1_content_categories__category_name__voices__voice_id__audio_put
       security:
       - OAuth2PasswordBearer: []
       parameters:
@@ -731,7 +731,7 @@ paths:
         content:
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/Body_upload_category_voice_audio_api_v1_content_categories__category_name__voices__voice_id__audio_put'
+              $ref: '#/components/schemas/Body_categories_voices_upload_api_v1_content_categories__category_name__voices__voice_id__audio_put'
       responses:
         '200':
           description: Successful Response
@@ -746,13 +746,13 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
 
   # ─── Items ──────────────────────────────────────────────────────────
-  /api/v1/content/categories/{category_name}/images/{image_id}:
+  /api/v1/content/categories/{category_name}/items/{item_id}:
     put:
       tags:
       - Items
-      summary: Update Image
-      description: Update image name.
-      operationId: update_image_api_v1_content_categories__category_name__images__image_id__put
+      summary: Items Update
+      description: Update item name.
+      operationId: items_update_api_v1_content_categories__category_name__items__item_id__put
       security:
       - OAuth2PasswordBearer: []
       parameters:
@@ -762,12 +762,12 @@ paths:
         schema:
           type: string
           title: Category Name
-      - name: image_id
+      - name: item_id
         in: path
         required: true
         schema:
           type: string
-          title: Image Id
+          title: Item Id
       responses:
         '200':
           description: Successful Response
@@ -783,9 +783,9 @@ paths:
     delete:
       tags:
       - Items
-      summary: Delete Image
-      description: Delete an image from a category.
-      operationId: delete_image_api_v1_content_categories__category_name__images__image_id__delete
+      summary: Items Delete
+      description: Delete an item from a category.
+      operationId: items_delete_api_v1_content_categories__category_name__items__item_id__delete
       security:
       - OAuth2PasswordBearer: []
       parameters:
@@ -795,12 +795,12 @@ paths:
         schema:
           type: string
           title: Category Name
-      - name: image_id
+      - name: item_id
         in: path
         required: true
         schema:
           type: string
-          title: Image Id
+          title: Item Id
       responses:
         '204':
           description: Successful Response
@@ -813,9 +813,9 @@ paths:
     get:
       tags:
       - Items
-      summary: Get Image
-      description: Get a single image by ID.
-      operationId: get_image_api_v1_content_categories__category_name__images__image_id__get
+      summary: Items Get
+      description: Get a single item by ID.
+      operationId: items_get_api_v1_content_categories__category_name__items__item_id__get
       security:
       - OAuth2PasswordBearer: []
       parameters:
@@ -825,12 +825,12 @@ paths:
         schema:
           type: string
           title: Category Name
-      - name: image_id
+      - name: item_id
         in: path
         required: true
         schema:
           type: string
-          title: Image Id
+          title: Item Id
       responses:
         '200':
           description: Successful Response
@@ -845,13 +845,13 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
 
   # ─── Items Images ───────────────────────────────────────────────────
-  /api/v1/content/categories/{category_name}/images/{image_id}/files:
-    post:
+  /api/v1/content/categories/{category_name}/items/{item_id}/files/{file_index}:
+    delete:
       tags:
       - Items Images
-      summary: Add Image File
-      description: Upload an additional file variant for an image.
-      operationId: add_image_file_api_v1_content_categories__category_name__images__image_id__files_post
+      summary: Items Images Delete
+      description: Delete a file variant (at least one must remain).
+      operationId: items_images_delete_api_v1_content_categories__category_name__items__item_id__files__file_index__delete
       security:
       - OAuth2PasswordBearer: []
       parameters:
@@ -861,18 +861,88 @@ paths:
         schema:
           type: string
           title: Category Name
-      - name: image_id
+      - name: item_id
         in: path
         required: true
         schema:
           type: string
-          title: Image Id
+          title: Item Id
+      - name: file_index
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: File Index
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/content/categories/{category_name}/items/{item_id}/images:
+    get:
+      tags:
+      - Items Images
+      summary: Items Images List
+      description: List image file variants for an item.
+      operationId: items_images_list_api_v1_content_categories__category_name__items__item_id__images_get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Name
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Item Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - Items Images
+      summary: Items Images Add
+      description: Upload an additional file variant for an image.
+      operationId: items_images_add_api_v1_content_categories__category_name__items__item_id__images_post
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Name
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Item Id
       requestBody:
         required: true
         content:
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/Body_add_image_file_api_v1_content_categories__category_name__images__image_id__files_post'
+              $ref: '#/components/schemas/Body_items_images_add_api_v1_content_categories__category_name__items__item_id__images_post'
       responses:
         '201':
           description: Successful Response
@@ -885,13 +955,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/content/categories/{category_name}/images/{image_id}/files/{file_index}:
+  /api/v1/content/categories/{category_name}/items/{item_id}/images/{image_index}:
     put:
       tags:
       - Items Images
-      summary: Replace Image File
+      summary: Items Images Replace
       description: Replace a specific file variant.
-      operationId: replace_image_file_api_v1_content_categories__category_name__images__image_id__files__file_index__put
+      operationId: items_images_replace_api_v1_content_categories__category_name__items__item_id__images__image_index__put
       security:
       - OAuth2PasswordBearer: []
       parameters:
@@ -901,66 +971,30 @@ paths:
         schema:
           type: string
           title: Category Name
-      - name: image_id
+      - name: item_id
         in: path
         required: true
         schema:
           type: string
-          title: Image Id
-      - name: file_index
+          title: Item Id
+      - name: image_index
         in: path
         required: true
         schema:
           type: integer
-          title: File Index
+          title: Image Index
       requestBody:
         required: true
         content:
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/Body_replace_image_file_api_v1_content_categories__category_name__images__image_id__files__file_index__put'
+              $ref: '#/components/schemas/Body_items_images_replace_api_v1_content_categories__category_name__items__item_id__images__image_index__put'
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema: {}
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-    delete:
-      tags:
-      - Items Images
-      summary: Delete Image File
-      description: Delete a file variant (at least one must remain).
-      operationId: delete_image_file_api_v1_content_categories__category_name__images__image_id__files__file_index__delete
-      security:
-      - OAuth2PasswordBearer: []
-      parameters:
-      - name: category_name
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Category Name
-      - name: image_id
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Image Id
-      - name: file_index
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: File Index
-      responses:
-        '204':
-          description: Successful Response
         '422':
           description: Validation Error
           content:
@@ -969,13 +1003,13 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
 
   # ─── Items Voices ───────────────────────────────────────────────────
-  /api/v1/content/categories/{category_name}/images/{image_id}/voices:
+  /api/v1/content/categories/{category_name}/items/{item_id}/voices:
     get:
       tags:
       - Items Voices
-      summary: List Image Voices
+      summary: Items Voices List
       description: List voices for an image.
-      operationId: list_image_voices_api_v1_content_categories__category_name__images__image_id__voices_get
+      operationId: items_voices_list_api_v1_content_categories__category_name__items__item_id__voices_get
       security:
       - OAuth2PasswordBearer: []
       parameters:
@@ -985,12 +1019,12 @@ paths:
         schema:
           type: string
           title: Category Name
-      - name: image_id
+      - name: item_id
         in: path
         required: true
         schema:
           type: string
-          title: Image Id
+          title: Item Id
       responses:
         '200':
           description: Successful Response
@@ -1003,13 +1037,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/content/categories/{category_name}/images/{image_id}/voices/{voice_id}:
+  /api/v1/content/categories/{category_name}/items/{item_id}/voices/{voice_id}:
     put:
       tags:
       - Items Voices
-      summary: Update Image Voice
+      summary: Items Voices Update
       description: Rename an image voice.
-      operationId: update_image_voice_api_v1_content_categories__category_name__images__image_id__voices__voice_id__put
+      operationId: items_voices_update_api_v1_content_categories__category_name__items__item_id__voices__voice_id__put
       security:
       - OAuth2PasswordBearer: []
       parameters:
@@ -1019,12 +1053,12 @@ paths:
         schema:
           type: string
           title: Category Name
-      - name: image_id
+      - name: item_id
         in: path
         required: true
         schema:
           type: string
-          title: Image Id
+          title: Item Id
       - name: voice_id
         in: path
         required: true
@@ -1046,9 +1080,9 @@ paths:
     delete:
       tags:
       - Items Voices
-      summary: Delete Image Voice
+      summary: Items Voices Delete
       description: Delete or reset an image voice.
-      operationId: delete_image_voice_api_v1_content_categories__category_name__images__image_id__voices__voice_id__delete
+      operationId: items_voices_delete_api_v1_content_categories__category_name__items__item_id__voices__voice_id__delete
       security:
       - OAuth2PasswordBearer: []
       parameters:
@@ -1058,12 +1092,12 @@ paths:
         schema:
           type: string
           title: Category Name
-      - name: image_id
+      - name: item_id
         in: path
         required: true
         schema:
           type: string
-          title: Image Id
+          title: Item Id
       - name: voice_id
         in: path
         required: true
@@ -1079,13 +1113,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/content/categories/{category_name}/images/{image_id}/voices/{voice_id}/audio:
+  /api/v1/content/categories/{category_name}/items/{item_id}/voices/{voice_id}/audio:
     put:
       tags:
       - Items Voices
-      summary: Upload Image Voice Audio
+      summary: Items Voices Upload
       description: Upload or replace audio for an image voice.
-      operationId: upload_image_voice_audio_api_v1_content_categories__category_name__images__image_id__voices__voice_id__audio_put
+      operationId: items_voices_upload_api_v1_content_categories__category_name__items__item_id__voices__voice_id__audio_put
       security:
       - OAuth2PasswordBearer: []
       parameters:
@@ -1095,12 +1129,12 @@ paths:
         schema:
           type: string
           title: Category Name
-      - name: image_id
+      - name: item_id
         in: path
         required: true
         schema:
           type: string
-          title: Image Id
+          title: Item Id
       - name: voice_id
         in: path
         required: true
@@ -1112,7 +1146,7 @@ paths:
         content:
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/Body_upload_image_voice_audio_api_v1_content_categories__category_name__images__image_id__voices__voice_id__audio_put'
+              $ref: '#/components/schemas/Body_items_voices_upload_api_v1_content_categories__category_name__items__item_id__voices__voice_id__audio_put'
       responses:
         '200':
           description: Successful Response

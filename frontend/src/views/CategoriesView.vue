@@ -13,7 +13,7 @@
       @delete-voice="onDeleteVoice"
     />
     <div class="d-flex justify-content-between align-items-center mt-4 mb-3">
-      <h4 class="mb-0">Images</h4>
+      <h4 class="mb-0">Items</h4>
       <div class="d-flex align-items-center" style="gap: 1rem;">
         <div class="d-flex align-items-center" style="gap: 0.5rem;">
           <i class="mdi mdi-view-grid-outline text-muted" style="font-size: 1.1rem;"></i>
@@ -29,7 +29,7 @@
           <i class="mdi mdi-view-grid text-muted" style="font-size: 1.4rem;"></i>
         </div>
         <button class="btn btn-primary btn-sm" @click="onAddImage">
-          <i class="mdi mdi-plus mr-1"></i>Add New Image
+          <i class="mdi mdi-plus mr-1"></i>Add New Item
         </button>
       </div>
     </div>

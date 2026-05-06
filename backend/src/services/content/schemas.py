@@ -40,7 +40,7 @@ class ArchivedEntry(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Response models
+# Categories Response models
 # ---------------------------------------------------------------------------
 
 class CategoryListResponse(BaseModel):
@@ -111,7 +111,7 @@ class RestoreCategoryResponse(BaseModel):
 class RemoveCategoryResponse(BaseModel):
     """Response for DELETE /content/categories/{name}.
 
-    May be an archive result or a permanent delete result, so both
+    Maybe an archive result or a permanent delete result, so both
     "archived" and "removed" are optional.
     """
 
@@ -121,3 +121,14 @@ class RemoveCategoryResponse(BaseModel):
     archive_folder: str | None = None
     destination: str | None = None
     message: str
+
+
+# ---------------------------------------------------------------------------
+# Categories Response models
+# ---------------------------------------------------------------------------
+
+class ItemListResponse(BaseModel):
+    """Response for GET /categories/{category_name}/items."""
+
+    items: list[str]
+
