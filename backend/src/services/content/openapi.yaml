@@ -30,30 +30,6 @@ components:
       - archived_at
       title: ArchivedEntry
       description: Single archived category entry.
-    Body_categories_images_add_api_v1_content_categories__category_name__images_post:
-      properties:
-        file:
-          type: string
-          contentMediaType: application/octet-stream
-          title: File
-        name:
-          type: string
-          title: Name
-      type: object
-      required:
-      - file
-      - name
-      title: Body_categories_images_add_api_v1_content_categories__category_name__images_post
-    Body_categories_voices_upload_api_v1_content_categories__category_name__voices__voice_id__audio_put:
-      properties:
-        file:
-          type: string
-          contentMediaType: application/octet-stream
-          title: File
-      type: object
-      required:
-      - file
-      title: Body_categories_voices_upload_api_v1_content_categories__category_name__voices__voice_id__audio_put
     Body_create_item_endpoint_api_v1_content_items_post:
       properties:
         image:
@@ -72,36 +48,6 @@ components:
       - category
       - item
       title: Body_create_item_endpoint_api_v1_content_items_post
-    Body_items_images_add_api_v1_content_categories__category_name__items__item_id__images_post:
-      properties:
-        file:
-          type: string
-          contentMediaType: application/octet-stream
-          title: File
-      type: object
-      required:
-      - file
-      title: Body_items_images_add_api_v1_content_categories__category_name__items__item_id__images_post
-    Body_items_images_replace_api_v1_content_categories__category_name__items__item_id__images__image_index__put:
-      properties:
-        file:
-          type: string
-          contentMediaType: application/octet-stream
-          title: File
-      type: object
-      required:
-      - file
-      title: Body_items_images_replace_api_v1_content_categories__category_name__items__item_id__images__image_index__put
-    Body_items_voices_upload_api_v1_content_categories__category_name__items__item_id__voices__voice_id__audio_put:
-      properties:
-        file:
-          type: string
-          contentMediaType: application/octet-stream
-          title: File
-      type: object
-      required:
-      - file
-      title: Body_items_voices_upload_api_v1_content_categories__category_name__items__item_id__voices__voice_id__audio_put
     CategoryDetailResponse:
       properties:
         name:
@@ -210,6 +156,18 @@ components:
           title: Detail
       type: object
       title: HTTPValidationError
+    ItemListResponse:
+      properties:
+        items:
+          items:
+            type: string
+          type: array
+          title: Items
+      type: object
+      required:
+      - items
+      title: ItemListResponse
+      description: Response for GET /categories/{category_name}/items.
     RemoveCategoryResponse:
       properties:
         archived:
@@ -592,12 +550,6 @@ paths:
         schema:
           type: string
           title: Category Name
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/Body_categories_images_add_api_v1_content_categories__category_name__images_post'
       responses:
         '201':
           description: Successful Response
@@ -726,12 +678,6 @@ paths:
         schema:
           type: string
           title: Voice Id
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/Body_categories_voices_upload_api_v1_content_categories__category_name__voices__voice_id__audio_put'
       responses:
         '200':
           description: Successful Response
@@ -746,6 +692,35 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
 
   # ─── Items ──────────────────────────────────────────────────────────
+  /api/v1/content/categories/{category_name}/items:
+    get:
+      tags:
+      - Items
+      summary: Items List
+      description: List all items in a category.
+      operationId: items_list_api_v1_content_categories__category_name__items_get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Name
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/content/categories/{category_name}/items/{item_id}:
     put:
       tags:
@@ -937,12 +912,6 @@ paths:
         schema:
           type: string
           title: Item Id
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/Body_items_images_add_api_v1_content_categories__category_name__items__item_id__images_post'
       responses:
         '201':
           description: Successful Response
@@ -983,12 +952,6 @@ paths:
         schema:
           type: integer
           title: Image Index
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/Body_items_images_replace_api_v1_content_categories__category_name__items__item_id__images__image_index__put'
       responses:
         '200':
           description: Successful Response
@@ -1141,12 +1104,6 @@ paths:
         schema:
           type: string
           title: Voice Id
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/Body_items_voices_upload_api_v1_content_categories__category_name__items__item_id__voices__voice_id__audio_put'
       responses:
         '200':
           description: Successful Response
