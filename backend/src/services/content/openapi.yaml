@@ -427,8 +427,9 @@ paths:
     put:
       tags:
       - Categories
-      summary: Categories Update
-      description: Update category name or description.
+      summary: Update category name or description
+      description: Update the name or description of a content category. The category
+        must exist and be active to be updated. Requires authentication.
       operationId: categories_update_api_v1_content_categories__category_name__put
       security:
       - OAuth2PasswordBearer: []
@@ -454,8 +455,9 @@ paths:
     patch:
       tags:
       - Categories
-      summary: Categories Rename
-      description: Rename a category.
+      summary: Rename a content category
+      description: Renames an existing content category. The new name must be unique
+        and follow naming conventions. Requires authentication.
       operationId: categories_rename_api_v1_content_categories__category_name__patch
       security:
       - OAuth2PasswordBearer: []
@@ -488,8 +490,9 @@ paths:
     delete:
       tags:
       - Categories
-      summary: Categories Remove
-      description: Remove a category.
+      summary: Remove a content category
+      description: Delete a content category permanently. This operation cannot be undone
+        and will remove the category and all associated content. Requires authentication.
       operationId: categories_remove_api_v1_content_categories__category_name__delete
       security:
       - OAuth2PasswordBearer: []
@@ -519,8 +522,9 @@ paths:
     get:
       tags:
       - Categories Images
-      summary: Categories Images List
-      description: List images for a category.
+      summary: List all images in a category
+      description: Retrieve a list of all image files associated with a content category.
+        Returns the image filenames and their metadata. Requires authentication.
       operationId: categories_images_list_api_v1_content_categories__category_name__images_get
       security:
       - OAuth2PasswordBearer: []
@@ -546,8 +550,10 @@ paths:
     post:
       tags:
       - Categories Images
-      summary: Categories Images Add
-      description: Add a new image to a category.
+      summary: Add an image to a category
+      description: Add a new image file to the specified content category. This endpoint
+        allows uploading image files and associating them with a category. The image
+        file will be stored in the category's image directory. Requires authentication.
       operationId: categories_images_add_api_v1_content_categories__category_name__images_post
       security:
       - OAuth2PasswordBearer: []
@@ -574,8 +580,9 @@ paths:
     put:
       tags:
       - Categories Images
-      summary: Categories Images Update
-      description: Rename a category image.
+      summary: Rename a category image
+      description: Rename an image file associated with a category. The image must exist
+        in the category and be accessible. Requires authentication.
       operationId: categories_images_update_api_v1_content_categories__category_name__images__image_id__put
       security:
       - OAuth2PasswordBearer: []
@@ -593,7 +600,7 @@ paths:
           type: string
           title: Image Id
       responses:
-        '200':
+        '501':
           description: Successful Response
           content:
             application/json:
@@ -607,8 +614,9 @@ paths:
     delete:
       tags:
       - Categories Images
-      summary: Categories Images Delete
-      description: Delete or reset a category image.
+      summary: Delete category image
+      description: Delete or reset a category image.Removes the specified image from
+        the given category.
       operationId: categories_images_delete_api_v1_content_categories__category_name__images__image_id__delete
       security:
       - OAuth2PasswordBearer: []
@@ -640,8 +648,9 @@ paths:
     get:
       tags:
       - Categories Voices
-      summary: Categories Voices List
-      description: List voices for a category.
+      summary: List voices for a category
+      description: Retrieve a list of all voice files associated with a content category.
+        Returns the voice filenames and their metadata. Requires authentication.
       operationId: categories_voices_list_api_v1_content_categories__category_name__voices_get
       security:
       - OAuth2PasswordBearer: []
@@ -667,8 +676,10 @@ paths:
     post:
       tags:
       - Categories Voices
-      summary: Categories Voices Add
-      description: Rename a category voice.
+      summary: Add a voice to a category
+      description: Add a new voice file to the specified content category. This endpoint
+        allows uploading voice files and associating them with a category. The voice
+        file will be stored in the category's voice directory. Requires authentication.
       operationId: categories_voices_add_api_v1_content_categories__category_name__voices_post
       security:
       - OAuth2PasswordBearer: []
@@ -680,7 +691,7 @@ paths:
           type: string
           title: Category Name
       responses:
-        '200':
+        '201':
           description: Successful Response
           content:
             application/json:
@@ -695,8 +706,10 @@ paths:
     put:
       tags:
       - Categories Voices
-      summary: Categories Voices Update
-      description: Upload or replace audio for a category voice.
+      summary: Replace audio for a category voice
+      description: Upload or replace the audio file for a specific voice in a content
+        category. This endpoint allows replacing the audio file associated with a voice.
+        Requires authentication.
       operationId: categories_voices_update_api_v1_content_categories__category_name__voices__voice_id__put
       security:
       - OAuth2PasswordBearer: []
@@ -714,7 +727,7 @@ paths:
           type: string
           title: Voice Id
       responses:
-        '200':
+        '501':
           description: Successful Response
           content:
             application/json:
@@ -728,8 +741,10 @@ paths:
     delete:
       tags:
       - Categories Voices
-      summary: Categories Voices Delete
-      description: Delete or reset a category voice.
+      summary: Delete a voice from a category
+      description: Delete or reset a voice file associated with a content category.
+        This operation removes the specified voice from the given category. Requires
+        authentication.
       operationId: categories_voices_delete_api_v1_content_categories__category_name__voices__voice_id__delete
       security:
       - OAuth2PasswordBearer: []
@@ -761,8 +776,9 @@ paths:
     get:
       tags:
       - Items
-      summary: Items List
-      description: List all items in a category.
+      summary: List all items in a category
+      description: Retrieve a list of all content items within a specific category.
+        Returns the item names and their metadata. Requires authentication.
       operationId: items_list_api_v1_content_categories__category_name__items_get
       security:
       - OAuth2PasswordBearer: []
@@ -790,8 +806,9 @@ paths:
     get:
       tags:
       - Items
-      summary: Items Get
-      description: Get a single item by ID.
+      summary: Get a single item by ID
+      description: Retrieve detailed information about a single content item. Returns
+        the item name, associated images, and metadata. Requires authentication.
       operationId: items_get_api_v1_content_categories__category_name__items__item_id__get
       security:
       - OAuth2PasswordBearer: []
@@ -809,7 +826,7 @@ paths:
           type: string
           title: Item Id
       responses:
-        '200':
+        '501':
           description: Successful Response
           content:
             application/json:
@@ -823,8 +840,9 @@ paths:
     put:
       tags:
       - Items
-      summary: Items Update
-      description: Update item name.
+      summary: Update an item in a category
+      description: Update the name of a content item within a specific category. This
+        endpoint allows modifying the item name for a given item ID. Requires authentication.
       operationId: items_update_api_v1_content_categories__category_name__items__item_id__put
       security:
       - OAuth2PasswordBearer: []
@@ -856,8 +874,10 @@ paths:
     delete:
       tags:
       - Items
-      summary: Items Delete
-      description: Delete an item from a category.
+      summary: Delete an item from a category
+      description: Permanently delete a content item from its category. This operation
+        cannot be undone and will remove the item and all associated metadata. Requires
+        authentication.
       operationId: items_delete_api_v1_content_categories__category_name__items__item_id__delete
       security:
       - OAuth2PasswordBearer: []
@@ -889,8 +909,10 @@ paths:
     delete:
       tags:
       - Items Images
-      summary: Items Images Delete
-      description: Delete a file variant (at least one must remain).
+      summary: Delete a file variant from an item
+      description: Remove a specific file variant (e.g., image at a given index) from
+        a content item. This endpoint allows deleting a file variant from an item in
+        a category. At least one file variant must remain after deletion. Requires authentication.
       operationId: items_images_delete_api_v1_content_categories__category_name__items__item_id__files__file_index__delete
       security:
       - OAuth2PasswordBearer: []
@@ -926,8 +948,10 @@ paths:
     get:
       tags:
       - Items Images
-      summary: Items Images List
-      description: List image file variants for an item.
+      summary: List image variants for an item
+      description: Retrieve a list of all image file variants associated with a content
+        item. Returns the image filenames, URLs, and metadata for each variant. Requires
+        authentication.
       operationId: items_images_list_api_v1_content_categories__category_name__items__item_id__images_get
       security:
       - OAuth2PasswordBearer: []
@@ -959,8 +983,10 @@ paths:
     post:
       tags:
       - Items Images
-      summary: Items Images Add
-      description: Upload an additional file variant for an image.
+      summary: Add an image file variant to an item
+      description: Add an additional image file variant to the specified content item.
+        This endpoint allows uploading multiple image files (e.g., different resolutions,
+        formats) for a single item. Requires authentication.
       operationId: items_images_add_api_v1_content_categories__category_name__items__item_id__images_post
       security:
       - OAuth2PasswordBearer: []
@@ -993,8 +1019,10 @@ paths:
     put:
       tags:
       - Items Images
-      summary: Items Images Replace
-      description: Replace a specific file variant.
+      summary: Replace a specific image file variant
+      description: Replace the image file variant at the specified index for the given
+        item in the category. Uploads the new file and stores it in place of the existing
+        variant at this index. Requires authentication.
       operationId: items_images_replace_api_v1_content_categories__category_name__items__item_id__images__image_index__put
       security:
       - OAuth2PasswordBearer: []
@@ -1018,7 +1046,7 @@ paths:
           type: integer
           title: Image Index
       responses:
-        '200':
+        '501':
           description: Successful Response
           content:
             application/json:
@@ -1035,8 +1063,9 @@ paths:
     get:
       tags:
       - Items Voices
-      summary: Items Voices List
-      description: List voices for an image.
+      summary: List voices for an item
+      description: Retrieve a list of all voice files associated with a content item.
+        Returns the voice filenames and their metadata. Requires authentication.
       operationId: items_voices_list_api_v1_content_categories__category_name__items__item_id__voices_get
       security:
       - OAuth2PasswordBearer: []
@@ -1069,8 +1098,10 @@ paths:
     put:
       tags:
       - Items Voices
-      summary: Items Voices Update
-      description: Rename an image voice.
+      summary: Update voice for an item
+      description: Update or replace a voice file associated with a content item. This
+        endpoint allows modifying the voice file for a specific item in a category.
+        Requires authentication.
       operationId: items_voices_update_api_v1_content_categories__category_name__items__item_id__voices__voice_id__put
       security:
       - OAuth2PasswordBearer: []
@@ -1094,7 +1125,7 @@ paths:
           type: string
           title: Voice Id
       responses:
-        '200':
+        '501':
           description: Successful Response
           content:
             application/json:
@@ -1108,8 +1139,10 @@ paths:
     delete:
       tags:
       - Items Voices
-      summary: Items Voices Delete
-      description: Delete or reset an image voice.
+      summary: Delete a voice from an item
+      description: Delete or reset a voice file associated with a content item. This
+        operation removes the specified voice from the given item in a category. Requires
+        authentication.
       operationId: items_voices_delete_api_v1_content_categories__category_name__items__item_id__voices__voice_id__delete
       security:
       - OAuth2PasswordBearer: []
@@ -1145,8 +1178,10 @@ paths:
     put:
       tags:
       - Items Voices
-      summary: Items Voices Upload
-      description: Upload or replace audio for an image voice.
+      summary: Upload audio for an item voice
+      description: Upload or replace the audio file for a specific voice associated
+        with a content item. This endpoint allows uploading audio files for voices linked
+        to items in a category. Requires authentication.
       operationId: items_voices_upload_api_v1_content_categories__category_name__items__item_id__voices__voice_id__audio_put
       security:
       - OAuth2PasswordBearer: []
@@ -1170,7 +1205,7 @@ paths:
           type: string
           title: Voice Id
       responses:
-        '200':
+        '501':
           description: Successful Response
           content:
             application/json:
@@ -1183,8 +1218,11 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/content/items:
     post:
-      summary: Create Item Endpoint
-      description: Create a new content item (image + voices).
+      summary: Create a new content item
+      description: Create a new content item with an image and associated voices. This
+        endpoint allows uploading an image file and creating a new item entry with the
+        specified category and English word. The image must be in PNG, JPG, or JPEG
+        format. Requires authentication.
       operationId: create_item_endpoint_api_v1_content_items_post
       requestBody:
         content:
