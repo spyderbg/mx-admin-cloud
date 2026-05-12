@@ -28,9 +28,9 @@ const router = createRouter({
           component: () => import('../views/CategoriesView.vue'),
         },
         {
-          path: ':categoryId/images/:imageId',
-          name: 'image-detail',
-          component: () => import('../views/ImageDetailView.vue'),
+          path: ':categoryId/items/:itemId',
+          name: 'item-detail',
+          component: () => import('../views/ItemDetailView.vue'),
         },
       ],
     },

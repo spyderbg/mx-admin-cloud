@@ -1,4 +1,4 @@
-import type { Category, Image, Language, Voice } from '../types'
+import type { Category, Item, Language, Voice } from '../types'
 
 function labelFromVoices(voices: Voice[], lang: Language): string | undefined {
   const pick = (code: Language) => voices.find((v) => v.language === code)?.name?.trim()
@@ -13,8 +13,8 @@ export function localizedCategoryLabel(category: Category, lang: Language): stri
   return labelFromVoices(category.voices, lang) ?? category.name
 }
 
-export function localizedImageLabel(image: Image, lang: Language): string {
-  return labelFromVoices(image.voices, lang) ?? image.name
+export function localizedImageLabel(item: Item, lang: Language): string {
+  return labelFromVoices(item.voices, lang) ?? item.name
 }
 
 /** The first segment of category breadcrumbs; unknown `lang` falls back to English. */

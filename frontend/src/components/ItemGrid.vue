@@ -1,21 +1,21 @@
 <template>
-  <div class="image-grid" :style="{ gridTemplateColumns: `repeat(${columns}, 1fr)` }">
+  <div class="item-grid" :style="{ gridTemplateColumns: `repeat(${columns}, 1fr)` }">
     <div
-      v-for="image in images"
-      :key="image.id"
-      class="image-card"
-      @click="navigateToDetail(image.id)"
+      v-for="item in items"
+      :key="item.id"
+      class="item-card"
+      @click="navigateToDetail(item.id)"
     >
       <img
-        :src="resolveImageSrc(image)"
-        :alt="image.name"
-        class="image-card-thumb"
+        :src="resolveItemSrc(item)"
+        :alt="item.name"
+        class="item-card-thumb"
       />
-      <span class="file-count-badge">{{ image.files.length }}</span>
+      <span class="file-count-badge">{{ item.files.length }}</span>
       <button
         class="edit-badge"
-        @click.stop="navigateToDetail(image.id)"
-        :title="'Edit ' + image.name"
+        @click.stop="navigateToDetail(item.id)"
+        :title="'Edit ' + item.name"
       >
         <i class="mdi mdi-pencil"></i>
       </button>
@@ -25,39 +25,39 @@
 
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
-import type { Image } from '../types'
+import type { Item } from '../types'
 import cameraPlaceholderUrl from '../assets/images/samples/camera-placeholder.svg'
 
 const props = defineProps<{
-  images: Image[]
+  items: Item[]
   categoryId: string
   columns: number
 }>()
 
 const router = useRouter()
 
-const resolveImageSrc = (image: Image): string => {
-  if (image.thumbnailUrl.trim().length > 0) {
-    return image.thumbnailUrl
+const resolveItemSrc = (item: Item): string => {
+  if (item.thumbnailUrl.trim().length > 0) {
+    return item.thumbnailUrl
   }
 
-  const firstFile = image.files.find((file) => file.trim().length > 0)
+  const firstFile = item.files.find((file) => file.trim().length > 0)
   return firstFile ?? cameraPlaceholderUrl
 }
 
-const navigateToDetail = (imageId: string): void => {
-  router.push(`/categories/${props.categoryId}/images/${imageId}`)
+const navigateToDetail = (itemId: string): void => {
+  router.push(`/categories/${props.categoryId}/items/${itemId}`)
 }
 </script>
 
 <style scoped>
-.image-grid {
+.item-grid {
   display: grid;
   gap: 1rem;
   width: 100%;
   transition: grid-template-columns 0.3s ease;
 }
-.image-card {
+.item-card {
   position: relative;
   border-radius: 6px;
   overflow: hidden;
@@ -65,10 +65,10 @@ const navigateToDetail = (imageId: string): void => {
   transition: box-shadow 0.2s;
   cursor: pointer;
 }
-.image-card:hover {
+.item-card:hover {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
 }
-.image-card-thumb {
+.item-card-thumb {
   width: 100%;
   aspect-ratio: 1/1;
   object-fit: cover;

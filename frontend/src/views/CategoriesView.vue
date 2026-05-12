@@ -28,12 +28,12 @@
           />
           <i class="mdi mdi-view-grid text-muted" style="font-size: 1.4rem;"></i>
         </div>
-        <button class="btn btn-primary btn-sm" @click="onAddImage">
+        <button class="btn btn-primary btn-sm" @click="onAddItem">
           <i class="mdi mdi-plus mr-1"></i>Add New Item
         </button>
       </div>
     </div>
-    <ImageGrid :images="category.images" :category-id="category.id" :columns="gridColumns" />
+    <ItemGrid :items="category.items" :category-id="category.id" :columns="gridColumns" />
   </div>
   <div v-else class="text-center py-5">
     <h4 class="text-muted">Select a category from the sidebar</h4>
@@ -43,10 +43,10 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getCategories } from '../api/categories'
+import { loadCategoriesTree } from '../api/content'
 import type { Category, Voice } from '../types'
 import CategoryDetail from '../components/CategoryDetail.vue'
-import ImageGrid from '../components/ImageGrid.vue'
+import ItemGrid from '../components/ItemGrid.vue'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import { localizedCategoryLabel } from '../utils/localizedLabels'
 import { toPascalCaseWords } from '../utils/pascalCaseWords'
@@ -58,7 +58,7 @@ const contentLanguage = useContentLanguage()
 
 const gridColumns = ref(3)
 const categories = ref<Category[]>([])
-onMounted(async () => { categories.value = await getCategories() })
+onMounted(async () => { categories.value = await loadCategoriesTree() })
 
 const category = computed(() => {
   const id = route.params.categoryId as string
@@ -96,7 +96,7 @@ const onRenameVoice = (voice: Voice, name: string): void => {
 const onDeleteVoice = (voice: Voice): void => {
   console.log('Delete voice:', voice.id)
 }
-const onAddImage = (): void => {
-  console.log('Add new image to category:', category.value?.id)
+const onAddItem = (): void => {
+  console.log('Add new item to category:', category.value?.id)
 }
 </script>

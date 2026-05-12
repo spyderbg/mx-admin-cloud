@@ -21,7 +21,13 @@ The dev server proxies `**/api**` to `**http://127.0.0.1:8000**` and serves the 
 ```
 src/
 ├── api/              # REST API client modules
-│   └── auth.ts       # Login, status, file-list endpoints
+│   ├── auth.ts       # Login, status, file-list endpoints
+│   ├── categories.ts # Category CRUD + restore/list
+│   ├── categoryVoices.ts
+│   ├── items.ts
+│   ├── itemImages.ts
+│   ├── itemVoices.ts
+│   └── content.ts    # Aggregates OpenAPI endpoints into UI tree data
 ├── assets/           # Static assets (copied from vue3-demo)
 │   ├── css/          # Shared + demo_1 Star Admin stylesheets
 │   ├── images/       # Faces, logos, samples, auth backgrounds
@@ -29,7 +35,7 @@ src/
 ├── components/       # Reusable UI components
 │   ├── CategoryDetail.vue
 │   ├── ServerWord.vue
-│   ├── ImageGrid.vue
+│   ├── ItemGrid.vue
 │   └── LoginForm.vue
 ├── composables/      # Shared composition helpers (e.g. content UI language)
 ├── utils/            # Pure helpers (labels from voices, title-case formatting, etc.)
@@ -47,7 +53,7 @@ src/
 │   └── index.ts      # TypeScript interfaces (Category, Image, Voice, etc.)
 ├── views/            # Route-level page components
 │   ├── CategoriesView.vue
-│   ├── ImageDetailView.vue
+│   ├── ItemDetailView.vue
 │   ├── LoginView.vue
 │   └── DashboardView.vue   # present but not registered in the router
 ├── App.vue           # Root component (bare router-view)
@@ -65,7 +71,7 @@ src/
 | `/`                                       | —                                     | —                         | Redirects to `/categories`                |
 | `/categories`                             | `[CategoriesView](#categoriesview)`   | `[AppLayout](#applayout)` | Shows first category by default           |
 | `/categories/:categoryId`                 | `[CategoriesView](#categoriesview)`   | `[AppLayout](#applayout)` | Selected category details + image grid    |
-| `/categories/:categoryId/images/:imageId` | `[ImageDetailView](#imagedetailview)` | `[AppLayout](#applayout)` | Image detail: files, voices, name editing |
+| `/categories/:categoryId/items/:itemId` | `[ItemDetailView](#itemdetailview)` | `[AppLayout](#applayout)` | Item detail: files, voices, name editing |
 
 
 All `/categories` routes require authentication (token in localStorage). Unauthenticated users are redirected to `/login`.
@@ -83,7 +89,7 @@ The main authenticated shell, wrapping all `/categories` routes:
 │          │                                   │
 │AppSidebar│  <router-view />                  │
 │ (270px)  │  (CategoriesView or               │
-│          │   ImageDetailView)                │
+│          │   ItemDetailView)                 │
 │          │                                   │
 │          ├───────────────────────────────────┤
 │          │  AppFooter                        │
@@ -106,9 +112,9 @@ Displayed when a category is selected (or defaults to first category):
 
 - **Page header** -- `h3.page-title` with localized category label + `toPascalCaseWords` (navbar content language; no edit control on the title)
 - **CategoryDetail card** -- **Category Name** and each **voice-card** word use `ServerWord` (category row: localized + rename modal; voice row: `voice.name` as-is, pencil → **Edit word** modal, `rename-voice` emit). Two-row layout: **Category Icon** (`aspect-ratio: 1 / 1`, `object-fit: contain`) and **Category Voices** share a baseline; voice grid `repeat(auto-fit, minmax(7.5rem, 1fr))`; play + **Upload** (audio); corner **delete** icon opens **Delete or reset voice** confirmation, then `delete-voice` emit; modals mutually exclusive
-- **ImageGrid** -- responsive 4-column grid of image thumbnails, each with a pencil edit-icon badge. If an image has no `thumbnailUrl` or file entries, a built-in camera placeholder is shown. Clicking navigates to ImageDetailView.
+- **ItemGrid** -- responsive 4-column grid of item thumbnails, each with a pencil edit-icon badge. If an item has no `thumbnailUrl` or file entries, a built-in camera placeholder is shown. Clicking navigates to ItemDetailView.
 
-### ImageDetailView
+### ItemDetailView
 
 Displayed for a specific image within a category:
 
@@ -125,7 +131,7 @@ Displayed for a specific image within a category:
 | ---------------- | --------------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------- |
 | `ServerWord`     | `category` and/or `text` + style props  | `edit`                                                                   | Label + pencil; `text` overrides display source |
 | `CategoryDetail` | `category: Category`                    | `edit`, `delete`, `rename`, `edit-voice`, `rename-voice`, `delete-voice` | Category info card with voice list              |
-| `ImageGrid`      | `images: Image[]`, `categoryId: string` | —                                                                        | Thumbnail grid with camera fallback for missing images |
+| `ItemGrid`       | `items: Item[]`, `categoryId: string` | —                                                                        | Thumbnail grid with camera fallback for missing items |
 | `LoginForm`      | —                                       | —                                                                        | Login form with auth API integration            |
 
 
@@ -133,7 +139,7 @@ Displayed for a specific image within a category:
 
 ## API Specification
 
-The full REST API contract is defined in [`openapi.yaml`](openapi.yaml) (OpenAPI 3.1). It covers every endpoint the
+The full REST API contract is defined in [`backend/src/services/content/openapi.yaml`](../backend/src/services/content/openapi.yaml) (OpenAPI 3.1). It covers every endpoint the
 frontend relies on — derived from the MSW handlers (`src/mocks/handlers.ts`), API client modules (`src/api/`), mock
 data shapes (`src/data/mockData.ts`), and the UI actions exposed by components.
 
@@ -157,7 +163,7 @@ interface Voice {
   audioUrl?: string   // if absent/empty, play is disabled for that voice
 }
 
-interface Image {
+interface Item {
   id: string
   name: string
   files: string[]     // at least 1 file URL
@@ -171,7 +177,7 @@ interface Category {
   description: string
   iconUrl: string
   voices: Voice[]     // category-level voices per language
-  images: Image[]
+  items: Item[]
 }
 
 interface User {

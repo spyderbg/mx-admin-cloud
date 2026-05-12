@@ -87,20 +87,20 @@
         <div class="collapse" :class="{ show: expandedIds.has(cat.id) }">
           <ul class="nav flex-column sub-menu">
             <li
-              v-for="img in cat.filteredImages"
-              :key="img.id"
+              v-for="item in cat.filteredItems"
+              :key="item.id"
               class="nav-item"
             >
               <router-link
                 class="nav-link"
-                :to="`/categories/${cat.id}/images/${img.id}`"
-                :class="{ active: img.id === activeImageId }"
+                :to="`/categories/${cat.id}/items/${item.id}`"
+                :class="{ active: item.id === activeItemId }"
                 @click="requestCloseSidebar"
               >
-                {{ img.name }}
+                {{ item.name }}
               </router-link>
             </li>
-            <li v-if="cat.filteredImages.length === 0" class="nav-item">
+            <li v-if="cat.filteredItems.length === 0" class="nav-item">
               <span class="nav-link" style="opacity: 0.5; font-style: italic;">No matches</span>
             </li>
           </ul>
@@ -141,12 +141,12 @@ const filterText = ref('')
 const expandedIds = ref(new Set<string>())
 
 const activeCategoryId = computed(() => route.params.categoryId as string || '')
-const activeImageId = computed(() => route.params.imageId as string || '')
+const activeItemId = computed(() => route.params.itemId as string || '')
 
 interface FilteredCategory {
   id: string
   name: string
-  filteredImages: { id: string; name: string }[]
+  filteredItems: { id: string; name: string }[]
 }
 
 const filteredCategories = computed((): FilteredCategory[] => {
@@ -156,7 +156,7 @@ const filteredCategories = computed((): FilteredCategory[] => {
     return mockCategories.map((c) => ({
       id: c.id,
       name: localizedCategoryLabel(c, lang),
-      filteredImages: c.images.map((i) => ({
+      filteredItems: c.items.map((i) => ({
         id: i.id,
         name: localizedImageLabel(i, lang),
       })),
@@ -166,16 +166,16 @@ const filteredCategories = computed((): FilteredCategory[] => {
   for (const cat of mockCategories) {
     const catLabel = localizedCategoryLabel(cat, lang)
     const catMatch = catLabel.toLowerCase().includes(q)
-    const matchedImages = cat.images.filter((i) =>
+    const matchedItems = cat.items.filter((i) =>
       localizedImageLabel(i, lang).toLowerCase().includes(q),
     )
-    if (catMatch || matchedImages.length > 0) {
+    if (catMatch || matchedItems.length > 0) {
       result.push({
         id: cat.id,
         name: catLabel,
-        filteredImages: catMatch
-          ? cat.images.map((i) => ({ id: i.id, name: localizedImageLabel(i, lang) }))
-          : matchedImages.map((i) => ({ id: i.id, name: localizedImageLabel(i, lang) })),
+        filteredItems: catMatch
+          ? cat.items.map((i) => ({ id: i.id, name: localizedImageLabel(i, lang) }))
+          : matchedItems.map((i) => ({ id: i.id, name: localizedImageLabel(i, lang) })),
       })
     }
   }

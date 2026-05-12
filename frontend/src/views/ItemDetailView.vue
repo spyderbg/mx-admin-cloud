@@ -1,5 +1,5 @@
 <template>
-  <div v-if="category && image">
+  <div v-if="category && item">
     <!-- Breadcrumb -->
     <nav aria-label="breadcrumb">
       <ol class="breadcrumb bg-transparent p-0 mb-3">
@@ -9,23 +9,23 @@
         <li class="breadcrumb-item">
           <router-link :to="`/categories/${category.id}`">{{ breadcrumbCategory }}</router-link>
         </li>
-        <li class="breadcrumb-item active" aria-current="page">{{ breadcrumbImage }}</li>
+        <li class="breadcrumb-item active" aria-current="page">{{ breadcrumbItem }}</li>
       </ol>
     </nav>
 
     <div class="page-header">
-      <h3 class="page-title">{{ imagePageTitle }}</h3>
+      <h3 class="page-title">{{ itemPageTitle }}</h3>
     </div>
 
-    <!-- Image name edit -->
+    <!-- Item name edit -->
     <div class="card mb-4">
       <div class="card-body">
-        <h4 class="card-title">Image Name</h4>
+        <h4 class="card-title">Item Name</h4>
         <div class="form-group mb-0">
           <input
             type="text"
             class="form-control"
-            :value="image.name"
+            :value="item.name"
             @input="onNameChange"
           />
         </div>
@@ -61,7 +61,7 @@
         />
         <div v-if="hasFiles" class="row">
           <div
-            v-for="(file, index) in imageFiles"
+            v-for="(file, index) in itemFiles"
             :key="index"
             class="col-xl-4 col-lg-6 col-md-6 col-sm-12 col-12 mb-3"
           >
@@ -128,7 +128,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="voice in image.voices" :key="voice.id">
+              <tr v-for="voice in item.voices" :key="voice.id">
                 <td>
                   <i :class="'flag-icon flag-icon-' + langFlag(voice.language)" style="margin-right: 8px;"></i>
                   {{ langLabel(voice.language) }}
@@ -160,7 +160,7 @@
   </div>
 
   <div v-else class="text-center py-5">
-    <h4 class="text-muted">Image not found</h4>
+    <h4 class="text-muted">Item not found</h4>
     <router-link to="/categories" class="btn btn-primary mt-3">Back to Categories</router-link>
   </div>
 
@@ -172,7 +172,7 @@
           <button type="button" class="cd-modal-close" @click="cancelDelete">&times;</button>
         </div>
         <div class="cd-modal-body">
-          Are you sure you want to delete this file from "{{ category.name }}"?
+          Are you sure you want to delete this file from "{{ category?.name }}"?
         </div>
         <div class="cd-modal-footer">
           <button type="button" class="btn btn-secondary" @click="cancelDelete">Cancel</button>
@@ -186,7 +186,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { getCategory } from '../api/categories'
+import { loadCategoriesTree } from '../api/content'
 import type { Category, Language, Voice } from '../types'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import cameraPlaceholderUrl from '../assets/images/samples/camera-placeholder.svg'
@@ -203,7 +203,8 @@ const contentLanguage = useContentLanguage()
 const categoryData = ref<Category | null>(null)
 
 const loadCategory = async (id: string) => {
-  categoryData.value = await getCategory(id)
+  const categories = await loadCategoriesTree()
+  categoryData.value = categories.find((category) => category.id === id) ?? null
 }
 
 onMounted(() => {
@@ -217,12 +218,12 @@ watch(() => route.params.categoryId as string, (id) => {
 
 const category = computed(() => categoryData.value)
 
-const image = computed(() => {
-  const imgId = route.params.imageId as string
-  return category.value?.images.find(i => i.id === imgId) ?? null
+const item = computed(() => {
+  const itemId = route.params.itemId as string
+  return category.value?.items.find((entry) => entry.id === itemId) ?? null
 })
-const imageFiles = computed(() => image.value?.files.filter((file) => file.trim().length > 0) ?? [])
-const hasFiles = computed(() => imageFiles.value.length > 0)
+const itemFiles = computed(() => item.value?.files.filter((file) => file.trim().length > 0) ?? [])
+const hasFiles = computed(() => itemFiles.value.length > 0)
 
 const breadcrumbRoot = computed(() => breadcrumbCategoriesLabel(contentLanguage.value))
 
@@ -230,13 +231,13 @@ const breadcrumbCategory = computed(() =>
   category.value ? localizedCategoryLabel(category.value, contentLanguage.value) : '',
 )
 
-const breadcrumbImage = computed(() =>
-  image.value ? localizedImageLabel(image.value, contentLanguage.value) : '',
+const breadcrumbItem = computed(() =>
+  item.value ? localizedImageLabel(item.value, contentLanguage.value) : '',
 )
 
-const imagePageTitle = computed(() => {
-  if (!image.value) return ''
-  return toPascalCaseWords(localizedImageLabel(image.value, contentLanguage.value))
+const itemPageTitle = computed(() => {
+  if (!item.value) return ''
+  return toPascalCaseWords(localizedImageLabel(item.value, contentLanguage.value))
 })
 
 const langFlagMap: Record<Language, string> = { en: 'us', es: 'es', fr: 'fr', bg: 'bg' }
@@ -259,7 +260,7 @@ const onAddFilePicked = (e: Event): void => {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
   if (file) {
-    console.log('Add file to image:', image.value?.id, file.name)
+    console.log('Add file to item:', item.value?.id, file.name)
   }
   input.value = ''
 }
