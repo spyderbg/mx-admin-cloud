@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException  # pylint: disable=import-error
+from fastapi import APIRouter, Depends, HTTPException, status  # pylint: disable=import-error
 
 from src.api.dependencies import get_registry, require_internal
 from src.api.service_resolver import get_typed_service, require_active_providers
@@ -40,10 +40,13 @@ GENERATE_WORD = "/generate-word"
 @router.get(
     GENERATORS_LIST,
     response_model=list[GeneratorProviderInfo],
+    status_code=status.HTTP_200_OK,
     summary="List text to speech service configurations",
     description=(
             "Return all configured text to speech services with their activation state, "
-            "config path, and generation settings. Language lists are omitted from the response."
+            "config path, and generation settings. "
+            "The per-provider 'languages' list is omitted from the response to keep the "
+            "payload compact."
     ),
 )
 async def list_generators(
@@ -68,8 +71,15 @@ async def list_generators(
 @router.post(
     GENERATOR_SINGLE_GENERATE,
     response_model=TtsGenerateResult,
+    status_code=status.HTTP_200_OK,
     summary="Generate text to speech audio for one request",
-    description="Generate raw audio using the named text to speech service and return the result as JSON.",
+    description=(
+            "Generate raw audio using the text to speech service named by the 'provider' "
+            "path parameter and return the result as JSON, including the raw audio path "
+            "and optional normalisation output. "
+            "Responds with HTTP 404 when the provider is unknown and HTTP 503 when no "
+            "active text to speech providers are configured."
+    ),
 )
 async def generate_single(
         provider: str,
@@ -127,8 +137,14 @@ async def generate_single(
 
 @router.post(
     GENERATE_WORD,
+    status_code=status.HTTP_200_OK,
     summary="Generate text to speech audio for a single word",
-    description="Generate raw audio using the highest-priority active text to speech service and return raw bytes.",
+    description=(
+            "Generate raw MP3 audio for a single word using the highest-priority active "
+            "text to speech service and return the raw audio bytes. "
+            "Responds with HTTP 400 when the word is empty, HTTP 500 when generation "
+            "fails, and HTTP 503 when no active text to speech providers are configured."
+    ),
     responses={
         200: {
             "content": {"audio/mpeg": {}},

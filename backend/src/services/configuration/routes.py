@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile  # pylint: disable=import-error
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status  # pylint: disable=import-error
 
 from src.api.dependencies import get_registry, get_registry_builder, require_internal
 from src.api.service_resolver import get_typed_service
@@ -48,7 +48,16 @@ CONFIG_DISABLE_ALL_CONFIGURATIONS = "/{service_name}/disable-all-configurations"
 
 @router.post(
     CONFIG_APPLY,
-    response_model=ApplyConfigurationResponse)
+    response_model=ApplyConfigurationResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Apply a runtime configuration payload",
+    description=(
+            "Validate a JSON configuration payload and apply it in memory through the "
+            "service registry builder. The payload is not persisted to disk. "
+            "Returns the resolved 'config_name' and whether the payload was accepted; "
+            "rejected payloads respond with HTTP 422 and a validation error."
+    ),
+)
 async def apply_config_payload(
         body: ApplyConfigurationRequest,
         _user: dict = Depends(require_internal),
@@ -67,7 +76,16 @@ async def apply_config_payload(
 
 @router.post(
     CONFIG_UPLOAD,
-    response_model=ApplyConfigurationResponse)
+    response_model=ApplyConfigurationResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Upload a runtime configuration file",
+    description=(
+            "Read a JSON configuration file from the multipart upload, validate it, "
+            "and apply it in memory through the service registry builder. "
+            "The uploaded content is not persisted to disk. "
+            "Malformed JSON or invalid configurations respond with HTTP 422."
+    ),
+)
 async def upload_config_file(
         file: UploadFile = File(...),
         _user: dict = Depends(require_internal),
@@ -93,7 +111,16 @@ async def upload_config_file(
 
 @router.get(
     CONFIG_SERVICE,
-    response_model=list[ConfigurationFileSummaryResponse])
+    response_model=list[ConfigurationFileSummaryResponse],
+    status_code=status.HTTP_200_OK,
+    summary="List configuration files for a service",
+    description=(
+            "Return summaries of every JSON configuration file registered under "
+            "'service_name'. Each entry reports the resolved config name, filename, "
+            "provider, enabled/priority metadata, and JSON validity. "
+            "Unknown service names respond with HTTP 404."
+    ),
+)
 def list_service_configs(
         service_name: str,
         service: ConfigurationServiceDep,
@@ -109,7 +136,16 @@ def list_service_configs(
 
 @router.post(
     CONFIG_SERVICE,
-    response_model=ConfigurationMutationResponse)
+    response_model=ConfigurationMutationResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a configuration file for a service",
+    description=(
+            "Create a new JSON configuration file for 'service_name' using the provided "
+            "'config_name' and 'payload'. "
+            "Responds with HTTP 404 for unknown services, HTTP 409 when the configuration "
+            "already exists, and HTTP 422 for invalid names or payloads."
+    ),
+)
 def add_service_config(
         service_name: str,
         body: AddConfigurationRequest,
@@ -134,7 +170,16 @@ def add_service_config(
 
 @router.delete(
     CONFIG_SERVICE_ITEM,
-    response_model=ConfigurationMutationResponse)
+    response_model=ConfigurationMutationResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Remove a configuration file from a service",
+    description=(
+            "Delete the JSON configuration file identified by 'config_name' from "
+            "'service_name' and return whether the on-disk state changed. "
+            "Responds with HTTP 404 when the service or configuration is unknown "
+            "and HTTP 422 for invalid configuration names."
+    ),
+)
 def remove_service_config(
         service_name: str,
         config_name: str,
@@ -153,7 +198,16 @@ def remove_service_config(
 
 @router.patch(
     CONFIG_SERVICE_ITEM,
-    response_model=ConfigurationMutationResponse)
+    response_model=ConfigurationMutationResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Merge-patch a configuration file",
+    description=(
+            "Apply a JSON merge patch to the configuration file identified by "
+            "'config_name' under 'service_name' and persist the result. "
+            "Responds with HTTP 404 when the service or configuration is unknown "
+            "and HTTP 422 for invalid names or payloads."
+    ),
+)
 def patch_service_config(
         service_name: str,
         config_name: str,
@@ -175,7 +229,17 @@ def patch_service_config(
     return ConfigurationMutationResponse(**result.__dict__)
 
 
-@router.post(CONFIG_ENABLE_CONFIGURATIONS, response_model=BatchToggleConfigurationsResponse)
+@router.post(
+    CONFIG_ENABLE_CONFIGURATIONS,
+    response_model=BatchToggleConfigurationsResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Enable selected configuration files for a service",
+    description=(
+            "Set 'enabled: true' on each configuration listed in 'config_names' for "
+            "'service_name' and return the per-config mutation results. "
+            "Responds with HTTP 404 when the service is unknown."
+    ),
+)
 def enable_configurations(
         service_name: str,
         body: BatchToggleConfigurationsRequest,
@@ -191,7 +255,17 @@ def enable_configurations(
     )
 
 
-@router.post(CONFIG_DISABLE_CONFIGURATIONS, response_model=BatchToggleConfigurationsResponse)
+@router.post(
+    CONFIG_DISABLE_CONFIGURATIONS,
+    response_model=BatchToggleConfigurationsResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Disable selected configuration files for a service",
+    description=(
+            "Set 'enabled: false' on each configuration listed in 'config_names' for "
+            "'service_name' and return the per-config mutation results. "
+            "Responds with HTTP 404 when the service is unknown."
+    ),
+)
 def disable_configurations(
         service_name: str,
         body: BatchToggleConfigurationsRequest,
@@ -207,7 +281,17 @@ def disable_configurations(
     )
 
 
-@router.post(CONFIG_ENABLE_ALL_CONFIGURATIONS, response_model=BatchToggleConfigurationsResponse)
+@router.post(
+    CONFIG_ENABLE_ALL_CONFIGURATIONS,
+    response_model=BatchToggleConfigurationsResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Enable every configuration file for a service",
+    description=(
+            "Set 'enabled: true' on every configuration registered under 'service_name' "
+            "and return the per-config mutation results. "
+            "Responds with HTTP 404 when the service is unknown."
+    ),
+)
 def enable_all_configurations(
         service_name: str,
         service: ConfigurationServiceDep,
@@ -221,7 +305,17 @@ def enable_all_configurations(
     )
 
 
-@router.post(CONFIG_DISABLE_ALL_CONFIGURATIONS, response_model=BatchToggleConfigurationsResponse)
+@router.post(
+    CONFIG_DISABLE_ALL_CONFIGURATIONS,
+    response_model=BatchToggleConfigurationsResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Disable every configuration file for a service",
+    description=(
+            "Set 'enabled: false' on every configuration registered under 'service_name' "
+            "and return the per-config mutation results. "
+            "Responds with HTTP 404 when the service is unknown."
+    ),
+)
 def disable_all_configurations(
         service_name: str,
         service: ConfigurationServiceDep,
@@ -279,6 +373,7 @@ def _toggle_all_configurations(
 def get_configuration_service(
         registry: ServiceRegistry = Depends(get_registry),
 ) -> ConfigurationService:
+    """Resolve the ConfigurationService from the active service registry."""
     return get_typed_service(
         registry=registry,
         service_name=configuration.SERVICE_NAME,

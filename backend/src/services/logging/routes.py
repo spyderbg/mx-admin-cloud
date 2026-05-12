@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging as _logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from src.api.dependencies import get_registry, require_internal
 from src.api.service_resolver import get_typed_service
@@ -44,6 +44,7 @@ router = APIRouter(prefix=ROUTER_PREFIX, tags=["internal-loggers"])
 @router.get(
     LOGGERS_LIST,
     response_model=list[ServiceProviderInfo],
+    status_code=status.HTTP_200_OK,
     summary="List logging service providers",
     description=(
             "Return the logging service providers that the emit endpoint routes through. "
@@ -63,10 +64,12 @@ async def list_loggers(
 @router.post(
     LOGGING_RESET,
     response_model=ResetLogsResponse,
+    status_code=status.HTTP_200_OK,
     summary="Reset active logger providers",
     description=(
             "Trigger reset on all active logging providers. "
-            "For file-backed providers this truncates active log files."
+            "For file-backed providers this truncates active log files. "
+            "Returns the list of reset files."
     ),
 )
 async def reset_loggers(
@@ -80,11 +83,11 @@ async def reset_loggers(
 @router.post(
     LOGGING_EMIT,
     response_model=StatusResponse,
+    status_code=status.HTTP_200_OK,
     summary="Emit a structured log message",
     description=(
-            "Post a structured log message to the named logger. "
-            "The ``logger_name`` selects the target channel; ``level`` and "
-            "``event`` mirror structlog semantics."
+            "Post a structured log message and broadcast it to every active logging "
+            "provider. The 'level' and 'event' fields mirror structlog semantics."
     ),
 )
 async def emit_log(
@@ -100,10 +103,13 @@ async def emit_log(
 @router.post(
     LOGGING_LOG,
     response_model=StatusResponse,
+    status_code=status.HTTP_200_OK,
     summary="Emit a log message to a specific logger",
     description=(
-            "Post a structured log message to the logger specified by path parameter. "
-            "``level`` and ``event`` mirror structlog semantics."
+            "Post a structured log message to the logger identified by the "
+            "'logger_name' path parameter. The 'level' and 'event' fields mirror "
+            "structlog semantics. "
+            "Responds with HTTP 404 when the named logger is missing or disabled."
     ),
 )
 async def log_by_logger_name(
@@ -121,10 +127,12 @@ async def log_by_logger_name(
 @router.post(
     LOGGING_API_REQUEST,
     response_model=StatusResponse,
+    status_code=status.HTTP_200_OK,
     summary="Emit an API request log message",
     description=(
             "Post a structured log message to the 'requests' logger. "
-            "``level`` and ``event`` mirror structlog semantics."
+            "The 'level' and 'event' fields mirror structlog semantics. "
+            "Responds with HTTP 404 when the 'requests' logger is missing or disabled."
     ),
 )
 async def log_api_request(
@@ -142,10 +150,12 @@ async def log_api_request(
 @router.post(
     LOGGING_SERVICE,
     response_model=StatusResponse,
+    status_code=status.HTTP_200_OK,
     summary="Emit a service log message",
     description=(
             "Post a structured log message to the 'service' logger. "
-            "``level`` and ``event`` mirror structlog semantics."
+            "The 'level' and 'event' fields mirror structlog semantics. "
+            "Responds with HTTP 404 when the 'service' logger is missing or disabled."
     ),
 )
 async def log_service_request(
@@ -163,10 +173,12 @@ async def log_service_request(
 @router.post(
     LOGGING_PROVIDER,
     response_model=StatusResponse,
+    status_code=status.HTTP_200_OK,
     summary="Log a TTS/STT provider request",
     description=(
-            "Record a provider request (model, actor, latency, …) through the "
-            "request-logger channel."
+            "Record a provider request (model, actor, latency, ...) through the "
+            "'requests' logger channel as a 'provider_request' event. "
+            "Responds with HTTP 404 when the 'requests' logger is missing or disabled."
     ),
 )
 async def log_provider_request(
@@ -189,10 +201,12 @@ async def log_provider_request(
 @router.post(
     LOGGING_PAYMENT,
     response_model=StatusResponse,
+    status_code=status.HTTP_200_OK,
     summary="Emit a payment log message",
     description=(
             "Post a structured log message to the 'payment' logger. "
-            "``level`` and ``event`` mirror structlog semantics."
+            "The 'level' and 'event' fields mirror structlog semantics. "
+            "Responds with HTTP 404 when the 'payment' logger is missing or disabled."
     ),
 )
 async def log_payment_request(
@@ -227,6 +241,7 @@ def validate_logger_exists(service: LoggingService, logger_name: str) -> None:
 
 
 def log_message_from_request(body: LogRequest) -> LogMessage:
+    """Build a LogMessage from the request body, normalising the level name."""
     return LogMessage(
         event=body.event,
         level=_logging.getLevelName(body.level.value.upper()),
@@ -237,6 +252,7 @@ def log_message_from_request(body: LogRequest) -> LogMessage:
 def get_logging_service(
         registry: ServiceRegistry = Depends(get_registry),
 ) -> LoggingService:
+    """Resolve the LoggingService from the active service registry."""
     return get_typed_service(
         registry=registry,
         service_name=logging.SERVICE_NAME,

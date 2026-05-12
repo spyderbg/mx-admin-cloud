@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException  # pylint: disable=import-error
+from fastapi import APIRouter, Depends, HTTPException, status  # pylint: disable=import-error
 
 from src.api.dependencies import get_registry, require_internal
 from src.api.service_resolver import get_typed_service
@@ -28,10 +28,12 @@ OPTIMIZER_SINGLE = "/{optimizer}/optimize"
 
 @router.get(
     OPTIMIZERS_LIST,
+    status_code=status.HTTP_200_OK,
     summary="List audio optimizer configurations",
     description=(
             "Return all configured audio post-processing optimizers with their service type, "
-            "activation state, priority, and config path."
+            "activation state, priority, and config path. "
+            "Entries are sorted by priority (ascending)."
     ),
 )
 async def list_optimizers(
@@ -57,8 +59,15 @@ async def list_optimizers(
 
 @router.post(
     OPTIMIZER_SINGLE,
+    status_code=status.HTTP_200_OK,
     summary="Optimize a single audio file",
-    description="Run the named optimizer on the given raw audio file.",
+    description=(
+            "Run the optimizer identified by the 'optimizer' path parameter on the raw "
+            "audio file at 'raw_path' and write the post-processed audio to 'output_path'. "
+            "Responds with HTTP 404 when the optimizer is unknown or inactive, "
+            "HTTP 400 when the raw file does not exist, and HTTP 500 when optimization "
+            "fails."
+    ),
 )
 async def optimize_single(
         optimizer: str,

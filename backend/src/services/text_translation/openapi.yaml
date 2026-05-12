@@ -184,7 +184,8 @@ paths:
       - internal-translators
       summary: List text translation service configurations
       description: Return all configured text translation services with their service
-        type, activation state, priority, and config path.
+        type, activation state, priority, and config path. Entries are sorted by priority
+        (ascending).
       operationId: list_translators_internal_translators__get
       responses:
         '200':
@@ -216,8 +217,10 @@ paths:
       tags:
       - internal-translators
       summary: Translate text using active translators
-      description: Translate *text* from *input_lang_code* to *target_lang_code* using
-        all active translators in priority order. Returns the last successful translation.
+      description: Translate 'text' from 'input_lang_code' to 'target_lang_code' using
+        every active translator in priority order and return the last successful translation.
+        When no translator succeeds, the response echoes the input text and language.
+        Responds with HTTP 503 when no active translators are configured.
       operationId: translate_text_internal_translators_translate_post
       requestBody:
         content:
@@ -246,8 +249,10 @@ paths:
       - internal-translators
       summary: Translate words in a file using active translators
       description: Upload a file (TXT, CSV, or XLSX) and translate segments whose language
-        differs from *target_lang_code* (per row/column language) using active translators
-        in priority order.
+        differs from 'target_lang_code' (per row/column language) using every active
+        translator in priority order. Returns one result per input word, including the
+        original text, the translated text, and the resolved language code. Responds
+        with HTTP 503 when no active translators are configured.
       operationId: translate_file_internal_translators_translate_file_post
       security:
       - OAuth2PasswordBearer: []

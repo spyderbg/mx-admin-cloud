@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends  # pylint: disable=import-error
+from fastapi import APIRouter, Depends, status  # pylint: disable=import-error
 
 from src.api.dependencies import get_registry, require_internal
 from src.api.service_resolver import get_typed_service
@@ -29,10 +29,12 @@ EVALUATE_AUDIO = "/evaluate"
 
 @router.get(
     EVALUATORS_LIST,
+    status_code=status.HTTP_200_OK,
     summary="List STT evaluator configurations",
     description=(
-            "Return all configured STT evaluators (derived from generator/provider configs) "
-            "with their activation state and config path."
+            "Return all configured STT evaluators (derived from text to speech generator "
+            "and provider configs) with their activation state and config path. "
+            "Entries are sorted by priority (ascending)."
     ),
 )
 async def list_evaluators(
@@ -59,8 +61,14 @@ async def list_evaluators(
 
 @router.post(
     EVALUATE_AUDIO,
+    status_code=status.HTTP_200_OK,
     summary="Evaluate generated audio against expected text",
-    description="Run STT transcription, score, persist, and return the evaluation result.",
+    description=(
+            "Run STT transcription on the generated audio, score it against the expected "
+            "text using Levenshtein-based metrics (character, word, and pronunciation "
+            "accuracy), persist the scores to the JSON and SQLite stores, and return the "
+            "evaluation result including the rolling average score."
+    ),
 )
 async def evaluate(
         body: EvaluateRequest,

@@ -285,8 +285,8 @@ paths:
       tags:
       - internal-loggers
       summary: Emit a structured log message
-      description: Post a structured log message to the named logger. The ``logger_name``
-        selects the target channel; ``level`` and ``event`` mirror structlog semantics.
+      description: Post a structured log message and broadcast it to every active logging
+        provider. The 'level' and 'event' fields mirror structlog semantics.
       operationId: emit_log_internal_loggers_emit_post
       requestBody:
         content:
@@ -314,8 +314,9 @@ paths:
       tags:
       - internal-loggers
       summary: Emit an API request log message
-      description: Post a structured log message to the 'requests' logger. ``level``
-        and ``event`` mirror structlog semantics.
+      description: Post a structured log message to the 'requests' logger. The 'level'
+        and 'event' fields mirror structlog semantics. Responds with HTTP 404 when the
+        'requests' logger is missing or disabled.
       operationId: log_api_request_internal_loggers_logging_log_api_request_post
       requestBody:
         content:
@@ -343,8 +344,9 @@ paths:
       tags:
       - internal-loggers
       summary: Emit a payment log message
-      description: Post a structured log message to the 'payment' logger. ``level``
-        and ``event`` mirror structlog semantics.
+      description: Post a structured log message to the 'payment' logger. The 'level'
+        and 'event' fields mirror structlog semantics. Responds with HTTP 404 when the
+        'payment' logger is missing or disabled.
       operationId: log_payment_request_internal_loggers_logging_log_payment_post
       requestBody:
         content:
@@ -372,8 +374,9 @@ paths:
       tags:
       - internal-loggers
       summary: Log a TTS/STT provider request
-      description: Record a provider request (model, actor, latency, …) through the
-        request-logger channel.
+      description: Record a provider request (model, actor, latency, ...) through the
+        'requests' logger channel as a 'provider_request' event. Responds with HTTP
+        404 when the 'requests' logger is missing or disabled.
       operationId: log_provider_request_internal_loggers_logging_log_provider_post
       requestBody:
         content:
@@ -401,8 +404,9 @@ paths:
       tags:
       - internal-loggers
       summary: Emit a service log message
-      description: Post a structured log message to the 'service' logger. ``level``
-        and ``event`` mirror structlog semantics.
+      description: Post a structured log message to the 'service' logger. The 'level'
+        and 'event' fields mirror structlog semantics. Responds with HTTP 404 when the
+        'service' logger is missing or disabled.
       operationId: log_service_request_internal_loggers_logging_log_service_post
       requestBody:
         content:
@@ -431,7 +435,7 @@ paths:
       - internal-loggers
       summary: Reset active logger providers
       description: Trigger reset on all active logging providers. For file-backed providers
-        this truncates active log files.
+        this truncates active log files. Returns the list of reset files.
       operationId: reset_loggers_internal_loggers_reset_post
       responses:
         '200':
@@ -447,8 +451,9 @@ paths:
       tags:
       - internal-loggers
       summary: Emit a log message to a specific logger
-      description: Post a structured log message to the logger specified by path parameter.
-        ``level`` and ``event`` mirror structlog semantics.
+      description: Post a structured log message to the logger identified by the 'logger_name'
+        path parameter. The 'level' and 'event' fields mirror structlog semantics. Responds
+        with HTTP 404 when the named logger is missing or disabled.
       operationId: log_by_logger_name_internal_loggers__logger_name__log_post
       security:
       - OAuth2PasswordBearer: []
