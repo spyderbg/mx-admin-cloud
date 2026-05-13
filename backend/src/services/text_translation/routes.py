@@ -10,7 +10,7 @@ import os
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, UploadFile  # pylint: disable=import-error
+from fastapi import APIRouter, Depends, File, UploadFile, status  # pylint: disable=import-error
 
 from src.api.dependencies import (
     get_registry,
@@ -42,10 +42,12 @@ TRANSLATE_FILE = "/translate-file"
 @router.get(
     TRANSLATORS_LIST,
     response_model=list[ServiceProviderInfo],
+    status_code=status.HTTP_200_OK,
     summary="List text translation service configurations",
     description=(
             "Return all configured text translation services with their service type, "
-            "activation state, priority, and config path."
+            "activation state, priority, and config path. "
+            "Entries are sorted by priority (ascending)."
     ),
     responses={
         200: {"model": list[ServiceProviderInfo],
@@ -84,10 +86,14 @@ async def list_translators(
 @router.post(
     TRANSLATE_TEXT,
     response_model=TranslateResponse,
+    status_code=status.HTTP_200_OK,
     summary="Translate text using active translators",
     description=(
-            "Translate *text* from *input_lang_code* to *target_lang_code* using all "
-            "active translators in priority order. Returns the last successful translation."
+            "Translate 'text' from 'input_lang_code' to 'target_lang_code' using every "
+            "active translator in priority order and return the last successful "
+            "translation. "
+            "When no translator succeeds, the response echoes the input text and language. "
+            "Responds with HTTP 503 when no active translators are configured."
     ),
 )
 async def translate_text(
@@ -131,10 +137,14 @@ async def translate_text(
 @router.post(
     TRANSLATE_FILE,
     response_model=TranslateFileResponse,
+    status_code=status.HTTP_200_OK,
     summary="Translate words in a file using active translators",
     description=(
-            "Upload a file (TXT, CSV, or XLSX) and translate segments whose language differs from "
-            "*target_lang_code* (per row/column language) using active translators in priority order."
+            "Upload a file (TXT, CSV, or XLSX) and translate segments whose language differs "
+            "from 'target_lang_code' (per row/column language) using every active translator "
+            "in priority order. Returns one result per input word, including the original "
+            "text, the translated text, and the resolved language code. "
+            "Responds with HTTP 503 when no active translators are configured."
     ),
 )
 async def translate_file(

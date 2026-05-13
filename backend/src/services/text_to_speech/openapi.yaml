@@ -215,8 +215,8 @@ paths:
       - internal-generators
       summary: List text to speech service configurations
       description: Return all configured text to speech services with their activation
-        state, config path, and generation settings. Language lists are omitted from
-        the response.
+        state, config path, and generation settings. The per-provider 'languages' list
+        is omitted from the response to keep the payload compact.
       operationId: list_generators_internal_generators__get
       responses:
         '200':
@@ -235,8 +235,10 @@ paths:
       tags:
       - internal-generators
       summary: Generate text to speech audio for a single word
-      description: Generate raw audio using the highest-priority active text to speech
-        service and return raw bytes.
+      description: Generate raw MP3 audio for a single word using the highest-priority
+        active text to speech service and return the raw audio bytes. Responds with
+        HTTP 400 when the word is empty, HTTP 500 when generation fails, and HTTP 503
+        when no active text to speech providers are configured.
       operationId: generate_word_internal_generators_generate_word_post
       requestBody:
         content:
@@ -270,8 +272,10 @@ paths:
       tags:
       - internal-generators
       summary: Generate text to speech audio for one request
-      description: Generate raw audio using the named text to speech service and return
-        the result as JSON.
+      description: Generate raw audio using the text to speech service named by the
+        'provider' path parameter and return the result as JSON, including the raw audio
+        path and optional normalisation output. Responds with HTTP 404 when the provider
+        is unknown and HTTP 503 when no active text to speech providers are configured.
       operationId: generate_single_internal_generators__provider__generate_post
       security:
       - OAuth2PasswordBearer: []
