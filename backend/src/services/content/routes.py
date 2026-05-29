@@ -24,16 +24,22 @@ from src.services.content.models import (
 from src.services.content.schemas import (
     ArchivedEntry,
     CategoryDetailResponse,
+    CategoryImagesResponse,
     CategoryListResponse,
+    CategoryVoicesResponse,
     CreateCategoryBody,
     CreateCategoryResponse,
     CreateItemResponse,
+    ItemDetailResponse,
+    ItemImagesResponse,
     ItemListResponse,
+    ItemVoicesResponse,
     RemoveCategoryResponse,
     RenameCategoryBody,
     RenameCategoryResponse,
     RestoreCategoryBody,
     RestoreCategoryResponse,
+    VoiceResponse,
 )
 from src.services.content.service import ContentService
 from src.services.service_registry import ServiceRegistry
@@ -279,7 +285,7 @@ def categories_remove(
 
 @router.get(
     "/categories/{category_name}/images",
-    response_model=None,
+    response_model=CategoryImagesResponse,
     status_code=status.HTTP_200_OK,
     tags=[TAG_CATEGORIES_IMAGES],
     summary="List all images in a category",
@@ -293,12 +299,27 @@ def categories_images_list(
         category_name: str,
         service: ContentServiceDep,
         _user: dict = Depends(get_current_user),
-) -> None:
+) -> CategoryImagesResponse:
     """List images for a category."""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=f"Not implemented: list images for category '{category_name}'",
-    )
+    try:
+        result = service.category_details(category_name)
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidCategoryNameError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+    items = [
+        ItemDetailResponse(
+            id=f"{category_name}-{name}",
+            name=name.replace("_", " ").title(),
+            files=_mock_item_files(category_name, name),
+            thumbnail_url=_mock_item_files(category_name, name)[0],
+            voices=_mock_item_voices(category_name, name),
+        )
+        for name in (result.images_names or [])
+    ]
+    return CategoryImagesResponse(category=category_name, items=items)
 
 
 @router.post(
@@ -380,7 +401,7 @@ def categories_images_delete(
 
 @router.get(
     "/categories/{category_name}/voices",
-    response_model=None,
+    response_model=CategoryVoicesResponse,
     status_code=status.HTTP_200_OK,
     tags=[TAG_CATEGORIES_VOICES],
     summary="List voices for a category",
@@ -394,11 +415,19 @@ def categories_voices_list(
         category_name: str,
         service: ContentServiceDep,
         _user: dict = Depends(get_current_user),
-) -> None:
+) -> CategoryVoicesResponse:
     """List voices for a category."""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=f"Not implemented: list voices for category '{category_name}'",
+    try:
+        service.category_details(category_name)
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidCategoryNameError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+    return CategoryVoicesResponse(
+        category=category_name,
+        voices=_mock_category_voices(category_name),
     )
 
 
@@ -513,8 +542,8 @@ def items_list(
 
 @router.get(
     "/categories/{category_name}/items/{item_id}",
-    response_model=None,
-    status_code=status.HTTP_501_NOT_IMPLEMENTED,
+    response_model=ItemDetailResponse,
+    status_code=status.HTTP_200_OK,
     tags=[TAG_ITEMS],
     summary="Get a single item by ID",
     description=(
@@ -528,11 +557,28 @@ def items_get(
         item_id: str,
         service: ContentServiceDep,
         _user: dict = Depends(get_current_user),
-) -> None:
+) -> ItemDetailResponse:
     """Get a single item by ID."""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=f"Not implemented: get item '{item_id}' in category '{category_name}'",
+    try:
+        result = service.category_details(category_name)
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidCategoryNameError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+    if item_id not in (result.images_names or []):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Item '{item_id}' not found in category '{category_name}'",
+        )
+    files = _mock_item_files(category_name, item_id)
+    return ItemDetailResponse(
+        id=f"{category_name}-{item_id}",
+        name=item_id.replace("_", " ").title(),
+        files=files,
+        thumbnail_url=files[0],
+        voices=_mock_item_voices(category_name, item_id),
     )
 
 
@@ -592,7 +638,7 @@ def items_delete(
 
 @router.get(
     "/categories/{category_name}/items/{item_id}/images",
-    response_model=None,
+    response_model=ItemImagesResponse,
     status_code=status.HTTP_200_OK,
     tags=[TAG_ITEMS_IMAGES],
     summary="List image variants for an item",
@@ -607,12 +653,23 @@ def items_images_list(
         item_id: str,
         service: ContentServiceDep,
         _user: dict = Depends(get_current_user),
-) -> None:
+) -> ItemImagesResponse:
     """List image file variants for an item."""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=f"Not implemented: list images for item '{item_id}' in category '{category_name}'",
-    )
+    try:
+        result = service.category_details(category_name)
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidCategoryNameError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+    if item_id not in (result.images_names or []):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Item '{item_id}' not found in category '{category_name}'",
+        )
+    files = _mock_item_files(category_name, item_id)
+    return ItemImagesResponse(item_id=item_id, files=files, thumbnail_url=files[0])
 
 
 @router.post(
@@ -703,7 +760,7 @@ def items_images_delete(
 
 @router.get(
     "/categories/{category_name}/items/{item_id}/voices",
-    response_model=None,
+    response_model=ItemVoicesResponse,
     status_code=status.HTTP_200_OK,
     tags=[TAG_ITEMS_VOICES],
     summary="List voices for an item",
@@ -718,13 +775,22 @@ def items_voices_list(
         item_id: str,
         service: ContentServiceDep,
         _user: dict = Depends(get_current_user),
-) -> None:
+) -> ItemVoicesResponse:
     """List voices for an item."""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=f"Not implemented: list voices for item '{item_id}' "
-               f"in category '{category_name}'",
-    )
+    try:
+        result = service.category_details(category_name)
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidCategoryNameError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+    if item_id not in (result.images_names or []):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Item '{item_id}' not found in category '{category_name}'",
+        )
+    return ItemVoicesResponse(item_id=item_id, voices=_mock_item_voices(category_name, item_id))
 
 
 @router.put(
@@ -859,6 +925,46 @@ def create_item_endpoint(
         folder=result.folder,
         image_id=result.image_id,
     )
+
+
+################################################################################
+
+_MOCK_LANGS = [
+    ("en", "male"),
+    ("es", "female"),
+    ("fr", "male"),
+    ("bg", "female"),
+]
+
+
+def _mock_category_voices(category_name: str) -> list[VoiceResponse]:
+    return [
+        VoiceResponse(
+            id=f"{category_name}-v-{lang}",
+            name=category_name,
+            language=lang,
+            type=voice_type,
+            audio_url=f"/content/{category_name}/{category_name}_{lang}.mp3",
+        )
+        for lang, voice_type in _MOCK_LANGS
+    ]
+
+
+def _mock_item_voices(category_name: str, item_id: str) -> list[VoiceResponse]:
+    return [
+        VoiceResponse(
+            id=f"{item_id}-{lang}",
+            name=item_id.replace("_", " "),
+            language=lang,
+            type=voice_type,
+            audio_url=f"/content/{category_name}/images/{item_id}/{item_id}_{lang}.mp3",
+        )
+        for lang, voice_type in _MOCK_LANGS
+    ]
+
+
+def _mock_item_files(category_name: str, item_id: str) -> list[str]:
+    return [f"/content/{category_name}/images/{item_id}/{item_id}_01.png"]
 
 
 ################################################################################

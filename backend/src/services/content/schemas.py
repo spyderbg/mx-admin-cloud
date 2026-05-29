@@ -132,3 +132,56 @@ class ItemListResponse(BaseModel):
 
     items: list[str]
 
+
+# ---------------------------------------------------------------------------
+# Mock-backed response models
+# ---------------------------------------------------------------------------
+
+class VoiceResponse(BaseModel):
+    """A single voice entry."""
+
+    id: str
+    name: str
+    language: str
+    type: str
+    audio_url: str | None = None
+
+
+class ItemDetailResponse(BaseModel):
+    """Detailed response for a single item."""
+
+    id: str
+    name: str
+    files: list[str] = []
+    thumbnail_url: str | None = None
+    voices: list[VoiceResponse] = []
+
+
+class CategoryImagesResponse(BaseModel):
+    """Response for GET /categories/{name}/images."""
+
+    category: str
+    items: list[ItemDetailResponse] = []
+
+
+class CategoryVoicesResponse(BaseModel):
+    """Response for GET /categories/{name}/voices."""
+
+    category: str
+    voices: list[VoiceResponse] = []
+
+
+class ItemImagesResponse(BaseModel):
+    """Response for GET /categories/{name}/items/{item_id}/images."""
+
+    item_id: str
+    files: list[str] = []
+    thumbnail_url: str | None = None
+
+
+class ItemVoicesResponse(BaseModel):
+    """Response for GET /categories/{name}/items/{item_id}/voices."""
+
+    item_id: str
+    voices: list[VoiceResponse] = []
+
