@@ -139,9 +139,9 @@ def test_list_archived_entries_returns_matching_folders(tmp_path: Path) -> None:
         mock_settings.archive_path = archive_root
         entries = provider._list_archived_entries()
     assert len(entries) == 2
-    base_names = {e["base_name"] for e in entries}
+    base_names = {e.base_name for e in entries}
     assert base_names == {"foods", "drinks"}
-    assert entries[0]["archived_at"] > entries[1]["archived_at"]
+    assert entries[0].archived_at > entries[1].archived_at
 
 
 def test_list_archived_entries_skips_dotfiles(tmp_path: Path) -> None:
@@ -197,8 +197,8 @@ def test_list_categories_returns_sorted_names(tmp_path: Path) -> None:
         mock_settings.ARCHIVE_DIR = ""
         result = provider.list_categories()
 
-    assert result["categories"] == ["apple", "zebra"]
-    assert "error" not in result
+    assert result.categories == ["apple", "zebra"]
+    assert result.error is None
 
 
 def test_list_categories_error_when_root_missing(tmp_path: Path) -> None:
@@ -208,8 +208,8 @@ def test_list_categories_error_when_root_missing(tmp_path: Path) -> None:
         mock_settings.ARCHIVE_DIR = ""
         result = provider.list_categories()
 
-    assert "error" in result
-    assert result["categories"] == []
+    assert result.error is not None
+    assert result.categories == []
 
 
 def test_list_categories_archived_only_skips_content_root(tmp_path: Path) -> None:
@@ -223,8 +223,8 @@ def test_list_categories_archived_only_skips_content_root(tmp_path: Path) -> Non
         mock_settings.archive_path = archive_root
         result = provider.list_categories(archived_only=True)
 
-    assert result["categories"] == []
-    assert len(result["archived"]) == 1
+    assert result.categories == []
+    assert len(result.archived) == 1
 
 
 def test_list_categories_include_archived(tmp_path: Path) -> None:
@@ -242,8 +242,8 @@ def test_list_categories_include_archived(tmp_path: Path) -> None:
         mock_settings.archive_path = archive_root
         result = provider.list_categories(include_archived=True)
 
-    assert "foods" in result["categories"]
-    assert len(result["archived"]) == 1
+    assert "foods" in result.categories
+    assert len(result.archived) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -256,7 +256,7 @@ def test_category_details_invalid_name(tmp_path: Path) -> None:
         mock_settings.content_path = tmp_path
         result = provider.category_details("bad name!")
 
-    assert result["error"] == "Invalid category name"
+    assert result.error == "Invalid category name"
 
 
 def test_category_details_not_found(tmp_path: Path) -> None:
@@ -267,7 +267,7 @@ def test_category_details_not_found(tmp_path: Path) -> None:
         mock_settings.content_path = content_root
         result = provider.category_details("foods")
 
-    assert result["error"] == "Category not found"
+    assert result.error == "Category not found"
 
 
 def test_category_details_returns_objects_and_csv(tmp_path: Path) -> None:
@@ -286,11 +286,11 @@ def test_category_details_returns_objects_and_csv(tmp_path: Path) -> None:
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
         result = provider.category_details("foods")
 
-    assert result["name"] == "foods"
-    assert sorted(result["objects"]) == ["apple", "banana"]
-    assert result["images_en"] == ["apple", "banana"]
-    assert result["images_fr"] == ["pomme", "banane"]
-    assert result["images_names"] == ["I_Apple", "I_Banana"]
+    assert result.name == "foods"
+    assert sorted(result.objects) == ["apple", "banana"]
+    assert result.images_by_lang["en"] == ["apple", "banana"]
+    assert result.images_by_lang["fr"] == ["pomme", "banane"]
+    assert result.images_names == ["I_Apple", "I_Banana"]
 
 
 # ---------------------------------------------------------------------------
@@ -303,7 +303,7 @@ def test_create_category_invalid_name(tmp_path: Path) -> None:
         mock_settings.content_path = tmp_path
         result = provider.create_category("bad name!")
 
-    assert "error" in result
+    assert result.error is not None
 
 
 def test_create_category_already_exists(tmp_path: Path) -> None:
@@ -314,8 +314,8 @@ def test_create_category_already_exists(tmp_path: Path) -> None:
         mock_settings.content_path = content_root
         result = provider.create_category("foods")
 
-    assert "error" in result
-    assert "already exists" in result["error"]
+    assert result.error is not None
+    assert "already exists" in result.error
 
 
 def test_create_category_success(tmp_path: Path) -> None:
@@ -333,8 +333,8 @@ def test_create_category_success(tmp_path: Path) -> None:
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
         result = provider.create_category("animals")
 
-    assert result.get("category") == "animals"
-    assert "error" not in result
+    assert result.category == "animals"
+    assert result.error is None
     assert (content_root / "animals").is_dir()
     assert (content_root / "animals" / "animals_en.mp3").exists()
     assert (content_root / "animals" / "animals_fr.mp3").exists()
@@ -360,8 +360,8 @@ def test_create_category_translation_failure(tmp_path: Path) -> None:
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
         result = provider.create_category("animals")
 
-    assert "error" in result
-    assert "Translation failed" in result["error"]
+    assert result.error is not None
+    assert "Translation failed" in result.error
 
 
 # ---------------------------------------------------------------------------
@@ -375,8 +375,8 @@ def test_archive_category_invalid_name(tmp_path: Path) -> None:
         mock_settings.archive_path = tmp_path / "archive"
         result = provider.archive_category("bad name!")
 
-    assert result["archived"] is False
-    assert "error" in result
+    assert result.archived is False
+    assert result.error is not None
 
 
 def test_archive_category_not_found(tmp_path: Path) -> None:
@@ -388,8 +388,8 @@ def test_archive_category_not_found(tmp_path: Path) -> None:
         mock_settings.archive_path = tmp_path / "archive"
         result = provider.archive_category("nonexistent")
 
-    assert result["archived"] is False
-    assert result["error"] == "Category not found"
+    assert result.archived is False
+    assert result.error == "Category not found"
 
 
 def test_archive_category_moves_to_archive(tmp_path: Path) -> None:
@@ -404,7 +404,7 @@ def test_archive_category_moves_to_archive(tmp_path: Path) -> None:
         mock_settings.archive_path = archive_root
         result = provider.archive_category("foods")
 
-    assert result["archived"] is True
+    assert result.archived is True
     assert not (content_root / "foods").exists()
     assert archive_root.is_dir()
     archived_folders = list(archive_root.iterdir())
@@ -422,7 +422,7 @@ def test_rename_category_invalid_old_name(tmp_path: Path) -> None:
         mock_settings.content_path = tmp_path
         result = provider.rename_category("bad name!", "newname")
 
-    assert "error" in result
+    assert result.error is not None
 
 
 def test_rename_category_invalid_new_name(tmp_path: Path) -> None:
@@ -431,7 +431,7 @@ def test_rename_category_invalid_new_name(tmp_path: Path) -> None:
         mock_settings.content_path = tmp_path
         result = provider.rename_category("foods", "bad name!")
 
-    assert "error" in result
+    assert result.error is not None
 
 
 def test_rename_category_old_not_found(tmp_path: Path) -> None:
@@ -442,7 +442,7 @@ def test_rename_category_old_not_found(tmp_path: Path) -> None:
         mock_settings.content_path = content_root
         result = provider.rename_category("foods", "meals")
 
-    assert result["error"] == "Category not found"
+    assert result.error == "Category not found"
 
 
 def test_rename_category_target_already_exists(tmp_path: Path) -> None:
@@ -454,7 +454,7 @@ def test_rename_category_target_already_exists(tmp_path: Path) -> None:
         mock_settings.content_path = content_root
         result = provider.rename_category("foods", "meals")
 
-    assert "already exists" in result["error"]
+    assert "already exists" in result.error
 
 
 def test_rename_category_success(tmp_path: Path) -> None:
@@ -475,8 +475,8 @@ def test_rename_category_success(tmp_path: Path) -> None:
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
         result = provider.rename_category("foods", "meals")
 
-    assert result.get("category") == "meals"
-    assert "error" not in result
+    assert result.category == "meals"
+    assert result.error is None
     assert (content_root / "meals").is_dir()
     assert not (content_root / "foods").exists()
     assert not (content_root / "meals" / "foods_en.mp3").exists()
@@ -495,7 +495,7 @@ def test_remove_category_invalid_name(tmp_path: Path) -> None:
         mock_settings.ARCHIVE_DIR = ""
         result = provider.remove_category("bad name!")
 
-    assert "error" in result
+    assert result.error is not None
 
 
 def test_remove_category_not_found(tmp_path: Path) -> None:
@@ -507,7 +507,7 @@ def test_remove_category_not_found(tmp_path: Path) -> None:
         mock_settings.ARCHIVE_DIR = ""
         result = provider.remove_category("nonexistent")
 
-    assert result["error"] == "Category not found"
+    assert result.error == "Category not found"
 
 
 def test_remove_category_permanently_deletes_when_no_archive_dir(tmp_path: Path) -> None:
@@ -520,7 +520,7 @@ def test_remove_category_permanently_deletes_when_no_archive_dir(tmp_path: Path)
         mock_settings.ARCHIVE_DIR = ""
         result = provider.remove_category("foods")
 
-    assert result.get("removed") is True
+    assert result.removed is True
     assert not (content_root / "foods").exists()
 
 
@@ -536,7 +536,7 @@ def test_remove_category_archives_when_archive_dir_set(tmp_path: Path) -> None:
         mock_settings.ARCHIVE_DIR = str(archive_root)
         result = provider.remove_category("foods")
 
-    assert result.get("archived") is True
+    assert result.archived is True
 
 
 # ---------------------------------------------------------------------------
@@ -550,7 +550,7 @@ def test_restore_category_empty_name(tmp_path: Path) -> None:
         mock_settings.content_path = tmp_path / "content"
         result = provider.restore_category("")
 
-    assert result["restored"] is False
+    assert result.restored is False
 
 
 def test_restore_category_archive_dir_missing(tmp_path: Path) -> None:
@@ -560,8 +560,8 @@ def test_restore_category_archive_dir_missing(tmp_path: Path) -> None:
         mock_settings.content_path = tmp_path / "content"
         result = provider.restore_category("foods")
 
-    assert result["restored"] is False
-    assert result["error"] == "Archive directory does not exist"
+    assert result.restored is False
+    assert result.error == "Archive directory does not exist"
 
 
 def test_restore_category_no_archive_found(tmp_path: Path) -> None:
@@ -576,8 +576,8 @@ def test_restore_category_no_archive_found(tmp_path: Path) -> None:
         mock_settings.content_path = content_root
         result = provider.restore_category("foods")
 
-    assert result["restored"] is False
-    assert "No archive found" in result["error"]
+    assert result.restored is False
+    assert "No archive found" in result.error
 
 
 def test_restore_category_conflict_with_existing(tmp_path: Path) -> None:
@@ -593,8 +593,8 @@ def test_restore_category_conflict_with_existing(tmp_path: Path) -> None:
         mock_settings.content_path = content_root
         result = provider.restore_category("foods")
 
-    assert result["restored"] is False
-    assert "already exists" in result["error"]
+    assert result.restored is False
+    assert "already exists" in result.error
 
 
 def test_restore_category_success(tmp_path: Path) -> None:
@@ -611,9 +611,9 @@ def test_restore_category_success(tmp_path: Path) -> None:
         mock_settings.content_path = content_root
         result = provider.restore_category("foods")
 
-    assert result["restored"] is True
-    assert result["name"] == "foods"
-    assert result["from_archive"] == "foods_1000"
+    assert result.restored is True
+    assert result.name == "foods"
+    assert result.from_archive == "foods_1000"
     assert (content_root / "foods").is_dir()
 
 
@@ -630,5 +630,5 @@ def test_restore_category_by_exact_archive_folder(tmp_path: Path) -> None:
         mock_settings.content_path = content_root
         result = provider.restore_category("foods_1000")
 
-    assert result["restored"] is True
-    assert result["from_archive"] == "foods_1000"
+    assert result.restored is True
+    assert result.from_archive == "foods_1000"

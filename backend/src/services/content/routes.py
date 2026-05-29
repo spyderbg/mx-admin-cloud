@@ -15,6 +15,7 @@ from src.api.service_resolver import get_typed_service
 from src.core.config import settings
 from src.services import content
 from src.services.content.schemas import (
+    ArchivedEntry,
     CategoryDetailResponse,
     CategoryListResponse,
     CreateCategoryBody,
@@ -69,12 +70,19 @@ def categories_list(
         include_archived=include_archived,
         archived_only=archived_only,
     )
-    if "error" in result and "categories" not in result:
+    if result.error and not result.categories:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=result.get("error"),
+            detail=result.error,
         )
-    return CategoryListResponse(**result)
+    return CategoryListResponse(
+        categories=result.categories,
+        archived=[
+            ArchivedEntry(base_name=e.base_name, archive_folder=e.archive_folder, archived_at=e.archived_at)
+            for e in result.archived
+        ] or None,
+        error=result.error,
+    )
 
 
 @router.post(
@@ -98,11 +106,11 @@ def categories_create(
 ) -> CreateCategoryResponse:
     """Create a new category."""
     result = service.create_category(body.name.strip())
-    if "error" in result:
-        if result.get("error", "").startswith("Category already exists"):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=result["error"])
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result["error"])
-    return CreateCategoryResponse(**result)
+    if result.error:
+        if result.error.startswith("Category already exists"):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=result.error)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.error)
+    return CreateCategoryResponse(category=result.category, message=result.message)
 
 
 @router.post(
@@ -123,16 +131,20 @@ def categories_restore(
 ) -> RestoreCategoryResponse:
     """Restore a category from archive."""
     result = service.restore_category(body.name.strip())
-    if "error" in result:
-        error_msg = result.get("error", "")
-        if error_msg == "Archive directory does not exist":
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=error_msg)
-        if "No archive found" in error_msg:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_msg)
-        if "already exists" in error_msg:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=error_msg)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
-    return RestoreCategoryResponse(**result)
+    if result.error:
+        if result.error == "Archive directory does not exist":
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=result.error)
+        if "No archive found" in result.error:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=result.error)
+        if "already exists" in result.error:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=result.error)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.error)
+    return RestoreCategoryResponse(
+        restored=result.restored,
+        name=result.name,
+        from_archive=result.from_archive,
+        message=result.message,
+    )
 
 
 @router.get(
@@ -154,11 +166,16 @@ def categories_details(
 ) -> CategoryDetailResponse:
     """Get category details."""
     result = service.category_details(category_name)
-    if "error" in result and result.get("error") == "Category not found":
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=result["error"])
-    if "error" in result and result.get("error") == "Invalid category name":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result["error"])
-    return CategoryDetailResponse(**result)
+    if result.error == "Category not found":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=result.error)
+    if result.error == "Invalid category name":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.error)
+    return CategoryDetailResponse(
+        name=result.name,
+        objects=result.objects,
+        images_names=result.images_names,
+        **{f"images_{lang}": words for lang, words in result.images_by_lang.items()},
+    )
 
 
 @router.put(
@@ -205,14 +222,13 @@ def categories_rename(
 ) -> RenameCategoryResponse:
     """Rename a category."""
     result = service.rename_category(category_name, body.name.strip())
-    if "error" in result:
-        error_msg = result.get("error", "")
-        if error_msg == "Category not found":
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_msg)
-        if "already exists" in error_msg:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=error_msg)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
-    return RenameCategoryResponse(**result)
+    if result.error:
+        if result.error == "Category not found":
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=result.error)
+        if "already exists" in result.error:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=result.error)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.error)
+    return RenameCategoryResponse(category=result.category, message=result.message)
 
 
 @router.delete(
@@ -234,12 +250,18 @@ def categories_remove(
 ) -> RemoveCategoryResponse:
     """Remove a category."""
     result = service.remove_category(category_name)
-    if "error" in result:
-        error_msg = result.get("error", "")
-        if error_msg == "Category not found":
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_msg)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
-    return RemoveCategoryResponse(**result)
+    if result.error:
+        if result.error == "Category not found":
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=result.error)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.error)
+    return RemoveCategoryResponse(
+        archived=result.archived,
+        removed=result.removed,
+        name=result.name,
+        archive_folder=result.archive_folder,
+        destination=result.destination,
+        message=result.message,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -470,16 +492,13 @@ def items_list(
 ) -> ItemListResponse:
     """List all items in a category."""
     result = service.category_details(category_name)
-    if "error" in result:
-        error_msg = result.get("error", "")
-        if error_msg == "Category not found":
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_msg)
-        if error_msg == "Invalid category name":
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=error_msg)
-
-    items = result.get("images_names", [])
-    return ItemListResponse(items=items, category=category_name)
+    if result.error:
+        if result.error == "Category not found":
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=result.error)
+        if result.error == "Invalid category name":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.error)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=result.error)
+    return ItemListResponse(items=result.images_names or [])
 
 
 @router.get(
@@ -821,12 +840,14 @@ def create_item_endpoint(
         image_data=image_data,
         image_extension=ext,
     )
-    if "error" in result:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=result["error"],
-        )
-    return CreateItemResponse(**result)
+    if result.error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.error)
+    return CreateItemResponse(
+        category=result.category,
+        item=result.item,
+        folder=result.folder,
+        image_id=result.image_id,
+    )
 
 
 ################################################################################

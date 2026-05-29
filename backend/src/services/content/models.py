@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from abc import ABC, abstractmethod
-from typing import Any
+from dataclasses import dataclass, field
 
 from src.services.models import ServiceProvider
 
@@ -29,6 +29,73 @@ class CategoryConflictError(ContentError):
     """Raised when a category already exists and cannot be overwritten."""
 
 
+@dataclass
+class ArchivedEntryResult:
+    base_name: str
+    archive_folder: str
+    archived_at: int
+
+
+@dataclass
+class CategoryListResult:
+    categories: list[str] = field(default_factory=list)
+    archived: list[ArchivedEntryResult] = field(default_factory=list)
+    error: str | None = None
+
+
+@dataclass
+class CategoryDetailResult:
+    name: str = ""
+    objects: list[str] = field(default_factory=list)
+    images_names: list[str] | None = None
+    images_by_lang: dict[str, list[str]] = field(default_factory=dict)
+    error: str | None = None
+
+
+@dataclass
+class CreateCategoryResult:
+    category: str = ""
+    message: str = ""
+    error: str | None = None
+
+
+@dataclass
+class CreateItemResult:
+    category: str = ""
+    item: str = ""
+    folder: str = ""
+    image_id: str = ""
+    error: str | None = None
+
+
+@dataclass
+class ArchiveCategoryResult:
+    """Used for both archive_category and remove_category results."""
+    name: str = ""
+    message: str = ""
+    archived: bool | None = None
+    removed: bool | None = None
+    archive_folder: str | None = None
+    destination: str | None = None
+    error: str | None = None
+
+
+@dataclass
+class RenameCategoryResult:
+    category: str = ""
+    message: str = ""
+    error: str | None = None
+
+
+@dataclass
+class RestoreCategoryResult:
+    restored: bool = False
+    name: str | None = None
+    from_archive: str | None = None
+    message: str = ""
+    error: str | None = None
+
+
 class ContentProvider(ServiceProvider, ABC):
     """Provider contract for content CRUD operations."""
 
@@ -37,15 +104,15 @@ class ContentProvider(ServiceProvider, ABC):
             self,
             include_archived: bool = False,
             archived_only: bool = False,
-    ) -> dict[str, Any]:
+    ) -> CategoryListResult:
         """List content categories, optionally including archived ones."""
 
     @abstractmethod
-    def category_details(self, category_name: str) -> dict[str, Any]:
+    def category_details(self, category_name: str) -> CategoryDetailResult:
         """Return object folders and CSV-derived data for a category."""
 
     @abstractmethod
-    def create_category(self, category_name: str) -> dict[str, Any]:
+    def create_category(self, category_name: str) -> CreateCategoryResult:
         """Create a new category with voice files and icon."""
 
     @abstractmethod
@@ -55,23 +122,23 @@ class ContentProvider(ServiceProvider, ABC):
             english_word: str,
             image_data: bytes,
             image_extension: str = ".png",
-    ) -> dict[str, Any]:
+    ) -> CreateItemResult:
         """Create an item folder with image, translations, and voice files."""
 
     @abstractmethod
-    def archive_category(self, category_name: str) -> dict[str, Any]:
+    def archive_category(self, category_name: str) -> ArchiveCategoryResult:
         """Move a category from the content directory to the archive."""
 
     @abstractmethod
-    def rename_category(self, old_name: str, new_name: str) -> dict[str, Any]:
+    def rename_category(self, old_name: str, new_name: str) -> RenameCategoryResult:
         """Rename a category and regenerate its voice files."""
 
     @abstractmethod
-    def remove_category(self, category_name: str) -> dict[str, Any]:
+    def remove_category(self, category_name: str) -> ArchiveCategoryResult:
         """Remove a category (archive if configured, else delete permanently)."""
 
     @abstractmethod
-    def restore_category(self, category_name: str) -> dict[str, Any]:
+    def restore_category(self, category_name: str) -> RestoreCategoryResult:
         """Restore a category from the archive to the content directory."""
 
     # ------------------------------------------------------------------
