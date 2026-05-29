@@ -124,8 +124,13 @@ app.include_router(text_to_speech_routes.router)
 app.include_router(optimizers_routes.router)
 app.include_router(evaluators_routes.router)
 
+test_app = FastAPI(title="Testing Content Service", docs_url="/services-docs")
+test_app.include_router(services_routes.router)
+app.mount("/test", test_app)
+
 
 @app.get("/")
 def read_root():
     """Read the root endpoint."""
     return {"message": f"Welcome to {settings.PROJECT_NAME}."}
+
