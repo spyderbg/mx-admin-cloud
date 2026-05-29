@@ -9,6 +9,11 @@ from dataclasses import dataclass, field
 from src.services.models import ServiceProvider
 
 
+# ---------------------------------------------------------------------------
+# Exceptions
+# ---------------------------------------------------------------------------
+
+
 class ContentError(Exception):
     """Base exception for content service errors."""
 
@@ -29,6 +34,19 @@ class CategoryConflictError(ContentError):
     """Raised when a category already exists and cannot be overwritten."""
 
 
+class ArchiveUnavailableError(ContentError):
+    """Raised when the archive directory does not exist or is not accessible."""
+
+
+class ContentOperationError(ContentError):
+    """Raised when a content operation fails (TTS, translation, file I/O, icon generation)."""
+
+
+# ---------------------------------------------------------------------------
+# Result dataclasses
+# ---------------------------------------------------------------------------
+
+
 @dataclass
 class ArchivedEntryResult:
     base_name: str
@@ -40,7 +58,6 @@ class ArchivedEntryResult:
 class CategoryListResult:
     categories: list[str] = field(default_factory=list)
     archived: list[ArchivedEntryResult] = field(default_factory=list)
-    error: str | None = None
 
 
 @dataclass
@@ -49,14 +66,12 @@ class CategoryDetailResult:
     objects: list[str] = field(default_factory=list)
     images_names: list[str] | None = None
     images_by_lang: dict[str, list[str]] = field(default_factory=dict)
-    error: str | None = None
 
 
 @dataclass
 class CreateCategoryResult:
     category: str = ""
     message: str = ""
-    error: str | None = None
 
 
 @dataclass
@@ -65,7 +80,6 @@ class CreateItemResult:
     item: str = ""
     folder: str = ""
     image_id: str = ""
-    error: str | None = None
 
 
 @dataclass
@@ -77,23 +91,25 @@ class ArchiveCategoryResult:
     removed: bool | None = None
     archive_folder: str | None = None
     destination: str | None = None
-    error: str | None = None
 
 
 @dataclass
 class RenameCategoryResult:
     category: str = ""
     message: str = ""
-    error: str | None = None
 
 
 @dataclass
 class RestoreCategoryResult:
-    restored: bool = False
+    restored: bool = True
     name: str | None = None
     from_archive: str | None = None
     message: str = ""
-    error: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Provider contract
+# ---------------------------------------------------------------------------
 
 
 class ContentProvider(ServiceProvider, ABC):

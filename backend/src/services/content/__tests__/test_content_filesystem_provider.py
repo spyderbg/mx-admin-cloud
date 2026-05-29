@@ -10,6 +10,13 @@ from unittest.mock import patch
 import httpx
 import pytest
 
+from src.services.content.models import (
+    ArchiveUnavailableError,
+    CategoryConflictError,
+    CategoryNotFoundError,
+    ContentOperationError,
+    InvalidCategoryNameError,
+)
 from src.services.content.providers.file_system import FileSystemContentProvider
 
 
@@ -198,7 +205,6 @@ def test_list_categories_returns_sorted_names(tmp_path: Path) -> None:
         result = provider.list_categories()
 
     assert result.categories == ["apple", "zebra"]
-    assert result.error is None
 
 
 def test_list_categories_error_when_root_missing(tmp_path: Path) -> None:
@@ -206,10 +212,8 @@ def test_list_categories_error_when_root_missing(tmp_path: Path) -> None:
     with patch("src.services.content.providers.file_system.settings") as mock_settings:
         mock_settings.content_path = tmp_path / "nonexistent"
         mock_settings.ARCHIVE_DIR = ""
-        result = provider.list_categories()
-
-    assert result.error is not None
-    assert result.categories == []
+        with pytest.raises(ContentOperationError):
+            provider.list_categories()
 
 
 def test_list_categories_archived_only_skips_content_root(tmp_path: Path) -> None:
@@ -254,9 +258,8 @@ def test_category_details_invalid_name(tmp_path: Path) -> None:
     provider = _make_fs_provider()
     with patch("src.services.content.providers.file_system.settings") as mock_settings:
         mock_settings.content_path = tmp_path
-        result = provider.category_details("bad name!")
-
-    assert result.error == "Invalid category name"
+        with pytest.raises(InvalidCategoryNameError):
+            provider.category_details("bad name!")
 
 
 def test_category_details_not_found(tmp_path: Path) -> None:
@@ -265,9 +268,8 @@ def test_category_details_not_found(tmp_path: Path) -> None:
     provider = _make_fs_provider()
     with patch("src.services.content.providers.file_system.settings") as mock_settings:
         mock_settings.content_path = content_root
-        result = provider.category_details("foods")
-
-    assert result.error == "Category not found"
+        with pytest.raises(CategoryNotFoundError):
+            provider.category_details("foods")
 
 
 def test_category_details_returns_objects_and_csv(tmp_path: Path) -> None:
@@ -301,9 +303,8 @@ def test_create_category_invalid_name(tmp_path: Path) -> None:
     provider = _make_fs_provider()
     with patch("src.services.content.providers.file_system.settings") as mock_settings:
         mock_settings.content_path = tmp_path
-        result = provider.create_category("bad name!")
-
-    assert result.error is not None
+        with pytest.raises(InvalidCategoryNameError):
+            provider.create_category("bad name!")
 
 
 def test_create_category_already_exists(tmp_path: Path) -> None:
@@ -312,10 +313,8 @@ def test_create_category_already_exists(tmp_path: Path) -> None:
     provider = _make_fs_provider()
     with patch("src.services.content.providers.file_system.settings") as mock_settings:
         mock_settings.content_path = content_root
-        result = provider.create_category("foods")
-
-    assert result.error is not None
-    assert "already exists" in result.error
+        with pytest.raises(CategoryConflictError):
+            provider.create_category("foods")
 
 
 def test_create_category_success(tmp_path: Path) -> None:
@@ -334,7 +333,6 @@ def test_create_category_success(tmp_path: Path) -> None:
         result = provider.create_category("animals")
 
     assert result.category == "animals"
-    assert result.error is None
     assert (content_root / "animals").is_dir()
     assert (content_root / "animals" / "animals_en.mp3").exists()
     assert (content_root / "animals" / "animals_fr.mp3").exists()
@@ -358,10 +356,8 @@ def test_create_category_translation_failure(tmp_path: Path) -> None:
     ):
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
-        result = provider.create_category("animals")
-
-    assert result.error is not None
-    assert "Translation failed" in result.error
+        with pytest.raises(ContentOperationError, match="Translation failed"):
+            provider.create_category("animals")
 
 
 # ---------------------------------------------------------------------------
@@ -373,10 +369,8 @@ def test_archive_category_invalid_name(tmp_path: Path) -> None:
     with patch("src.services.content.providers.file_system.settings") as mock_settings:
         mock_settings.content_path = tmp_path
         mock_settings.archive_path = tmp_path / "archive"
-        result = provider.archive_category("bad name!")
-
-    assert result.archived is False
-    assert result.error is not None
+        with pytest.raises(InvalidCategoryNameError):
+            provider.archive_category("bad name!")
 
 
 def test_archive_category_not_found(tmp_path: Path) -> None:
@@ -386,10 +380,8 @@ def test_archive_category_not_found(tmp_path: Path) -> None:
     with patch("src.services.content.providers.file_system.settings") as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.archive_path = tmp_path / "archive"
-        result = provider.archive_category("nonexistent")
-
-    assert result.archived is False
-    assert result.error == "Category not found"
+        with pytest.raises(CategoryNotFoundError):
+            provider.archive_category("nonexistent")
 
 
 def test_archive_category_moves_to_archive(tmp_path: Path) -> None:
@@ -420,18 +412,16 @@ def test_rename_category_invalid_old_name(tmp_path: Path) -> None:
     provider = _make_fs_provider()
     with patch("src.services.content.providers.file_system.settings") as mock_settings:
         mock_settings.content_path = tmp_path
-        result = provider.rename_category("bad name!", "newname")
-
-    assert result.error is not None
+        with pytest.raises(InvalidCategoryNameError):
+            provider.rename_category("bad name!", "newname")
 
 
 def test_rename_category_invalid_new_name(tmp_path: Path) -> None:
     provider = _make_fs_provider()
     with patch("src.services.content.providers.file_system.settings") as mock_settings:
         mock_settings.content_path = tmp_path
-        result = provider.rename_category("foods", "bad name!")
-
-    assert result.error is not None
+        with pytest.raises(InvalidCategoryNameError):
+            provider.rename_category("foods", "bad name!")
 
 
 def test_rename_category_old_not_found(tmp_path: Path) -> None:
@@ -440,9 +430,8 @@ def test_rename_category_old_not_found(tmp_path: Path) -> None:
     provider = _make_fs_provider()
     with patch("src.services.content.providers.file_system.settings") as mock_settings:
         mock_settings.content_path = content_root
-        result = provider.rename_category("foods", "meals")
-
-    assert result.error == "Category not found"
+        with pytest.raises(CategoryNotFoundError):
+            provider.rename_category("foods", "meals")
 
 
 def test_rename_category_target_already_exists(tmp_path: Path) -> None:
@@ -452,9 +441,8 @@ def test_rename_category_target_already_exists(tmp_path: Path) -> None:
     provider = _make_fs_provider()
     with patch("src.services.content.providers.file_system.settings") as mock_settings:
         mock_settings.content_path = content_root
-        result = provider.rename_category("foods", "meals")
-
-    assert "already exists" in result.error
+        with pytest.raises(CategoryConflictError):
+            provider.rename_category("foods", "meals")
 
 
 def test_rename_category_success(tmp_path: Path) -> None:
@@ -476,7 +464,6 @@ def test_rename_category_success(tmp_path: Path) -> None:
         result = provider.rename_category("foods", "meals")
 
     assert result.category == "meals"
-    assert result.error is None
     assert (content_root / "meals").is_dir()
     assert not (content_root / "foods").exists()
     assert not (content_root / "meals" / "foods_en.mp3").exists()
@@ -493,9 +480,8 @@ def test_remove_category_invalid_name(tmp_path: Path) -> None:
     with patch("src.services.content.providers.file_system.settings") as mock_settings:
         mock_settings.content_path = tmp_path
         mock_settings.ARCHIVE_DIR = ""
-        result = provider.remove_category("bad name!")
-
-    assert result.error is not None
+        with pytest.raises(InvalidCategoryNameError):
+            provider.remove_category("bad name!")
 
 
 def test_remove_category_not_found(tmp_path: Path) -> None:
@@ -505,9 +491,8 @@ def test_remove_category_not_found(tmp_path: Path) -> None:
     with patch("src.services.content.providers.file_system.settings") as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.ARCHIVE_DIR = ""
-        result = provider.remove_category("nonexistent")
-
-    assert result.error == "Category not found"
+        with pytest.raises(CategoryNotFoundError):
+            provider.remove_category("nonexistent")
 
 
 def test_remove_category_permanently_deletes_when_no_archive_dir(tmp_path: Path) -> None:
@@ -548,9 +533,8 @@ def test_restore_category_empty_name(tmp_path: Path) -> None:
     with patch("src.services.content.providers.file_system.settings") as mock_settings:
         mock_settings.archive_path = tmp_path / "archive"
         mock_settings.content_path = tmp_path / "content"
-        result = provider.restore_category("")
-
-    assert result.restored is False
+        with pytest.raises(InvalidCategoryNameError):
+            provider.restore_category("")
 
 
 def test_restore_category_archive_dir_missing(tmp_path: Path) -> None:
@@ -558,10 +542,8 @@ def test_restore_category_archive_dir_missing(tmp_path: Path) -> None:
     with patch("src.services.content.providers.file_system.settings") as mock_settings:
         mock_settings.archive_path = tmp_path / "nonexistent"
         mock_settings.content_path = tmp_path / "content"
-        result = provider.restore_category("foods")
-
-    assert result.restored is False
-    assert result.error == "Archive directory does not exist"
+        with pytest.raises(ArchiveUnavailableError):
+            provider.restore_category("foods")
 
 
 def test_restore_category_no_archive_found(tmp_path: Path) -> None:
@@ -574,10 +556,8 @@ def test_restore_category_no_archive_found(tmp_path: Path) -> None:
     with patch("src.services.content.providers.file_system.settings") as mock_settings:
         mock_settings.archive_path = archive_root
         mock_settings.content_path = content_root
-        result = provider.restore_category("foods")
-
-    assert result.restored is False
-    assert "No archive found" in result.error
+        with pytest.raises(CategoryNotFoundError, match="No archive found"):
+            provider.restore_category("foods")
 
 
 def test_restore_category_conflict_with_existing(tmp_path: Path) -> None:
@@ -591,10 +571,8 @@ def test_restore_category_conflict_with_existing(tmp_path: Path) -> None:
     with patch("src.services.content.providers.file_system.settings") as mock_settings:
         mock_settings.archive_path = archive_root
         mock_settings.content_path = content_root
-        result = provider.restore_category("foods")
-
-    assert result.restored is False
-    assert "already exists" in result.error
+        with pytest.raises(CategoryConflictError):
+            provider.restore_category("foods")
 
 
 def test_restore_category_success(tmp_path: Path) -> None:

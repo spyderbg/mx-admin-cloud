@@ -5,7 +5,15 @@ import { listItems } from './items'
 import { listItemImages } from './itemImages'
 import { listItemVoices } from './itemVoices'
 
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
 const DEFAULT_LANGUAGES: Language[] = ['en', 'es', 'fr', 'bg']
+
+// ---------------------------------------------------------------------------
+// Helper functions
+// ---------------------------------------------------------------------------
 
 const slugify = (value: string): string =>
   value
@@ -54,8 +62,13 @@ const normalizeFiles = (raw: unknown, fallback: string[]): string[] => {
   return fallback
 }
 
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
 export const loadCategoriesTree = async (): Promise<Category[]> => {
   const list = await listCategories()
+  console.log('listCategories result:', JSON.stringify(list, null, 2))
   if (!list.categories.length) return []
   const categories = await Promise.all(
     list.categories.map(async (categoryName) => {

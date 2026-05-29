@@ -14,6 +14,13 @@ from src.api.dependencies import get_current_user, get_registry
 from src.api.service_resolver import get_typed_service
 from src.core.config import settings
 from src.services import content
+from src.services.content.models import (
+    ArchiveUnavailableError,
+    CategoryConflictError,
+    CategoryNotFoundError,
+    ContentError,
+    InvalidCategoryNameError,
+)
 from src.services.content.schemas import (
     ArchivedEntry,
     CategoryDetailResponse,
@@ -66,22 +73,19 @@ def categories_list(
         _user: dict = Depends(get_current_user),
 ) -> CategoryListResponse:
     """List categories."""
-    result = service.list_categories(
-        include_archived=include_archived,
-        archived_only=archived_only,
-    )
-    if result.error and not result.categories:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=result.error,
+    try:
+        result = service.list_categories(
+            include_archived=include_archived,
+            archived_only=archived_only,
         )
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
     return CategoryListResponse(
         categories=result.categories,
         archived=[
             ArchivedEntry(base_name=e.base_name, archive_folder=e.archive_folder, archived_at=e.archived_at)
             for e in result.archived
         ] or None,
-        error=result.error,
     )
 
 
@@ -105,11 +109,12 @@ def categories_create(
         _user: dict = Depends(get_current_user),
 ) -> CreateCategoryResponse:
     """Create a new category."""
-    result = service.create_category(body.name.strip())
-    if result.error:
-        if result.error.startswith("Category already exists"):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=result.error)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.error)
+    try:
+        result = service.create_category(body.name.strip())
+    except CategoryConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return CreateCategoryResponse(category=result.category, message=result.message)
 
 
@@ -130,15 +135,16 @@ def categories_restore(
         _user: dict = Depends(get_current_user),
 ) -> RestoreCategoryResponse:
     """Restore a category from archive."""
-    result = service.restore_category(body.name.strip())
-    if result.error:
-        if result.error == "Archive directory does not exist":
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=result.error)
-        if "No archive found" in result.error:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=result.error)
-        if "already exists" in result.error:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=result.error)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.error)
+    try:
+        result = service.restore_category(body.name.strip())
+    except ArchiveUnavailableError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except CategoryConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return RestoreCategoryResponse(
         restored=result.restored,
         name=result.name,
@@ -165,11 +171,12 @@ def categories_details(
         _user: dict = Depends(get_current_user),
 ) -> CategoryDetailResponse:
     """Get category details."""
-    result = service.category_details(category_name)
-    if result.error == "Category not found":
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=result.error)
-    if result.error == "Invalid category name":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.error)
+    try:
+        result = service.category_details(category_name)
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidCategoryNameError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return CategoryDetailResponse(
         name=result.name,
         objects=result.objects,
@@ -221,13 +228,14 @@ def categories_rename(
         _user: dict = Depends(get_current_user),
 ) -> RenameCategoryResponse:
     """Rename a category."""
-    result = service.rename_category(category_name, body.name.strip())
-    if result.error:
-        if result.error == "Category not found":
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=result.error)
-        if "already exists" in result.error:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=result.error)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.error)
+    try:
+        result = service.rename_category(category_name, body.name.strip())
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except CategoryConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return RenameCategoryResponse(category=result.category, message=result.message)
 
 
@@ -249,11 +257,12 @@ def categories_remove(
         _user: dict = Depends(get_current_user),
 ) -> RemoveCategoryResponse:
     """Remove a category."""
-    result = service.remove_category(category_name)
-    if result.error:
-        if result.error == "Category not found":
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=result.error)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.error)
+    try:
+        result = service.remove_category(category_name)
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return RemoveCategoryResponse(
         archived=result.archived,
         removed=result.removed,
@@ -491,13 +500,14 @@ def items_list(
         _user: dict = Depends(get_current_user),
 ) -> ItemListResponse:
     """List all items in a category."""
-    result = service.category_details(category_name)
-    if result.error:
-        if result.error == "Category not found":
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=result.error)
-        if result.error == "Invalid category name":
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.error)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=result.error)
+    try:
+        result = service.category_details(category_name)
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidCategoryNameError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
     return ItemListResponse(items=result.images_names or [])
 
 
@@ -834,14 +844,15 @@ def create_item_endpoint(
         ext = "." + image.filename.rsplit(".", 1)[-1].lower()
     if ext not in (".png", ".jpg", ".jpeg"):
         ext = ".png"
-    result = service.create_item(
-        category_name=category.strip(),
-        english_word=item.strip(),
-        image_data=image_data,
-        image_extension=ext,
-    )
-    if result.error:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.error)
+    try:
+        result = service.create_item(
+            category_name=category.strip(),
+            english_word=item.strip(),
+            image_data=image_data,
+            image_extension=ext,
+        )
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return CreateItemResponse(
         category=result.category,
         item=result.item,

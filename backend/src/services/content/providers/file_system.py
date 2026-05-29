@@ -21,12 +21,17 @@ from src.core.config import settings
 from src.security.tokens import create_internal_token
 from src.services.content.models import (
     ArchiveCategoryResult,
+    ArchiveUnavailableError,
     ArchivedEntryResult,
+    CategoryConflictError,
     CategoryDetailResult,
     CategoryListResult,
+    CategoryNotFoundError,
+    ContentOperationError,
     ContentProvider,
     CreateCategoryResult,
     CreateItemResult,
+    InvalidCategoryNameError,
     RenameCategoryResult,
     RestoreCategoryResult,
 )
@@ -202,11 +207,7 @@ class FileSystemContentProvider(ContentProvider):
 
         root = self._content_root()
         if not root.exists() or not root.is_dir():
-            return CategoryListResult(
-                categories=[],
-                archived=archived if include_archived else [],
-                error=f"Content root does not exist: {root}",
-            )
+            raise ContentOperationError(f"Content root does not exist: {root}")
         names = [p.name for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")]
         return CategoryListResult(
             categories=sorted(names),
@@ -215,10 +216,10 @@ class FileSystemContentProvider(ContentProvider):
 
     def category_details(self, category_name: str) -> CategoryDetailResult:
         if not self._is_safe_category_name(category_name):
-            return CategoryDetailResult(name=category_name, error="Invalid category name")
+            raise InvalidCategoryNameError(category_name)
         cat_path = self._category_path(category_name)
         if not cat_path.exists() or not cat_path.is_dir():
-            return CategoryDetailResult(name=category_name, error="Category not found")
+            raise CategoryNotFoundError(category_name)
 
         objects = [p.name for p in cat_path.iterdir() if p.is_dir() and not p.name.startswith(".")]
         images_by_lang: dict[str, list[str]] = {}
@@ -252,10 +253,10 @@ class FileSystemContentProvider(ContentProvider):
 
     def create_category(self, category_name: str) -> CreateCategoryResult:
         if not self._is_safe_category_name(category_name):
-            return CreateCategoryResult(error="Invalid category name")
+            raise InvalidCategoryNameError(category_name)
         cat_path = self._category_path(category_name)
         if cat_path.exists() and cat_path.is_dir():
-            return CreateCategoryResult(error=f"Category already exists: {category_name}")
+            raise CategoryConflictError(f"Category already exists: {category_name}")
 
         cat_path.mkdir(parents=True, exist_ok=True)
 
@@ -268,16 +269,16 @@ class FileSystemContentProvider(ContentProvider):
                         category_name.replace("_", " ").strip() or category_name, lang, category_name,
                     )
                 except (ValueError, RuntimeError, httpx.HTTPError, KeyError) as exc:
-                    return CreateCategoryResult(error=f"Translation failed for {lang}: {exc}")
+                    raise ContentOperationError(f"Translation failed for {lang}: {exc}") from exc
             try:
                 audio_bytes = self._generate_audio(label, lang)
                 voice_path = cat_path / f"{category_name}_{lang}.mp3"
                 with open(voice_path, "wb") as fh:
                     fh.write(audio_bytes)
             except (ValueError, RuntimeError, httpx.HTTPError) as exc:
-                return CreateCategoryResult(error=f"TTS failed for {lang}: {exc}")
+                raise ContentOperationError(f"TTS failed for {lang}: {exc}") from exc
             except OSError as exc:
-                return CreateCategoryResult(error=f"File write failed for {lang}: {exc}")
+                raise ContentOperationError(f"File write failed for {lang}: {exc}") from exc
 
         try:
             prompt = self._category_name_to_icon_prompt(category_name)
@@ -286,13 +287,13 @@ class FileSystemContentProvider(ContentProvider):
             with open(icon_path, "wb") as fh:
                 fh.write(icon_bytes)
         except (ValueError, RuntimeError) as exc:
-            return CreateCategoryResult(error=f"Icon generation failed: {exc}")
+            raise ContentOperationError(f"Icon generation failed: {exc}") from exc
         except OSError as exc:
-            return CreateCategoryResult(error=f"Icon file write failed: {exc}")
+            raise ContentOperationError(f"Icon file write failed: {exc}") from exc
 
         return CreateCategoryResult(category=category_name, message=f"Category '{category_name}' created.")
 
-    def create_item(  # pylint: disable=too-many-locals,too-many-return-statements
+    def create_item(  # pylint: disable=too-many-locals
             self,
             category_name: str,
             english_word: str,
@@ -300,22 +301,22 @@ class FileSystemContentProvider(ContentProvider):
             image_extension: str = ".png",
     ) -> CreateItemResult:
         if not self._is_safe_category_name(category_name):
-            return CreateItemResult(category=category_name, error="Invalid category name")
+            raise InvalidCategoryNameError(category_name)
         if not english_word or not english_word.strip():
-            return CreateItemResult(error="Item word is required")
+            raise ContentOperationError("Item word is required")
         english_word = english_word.strip()
 
         folder_name = self._english_word_to_folder_name(english_word)
         image_id = self._english_word_to_image_id(english_word)
         if not folder_name:
-            return CreateItemResult(error="Could not derive folder name from item word")
+            raise ContentOperationError("Could not derive folder name from item word")
 
         root = self._content_root()
         cat_path = root / category_name
         item_path = cat_path / folder_name
 
         if item_path.exists():
-            return CreateItemResult(category=category_name, error=f"Item folder already exists: {folder_name}")
+            raise CategoryConflictError(f"Item folder already exists: {folder_name}")
 
         cat_path.mkdir(parents=True, exist_ok=True)
         item_path.mkdir(parents=True, exist_ok=True)
@@ -340,13 +341,7 @@ class FileSystemContentProvider(ContentProvider):
                 words_by_lang[lang] = translated
                 self._append_csv_line(cat_path / f"images_{lang}.csv", translated)
             except (ValueError, RuntimeError, httpx.HTTPError, KeyError) as exc:
-                return CreateItemResult(
-                    category=category_name,
-                    item=english_word,
-                    folder=folder_name,
-                    image_id=image_id,
-                    error=f"Translation failed for {lang}: {exc}",
-                )
+                raise ContentOperationError(f"Translation failed for {lang}: {exc}") from exc
 
         for lang in settings.SUPPORTED_LANGUAGES:
             word = words_by_lang.get(lang) or english_word
@@ -356,21 +351,9 @@ class FileSystemContentProvider(ContentProvider):
                 with open(voice_path, "wb") as fh:
                     fh.write(audio_bytes)
             except (ValueError, RuntimeError, httpx.HTTPError) as exc:
-                return CreateItemResult(
-                    category=category_name,
-                    item=english_word,
-                    folder=folder_name,
-                    image_id=image_id,
-                    error=f"TTS failed for {lang}: {exc}",
-                )
+                raise ContentOperationError(f"TTS failed for {lang}: {exc}") from exc
             except OSError as exc:
-                return CreateItemResult(
-                    category=category_name,
-                    item=english_word,
-                    folder=folder_name,
-                    image_id=image_id,
-                    error=f"File write failed for {lang}: {exc}",
-                )
+                raise ContentOperationError(f"File write failed for {lang}: {exc}") from exc
 
         return CreateItemResult(
             category=category_name,
@@ -381,20 +364,10 @@ class FileSystemContentProvider(ContentProvider):
 
     def archive_category(self, category_name: str) -> ArchiveCategoryResult:
         if not self._is_safe_category_name(category_name):
-            return ArchiveCategoryResult(
-                name=category_name,
-                archived=False,
-                message="Category name must be non-empty and contain only letters, numbers, and underscores.",
-                error="Invalid category name",
-            )
+            raise InvalidCategoryNameError(category_name)
         cat_path = self._category_path(category_name)
         if not cat_path.exists() or not cat_path.is_dir():
-            return ArchiveCategoryResult(
-                name=category_name,
-                archived=False,
-                message=f"Category '{category_name}' does not exist in content directory.",
-                error="Category not found",
-            )
+            raise CategoryNotFoundError(category_name)
         archive_root = self._archive_root()
         archive_root.mkdir(parents=True, exist_ok=True)
         archive_folder_name = f"{category_name}_{int(time.time())}"
@@ -412,32 +385,27 @@ class FileSystemContentProvider(ContentProvider):
                 ),
             )
         except (OSError, shutil.Error) as exc:
-            return ArchiveCategoryResult(
-                name=category_name,
-                archived=False,
-                message=f"Failed to archive category: {exc}",
-                error=str(exc),
-            )
+            raise ContentOperationError(f"Failed to archive category: {exc}") from exc
 
-    def rename_category(  # pylint: disable=too-many-return-statements
+    def rename_category(
             self,
             old_name: str,
             new_name: str,
     ) -> RenameCategoryResult:
         if not self._is_safe_category_name(old_name):
-            return RenameCategoryResult(error="Invalid category name")
+            raise InvalidCategoryNameError(old_name)
         if not self._is_safe_category_name(new_name):
-            return RenameCategoryResult(error="Invalid new category name")
+            raise InvalidCategoryNameError(new_name)
         old_path = self._category_path(old_name)
         new_path = self._category_path(new_name)
         if not old_path.exists() or not old_path.is_dir():
-            return RenameCategoryResult(error="Category not found")
+            raise CategoryNotFoundError(old_name)
         if new_path.exists() and new_path.is_dir():
-            return RenameCategoryResult(error=f"Target category already exists: {new_name}")
+            raise CategoryConflictError(f"Target category already exists: {new_name}")
         try:
             shutil.move(str(old_path), str(new_path))
         except (OSError, shutil.Error) as exc:
-            return RenameCategoryResult(error=str(exc), message=f"Failed to rename: {exc}")
+            raise ContentOperationError(f"Failed to rename: {exc}") from exc
 
         for lang in settings.SUPPORTED_LANGUAGES:
             old_voice = new_path / f"{old_name}_{lang}.mp3"
@@ -457,16 +425,16 @@ class FileSystemContentProvider(ContentProvider):
                         new_name.replace("_", " ").strip() or new_name, lang, new_name,
                     )
                 except (ValueError, RuntimeError, httpx.HTTPError, KeyError) as exc:
-                    return RenameCategoryResult(error=f"Translation failed for {lang}: {exc}")
+                    raise ContentOperationError(f"Translation failed for {lang}: {exc}") from exc
             try:
                 audio_bytes = self._generate_audio(label, lang)
                 voice_path = new_path / f"{new_name}_{lang}.mp3"
                 with open(voice_path, "wb") as fh:
                     fh.write(audio_bytes)
             except (ValueError, RuntimeError) as exc:
-                return RenameCategoryResult(error=f"TTS failed for {lang}: {exc}")
+                raise ContentOperationError(f"TTS failed for {lang}: {exc}") from exc
             except OSError as exc:
-                return RenameCategoryResult(error=f"File write failed for {lang}: {exc}")
+                raise ContentOperationError(f"File write failed for {lang}: {exc}") from exc
 
         new_icon_path = new_path / f"{new_name}.png"
         for old_icon_name in (f"{old_name}.png", "category_icon.png"):
@@ -483,18 +451,10 @@ class FileSystemContentProvider(ContentProvider):
 
     def remove_category(self, category_name: str) -> ArchiveCategoryResult:
         if not self._is_safe_category_name(category_name):
-            return ArchiveCategoryResult(
-                name=category_name,
-                message="Category name must be non-empty and contain only letters, numbers, and underscores.",
-                error="Invalid category name",
-            )
+            raise InvalidCategoryNameError(category_name)
         cat_path = self._category_path(category_name)
         if not cat_path.exists() or not cat_path.is_dir():
-            return ArchiveCategoryResult(
-                name=category_name,
-                message=f"Category '{category_name}' does not exist in content directory.",
-                error="Category not found",
-            )
+            raise CategoryNotFoundError(category_name)
         if settings.ARCHIVE_DIR and settings.ARCHIVE_DIR.strip():
             return self.archive_category(category_name)
         try:
@@ -505,29 +465,20 @@ class FileSystemContentProvider(ContentProvider):
                 message=f"Category '{category_name}' was permanently deleted (ARCHIVE_DIR not set).",
             )
         except (OSError, shutil.Error) as exc:
-            return ArchiveCategoryResult(
-                name=category_name,
-                removed=False,
-                message=f"Failed to delete category: {exc}",
-                error=str(exc),
-            )
+            raise ContentOperationError(f"Failed to delete category: {exc}") from exc
 
-    def restore_category(  # pylint: disable=too-many-return-statements
+    def restore_category(
             self,
             category_name: str,
     ) -> RestoreCategoryResult:
         name = (category_name or "").strip()
         if not name:
-            return RestoreCategoryResult(restored=False, message="No category name provided.")
+            raise InvalidCategoryNameError("No category name provided")
 
         content_root = self._content_root()
         archive_root = self._archive_root()
         if not archive_root.exists() or not archive_root.is_dir():
-            return RestoreCategoryResult(
-                restored=False,
-                error="Archive directory does not exist",
-                message="Archive directory is not available.",
-            )
+            raise ArchiveUnavailableError("Archive directory does not exist")
 
         if re.match(r"^.+_\d+$", name):
             base_name = re.sub(r"_\d+$", "", name)
@@ -536,47 +487,26 @@ class FileSystemContentProvider(ContentProvider):
             base_name = name
             candidates = self._archive_folders_for_base(archive_root, base_name)
             if not candidates:
-                return RestoreCategoryResult(
-                    restored=False,
-                    name=base_name,
-                    error=f"No archive found for category '{base_name}'",
-                    message=f"No archived version of '{base_name}' found in archive.",
-                )
+                raise CategoryNotFoundError(f"No archive found for category '{base_name}'")
             archive_folder = candidates[0][0]
 
         archive_path = archive_root / archive_folder
         if not archive_path.exists() or not archive_path.is_dir():
-            return RestoreCategoryResult(
-                restored=False,
-                name=base_name,
-                error=f"Archive folder not found: {archive_folder}",
-                message=f"Archive folder '{archive_folder}' does not exist.",
-            )
+            raise CategoryNotFoundError(f"Archive folder not found: {archive_folder}")
 
         content_dest = content_root / base_name
         if content_dest.exists() and content_dest.is_dir():
-            return RestoreCategoryResult(
-                restored=False,
-                name=base_name,
-                error=f"Category already exists in content directory: {base_name}",
-                message=f"Category '{base_name}' already exists in content; not overwriting.",
-            )
+            raise CategoryConflictError(f"Category already exists in content directory: {base_name}")
 
         try:
             shutil.copytree(archive_path, content_dest)
             return RestoreCategoryResult(
-                restored=True,
                 name=base_name,
                 from_archive=archive_folder,
                 message=f"Restored category '{base_name}' from archive '{archive_folder}'.",
             )
         except (OSError, shutil.Error) as exc:
-            return RestoreCategoryResult(
-                restored=False,
-                name=base_name,
-                error=str(exc),
-                message=f"Failed to restore category: {exc}",
-            )
+            raise ContentOperationError(f"Failed to restore category: {exc}") from exc
 
     # ------------------------------------------------------------------
     # Factory registration
