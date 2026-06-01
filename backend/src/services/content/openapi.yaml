@@ -53,20 +53,27 @@ components:
         name:
           type: string
           title: Name
-        objects:
+        items:
           items:
             type: string
           type: array
-          title: Objects
+          title: Items
           default: []
-        images_names:
+        images_ids:
           anyOf:
           - items:
               type: string
             type: array
           - type: 'null'
-          title: Images Names
-      additionalProperties: true
+          title: Images Ids
+        images_by_lang:
+          additionalProperties:
+            items:
+              type: string
+            type: array
+          type: object
+          title: Images By Lang
+          default: {}
       type: object
       required:
       - name
@@ -74,9 +81,9 @@ components:
       description: 'Response for GET /content/categories/{name}.
 
 
-        Language-specific CSV word lists are dynamic keys (images_en, images_fr, ...)
+        For ''images_by_lang'' maps each language code to its CSV-derived word list,
 
-        so extra fields are allowed.'
+        so any number of languages can be returned without changing the schema.'
     CategoryImagesResponse:
       properties:
         category:
