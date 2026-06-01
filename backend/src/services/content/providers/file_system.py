@@ -20,20 +20,20 @@ from openai import OpenAI
 from src.core.config import settings
 from src.security.tokens import create_internal_token
 from src.services.content.models import (
-    ArchiveCategoryResult,
+    ArchiveCategory,
     ArchiveUnavailableError,
-    ArchivedEntryResult,
+    ArchivedEntry,
     CategoryConflictError,
-    CategoryDetailResult,
-    CategoryListResult,
+    CategoryDetail,
+    CategoryList,
     CategoryNotFoundError,
     ContentOperationError,
     ContentProvider,
-    CreateCategoryResult,
-    CreateItemResult,
+    CreateCategory,
+    CreateItem,
     InvalidCategoryNameError,
-    RenameCategoryResult,
-    RestoreCategoryResult,
+    RenameCategory,
+    RestoreCategory,
 )
 from src.services.content.service import ContentProviderFactory
 
@@ -161,19 +161,19 @@ class FileSystemContentProvider(ContentProvider):
                 return i
         return 1
 
-    def _list_archived_entries(self) -> list[ArchivedEntryResult]:
+    def _list_archived_entries(self) -> list[ArchivedEntry]:
         """Scan archive root for folders matching ``{base}_{timestamp}``."""
         if not settings.ARCHIVE_DIR or not settings.ARCHIVE_DIR.strip():
             return []
         archive_root = self._archive_root()
         if not archive_root.exists() or not archive_root.is_dir():
             return []
-        entries: list[ArchivedEntryResult] = []
+        entries: list[ArchivedEntry] = []
         for p in archive_root.iterdir():
             if p.is_dir() and not p.name.startswith("."):
                 m = re.match(r"^(.+)_(\d+)$", p.name)
                 if m:
-                    entries.append(ArchivedEntryResult(
+                    entries.append(ArchivedEntry(
                         base_name=m.group(1),
                         archive_folder=p.name,
                         archived_at=int(m.group(2)),
@@ -199,22 +199,22 @@ class FileSystemContentProvider(ContentProvider):
             self,
             include_archived: bool = False,
             archived_only: bool = False,
-    ) -> CategoryListResult:
+    ) -> CategoryList:
         archived = self._list_archived_entries() if (include_archived or archived_only) else []
 
         if archived_only:
-            return CategoryListResult(categories=[], archived=archived)
+            return CategoryList(categories=[], archived=archived)
 
         root = self._content_root()
         if not root.exists() or not root.is_dir():
             raise ContentOperationError(f"Content root does not exist: {root}")
         names = [p.name for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")]
-        return CategoryListResult(
+        return CategoryList(
             categories=sorted(names),
             archived=archived if include_archived else [],
         )
 
-    def category_details(self, category_name: str) -> CategoryDetailResult:
+    def category_details(self, category_name: str) -> CategoryDetail:
         if not self._is_safe_category_name(category_name):
             raise InvalidCategoryNameError(category_name)
         cat_path = self._category_path(category_name)
@@ -244,14 +244,14 @@ class FileSystemContentProvider(ContentProvider):
             except (OSError, csv.Error):
                 images_names = []
 
-        return CategoryDetailResult(
+        return CategoryDetail(
             name=category_name,
             objects=sorted(objects),
             images_names=images_names,
             images_by_lang=images_by_lang,
         )
 
-    def create_category(self, category_name: str) -> CreateCategoryResult:
+    def create_category(self, category_name: str) -> CreateCategory:
         if not self._is_safe_category_name(category_name):
             raise InvalidCategoryNameError(category_name)
         cat_path = self._category_path(category_name)
@@ -291,7 +291,7 @@ class FileSystemContentProvider(ContentProvider):
         except OSError as exc:
             raise ContentOperationError(f"Icon file write failed: {exc}") from exc
 
-        return CreateCategoryResult(category=category_name, message=f"Category '{category_name}' created.")
+        return CreateCategory(category=category_name, message=f"Category '{category_name}' created.")
 
     def create_item(  # pylint: disable=too-many-locals
             self,
@@ -299,7 +299,7 @@ class FileSystemContentProvider(ContentProvider):
             english_word: str,
             image_data: bytes,
             image_extension: str = ".png",
-    ) -> CreateItemResult:
+    ) -> CreateItem:
         if not self._is_safe_category_name(category_name):
             raise InvalidCategoryNameError(category_name)
         if not english_word or not english_word.strip():
@@ -355,14 +355,14 @@ class FileSystemContentProvider(ContentProvider):
             except OSError as exc:
                 raise ContentOperationError(f"File write failed for {lang}: {exc}") from exc
 
-        return CreateItemResult(
+        return CreateItem(
             category=category_name,
             item=english_word,
             folder=folder_name,
             image_id=image_id,
         )
 
-    def archive_category(self, category_name: str) -> ArchiveCategoryResult:
+    def archive_category(self, category_name: str) -> ArchiveCategory:
         if not self._is_safe_category_name(category_name):
             raise InvalidCategoryNameError(category_name)
         cat_path = self._category_path(category_name)
@@ -374,7 +374,7 @@ class FileSystemContentProvider(ContentProvider):
         dest = archive_root / archive_folder_name
         try:
             shutil.move(str(cat_path), str(dest))
-            return ArchiveCategoryResult(
+            return ArchiveCategory(
                 archived=True,
                 name=category_name,
                 archive_folder=archive_folder_name,
@@ -391,7 +391,7 @@ class FileSystemContentProvider(ContentProvider):
             self,
             old_name: str,
             new_name: str,
-    ) -> RenameCategoryResult:
+    ) -> RenameCategory:
         if not self._is_safe_category_name(old_name):
             raise InvalidCategoryNameError(old_name)
         if not self._is_safe_category_name(new_name):
@@ -444,12 +444,12 @@ class FileSystemContentProvider(ContentProvider):
                     old_icon_path.rename(new_icon_path)
                 break
 
-        return RenameCategoryResult(
+        return RenameCategory(
             category=new_name,
             message=f"Category renamed from '{old_name}' to '{new_name}'.",
         )
 
-    def remove_category(self, category_name: str) -> ArchiveCategoryResult:
+    def remove_category(self, category_name: str) -> ArchiveCategory:
         if not self._is_safe_category_name(category_name):
             raise InvalidCategoryNameError(category_name)
         cat_path = self._category_path(category_name)
@@ -459,7 +459,7 @@ class FileSystemContentProvider(ContentProvider):
             return self.archive_category(category_name)
         try:
             shutil.rmtree(cat_path)
-            return ArchiveCategoryResult(
+            return ArchiveCategory(
                 removed=True,
                 name=category_name,
                 message=f"Category '{category_name}' was permanently deleted (ARCHIVE_DIR not set).",
@@ -470,7 +470,7 @@ class FileSystemContentProvider(ContentProvider):
     def restore_category(
             self,
             category_name: str,
-    ) -> RestoreCategoryResult:
+    ) -> RestoreCategory:
         name = (category_name or "").strip()
         if not name:
             raise InvalidCategoryNameError("No category name provided")
@@ -500,7 +500,7 @@ class FileSystemContentProvider(ContentProvider):
 
         try:
             shutil.copytree(archive_path, content_dest)
-            return RestoreCategoryResult(
+            return RestoreCategory(
                 name=base_name,
                 from_archive=archive_folder,
                 message=f"Restored category '{base_name}' from archive '{archive_folder}'.",

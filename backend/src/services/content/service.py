@@ -7,15 +7,15 @@ from pathlib import Path
 from typing_extensions import override
 
 from src.services.content.models import (
-    ArchiveCategoryResult,
-    CategoryDetailResult,
-    CategoryListResult,
+    ArchiveCategory,
+    CategoryDetail,
+    CategoryList,
     ContentProvider,
     ContentProviderUnavailableError,
-    CreateCategoryResult,
-    CreateItemResult,
-    RenameCategoryResult,
-    RestoreCategoryResult,
+    CreateCategory,
+    CreateItem,
+    RenameCategory,
+    RestoreCategory,
 )
 from src.services.models import Service, ServiceProvider
 from src.services.provider_factory import ServiceProviderFactory
@@ -67,18 +67,18 @@ class ContentService(Service):
             self,
             include_archived: bool = False,
             archived_only: bool = False,
-    ) -> CategoryListResult:
+    ) -> CategoryList:
         """List content categories via the active provider."""
         return self._select_provider().list_categories(
             include_archived=include_archived,
             archived_only=archived_only,
         )
 
-    def category_details(self, category_name: str) -> CategoryDetailResult:
+    def category_details(self, category_name: str) -> CategoryDetail:
         """Return category details via the active provider."""
         return self._select_provider().category_details(category_name)
 
-    def create_category(self, category_name: str) -> CreateCategoryResult:
+    def create_category(self, category_name: str) -> CreateCategory:
         """Create a new category via the active provider."""
         return self._select_provider().create_category(category_name)
 
@@ -88,7 +88,7 @@ class ContentService(Service):
             english_word: str,
             image_data: bytes,
             image_extension: str = ".png",
-    ) -> CreateItemResult:
+    ) -> CreateItem:
         """Create a content item via the active provider."""
         return self._select_provider().create_item(
             category_name=category_name,
@@ -97,19 +97,19 @@ class ContentService(Service):
             image_extension=image_extension,
         )
 
-    def archive_category(self, category_name: str) -> ArchiveCategoryResult:
+    def archive_category(self, category_name: str) -> ArchiveCategory:
         """Archive a category via the active provider."""
         return self._select_provider().archive_category(category_name)
 
-    def rename_category(self, old_name: str, new_name: str) -> RenameCategoryResult:
+    def rename_category(self, old_name: str, new_name: str) -> RenameCategory:
         """Rename a category via the active provider."""
         return self._select_provider().rename_category(old_name, new_name)
 
-    def remove_category(self, category_name: str) -> ArchiveCategoryResult:
+    def remove_category(self, category_name: str) -> ArchiveCategory:
         """Remove a category via the active provider."""
         return self._select_provider().remove_category(category_name)
 
-    def restore_category(self, category_name: str) -> RestoreCategoryResult:
+    def restore_category(self, category_name: str) -> RestoreCategory:
         """Restore a category via the active provider."""
         return self._select_provider().restore_category(category_name)
 

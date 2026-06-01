@@ -48,20 +48,20 @@ class ContentOperationError(ContentError):
 
 
 @dataclass
-class ArchivedEntryResult:
+class ArchivedEntry:
     base_name: str
     archive_folder: str
     archived_at: int
 
 
 @dataclass
-class CategoryListResult:
+class CategoryList:
     categories: list[str] = field(default_factory=list)
-    archived: list[ArchivedEntryResult] = field(default_factory=list)
+    archived: list[ArchivedEntry] = field(default_factory=list)
 
 
 @dataclass
-class CategoryDetailResult:
+class CategoryDetail:
     name: str = ""
     objects: list[str] = field(default_factory=list)
     images_names: list[str] | None = None
@@ -69,13 +69,13 @@ class CategoryDetailResult:
 
 
 @dataclass
-class CreateCategoryResult:
+class CreateCategory:
     category: str = ""
     message: str = ""
 
 
 @dataclass
-class CreateItemResult:
+class CreateItem:
     category: str = ""
     item: str = ""
     folder: str = ""
@@ -83,7 +83,7 @@ class CreateItemResult:
 
 
 @dataclass
-class ArchiveCategoryResult:
+class ArchiveCategory:
     """Used for both archive_category and remove_category results."""
     name: str = ""
     message: str = ""
@@ -94,13 +94,13 @@ class ArchiveCategoryResult:
 
 
 @dataclass
-class RenameCategoryResult:
+class RenameCategory:
     category: str = ""
     message: str = ""
 
 
 @dataclass
-class RestoreCategoryResult:
+class RestoreCategory:
     restored: bool = True
     name: str | None = None
     from_archive: str | None = None
@@ -120,15 +120,15 @@ class ContentProvider(ServiceProvider, ABC):
             self,
             include_archived: bool = False,
             archived_only: bool = False,
-    ) -> CategoryListResult:
+    ) -> CategoryList:
         """List content categories, optionally including archived ones."""
 
     @abstractmethod
-    def category_details(self, category_name: str) -> CategoryDetailResult:
+    def category_details(self, category_name: str) -> CategoryDetail:
         """Return object folders and CSV-derived data for a category."""
 
     @abstractmethod
-    def create_category(self, category_name: str) -> CreateCategoryResult:
+    def create_category(self, category_name: str) -> CreateCategory:
         """Create a new category with voice files and icon."""
 
     @abstractmethod
@@ -138,23 +138,23 @@ class ContentProvider(ServiceProvider, ABC):
             english_word: str,
             image_data: bytes,
             image_extension: str = ".png",
-    ) -> CreateItemResult:
+    ) -> CreateItem:
         """Create an item folder with image, translations, and voice files."""
 
     @abstractmethod
-    def archive_category(self, category_name: str) -> ArchiveCategoryResult:
+    def archive_category(self, category_name: str) -> ArchiveCategory:
         """Move a category from the content directory to the archive."""
 
     @abstractmethod
-    def rename_category(self, old_name: str, new_name: str) -> RenameCategoryResult:
+    def rename_category(self, old_name: str, new_name: str) -> RenameCategory:
         """Rename a category and regenerate its voice files."""
 
     @abstractmethod
-    def remove_category(self, category_name: str) -> ArchiveCategoryResult:
+    def remove_category(self, category_name: str) -> ArchiveCategory:
         """Remove a category (archive if configured, else delete permanently)."""
 
     @abstractmethod
-    def restore_category(self, category_name: str) -> RestoreCategoryResult:
+    def restore_category(self, category_name: str) -> RestoreCategory:
         """Restore a category from the archive to the content directory."""
 
     # ------------------------------------------------------------------
