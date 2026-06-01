@@ -52,15 +52,16 @@ class CategoryListResponse(BaseModel):
 
 
 class CategoryDetailResponse(BaseModel):
-    """Response for GET /content/categories/{name}."""
+    """Response for GET /content/categories/{name}.
+
+    For 'images_by_lang' maps each language code to its CSV-derived word list,
+    so any number of languages can be returned without changing the schema.
+    """
 
     name: str
     items: list[str] = []
     images_ids: list[str] | None = None
-    images_en: list[str] | None = None
-    images_es: list[str] | None = None
-    images_fr: list[str] | None = None
-    images_bg: list[str] | None = None
+    images_by_lang: dict[str, list[str]] = {}
 
 
 class CreateCategoryResponse(BaseModel):

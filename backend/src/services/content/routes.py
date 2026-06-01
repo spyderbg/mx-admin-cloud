@@ -187,7 +187,7 @@ def categories_details(
         name=result.name,
         items=result.objects,
         images_ids=result.images_names,
-        **{f"images_{lang}": words for lang, words in result.images_by_lang.items()},
+        images_by_lang=result.images_by_lang,
     )
 
 

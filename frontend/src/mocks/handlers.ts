@@ -24,18 +24,19 @@ const findItem = (category: Category, itemId: string) =>
   category.items.find((item) => item.id === itemId || item.name.toLowerCase() === itemId.toLowerCase())
 
 const toCategoryDetailResponse = (category: Category): Record<string, unknown> => {
-  const response: Record<string, unknown> = {
-    name: category.name,
-    items: category.items.map((item) => item.name),
-    images_ids: category.items.map((item) => item.name),
-  }
+  const imagesByLang: Record<string, string[]> = {}
   ;(['en', 'es', 'fr', 'bg'] as const).forEach((lang) => {
-    response[`images_${lang}`] = category.items.map((item) => {
+    imagesByLang[lang] = category.items.map((item) => {
       const localized = item.voices.find((voice) => voice.language === lang)?.name
       return localized ?? item.name
     })
   })
-  return response
+  return {
+    name: category.name,
+    items: category.items.map((item) => item.name),
+    images_ids: category.items.map((item) => item.name),
+    images_by_lang: imagesByLang,
+  }
 }
 
 const toVoiceResponse = (voice: Voice): Record<string, unknown> => ({

@@ -1,4 +1,5 @@
 import client from './client'
+import { SUPPORTED_LANGUAGES } from '../types'
 import type { CategoryDetail, CategorySummary } from '../types'
 
 export interface CategoryListParams {
@@ -68,20 +69,17 @@ interface CategoryDetailApiResponse {
   name: string
   items: string[]
   images_ids?: string[] | null
-  images_en?: string[] | null
-  images_es?: string[] | null
-  images_fr?: string[] | null
-  images_bg?: string[] | null
+  images_by_lang?: Record<string, string[]> | null
 }
 
 export const getCategoryDetail = async (name: string): Promise<CategoryDetail> => {
   const r = await client.get<CategoryDetailApiResponse>(`/content/categories/${name}`)
   const data = r.data
   const imagesByLanguage: CategoryDetail['imagesByLanguage'] = {}
-  if (data.images_en != null) imagesByLanguage.en = data.images_en
-  if (data.images_es != null) imagesByLanguage.es = data.images_es
-  if (data.images_fr != null) imagesByLanguage.fr = data.images_fr
-  if (data.images_bg != null) imagesByLanguage.bg = data.images_bg
+  for (const lang of SUPPORTED_LANGUAGES) {
+    const words = data.images_by_lang?.[lang]
+    if (Array.isArray(words)) imagesByLanguage[lang] = words
+  }
 
   return {
     name: data.name,
