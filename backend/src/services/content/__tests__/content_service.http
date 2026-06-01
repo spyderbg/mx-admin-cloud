@@ -2,6 +2,7 @@
 ### List all content categories
 GET http://localhost:8000/{{settings.API_V1_STR}}/content/categories
 
+
 ### Get details of a specific content category
 GET http://localhost:8000/{{settings.API_V1_STR}}/content/categories/{{category_name}}
 
