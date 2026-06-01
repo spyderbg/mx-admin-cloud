@@ -26,8 +26,8 @@ const findItem = (category: Category, itemId: string) =>
 const toCategoryDetailResponse = (category: Category): Record<string, unknown> => {
   const response: Record<string, unknown> = {
     name: category.name,
-    objects: category.items.map((item) => item.name),
-    images_names: category.items.map((item) => item.name),
+    items: category.items.map((item) => item.name),
+    images_ids: category.items.map((item) => item.name),
   }
   ;(['en', 'es', 'fr', 'bg'] as const).forEach((lang) => {
     response[`images_${lang}`] = category.items.map((item) => {

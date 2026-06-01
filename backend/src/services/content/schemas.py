@@ -52,17 +52,15 @@ class CategoryListResponse(BaseModel):
 
 
 class CategoryDetailResponse(BaseModel):
-    """Response for GET /content/categories/{name}.
-
-    Language-specific CSV word lists are dynamic keys (images_en, images_fr, ...)
-    so extra fields are allowed.
-    """
+    """Response for GET /content/categories/{name}."""
 
     name: str
-    objects: list[str] = []
-    images_names: list[str] | None = None
-
-    model_config = {"extra": "allow"}
+    items: list[str] = []
+    images_ids: list[str] | None = None
+    images_en: list[str] | None = None
+    images_es: list[str] | None = None
+    images_fr: list[str] | None = None
+    images_bg: list[str] | None = None
 
 
 class CreateCategoryResponse(BaseModel):

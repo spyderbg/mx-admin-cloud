@@ -185,8 +185,8 @@ def categories_details(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return CategoryDetailResponse(
         name=result.name,
-        objects=result.objects,
-        images_names=result.images_names,
+        items=result.objects,
+        images_ids=result.images_names,
         **{f"images_{lang}": words for lang, words in result.images_by_lang.items()},
     )
 

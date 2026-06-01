@@ -52,7 +52,7 @@ export interface CategorySummary {
 
 export interface CategoryDetail {
   name: string
-  objects: string[]
-  imagesNames?: string[] | null
+  items: string[]
+  imagesIds?: string[] | null
   imagesByLanguage?: Partial<Record<Language, string[]>>
 }

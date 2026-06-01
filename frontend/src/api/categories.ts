@@ -64,23 +64,29 @@ export const restoreCategory = async (body: RestoreCategoryBody): Promise<Restor
   return r.data
 }
 
+interface CategoryDetailApiResponse {
+  name: string
+  items: string[]
+  images_ids?: string[] | null
+  images_en?: string[] | null
+  images_es?: string[] | null
+  images_fr?: string[] | null
+  images_bg?: string[] | null
+}
+
 export const getCategoryDetail = async (name: string): Promise<CategoryDetail> => {
-  const r = await client.get<Record<string, unknown>>(`/content/categories/${name}`)
+  const r = await client.get<CategoryDetailApiResponse>(`/content/categories/${name}`)
+  const data = r.data
   const imagesByLanguage: CategoryDetail['imagesByLanguage'] = {}
-  for (const [key, value] of Object.entries(r.data)) {
-    if (!key.startsWith('images_') || !Array.isArray(value)) continue
-    const lang = key.replace('images_', '')
-    if (lang === 'en' || lang === 'es' || lang === 'fr' || lang === 'bg') {
-      imagesByLanguage[lang] = value.filter((v): v is string => typeof v === 'string')
-    }
-  }
+  if (data.images_en != null) imagesByLanguage.en = data.images_en
+  if (data.images_es != null) imagesByLanguage.es = data.images_es
+  if (data.images_fr != null) imagesByLanguage.fr = data.images_fr
+  if (data.images_bg != null) imagesByLanguage.bg = data.images_bg
 
   return {
-    name: String(r.data.name ?? name),
-    objects: Array.isArray(r.data.objects) ? r.data.objects.filter((v): v is string => typeof v === 'string') : [],
-    imagesNames: Array.isArray(r.data.images_names)
-      ? r.data.images_names.filter((v): v is string => typeof v === 'string')
-      : null,
+    name: data.name,
+    items: data.items ?? [],
+    imagesIds: data.images_ids ?? null,
     imagesByLanguage,
   }
 }
