@@ -77,6 +77,22 @@ components:
         Language-specific CSV word lists are dynamic keys (images_en, images_fr, ...)
 
         so extra fields are allowed.'
+    CategoryImagesResponse:
+      properties:
+        category:
+          type: string
+          title: Category
+        items:
+          items:
+            $ref: '#/components/schemas/ItemDetailResponse'
+          type: array
+          title: Items
+          default: []
+      type: object
+      required:
+      - category
+      title: CategoryImagesResponse
+      description: Response for GET /categories/{name}/images.
     CategoryListResponse:
       properties:
         categories:
@@ -101,6 +117,22 @@ components:
       - categories
       title: CategoryListResponse
       description: Response for GET /content/categories.
+    CategoryVoicesResponse:
+      properties:
+        category:
+          type: string
+          title: Category
+        voices:
+          items:
+            $ref: '#/components/schemas/VoiceResponse'
+          type: array
+          title: Voices
+          default: []
+      type: object
+      required:
+      - category
+      title: CategoryVoicesResponse
+      description: Response for GET /categories/{name}/voices.
     CreateCategoryBody:
       properties:
         name:
@@ -156,6 +188,58 @@ components:
           title: Detail
       type: object
       title: HTTPValidationError
+    ItemDetailResponse:
+      properties:
+        id:
+          type: string
+          title: Id
+        name:
+          type: string
+          title: Name
+        files:
+          items:
+            type: string
+          type: array
+          title: Files
+          default: []
+        thumbnail_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Thumbnail Url
+        voices:
+          items:
+            $ref: '#/components/schemas/VoiceResponse'
+          type: array
+          title: Voices
+          default: []
+      type: object
+      required:
+      - id
+      - name
+      title: ItemDetailResponse
+      description: Detailed response for a single item.
+    ItemImagesResponse:
+      properties:
+        item_id:
+          type: string
+          title: Item Id
+        files:
+          items:
+            type: string
+          type: array
+          title: Files
+          default: []
+        thumbnail_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Thumbnail Url
+      type: object
+      required:
+      - item_id
+      title: ItemImagesResponse
+      description: Response for GET /categories/{name}/items/{item_id}/images.
     ItemListResponse:
       properties:
         items:
@@ -168,6 +252,22 @@ components:
       - items
       title: ItemListResponse
       description: Response for GET /categories/{category_name}/items.
+    ItemVoicesResponse:
+      properties:
+        item_id:
+          type: string
+          title: Item Id
+        voices:
+          items:
+            $ref: '#/components/schemas/VoiceResponse'
+          type: array
+          title: Voices
+          default: []
+      type: object
+      required:
+      - item_id
+      title: ItemVoicesResponse
+      description: Response for GET /categories/{name}/items/{item_id}/voices.
     RemoveCategoryResponse:
       properties:
         archived:
@@ -291,6 +391,33 @@ components:
       - msg
       - type
       title: ValidationError
+    VoiceResponse:
+      properties:
+        id:
+          type: string
+          title: Id
+        name:
+          type: string
+          title: Name
+        language:
+          type: string
+          title: Language
+        type:
+          type: string
+          title: Type
+        audio_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Audio Url
+      type: object
+      required:
+      - id
+      - name
+      - language
+      - type
+      title: VoiceResponse
+      description: A single voice entry.
 
 paths:
 
@@ -540,7 +667,8 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/CategoryImagesResponse'
         '422':
           description: Validation Error
           content:
@@ -666,7 +794,8 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/CategoryVoicesResponse'
         '422':
           description: Validation Error
           content:
@@ -826,11 +955,12 @@ paths:
           type: string
           title: Item Id
       responses:
-        '501':
+        '200':
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/ItemDetailResponse'
         '422':
           description: Validation Error
           content:
@@ -973,7 +1103,8 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/ItemImagesResponse'
         '422':
           description: Validation Error
           content:
@@ -1087,7 +1218,8 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/ItemVoicesResponse'
         '422':
           description: Validation Error
           content:
