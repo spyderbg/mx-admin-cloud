@@ -1,4 +1,4 @@
-"""Users API routes."""
+"""Users' API routes."""
 
 from sqlite3 import IntegrityError  # pylint: disable=import-error
 

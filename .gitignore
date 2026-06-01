@@ -10,7 +10,8 @@ venv/
 .venv/
 .venv_wsl/
 
-# JetBrain Rider folder 
+# JetBrain Rider folder
+.idea/
 .run/
 .junie/
 

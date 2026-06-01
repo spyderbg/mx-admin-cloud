@@ -182,7 +182,7 @@ class FileSystemContentProvider(ContentProvider):
 
     @staticmethod
     def _archive_folders_for_base(archive_root: Path, base_name: str) -> list[tuple[str, int]]:
-        """Return ``(folder_name, timestamp)`` pairs for matching archive folders."""
+        """Return (folder_name, timestamp) pairs for matching archive folders."""
         candidates: list[tuple[str, int]] = []
         for p in archive_root.iterdir():
             if p.is_dir() and not p.name.startswith("."):
