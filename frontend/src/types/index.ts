@@ -2,16 +2,11 @@ export type Language = 'en' | 'es' | 'fr' | 'bg'
 
 export const SUPPORTED_LANGUAGES: Language[] = ['en', 'es', 'fr', 'bg']
 
-export interface Category {
-    /** UI-only identifier; backend identifies categories by `name`. */
+export interface Image {
     id: string
     name: string
-    description: string
-    /** UI-only field isn't provided by backend category responses. */
+    language: Language
     iconUri: string
-    archived?: boolean
-    voices: Voice[]
-    items: Item[]
 }
 
 export interface Voice {
@@ -22,6 +17,18 @@ export interface Voice {
     iconUri: string
     /** When absent or empty, the voice is considered missing and play is disabled. */
     audioUri?: string
+}
+
+export interface Category {
+    /** UI-only identifier; backend identifies categories by `name`. */
+    id: string
+    name: string
+    description: string
+    /** UI-only field isn't provided by backend category responses. */
+    icon: Image
+    archived?: boolean
+    voices: Voice[]
+    items: Item[]
 }
 
 export interface Item {

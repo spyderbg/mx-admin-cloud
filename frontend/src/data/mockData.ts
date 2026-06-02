@@ -15,7 +15,7 @@ export const mockCategories: Category[] = [
     id: 'drinks',
     name: 'Drinks',
     description: 'Beverages and drinks',
-    iconUri: '/content/drinks/coffee/coffee_01.png',
+    icon: { id: 'drinks', name: 'Drinks', language: 'en', iconUri: '/content/drinks/coffee/coffee_01.png' },
     archived: false,
     voices: [
       { id: 'drinks-v-en', name: 'drinks', language: 'en', type: 'male', iconUri: face(1), audioUri: '/content/drinks/drinks_en.mp3' },
@@ -150,7 +150,7 @@ export const mockCategories: Category[] = [
     id: 'foods',
     name: 'Foods',
     description: 'Food and snacks',
-    iconUri: '/content/foods/apple_pie/apple_pie.png',
+    icon: { id: 'foods', name: 'Foods', language: 'en', iconUri: '/content/foods/apple_pie/apple_pie.png' },
     archived: false,
     voices: [
       { id: 'foods-v-en', name: 'foods', language: 'en', type: 'male', iconUri: face(1), audioUri: '/content/foods/foods_en.mp3' },
@@ -326,7 +326,7 @@ export const mockCategories: Category[] = [
     id: 'vegetables',
     name: 'Vegetables',
     description: 'Fresh vegetables',
-    iconUri: '/content/vegetables/tomato/tomato.png',
+    icon: { id: 'vegetables', name: 'Vegetables', language: 'en', iconUri: '/content/vegetables/tomato/tomato.png' },
     archived: false,
     voices: [
       { id: 'vegetables-v-en', name: 'vegetables', language: 'en', type: 'male', iconUri: face(1), audioUri: '/content/vegetables/vegetables_en.mp3' },
@@ -557,7 +557,7 @@ export const mockCategories: Category[] = [
     id: 'toys',
     name: 'Toys',
     description: 'Toys and playthings',
-    iconUri: '/content/toys/toys.png',
+    icon: { id: 'toys', name: 'Toys', language: 'en', iconUri: '/content/toys/toys.png' },
     archived: false,
     voices: [
       { id: 'toys-v-en', name: 'toys', language: 'en', type: 'male', iconUri: face(1), audioUri: '/content/toys/toys_en.mp3' },

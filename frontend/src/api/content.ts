@@ -110,7 +110,7 @@ export const loadCategoriesTree = async (): Promise<Category[]> => {
         id: categoryFallback?.id ?? slugify(detail.name),
         name: detail.name,
         description: categoryFallback?.description ?? '',
-        iconUri: categoryFallback?.iconUri ?? items[0]?.thumbnailUri ?? '',
+        icon: categoryFallback?.icon ?? { id: '', name: detail.name, language: 'en' as const, iconUri: items[0]?.thumbnailUri ?? '' },
         archived: false,
         voices: categoryFallback?.voices ?? DEFAULT_LANGUAGES.map((lang) => fallbackVoice(detail.name, lang)),
         items,
