@@ -63,8 +63,8 @@ class CategoryList:
 @dataclass
 class CategoryDetail:
     name: str = ""
-    objects: list[str] = field(default_factory=list)
-    images_names: list[str] | None = None
+    items: list[str] = field(default_factory=list)
+    images_ids: list[str] | None = None
     images_by_lang: dict[str, list[str]] = field(default_factory=dict)
 
 

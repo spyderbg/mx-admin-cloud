@@ -272,7 +272,7 @@ def test_category_details_not_found(tmp_path: Path) -> None:
             provider.category_details("foods")
 
 
-def test_category_details_returns_objects_and_csv(tmp_path: Path) -> None:
+def test_category_details_returns_items_and_csv(tmp_path: Path) -> None:
     content_root = tmp_path / "content"
     cat = content_root / "foods"
     cat.mkdir(parents=True)
@@ -289,10 +289,10 @@ def test_category_details_returns_objects_and_csv(tmp_path: Path) -> None:
         result = provider.category_details("foods")
 
     assert result.name == "foods"
-    assert sorted(result.objects) == ["apple", "banana"]
+    assert sorted(result.items) == ["apple", "banana"]
     assert result.images_by_lang["en"] == ["apple", "banana"]
     assert result.images_by_lang["fr"] == ["pomme", "banane"]
-    assert result.images_names == ["I_Apple", "I_Banana"]
+    assert result.images_ids == ["I_Apple", "I_Banana"]
 
 
 # ---------------------------------------------------------------------------

@@ -420,11 +420,18 @@ def test_category_list_response_with_archived() -> None:
     assert len(resp.archived) == 1  # type: ignore[arg-type]
 
 
-def test_category_detail_response_allows_extra_fields() -> None:
-    resp = CategoryDetailResponse(name="foods", objects=["apple"], images_en=["apple"], images_fr=["pomme"])
+def test_category_detail_response_fields() -> None:
+    resp = CategoryDetailResponse(
+        name="foods",
+        items=["apple"],
+        images_ids=["I_Apple"],
+        images_by_lang={"en": ["apple"], "fr": ["pomme"]},
+    )
     dumped = resp.model_dump()
-    assert dumped["images_en"] == ["apple"]
-    assert dumped["images_fr"] == ["pomme"]
+    assert dumped["items"] == ["apple"]
+    assert dumped["images_ids"] == ["I_Apple"]
+    assert dumped["images_by_lang"]["en"] == ["apple"]
+    assert dumped["images_by_lang"]["fr"] == ["pomme"]
 
 
 def test_create_category_response() -> None:

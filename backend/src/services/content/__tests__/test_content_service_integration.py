@@ -18,7 +18,18 @@ from httpx import ASGITransport, AsyncClient
 
 from src.api.dependencies import get_current_user
 from src.services.content import routes as content_routes
-from src.services.content.models import ContentProvider
+from src.services.content.models import (
+    ArchiveCategory,
+    CategoryDetail,
+    CategoryList,
+    CategoryNotFoundError,
+    ContentProvider,
+    CreateCategory,
+    CreateItem,
+    InvalidCategoryNameError,
+    RenameCategory,
+    RestoreCategory,
+)
 from src.services.content.routes import get_content_service
 from src.services.content.service import ContentService
 
@@ -28,7 +39,7 @@ from src.services.content.service import ContentService
 # ---------------------------------------------------------------------------
 
 class _StubContentProvider(ContentProvider):
-    """Controllable stub — returns configured dicts or raises configured exceptions."""
+    """Controllable stub — returns configured model instances or raises configured exceptions."""
 
     def __init__(self, base: Path) -> None:
         super().__init__(
@@ -47,7 +58,7 @@ class _StubContentProvider(ContentProvider):
 
     # ---- builder API ----
 
-    def returns(self, method: str, value: dict[str, Any]) -> "_StubContentProvider":
+    def returns(self, method: str, value: Any) -> "_StubContentProvider":
         self._returns[method] = value
         return self
 
@@ -57,21 +68,21 @@ class _StubContentProvider(ContentProvider):
 
     # ---- ContentProvider interface ----
 
-    def _call(self, method: str, default: dict[str, Any]) -> dict[str, Any]:
+    def _call(self, method: str, default: Any) -> Any:
         if method in self._raises:
             raise self._raises[method]
         return self._returns.get(method, default)
 
     def list_categories(
             self, include_archived: bool = False, archived_only: bool = False
-    ) -> dict[str, Any]:
-        return self._call("list_categories", {"categories": ["foods", "drinks"]})
+    ) -> CategoryList:
+        return self._call("list_categories", CategoryList(categories=["foods", "drinks"]))
 
-    def category_details(self, category_name: str) -> dict[str, Any]:
-        return self._call("category_details", {"name": category_name, "objects": ["apple"]})
+    def category_details(self, category_name: str) -> CategoryDetail:
+        return self._call("category_details", CategoryDetail(name=category_name, items=["apple"]))
 
-    def create_category(self, category_name: str) -> dict[str, Any]:
-        return self._call("create_category", {"category": category_name, "message": "created"})
+    def create_category(self, category_name: str) -> CreateCategory:
+        return self._call("create_category", CreateCategory(category=category_name, message="created"))
 
     def create_item(
             self,
@@ -79,40 +90,40 @@ class _StubContentProvider(ContentProvider):
             english_word: str,
             image_data: bytes,
             image_extension: str = ".png",
-    ) -> dict[str, Any]:
-        return self._call("create_item", {
-            "category": category_name,
-            "item": english_word,
-            "folder": english_word.lower(),
-            "image_id": f"I_{english_word.title()}",
-        })
+    ) -> CreateItem:
+        return self._call("create_item", CreateItem(
+            category=category_name,
+            item=english_word,
+            folder=english_word.lower(),
+            image_id=f"I_{english_word.title()}",
+        ))
 
-    def archive_category(self, category_name: str) -> dict[str, Any]:
-        return self._call("archive_category", {
-            "archived": True,
-            "name": category_name,
-            "archive_folder": f"{category_name}_1000",
-            "destination": f"/archive/{category_name}_1000",
-            "message": "archived",
-        })
+    def archive_category(self, category_name: str) -> ArchiveCategory:
+        return self._call("archive_category", ArchiveCategory(
+            archived=True,
+            name=category_name,
+            archive_folder=f"{category_name}_1000",
+            destination=f"/archive/{category_name}_1000",
+            message="archived",
+        ))
 
-    def rename_category(self, old_name: str, new_name: str) -> dict[str, Any]:
-        return self._call("rename_category", {"category": new_name, "message": "renamed"})
+    def rename_category(self, old_name: str, new_name: str) -> RenameCategory:
+        return self._call("rename_category", RenameCategory(category=new_name, message="renamed"))
 
-    def remove_category(self, category_name: str) -> dict[str, Any]:
-        return self._call("remove_category", {
-            "removed": True,
-            "name": category_name,
-            "message": "removed",
-        })
+    def remove_category(self, category_name: str) -> ArchiveCategory:
+        return self._call("remove_category", ArchiveCategory(
+            removed=True,
+            name=category_name,
+            message="removed",
+        ))
 
-    def restore_category(self, category_name: str) -> dict[str, Any]:
-        return self._call("restore_category", {
-            "restored": True,
-            "name": category_name,
-            "from_archive": f"{category_name}_1000",
-            "message": "restored",
-        })
+    def restore_category(self, category_name: str) -> RestoreCategory:
+        return self._call("restore_category", RestoreCategory(
+            restored=True,
+            name=category_name,
+            from_archive=f"{category_name}_1000",
+            message="restored",
+        ))
 
 
 def _make_content_service(
@@ -498,35 +509,35 @@ async def test_category_details_returns_200(client: AsyncClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["name"] == "foods"
-    assert body["objects"] == ["apple"]
+    assert body["items"] == ["apple"]
 
 
 @pytest.mark.asyncio
 async def test_category_details_with_csv_columns(tmp_resolved: Path) -> None:
     provider = _StubContentProvider(tmp_resolved).returns(
         "category_details",
-        {
-            "name": "foods",
-            "objects": ["apple", "banana"],
-            "images_en": ["apple", "banana"],
-            "images_fr": ["pomme", "banane"],
-            "images_names": ["I_Apple", "I_Banana"],
-        },
+        CategoryDetail(
+            name="foods",
+            items=["apple", "banana"],
+            images_ids=["I_Apple", "I_Banana"],
+            images_by_lang={"en": ["apple", "banana"], "fr": ["pomme", "banane"]},
+        ),
     )
     app = _make_app(provider, tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         response = await c.get("/api/v1/content/categories/foods")
     assert response.status_code == 200
     body = response.json()
-    assert body["images_en"] == ["apple", "banana"]
-    assert body["images_fr"] == ["pomme", "banane"]
-    assert body["images_names"] == ["I_Apple", "I_Banana"]
+    assert body["items"] == ["apple", "banana"]
+    assert body["images_ids"] == ["I_Apple", "I_Banana"]
+    assert body["images_by_lang"]["en"] == ["apple", "banana"]
+    assert body["images_by_lang"]["fr"] == ["pomme", "banane"]
 
 
 @pytest.mark.asyncio
 async def test_category_details_not_found_returns_404(tmp_resolved: Path) -> None:
-    provider = _StubContentProvider(tmp_resolved).returns(
-        "category_details", {"error": "Category not found", "name": "foods"}
+    provider = _StubContentProvider(tmp_resolved).raises(
+        "category_details", CategoryNotFoundError("Category not found")
     )
     app = _make_app(provider, tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
@@ -536,8 +547,8 @@ async def test_category_details_not_found_returns_404(tmp_resolved: Path) -> Non
 
 @pytest.mark.asyncio
 async def test_category_details_invalid_name_returns_400(tmp_resolved: Path) -> None:
-    provider = _StubContentProvider(tmp_resolved).returns(
-        "category_details", {"error": "Invalid category name", "name": "bad!"}
+    provider = _StubContentProvider(tmp_resolved).raises(
+        "category_details", InvalidCategoryNameError("Invalid category name")
     )
     app = _make_app(provider, tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:

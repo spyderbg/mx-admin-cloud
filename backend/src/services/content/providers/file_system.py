@@ -234,20 +234,20 @@ class FileSystemContentProvider(ContentProvider):
                 except (OSError, csv.Error):
                     images_by_lang[lang] = []
 
-        images_names: list[str] | None = None
+        images_ids: list[str] | None = None
         names_path = cat_path / "images_names.csv"
         if names_path.exists():
             try:
                 with open(names_path, newline="", encoding="utf-8") as fh:
                     rows = list(csv.reader(fh))
-                    images_names = [r[0].strip() for r in rows if r and r[0].strip()]
+                    images_ids = [r[0].strip() for r in rows if r and r[0].strip()]
             except (OSError, csv.Error):
-                images_names = []
+                images_ids = []
 
         return CategoryDetail(
             name=category_name,
-            objects=sorted(objects),
-            images_names=images_names,
+            items=sorted(objects),
+            images_ids=images_ids,
             images_by_lang=images_by_lang,
         )
 

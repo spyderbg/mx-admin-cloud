@@ -185,8 +185,8 @@ def categories_details(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return CategoryDetailResponse(
         name=result.name,
-        items=result.objects,
-        images_ids=result.images_names,
+        items=result.items,
+        images_ids=result.images_ids,
         images_by_lang=result.images_by_lang,
     )
 
@@ -317,7 +317,7 @@ def categories_images_list(
             thumbnail_url=_mock_item_files(category_name, name)[0],
             voices=_mock_item_voices(category_name, name),
         )
-        for name in (result.images_names or [])
+        for name in (result.images_ids or [])
     ]
     return CategoryImagesResponse(category=category_name, items=items)
 
@@ -537,7 +537,7 @@ def items_list(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
-    return ItemListResponse(items=result.images_names or [])
+    return ItemListResponse(items=result.images_ids or [])
 
 
 @router.get(
@@ -567,7 +567,7 @@ def items_get(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
-    if item_id not in (result.images_names or []):
+    if item_id not in (result.images_ids or []):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Item '{item_id}' not found in category '{category_name}'",
@@ -663,7 +663,7 @@ def items_images_list(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
-    if item_id not in (result.images_names or []):
+    if item_id not in (result.images_ids or []):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Item '{item_id}' not found in category '{category_name}'",
@@ -785,7 +785,7 @@ def items_voices_list(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
-    if item_id not in (result.images_names or []):
+    if item_id not in (result.images_ids or []):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Item '{item_id}' not found in category '{category_name}'",
