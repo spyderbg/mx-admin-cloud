@@ -47,11 +47,11 @@
         </li>
         <li class="nav-item dropdown user-dropdown">
           <a class="nav-link dropdown-toggle" href="#" @click.prevent="toggleUser">
-            <img class="img-xs rounded-circle" :src="user.avatarUrl" alt="Profile image" />
+            <img class="img-xs rounded-circle" :src="user.avatarUri" alt="Profile image" />
           </a>
           <div class="dropdown-menu dropdown-menu-right navbar-dropdown" :class="{ show: userOpen }">
             <div class="dropdown-header text-center">
-              <img class="img-md rounded-circle" :src="user.avatarUrl" alt="Profile image" />
+              <img class="img-md rounded-circle" :src="user.avatarUri" alt="Profile image" />
               <p class="mb-1 mt-3 font-weight-semibold">{{ user.name }}</p>
               <p class="font-weight-light text-muted mb-0">{{ user.role }}</p>
             </div>

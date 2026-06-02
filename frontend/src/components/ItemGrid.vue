@@ -37,8 +37,8 @@ const props = defineProps<{
 const router = useRouter()
 
 const resolveItemSrc = (item: Item): string => {
-  if (item.thumbnailUrl.trim().length > 0) {
-    return item.thumbnailUrl
+  if (item.thumbnailUri.trim().length > 0) {
+    return item.thumbnailUri
   }
 
   const firstFile = item.files.find((file) => file.trim().length > 0)

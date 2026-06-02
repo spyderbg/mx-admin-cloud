@@ -16,7 +16,7 @@
             <label class="text-muted small mb-1 d-block">Category Icon</label>
             <div class="category-icon-wrap">
               <img
-                :src="category.iconUrl"
+                :src="category.iconUri"
                 alt="Category icon"
                 class="rounded"
               />
@@ -301,7 +301,7 @@ const playingVoiceId = ref<string | null>(null)
 let activeAudio: HTMLAudioElement | null = null
 
 function hasAudio(voice: Voice): boolean {
-  return !!(voice.audioUrl && voice.audioUrl.trim())
+  return !!(voice.audioUri && voice.audioUri.trim())
 }
 
 function stopAudio(): void {
@@ -429,7 +429,7 @@ function togglePlay(voice: Voice): void {
     return
   }
   stopAudio()
-  const audio = new Audio(voice.audioUrl)
+  const audio = new Audio(voice.audioUri)
   activeAudio = audio
   playingVoiceId.value = voice.id
   audio.addEventListener('ended', stopAudio, { once: true })

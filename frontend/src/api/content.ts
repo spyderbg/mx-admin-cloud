@@ -27,8 +27,8 @@ const fallbackVoice = (itemId: string, language: Language): Voice => ({
   name: itemId.replaceAll('_', ' '),
   language,
   type: language === 'en' || language === 'fr' ? 'male' : 'female',
-  iconUrl: '',
-  audioUrl: '',
+  iconUri: '',
+  audioUri: '',
 })
 
 const normalizeVoices = (raw: unknown, itemId: string, fallback?: Voice[]): Voice[] => {
@@ -44,8 +44,8 @@ const normalizeVoices = (raw: unknown, itemId: string, fallback?: Voice[]): Voic
         name: typeof voice.name === 'string' ? voice.name : itemId.replaceAll('_', ' '),
         language,
         type: typeof voice.type === 'string' ? voice.type : 'male',
-        iconUrl: '',
-        audioUrl: typeof voice.audio_url === 'string' ? voice.audio_url : '',
+        iconUri: '',
+        audioUri: typeof voice.audio_url === 'string' ? voice.audio_url : '',
       })
     })
     if (parsed.length > 0) return parsed
@@ -99,7 +99,7 @@ export const loadCategoriesTree = async (): Promise<Category[]> => {
             id: itemFallback?.id ?? `${slugify(categoryName)}-${itemId}`,
             name: itemName,
             files,
-            thumbnailUrl: files[0] ?? itemFallback?.thumbnailUrl ?? '',
+            thumbnailUri: files[0] ?? itemFallback?.thumbnailUri ?? '',
             voices,
           }
           return item
@@ -110,7 +110,7 @@ export const loadCategoriesTree = async (): Promise<Category[]> => {
         id: categoryFallback?.id ?? slugify(detail.name),
         name: detail.name,
         description: categoryFallback?.description ?? '',
-        iconUrl: categoryFallback?.iconUrl ?? items[0]?.thumbnailUrl ?? '',
+        iconUri: categoryFallback?.iconUri ?? items[0]?.thumbnailUri ?? '',
         archived: false,
         voices: categoryFallback?.voices ?? DEFAULT_LANGUAGES.map((lang) => fallbackVoice(detail.name, lang)),
         items,

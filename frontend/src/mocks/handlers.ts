@@ -44,7 +44,7 @@ const toVoiceResponse = (voice: Voice): Record<string, unknown> => ({
   name: voice.name,
   language: voice.language,
   type: voice.type,
-  audio_url: voice.audioUrl ?? '',
+  audio_url: voice.audioUri ?? '',
 })
 
 export const handlers = [
@@ -77,7 +77,7 @@ export const handlers = [
       id,
       name,
       description: '',
-      iconUrl: '',
+      iconUri: '',
       archived: false,
       voices: [],
       items: [],
@@ -99,7 +99,7 @@ export const handlers = [
         id: slugify(name),
         name,
         description: '',
-        iconUrl: '',
+        iconUri: '',
         archived: false,
         voices: [],
         items: [],
@@ -181,7 +181,7 @@ export const handlers = [
     const category = findCategory(String(params.category_name))
     if (!category) return new HttpResponse(null, { status: 404 })
     const voice = category.voices.find((entry) => entry.id === String(params.voice_id))
-    if (voice) voice.audioUrl = ''
+    if (voice) voice.audioUri = ''
     return new HttpResponse(null, { status: 204 })
   }),
 
@@ -233,7 +233,7 @@ export const handlers = [
     const index = Number(params.file_index)
     if (!Number.isInteger(index) || index < 0 || index >= item.files.length) return new HttpResponse(null, { status: 404 })
     if (item.files.length > 1) item.files.splice(index, 1)
-    item.thumbnailUrl = item.files[0] ?? ''
+    item.thumbnailUri = item.files[0] ?? ''
     return new HttpResponse(null, { status: 204 })
   }),
 
@@ -252,7 +252,7 @@ export const handlers = [
     if (!item) return new HttpResponse(null, { status: 404 })
     const body = (await request.json().catch(() => ({}))) as { file?: string }
     if (body.file) item.files.push(body.file)
-    item.thumbnailUrl = item.files[0] ?? ''
+    item.thumbnailUri = item.files[0] ?? ''
     return HttpResponse.json({}, { status: 201 })
   }),
 
@@ -265,7 +265,7 @@ export const handlers = [
     const body = (await request.json().catch(() => ({}))) as { file?: string }
     if (body.file && Number.isInteger(index) && index >= 0 && index < item.files.length) {
       item.files[index] = body.file
-      item.thumbnailUrl = item.files[0] ?? ''
+      item.thumbnailUri = item.files[0] ?? ''
     }
     return HttpResponse.json({})
   }),
@@ -297,7 +297,7 @@ export const handlers = [
     const item = findItem(category, String(params.item_id))
     if (!item) return new HttpResponse(null, { status: 404 })
     const voice = item.voices.find((entry) => entry.id === String(params.voice_id) || entry.language === String(params.voice_id))
-    if (voice) voice.audioUrl = ''
+    if (voice) voice.audioUri = ''
     return new HttpResponse(null, { status: 204 })
   }),
 
@@ -308,8 +308,8 @@ export const handlers = [
     if (!item) return new HttpResponse(null, { status: 404 })
     const voice = item.voices.find((entry) => entry.id === String(params.voice_id) || entry.language === String(params.voice_id))
     if (!voice) return new HttpResponse(null, { status: 404 })
-    const body = (await request.json().catch(() => ({}))) as { audioUrl?: string }
-    if (body.audioUrl) voice.audioUrl = body.audioUrl
+    const body = (await request.json().catch(() => ({}))) as { audioUri?: string }
+    if (body.audioUri) voice.audioUri = body.audioUri
     return HttpResponse.json({})
   }),
 
@@ -325,14 +325,14 @@ export const handlers = [
       id: itemId,
       name: itemName,
       files: [],
-      thumbnailUrl: '',
+      thumbnailUri: '',
       voices: (['en', 'es', 'fr', 'bg'] as const).map((lang) => ({
         id: `${itemId}-${lang}`,
         name: itemName,
         language: lang,
         type: lang === 'en' || lang === 'fr' ? 'male' : 'female',
-        iconUrl: '',
-        audioUrl: '',
+        iconUri: '',
+        audioUri: '',
       })),
     })
     return HttpResponse.json(
