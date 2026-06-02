@@ -68,7 +68,6 @@ const normalizeFiles = (raw: unknown, fallback: string[]): string[] => {
 
 export const loadCategoriesTree = async (): Promise<Category[]> => {
   const list = await listCategories()
-  console.log('listCategories result:', JSON.stringify(list, null, 2))
   if (!list.categories.length) return []
   const categories = await Promise.all(
     list.categories.map(async (categoryName) => {

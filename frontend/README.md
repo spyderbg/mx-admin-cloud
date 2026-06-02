@@ -16,6 +16,8 @@ The dev server proxies `**/api**` to `**http://127.0.0.1:8000**` and serves the 
 
 **Optional offline UI:** If `VITE_DEBUG_MODE=true` (e.g. in `.env.development.local`), the app starts [MSW](https://mswjs.io/) (`src/mocks/`), seeds a placeholder token when none is set, and unhandled requests bypass the worker so real APIs still work when reachable.
 
+**Verbose request logging:** If `VITE_VERBOSE_REQUESTS=true`, every axios request/response is logged to the browser console as `[VERBOSE] METHOD /api/endpoint → status` with the JSON body. Useful during development to inspect API payloads.
+
 ## Project Structure
 
 ```

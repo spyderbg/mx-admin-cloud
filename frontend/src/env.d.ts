@@ -2,6 +2,7 @@
 
 interface ImportMetaEnv {
   readonly VITE_DEBUG_MODE: string
+  readonly VITE_VERBOSE_REQUESTS: string
 }
 
 declare module '*.vue' {

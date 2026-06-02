@@ -8,7 +8,6 @@ export interface ItemImagesListResponse {
 
 export const listItemImages = async (categoryName: string, itemId: string): Promise<ItemImagesListResponse> => {
   const r = await client.get<ItemImagesListResponse>(`/content/categories/${categoryName}/items/${itemId}/images`)
-  console.log('listItemImages result:', JSON.stringify(r.data, null, 2))
   return r.data
 }
 
