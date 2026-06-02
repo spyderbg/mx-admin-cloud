@@ -54,10 +54,10 @@ const normalizeVoices = (raw: unknown, itemId: string, fallback?: Voice[]): Voic
   return DEFAULT_LANGUAGES.map((lang) => fallbackVoice(itemId, lang))
 }
 
-const normalizeFiles = (raw: unknown, fallback: string[]): string[] => {
+const normalizeImages = (raw: unknown, fallback: string[]): string[] => {
   if (Array.isArray(raw)) {
-    const files = raw.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
-    if (files.length > 0) return files
+    const images = raw.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+    if (images.length > 0) return images
   }
   return fallback
 }
@@ -85,9 +85,9 @@ export const loadCategoriesTree = async (): Promise<Category[]> => {
             listItemVoices(categoryName, itemName).catch(() => ({})),
           ])
           const imagePayload = imagesResponse as { files?: unknown; images?: unknown }
-          const files = normalizeFiles(
-            imagePayload.files ?? imagePayload.images,
-            itemFallback?.files ?? [],
+          const images = normalizeImages(
+            imagePayload.images ?? imagePayload.files,
+            itemFallback?.images ?? [],
           )
           const voices = normalizeVoices(
             'voices' in voicesResponse ? voicesResponse.voices : undefined,
@@ -97,8 +97,8 @@ export const loadCategoriesTree = async (): Promise<Category[]> => {
           const item: Item = {
             id: itemFallback?.id ?? `${slugify(categoryName)}-${itemId}`,
             name: itemName,
-            files,
-            thumbnailUri: files[0] ?? itemFallback?.thumbnailUri ?? '',
+            images,
+            thumbnailUri: images[0] ?? itemFallback?.thumbnailUri ?? '',
             voices,
           }
           return item

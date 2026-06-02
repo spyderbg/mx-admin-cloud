@@ -11,7 +11,7 @@
         :alt="item.name"
         class="item-card-thumb"
       />
-      <span class="file-count-badge">{{ item.files.length }}</span>
+      <span class="image-count-badge">{{ item.images.length }}</span>
       <button
         class="edit-badge"
         @click.stop="navigateToDetail(item.id)"
@@ -41,7 +41,7 @@ const resolveItemSrc = (item: Item): string => {
     return item.thumbnailUri
   }
 
-  const firstFile = item.files.find((file) => file.trim().length > 0)
+  const firstFile = item.images.find((image) => image.trim().length > 0)
   return firstFile ?? cameraPlaceholderUrl
 }
 

@@ -2,7 +2,6 @@ import client from './client'
 
 export interface ItemImagesListResponse {
   images?: string[]
-  files?: string[]
   [key: string]: unknown
 }
 
@@ -26,6 +25,6 @@ export const replaceItemImage = async (
   return r.data
 }
 
-export const deleteItemFile = async (categoryName: string, itemId: string, fileIndex: number): Promise<void> => {
-  await client.delete(`/content/categories/${categoryName}/items/${itemId}/files/${fileIndex}`)
+export const deleteItemImage = async (categoryName: string, itemId: string, imageIndex: number): Promise<void> => {
+  await client.delete(`/content/categories/${categoryName}/items/${itemId}/images/${imageIndex}`)
 }

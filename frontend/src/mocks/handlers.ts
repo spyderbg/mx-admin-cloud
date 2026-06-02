@@ -198,7 +198,7 @@ export const handlers = [
     if (!item) return new HttpResponse(null, { status: 404 })
     return HttpResponse.json({
       item: item.name,
-      files: item.files,
+      images: item.images,
       voices: item.voices.map(toVoiceResponse),
     })
   }),
@@ -231,9 +231,9 @@ export const handlers = [
     const item = findItem(category, String(params.item_id))
     if (!item) return new HttpResponse(null, { status: 404 })
     const index = Number(params.file_index)
-    if (!Number.isInteger(index) || index < 0 || index >= item.files.length) return new HttpResponse(null, { status: 404 })
-    if (item.files.length > 1) item.files.splice(index, 1)
-    item.thumbnailUri = item.files[0] ?? ''
+    if (!Number.isInteger(index) || index < 0 || index >= item.images.length) return new HttpResponse(null, { status: 404 })
+    if (item.images.length > 1) item.images.splice(index, 1)
+    item.thumbnailUri = item.images[0] ?? ''
     return new HttpResponse(null, { status: 204 })
   }),
 
@@ -242,7 +242,7 @@ export const handlers = [
     if (!category) return new HttpResponse(null, { status: 404 })
     const item = findItem(category, String(params.item_id))
     if (!item) return new HttpResponse(null, { status: 404 })
-    return HttpResponse.json({ files: item.files })
+    return HttpResponse.json({ images: item.images })
   }),
 
   http.post('/api/v1/content/categories/:category_name/items/:item_id/images', async ({ params, request }) => {
@@ -251,8 +251,8 @@ export const handlers = [
     const item = findItem(category, String(params.item_id))
     if (!item) return new HttpResponse(null, { status: 404 })
     const body = (await request.json().catch(() => ({}))) as { file?: string }
-    if (body.file) item.files.push(body.file)
-    item.thumbnailUri = item.files[0] ?? ''
+    if (body.file) item.images.push(body.file)
+    item.thumbnailUri = item.images[0] ?? ''
     return HttpResponse.json({}, { status: 201 })
   }),
 
@@ -263,9 +263,9 @@ export const handlers = [
     if (!item) return new HttpResponse(null, { status: 404 })
     const index = Number(params.image_index)
     const body = (await request.json().catch(() => ({}))) as { file?: string }
-    if (body.file && Number.isInteger(index) && index >= 0 && index < item.files.length) {
-      item.files[index] = body.file
-      item.thumbnailUri = item.files[0] ?? ''
+    if (body.file && Number.isInteger(index) && index >= 0 && index < item.images.length) {
+      item.images[index] = body.file
+      item.thumbnailUri = item.images[0] ?? ''
     }
     return HttpResponse.json({})
   }),
@@ -324,7 +324,7 @@ export const handlers = [
     category.items.push({
       id: itemId,
       name: itemName,
-      files: [],
+      images: [],
       thumbnailUri: '',
       voices: (['en', 'es', 'fr', 'bg'] as const).map((lang) => ({
         id: `${itemId}-${lang}`,

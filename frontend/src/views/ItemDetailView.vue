@@ -61,7 +61,7 @@
         />
         <div v-if="hasFiles" class="row">
           <div
-            v-for="(file, index) in itemFiles"
+            v-for="(file, index) in itemImages"
             :key="index"
             class="col-xl-4 col-lg-6 col-md-6 col-sm-12 col-12 mb-3"
           >
@@ -222,8 +222,8 @@ const item = computed(() => {
   const itemId = route.params.itemId as string
   return category.value?.items.find((entry) => entry.id === itemId) ?? null
 })
-const itemFiles = computed(() => item.value?.files.filter((file) => file.trim().length > 0) ?? [])
-const hasFiles = computed(() => itemFiles.value.length > 0)
+const itemImages = computed(() => item.value?.images.filter((image) => image.trim().length > 0) ?? [])
+const hasFiles = computed(() => itemImages.value.length > 0)
 
 const breadcrumbRoot = computed(() => breadcrumbCategoriesLabel(contentLanguage.value))
 

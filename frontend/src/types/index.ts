@@ -34,7 +34,7 @@ export interface Category {
 export interface Item {
     id: string
     name: string
-    files: string[]
+    images: string[]
     voices: Voice[]
     thumbnailUri: string
 }
