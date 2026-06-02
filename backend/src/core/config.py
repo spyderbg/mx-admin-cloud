@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     CLI_TOKEN_EXPIRE_SECONDS: int = 30
-    AUTH_DISABLED: bool = False
+    AUTH_DISABLED: bool = True
 
     # Database settings
     DB_PATH: str = "data/users.db"
