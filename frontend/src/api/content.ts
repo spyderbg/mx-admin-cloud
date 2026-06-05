@@ -77,20 +77,21 @@ export const loadCategoriesBasic = async (): Promise<Category[]> => {
   if (!list.categories.length) return []
 
   return await Promise.all(
-    list.categories.map(async (categoryName) => {
-      const categoryFallback = mockCategories.find((c) => c.name.toLowerCase() === categoryName.toLowerCase())
-      const detail = await getCategoryDetail(categoryName)
-      const itemNames = await listItems(categoryName).then((r) => r.items).catch(() => [])
+    list.categories.map(async (summary) => {
+      const enName = summary.name.find((n) => n.language === 'en')?.name ?? ''
+      const categoryFallback = mockCategories.find((c) => c.name.toLowerCase() === enName.toLowerCase())
+      const detail = await getCategoryDetail(enName)
+      const itemNames = await listItems(enName).then((r) => r.items).catch(() => [])
 
       const category: Category = {
-        id: categoryFallback?.id ?? slugify(categoryName),
+        id: summary.category_id,
         name: detail.name,
         description: categoryFallback?.description ?? '',
         images: categoryFallback?.images ?? [{ id: '', name: detail.name, language: 'en' as const, iconUri: '' }],
         archived: false,
         voices: categoryFallback?.voices ?? DEFAULT_LANGUAGES.map((lang) => fallbackVoice(detail.name, lang)),
         items: itemNames.map((name) => ({
-          id: `${slugify(categoryName)}-${slugify(name)}`,
+          id: `${summary.category_id}-${slugify(name)}`,
           name,
           images: [],
           voices: [],
@@ -160,19 +161,20 @@ export const loadCategoriesTree = async (): Promise<Category[]> => {
   const list = await listCategories()
   if (!list.categories.length) return []
   const categories = await Promise.all(
-    list.categories.map(async (categoryName) => {
-      const categoryFallback = mockCategories.find((c) => c.name.toLowerCase() === categoryName.toLowerCase())
+    list.categories.map(async (summary) => {
+      const enName = summary.name.find((n) => n.language === 'en')?.name ?? ''
+      const categoryFallback = mockCategories.find((c) => c.name.toLowerCase() === enName.toLowerCase())
       const [detail, itemNames] = await Promise.all([
-        getCategoryDetail(categoryName),
-        listItems(categoryName).then((r) => r.items).catch(() => []),
+        getCategoryDetail(enName),
+        listItems(enName).then((r) => r.items).catch(() => []),
       ])
       const items = await Promise.all(
         itemNames.map(async (itemName) => {
           const itemId = slugify(itemName)
           const itemFallback = categoryFallback?.items.find((i) => i.name.toLowerCase() === itemName.toLowerCase())
           const [imagesResponse, voicesResponse] = await Promise.all([
-            listItemImages(categoryName, itemName).catch(() => ({})),
-            listItemVoices(categoryName, itemName).catch(() => ({})),
+            listItemImages(enName, itemName).catch(() => ({})),
+            listItemVoices(enName, itemName).catch(() => ({})),
           ])
           const imagePayload = imagesResponse as { files?: unknown; images?: unknown }
           const images = normalizeImages(
@@ -185,7 +187,7 @@ export const loadCategoriesTree = async (): Promise<Category[]> => {
             itemFallback?.voices,
           )
           const item: Item = {
-            id: itemFallback?.id ?? `${slugify(categoryName)}-${itemId}`,
+            id: itemFallback?.id ?? `${summary.category_id}-${itemId}`,
             name: itemName,
             images,
             thumbnailUri: images[0] ?? itemFallback?.thumbnailUri ?? '',
@@ -196,7 +198,7 @@ export const loadCategoriesTree = async (): Promise<Category[]> => {
       )
 
       const category: Category = {
-        id: categoryFallback?.id ?? slugify(detail.name),
+        id: summary.category_id,
         name: detail.name,
         description: categoryFallback?.description ?? '',
         images: categoryFallback?.images ?? [{ id: '', name: detail.name, language: 'en' as const, iconUri: items[0]?.thumbnailUri ?? '' }],

@@ -1,3 +1,6 @@
+import type { CategorySummary as CategorySummaryItem } from './contentSchemas'
+export type { CategorySummary as CategorySummaryItem } from './contentSchemas'
+
 export type Language = 'en' | 'es' | 'fr' | 'bg'
 
 export const SUPPORTED_LANGUAGES: Language[] = ['en', 'es', 'fr', 'bg']
@@ -52,7 +55,7 @@ export interface ArchivedEntry {
 }
 
 export interface CategorySummary {
-    categories: string[]
+    categories: CategorySummaryItem[]
     archived?: ArchivedEntry[] | null
     error?: string | null
 }

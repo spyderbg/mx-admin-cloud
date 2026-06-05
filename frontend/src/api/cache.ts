@@ -90,19 +90,20 @@ async function _loadCategoriesBasic(): Promise<Category[]> {
 
   const categories: Category[] = []
 
-  for (const categoryName of list.categories) {
+  for (const summary of list.categories) {
+    const enName = summary.name.find((n) => n.language === 'en')?.name ?? ''
     const categoryFallback = mockCategories.find(
-      (c) => c.name.toLowerCase() === categoryName.toLowerCase(),
+      (c) => c.name.toLowerCase() === enName.toLowerCase(),
     )
     const [detail, itemNames] = await Promise.all([
-      withInflight(`detail:${categoryName}`, () => getCategoryDetail(categoryName)),
-      withInflight(`items:${categoryName}`, () => listItems(categoryName)).then(
+      withInflight(`detail:${enName}`, () => getCategoryDetail(enName)),
+      withInflight(`items:${enName}`, () => listItems(enName)).then(
         (r) => r.items,
       ),
     ])
 
     const category: Category = {
-      id: categoryFallback?.id ?? slugify(categoryName),
+      id: summary.category_id,
       name: detail.name,
       description: categoryFallback?.description ?? '',
       images: categoryFallback?.images ?? [
@@ -113,7 +114,7 @@ async function _loadCategoriesBasic(): Promise<Category[]> {
         ...SUPPORTED_LANGUAGES.map((lang) => fallbackVoice(detail.name, lang)),
       ],
       items: itemNames.map((name) => ({
-        id: `${slugify(categoryName)}-${slugify(name)}`,
+        id: `${summary.category_id}-${slugify(name)}`,
         name,
         images: [],
         voices: [],

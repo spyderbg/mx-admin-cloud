@@ -11,10 +11,17 @@ Shared schemas at services/schemas.py → sharedSchemas.ts.
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 BACKEND_SERVICES_DIR = Path(__file__).resolve().parent.parent / "backend" / "src" / "services"
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "frontend" / "src" / "types"
+
+def snake_to_camel(name: str) -> str:
+    """Convert snake_case to camelCase."""
+    parts = name.split("_")
+    return parts[0] + "".join(p.capitalize() for p in parts[1:])
+
 
 BASE_TYPE_MAP: dict[str, str] = {
     "str": "string",
@@ -327,7 +334,8 @@ def main() -> None:
         ts_code = _generate_ts(models, enums)
 
         body = header + ts_code
-        out_path = OUTPUT_DIR / f"{service_name}Schemas.ts"
+        ts_name = snake_to_camel(service_name)
+        out_path = OUTPUT_DIR / f"{ts_name}Schemas.ts"
         out_path.write_text(body)
         print(f"✔ {service_name:20s} → {out_path.name}")
 
