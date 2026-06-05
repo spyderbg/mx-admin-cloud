@@ -186,8 +186,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { loadCategoriesBasic, loadCategoryFull } from '../api/content'
-import type { Category, Language, Voice } from '../types'
+import { ensureCategoriesLoaded, ensureCategoryFull, sharedCategories, sharedLoadedCategoryIds } from '../api/cache'
+import type { Language, Voice } from '../types'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import cameraPlaceholderUrl from '../assets/images/samples/camera-placeholder.svg'
 import {
@@ -200,43 +200,28 @@ import { toPascalCaseWords } from '../utils/pascalCaseWords'
 const route = useRoute()
 const contentLanguage = useContentLanguage()
 
-const categoryData = ref<Category | null>(null)
-const categoryNames = ref<Map<string, string>>(new Map()) // id -> name for loadCategoryFull lookup
-const loadedCategoryIds = ref<Set<string>>(new Set())
-
-// Build ID->name map and load full data for the current category
-const initCategory = async (id: string) => {
-  // Try loading from map first
-  const name = categoryNames.value.get(id)
-  if (name) {
-    const full = await loadCategoryFull(name)
-    if (full) categoryData.value = full
-  } else {
-    // Need to fetch basic data first
-    const basic = await loadCategoriesBasic()
-    const map = new Map<string, string>()
-    for (const c of basic) map.set(c.id, c.name)
-    categoryNames.value = map
-    const catName = map.get(id)
-    if (catName) {
-      const full = await loadCategoryFull(catName)
-      if (full) categoryData.value = full
-    }
-  }
-  loadedCategoryIds.value.add(id)
-}
-
-onMounted(() => {
-  const id = route.params.categoryId as string
-  if (id) initCategory(id)
+onMounted(async () => {
+  await ensureCategoriesLoaded()
 })
 
 watch(() => route.params.categoryId as string, async (id) => {
-  if (!id || loadedCategoryIds.value.has(id)) return
-  await initCategory(id)
+  if (!id || sharedLoadedCategoryIds.value.has(id)) return
+  const name = sharedCategories.value.find(
+    (c) => c.id.toLowerCase() === id.toLowerCase(),
+  )?.name
+  if (name) {
+    await ensureCategoryFull(name)
+    sharedLoadedCategoryIds.value.add(id)
+  }
 })
 
-const category = computed(() => categoryData.value)
+const category = computed(() => {
+  const id = route.params.categoryId as string
+  if (!id) return null
+  return sharedCategories.value.find(
+    (c) => c.id.toLowerCase() === id.toLowerCase(),
+  ) ?? null
+})
 
 const item = computed(() => {
   const itemId = route.params.itemId as string

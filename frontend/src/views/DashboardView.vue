@@ -54,9 +54,8 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { listCategories, getCategoryDetail } from '../api/categories'
 import { useContentLanguage } from '../composables/useContentLanguage'
-import { loadCategoriesBasic } from '../api/content'
+import { ensureCategoriesLoaded, sharedCategories } from '../api/cache'
 import { breadcrumbCategoriesLabel } from '../utils/localizedLabels'
 import { toPascalCaseWords } from '../utils/pascalCaseWords'
 
@@ -88,40 +87,15 @@ const goToCategory = (id: string): void => {
 
 onMounted(async () => {
   try {
-    const summary = await listCategories()
-    if (summary.error) {
-      error.value = summary.error
-      loading.value = false
-      return
-    }
+    // Single shared fetch — no duplicate calls.
+    await ensureCategoriesLoaded()
 
-    const names = summary.categories || []
-    const cardList: CategoryCard[] = []
-
-    // Build a map of name → first image URI from mock/fallback data.
-    const fallbacks = await loadCategoriesBasic()
-    const fallbackMap = new Map(
-      fallbacks.map((c) => [c.name.toLowerCase(), c.images?.[0]?.iconUri ?? '']),
-    )
-
-    for (const name of names) {
-      try {
-        const detail = await getCategoryDetail(name)
-        cardList.push({
-          id: name,
-          name: name,
-          iconUri: fallbackMap.get(name.toLowerCase()) ?? `/content/${name}/icon.png`,
-          itemCount: detail.items?.length ?? 0,
-        })
-      } catch {
-        cardList.push({
-          id: name,
-          name: name,
-          iconUri: fallbackMap.get(name.toLowerCase()) ?? '/content/default/icon.png',
-          itemCount: 0,
-        })
-      }
-    }
+    const cardList: CategoryCard[] = sharedCategories.value.map((c) => ({
+      id: c.id,
+      name: c.name,
+      iconUri: c.images?.[0]?.iconUri ?? `/content/${c.name}/icon.png`,
+      itemCount: c.items?.length ?? 0,
+    }))
 
     cards.value = cardList
   } catch (err) {

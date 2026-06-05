@@ -51,8 +51,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { loadCategoriesBasic, loadCategoryFull } from '../api/content'
-import type { Category, Voice } from '../types'
+import { ensureCategoriesLoaded, ensureCategoryFull, sharedCategories, sharedCategoryNames, sharedLoadedCategoryIds } from '../api/cache'
+import type { Voice } from '../types'
 import CategoryDetail from '../components/CategoryDetail.vue'
 import ItemGrid from '../components/ItemGrid.vue'
 import { useContentLanguage } from '../composables/useContentLanguage'
@@ -65,24 +65,17 @@ const router = useRouter()
 const contentLanguage = useContentLanguage()
 
 const gridColumns = ref(3)
-const categories = ref<Category[]>([])
-const categoryNames = ref<Map<string, string>>(new Map()) // id -> name for loadCategoryFull lookup
+
 onMounted(async () => {
-  const basic = await loadCategoriesBasic()
-  categories.value = basic
-  const map = new Map<string, string>()
-  for (const c of basic) map.set(c.id, c.name)
-  categoryNames.value = map
+  // Use shared store — deduplicates with DashboardView if it already fetched
+  await ensureCategoriesLoaded()
 })
 
 const category = computed(() => {
   const id = route.params.categoryId as string
-  if (id) return categories.value.find(c => c.id.toLowerCase() === id.toLowerCase()) ?? null
-  return categories.value[0] ?? null
+  if (id) return sharedCategories.value.find(c => c.id.toLowerCase() === id.toLowerCase()) ?? null
+  return sharedCategories.value[0] ?? null
 })
-
-// Track which categories have been fully loaded to avoid redundant fetches
-const loadedCategoryIds = ref<Set<string>>(new Set())
 
 const pageTitle = computed(() => {
   const cat = category.value
@@ -96,32 +89,29 @@ const breadcrumbCategory = computed(() =>
   category.value ? localizedCategoryLabel(category.value, contentLanguage.value) : '',
 )
 
+// Auto-redirect from /categories to /categories/:id when a category is selected
 watch(category, (cat) => {
   if (cat && !route.params.categoryId) {
     router.replace(`/categories/${cat.id}`)
   }
 }, { immediate: true })
 
-// When user clicks a category in the sidebar, load full data (images + voices) for that category
+// Track which categories have been fully loaded to avoid redundant fetches
 const currentFullCategoryId = ref<string>('')
 watch(
   () => route.params.categoryId as string,
   async (id) => {
     if (!id || currentFullCategoryId.value === id) return
-    if (loadedCategoryIds.value.has(id)) {
+    if (sharedLoadedCategoryIds.value.has(id)) {
       currentFullCategoryId.value = id
       return
     }
-    const name = categoryNames.value.get(id)
+    const name = sharedCategoryNames.value.get(id)
     if (!name) return
-    const full = await loadCategoryFull(name)
+    const full = await ensureCategoryFull(name)
     if (full) {
-      const idx = categories.value.findIndex(c => c.id === id)
-      if (idx !== -1) categories.value[idx] = full
-      else categories.value.push(full)
-      loadedCategoryIds.value.add(id)
+      currentFullCategoryId.value = id
     }
-    currentFullCategoryId.value = id
   },
 )
 
