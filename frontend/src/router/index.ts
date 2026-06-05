@@ -10,25 +10,25 @@ const router = createRouter({
     },
     {
       path: '/',
-      redirect: '/categories',
-    },
-    {
-      path: '/categories',
       component: () => import('../layouts/AppLayout.vue'),
       meta: { requiresAuth: true },
       children: [
         {
           path: '',
-          name: 'categories',
+          name: 'dashboard',
+          component: () => import('../views/DashboardView.vue'),
+        },
+        {
+          path: 'categories',
           component: () => import('../views/CategoriesView.vue'),
         },
         {
-          path: ':categoryId',
+          path: 'categories/:categoryId',
           name: 'category',
           component: () => import('../views/CategoriesView.vue'),
         },
         {
-          path: ':categoryId/items/:itemId',
+          path: 'categories/:categoryId/items/:itemId',
           name: 'item-detail',
           component: () => import('../views/ItemDetailView.vue'),
         },

@@ -1,5 +1,13 @@
 <template>
   <div v-if="category" style="width: 100%;">
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb bg-transparent p-0 mb-3">
+        <li class="breadcrumb-item">
+          <router-link :to="{ name: 'dashboard' }">{{ breadcrumbRoot }}</router-link>
+        </li>
+        <li class="breadcrumb-item active" aria-current="page">{{ breadcrumbCategory }}</li>
+      </ol>
+    </nav>
     <div class="page-header" style="margin-bottom: 0.5rem;">
       <h3 class="page-title">{{ pageTitle }}</h3>
     </div>
@@ -48,7 +56,7 @@ import type { Category, Voice } from '../types'
 import CategoryDetail from '../components/CategoryDetail.vue'
 import ItemGrid from '../components/ItemGrid.vue'
 import { useContentLanguage } from '../composables/useContentLanguage'
-import { localizedCategoryLabel } from '../utils/localizedLabels'
+import { localizedCategoryLabel, breadcrumbCategoriesLabel } from '../utils/localizedLabels'
 import { toPascalCaseWords } from '../utils/pascalCaseWords'
 
 const route = useRoute()
@@ -69,7 +77,7 @@ onMounted(async () => {
 
 const category = computed(() => {
   const id = route.params.categoryId as string
-  if (id) return categories.value.find(c => c.id === id) ?? null
+  if (id) return categories.value.find(c => c.id.toLowerCase() === id.toLowerCase()) ?? null
   return categories.value[0] ?? null
 })
 
@@ -81,6 +89,12 @@ const pageTitle = computed(() => {
   if (!cat) return ''
   return toPascalCaseWords(localizedCategoryLabel(cat, contentLanguage.value))
 })
+
+const breadcrumbRoot = computed(() => breadcrumbCategoriesLabel(contentLanguage.value))
+
+const breadcrumbCategory = computed(() =>
+  category.value ? localizedCategoryLabel(category.value, contentLanguage.value) : '',
+)
 
 watch(category, (cat) => {
   if (cat && !route.params.categoryId) {
