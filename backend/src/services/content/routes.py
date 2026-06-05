@@ -26,6 +26,7 @@ from src.services.content.schemas import (
     CategoryDetailResponse,
     CategoryImagesResponse,
     CategoryListResponse,
+    CategorySummary,
     CategoryVoicesResponse,
     CreateCategoryBody,
     CreateCategoryResponse,
@@ -87,7 +88,10 @@ def categories_list(
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
     return CategoryListResponse(
-        categories=result.categories,
+        categories=[
+            CategorySummary(name=c.name, item_count=c.item_count)
+            for c in result.categories
+        ],
         archived=[
             ArchivedEntry(base_name=e.base_name, archive_folder=e.archive_folder, archived_at=e.archived_at)
             for e in result.archived

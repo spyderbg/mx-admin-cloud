@@ -55,8 +55,14 @@ class ArchivedEntry:
 
 
 @dataclass
+class CategorySummary:
+    name: str = ""
+    item_count: int = 0
+
+
+@dataclass
 class CategoryList:
-    categories: list[str] = field(default_factory=list)
+    categories: list[CategorySummary] = field(default_factory=list)
     archived: list[ArchivedEntry] = field(default_factory=list)
 
 

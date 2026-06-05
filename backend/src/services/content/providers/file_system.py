@@ -27,6 +27,7 @@ from src.services.content.models import (
     CategoryDetail,
     CategoryList,
     CategoryNotFoundError,
+    CategorySummary,
     ContentOperationError,
     ContentProvider,
     CreateCategory,
@@ -234,9 +235,13 @@ class FileSystemContentProvider(ContentProvider):
         root = self._content_root()
         if not root.exists() or not root.is_dir():
             raise ContentOperationError(f"Content root does not exist: {root}")
-        names = [p.name for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")]
+        summaries = []
+        for p in sorted(root.iterdir(), key=lambda x: x.name):
+            if p.is_dir() and not p.name.startswith("."):
+                item_count = sum(1 for c in p.iterdir() if c.is_dir() and not c.name.startswith("."))
+                summaries.append(CategorySummary(name=p.name, item_count=item_count))
         return CategoryList(
-            categories=sorted(names),
+            categories=summaries,
             archived=archived if include_archived else [],
         )
 

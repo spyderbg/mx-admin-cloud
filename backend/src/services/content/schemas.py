@@ -43,10 +43,17 @@ class ArchivedEntry(BaseModel):
 # Categories Response models
 # ---------------------------------------------------------------------------
 
+class CategorySummary(BaseModel):
+    """Summary of a single category returned in the list endpoint."""
+
+    name: str
+    item_count: int
+
+
 class CategoryListResponse(BaseModel):
     """Response for GET /content/categories."""
 
-    categories: list[str]
+    categories: list[CategorySummary]
     archived: list[ArchivedEntry] | None = None
     error: str | None = None
 
