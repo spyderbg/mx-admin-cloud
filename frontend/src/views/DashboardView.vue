@@ -44,7 +44,6 @@
                 {{ card.itemCount }} item{{ card.itemCount !== 1 ? 's' : '' }}
               </p>
             </div>
-            <i class="mdi mdi-chevron-right text-muted" style="font-size: 1.25rem;"></i>
           </div>
         </div>
       </div>

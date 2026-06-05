@@ -16,7 +16,7 @@
             <label class="text-muted small mb-1 d-block">Category Icon</label>
             <div class="category-icon-wrap">
               <img
-                :src="category.icon.iconUri"
+                :src="category.images?.[0]?.iconUri ?? ''"
                 alt="Category icon"
                 class="rounded"
               />

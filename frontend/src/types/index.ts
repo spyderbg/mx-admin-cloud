@@ -24,8 +24,8 @@ export interface Category {
     id: string
     name: string
     description: string
-    /** UI-only field isn't provided by backend category responses. */
-    icon: Image
+    /** UI-only array of images isn't provided by backend category responses. */
+    images: Image[]
     archived?: boolean
     voices: Voice[]
     items: Item[]
