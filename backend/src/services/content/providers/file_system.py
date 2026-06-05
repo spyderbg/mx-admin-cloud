@@ -434,28 +434,41 @@ class FileSystemContentProvider(ContentProvider):
         except (OSError, shutil.Error) as exc:
             raise ContentOperationError(f"Failed to rename: {exc}") from exc
 
+        self._cleanup_old_voices(new_path, old_name)
+        self._recreate_voices(new_path, new_name)
+        self._update_category_icon(new_path, old_name, new_name)
+
+        return RenameCategory(
+            category=new_name,
+            message=f"Category renamed from '{old_name}' to '{new_name}'.",
+        )
+
+    def _cleanup_old_voices(self, category_path: Path, old_name: str) -> None:
+        """Remove audio files associated with the old category name."""
         for lang in settings.SUPPORTED_LANGUAGES:
-            old_voice = new_path / f"{old_name}_{lang}.mp3"
+            old_voice = category_path / f"{old_name}_{lang}.mp3"
             if old_voice.exists() and old_voice.is_file():
                 old_voice.unlink()
         for lang in settings.SUPPORTED_LANGUAGES:
-            legacy_voice = new_path / f"category_{lang}.mp3"
+            legacy_voice = category_path / f"category_{lang}.mp3"
             if legacy_voice.exists() and legacy_voice.is_file():
                 legacy_voice.unlink()
 
+    def _recreate_voices(self, category_path: Path, category_name: str) -> None:
+        """Translate category name and generate audio files for all languages."""
         for lang in settings.SUPPORTED_LANGUAGES:
             if lang == "en":
-                label = new_name.replace("_", " ").strip() or new_name
+                label = category_name.replace("_", " ").strip() or category_name
             else:
                 try:
                     label = self._translate_word(
-                        new_name.replace("_", " ").strip() or new_name, lang, new_name,
+                        category_name.replace("_", " ").strip() or category_name, lang, category_name,
                     )
                 except (ValueError, RuntimeError, httpx.HTTPError, KeyError) as exc:
                     raise ContentOperationError(f"Translation failed for {lang}: {exc}") from exc
             try:
                 audio_bytes = self._generate_audio(label, lang)
-                voice_path = new_path / f"{new_name}_{lang}.mp3"
+                voice_path = category_path / f"{category_name}_{lang}.mp3"
                 with open(voice_path, "wb") as fh:
                     fh.write(audio_bytes)
             except (ValueError, RuntimeError) as exc:
@@ -463,18 +476,15 @@ class FileSystemContentProvider(ContentProvider):
             except OSError as exc:
                 raise ContentOperationError(f"File write failed for {lang}: {exc}") from exc
 
-        new_icon_path = new_path / f"{new_name}.png"
+    def _update_category_icon(self, category_path: Path, old_name: str, new_name: str) -> None:
+        """Rename the category icon to match the new category name."""
+        new_icon_path = category_path / f"{new_name}.png"
         for old_icon_name in (f"{old_name}.png", "category_icon.png"):
-            old_icon_path = new_path / old_icon_name
+            old_icon_path = category_path / old_icon_name
             if old_icon_path.exists() and old_icon_path.is_file():
                 if old_icon_path != new_icon_path:
                     old_icon_path.rename(new_icon_path)
                 break
-
-        return RenameCategory(
-            category=new_name,
-            message=f"Category renamed from '{old_name}' to '{new_name}'.",
-        )
 
     def remove_category(self, category_name: str) -> ArchiveCategory:
         if not self._is_safe_category_name(category_name):

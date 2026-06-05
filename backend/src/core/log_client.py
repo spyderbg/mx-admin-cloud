@@ -93,6 +93,19 @@ async def log(request: LogRequest, logger_name: str | None = None) -> None:
 
 
 async def log_api_request(request: LogApiRequest) -> None:
+    """
+    Logs an API request by sending the request data to a configured logging client.
+
+    Attempts to log the provided API request data by sending it to the logging
+    endpoint using an asynchronous HTTP client. If the client is not configured,
+    the function will exit without performing any action. In the event of an
+    HTTP request error, the failure is logged without raising further exceptions.
+
+    Parameters:
+        request (LogApiRequest): The API request to be logged. It must be an
+            instance of LogApiRequest, containing the data to be sent to the
+            logging endpoint.
+    """
     if _client is None:
         return
     try:
