@@ -89,7 +89,7 @@ def categories_list(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
     return CategoryListResponse(
         categories=[
-            CategorySummary(name=c.name, item_count=c.item_count)
+            CategorySummary(name=c.name, items_count=c.items_count)
             for c in result.categories
         ],
         archived=[

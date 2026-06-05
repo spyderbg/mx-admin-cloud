@@ -238,8 +238,8 @@ class FileSystemContentProvider(ContentProvider):
         summaries = []
         for p in sorted(root.iterdir(), key=lambda x: x.name):
             if p.is_dir() and not p.name.startswith("."):
-                item_count = sum(1 for c in p.iterdir() if c.is_dir() and not c.name.startswith("."))
-                summaries.append(CategorySummary(name=p.name, item_count=item_count))
+                items_count = sum(1 for c in p.iterdir() if c.is_dir() and not c.name.startswith("."))
+                summaries.append(CategorySummary(name=p.name, items_count=items_count))
         return CategoryList(
             categories=summaries,
             archived=archived if include_archived else [],

@@ -47,7 +47,7 @@ class CategorySummary(BaseModel):
     """Summary of a single category returned in the list endpoint."""
 
     name: str
-    item_count: int
+    items_count: int
 
 
 class CategoryListResponse(BaseModel):

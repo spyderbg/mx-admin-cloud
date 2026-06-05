@@ -57,7 +57,7 @@ class ArchivedEntry:
 @dataclass
 class CategorySummary:
     name: str = ""
-    item_count: int = 0
+    items_count: int = 0
 
 
 @dataclass
