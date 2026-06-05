@@ -91,7 +91,7 @@ async function _loadCategoriesBasic(): Promise<Category[]> {
   const categories: Category[] = []
 
   for (const summary of list.categories) {
-    const enName = summary.name.find((n) => n.language === 'en')?.name ?? ''
+    const enName = summary.name['en'] ?? ''
     const categoryFallback = mockCategories.find(
       (c) => c.name.toLowerCase() === enName.toLowerCase(),
     )

@@ -218,6 +218,31 @@ class FileSystemContentProvider(ContentProvider):
                     candidates.append((p.name, int(m.group(1))))
         return sorted(candidates, key=lambda x: x[1], reverse=True)
 
+    def _load_category_localized_names(self) -> tuple[dict[str, str], dict[str, dict[str, str]]]:
+        """Return (ids_by_folder, names_by_folder) built from root categories_ids.csv and categories_{lang}.csv."""
+        root = self._content_root()
+        try:
+            with open(root / "categories_ids.csv", newline="", encoding="utf-8") as fh:
+                id_entries = [r[0].strip() for r in csv.reader(fh) if r and r[0].strip()]
+        except (OSError, csv.Error):
+            return {}, {}
+
+        folders = [(e.split("_", 1)[1].lower() if "_" in e else e.lower(), e) for e in id_entries]
+        ids_by_folder = {fn: cid for fn, cid in folders}
+        names_by_folder: dict[str, dict[str, str]] = {fn: {} for fn, _ in folders}
+
+        for lang in settings.SUPPORTED_LANGUAGES:
+            try:
+                with open(root / f"categories_{lang}.csv", newline="", encoding="utf-8") as fh:
+                    lang_names = [r[0].strip() for r in csv.reader(fh) if r and r[0].strip()]
+                for idx, (fn, _) in enumerate(folders):
+                    if idx < len(lang_names):
+                        names_by_folder[fn][lang] = lang_names[idx]
+            except (OSError, csv.Error):
+                pass
+
+        return ids_by_folder, names_by_folder
+
     # ------------------------------------------------------------------
     # ContentProvider interface
     # ------------------------------------------------------------------
@@ -235,11 +260,18 @@ class FileSystemContentProvider(ContentProvider):
         root = self._content_root()
         if not root.exists() or not root.is_dir():
             raise ContentOperationError(f"Content root does not exist: {root}")
+
+        ids_by_folder, names_by_folder = self._load_category_localized_names()
         summaries = []
         for p in sorted(root.iterdir(), key=lambda x: x.name):
             if p.is_dir() and not p.name.startswith("."):
                 items_count = sum(1 for c in p.iterdir() if c.is_dir() and not c.name.startswith("."))
-                summaries.append(CategorySummary(name=p.name, items_count=items_count))
+                fn = p.name.lower()
+                summaries.append(CategorySummary(
+                    category_id=ids_by_folder.get(fn, ""),
+                    name=dict(names_by_folder.get(fn, {})),
+                    items_count=items_count,
+                ))
         return CategoryList(
             categories=summaries,
             archived=archived if include_archived else [],

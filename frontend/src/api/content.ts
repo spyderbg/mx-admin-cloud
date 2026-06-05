@@ -78,7 +78,7 @@ export const loadCategoriesBasic = async (): Promise<Category[]> => {
 
   return await Promise.all(
     list.categories.map(async (summary) => {
-      const enName = summary.name.find((n) => n.language === 'en')?.name ?? ''
+      const enName = summary.name['en'] ?? ''
       const categoryFallback = mockCategories.find((c) => c.name.toLowerCase() === enName.toLowerCase())
       const detail = await getCategoryDetail(enName)
       const itemNames = await listItems(enName).then((r) => r.items).catch(() => [])
@@ -162,7 +162,7 @@ export const loadCategoriesTree = async (): Promise<Category[]> => {
   if (!list.categories.length) return []
   const categories = await Promise.all(
     list.categories.map(async (summary) => {
-      const enName = summary.name.find((n) => n.language === 'en')?.name ?? ''
+      const enName = summary.name['en'] ?? ''
       const categoryFallback = mockCategories.find((c) => c.name.toLowerCase() === enName.toLowerCase())
       const [detail, itemNames] = await Promise.all([
         getCategoryDetail(enName),

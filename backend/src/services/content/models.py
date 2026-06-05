@@ -56,7 +56,8 @@ class ArchivedEntry:
 
 @dataclass
 class CategorySummary:
-    name: str = ""
+    category_id: str = ""
+    name: dict[str, str] = field(default_factory=dict)
     items_count: int = 0
 
 

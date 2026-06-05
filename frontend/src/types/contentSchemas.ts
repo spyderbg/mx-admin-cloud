@@ -44,7 +44,7 @@ export interface CategoryListResponse {
 /** Summary of a single category returned in the list endpoint. */
 export interface CategorySummary {
     category_id: string
-    name: Record<string, string>[]
+    name: Record<string, string>
     items_count: number
 }
 

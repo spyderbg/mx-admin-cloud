@@ -46,7 +46,8 @@ class ArchivedEntry(BaseModel):
 class CategorySummary(BaseModel):
     """Summary of a single category returned in the list endpoint."""
 
-    name: str
+    category_id: str
+    name: dict[str, str]
     items_count: int
 
 
