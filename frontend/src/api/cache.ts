@@ -1,9 +1,13 @@
 import { ref } from 'vue'
 import type { Category, Item, Language, Voice } from '../types'
-import { listCategories, getCategoryDetail } from './categories'
-import { listItems } from './items'
-import { listItemImages } from './itemImages'
-import { listItemVoices } from './itemVoices'
+import {
+  categoriesList,
+  categoriesDetails,
+  itemsList,
+  itemsImagesList,
+  itemsVoicesList,
+} from './contentClient'
+import type { ItemImagesResponse, ItemVoicesResponse } from '../types/contentSchemas'
 import { mockCategories } from '../data/mockData'
 import { SUPPORTED_LANGUAGES } from '../types'
 
@@ -80,7 +84,7 @@ const fallbackVoice = (itemId: string, language: Language) => ({
  * requests.
  */
 async function _loadCategoriesBasic(): Promise<Category[]> {
-  const list = await listCategories()
+  const list = await categoriesList()
   if (!list.categories.length) {
     sharedCategories.value = []
     sharedCategoryNames.value = new Map()
@@ -96,8 +100,8 @@ async function _loadCategoriesBasic(): Promise<Category[]> {
       (c) => c.name.toLowerCase() === enName.toLowerCase(),
     )
     const [detail, itemNames] = await Promise.all([
-      withInflight(`detail:${enName}`, () => getCategoryDetail(enName)),
-      withInflight(`items:${enName}`, () => listItems(enName)).then(
+      withInflight(`detail:${enName}`, () => categoriesDetails(enName)),
+      withInflight(`items:${enName}`, () => itemsList(enName)).then(
         (r) => r.items,
       ),
     ])
@@ -227,11 +231,11 @@ export const ensureCategoryFull = async (
     return existing ?? null
   }
 
-  const detail = await getCategoryDetail(categoryName)
+  const detail = await categoriesDetails(categoryName)
   const categoryFallback = mockCategories.find(
     (c) => c.name.toLowerCase() === categoryName.toLowerCase(),
   )
-  const itemNames = await listItems(categoryName).then((r) => r.items).catch(
+  const itemNames = await itemsList(categoryName).then((r) => r.items).catch(
     () => [],
   )
 
@@ -244,25 +248,19 @@ export const ensureCategoryFull = async (
       const [imagesResponse, voicesResponse] = await Promise.all([
         withInflight(
           `images:${categoryName}:${itemName}`,
-          () => listItemImages(categoryName, itemName).catch(() => ({})),
+          () => itemsImagesList(categoryName, itemName).catch(() => ({}) as ItemImagesResponse),
         ),
         withInflight(
           `voices:${categoryName}:${itemName}`,
-          () => listItemVoices(categoryName, itemName).catch(() => ({})),
+          () => itemsVoicesList(categoryName, itemName).catch(() => ({}) as ItemVoicesResponse),
         ),
       ])
-      const imagePayload = imagesResponse as {
-        files?: unknown
-        images?: unknown
-      }
       const images = normalizeImages(
-        imagePayload.images ?? imagePayload.files,
+        imagesResponse.files,
         itemFallback?.images ?? [],
       )
       const voices = normalizeVoices(
-        'voices' in voicesResponse
-          ? (voicesResponse as { voices: unknown }).voices
-          : undefined,
+        voicesResponse.voices,
         itemId,
         itemFallback?.voices,
       )

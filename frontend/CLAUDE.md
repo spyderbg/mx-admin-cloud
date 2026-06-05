@@ -47,20 +47,33 @@ Auth guard checks `localStorage.getItem('token')`. Token is written by `src/api/
 
 ### Data Layer
 
-**All views currently use mock data from `src/data/mockData.ts`** — `AppSidebar` and `AppNavbar` import `mockCategories`
-and `mockUser` directly. `CategoriesView` and `ImageDetailView` use `src/api/categories.ts` which calls the real backend
-`/api/v1/content/categories` but action handlers (e.g., `onEditCategory`, `onDeleteCategory`) still only `console.log`.
-The full API integration is still in progress.
+The API contract is **generated from the backend** by `scripts/generate_ts_schemas.py` (Pydantic models →
+`src/types/*Schemas.ts` DTO interfaces) and `scripts/generate_ts_client.py` (FastAPI routes → `src/api/*Client.ts`
+typed axios calls). **Never hand-edit the generated files** (`src/types/*Schemas.ts`, `src/api/contentClient.ts`) —
+re-run the scripts to refresh them.
 
-When replacing mock data with real API calls, update existing modules in `src/api/` or add new ones. Note that
-`src/api/auth.ts` handles the token and `src/api/client.ts` defines the base axios instance.
+Layering for content/categories:
+
+- `src/api/client.ts` — base axios instance (`baseURL: /api/v1`) + the Bearer-token interceptor.
+- `src/api/contentClient.ts` — **generated** thin wrappers over `/content/*` routes (snake_case DTOs).
+- `src/api/cache.ts` — **hand-written** boundary that views consume. It calls `contentClient.ts`, maps backend DTOs
+  (snake_case, e.g. `audio_url`) to the camelCase UI view-models in `src/types/index.ts`, applies `mockCategories`
+  fallbacks for UI-only fields (icons/descriptions), and provides in-flight request **dedup** (`withInflight`) plus
+  shared reactive state (`sharedCategories`, `sharedCategoryNames`, `sharedLoadedCategoryIds`) so multiple views don't
+  re-fetch the same data. Views import `ensureCategoriesLoaded()` / `ensureCategoryFull()` from here.
+- `src/api/auth.ts` — login/status/list (no generated equivalent; handles the token).
+
+Backend mutation routes (item/voice create/update/delete) are currently 501 stubs, so the generator skips them; when
+implemented, re-run `generate_ts_client.py` and they will appear in `contentClient.ts` for `cache.ts`/views to call.
+`src/data/mockData.ts` remains as the fallback source for UI-only fields and as MSW fixtures.
 
 ### Component Structure
 
 - `src/layouts/` — `AppLayout` (shell), `AppNavbar`, `AppSidebar`, `AppFooter`
 - `src/views/` — page-level components (`CategoriesView`, `ImageDetailView`, `LoginView`, `DashboardView`)
 - `src/components/` — reusable components (`CategoryDetail`, `ImageGrid`, `LoginForm`)
-- `src/types/index.ts` — shared types: `Category`, `Image`, `Voice`, `User`, `Language`
+- `src/types/index.ts` — hand-written UI view-model types: `Category`, `Image`, `Voice`, `Item`, `User`, `Language`,
+  `SUPPORTED_LANGUAGES`. Backend DTOs live in the generated `src/types/*Schemas.ts`.
 
 `AppSidebar` renders a filterable category tree; expanding a category navigates to `/categories/:id`; clicking an image
 navigates to `/categories/:id/images/:imageId`.
@@ -76,5 +89,10 @@ pattern for any new modals.
 
 ### Types
 
-`Language = 'en' | 'es' | 'fr' | 'bg'` — supported languages. A `Voice` with an absent or empty `audioUrl` is considered
-missing; play controls must be disabled in that case.
+Two layers: **generated DTOs** in `src/types/*Schemas.ts` (backend-shaped, snake_case — do not edit) and the
+**hand-written UI view-models** in `src/types/index.ts` (camelCase, with UI-only fields the backend doesn't provide).
+`src/api/cache.ts` is the boundary that maps DTOs → UI types.
+
+`Language = 'en' | 'es' | 'fr' | 'bg'` (+ runtime `SUPPORTED_LANGUAGES`) are hand-maintained in `index.ts` — the
+backend exposes languages as plain strings, so codegen can't emit them. A UI `Voice` with an absent or empty `audioUri`
+(mapped from the backend's `audio_url`) is considered missing; play controls must be disabled in that case.

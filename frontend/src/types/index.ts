@@ -1,5 +1,10 @@
-import type { CategorySummary as CategorySummaryItem } from './contentSchemas'
-export type { CategorySummary as CategorySummaryItem } from './contentSchemas'
+// Hand-written UI view-model types.
+//
+// Backend DTOs live in the generated `*Schemas.ts` files (do not edit those).
+// The API layer (`src/api/cache.ts`) maps backend DTOs → these camelCase UI
+// types. `Language`/`SUPPORTED_LANGUAGES` are hand-maintained here because the
+// backend exposes them as plain strings (see backend `core/config.py` /
+// `core/languages.py`), so the schema generator cannot emit them.
 
 export type Language = 'en' | 'es' | 'fr' | 'bg'
 
@@ -46,23 +51,4 @@ export interface User {
     name: string
     role: string
     avatarUri: string
-}
-
-export interface ArchivedEntry {
-    baseName: string
-    archiveFolder: string
-    archivedAt: number
-}
-
-export interface CategorySummary {
-    categories: CategorySummaryItem[]
-    archived?: ArchivedEntry[] | null
-    error?: string | null
-}
-
-export interface CategoryDetail {
-    name: string
-    items: string[]
-    imagesIds?: string[] | null
-    imagesByLanguage?: Partial<Record<Language, string[]>>
 }
