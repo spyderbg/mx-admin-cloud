@@ -66,6 +66,96 @@ const normalizeImages = (raw: unknown, fallback: string[]): string[] => {
 // Public API
 // ---------------------------------------------------------------------------
 
+/**
+ * Load basic category info (names, descriptions, item names) without fetching
+ * images or voices. This is the initial load for page mount -- it reduces the
+ * API call count from O(N*M) to O(N) where N = categories and M = items per
+ * category.
+ */
+export const loadCategoriesBasic = async (): Promise<Category[]> => {
+  const list = await listCategories()
+  if (!list.categories.length) return []
+
+  return await Promise.all(
+    list.categories.map(async (categoryName) => {
+      const categoryFallback = mockCategories.find((c) => c.name.toLowerCase() === categoryName.toLowerCase())
+      const detail = await getCategoryDetail(categoryName)
+      const itemNames = await listItems(categoryName).then((r) => r.items).catch(() => [])
+
+      const category: Category = {
+        id: categoryFallback?.id ?? slugify(categoryName),
+        name: detail.name,
+        description: categoryFallback?.description ?? '',
+        icon: categoryFallback?.icon ?? { id: '', name: detail.name, language: 'en' as const, iconUri: '' },
+        archived: false,
+        voices: categoryFallback?.voices ?? DEFAULT_LANGUAGES.map((lang) => fallbackVoice(detail.name, lang)),
+        items: itemNames.map((name) => ({
+          id: `${slugify(categoryName)}-${slugify(name)}`,
+          name,
+          images: [],
+          voices: [],
+          thumbnailUri: categoryFallback?.items.find(
+            (i) => i.name.toLowerCase() === name.toLowerCase(),
+          )?.thumbnailUri ?? '',
+        })),
+      }
+      return category
+    }),
+  )
+}
+
+/**
+ * Load a single category with all its items populated with images and voices.
+ */
+export const loadCategoryFull = async (categoryName: string): Promise<Category | null> => {
+  const detail = await getCategoryDetail(categoryName)
+  const categoryFallback = mockCategories.find((c) => c.name.toLowerCase() === categoryName.toLowerCase())
+  const itemNames = await listItems(categoryName).then((r) => r.items).catch(() => [])
+
+  const items = await Promise.all(
+    itemNames.map(async (itemName) => {
+      const itemId = slugify(itemName)
+      const itemFallback = categoryFallback?.items.find((i) => i.name.toLowerCase() === itemName.toLowerCase())
+      const [imagesResponse, voicesResponse] = await Promise.all([
+        listItemImages(categoryName, itemName).catch(() => ({})),
+        listItemVoices(categoryName, itemName).catch(() => ({})),
+      ])
+      const imagePayload = imagesResponse as { files?: unknown; images?: unknown }
+      const images = normalizeImages(
+        imagePayload.images ?? imagePayload.files,
+        itemFallback?.images ?? [],
+      )
+      const voices = normalizeVoices(
+        'voices' in voicesResponse ? voicesResponse.voices : undefined,
+        itemId,
+        itemFallback?.voices,
+      )
+      return {
+        id: itemFallback?.id ?? `${slugify(categoryName)}-${itemId}`,
+        name: itemName,
+        images,
+        thumbnailUri: images[0] ?? itemFallback?.thumbnailUri ?? '',
+        voices,
+      } satisfies Item
+    }),
+  )
+
+  return {
+    id: categoryFallback?.id ?? slugify(categoryName),
+    name: detail.name,
+    description: categoryFallback?.description ?? '',
+    icon: categoryFallback?.icon ?? { id: '', name: detail.name, language: 'en' as const, iconUri: items[0]?.thumbnailUri ?? '' },
+    archived: false,
+    voices: categoryFallback?.voices ?? DEFAULT_LANGUAGES.map((lang) => fallbackVoice(detail.name, lang)),
+    items,
+  } satisfies Category
+}
+
+/**
+ * @deprecated Use {@link loadCategoriesBasic} + {@link loadCategoryFull} instead.
+ * Loads the entire category tree (all categories, all items with images/voices).
+ * Expensive O(N*M) operation -- prefer the two-step approach.
+ */
 export const loadCategoriesTree = async (): Promise<Category[]> => {
   const list = await listCategories()
   if (!list.categories.length) return []

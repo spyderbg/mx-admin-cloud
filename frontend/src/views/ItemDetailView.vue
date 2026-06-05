@@ -186,7 +186,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { loadCategoriesTree } from '../api/content'
+import { loadCategoriesBasic, loadCategoryFull } from '../api/content'
 import type { Category, Language, Voice } from '../types'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import cameraPlaceholderUrl from '../assets/images/samples/camera-placeholder.svg'
@@ -201,19 +201,39 @@ const route = useRoute()
 const contentLanguage = useContentLanguage()
 
 const categoryData = ref<Category | null>(null)
+const categoryNames = ref<Map<string, string>>(new Map()) // id -> name for loadCategoryFull lookup
+const loadedCategoryIds = ref<Set<string>>(new Set())
 
-const loadCategory = async (id: string) => {
-  const categories = await loadCategoriesTree()
-  categoryData.value = categories.find((category) => category.id === id) ?? null
+// Build ID->name map and load full data for the current category
+const initCategory = async (id: string) => {
+  // Try loading from map first
+  const name = categoryNames.value.get(id)
+  if (name) {
+    const full = await loadCategoryFull(name)
+    if (full) categoryData.value = full
+  } else {
+    // Need to fetch basic data first
+    const basic = await loadCategoriesBasic()
+    const map = new Map<string, string>()
+    for (const c of basic) map.set(c.id, c.name)
+    categoryNames.value = map
+    const catName = map.get(id)
+    if (catName) {
+      const full = await loadCategoryFull(catName)
+      if (full) categoryData.value = full
+    }
+  }
+  loadedCategoryIds.value.add(id)
 }
 
 onMounted(() => {
   const id = route.params.categoryId as string
-  if (id) loadCategory(id)
+  if (id) initCategory(id)
 })
 
-watch(() => route.params.categoryId as string, (id) => {
-  if (id) loadCategory(id)
+watch(() => route.params.categoryId as string, async (id) => {
+  if (!id || loadedCategoryIds.value.has(id)) return
+  await initCategory(id)
 })
 
 const category = computed(() => categoryData.value)

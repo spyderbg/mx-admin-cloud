@@ -43,7 +43,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { loadCategoriesTree } from '../api/content'
+import { loadCategoriesBasic, loadCategoryFull } from '../api/content'
 import type { Category, Voice } from '../types'
 import CategoryDetail from '../components/CategoryDetail.vue'
 import ItemGrid from '../components/ItemGrid.vue'
@@ -58,13 +58,23 @@ const contentLanguage = useContentLanguage()
 
 const gridColumns = ref(3)
 const categories = ref<Category[]>([])
-onMounted(async () => { categories.value = await loadCategoriesTree() })
+const categoryNames = ref<Map<string, string>>(new Map()) // id -> name for loadCategoryFull lookup
+onMounted(async () => {
+  const basic = await loadCategoriesBasic()
+  categories.value = basic
+  const map = new Map<string, string>()
+  for (const c of basic) map.set(c.id, c.name)
+  categoryNames.value = map
+})
 
 const category = computed(() => {
   const id = route.params.categoryId as string
   if (id) return categories.value.find(c => c.id === id) ?? null
   return categories.value[0] ?? null
 })
+
+// Track which categories have been fully loaded to avoid redundant fetches
+const loadedCategoryIds = ref<Set<string>>(new Set())
 
 const pageTitle = computed(() => {
   const cat = category.value
@@ -77,6 +87,29 @@ watch(category, (cat) => {
     router.replace(`/categories/${cat.id}`)
   }
 }, { immediate: true })
+
+// When user clicks a category in the sidebar, load full data (images + voices) for that category
+const currentFullCategoryId = ref<string>('')
+watch(
+  () => route.params.categoryId as string,
+  async (id) => {
+    if (!id || currentFullCategoryId.value === id) return
+    if (loadedCategoryIds.value.has(id)) {
+      currentFullCategoryId.value = id
+      return
+    }
+    const name = categoryNames.value.get(id)
+    if (!name) return
+    const full = await loadCategoryFull(name)
+    if (full) {
+      const idx = categories.value.findIndex(c => c.id === id)
+      if (idx !== -1) categories.value[idx] = full
+      else categories.value.push(full)
+      loadedCategoryIds.value.add(id)
+    }
+    currentFullCategoryId.value = id
+  },
+)
 
 const onEditCategory = (): void => {
   console.log('Edit category:', category.value?.id)
