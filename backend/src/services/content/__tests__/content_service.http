@@ -1,26 +1,26 @@
 
 ### List all content categories
-GET http://localhost:8000/{{settings.API_V1_STR}}/content/categories
+GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories
 
 
 ### Get details of a specific content category
-GET http://localhost:8000/{{settings.API_V1_STR}}/content/categories/{{category_name}}
+GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_name}}
 
 ### List all images in a category
-GET http://localhost:8000/{{settings.API_V1_STR}}/content/categories/{{category_name}}/images
+GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_name}}/images
 
 ### List voices for a category
-GET http://localhost:8000/{{settings.API_V1_STR}}/content/categories/{{category_name}}/voices
+GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_name}}/voices
 
 
 ### List all items in a category
-GET http://localhost:8000/{{settings.API_V1_STR}}/content/categories/{{category_name}}/items
+GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_name}}/items
 
 ### Get a single item by ID
-GET http://localhost:8000/{{settings.API_V1_STR}}/content/categories/{{category_name}}/items/{{item_id}}
+GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_name}}/items/{{item_id}}
 
 ### List image variants for an item
-GET http://localhost:8000/{{settings.API_V1_STR}}/content/categories/{{category_name}}/items/{{item_id}}/images
+GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_name}}/items/{{item_id}}/images
 
 ### List voices for an item
-GET http://localhost:8000/{{settings.API_V1_STR}}/content/categories/{{category_name}}/items/{{item_id}}/voices
+GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_name}}/items/{{item_id}}/voices

@@ -62,6 +62,7 @@ class CategoryList:
 
 @dataclass
 class CategoryDetail:
+    id: str = ""
     name: str = ""
     items: list[str] = field(default_factory=list)
     images_ids: list[str] | None = None

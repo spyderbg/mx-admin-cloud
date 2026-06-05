@@ -58,6 +58,7 @@ class CategoryDetailResponse(BaseModel):
     so any number of languages can be returned without changing the schema.
     """
 
+    id: str
     name: str
     items: list[str] = []
     images_ids: list[str] | None = None

@@ -161,6 +161,32 @@ class FileSystemContentProvider(ContentProvider):
                 return i
         return 1
 
+    def _get_category_id(self, category_name: str) -> str:
+        """Validate the category exists and return its ID from categories_ids.csv.
+
+        Raises CategoryNotFoundError with a specific message when either condition fails:
+        - The category directory is absent
+        - The category has no entry in categories_ids.csv
+        """
+        category_path = self._category_path(category_name)
+        if not category_path.exists() or not category_path.is_dir():
+            raise CategoryNotFoundError(f"Category '{category_name}': directory is missing.")
+
+        root = self._content_root()
+        ids_path = root / "categories_ids.csv"
+        try:
+            with open(ids_path, newline="", encoding="utf-8") as fh:
+                rows = list(csv.reader(fh))
+            for row in rows:
+                if not row or not row[0].strip():
+                    continue
+                entry = row[0].strip()
+                if "_" in entry and entry.split("_", 1)[1].lower() == category_name.lower():
+                    return entry
+        except (OSError, csv.Error):
+            pass
+        raise CategoryNotFoundError(f"Category '{category_name}': ID is not found in categories_ids.csv.")
+
     def _list_archived_entries(self) -> list[ArchivedEntry]:
         """Scan archive root for folders matching ``{base}_{timestamp}``."""
         if not settings.ARCHIVE_DIR or not settings.ARCHIVE_DIR.strip():
@@ -217,15 +243,15 @@ class FileSystemContentProvider(ContentProvider):
     def category_details(self, category_name: str) -> CategoryDetail:
         if not self._is_safe_category_name(category_name):
             raise InvalidCategoryNameError(category_name)
-        cat_path = self._category_path(category_name)
-        if not cat_path.exists() or not cat_path.is_dir():
-            raise CategoryNotFoundError(category_name)
 
-        objects = [p.name for p in cat_path.iterdir() if p.is_dir() and not p.name.startswith(".")]
+        category_id = self._get_category_id(category_name)
+        category_path = self._category_path(category_name)
+
+        objects = [p.name for p in category_path.iterdir() if p.is_dir() and not p.name.startswith(".")]
         images_by_lang: dict[str, list[str]] = {}
 
         for lang in settings.SUPPORTED_LANGUAGES:
-            csv_path = cat_path / f"images_{lang}.csv"
+            csv_path = category_path / f"items_{lang}.csv"
             if csv_path.exists():
                 try:
                     with open(csv_path, newline="", encoding="utf-8") as fh:
@@ -235,16 +261,17 @@ class FileSystemContentProvider(ContentProvider):
                     images_by_lang[lang] = []
 
         images_ids: list[str] | None = None
-        names_path = cat_path / "images_names.csv"
-        if names_path.exists():
+        ids_path = category_path / "items_ids.csv"
+        if ids_path.exists():
             try:
-                with open(names_path, newline="", encoding="utf-8") as fh:
+                with open(ids_path, newline="", encoding="utf-8") as fh:
                     rows = list(csv.reader(fh))
                     images_ids = [r[0].strip() for r in rows if r and r[0].strip()]
             except (OSError, csv.Error):
                 images_ids = []
 
         return CategoryDetail(
+            id=category_id,
             name=category_name,
             items=sorted(objects),
             images_ids=images_ids,
@@ -254,11 +281,11 @@ class FileSystemContentProvider(ContentProvider):
     def create_category(self, category_name: str) -> CreateCategory:
         if not self._is_safe_category_name(category_name):
             raise InvalidCategoryNameError(category_name)
-        cat_path = self._category_path(category_name)
-        if cat_path.exists() and cat_path.is_dir():
+        category_path = self._category_path(category_name)
+        if category_path.exists() and category_path.is_dir():
             raise CategoryConflictError(f"Category already exists: {category_name}")
 
-        cat_path.mkdir(parents=True, exist_ok=True)
+        category_path.mkdir(parents=True, exist_ok=True)
 
         for lang in settings.SUPPORTED_LANGUAGES:
             if lang == "en":
@@ -272,7 +299,7 @@ class FileSystemContentProvider(ContentProvider):
                     raise ContentOperationError(f"Translation failed for {lang}: {exc}") from exc
             try:
                 audio_bytes = self._generate_audio(label, lang)
-                voice_path = cat_path / f"{category_name}_{lang}.mp3"
+                voice_path = category_path / f"{category_name}_{lang}.mp3"
                 with open(voice_path, "wb") as fh:
                     fh.write(audio_bytes)
             except (ValueError, RuntimeError, httpx.HTTPError) as exc:
@@ -283,7 +310,7 @@ class FileSystemContentProvider(ContentProvider):
         try:
             prompt = self._category_name_to_icon_prompt(category_name)
             icon_bytes = self._generate_icon(prompt)
-            icon_path = cat_path / f"{category_name}.png"
+            icon_path = category_path / f"{category_name}.png"
             with open(icon_path, "wb") as fh:
                 fh.write(icon_bytes)
         except (ValueError, RuntimeError) as exc:
@@ -312,13 +339,13 @@ class FileSystemContentProvider(ContentProvider):
             raise ContentOperationError("Could not derive folder name from item word")
 
         root = self._content_root()
-        cat_path = root / category_name
-        item_path = cat_path / folder_name
+        category_path = root / category_name
+        item_path = category_path / folder_name
 
         if item_path.exists():
             raise CategoryConflictError(f"Item folder already exists: {folder_name}")
 
-        cat_path.mkdir(parents=True, exist_ok=True)
+        category_path.mkdir(parents=True, exist_ok=True)
         item_path.mkdir(parents=True, exist_ok=True)
 
         idx = self._first_available_image_index(item_path)
@@ -329,8 +356,8 @@ class FileSystemContentProvider(ContentProvider):
         with open(image_path, "wb") as fh:
             fh.write(image_data)
 
-        self._append_csv_line(cat_path / "images_en.csv", english_word)
-        self._append_csv_line(cat_path / "images_names.csv", image_id)
+        self._append_csv_line(category_path / "items_en.csv", english_word)
+        self._append_csv_line(category_path / "items_ids.csv", image_id)
 
         words_by_lang: dict[str, str] = {"en": english_word}
         for lang in settings.SUPPORTED_LANGUAGES:
@@ -339,7 +366,7 @@ class FileSystemContentProvider(ContentProvider):
             try:
                 translated = self._translate_word(english_word, lang, category_name)
                 words_by_lang[lang] = translated
-                self._append_csv_line(cat_path / f"images_{lang}.csv", translated)
+                self._append_csv_line(category_path / f"items_{lang}.csv", translated)
             except (ValueError, RuntimeError, httpx.HTTPError, KeyError) as exc:
                 raise ContentOperationError(f"Translation failed for {lang}: {exc}") from exc
 
@@ -365,15 +392,15 @@ class FileSystemContentProvider(ContentProvider):
     def archive_category(self, category_name: str) -> ArchiveCategory:
         if not self._is_safe_category_name(category_name):
             raise InvalidCategoryNameError(category_name)
-        cat_path = self._category_path(category_name)
-        if not cat_path.exists() or not cat_path.is_dir():
+        category_path = self._category_path(category_name)
+        if not category_path.exists() or not category_path.is_dir():
             raise CategoryNotFoundError(category_name)
         archive_root = self._archive_root()
         archive_root.mkdir(parents=True, exist_ok=True)
         archive_folder_name = f"{category_name}_{int(time.time())}"
         dest = archive_root / archive_folder_name
         try:
-            shutil.move(str(cat_path), str(dest))
+            shutil.move(str(category_path), str(dest))
             return ArchiveCategory(
                 archived=True,
                 name=category_name,
@@ -452,13 +479,13 @@ class FileSystemContentProvider(ContentProvider):
     def remove_category(self, category_name: str) -> ArchiveCategory:
         if not self._is_safe_category_name(category_name):
             raise InvalidCategoryNameError(category_name)
-        cat_path = self._category_path(category_name)
-        if not cat_path.exists() or not cat_path.is_dir():
+        category_path = self._category_path(category_name)
+        if not category_path.exists() or not category_path.is_dir():
             raise CategoryNotFoundError(category_name)
         if settings.ARCHIVE_DIR and settings.ARCHIVE_DIR.strip():
             return self.archive_category(category_name)
         try:
-            shutil.rmtree(cat_path)
+            shutil.rmtree(category_path)
             return ArchiveCategory(
                 removed=True,
                 name=category_name,

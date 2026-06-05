@@ -184,6 +184,7 @@ def categories_details(
     except InvalidCategoryNameError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return CategoryDetailResponse(
+        id=result.id,
         name=result.name,
         items=result.items,
         images_ids=result.images_ids,
