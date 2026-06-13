@@ -16,16 +16,11 @@ export interface ArchivedEntry {
     archived_at: number
 }
 
-/** Response for GET /content/categories/{name}.
-
-    For 'images_by_lang' maps each language code to its CSV-derived word list,
-    so any number of languages can be returned without changing the schema. */
+/** Response for GET /content/categories/{name}. */
 export interface CategoryDetailResponse {
     id: string
-    name: string
-    items?: string[]
-    images_ids?: string[] | null
-    images_by_lang?: Record<string, string[]>
+    name: Record<string, string>
+    items?: ItemSummary[]
 }
 
 /** Response for GET /categories/{name}/images. */
@@ -92,6 +87,12 @@ export interface ItemImagesResponse {
 /** Response for GET /categories/{category_name}/items. */
 export interface ItemListResponse {
     items: string[]
+}
+
+/** Item entry returned inside CategoryDetailResponse. */
+export interface ItemSummary {
+    item_id: string
+    name: Record<string, string>
 }
 
 /** Response for GET /categories/{name}/items/{item_id}/voices. */

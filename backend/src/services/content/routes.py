@@ -34,6 +34,7 @@ from src.services.content.schemas import (
     ItemDetailResponse,
     ItemImagesResponse,
     ItemListResponse,
+    ItemSummary,
     ItemVoicesResponse,
     RemoveCategoryResponse,
     RenameCategoryBody,
@@ -194,9 +195,7 @@ def categories_details(
     return CategoryDetailResponse(
         id=result.id,
         name=result.name,
-        items=result.items,
-        images_ids=result.images_ids,
-        images_by_lang=result.images_by_lang,
+        items=[ItemSummary(item_id=item.item_id, name=item.name) for item in result.items],
     )
 
 
@@ -326,7 +325,7 @@ def categories_images_list(
             thumbnail_url=_mock_item_files(category_name, name)[0],
             voices=_mock_item_voices(category_name, name),
         )
-        for name in (result.images_ids or [])
+        for name in [item.item_id for item in result.items]
     ]
     return CategoryImagesResponse(category=category_name, items=items)
 
@@ -546,7 +545,7 @@ def items_list(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
-    return ItemListResponse(items=result.images_ids or [])
+    return ItemListResponse(items=[item.item_id for item in result.items])
 
 
 @router.get(
@@ -576,7 +575,7 @@ def items_get(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
-    if item_id not in (result.images_ids or []):
+    if item_id not in [item.item_id for item in result.items]:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Item '{item_id}' not found in category '{category_name}'",
@@ -672,7 +671,7 @@ def items_images_list(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
-    if item_id not in (result.images_ids or []):
+    if item_id not in [item.item_id for item in result.items]:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Item '{item_id}' not found in category '{category_name}'",
@@ -794,7 +793,7 @@ def items_voices_list(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
-    if item_id not in (result.images_ids or []):
+    if item_id not in [item.item_id for item in result.items]:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Item '{item_id}' not found in category '{category_name}'",

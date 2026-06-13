@@ -33,6 +33,7 @@ from src.services.content.models import (
     CreateCategory,
     CreateItem,
     InvalidCategoryNameError,
+    ItemDetail,
     RenameCategory,
     RestoreCategory,
 )
@@ -284,35 +285,42 @@ class FileSystemContentProvider(ContentProvider):
         category_id = self._get_category_id(category_name)
         category_path = self._category_path(category_name)
 
-        objects = [p.name for p in category_path.iterdir() if p.is_dir() and not p.name.startswith(".")]
-        images_by_lang: dict[str, list[str]] = {}
+        _, names_by_folder = self._load_category_localized_names()
+        category_name_dict = dict(names_by_folder.get(category_name.lower(), {}))
 
+        items_by_lang: dict[str, list[str]] = {}
         for lang in settings.SUPPORTED_LANGUAGES:
             csv_path = category_path / f"items_{lang}.csv"
             if csv_path.exists():
                 try:
                     with open(csv_path, newline="", encoding="utf-8") as fh:
                         rows = list(csv.reader(fh))
-                        images_by_lang[lang] = [r[0].strip() for r in rows if r and r[0].strip()]
+                        items_by_lang[lang] = [r[0].strip() for r in rows if r and r[0].strip()]
                 except (OSError, csv.Error):
-                    images_by_lang[lang] = []
+                    items_by_lang[lang] = []
 
-        images_ids: list[str] | None = None
+        item_ids: list[str] = []
         ids_path = category_path / "items_ids.csv"
         if ids_path.exists():
             try:
                 with open(ids_path, newline="", encoding="utf-8") as fh:
                     rows = list(csv.reader(fh))
-                    images_ids = [r[0].strip() for r in rows if r and r[0].strip()]
+                    item_ids = [r[0].strip() for r in rows if r and r[0].strip()]
             except (OSError, csv.Error):
-                images_ids = []
+                item_ids = []
+
+        items = [
+            ItemDetail(
+                item_id=iid,
+                name={lang: names[i] for lang, names in items_by_lang.items() if i < len(names)},
+            )
+            for i, iid in enumerate(item_ids)
+        ]
 
         return CategoryDetail(
             id=category_id,
-            name=category_name,
-            items=sorted(objects),
-            images_ids=images_ids,
-            images_by_lang=images_by_lang,
+            name=category_name_dict,
+            items=items,
         )
 
     def create_category(self, category_name: str) -> CreateCategory:

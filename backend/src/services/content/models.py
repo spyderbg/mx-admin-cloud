@@ -68,12 +68,16 @@ class CategoryList:
 
 
 @dataclass
+class ItemDetail:
+    item_id: str = ""
+    name: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
 class CategoryDetail:
     id: str = ""
-    name: str = ""
-    items: list[str] = field(default_factory=list)
-    images_ids: list[str] | None = None
-    images_by_lang: dict[str, list[str]] = field(default_factory=dict)
+    name: dict[str, str] = field(default_factory=dict)
+    items: list[ItemDetail] = field(default_factory=list)
 
 
 @dataclass

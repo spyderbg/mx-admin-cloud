@@ -276,11 +276,12 @@ def test_category_details_returns_items_and_csv(tmp_path: Path) -> None:
     content_root = tmp_path / "content"
     cat = content_root / "foods"
     cat.mkdir(parents=True)
-    (cat / "apple").mkdir()
-    (cat / "banana").mkdir()
-    (cat / "images_en.csv").write_text("apple\nbanana\n", encoding="utf-8")
-    (cat / "images_fr.csv").write_text("pomme\nbanane\n", encoding="utf-8")
-    (cat / "images_names.csv").write_text("I_Apple\nI_Banana\n", encoding="utf-8")
+    (content_root / "categories_ids.csv").write_text("C_Foods\n", encoding="utf-8")
+    (content_root / "categories_en.csv").write_text("Foods\n", encoding="utf-8")
+    (content_root / "categories_fr.csv").write_text("Aliments\n", encoding="utf-8")
+    (cat / "items_en.csv").write_text("apple\nbanana\n", encoding="utf-8")
+    (cat / "items_fr.csv").write_text("pomme\nbanane\n", encoding="utf-8")
+    (cat / "items_ids.csv").write_text("I_Apple\nI_Banana\n", encoding="utf-8")
 
     provider = _make_fs_provider()
     with patch("src.services.content.providers.file_system.settings") as mock_settings:
@@ -288,11 +289,12 @@ def test_category_details_returns_items_and_csv(tmp_path: Path) -> None:
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
         result = provider.category_details("foods")
 
-    assert result.name == "foods"
-    assert sorted(result.items) == ["apple", "banana"]
-    assert result.images_by_lang["en"] == ["apple", "banana"]
-    assert result.images_by_lang["fr"] == ["pomme", "banane"]
-    assert result.images_ids == ["I_Apple", "I_Banana"]
+    assert result.name == {"en": "Foods", "fr": "Aliments"}
+    assert len(result.items) == 2
+    assert result.items[0].item_id == "I_Apple"
+    assert result.items[0].name == {"en": "apple", "fr": "pomme"}
+    assert result.items[1].item_id == "I_Banana"
+    assert result.items[1].name == {"en": "banana", "fr": "banane"}
 
 
 # ---------------------------------------------------------------------------

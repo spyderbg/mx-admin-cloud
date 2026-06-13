@@ -29,6 +29,7 @@ from src.services.content.schemas import (
     CreateCategoryBody,
     CreateCategoryResponse,
     CreateItemResponse,
+    ItemSummary,
     RemoveCategoryResponse,
     RenameCategoryBody,
     RenameCategoryResponse,
@@ -422,16 +423,13 @@ def test_category_list_response_with_archived() -> None:
 
 def test_category_detail_response_fields() -> None:
     resp = CategoryDetailResponse(
-        name="foods",
-        items=["apple"],
-        images_ids=["I_Apple"],
-        images_by_lang={"en": ["apple"], "fr": ["pomme"]},
+        id="C_Foods",
+        name={"en": "Foods", "fr": "Aliments"},
+        items=[ItemSummary(item_id="I_Apple", name={"en": "apple", "fr": "pomme"})],
     )
     dumped = resp.model_dump()
-    assert dumped["items"] == ["apple"]
-    assert dumped["images_ids"] == ["I_Apple"]
-    assert dumped["images_by_lang"]["en"] == ["apple"]
-    assert dumped["images_by_lang"]["fr"] == ["pomme"]
+    assert dumped["name"] == {"en": "Foods", "fr": "Aliments"}
+    assert dumped["items"] == [{"item_id": "I_Apple", "name": {"en": "apple", "fr": "pomme"}}]
 
 
 def test_create_category_response() -> None:

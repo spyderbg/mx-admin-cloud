@@ -59,18 +59,19 @@ class CategoryListResponse(BaseModel):
     error: str | None = None
 
 
-class CategoryDetailResponse(BaseModel):
-    """Response for GET /content/categories/{name}.
+class ItemSummary(BaseModel):
+    """Item entry returned inside CategoryDetailResponse."""
 
-    For 'images_by_lang' maps each language code to its CSV-derived word list,
-    so any number of languages can be returned without changing the schema.
-    """
+    item_id: str
+    name: dict[str, str]
+
+
+class CategoryDetailResponse(BaseModel):
+    """Response for GET /content/categories/{name}."""
 
     id: str
-    name: str
-    items: list[str] = []
-    images_ids: list[str] | None = None
-    images_by_lang: dict[str, list[str]] = {}
+    name: dict[str, str]
+    items: list[ItemSummary] = []
 
 
 class CreateCategoryResponse(BaseModel):

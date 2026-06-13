@@ -79,7 +79,11 @@ class _StubContentProvider(ContentProvider):
         return self._call("list_categories", CategoryList(categories=["foods", "drinks"]))
 
     def category_details(self, category_name: str) -> CategoryDetail:
-        return self._call("category_details", CategoryDetail(name=category_name, items=["apple"]))
+        from src.services.content.models import ItemDetail
+        return self._call("category_details", CategoryDetail(
+            name={"en": category_name},
+            items=[ItemDetail(item_id=f"I_{category_name.title()}", name={"en": "apple"})],
+        ))
 
     def create_category(self, category_name: str) -> CreateCategory:
         return self._call("create_category", CreateCategory(category=category_name, message="created"))
@@ -508,19 +512,21 @@ async def test_category_details_returns_200(client: AsyncClient) -> None:
     response = await client.get("/api/v1/content/categories/foods")
     assert response.status_code == 200
     body = response.json()
-    assert body["name"] == "foods"
-    assert body["items"] == ["apple"]
+    assert body["name"] == {"en": "foods"}
+    assert body["items"] == [{"item_id": "I_Foods", "name": {"en": "apple"}}]
 
 
 @pytest.mark.asyncio
-async def test_category_details_with_csv_columns(tmp_resolved: Path) -> None:
+async def test_category_details_with_items(tmp_resolved: Path) -> None:
+    from src.services.content.models import ItemDetail
     provider = _StubContentProvider(tmp_resolved).returns(
         "category_details",
         CategoryDetail(
-            name="foods",
-            items=["apple", "banana"],
-            images_ids=["I_Apple", "I_Banana"],
-            images_by_lang={"en": ["apple", "banana"], "fr": ["pomme", "banane"]},
+            name={"en": "Foods", "fr": "Aliments"},
+            items=[
+                ItemDetail(item_id="I_Apple", name={"en": "apple", "fr": "pomme"}),
+                ItemDetail(item_id="I_Banana", name={"en": "banana", "fr": "banane"}),
+            ],
         ),
     )
     app = _make_app(provider, tmp_resolved)
@@ -528,10 +534,11 @@ async def test_category_details_with_csv_columns(tmp_resolved: Path) -> None:
         response = await c.get("/api/v1/content/categories/foods")
     assert response.status_code == 200
     body = response.json()
-    assert body["items"] == ["apple", "banana"]
-    assert body["images_ids"] == ["I_Apple", "I_Banana"]
-    assert body["images_by_lang"]["en"] == ["apple", "banana"]
-    assert body["images_by_lang"]["fr"] == ["pomme", "banane"]
+    assert body["name"] == {"en": "Foods", "fr": "Aliments"}
+    assert body["items"] == [
+        {"item_id": "I_Apple", "name": {"en": "apple", "fr": "pomme"}},
+        {"item_id": "I_Banana", "name": {"en": "banana", "fr": "banane"}},
+    ]
 
 
 @pytest.mark.asyncio

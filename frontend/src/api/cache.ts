@@ -106,9 +106,11 @@ async function _loadCategoriesBasic(): Promise<Category[]> {
       ),
     ])
 
+    const detailEnName = detail.name['en'] ?? Object.values(detail.name)[0] ?? enName
+
     const category: Category = {
       id: summary.category_id,
-      name: detail.name,
+      name: detailEnName,
       description: categoryFallback?.description ?? '',
       images: categoryFallback?.images ?? [
         { id: '', name: detail.name, language: 'en' as const, iconUri: '' },
@@ -232,6 +234,7 @@ export const ensureCategoryFull = async (
   }
 
   const detail = await categoriesDetails(categoryName)
+  const detailEnName = detail.name['en'] ?? Object.values(detail.name)[0] ?? categoryName
   const categoryFallback = mockCategories.find(
     (c) => c.name.toLowerCase() === categoryName.toLowerCase(),
   )
@@ -276,13 +279,13 @@ export const ensureCategoryFull = async (
 
   const fullCategory: Category = {
     id: categoryFallback?.id ?? slugify(categoryName),
-    name: detail.name,
+    name: detailEnName,
     description: categoryFallback?.description ?? '',
     images:
       categoryFallback?.images ?? [
         {
           id: '',
-          name: detail.name,
+          name: detailEnName,
           language: 'en' as const,
           iconUri: items[0]?.thumbnailUri ?? '',
         },
@@ -290,7 +293,7 @@ export const ensureCategoryFull = async (
     archived: false,
     voices:
       categoryFallback?.voices ??
-      SUPPORTED_LANGUAGES.map((lang) => fallbackVoice(detail.name, lang)),
+      SUPPORTED_LANGUAGES.map((lang) => fallbackVoice(detailEnName, lang)),
     items,
   }
 
