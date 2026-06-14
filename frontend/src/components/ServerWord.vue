@@ -24,7 +24,7 @@
 
 <script setup lang="ts">
 import { computed, useAttrs, type StyleValue } from 'vue'
-import type { Category } from '../types'
+import type { CategoryFull } from '../types'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import { localizedCategoryLabel } from '../utils/localizedLabels'
 import { toPascalCaseWords } from '../utils/pascalCaseWords'
@@ -34,7 +34,7 @@ defineOptions({ inheritAttrs: false })
 const props = withDefaults(
   defineProps<{
     /** When set, label follows navbar content language (`localizedCategoryLabel`). */
-    category?: Category
+    category?: CategoryFull
     /** Plain label (e.g. `voice.name`); wins over `category` when non-empty after trim. */
     text?: string
     editTitle?: string

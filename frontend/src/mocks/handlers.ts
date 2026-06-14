@@ -1,6 +1,6 @@
 import { http, HttpResponse } from 'msw'
 import { mockCategories } from '../data/mockData'
-import type { Category, Voice } from '../types'
+import type { Voice } from '../types'
 
 interface ArchivedEntry {
   base_name: string
@@ -17,24 +17,26 @@ const slugify = (value: string): string =>
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '')
 
-const findCategory = (categoryName: string): Category | undefined =>
+const findCategory = (categoryName: string) =>
   mockCategories.find((c) => c.name.toLowerCase() === categoryName.toLowerCase())
 
-const findItem = (category: Category, itemId: string) =>
-  category.items.find((item) => item.id === itemId || item.name.toLowerCase() === itemId.toLowerCase())
+const findItem = (category: ReturnType<typeof findCategory>, itemId: string) =>
+  category?.items.find((item) => item.id === itemId || item.name.toLowerCase() === itemId.toLowerCase())
 
-const toCategoryDetailResponse = (category: Category): Record<string, unknown> => {
+const toCategoryDetailResponse = (category: ReturnType<typeof findCategory>): Record<string, unknown> => {
+  if (!category) return {}
   return {
     id: category.id,
     name: { en: category.name },
     items: category.items.map((item) => ({
-      item_id: item.id,
+      id: item.id,
       name: Object.fromEntries(
         (['en', 'es', 'fr', 'bg'] as const).map((lang) => {
           const localized = item.voices.find((v) => v.language === lang)?.name
           return [lang, localized ?? item.name]
         }),
       ),
+      thumbnail_uri: item.thumbnailUri ?? null,
     })),
   }
 }
@@ -63,6 +65,7 @@ export const handlers = [
         id: category.id,
         name: { en: category.name },
         items_count: category.items.length,
+        thumbnail_uri: category.thumbnailUri ?? null,
       })),
       archived: includeArchived ? archivedCategories : null,
       error: null,
@@ -81,8 +84,9 @@ export const handlers = [
       id,
       name,
       description: '',
-      images: [{ id: '', name: '', language: 'en' as const, iconUri: '' }],
+      images: [],
       archived: false,
+      thumbnailUri: '',
       voices: [],
       items: [],
     })
@@ -103,8 +107,9 @@ export const handlers = [
         id: slugify(name),
         name,
         description: '',
-        images: [{ id: slugify(name), name, language: 'en' as const, iconUri: '' }],
+        images: [],
         archived: false,
+        thumbnailUri: '',
         voices: [],
         items: [],
       })
@@ -246,7 +251,7 @@ export const handlers = [
     if (!category) return new HttpResponse(null, { status: 404 })
     const item = findItem(category, String(params.item_id))
     if (!item) return new HttpResponse(null, { status: 404 })
-    return HttpResponse.json({ images: item.images })
+    return HttpResponse.json({ item_id: item.id, files: item.images, thumbnail_uri: item.thumbnailUri ?? null })
   }),
 
   http.post('/api/v1/content/categories/:category_name/items/:item_id/images', async ({ params, request }) => {

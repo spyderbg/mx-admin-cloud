@@ -27,18 +27,14 @@ export interface Voice {
     audioUri?: string
 }
 
-export interface Category {
-    /** UI-only identifier; backend identifies categories by `name`. */
+export interface CategoryFull {
     id: string
-    name: string
+    name: string               // English display name (extracted from LocalizedString in cache)
     description: string
-    /** UI-only array of images isn't provided by backend category responses. */
     images: Image[]
-    archived?: boolean
+    thumbnail_uri?: string | null   // from CategorySummary.thumbnail_uri
     voices: Voice[]
     items: Item[]
-    /** Thumbnail URI returned from the backend CategorySummary. */
-    thumbnailUri?: string
 }
 
 export interface Item {

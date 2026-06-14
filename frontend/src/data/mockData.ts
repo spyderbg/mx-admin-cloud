@@ -1,4 +1,15 @@
-import type { Category, User } from '../types'
+import type { User, Voice, Item, Image } from '../types'
+
+interface MockCategory {
+  id: string
+  name: string
+  description: string
+  images: Image[]
+  archived: boolean
+  thumbnailUri?: string
+  voices: Voice[]
+  items: Item[]
+}
 
 const faceImgs = import.meta.glob('../assets/images/faces/face*.jpg', { eager: true, import: 'default' }) as Record<string, string>
 
@@ -10,16 +21,16 @@ export const mockUser: User = {
   avatarUri: face(8),
 }
 
-export const mockCategories: Category[] = [
+export const mockCategories: MockCategory[] = [
   {
     id: 'drinks',
     name: 'Drinks',
     description: 'Beverages and drinks',
+    archived: false,
+    thumbnailUri: '/content/drinks/coffee/coffee_01.png',
     images: [
       { id: 'drinks', name: 'Drinks', language: 'en', iconUri: '/content/drinks/coffee/coffee_01.png' }
     ],
-    archived: false,
-    thumbnailUri: '/content/drinks/coffee/coffee_01.png',
     voices: [
       { id: 'drinks-v-en', name: 'drinks', language: 'en', type: 'male', iconUri: face(1), audioUri: '/content/drinks/drinks_en.mp3' },
       { id: 'drinks-v-es', name: 'drinks', language: 'es', type: 'female', iconUri: face(2), audioUri: '/content/drinks/drinks_es.mp3' },
@@ -153,11 +164,11 @@ export const mockCategories: Category[] = [
     id: 'foods',
     name: 'Foods',
     description: 'Food and snacks',
+    archived: false,
+    thumbnailUri: '/content/foods/apple_pie/apple_pie.png',
     images: [
       { id: 'foods', name: 'Foods', language: 'en', iconUri: '/content/foods/apple_pie/apple_pie.png' }
     ],
-    archived: false,
-    thumbnailUri: '/content/foods/apple_pie/apple_pie.png',
     voices: [
       { id: 'foods-v-en', name: 'foods', language: 'en', type: 'male', iconUri: face(1), audioUri: '/content/foods/foods_en.mp3' },
       { id: 'foods-v-es', name: 'foods', language: 'es', type: 'female', iconUri: face(2), audioUri: '/content/foods/foods_es.mp3' },
@@ -332,11 +343,11 @@ export const mockCategories: Category[] = [
     id: 'vegetables',
     name: 'Vegetables',
     description: 'Fresh vegetables',
+    archived: false,
+    thumbnailUri: '/content/vegetables/tomato/tomato.png',
     images: [
       { id: 'vegetables', name: 'Vegetables', language: 'en', iconUri: '/content/vegetables/tomato/tomato.png' }
     ],
-    archived: false,
-    thumbnailUri: '/content/vegetables/tomato/tomato.png',
     voices: [
       { id: 'vegetables-v-en', name: 'vegetables', language: 'en', type: 'male', iconUri: face(1), audioUri: '/content/vegetables/vegetables_en.mp3' },
       { id: 'vegetables-v-es', name: 'vegetables', language: 'es', type: 'female', iconUri: face(2), audioUri: '/content/vegetables/vegetables_es.mp3' },
@@ -566,11 +577,11 @@ export const mockCategories: Category[] = [
     id: 'toys',
     name: 'Toys',
     description: 'Toys and playthings',
+    archived: false,
+    thumbnailUri: '/content/toys/toys.png',
     images: [
       { id: 'toys', name: 'Toys', language: 'en', iconUri: '/content/toys/toys.png' }
     ],
-    archived: false,
-    thumbnailUri: '/content/toys/toys.png',
     voices: [
       { id: 'toys-v-en', name: 'toys', language: 'en', type: 'male', iconUri: face(1), audioUri: '/content/toys/toys_en.mp3' },
       { id: 'toys-v-es', name: 'toys', language: 'es', type: 'female', iconUri: face(2), audioUri: '/content/toys/toys_es.mp3' },

@@ -1,4 +1,4 @@
-import type { Category, Item, Language, Voice } from '../types'
+import type { CategoryFull, Item, Language, Voice } from '../types'
 
 function labelFromVoices(voices: Voice[], lang: Language): string | undefined {
   const pick = (code: Language) => voices.find((v) => v.language === code)?.name?.trim()
@@ -9,7 +9,7 @@ function labelFromVoices(voices: Voice[], lang: Language): string | undefined {
   return undefined
 }
 
-export function localizedCategoryLabel(category: Category, lang: Language): string {
+export function localizedCategoryLabel(category: CategoryFull, lang: Language): string {
   return labelFromVoices(category.voices, lang) ?? category.name
 }
 

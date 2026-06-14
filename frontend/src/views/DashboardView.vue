@@ -93,7 +93,7 @@ onMounted(async () => {
     const cardList: CategoryCard[] = sharedCategories.value.map((c) => ({
       id: c.id,
       name: c.name,
-      iconUri: c.images?.[0]?.iconUri ?? `/content/${c.name}/icon.png`,
+      iconUri: c.thumbnail_uri ?? `/content/${c.name}/icon.png`,
       itemCount: c.items?.length ?? 0,
     }))
 

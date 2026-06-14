@@ -16,7 +16,7 @@
             <label class="text-muted small mb-1 d-block">Category Icon</label>
             <div class="category-icon-wrap">
               <img
-                :src="category.images?.[0]?.iconUri ?? ''"
+                :src="category.thumbnail_uri ?? ''"
                 alt="Category icon"
                 class="rounded"
               />
@@ -261,10 +261,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import ServerWord from './ServerWord.vue'
-import type { Category, Language, Voice } from '../types'
+import type { CategoryFull, Language, Voice } from '../types'
 
 const props = defineProps<{
-  category: Category
+  category: CategoryFull
 }>()
 
 const emit = defineEmits<{
