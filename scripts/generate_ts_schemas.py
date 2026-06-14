@@ -333,7 +333,10 @@ def main() -> None:
         models, enums = _parse_schemas(source)
         ts_code = _generate_ts(models, enums)
 
-        body = header + ts_code
+        imports = ""
+        if "LocalizedString" in ts_code:
+            imports = "import { LocalizedString } from './localization'\n\n"
+        body = header + imports + ts_code
         ts_name = snake_to_camel(service_name)
         out_path = OUTPUT_DIR / f"{ts_name}Schemas.ts"
         out_path.write_text(body)

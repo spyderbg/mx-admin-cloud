@@ -615,7 +615,13 @@ def main() -> None:
     ts_name = snake_to_camel(service_name)
     out_path = FRONTEND_API_DIR / f"{ts_name}Client.ts"
     out_path.write_text(ts_code)
-    print(f"✔  {len(routes)} routes → {out_path}")
+    print(f"✔  {len(routes)} routes → \033[32m{out_path}\033[0m")
+    for r in routes:
+        summary = r.get("summary") or ""
+        label = f"  {r['method'].upper():6s} {r['prefix']}{r['path']}"
+        if summary:
+            label += f"  // {summary}"
+        print(label)
 
 
 if __name__ == "__main__":
