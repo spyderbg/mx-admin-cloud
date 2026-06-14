@@ -94,6 +94,7 @@ def categories_list(
                 category_id=c.category_id,
                 name=c.name,
                 items_count=c.items_count,
+                thumbnail_uri=c.thumbnail_uri or None,
             )
             for c in result.categories
         ],
@@ -322,7 +323,7 @@ def categories_images_list(
             id=f"{category_name}-{name}",
             name=name.replace("_", " ").title(),
             files=_mock_item_files(category_name, name),
-            thumbnail_url=_mock_item_files(category_name, name)[0],
+            thumbnail_uri=_mock_item_files(category_name, name)[0],
             voices=_mock_item_voices(category_name, name),
         )
         for name in [item.item_id for item in result.items]
@@ -585,7 +586,7 @@ def items_get(
         id=f"{category_name}-{item_id}",
         name=item_id.replace("_", " ").title(),
         files=files,
-        thumbnail_url=files[0],
+        thumbnail_uri=files[0],
         voices=_mock_item_voices(category_name, item_id),
     )
 
@@ -677,7 +678,7 @@ def items_images_list(
             detail=f"Item '{item_id}' not found in category '{category_name}'",
         )
     files = _mock_item_files(category_name, item_id)
-    return ItemImagesResponse(item_id=item_id, files=files, thumbnail_url=files[0])
+    return ItemImagesResponse(item_id=item_id, files=files, thumbnail_uri=files[0])
 
 
 @router.post(

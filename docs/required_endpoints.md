@@ -567,7 +567,7 @@ item:     Mountain Peak
     "/content/nature_scenes/mountain_peak/01.png",
     "/content/nature_scenes/mountain_peak/02.png"
   ],
-  "thumbnail_url": "/content/nature_scenes/mountain_peak/01.png",
+  "thumbnail_uri": "/content/nature_scenes/mountain_peak/01.png",
   "voices": [
     {
       "id": "mountain_peak_en",

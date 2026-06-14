@@ -73,7 +73,7 @@ export interface ItemDetailResponse {
     id: string
     name: string
     files?: string[]
-    thumbnail_url?: string | null
+    thumbnail_uri?: string | null
     voices?: VoiceResponse[]
 }
 
@@ -81,7 +81,7 @@ export interface ItemDetailResponse {
 export interface ItemImagesResponse {
     item_id: string
     files?: string[]
-    thumbnail_url?: string | null
+    thumbnail_uri?: string | null
 }
 
 /** Response for GET /categories/{category_name}/items. */

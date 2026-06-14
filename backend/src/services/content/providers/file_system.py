@@ -272,6 +272,7 @@ class FileSystemContentProvider(ContentProvider):
                     category_id=ids_by_folder.get(fn, ""),
                     name=dict(names_by_folder.get(fn, {})),
                     items_count=items_count,
+                    thumbnail_uri=f"/content/{p.name}/{p.name}.png",
                 ))
         return CategoryList(
             categories=summaries,

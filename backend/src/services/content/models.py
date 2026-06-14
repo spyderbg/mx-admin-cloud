@@ -59,6 +59,7 @@ class CategorySummary:
     category_id: str = ""
     name: dict[str, str] = field(default_factory=dict)
     items_count: int = 0
+    thumbnail_uri: str = ""
 
 
 @dataclass

@@ -49,6 +49,7 @@ class CategorySummary(BaseModel):
     category_id: str
     name: dict[str, str]
     items_count: int
+    thumbnail_uri: str | None = None
 
 
 class CategoryListResponse(BaseModel):
@@ -162,7 +163,7 @@ class ItemDetailResponse(BaseModel):
     id: str
     name: str
     files: list[str] = []
-    thumbnail_url: str | None = None
+    thumbnail_uri: str | None = None
     voices: list[VoiceResponse] = []
 
 
@@ -185,7 +186,7 @@ class ItemImagesResponse(BaseModel):
 
     item_id: str
     files: list[str] = []
-    thumbnail_url: str | None = None
+    thumbnail_uri: str | None = None
 
 
 class ItemVoicesResponse(BaseModel):

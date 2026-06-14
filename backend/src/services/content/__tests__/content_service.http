@@ -6,10 +6,10 @@ GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories
 ### Get details of a specific content category
 GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_name}}
 
-### List all images in a category
+### List of all images for a category
 GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_name}}/images
 
-### List voices for a category
+### List of all voices for a category
 GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_name}}/voices
 
 

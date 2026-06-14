@@ -7,7 +7,7 @@ import {
   itemsImagesList,
   itemsVoicesList,
 } from './contentClient'
-import type { ItemImagesResponse, ItemVoicesResponse } from '../types/contentSchemas'
+import type { ItemImagesResponse, ItemSummary, ItemVoicesResponse } from '../types/contentSchemas'
 import { mockCategories } from '../data/mockData'
 import { SUPPORTED_LANGUAGES } from '../types'
 
@@ -113,22 +113,25 @@ async function _loadCategoriesBasic(): Promise<Category[]> {
       name: detailEnName,
       description: categoryFallback?.description ?? '',
       images: categoryFallback?.images ?? [
-        { id: '', name: detail.name, language: 'en' as const, iconUri: '' },
+        { id: '', name: detailEnName, language: 'en' as const, iconUri: '' },
       ],
       archived: false,
       voices: categoryFallback?.voices ?? [
-        ...SUPPORTED_LANGUAGES.map((lang) => fallbackVoice(detail.name, lang)),
+        ...SUPPORTED_LANGUAGES.map((lang) => fallbackVoice(detailEnName, lang)),
       ],
-      items: itemNames.map((name) => ({
-        id: `${summary.category_id}-${slugify(name)}`,
-        name,
-        images: [],
-        voices: [],
-        thumbnailUri:
-          categoryFallback?.items.find(
-            (i) => i.name.toLowerCase() === name.toLowerCase(),
-          )?.thumbnailUri ?? '',
-      })),
+      items: (detail.items ?? []).map((itemSummary: ItemSummary, index: number) => {
+        const itemName = itemSummary.name['en'] ?? Object.values(itemSummary.name)[0] ?? itemNames[index] ?? ''
+        return {
+          id: itemSummary.item_id,
+          name: itemName,
+          images: [],
+          voices: [],
+          thumbnailUri:
+            categoryFallback?.items.find(
+              (i) => i.name.toLowerCase() === itemName.toLowerCase(),
+            )?.thumbnailUri ?? '',
+        }
+      }),
     }
     categories.push(category)
   }

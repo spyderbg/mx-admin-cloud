@@ -54,12 +54,16 @@ export const handlers = [
     const url = new URL(request.url)
     const includeArchived = url.searchParams.get('include_archived') === 'true'
     const archivedOnly = url.searchParams.get('archived_only') === 'true'
-    const active = mockCategories.filter((category) => !category.archived).map((category) => category.name)
+    const active = mockCategories.filter((category) => !category.archived)
     if (archivedOnly) {
       return HttpResponse.json({ categories: [], archived: archivedCategories })
     }
     return HttpResponse.json({
-      categories: active,
+      categories: active.map((category) => ({
+        category_id: category.id,
+        name: { en: category.name },
+        items_count: category.items.length,
+      })),
       archived: includeArchived ? archivedCategories : null,
       error: null,
     })

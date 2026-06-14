@@ -50,40 +50,26 @@ components:
       title: Body_create_item_endpoint_api_v1_content_items_post
     CategoryDetailResponse:
       properties:
-        name:
+        id:
           type: string
+          title: Id
+        name:
+          additionalProperties:
+            type: string
+          type: object
           title: Name
         items:
           items:
-            type: string
+            $ref: '#/components/schemas/ItemSummary'
           type: array
           title: Items
           default: []
-        images_ids:
-          anyOf:
-          - items:
-              type: string
-            type: array
-          - type: 'null'
-          title: Images Ids
-        images_by_lang:
-          additionalProperties:
-            items:
-              type: string
-            type: array
-          type: object
-          title: Images By Lang
-          default: {}
       type: object
       required:
+      - id
       - name
       title: CategoryDetailResponse
-      description: 'Response for GET /content/categories/{name}.
-
-
-        For ''images_by_lang'' maps each language code to its CSV-derived word list,
-
-        so any number of languages can be returned without changing the schema.'
+      description: Response for GET /content/categories/{name}.
     CategoryImagesResponse:
       properties:
         category:
@@ -104,7 +90,7 @@ components:
       properties:
         categories:
           items:
-            type: string
+            $ref: '#/components/schemas/CategorySummary'
           type: array
           title: Categories
         archived:
@@ -124,6 +110,26 @@ components:
       - categories
       title: CategoryListResponse
       description: Response for GET /content/categories.
+    CategorySummary:
+      properties:
+        category_id:
+          type: string
+          title: Category Id
+        name:
+          additionalProperties:
+            type: string
+          type: object
+          title: Name
+        items_count:
+          type: integer
+          title: Items Count
+      type: object
+      required:
+      - category_id
+      - name
+      - items_count
+      title: CategorySummary
+      description: Summary of a single category returned in the list endpoint.
     CategoryVoicesResponse:
       properties:
         category:
@@ -209,11 +215,11 @@ components:
           type: array
           title: Files
           default: []
-        thumbnail_url:
+        thumbnail_uri:
           anyOf:
           - type: string
           - type: 'null'
-          title: Thumbnail Url
+          title: Thumbnail Uri
         voices:
           items:
             $ref: '#/components/schemas/VoiceResponse'
@@ -237,11 +243,11 @@ components:
           type: array
           title: Files
           default: []
-        thumbnail_url:
+        thumbnail_uri:
           anyOf:
           - type: string
           - type: 'null'
-          title: Thumbnail Url
+          title: Thumbnail Uri
       type: object
       required:
       - item_id
@@ -259,6 +265,22 @@ components:
       - items
       title: ItemListResponse
       description: Response for GET /categories/{category_name}/items.
+    ItemSummary:
+      properties:
+        item_id:
+          type: string
+          title: Item Id
+        name:
+          additionalProperties:
+            type: string
+          type: object
+          title: Name
+      type: object
+      required:
+      - item_id
+      - name
+      title: ItemSummary
+      description: Item entry returned inside CategoryDetailResponse.
     ItemVoicesResponse:
       properties:
         item_id:
