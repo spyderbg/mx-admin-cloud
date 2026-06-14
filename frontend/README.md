@@ -52,7 +52,9 @@ src/
 ├── router/
 │   └── index.ts      # Route definitions and auth guard
 ├── types/
-│   └── index.ts      # TypeScript interfaces (Category, Image, Voice, etc.)
+│   ├── index.ts      # Hand-written UI view-model types (Category, Image, Voice, etc.)
+│   ├── localization.ts  # LocalizedString class (mirrors backend; typed getters + JSON serialization)
+│   └── contentSchemas.ts  # Auto-generated backend DTOs (do not edit; re-run generate_ts_schemas.py)
 ├── views/            # Route-level page components
 │   ├── CategoriesView.vue
 │   ├── ItemDetailView.vue
@@ -150,9 +152,14 @@ data shapes (`src/data/mockData.ts`), and the UI actions exposed by components.
 
 ## Domain Types
 
-Defined in `src/types/index.ts` (excerpt):
+Two type layers exist:
+
+- **`src/types/localization.ts`** — `LocalizedString` class, mirrors the Python backend class. Typed property getters for every supported language code (`en`, `es`, `fr`, `bg`, `de`, `it`, `pl`, `uk`, `ro`, `nl`); falls back to English when a translation is absent. Serializes to/from the JSON wire format `{"en": "dog", "fr": "chien"}` via `toJSON()`. Use `LocalizedString.fromJSON(data)` to deserialize from API responses.
+- **`src/types/contentSchemas.ts`** — Auto-generated backend DTOs (do not edit). Imports `LocalizedString`. Regenerate by running `scripts/generate_ts_schemas.py`.
+- **`src/types/index.ts`** — Hand-written UI view-model types (camelCase; UI-only fields the backend doesn't provide). `src/api/cache.ts` maps backend DTOs → these types.
 
 ```typescript
+// src/types/index.ts (hand-written view-models)
 type Language = 'en' | 'es' | 'fr' | 'bg'
 
 const SUPPORTED_LANGUAGES: Language[] = ['en', 'es', 'fr', 'bg']
@@ -162,33 +169,37 @@ interface Voice {
   name: string
   language: Language
   type: string        // e.g. "male", "female", "ambient"
-  iconUrl: string
-  audioUrl?: string   // if absent/empty, play is disabled for that voice
+  iconUri: string
+  audioUri?: string   // if absent/empty, play is disabled for that voice
 }
 
 interface Item {
   id: string
   name: string
-  files: string[]     // at least 1 file URL
-  voices: Voice[]     // exactly 1 per language (4 total)
-  thumbnailUrl: string
+  images: string[]
+  voices: Voice[]
+  thumbnailUri: string
 }
 
 interface Category {
   id: string
   name: string
   description: string
-  iconUrl: string
-  voices: Voice[]     // category-level voices per language
+  images: Image[]
+  archived?: boolean
+  voices: Voice[]
   items: Item[]
+  thumbnailUri?: string  // returned by backend CategorySummary
 }
 
 interface User {
   name: string
   role: string
-  avatarUrl: string
+  avatarUri: string
 }
 ```
+
+`name` fields on categories and items are `LocalizedString` in the backend DTOs (`contentSchemas.ts`) and are mapped to plain `string` in the UI view-models (`index.ts`) via the content language selected in the navbar.
 
 ## Styles
 

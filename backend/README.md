@@ -410,6 +410,7 @@ src/
 │   ├── config.py                 # Settings + output path helpers
 │   ├── models.py                 # e.g. TranslationSourceWord, GeneratedAudio, RunSummary
 │   ├── languages.py
+│   ├── localization.py           # LocalizedString: multilingual str with property access + Pydantic support
 │   ├── input_loader.py           # load_words() for translate-file (TXT/CSV/XLSX)
 │   ├── result_writer.py
 │   ├── content_naming.py         # Content folder / image id naming
@@ -431,8 +432,8 @@ src/
     ├── models.py                 # Service / ServiceProvider bases
     ├── content/                  # Content management service (co-located routes + schemas)
     │   ├── __init__.py           # SERVICE_CLASS, SERVICE_NAME, SERVICE_ACCEPT_CRITERIA
-    │   ├── models.py             # ContentProvider base + error classes
-    │   ├── schemas.py            # Pydantic bodies for /api/v1/content/*
+    │   ├── models.py             # ContentProvider base, result dataclasses (name fields use LocalizedString)
+    │   ├── schemas.py            # Pydantic bodies for /api/v1/content/* (id, LocalizedString name, thumbnail_uri)
     │   ├── routes.py             # /api/v1/content/* (categories, voices, images, files)
     │   ├── service.py            # ContentService + ContentProviderFactory
     │   └── providers/            # file_system provider

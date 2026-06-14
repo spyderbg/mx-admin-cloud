@@ -17,16 +17,20 @@ mx-admin/
 |-- docker/           # Dockerfiles and docker-compose
 |-- content/          # Content data (categories: drinks, foods, toys, etc.)
 |-- docs/             # Backend/CLI layout, game plugin generation
-|-- scripts/          # app.sh, cli.sh, setup.sh, export_env_variables.py
+|-- scripts/          # app.sh, cli.sh, setup.sh, export_env_variables.py;
+|                     #   validate_build.py (backend lint), validate_frontend_build.py (TS/Vue build);
+|                     #   generate_ts_schemas.py, generate_ts_client.py (codegen)
 `-- README.md
 ```
 
 ### Backend (`backend/`)
 
-- **Stack:** Python 3.10+, FastAPI, Uvicorn, Pydantic Settings, python-jose, bcrypt (password hashing), OpenAI (TTS/translation/icons), httpx, structlog.
+- **Stack:** Python 3.10+, FastAPI, Uvicorn, Pydantic Settings, python-jose, bcrypt (password hashing), OpenAI (TTS/translation/icons), httpx, structlog. `LocalizedString` (`src/core/localization.py`) provides multilingual string handling with Pydantic v2 integration.
 - **Layout:** `src/main.py`; `src/api/v1/` (auth, common routes, content, users); `src/api/internal/` (voice generation); `src/core/` (config, pipeline, content_service, models); `src/services/` (multi-provider TTS, translation, evaluation, logging); `src/security/` (auth, tokens).
 - **API base:** `/api/v1` -- auth, common routes, content; `/internal/*` -- voice generation (JWT with role `internal` or `admin`; short-lived internal JWT is created at startup for in-process calls).
 - **Internal translate response:** `POST /internal/translate` returns `success` and `lang_text` (`{ "lang_code", "text" }`).
+- **Category/item names:** `name` fields in category and item responses are `LocalizedString` objects — a `dict[str, str]` mapping language codes to translations (e.g. `{"en": "coffee", "fr": "café"}`). The frontend maps these to plain strings based on the selected content language.
+- **Category thumbnails:** `CategorySummary` now includes `thumbnail_uri`; category thumbnail images (`<category>.png`) live at the root of each category folder under `content/`.
 - **Services:** Multi-provider TTS (Static, OpenAI, ElevenLabs, Speaktor), priority-based translation (static CSV + OpenAI fallback), evaluation engine (STT + Levenshtein scoring), structured logging (structlog, Seq, file rotation).
 - **Service config flow:** JSON files in `backend/config/*` use a `service_provider` envelope with `service` (type), `provider` (implementation name), `enabled`, `priority`, and a `config` payload. Each service package self-registers a `ServicePlugin` with `ServicePluginRegistry` at import time; `registry_builder` iterates the plugin list generically — adding a new service type requires no changes to registry logic.
 - **TTS priority:** Lower `priority` values are selected first. `backend/config/text_to_speech/static.json` is configured with `priority: 0`, so it is preferred ahead of providers configured with `priority: 1`.
@@ -35,7 +39,7 @@ mx-admin/
 ### Frontend (`frontend/`)
 
 - **Stack:** Vue 3, TypeScript, Vite, Vue Router, Axios.
-- **Layout:** `src/api/`, `src/components/`, `src/views/`, `src/layouts/`, `src/router/`, `src/types/`, `src/assets/`.
+- **Layout:** `src/api/`, `src/components/`, `src/views/`, `src/layouts/`, `src/router/`, `src/types/` (hand-written view-models in `index.ts`, auto-generated DTOs in `contentSchemas.ts`, `LocalizedString` in `localization.ts`), `src/assets/`.
 - **Routes:** `/login`, `/categories`, `/categories/:id`, `/categories/:id/images/:imageId` (auth required for categories).
 - **Docs:** See [frontend/README.md](frontend/README.md) for structure, routes, and components.
 
