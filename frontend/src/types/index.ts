@@ -37,6 +37,8 @@ export interface Category {
     archived?: boolean
     voices: Voice[]
     items: Item[]
+    /** Thumbnail URI returned from the backend CategorySummary. */
+    thumbnailUri?: string
 }
 
 export interface Item {

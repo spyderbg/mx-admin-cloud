@@ -60,7 +60,7 @@ export const handlers = [
     }
     return HttpResponse.json({
       categories: active.map((category) => ({
-        category_id: category.id,
+        id: category.id,
         name: { en: category.name },
         items_count: category.items.length,
       })),

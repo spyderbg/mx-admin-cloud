@@ -2,7 +2,7 @@
 
 import client from './client'
 import type {
-  CategoryDetailResponse,
+  CategoryDetailsResponse,
   CategoryImagesResponse,
   CategoryListResponse,
   CategoryVoicesResponse,
@@ -39,8 +39,8 @@ export const categoriesRestore = async (body: RestoreCategoryBody): Promise<Rest
 }
 
 /** Get details of a specific content category */
-export const categoriesDetails = async (categoryName: string): Promise<CategoryDetailResponse> => {
-  const r = await client.get<CategoryDetailResponse>(`/content/categories/${categoryName}`)
+export const categoriesDetails = async (categoryName: string): Promise<CategoryDetailsResponse> => {
+  const r = await client.get<CategoryDetailsResponse>(`/content/categories/${categoryName}`)
   return r.data
 }
 

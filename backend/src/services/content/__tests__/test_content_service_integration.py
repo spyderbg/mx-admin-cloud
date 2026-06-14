@@ -82,7 +82,7 @@ class _StubContentProvider(ContentProvider):
         from src.services.content.models import ItemDetail
         return self._call("category_details", CategoryDetail(
             name={"en": category_name},
-            items=[ItemDetail(item_id=f"I_{category_name.title()}", name={"en": "apple"})],
+            items=[ItemDetail(id=f"I_{category_name.title()}", name={"en": "apple"})],
         ))
 
     def create_category(self, category_name: str) -> CreateCategory:
@@ -513,7 +513,7 @@ async def test_category_details_returns_200(client: AsyncClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["name"] == {"en": "foods"}
-    assert body["items"] == [{"item_id": "I_Foods", "name": {"en": "apple"}}]
+    assert body["items"] == [{"id": "I_Foods", "name": {"en": "apple"}, "thumbnail_uri": None, "images_count": 0}]
 
 
 @pytest.mark.asyncio
@@ -524,8 +524,8 @@ async def test_category_details_with_items(tmp_resolved: Path) -> None:
         CategoryDetail(
             name={"en": "Foods", "fr": "Aliments"},
             items=[
-                ItemDetail(item_id="I_Apple", name={"en": "apple", "fr": "pomme"}),
-                ItemDetail(item_id="I_Banana", name={"en": "banana", "fr": "banane"}),
+                ItemDetail(id="I_Apple", name={"en": "apple", "fr": "pomme"}),
+                ItemDetail(id="I_Banana", name={"en": "banana", "fr": "banane"}),
             ],
         ),
     )
@@ -536,8 +536,8 @@ async def test_category_details_with_items(tmp_resolved: Path) -> None:
     body = response.json()
     assert body["name"] == {"en": "Foods", "fr": "Aliments"}
     assert body["items"] == [
-        {"item_id": "I_Apple", "name": {"en": "apple", "fr": "pomme"}},
-        {"item_id": "I_Banana", "name": {"en": "banana", "fr": "banane"}},
+        {"id": "I_Apple", "name": {"en": "apple", "fr": "pomme"}, "thumbnail_uri": None, "images_count": 0},
+        {"id": "I_Banana", "name": {"en": "banana", "fr": "banane"}, "thumbnail_uri": None, "images_count": 0},
     ]
 
 

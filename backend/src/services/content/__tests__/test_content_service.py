@@ -24,7 +24,7 @@ from src.services.content.models import (
 )
 from src.services.content.schemas import (
     ArchivedEntry,
-    CategoryDetailResponse,
+    CategoryDetailsResponse,
     CategoryListResponse,
     CreateCategoryBody,
     CreateCategoryResponse,
@@ -422,14 +422,14 @@ def test_category_list_response_with_archived() -> None:
 
 
 def test_category_detail_response_fields() -> None:
-    resp = CategoryDetailResponse(
+    resp = CategoryDetailsResponse(
         id="C_Foods",
         name={"en": "Foods", "fr": "Aliments"},
-        items=[ItemSummary(item_id="I_Apple", name={"en": "apple", "fr": "pomme"})],
+        items=[ItemSummary(id="I_Apple", name={"en": "apple", "fr": "pomme"})],
     )
     dumped = resp.model_dump()
     assert dumped["name"] == {"en": "Foods", "fr": "Aliments"}
-    assert dumped["items"] == [{"item_id": "I_Apple", "name": {"en": "apple", "fr": "pomme"}}]
+    assert dumped["items"] == [{"id": "I_Apple", "name": {"en": "apple", "fr": "pomme"}, "thumbnail_uri": None, "images_count": 0}]
 
 
 def test_create_category_response() -> None:

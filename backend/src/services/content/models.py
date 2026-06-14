@@ -6,6 +6,7 @@ import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
+from src.core.localization import LocalizedString
 from src.services.models import ServiceProvider
 
 
@@ -56,10 +57,14 @@ class ArchivedEntry:
 
 @dataclass
 class CategorySummary:
-    category_id: str = ""
-    name: dict[str, str] = field(default_factory=dict)
+    id: str = ""
+    name: LocalizedString = field(default_factory=lambda: LocalizedString({}))
     items_count: int = 0
     thumbnail_uri: str = ""
+
+    def __post_init__(self) -> None:
+        if isinstance(self.name, dict):
+            self.name = LocalizedString(self.name)
 
 
 @dataclass
@@ -70,15 +75,26 @@ class CategoryList:
 
 @dataclass
 class ItemDetail:
-    item_id: str = ""
-    name: dict[str, str] = field(default_factory=dict)
+    id: str = ""
+    name: LocalizedString = field(default_factory=lambda: LocalizedString({}))
+    thumbnail_uri: str = ""
+    images_count: int = 0
+
+    def __post_init__(self) -> None:
+        if isinstance(self.name, dict):
+            self.name = LocalizedString(self.name)
 
 
 @dataclass
 class CategoryDetail:
     id: str = ""
-    name: dict[str, str] = field(default_factory=dict)
+    name: LocalizedString = field(default_factory=lambda: LocalizedString({}))
+    description: str = "Lorem ipsum ..."
     items: list[ItemDetail] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if isinstance(self.name, dict):
+            self.name = LocalizedString(self.name)
 
 
 @dataclass

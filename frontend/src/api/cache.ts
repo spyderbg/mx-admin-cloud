@@ -109,7 +109,7 @@ async function _loadCategoriesBasic(): Promise<Category[]> {
     const detailEnName = detail.name['en'] ?? Object.values(detail.name)[0] ?? enName
 
     const category: Category = {
-      id: summary.category_id,
+      id: summary.id,
       name: detailEnName,
       description: categoryFallback?.description ?? '',
       images: categoryFallback?.images ?? [

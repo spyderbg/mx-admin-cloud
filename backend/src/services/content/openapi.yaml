@@ -48,7 +48,7 @@ components:
       - category
       - item
       title: Body_create_item_endpoint_api_v1_content_items_post
-    CategoryDetailResponse:
+    CategoryDetailsResponse:
       properties:
         id:
           type: string
@@ -58,6 +58,12 @@ components:
             type: string
           type: object
           title: Name
+          description: 'Language-code → translation map (e.g. {"en": "dog", "fr":
+            "chien"})'
+        description:
+          type: string
+          title: Description
+          default: ''
         items:
           items:
             $ref: '#/components/schemas/ItemSummary'
@@ -68,7 +74,7 @@ components:
       required:
       - id
       - name
-      title: CategoryDetailResponse
+      title: CategoryDetailsResponse
       description: Response for GET /content/categories/{name}.
     CategoryImagesResponse:
       properties:
@@ -112,20 +118,27 @@ components:
       description: Response for GET /content/categories.
     CategorySummary:
       properties:
-        category_id:
+        id:
           type: string
-          title: Category Id
+          title: Id
         name:
           additionalProperties:
             type: string
           type: object
           title: Name
+          description: 'Language-code → translation map (e.g. {"en": "dog", "fr":
+            "chien"})'
         items_count:
           type: integer
           title: Items Count
+        thumbnail_uri:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Thumbnail Uri
       type: object
       required:
-      - category_id
+      - id
       - name
       - items_count
       title: CategorySummary
@@ -267,20 +280,31 @@ components:
       description: Response for GET /categories/{category_name}/items.
     ItemSummary:
       properties:
-        item_id:
+        id:
           type: string
-          title: Item Id
+          title: Id
         name:
           additionalProperties:
             type: string
           type: object
           title: Name
+          description: 'Language-code → translation map (e.g. {"en": "dog", "fr":
+            "chien"})'
+        thumbnail_uri:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Thumbnail Uri
+        images_count:
+          type: integer
+          title: Images Count
+          default: 0
       type: object
       required:
-      - item_id
+      - id
       - name
       title: ItemSummary
-      description: Item entry returned inside CategoryDetailResponse.
+      description: Item entry returned inside CategoryDetailsResponse.
     ItemVoicesResponse:
       properties:
         item_id:
@@ -573,7 +597,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CategoryDetailResponse'
+                $ref: '#/components/schemas/CategoryDetailsResponse'
         '422':
           description: Validation Error
           content:

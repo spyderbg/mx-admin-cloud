@@ -269,7 +269,7 @@ class FileSystemContentProvider(ContentProvider):
                 items_count = sum(1 for c in p.iterdir() if c.is_dir() and not c.name.startswith("."))
                 fn = p.name.lower()
                 summaries.append(CategorySummary(
-                    category_id=ids_by_folder.get(fn, ""),
+                    id=ids_by_folder.get(fn, ""),
                     name=dict(names_by_folder.get(fn, {})),
                     items_count=items_count,
                     thumbnail_uri=f"/content/{p.name}/{p.name}.png",
@@ -310,13 +310,28 @@ class FileSystemContentProvider(ContentProvider):
             except (OSError, csv.Error):
                 item_ids = []
 
-        items = [
-            ItemDetail(
-                item_id=iid,
+        en_words = items_by_lang.get("en", [])
+        items = []
+        for i, iid in enumerate(item_ids):
+            thumbnail_uri = ""
+            images_count = 0
+            if i < len(en_words):
+                folder_name = self._english_word_to_folder_name(en_words[i])
+                item_folder = category_path / folder_name
+                if item_folder.is_dir():
+                    image_files = sorted(
+                        f for f in item_folder.iterdir()
+                        if f.is_file() and f.suffix.lower() in (".png", ".jpg", ".jpeg")
+                    )
+                    images_count = len(image_files)
+                    if image_files:
+                        thumbnail_uri = f"/content/{category_name}/{folder_name}/{image_files[0].name}"
+            items.append(ItemDetail(
+                id=iid,
                 name={lang: names[i] for lang, names in items_by_lang.items() if i < len(names)},
-            )
-            for i, iid in enumerate(item_ids)
-        ]
+                thumbnail_uri=thumbnail_uri,
+                images_count=images_count,
+            ))
 
         return CategoryDetail(
             id=category_id,

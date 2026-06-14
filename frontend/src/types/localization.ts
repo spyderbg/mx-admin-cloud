@@ -14,10 +14,10 @@ const LANG_CODES = new Set(['en', 'de', 'fr', 'it', 'es', 'pl', 'uk', 'ro', 'nl'
  *
  * @example
  *   const ls = new LocalizedString({ en: 'coffee', fr: 'café' })
- *   ls.en   // 'coffee'
- *   ls.fr   // 'café'
- *   ls.es   // 'coffee'  ← falls back to English
- *   ls.get('jp')  // throws Error: 'jp' is not a supported language code
+ *   ls.en // 'coffee'
+ *   ls.fr // 'café'
+ *   ls.es // 'coffee' ← falls back to English
+ *   ls.get('jp') // throws Error: 'jp' is not a supported language code
  */
 export class LocalizedString {
     private readonly _data: Record<string, string>

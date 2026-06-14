@@ -1,4 +1,6 @@
 // Auto-generated – do not edit manually
+import { LocalizedString } from './localization'
+
 /** Response for archiving (or removing via archive) a category. */
 export interface ArchiveCategoryResponse {
     archived?: boolean | null
@@ -17,9 +19,10 @@ export interface ArchivedEntry {
 }
 
 /** Response for GET /content/categories/{name}. */
-export interface CategoryDetailResponse {
+export interface CategoryDetailsResponse {
     id: string
-    name: Record<string, string>
+    name: LocalizedString
+    description?: string
     items?: ItemSummary[]
 }
 
@@ -38,9 +41,10 @@ export interface CategoryListResponse {
 
 /** Summary of a single category returned in the list endpoint. */
 export interface CategorySummary {
-    category_id: string
-    name: Record<string, string>
+    id: string
+    name: LocalizedString
     items_count: number
+    thumbnail_uri?: string | null
 }
 
 /** Response for GET /categories/{name}/voices. */
@@ -89,10 +93,12 @@ export interface ItemListResponse {
     items: string[]
 }
 
-/** Item entry returned inside CategoryDetailResponse. */
+/** Item entry returned inside CategoryDetailsResponse. */
 export interface ItemSummary {
-    item_id: string
-    name: Record<string, string>
+    id: string
+    name: LocalizedString
+    thumbnail_uri?: string | null
+    images_count?: number
 }
 
 /** Response for GET /categories/{name}/items/{item_id}/voices. */

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
+from src.core.localization import LocalizedString
+
 
 # ---------------------------------------------------------------------------
 # Request bodies
@@ -46,8 +48,8 @@ class ArchivedEntry(BaseModel):
 class CategorySummary(BaseModel):
     """Summary of a single category returned in the list endpoint."""
 
-    category_id: str
-    name: dict[str, str]
+    id: str
+    name: LocalizedString
     items_count: int
     thumbnail_uri: str | None = None
 
@@ -61,17 +63,20 @@ class CategoryListResponse(BaseModel):
 
 
 class ItemSummary(BaseModel):
-    """Item entry returned inside CategoryDetailResponse."""
+    """Item entry returned inside CategoryDetailsResponse."""
 
-    item_id: str
-    name: dict[str, str]
+    id: str
+    name: LocalizedString
+    thumbnail_uri: str | None = None
+    images_count: int = 0
 
 
-class CategoryDetailResponse(BaseModel):
+class CategoryDetailsResponse(BaseModel):
     """Response for GET /content/categories/{name}."""
 
     id: str
-    name: dict[str, str]
+    name: LocalizedString
+    description: str = ""
     items: list[ItemSummary] = []
 
 
