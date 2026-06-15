@@ -86,10 +86,28 @@ class ItemDetail:
 
 
 @dataclass
-class CategoryDetail:
+class CategoryImage:
+    id: str = ""
+    name: str = ""
+    file_uri: str | None = None
+
+
+@dataclass
+class CategoryVoice:
+    id: str = ""
+    name: str = ""
+    language: str = ""
+    type: str = ""
+    audio_url: str | None = None
+
+
+@dataclass
+class CategoryDetails:
     id: str = ""
     name: LocalizedString = field(default_factory=lambda: LocalizedString({}))
     description: str = "Lorem ipsum ..."
+    images: list[CategoryImage] = field(default_factory=list)
+    voices: list[CategoryVoice] = field(default_factory=list)
     items: list[ItemDetail] = field(default_factory=list)
 
     def __post_init__(self) -> None:
@@ -153,7 +171,7 @@ class ContentProvider(ServiceProvider, ABC):
         """List content categories, optionally including archived ones."""
 
     @abstractmethod
-    def category_details(self, category_name: str) -> CategoryDetail:
+    def category_details(self, category_name: str) -> CategoryDetails:
         """Return object folders and CSV-derived data for a category."""
 
     @abstractmethod

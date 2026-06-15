@@ -24,10 +24,12 @@ from src.services.content.models import (
     ArchiveUnavailableError,
     ArchivedEntry,
     CategoryConflictError,
-    CategoryDetail,
+    CategoryDetails,
+    CategoryImage,
     CategoryList,
     CategoryNotFoundError,
     CategorySummary,
+    CategoryVoice,
     ContentOperationError,
     ContentProvider,
     CreateCategory,
@@ -38,6 +40,8 @@ from src.services.content.models import (
     RestoreCategory,
 )
 from src.services.content.service import ContentProviderFactory
+
+_IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg")
 
 _SAFE_NAME_RE = re.compile(r"^[a-zA-Z0-9_]+$")
 
@@ -158,7 +162,7 @@ class FileSystemContentProvider(ContentProvider):
         for i in range(1, 1000):
             if not any(
                     (object_folder / f"{i:02d}{ext}").exists()
-                    for ext in (".png", ".jpg", ".jpeg")
+                    for ext in _IMAGE_EXTENSIONS
             ):
                 return i
         return 1
@@ -279,7 +283,7 @@ class FileSystemContentProvider(ContentProvider):
             archived=archived if include_archived else [],
         )
 
-    def category_details(self, category_name: str) -> CategoryDetail:
+    def category_details(self, category_name: str) -> CategoryDetails:
         if not self._is_safe_category_name(category_name):
             raise InvalidCategoryNameError(category_name)
 
@@ -289,27 +293,50 @@ class FileSystemContentProvider(ContentProvider):
         _, names_by_folder = self._load_category_localized_names()
         category_name_dict = dict(names_by_folder.get(category_name.lower(), {}))
 
+        item_ids, items_by_lang = self._read_item_csv_data(category_path)
+
+        return CategoryDetails(
+            id=category_id,
+            name=category_name_dict,
+            items=self._collect_items(category_path, category_name, item_ids, items_by_lang),
+            images=self._collect_images(category_path, category_name),
+            voices=self._collect_voices(category_path, category_name),
+        )
+
+    def _read_item_csv_data(
+            self,
+            category_path: Path,
+    ) -> tuple[list[str], dict[str, list[str]]]:
+        """Read item IDs and per-language names from the category CSV files."""
+        item_ids: list[str] = []
+        ids_path = category_path / "items_ids.csv"
+        if ids_path.exists():
+            try:
+                with open(ids_path, newline="", encoding="utf-8") as fh:
+                    item_ids = [r[0].strip() for r in csv.reader(fh) if r and r[0].strip()]
+            except (OSError, csv.Error):
+                pass
+
         items_by_lang: dict[str, list[str]] = {}
         for lang in settings.SUPPORTED_LANGUAGES:
             csv_path = category_path / f"items_{lang}.csv"
             if csv_path.exists():
                 try:
                     with open(csv_path, newline="", encoding="utf-8") as fh:
-                        rows = list(csv.reader(fh))
-                        items_by_lang[lang] = [r[0].strip() for r in rows if r and r[0].strip()]
+                        items_by_lang[lang] = [r[0].strip() for r in csv.reader(fh) if r and r[0].strip()]
                 except (OSError, csv.Error):
                     items_by_lang[lang] = []
 
-        item_ids: list[str] = []
-        ids_path = category_path / "items_ids.csv"
-        if ids_path.exists():
-            try:
-                with open(ids_path, newline="", encoding="utf-8") as fh:
-                    rows = list(csv.reader(fh))
-                    item_ids = [r[0].strip() for r in rows if r and r[0].strip()]
-            except (OSError, csv.Error):
-                item_ids = []
+        return item_ids, items_by_lang
 
+    def _collect_items(
+            self,
+            category_path: Path,
+            category_name: str,
+            item_ids: list[str],
+            items_by_lang: dict[str, list[str]],
+    ) -> list[ItemDetail]:
+        """Build ItemDetail list from CSV data and filesystem scan."""
         en_words = items_by_lang.get("en", [])
         items = []
         for i, iid in enumerate(item_ids):
@@ -321,7 +348,7 @@ class FileSystemContentProvider(ContentProvider):
                 if item_folder.is_dir():
                     image_files = sorted(
                         f for f in item_folder.iterdir()
-                        if f.is_file() and f.suffix.lower() in (".png", ".jpg", ".jpeg")
+                        if f.is_file() and f.suffix.lower() in _IMAGE_EXTENSIONS
                     )
                     images_count = len(image_files)
                     if image_files:
@@ -332,12 +359,46 @@ class FileSystemContentProvider(ContentProvider):
                 thumbnail_uri=thumbnail_uri,
                 images_count=images_count,
             ))
+        return items
 
-        return CategoryDetail(
-            id=category_id,
-            name=category_name_dict,
-            items=items,
+    def _collect_images(
+            self,
+            category_path: Path,
+            category_name: str,
+    ) -> list[CategoryImage]:
+        """Collect category-level images named {category_name}[_{index}].{ext} from the category root."""
+        pattern = re.compile(
+            r"^" + re.escape(category_name) + r"(_\d+)?\.(png|jpg|jpeg)$",
+            re.IGNORECASE,
         )
+        images = []
+        for f in sorted(category_path.iterdir()):
+            if f.is_file() and pattern.match(f.name):
+                images.append(CategoryImage(
+                    id=f.stem,
+                    name=f.stem,
+                    file_uri=f"/content/{category_name}/{f.name}",
+                ))
+        return images
+
+    def _collect_voices(
+            self,
+            category_path: Path,
+            category_name: str,
+    ) -> list[CategoryVoice]:
+        """Build CategoryVoice list from existing TTS files in the category directory."""
+        voices = []
+        for lang in settings.SUPPORTED_LANGUAGES:
+            voice_file = category_path / f"{category_name}_{lang}.mp3"
+            if voice_file.exists() and voice_file.is_file():
+                voices.append(CategoryVoice(
+                    id=f"{category_name}-v-{lang}",
+                    name=category_name,
+                    language=lang,
+                    type="tts",
+                    audio_url=f"/content/{category_name}/{category_name}_{lang}.mp3",
+                ))
+        return voices
 
     def create_category(self, category_name: str) -> CreateCategory:
         if not self._is_safe_category_name(category_name):
@@ -411,7 +472,7 @@ class FileSystemContentProvider(ContentProvider):
 
         idx = self._first_available_image_index(item_path)
         ext = image_extension if image_extension.startswith(".") else f".{image_extension}"
-        if ext.lower() not in (".png", ".jpg", ".jpeg"):
+        if ext.lower() not in _IMAGE_EXTENSIONS:
             ext = ".png"
         image_path = item_path / f"{idx:02d}{ext}"
         with open(image_path, "wb") as fh:

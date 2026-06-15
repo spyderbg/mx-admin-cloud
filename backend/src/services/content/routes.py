@@ -31,7 +31,7 @@ from src.services.content.schemas import (
     CreateCategoryBody,
     CreateCategoryResponse,
     CreateItemResponse,
-    ItemDetailResponse,
+    ImageResponse,
     ItemImagesResponse,
     ItemListResponse,
     ItemSummary,
@@ -320,17 +320,13 @@ def categories_images_list(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
-    items = [
-        ItemDetailResponse(
-            id=f"{category_name}-{name}",
-            name=name.replace("_", " ").title(),
-            files=_mock_item_files(category_name, name),
-            thumbnail_uri=_mock_item_files(category_name, name)[0],
-            voices=_mock_item_voices(category_name, name),
-        )
-        for name in [item.id for item in result.items]
-    ]
-    return CategoryImagesResponse(category=category_name, items=items)
+    return CategoryImagesResponse(
+        category_id=result.id,
+        images=[
+            ImageResponse(id=img.id, name=img.name, file_uri=img.file_uri)
+            for img in result.images
+        ],
+    )
 
 
 @router.post(
@@ -429,7 +425,7 @@ def categories_voices_list(
 ) -> CategoryVoicesResponse:
     """List voices for a category."""
     try:
-        service.category_details(category_name)
+        result = service.category_details(category_name)
     except CategoryNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except InvalidCategoryNameError as exc:
@@ -437,8 +433,17 @@ def categories_voices_list(
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
     return CategoryVoicesResponse(
-        category=category_name,
-        voices=_mock_category_voices(category_name),
+        category_id=result.id,
+        voices=[
+            VoiceResponse(
+                id=v.id,
+                name=v.name,
+                language=v.language,
+                type=v.type,
+                audio_url=v.audio_url,
+            )
+            for v in result.voices
+        ],
     )
 
 
@@ -553,7 +558,7 @@ def items_list(
 
 @router.get(
     "/categories/{category_name}/items/{item_id}",
-    response_model=ItemDetailResponse,
+    response_model=ImageResponse,
     status_code=status.HTTP_200_OK,
     tags=[TAG_ITEMS],
     summary="Get a single item by ID",
@@ -568,7 +573,7 @@ def items_get(
         item_id: str,
         service: ContentServiceDep,
         _user: dict = Depends(get_current_user),
-) -> ItemDetailResponse:
+) -> ImageResponse:
     """Get a single item by ID."""
     try:
         result = service.category_details(category_name)
@@ -578,18 +583,16 @@ def items_get(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
-    if item_id not in [item.id for item in result.items]:
+    matched = next((item for item in result.items if item.id == item_id), None)
+    if matched is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Item '{item_id}' not found in category '{category_name}'",
         )
-    files = _mock_item_files(category_name, item_id)
-    return ItemDetailResponse(
-        id=f"{category_name}-{item_id}",
-        name=item_id.replace("_", " ").title(),
-        files=files,
-        thumbnail_uri=files[0],
-        voices=_mock_item_voices(category_name, item_id),
+    return ImageResponse(
+        id=matched.id,
+        name=matched.name.get("en", item_id),
+        file_uri=matched.thumbnail_uri or None,
     )
 
 

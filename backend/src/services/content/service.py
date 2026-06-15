@@ -8,7 +8,7 @@ from typing_extensions import override
 
 from src.services.content.models import (
     ArchiveCategory,
-    CategoryDetail,
+    CategoryDetails,
     CategoryList,
     ContentProvider,
     ContentProviderUnavailableError,
@@ -74,7 +74,7 @@ class ContentService(Service):
             archived_only=archived_only,
         )
 
-    def category_details(self, category_name: str) -> CategoryDetail:
+    def category_details(self, category_name: str) -> CategoryDetails:
         """Return category details via the active provider."""
         return self._select_provider().category_details(category_name)
 

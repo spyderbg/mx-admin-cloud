@@ -20,7 +20,7 @@ from src.api.dependencies import get_current_user
 from src.services.content import routes as content_routes
 from src.services.content.models import (
     ArchiveCategory,
-    CategoryDetail,
+    CategoryDetails,
     CategoryList,
     CategoryNotFoundError,
     ContentProvider,
@@ -78,9 +78,9 @@ class _StubContentProvider(ContentProvider):
     ) -> CategoryList:
         return self._call("list_categories", CategoryList(categories=["foods", "drinks"]))
 
-    def category_details(self, category_name: str) -> CategoryDetail:
+    def category_details(self, category_name: str) -> CategoryDetails:
         from src.services.content.models import ItemDetail
-        return self._call("category_details", CategoryDetail(
+        return self._call("category_details", CategoryDetails(
             name={"en": category_name},
             items=[ItemDetail(id=f"I_{category_name.title()}", name={"en": "apple"})],
         ))
@@ -521,7 +521,7 @@ async def test_category_details_with_items(tmp_resolved: Path) -> None:
     from src.services.content.models import ItemDetail
     provider = _StubContentProvider(tmp_resolved).returns(
         "category_details",
-        CategoryDetail(
+        CategoryDetails(
             name={"en": "Foods", "fr": "Aliments"},
             items=[
                 ItemDetail(id="I_Apple", name={"en": "apple", "fr": "pomme"}),

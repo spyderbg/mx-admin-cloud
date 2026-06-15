@@ -291,9 +291,9 @@ def test_category_details_returns_items_and_csv(tmp_path: Path) -> None:
 
     assert result.name == {"en": "Foods", "fr": "Aliments"}
     assert len(result.items) == 2
-    assert result.items[0].item_id == "I_Apple"
+    assert result.items[0].id == "I_Apple"
     assert result.items[0].name == {"en": "apple", "fr": "pomme"}
-    assert result.items[1].item_id == "I_Banana"
+    assert result.items[1].id == "I_Banana"
     assert result.items[1].name == {"en": "banana", "fr": "banane"}
 
 

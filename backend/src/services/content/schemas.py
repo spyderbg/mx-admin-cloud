@@ -136,21 +136,19 @@ class RemoveCategoryResponse(BaseModel):
 
 # region Category Images Response models
 
-class ItemDetailResponse(BaseModel):
-    """Detailed response for a single item."""
+class ImageResponse(BaseModel):
+    """Response for a single item image entry."""
 
     id: str
     name: str
-    files: list[str] = []
-    thumbnail_uri: str | None = None
-    voices: list[VoiceResponse] = []
+    file_uri: str | None = None
 
 
 class CategoryImagesResponse(BaseModel):
     """Response for GET /categories/{name}/images."""
 
-    category: str
-    items: list[ItemDetailResponse] = []
+    category_id: str
+    images: list[ImageResponse] = []
 
 
 # endregion
@@ -170,7 +168,7 @@ class VoiceResponse(BaseModel):
 class CategoryVoicesResponse(BaseModel):
     """Response for GET /categories/{name}/voices."""
 
-    category: str
+    category_id: str
     voices: list[VoiceResponse] = []
 
 
