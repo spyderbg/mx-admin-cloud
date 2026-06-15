@@ -28,8 +28,8 @@ export interface CategoryDetailsResponse {
 
 /** Response for GET /categories/{name}/images. */
 export interface CategoryImagesResponse {
-    category: string
-    items?: ItemDetailResponse[]
+    category_id: string
+    images?: ImageResponse[]
 }
 
 /** Response for GET /content/categories. */
@@ -49,7 +49,7 @@ export interface CategorySummary {
 
 /** Response for GET /categories/{name}/voices. */
 export interface CategoryVoicesResponse {
-    category: string
+    category_id: string
     voices?: VoiceResponse[]
 }
 
@@ -72,13 +72,11 @@ export interface CreateItemResponse {
     image_id: string
 }
 
-/** Detailed response for a single item. */
-export interface ItemDetailResponse {
+/** Response for a single item image entry. */
+export interface ImageResponse {
     id: string
     name: string
-    files?: string[]
-    thumbnail_uri?: string | null
-    voices?: VoiceResponse[]
+    file_uri?: string | null
 }
 
 /** Response for GET /categories/{name}/items/{item_id}/images. */
@@ -150,5 +148,5 @@ export interface VoiceResponse {
     name: string
     language: string
     type: string
-    audio_url?: string | null
+    file_uri?: string | null
 }

@@ -1,8 +1,9 @@
-import type { User, Voice, Item, Image } from '../types'
+import type { User } from '../types'
+import type { Voice, Item, Image } from '../types/viewModels'
 
 interface MockCategory {
   id: string
-  name: string
+  name: Record<string, string>
   description: string
   images: Image[]
   archived: boolean
@@ -24,7 +25,7 @@ export const mockUser: User = {
 export const mockCategories: MockCategory[] = [
   {
     id: 'drinks',
-    name: 'Drinks',
+    name: { en: 'Drinks', es: 'Bebidas', fr: 'Boissons', bg: 'Напитки' },
     description: 'Beverages and drinks',
     archived: false,
     thumbnailUri: '/content/drinks/coffee/coffee_01.png',
@@ -162,7 +163,7 @@ export const mockCategories: MockCategory[] = [
   },
   {
     id: 'foods',
-    name: 'Foods',
+    name: { en: 'Foods', es: 'Comida', fr: 'Aliments', bg: 'Храни' },
     description: 'Food and snacks',
     archived: false,
     thumbnailUri: '/content/foods/apple_pie/apple_pie.png',
@@ -341,7 +342,7 @@ export const mockCategories: MockCategory[] = [
   },
   {
     id: 'vegetables',
-    name: 'Vegetables',
+    name: { en: 'Vegetables', es: 'Verduras', fr: 'Légumes', bg: 'Зеленчуци' },
     description: 'Fresh vegetables',
     archived: false,
     thumbnailUri: '/content/vegetables/tomato/tomato.png',
@@ -575,7 +576,7 @@ export const mockCategories: MockCategory[] = [
   },
   {
     id: 'toys',
-    name: 'Toys',
+    name: { en: 'Toys', es: 'Juguetes', fr: 'Jouets', bg: 'Играчки' },
     description: 'Toys and playthings',
     archived: false,
     thumbnailUri: '/content/toys/toys.png',

@@ -1,5 +1,5 @@
 import { ref, inject, watch, type InjectionKey, type Ref } from 'vue'
-import type { Language } from '../types'
+import type { Language } from '../types/viewModels'
 
 const STORAGE_KEY = 'mx-admin-content-language'
 

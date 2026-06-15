@@ -117,7 +117,8 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { mockUser, mockCategories } from '../data/mockData'
+import { mockUser } from '../data/mockData'
+import { sharedCategories } from '../api/cache'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import { localizedCategoryLabel, localizedImageLabel } from '../utils/localizedLabels'
 
@@ -152,8 +153,9 @@ interface FilteredCategory {
 const filteredCategories = computed((): FilteredCategory[] => {
   const lang = contentLanguage.value
   const q = filterText.value.toLowerCase().trim()
+  const categories = sharedCategories.value
   if (!q) {
-    return mockCategories.map((c) => ({
+    return categories.map((c) => ({
       id: c.id,
       name: localizedCategoryLabel(c, lang),
       filteredItems: c.items.map((i) => ({
@@ -163,7 +165,7 @@ const filteredCategories = computed((): FilteredCategory[] => {
     }))
   }
   const result: FilteredCategory[] = []
-  for (const cat of mockCategories) {
+  for (const cat of categories) {
     const catLabel = localizedCategoryLabel(cat, lang)
     const catMatch = catLabel.toLowerCase().includes(q)
     const matchedItems = cat.items.filter((i) =>
@@ -200,7 +202,7 @@ watch(activeCategoryId, (id) => {
 }, { immediate: true })
 
 const expandAllCategories = (): void => {
-  expandedIds.value = new Set(mockCategories.map((c) => c.id))
+  expandedIds.value = new Set(sharedCategories.value.map((c) => c.id))
 }
 
 const collapseAllCategories = (): void => {

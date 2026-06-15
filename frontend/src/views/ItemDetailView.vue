@@ -186,8 +186,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { ensureCategoriesLoaded, ensureCategoryFull, sharedCategories, sharedLoadedCategoryIds } from '../api/cache'
-import type { Language, Voice } from '../types'
+import { ensureCategoriesLoaded, ensureCategoryFull, sharedCategories } from '../api/cache'
+import type { Language, Voice } from '../types/viewModels'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import cameraPlaceholderUrl from '../assets/images/samples/camera-placeholder.svg'
 import {
@@ -205,13 +205,12 @@ onMounted(async () => {
 })
 
 watch(() => route.params.categoryId as string, async (id) => {
-  if (!id || sharedLoadedCategoryIds.value.has(id)) return
-  const name = sharedCategories.value.find(
+  if (!id) return
+  const cat = sharedCategories.value.find(
     (c) => c.id.toLowerCase() === id.toLowerCase(),
-  )?.name
-  if (name) {
-    await ensureCategoryFull(name)
-    sharedLoadedCategoryIds.value.add(id)
+  )
+  if (cat) {
+    await ensureCategoryFull(cat.name.en)
   }
 })
 

@@ -56,7 +56,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import { ensureCategoriesLoaded, sharedCategories } from '../api/cache'
-import { breadcrumbCategoriesLabel } from '../utils/localizedLabels'
+import { breadcrumbCategoriesLabel, localizedCategoryLabel } from '../utils/localizedLabels'
 import { toPascalCaseWords } from '../utils/pascalCaseWords'
 
 interface CategoryCard {
@@ -92,8 +92,8 @@ onMounted(async () => {
 
     const cardList: CategoryCard[] = sharedCategories.value.map((c) => ({
       id: c.id,
-      name: c.name,
-      iconUri: c.thumbnail_uri ?? `/content/${c.name}/icon.png`,
+      name: localizedCategoryLabel(c, contentLanguage.value),
+      iconUri: c.thumbnail_uri ?? `/content/${localizedCategoryLabel(c, 'en')}/icon.png`,
       itemCount: c.items?.length ?? 0,
     }))
 

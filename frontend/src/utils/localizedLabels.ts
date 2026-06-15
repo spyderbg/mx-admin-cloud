@@ -1,4 +1,4 @@
-import type { CategoryFull, Item, Language, Voice } from '../types'
+import type { CategoryFull, Item, Language, Voice } from '../types/viewModels'
 
 function labelFromVoices(voices: Voice[], lang: Language): string | undefined {
   const pick = (code: Language) => voices.find((v) => v.language === code)?.name?.trim()
@@ -10,11 +10,21 @@ function labelFromVoices(voices: Voice[], lang: Language): string | undefined {
 }
 
 export function localizedCategoryLabel(category: CategoryFull, lang: Language): string {
-  return labelFromVoices(category.voices, lang) ?? category.name
+  const voiceLabel = labelFromVoices(category.voices, lang)
+  if (voiceLabel) return voiceLabel
+  if (typeof (category.name as any).get === 'function') {
+    return (category.name as any).get(lang, (category.name as any).en)
+  }
+  const dict = category.name as unknown as Record<string, string>
+  return dict[lang] ?? dict['en'] ?? ''
 }
 
 export function localizedImageLabel(item: Item, lang: Language): string {
-  return labelFromVoices(item.voices, lang) ?? item.name
+  const voiceLabel = labelFromVoices(item.voices, lang)
+  if (voiceLabel) return voiceLabel
+  const enLabel = labelFromVoices(item.voices, 'en')
+  if (enLabel) return enLabel
+  return item.name
 }
 
 /** The first segment of category breadcrumbs; unknown `lang` falls back to English. */

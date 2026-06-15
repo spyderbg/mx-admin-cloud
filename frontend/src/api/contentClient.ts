@@ -9,7 +9,7 @@ import type {
   CreateCategoryBody,
   CreateCategoryResponse,
   CreateItemResponse,
-  ItemDetailResponse,
+  ImageResponse,
   ItemImagesResponse,
   ItemListResponse,
   ItemVoicesResponse,
@@ -75,8 +75,8 @@ export const itemsList = async (categoryName: string): Promise<ItemListResponse>
 }
 
 /** Get a single item by ID */
-export const itemsGet = async (categoryName: string, itemId: string): Promise<ItemDetailResponse> => {
-  const r = await client.get<ItemDetailResponse>(`/content/categories/${categoryName}/items/${itemId}`)
+export const itemsGet = async (categoryName: string, itemId: string): Promise<ImageResponse> => {
+  const r = await client.get<ImageResponse>(`/content/categories/${categoryName}/items/${itemId}`)
   return r.data
 }
 

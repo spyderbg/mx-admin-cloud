@@ -25,7 +25,7 @@
 
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
-import type { Item } from '../types'
+import type { Item } from '../types/viewModels'
 import cameraPlaceholderUrl from '../assets/images/samples/camera-placeholder.svg'
 
 const props = defineProps<{

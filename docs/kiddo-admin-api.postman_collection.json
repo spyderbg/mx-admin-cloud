@@ -434,7 +434,7 @@
               "header": [
                 { "key": "Content-Type", "value": "application/json" }
               ],
-              "body": "{\n  \"category\": \"nature_scenes\",\n  \"language\": \"es\",\n  \"audio_url\": \"/content/nature_scenes/nature_scenes_es.mp3\"\n}",
+              "body": "{\n  \"category\": \"nature_scenes\",\n  \"language\": \"es\",\n  \"file_uri\": \"/content/nature_scenes/nature_scenes_es.mp3\"\n}",
               "_postman_previewlanguage": "json"
             }
           ]
@@ -458,7 +458,7 @@
               "header": [
                 { "key": "Content-Type", "value": "application/json" }
               ],
-              "body": "{\n  \"category\": \"nature_scenes\",\n  \"language\": \"fr\",\n  \"audio_url\": \"/content/nature_scenes/nature_scenes_fr.mp3\"\n}",
+              "body": "{\n  \"category\": \"nature_scenes\",\n  \"language\": \"fr\",\n  \"file_uri\": \"/content/nature_scenes/nature_scenes_fr.mp3\"\n}",
               "_postman_previewlanguage": "json"
             }
           ]
@@ -728,7 +728,7 @@
               "header": [
                 { "key": "Content-Type", "value": "application/json" }
               ],
-              "body": "{\n  \"category\": \"nature_scenes\",\n  \"object\": \"mountain_peak\",\n  \"language\": \"es\",\n  \"audio_url\": \"/content/nature_scenes/mountain_peak/mountain_peak_es_01.mp3\"\n}",
+              "body": "{\n  \"category\": \"nature_scenes\",\n  \"object\": \"mountain_peak\",\n  \"language\": \"es\",\n  \"file_uri\": \"/content/nature_scenes/mountain_peak/mountain_peak_es_01.mp3\"\n}",
               "_postman_previewlanguage": "json"
             }
           ]
@@ -752,7 +752,7 @@
               "header": [
                 { "key": "Content-Type", "value": "application/json" }
               ],
-              "body": "{\n  \"category\": \"nature_scenes\",\n  \"object\": \"mountain_peak\",\n  \"language\": \"fr\",\n  \"audio_url\": \"/content/nature_scenes/mountain_peak/mountain_peak_fr_01.mp3\"\n}",
+              "body": "{\n  \"category\": \"nature_scenes\",\n  \"object\": \"mountain_peak\",\n  \"language\": \"fr\",\n  \"file_uri\": \"/content/nature_scenes/mountain_peak/mountain_peak_fr_01.mp3\"\n}",
               "_postman_previewlanguage": "json"
             }
           ]

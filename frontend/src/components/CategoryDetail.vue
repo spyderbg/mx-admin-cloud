@@ -134,7 +134,7 @@
           <button type="button" class="cd-modal-close" @click="showDelete = false">&times;</button>
         </div>
         <div class="cd-modal-body">
-          Are you sure you want to delete the category "{{ category.name }}"?
+          Are you sure you want to delete the category "{{ categoryLabel }}"?
         </div>
         <div class="cd-modal-footer">
           <button type="button" class="btn btn-secondary" @click="showDelete = false">Cancel</button>
@@ -259,13 +259,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import ServerWord from './ServerWord.vue'
-import type { CategoryFull, Language, Voice } from '../types'
+import type { CategoryFull, Language, Voice } from '../types/viewModels'
 
 const props = defineProps<{
   category: CategoryFull
 }>()
+
+const categoryLabel = computed(() => props.category.name.en)
 
 const emit = defineEmits<{
   edit: []
@@ -401,13 +403,13 @@ function onVoiceFileSelected(e: Event): void {
 
 function openRenameModal(): void {
   closeAllModals()
-  renameValue.value = props.category.name
+  renameValue.value = props.category.name.en
   showRename.value = true
 }
 
 function confirmRename(): void {
   const trimmed = renameValue.value.trim()
-  if (trimmed && trimmed !== props.category.name) {
+  if (trimmed && trimmed !== props.category.name.en) {
     emit('rename', trimmed)
   }
   showRename.value = false

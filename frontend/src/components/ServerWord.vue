@@ -24,7 +24,7 @@
 
 <script setup lang="ts">
 import { computed, useAttrs, type StyleValue } from 'vue'
-import type { CategoryFull } from '../types'
+import type { CategoryFull } from '../types/viewModels'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import { localizedCategoryLabel } from '../utils/localizedLabels'
 import { toPascalCaseWords } from '../utils/pascalCaseWords'

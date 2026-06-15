@@ -458,7 +458,7 @@ audio: <binary file>
 {
   "category": "animals",
   "language": "es",
-  "audio_url": "/content/animals/animals_es.mp3"
+  "file_uri": "/content/animals/animals_es.mp3"
 }
 ```
 
@@ -483,7 +483,7 @@ audio: <binary file>
 {
   "category": "animals",
   "language": "fr",
-  "audio_url": "/content/animals/animals_fr.mp3"
+  "file_uri": "/content/animals/animals_fr.mp3"
 }
 ```
 
@@ -794,7 +794,7 @@ audio: <binary file>
   "category": "nature_scenes",
   "object": "mountain_peak",
   "language": "es",
-  "audio_url": "/content/nature_scenes/mountain_peak/mountain_peak_es_01.mp3"
+  "file_uri": "/content/nature_scenes/mountain_peak/mountain_peak_es_01.mp3"
 }
 ```
 
@@ -819,7 +819,7 @@ audio: <binary file>
   "category": "nature_scenes",
   "object": "mountain_peak",
   "language": "fr",
-  "audio_url": "/content/nature_scenes/mountain_peak/mountain_peak_fr_01.mp3"
+  "file_uri": "/content/nature_scenes/mountain_peak/mountain_peak_fr_01.mp3"
 }
 ```
 

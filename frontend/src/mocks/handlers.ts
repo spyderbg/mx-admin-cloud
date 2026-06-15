@@ -1,6 +1,6 @@
 import { http, HttpResponse } from 'msw'
 import { mockCategories } from '../data/mockData'
-import type { Voice } from '../types'
+import type { Voice } from '../types/viewModels'
 
 interface ArchivedEntry {
   base_name: string
@@ -18,7 +18,7 @@ const slugify = (value: string): string =>
     .replace(/^_+|_+$/g, '')
 
 const findCategory = (categoryName: string) =>
-  mockCategories.find((c) => c.name.toLowerCase() === categoryName.toLowerCase())
+  mockCategories.find((c) => c.name['en']?.toLowerCase() === categoryName.toLowerCase())
 
 const findItem = (category: ReturnType<typeof findCategory>, itemId: string) =>
   category?.items.find((item) => item.id === itemId || item.name.toLowerCase() === itemId.toLowerCase())
@@ -27,7 +27,8 @@ const toCategoryDetailResponse = (category: ReturnType<typeof findCategory>): Re
   if (!category) return {}
   return {
     id: category.id,
-    name: { en: category.name },
+    name: category.name,
+    description: category.description,
     items: category.items.map((item) => ({
       id: item.id,
       name: Object.fromEntries(
@@ -37,6 +38,7 @@ const toCategoryDetailResponse = (category: ReturnType<typeof findCategory>): Re
         }),
       ),
       thumbnail_uri: item.thumbnailUri ?? null,
+      images_count: item.images.length,
     })),
   }
 }
@@ -46,7 +48,7 @@ const toVoiceResponse = (voice: Voice): Record<string, unknown> => ({
   name: voice.name,
   language: voice.language,
   type: voice.type,
-  audio_url: voice.audioUri ?? '',
+  file_uri: voice.audioUri ?? '',
 })
 
 export const handlers = [
@@ -63,7 +65,7 @@ export const handlers = [
     return HttpResponse.json({
       categories: active.map((category) => ({
         id: category.id,
-        name: { en: category.name },
+        name: category.name,
         items_count: category.items.length,
         thumbnail_uri: category.thumbnailUri ?? null,
       })),
@@ -82,7 +84,7 @@ export const handlers = [
     const id = slugify(name)
     mockCategories.push({
       id,
-      name,
+      name: { en: name },
       description: '',
       images: [],
       archived: false,
@@ -105,7 +107,7 @@ export const handlers = [
     if (!findCategory(name)) {
       mockCategories.push({
         id: slugify(name),
-        name,
+        name: { en: name },
         description: '',
         images: [],
         archived: false,
@@ -140,26 +142,27 @@ export const handlers = [
     const body = (await request.json()) as { name?: string }
     const nextName = body.name?.trim()
     if (!nextName) return HttpResponse.json({ detail: 'Name is required' }, { status: 422 })
-    category.name = nextName
+    category.name = { ...category.name, en: nextName }
     category.id = slugify(nextName)
     return HttpResponse.json({ category: nextName, message: 'Category renamed' })
   }),
 
   http.delete('/api/v1/content/categories/:category_name', ({ params }) => {
     const name = String(params.category_name)
-    const idx = mockCategories.findIndex((category) => category.name.toLowerCase() === name.toLowerCase())
+    const idx = mockCategories.findIndex((category) => category.name['en']?.toLowerCase() === name.toLowerCase())
     if (idx < 0) return new HttpResponse(null, { status: 404 })
     const [removed] = mockCategories.splice(idx, 1)
-    const archiveFolder = `${slugify(removed.name)}-${Date.now()}`
+    const removedName = removed.name['en'] ?? ''
+    const archiveFolder = `${slugify(removedName)}-${Date.now()}`
     archivedCategories.push({
-      base_name: removed.name,
+      base_name: removedName,
       archive_folder: archiveFolder,
       archived_at: Date.now(),
     })
     return HttpResponse.json({
       archived: true,
       removed: null,
-      name: removed.name,
+      name: removedName,
       archive_folder: archiveFolder,
       destination: `/archive/${archiveFolder}`,
       message: 'Category archived',
@@ -169,7 +172,7 @@ export const handlers = [
   http.get('/api/v1/content/categories/:category_name/voices', ({ params }) => {
     const category = findCategory(String(params.category_name))
     if (!category) return new HttpResponse(null, { status: 404 })
-    return HttpResponse.json({ voices: category.voices.map(toVoiceResponse) })
+    return HttpResponse.json({ category_id: category.id, voices: category.voices.map(toVoiceResponse) })
   }),
 
   http.post('/api/v1/content/categories/:category_name/voices', ({ params }) => {
@@ -220,7 +223,7 @@ export const handlers = [
     const body = (await request.json()) as { name?: string }
     if (body.name?.trim()) {
       item.name = body.name.trim()
-      item.id = `${slugify(category.name)}-${slugify(item.name)}`
+      item.id = `${slugify(category.name['en'] ?? '')}-${slugify(item.name)}`
     }
     return HttpResponse.json({})
   }),
@@ -329,7 +332,8 @@ export const handlers = [
     const category = findCategory(categoryName)
     if (!category || !itemName.trim()) return HttpResponse.json({ detail: 'Invalid category or item' }, { status: 422 })
 
-    const itemId = `${slugify(category.name)}-${slugify(itemName)}`
+    const catSlug = slugify(category.name['en'] ?? '')
+    const itemId = `${catSlug}-${slugify(itemName)}`
     category.items.push({
       id: itemId,
       name: itemName,
@@ -346,9 +350,9 @@ export const handlers = [
     })
     return HttpResponse.json(
       {
-        category: category.name,
+        category: category.name['en'] ?? '',
         item: itemName,
-        folder: `/content/${slugify(category.name)}/${slugify(itemName)}`,
+        folder: `/content/${catSlug}/${slugify(itemName)}`,
         image_id: itemId,
       },
       { status: 201 },

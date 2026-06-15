@@ -51,8 +51,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ensureCategoriesLoaded, ensureCategoryFull, sharedCategories, sharedCategoryNames, sharedLoadedCategoryIds } from '../api/cache'
-import type { Voice } from '../types'
+import { ensureCategoriesLoaded, ensureCategoryFull, sharedCategories, sharedCategoryNames } from '../api/cache'
+import type { Voice } from '../types/viewModels'
 import CategoryDetail from '../components/CategoryDetail.vue'
 import ItemGrid from '../components/ItemGrid.vue'
 import { useContentLanguage } from '../composables/useContentLanguage'
@@ -96,22 +96,13 @@ watch(category, (cat) => {
   }
 }, { immediate: true })
 
-// Track which categories have been fully loaded to avoid redundant fetches
-const currentFullCategoryId = ref<string>('')
 watch(
   () => route.params.categoryId as string,
   async (id) => {
-    if (!id || currentFullCategoryId.value === id) return
-    if (sharedLoadedCategoryIds.value.has(id)) {
-      currentFullCategoryId.value = id
-      return
-    }
+    if (!id) return
     const name = sharedCategoryNames.value.get(id)
     if (!name) return
-    const full = await ensureCategoryFull(name)
-    if (full) {
-      currentFullCategoryId.value = id
-    }
+    await ensureCategoryFull(name)
   },
 )
 

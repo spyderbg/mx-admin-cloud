@@ -69,7 +69,7 @@
 import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { mockUser } from '../data/mockData'
-import type { Language } from '../types'
+import type { Language } from '../types/viewModels'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import logoUrl from '../assets/images/logo.svg'
 import logoMiniUrl from '../assets/images/logo-mini.svg'
