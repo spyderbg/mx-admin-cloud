@@ -56,9 +56,7 @@ TAG_ITEMS_VOICES = "Items Voices"
 router = APIRouter(prefix=f"{settings.API_V1_STR}/content")
 
 
-# ---------------------------------------------------------------------------
-# Categories
-# ---------------------------------------------------------------------------
+# region Categories
 
 @router.get(
     "/categories",
@@ -99,9 +97,9 @@ def categories_list(
             for c in result.categories
         ],
         archived=[
-            ArchivedEntry(base_name=e.base_name, archive_folder=e.archive_folder, archived_at=e.archived_at)
-            for e in result.archived
-        ] or None,
+                     ArchivedEntry(base_name=e.base_name, archive_folder=e.archive_folder, archived_at=e.archived_at)
+                     for e in result.archived
+                 ] or None,
     )
 
 
@@ -292,9 +290,9 @@ def categories_remove(
     )
 
 
-# ---------------------------------------------------------------------------
-# Category Images
-# ---------------------------------------------------------------------------
+# endregion
+
+# region Category Images
 
 @router.get(
     "/categories/{category_name}/images",
@@ -408,9 +406,9 @@ def categories_images_delete(
     )
 
 
-# ---------------------------------------------------------------------------
-# Category Voices
-# ---------------------------------------------------------------------------
+# endregion
+
+# region Category Voices
 
 @router.get(
     "/categories/{category_name}/voices",
@@ -520,9 +518,9 @@ def categories_voices_delete(
     )
 
 
-# ---------------------------------------------------------------------------
-# Items
-# ---------------------------------------------------------------------------
+# endregion
+
+# region Items
 
 @router.get(
     "/categories/{category_name}/items",
@@ -645,9 +643,9 @@ def items_delete(
     )
 
 
-# ---------------------------------------------------------------------------
-# Items Images
-# ---------------------------------------------------------------------------
+# endregion
+
+# region Items Images
 
 @router.get(
     "/categories/{category_name}/items/{item_id}/images",
@@ -767,9 +765,9 @@ def items_images_delete(
     )
 
 
-# ---------------------------------------------------------------------------
-# Items Voices
-# ---------------------------------------------------------------------------
+# endregion
+
+# region Items Voices
 
 @router.get(
     "/categories/{category_name}/items/{item_id}/voices",
@@ -888,9 +886,9 @@ def items_voices_delete(
     )
 
 
-# ---------------------------------------------------------------------------
-# Legacy item creation (not in frontend OpenAPI; kept for backward compat)
-# ---------------------------------------------------------------------------
+# endregion
+
+# region Legacy item creation
 
 @router.post(
     "/items",
@@ -940,7 +938,9 @@ def create_item_endpoint(
     )
 
 
-################################################################################
+# endregion
+
+# region Mock helpers
 
 _MOCK_LANGS = [
     ("en", "male"),
@@ -980,7 +980,9 @@ def _mock_item_files(category_name: str, item_id: str) -> list[str]:
     return [f"/content/{category_name}/images/{item_id}/{item_id}_01.png"]
 
 
-################################################################################
+# endregion
+
+# region Dependencies
 
 
 def get_content_service(
@@ -996,3 +998,5 @@ def get_content_service(
 ContentServiceDep = Annotated[ContentService, Depends(get_content_service)]
 
 # service: ContentService = Depends(_content_service),
+
+# endregion

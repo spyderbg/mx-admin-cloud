@@ -7,9 +7,7 @@ from pydantic import BaseModel
 from src.core.localization import LocalizedString
 
 
-# ---------------------------------------------------------------------------
-# Request bodies
-# ---------------------------------------------------------------------------
+# region Request bodies
 
 class CreateCategoryBody(BaseModel):
     """Request body for creating a new category."""
@@ -29,9 +27,9 @@ class RestoreCategoryBody(BaseModel):
     name: str
 
 
-# ---------------------------------------------------------------------------
-# Archived entry sub-model
-# ---------------------------------------------------------------------------
+# endregion
+
+# region Categories Response models
 
 class ArchivedEntry(BaseModel):
     """Single archived category entry."""
@@ -40,10 +38,6 @@ class ArchivedEntry(BaseModel):
     archive_folder: str
     archived_at: int
 
-
-# ---------------------------------------------------------------------------
-# Categories Response models
-# ---------------------------------------------------------------------------
 
 class CategorySummary(BaseModel):
     """Summary of a single category returned in the list endpoint."""
@@ -138,29 +132,9 @@ class RemoveCategoryResponse(BaseModel):
     message: str
 
 
-# ---------------------------------------------------------------------------
-# Categories Response models
-# ---------------------------------------------------------------------------
+# endregion
 
-class ItemListResponse(BaseModel):
-    """Response for GET /categories/{category_name}/items."""
-
-    items: list[str]
-
-
-# ---------------------------------------------------------------------------
-# Mock-backed response models
-# ---------------------------------------------------------------------------
-
-class VoiceResponse(BaseModel):
-    """A single voice entry."""
-
-    id: str
-    name: str
-    language: str
-    type: str
-    audio_url: str | None = None
-
+# region Category Images Response models
 
 class ItemDetailResponse(BaseModel):
     """Detailed response for a single item."""
@@ -179,12 +153,40 @@ class CategoryImagesResponse(BaseModel):
     items: list[ItemDetailResponse] = []
 
 
+# endregion
+
+# region Category Voices Response models
+
+class VoiceResponse(BaseModel):
+    """A single voice entry."""
+
+    id: str
+    name: str
+    language: str
+    type: str
+    audio_url: str | None = None
+
+
 class CategoryVoicesResponse(BaseModel):
     """Response for GET /categories/{name}/voices."""
 
     category: str
     voices: list[VoiceResponse] = []
 
+
+# endregion
+
+# region Items Response models
+
+class ItemListResponse(BaseModel):
+    """Response for GET /categories/{category_name}/items."""
+
+    items: list[str]
+
+
+# endregion
+
+# region Mock-backed response models
 
 class ItemImagesResponse(BaseModel):
     """Response for GET /categories/{name}/items/{item_id}/images."""
@@ -200,3 +202,4 @@ class ItemVoicesResponse(BaseModel):
     item_id: str
     voices: list[VoiceResponse] = []
 
+# endregion
