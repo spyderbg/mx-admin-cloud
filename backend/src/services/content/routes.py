@@ -440,7 +440,7 @@ def categories_voices_list(
                 name=v.name,
                 language=v.language,
                 type=v.type,
-                audio_url=v.audio_url,
+                file_uri=v.file_uri,
             )
             for v in result.voices
         ],
@@ -960,7 +960,7 @@ def _mock_category_voices(category_name: str) -> list[VoiceResponse]:
             name=category_name,
             language=lang,
             type=voice_type,
-            audio_url=f"/content/{category_name}/{category_name}_{lang}.mp3",
+            file_uri=f"/content/{category_name}/{category_name}_{lang}.mp3",
         )
         for lang, voice_type in _MOCK_LANGS
     ]
@@ -973,7 +973,7 @@ def _mock_item_voices(category_name: str, item_id: str) -> list[VoiceResponse]:
             name=item_id.replace("_", " "),
             language=lang,
             type=voice_type,
-            audio_url=f"/content/{category_name}/images/{item_id}/{item_id}_{lang}.mp3",
+            file_uri=f"/content/{category_name}/images/{item_id}/{item_id}_{lang}.mp3",
         )
         for lang, voice_type in _MOCK_LANGS
     ]

@@ -98,7 +98,7 @@ class CategoryVoice:
     name: str = ""
     language: str = ""
     type: str = ""
-    audio_url: str | None = None
+    file_uri: str | None = None
 
 
 @dataclass

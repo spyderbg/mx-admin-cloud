@@ -458,11 +458,11 @@ components:
         type:
           type: string
           title: Type
-        audio_url:
+        file_uri:
           anyOf:
           - type: string
           - type: 'null'
-          title: Audio Url
+          title: File Uri
       type: object
       required:
       - id

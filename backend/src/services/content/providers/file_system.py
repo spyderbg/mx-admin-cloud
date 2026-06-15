@@ -45,6 +45,16 @@ _IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg")
 
 _SAFE_NAME_RE = re.compile(r"^[a-zA-Z0-9_]+$")
 
+# --- File name constants ---
+_CATEGORIES_IDS = "categories_ids.csv"
+_CATEGORIES_LANG_CSV = "categories_{}.csv"
+_ITEMS_IDS = "items_ids.csv"
+_ITEMS_LANG_CSV = "items_{}.csv"
+_CATEGORY_ICON = "category_icon.png"
+_LEGACY_CATEGORY_VOICE_MP3 = "category_{}.mp3"
+_CATEGORY_VOICE_MP3 = "{}_{}.mp3"
+_ITEM_VOICE_MP3 = "{}_{}_01.mp3"
+
 
 class FileSystemContentProvider(ContentProvider):
     """Manage content categories and items under the local content directory."""
@@ -179,7 +189,7 @@ class FileSystemContentProvider(ContentProvider):
             raise CategoryNotFoundError(f"Category '{category_name}': directory is missing.")
 
         root = self._content_root()
-        ids_path = root / "categories_ids.csv"
+        ids_path = root / _CATEGORIES_IDS
         try:
             with open(ids_path, newline="", encoding="utf-8") as fh:
                 rows = list(csv.reader(fh))
@@ -227,7 +237,7 @@ class FileSystemContentProvider(ContentProvider):
         """Return (ids_by_folder, names_by_folder) built from root categories_ids.csv and categories_{lang}.csv."""
         root = self._content_root()
         try:
-            with open(root / "categories_ids.csv", newline="", encoding="utf-8") as fh:
+            with open(root / _CATEGORIES_IDS, newline="", encoding="utf-8") as fh:
                 id_entries = [r[0].strip() for r in csv.reader(fh) if r and r[0].strip()]
         except (OSError, csv.Error):
             return {}, {}
@@ -238,7 +248,7 @@ class FileSystemContentProvider(ContentProvider):
 
         for lang in settings.SUPPORTED_LANGUAGES:
             try:
-                with open(root / f"categories_{lang}.csv", newline="", encoding="utf-8") as fh:
+                with open(root / _CATEGORIES_LANG_CSV.format(lang), newline="", encoding="utf-8") as fh:
                     lang_names = [r[0].strip() for r in csv.reader(fh) if r and r[0].strip()]
                 for idx, (fn, _) in enumerate(folders):
                     if idx < len(lang_names):
@@ -309,7 +319,7 @@ class FileSystemContentProvider(ContentProvider):
     ) -> tuple[list[str], dict[str, list[str]]]:
         """Read item IDs and per-language names from the category CSV files."""
         item_ids: list[str] = []
-        ids_path = category_path / "items_ids.csv"
+        ids_path = category_path / _ITEMS_IDS
         if ids_path.exists():
             try:
                 with open(ids_path, newline="", encoding="utf-8") as fh:
@@ -319,7 +329,7 @@ class FileSystemContentProvider(ContentProvider):
 
         items_by_lang: dict[str, list[str]] = {}
         for lang in settings.SUPPORTED_LANGUAGES:
-            csv_path = category_path / f"items_{lang}.csv"
+            csv_path = category_path / _ITEMS_LANG_CSV.format(lang)
             if csv_path.exists():
                 try:
                     with open(csv_path, newline="", encoding="utf-8") as fh:
@@ -389,14 +399,14 @@ class FileSystemContentProvider(ContentProvider):
         """Build CategoryVoice list from existing TTS files in the category directory."""
         voices = []
         for lang in settings.SUPPORTED_LANGUAGES:
-            voice_file = category_path / f"{category_name}_{lang}.mp3"
+            voice_file = category_path / _CATEGORY_VOICE_MP3.format(category_name, lang)
             if voice_file.exists() and voice_file.is_file():
                 voices.append(CategoryVoice(
                     id=f"{category_name}-v-{lang}",
                     name=category_name,
                     language=lang,
                     type="tts",
-                    audio_url=f"/content/{category_name}/{category_name}_{lang}.mp3",
+                    file_uri=f"/content/{category_name}/{category_name}_{lang}.mp3",
                 ))
         return voices
 
@@ -421,7 +431,7 @@ class FileSystemContentProvider(ContentProvider):
                     raise ContentOperationError(f"Translation failed for {lang}: {exc}") from exc
             try:
                 audio_bytes = self._generate_audio(label, lang)
-                voice_path = category_path / f"{category_name}_{lang}.mp3"
+                voice_path = category_path / _CATEGORY_VOICE_MP3.format(category_name, lang)
                 with open(voice_path, "wb") as fh:
                     fh.write(audio_bytes)
             except (ValueError, RuntimeError, httpx.HTTPError) as exc:
@@ -478,8 +488,8 @@ class FileSystemContentProvider(ContentProvider):
         with open(image_path, "wb") as fh:
             fh.write(image_data)
 
-        self._append_csv_line(category_path / "items_en.csv", english_word)
-        self._append_csv_line(category_path / "items_ids.csv", image_id)
+        self._append_csv_line(category_path / _ITEMS_LANG_CSV.format("en"), english_word)
+        self._append_csv_line(category_path / _ITEMS_IDS, image_id)
 
         words_by_lang: dict[str, str] = {"en": english_word}
         for lang in settings.SUPPORTED_LANGUAGES:
@@ -488,7 +498,7 @@ class FileSystemContentProvider(ContentProvider):
             try:
                 translated = self._translate_word(english_word, lang, category_name)
                 words_by_lang[lang] = translated
-                self._append_csv_line(category_path / f"items_{lang}.csv", translated)
+                self._append_csv_line(category_path / _ITEMS_LANG_CSV.format(lang), translated)
             except (ValueError, RuntimeError, httpx.HTTPError, KeyError) as exc:
                 raise ContentOperationError(f"Translation failed for {lang}: {exc}") from exc
 
@@ -496,7 +506,7 @@ class FileSystemContentProvider(ContentProvider):
             word = words_by_lang.get(lang) or english_word
             try:
                 audio_bytes = self._generate_audio(word, lang)
-                voice_path = item_path / f"{folder_name}_{lang}_01.mp3"
+                voice_path = item_path / _ITEM_VOICE_MP3.format(folder_name, lang)
                 with open(voice_path, "wb") as fh:
                     fh.write(audio_bytes)
             except (ValueError, RuntimeError, httpx.HTTPError) as exc:
@@ -568,11 +578,11 @@ class FileSystemContentProvider(ContentProvider):
     def _cleanup_old_voices(self, category_path: Path, old_name: str) -> None:
         """Remove audio files associated with the old category name."""
         for lang in settings.SUPPORTED_LANGUAGES:
-            old_voice = category_path / f"{old_name}_{lang}.mp3"
+            old_voice = category_path / _CATEGORY_VOICE_MP3.format(old_name, lang)
             if old_voice.exists() and old_voice.is_file():
                 old_voice.unlink()
         for lang in settings.SUPPORTED_LANGUAGES:
-            legacy_voice = category_path / f"category_{lang}.mp3"
+            legacy_voice = category_path / _LEGACY_CATEGORY_VOICE_MP3.format(lang)
             if legacy_voice.exists() and legacy_voice.is_file():
                 legacy_voice.unlink()
 
@@ -590,7 +600,7 @@ class FileSystemContentProvider(ContentProvider):
                     raise ContentOperationError(f"Translation failed for {lang}: {exc}") from exc
             try:
                 audio_bytes = self._generate_audio(label, lang)
-                voice_path = category_path / f"{category_name}_{lang}.mp3"
+                voice_path = category_path / _CATEGORY_VOICE_MP3.format(category_name, lang)
                 with open(voice_path, "wb") as fh:
                     fh.write(audio_bytes)
             except (ValueError, RuntimeError) as exc:
@@ -601,7 +611,7 @@ class FileSystemContentProvider(ContentProvider):
     def _update_category_icon(self, category_path: Path, old_name: str, new_name: str) -> None:
         """Rename the category icon to match the new category name."""
         new_icon_path = category_path / f"{new_name}.png"
-        for old_icon_name in (f"{old_name}.png", "category_icon.png"):
+        for old_icon_name in (f"{old_name}.png", _CATEGORY_ICON):
             old_icon_path = category_path / old_icon_name
             if old_icon_path.exists() and old_icon_path.is_file():
                 if old_icon_path != new_icon_path:
