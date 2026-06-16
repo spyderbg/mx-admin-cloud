@@ -20,9 +20,8 @@ export interface Voice {
     name: string
     language: Language
     type: string
-    iconUri: string
     /** When absent or empty, the voice is considered missing and play is disabled. */
-    audioUri?: string
+    fileUri?: string
 }
 
 export interface Item {

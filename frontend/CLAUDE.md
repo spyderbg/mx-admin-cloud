@@ -57,7 +57,7 @@ Layering for content/categories:
 - `src/api/client.ts` — base axios instance (`baseURL: /api/v1`) + the Bearer-token interceptor.
 - `src/api/contentClient.ts` — **generated** thin wrappers over `/content/*` routes (snake_case DTOs).
 - `src/api/cache.ts` — **hand-written** boundary that views consume. It calls `contentClient.ts`, maps backend DTOs
-  (snake_case, e.g. `audio_url`) to the camelCase UI view-models in `src/types/index.ts`, applies `mockCategories`
+  (snake_case, e.g. `audio_uri`) to the camelCase UI view-models in `src/types/index.ts`, applies `mockCategories`
   fallbacks for UI-only fields (icons/descriptions), and provides in-flight request **dedup** (`withInflight`) plus
   shared reactive state (`sharedCategories`, `sharedCategoryNames`, `sharedLoadedCategoryIds`) so multiple views don't
   re-fetch the same data. Views import `ensureCategoriesLoaded()` / `ensureCategoryFull()` from here.
@@ -94,5 +94,5 @@ Two layers: **generated DTOs** in `src/types/*Schemas.ts` (backend-shaped, snake
 `src/api/cache.ts` is the boundary that maps DTOs → UI types.
 
 `Language = 'en' | 'es' | 'fr' | 'bg'` (+ runtime `SUPPORTED_LANGUAGES`) are hand-maintained in `index.ts` — the
-backend exposes languages as plain strings, so codegen can't emit them. A UI `Voice` with an absent or empty `audioUri`
-(mapped from the backend's `audio_url`) is considered missing; play controls must be disabled in that case.
+backend exposes languages as plain strings, so codegen can't emit them. A UI `Voice` with an absent or empty `fileUri`
+(mapped from the backend's `file_uri`) is considered missing; play controls must be disabled in that case.

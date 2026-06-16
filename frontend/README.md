@@ -117,7 +117,7 @@ Displayed when a category is selected (or defaults to first category):
 - **Breadcrumb** navigation: root + category segments follow the **navbar content language** (same as the sidebar and ItemDetailView). Root crumb is translated for en/es/fr/bg; category segment uses the matching `Voice.name`, then the **English** voice if that language is missing, then the stored `name`.
 - **Page header** -- `h3.page-title` with localized category label + `toPascalCaseWords` (navbar content language; no edit control on the title)
 - **CategoryDetail card** -- **Category Name** and each **voice-card** word use `ServerWord` (category row: localized + rename modal; voice row: `voice.name` as-is, pencil → **Edit word** modal, `rename-voice` emit). Two-row layout: **Category Icon** (`aspect-ratio: 1 / 1`, `object-fit: contain`) and **Category Voices** share a baseline; voice grid `repeat(auto-fit, minmax(7.5rem, 1fr))`; play + **Upload** (audio); corner **delete** icon opens **Delete or reset voice** confirmation, then `delete-voice` emit; modals mutually exclusive
-- **ItemGrid** -- responsive 4-column grid of item thumbnails, each with a pencil edit-icon badge. If an item has no `thumbnailUrl` or file entries, a built-in camera placeholder is shown. Clicking navigates to ItemDetailView.
+- **ItemGrid** -- responsive 4-column grid of item thumbnails, each with a pencil edit-icon badge. If an item has no `thumbnailUri` or file entries, a built-in camera placeholder is shown. Clicking navigates to ItemDetailView.
 
 ### ItemDetailView
 
@@ -169,8 +169,7 @@ interface Voice {
   name: string
   language: Language
   type: string        // e.g. "male", "female", "ambient"
-  iconUri: string
-  audioUri?: string   // if absent/empty, play is disabled for that voice
+  fileUri?: string   // if absent/empty, play is disabled for that voice
 }
 
 interface Item {

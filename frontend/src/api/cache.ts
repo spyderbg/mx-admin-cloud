@@ -4,11 +4,12 @@ import { LocalizedString, SUPPORTED_LANGUAGES } from '../types/viewModels'
 import {
   categoriesList,
   categoriesDetails,
+  categoriesImagesList,
   categoriesVoicesList,
   itemsImagesList,
   itemsVoicesList,
 } from './contentClient'
-import type { ItemImagesResponse, ItemSummary, ItemVoicesResponse } from '../types/contentSchemas'
+import type { CategoryImagesResponse, ItemImagesResponse, ItemSummary, ItemVoicesResponse } from '../types/contentSchemas'
 
 // ---------------------------------------------------------------------------
 // In-flight promise deduplication
@@ -57,8 +58,7 @@ const fallbackVoice = (itemId: string, language: Language) => ({
   name: itemId.replaceAll('_', ' '),
   language,
   type: language === 'en' || language === 'fr' ? 'male' : 'female',
-  iconUri: '',
-  audioUri: '',
+  fileUri: '',
 })
 
 async function _loadCategoriesBasic(): Promise<CategoryFull[]> {
@@ -165,8 +165,7 @@ const normalizeVoices = (
           typeof voice.name === 'string' ? voice.name : itemId.replaceAll('_', ' '),
         language,
         type: typeof voice.type === 'string' ? voice.type : 'male',
-        iconUri: '',
-        audioUri: typeof voice.file_uri === 'string' ? voice.file_uri : '',
+        fileUri: typeof voice.file_uri === 'string' ? voice.file_uri : '',
       })
     })
     if (parsed.length > 0) return parsed
@@ -183,11 +182,15 @@ const normalizeVoices = (
 export const ensureCategoryFull = async (
   categoryName: string,
 ): Promise<CategoryFull | null> => {
-  const [detail, voicesResponse] = await Promise.all([
+  const [detail, voicesResponse, categoryImagesResponse] = await Promise.all([
     categoriesDetails(categoryName),
     withInflight(
       `cat-voices:${categoryName}`,
       () => categoriesVoicesList(categoryName).catch(() => ({ category_id: '', voices: [] })),
+    ),
+    withInflight(
+      `cat-images:${categoryName}`,
+      () => categoriesImagesList(categoryName).catch(() => ({}) as CategoryImagesResponse),
     ),
   ])
 
@@ -224,12 +227,15 @@ export const ensureCategoryFull = async (
     }),
   )
 
+  const categoryThumbnail =
+    categoryImagesResponse.images?.[0]?.file_uri ?? items[0]?.thumbnailUri ?? null
+
   const fullCategory: CategoryFull = {
     id: detail.id,
     name: new LocalizedString(nameDict),
     description: detail.description ?? '',
     images: [],
-    thumbnail_uri: items[0]?.thumbnailUri ?? null,
+    thumbnail_uri: categoryThumbnail,
     voices: normalizeVoices(voicesResponse.voices, detailEnName),
     items,
   }

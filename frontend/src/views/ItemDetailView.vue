@@ -329,7 +329,7 @@ function togglePlay(voice: Voice): void {
     return
   }
   stopAudio()
-  const audio = new Audio(voice.audioUri)
+  const audio = new Audio(voice.fileUri)
   activeAudio = audio
   playingVoiceId.value = voice.id
   audio.addEventListener('ended', stopAudio, { once: true })

@@ -12,7 +12,13 @@ import router from './router'
 async function main() {
   if (import.meta.env.VITE_DEBUG_MODE === 'true') {
     const { worker } = await import('./mocks/browser')
-    await worker.start({ onUnhandledRequest: 'bypass' })
+    await worker.start({
+      onUnhandledRequest(request, print) {
+        if (new URL(request.url).pathname.startsWith('/api/')) {
+          print.error()
+        }
+      },
+    })
     if (!localStorage.getItem('token')) {
       localStorage.setItem('token', 'debug-token')
     }
