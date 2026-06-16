@@ -100,10 +100,12 @@ watch(
   () => route.params.categoryId as string,
   async (id) => {
     if (!id) return
+    await ensureCategoriesLoaded()
     const name = sharedCategoryNames.value.get(id)
     if (!name) return
     await ensureCategoryFull(name)
   },
+  { immediate: true },
 )
 
 const onEditCategory = (): void => {
