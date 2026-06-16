@@ -1,10 +1,24 @@
 #!/usr/bin/env python3
 """
-Generate frontend/src/data/mockDataNew.ts from the content directory structure.
+Generate frontend/src/data/mockData.ts from the content directory structure.
 
 Usage:
-    python scripts/generate_mockdata.py          # uses content/ as source
+    python scripts/generate_mockdata.py
+        # uses content/ as a source, outputs to frontend/src/data/mockData.ts
+    
     python scripts/generate_mockdata.py path/to/content
+        # uses a specified directory as a source
+    
+    python scripts/generate_mockdata.py -o path/to/output.ts
+        # uses content/ as a source, outputs to a specified file
+    
+    python scripts/generate_mockdata.py path/to/content -o path/to/output.ts
+        # uses specified directory as a source, outputs to a specified file
+
+Arguments:
+    content_dir             Path to the content directory (default: content/)
+    -o, --output FILE       Path to an output file (default: frontend/src/data/mockData.ts)
+    -h, --help              Show this help message and exit
 """
 
 from __future__ import annotations
@@ -110,8 +124,7 @@ def build_items(cat_dir: Path, content_root: Path, cat_key: str) -> tuple[list[d
                 'name': trans_name,
                 'language': lang,
                 'type': vc['type'],
-                'iconUri': f'face({vc["face"]})',
-                'audioUri': audio_uri,
+                'fileUri': audio_uri,
             })
 
         items.append({
@@ -207,7 +220,7 @@ def generate(content_path: Path) -> str:
                 'language': lang,
                 'type': vc['type'],
                 'iconUri': f'face({vc["face"]})',
-                'audioUri': audio_uri,
+                'fileUri': audio_uri,
             })
 
         # Description
@@ -229,8 +242,7 @@ def generate(content_path: Path) -> str:
             lines.append(f"        name: '{js_str(v['name'])}',")
             lines.append(f"        language: '{v['language']}',")
             lines.append(f"        type: '{v['type']}',")
-            lines.append(f"        iconUri: {v['iconUri']},")
-            lines.append(f"        audioUri: '{js_str(v['audioUri'])}',")
+            lines.append(f"        fileUri: '{js_str(v['fileUri'])}',")
             lines.append('      },')
         lines.append('    ],')
         lines.append('    items: [')
@@ -248,8 +260,7 @@ def generate(content_path: Path) -> str:
                 lines.append(f"            name: '{js_str(v['name'])}',")
                 lines.append(f"            language: '{v['language']}',")
                 lines.append(f"            type: '{v['type']}',")
-                lines.append(f"            iconUri: {v['iconUri']},")
-                lines.append(f"            audioUri: '{js_str(v['audioUri'])}',")
+                lines.append(f"            fileUri: '{js_str(v['fileUri'])}',")
                 lines.append('          },')
             lines.append('        ],')
             lines.append('      },')
@@ -262,7 +273,7 @@ def generate(content_path: Path) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description='Generate frontend/src/data/mockDataNew.ts from content directory'
+        description='Generate frontend/src/data/mockData.ts from content directory'
     )
     parser.add_argument(
         'content_dir',
@@ -272,7 +283,7 @@ def main() -> None:
     )
     parser.add_argument(
         '-o', '--output',
-        default='frontend/src/data/mockDataNew.ts',
+        default='frontend/src/data/mockData.ts',
         help='Path to output file (default: frontend/src/data/mockData.ts)',
     )
     args = parser.parse_args()

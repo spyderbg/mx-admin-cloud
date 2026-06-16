@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate a TypeScript API client from a FastAPI routes.py file.
+Generate a TypeScript API client and MSW handler stubs from a FastAPI routes.py file.
 
 Usage:
     python generate_ts_client.py <service_name>
@@ -8,6 +8,7 @@ Usage:
 Example:
     python generate_ts_client.py content
     →  ../frontend/src/api/contentClient.ts
+    →  ../frontend/src/mocks/contentHandlers.ts  (missing stubs only)
 """
 
 from __future__ import annotations
@@ -20,6 +21,9 @@ from pathlib import Path
 BACKEND_SERVICES_DIR = Path(__file__).resolve().parent.parent / "backend" / "src" / "services"
 FRONTEND_API_DIR = Path(__file__).resolve().parent.parent / "frontend" / "src" / "api"
 FRONTEND_TYPES_DIR = Path(__file__).resolve().parent.parent / "frontend" / "src" / "types"
+FRONTEND_MOCKS_DIR = Path(__file__).resolve().parent.parent / "frontend" / "src" / "mocks"
+
+API_V1_PREFIX = "/api/v1"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -589,6 +593,151 @@ def _build_query_obj(query_params: list) -> str:
 
 
 # ---------------------------------------------------------------------------
+# MSW handler stub generation
+# ---------------------------------------------------------------------------
+
+def _fastapi_path_to_msw(prefix: str, route_path: str) -> str:
+    """Convert a FastAPI route path to an MSW URL pattern.
+
+    Example: prefix='/content', path='/categories/{name}' → '/api/v1/content/categories/:name'
+    """
+    full = API_V1_PREFIX + prefix + route_path
+    return re.sub(r"\{([^}]+)\}", r":\1", full)
+
+
+def _parse_all_routes_for_handlers(tree: ast.Module) -> list[dict]:
+    """Parse ALL routes (including 501 stubs) for MSW handler generation.
+
+    Returns only the minimal fields needed: method, path, prefix, summary,
+    is_501, dec_status_code.
+    """
+    prefix = extract_router_prefix(tree)
+    routes: list[dict] = []
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef):
+            continue
+
+        route_dec = None
+        method = ""
+        for dec in node.decorator_list:
+            if isinstance(dec, ast.Call) and isinstance(dec.func, ast.Attribute):
+                if isinstance(dec.func.value, ast.Name) and dec.func.value.id == "router":
+                    m = dec.func.attr.lower()
+                    if m in ("get", "post", "put", "patch", "delete"):
+                        route_dec = dec
+                        method = m
+                        break
+
+        if route_dec is None:
+            continue
+
+        path = _extract_path(route_dec)
+        summary = _extract_summary(route_dec)
+        dec_status_code = _extract_status_code(route_dec)
+        is_501 = dec_status_code == 501 or parse_function_body_raises_501(node.body)
+
+        routes.append({
+            "method": method,
+            "path": path,
+            "prefix": prefix,
+            "summary": summary,
+            "is_501": is_501,
+            "dec_status_code": dec_status_code,
+        })
+
+    return routes
+
+
+def _parse_existing_handler_keys(handlers_path: Path) -> set[tuple[str, str]]:
+    """Return (method, msw_path) pairs that already have handlers in the file."""
+    if not handlers_path.exists():
+        return set()
+    source = handlers_path.read_text()
+    pattern = re.compile(r'\bhttp\.(get|post|put|patch|delete)\(\s*[\'"`]([^\'"`]+)[\'"`]')
+    return {(m.group(1), m.group(2)) for m in pattern.finditer(source)}
+
+
+def _stub_response(route: dict) -> str:
+    """Return the MSW response expression for a stub handler."""
+    if route["is_501"]:
+        return "new HttpResponse(null, { status: 404 })"
+    dec = route.get("dec_status_code")
+    method = route["method"]
+    if dec == 204 or (method == "delete" and dec not in (200, 201)):
+        return "new HttpResponse(null, { status: 204 })"
+    if dec == 201:
+        return "HttpResponse.json({}, { status: 201 })"
+    return "HttpResponse.json({})"
+
+
+def _generate_handler_stubs(routes: list[dict]) -> list[str]:
+    """Return formatted stub lines (without surrounding array brackets)."""
+    lines: list[str] = []
+    for r in routes:
+        summary = r.get("summary") or ""
+        if summary:
+            lines.append(f"  // {summary}")
+        msw_path = _fastapi_path_to_msw(r["prefix"], r["path"])
+        stub = _stub_response(r)
+        lines.append(f"  http.{r['method']}('{msw_path}', () => {stub}),")
+        lines.append("")
+    return lines
+
+
+def update_handlers_file(service_name: str, all_routes: list[dict]) -> None:
+    """Create or extend the MSW handlers file with stubs for missing routes.
+
+    Never touches handlers that already exist in the file.
+    """
+    ts_name = snake_to_camel(service_name)
+    handlers_path = FRONTEND_MOCKS_DIR / f"{ts_name}Handlers.ts"
+
+    existing_keys = _parse_existing_handler_keys(handlers_path)
+
+    missing = [
+        r for r in all_routes
+        if (_fastapi_path_to_msw(r["prefix"], r["path"]), r["method"]) not in
+           {(path, m) for m, path in existing_keys}
+    ]
+
+    if not missing:
+        print(f"✔  {handlers_path.name} up to date — no new stubs needed")
+        return
+
+    stub_lines = _generate_handler_stubs(missing)
+
+    if not handlers_path.exists():
+        FRONTEND_MOCKS_DIR.mkdir(parents=True, exist_ok=True)
+        content = "\n".join([
+            "// Auto-generated – do not edit manually",
+            "",
+            "import { http, HttpResponse } from 'msw'",
+            "",
+            f"export const {ts_name}Handlers = [",
+            *stub_lines,
+            "]",
+            "",
+        ])
+        handlers_path.write_text(content)
+        print(f"✔  Created \033[32m{handlers_path}\033[0m with {len(missing)} stubs")
+    else:
+        source = handlers_path.read_text()
+        last_bracket = source.rfind("]")
+        if last_bracket == -1:
+            print(f"⚠  Could not find closing ] in {handlers_path.name}; skipping handler update")
+            return
+        insertion = "\n" + "\n".join(stub_lines)
+        handlers_path.write_text(source[:last_bracket] + insertion + source[last_bracket:])
+        print(f"✔  Added {len(missing)} stubs to \033[32m{handlers_path}\033[0m")
+
+    for r in missing:
+        msw_path = _fastapi_path_to_msw(r["prefix"], r["path"])
+        tag = " [501→404]" if r["is_501"] else ""
+        print(f"  {r['method'].upper():6s} {msw_path}{tag}")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -603,6 +752,7 @@ def main() -> None:
     source = routes_path.read_text()
     tree = ast.parse(source)
 
+    # --- Generate TypeScript client (implemented routes only) ---
     routes = parse_routes(tree)
 
     if not routes:
@@ -622,6 +772,11 @@ def main() -> None:
         if summary:
             label += f"  // {summary}"
         print(label)
+
+    # --- Generate MSW handler stubs (all routes, missing only) ---
+    print()
+    all_routes = _parse_all_routes_for_handlers(tree)
+    update_handlers_file(service_name, all_routes)
 
 
 if __name__ == "__main__":
