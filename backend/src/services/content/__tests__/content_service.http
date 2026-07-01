@@ -1,26 +1,29 @@
 
-### List all content categories
-GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories
+### Categories
+GET {{settings.CONTENT_URL}}/categories
 
 
-### Get details of a specific content category
-GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_name}}
+### Category details
+GET {{settings.CONTENT_URL}}/categories/{{category_name}}
 
-### List of all images for a category
+### Category images
 GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_name}}/images
 
-### List of all voices for a category
+### Category voices
 GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_name}}/voices
 
 
-### List all items in a category
+### Category items
 GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_name}}/items
 
-### Get a single item by ID
+### Category item details
 GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_name}}/items/{{item_id}}
 
-### List image variants for an item
+### Category item images
 GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_name}}/items/{{item_id}}/images
 
-### List voices for an item
+### Category item voices
 GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_name}}/items/{{item_id}}/voices
+
+
+
