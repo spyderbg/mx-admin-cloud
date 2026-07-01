@@ -18,6 +18,7 @@ import httpx
 from openai import OpenAI
 
 from src.core.config import settings
+from src.core.localization import LocalizedString
 from src.security.tokens import create_internal_token
 from src.services.content.models import (
     ArchiveCategory,
@@ -310,7 +311,7 @@ class FileSystemContentProvider(ContentProvider):
             name=category_name_dict,
             items=self._collect_items(category_path, category_name, item_ids, items_by_lang),
             images=self._collect_images(category_path, category_name),
-            voices=self._collect_voices(category_path, category_name),
+            voices=self._collect_voices(category_path, category_name, category_name_dict),
         )
 
     def _read_item_csv_data(
@@ -386,7 +387,7 @@ class FileSystemContentProvider(ContentProvider):
             if f.is_file() and pattern.match(f.name):
                 images.append(CategoryImage(
                     id=f.stem,
-                    name=f.stem,
+                    name=LocalizedString({"en": f.stem}),
                     file_uri=f"/content/{category_name}/{f.name}",
                 ))
         return images
@@ -395,6 +396,7 @@ class FileSystemContentProvider(ContentProvider):
             self,
             category_path: Path,
             category_name: str,
+            localized_names: dict[str, str],
     ) -> list[CategoryVoice]:
         """Build CategoryVoice list from existing TTS files in the category directory."""
         voices = []
@@ -403,7 +405,7 @@ class FileSystemContentProvider(ContentProvider):
             if voice_file.exists() and voice_file.is_file():
                 voices.append(CategoryVoice(
                     id=f"{category_name}-v-{lang}",
-                    name=category_name,
+                    name=LocalizedString(localized_names),
                     language=lang,
                     type="tts",
                     file_uri=f"/content/{category_name}/{category_name}_{lang}.mp3",

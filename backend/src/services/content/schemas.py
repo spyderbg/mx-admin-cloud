@@ -140,7 +140,7 @@ class ImageResponse(BaseModel):
     """Response for a single item image entry."""
 
     id: str
-    name: str
+    name: LocalizedString
     file_uri: str | None = None
 
 
@@ -159,7 +159,7 @@ class VoiceResponse(BaseModel):
     """A single voice entry."""
 
     id: str
-    name: str
+    name: LocalizedString
     language: str
     type: str
     file_uri: str | None = None

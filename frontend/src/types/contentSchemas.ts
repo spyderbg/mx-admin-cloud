@@ -75,7 +75,7 @@ export interface CreateItemResponse {
 /** Response for a single item image entry. */
 export interface ImageResponse {
     id: string
-    name: string
+    name: LocalizedString
     file_uri?: string | null
 }
 
@@ -145,7 +145,7 @@ export interface RestoreCategoryResponse {
 /** A single voice entry. */
 export interface VoiceResponse {
     id: string
-    name: string
+    name: LocalizedString
     language: string
     type: string
     file_uri?: string | null

@@ -174,7 +174,7 @@ export const contentHandlers = [
     if (!category) return new HttpResponse(null, { status: 404 })
     return HttpResponse.json({
       category_id: category.id,
-      images: category.images.map((img) => ({ id: img.id, name: img.name, file_uri: img.iconUri })),
+      images: category.images.map((img) => ({ id: img.id, name: { en: img.name }, file_uri: img.iconUri })),
     })
   }),
 

@@ -21,6 +21,7 @@ from src.services.content.models import (
     ContentError,
     InvalidCategoryNameError,
 )
+from src.core.localization import LocalizedString
 from src.services.content.schemas import (
     ArchivedEntry,
     CategoryDetailsResponse,
@@ -591,7 +592,7 @@ def items_get(
         )
     return ImageResponse(
         id=matched.id,
-        name=matched.name.get("en", item_id),
+        name=matched.name,
         file_uri=matched.thumbnail_uri or None,
     )
 
@@ -957,7 +958,7 @@ def _mock_category_voices(category_name: str) -> list[VoiceResponse]:
     return [
         VoiceResponse(
             id=f"{category_name}-v-{lang}",
-            name=category_name,
+            name=LocalizedString({"en": category_name.replace("_", " ")}),
             language=lang,
             type=voice_type,
             file_uri=f"/content/{category_name}/{category_name}_{lang}.mp3",
@@ -970,7 +971,7 @@ def _mock_item_voices(category_name: str, item_id: str) -> list[VoiceResponse]:
     return [
         VoiceResponse(
             id=f"{item_id}-{lang}",
-            name=item_id.replace("_", " "),
+            name=LocalizedString({"en": item_id.replace("_", " ")}),
             language=lang,
             type=voice_type,
             file_uri=f"/content/{category_name}/images/{item_id}/{item_id}_{lang}.mp3",
