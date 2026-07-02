@@ -9,9 +9,9 @@ import type {
   CreateCategoryBody,
   CreateCategoryResponse,
   CreateItemResponse,
-  ImageResponse,
   ItemImagesResponse,
   ItemListResponse,
+  ItemSummary,
   ItemVoicesResponse,
   RemoveCategoryResponse,
   RenameCategoryBody,
@@ -75,8 +75,8 @@ export const itemsList = async (categoryName: string): Promise<ItemListResponse>
 }
 
 /** Get a single item by ID */
-export const itemsGet = async (categoryName: string, itemId: string): Promise<ImageResponse> => {
-  const r = await client.get<ImageResponse>(`/content/categories/${categoryName}/items/${itemId}`)
+export const itemsGet = async (categoryName: string, itemId: string): Promise<ItemSummary> => {
+  const r = await client.get<ItemSummary>(`/content/categories/${categoryName}/items/${itemId}`)
   return r.data
 }
 

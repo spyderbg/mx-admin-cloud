@@ -323,8 +323,9 @@ def categories_images_list(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
     return CategoryImagesResponse(
         category_id=result.id,
+        name=result.name,
         images=[
-            ImageResponse(id=img.id, name=img.name, file_uri=img.file_uri)
+            ImageResponse(id=img.id, file_uri=img.file_uri)
             for img in result.images
         ],
     )
@@ -435,10 +436,10 @@ def categories_voices_list(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
     return CategoryVoicesResponse(
         category_id=result.id,
+        name=result.name,
         voices=[
             VoiceResponse(
                 id=v.id,
-                name=v.name,
                 language=v.language,
                 type=v.type,
                 file_uri=v.file_uri,
@@ -559,7 +560,7 @@ def items_list(
 
 @router.get(
     "/categories/{category_name}/items/{item_id}",
-    response_model=ImageResponse,
+    response_model=ItemSummary,
     status_code=status.HTTP_200_OK,
     tags=[TAG_ITEMS],
     summary="Get a single item by ID",
@@ -574,7 +575,7 @@ def items_get(
         item_id: str,
         service: ContentServiceDep,
         _user: dict = Depends(get_current_user),
-) -> ImageResponse:
+) -> ItemSummary:
     """Get a single item by ID."""
     try:
         result = service.category_details(category_name)
@@ -590,10 +591,11 @@ def items_get(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Item '{item_id}' not found in category '{category_name}'",
         )
-    return ImageResponse(
+    return ItemSummary(
         id=matched.id,
         name=matched.name,
-        file_uri=matched.thumbnail_uri or None,
+        thumbnail_uri=matched.thumbnail_uri or None,
+        images_count=matched.images_count,
     )
 
 
@@ -805,7 +807,13 @@ def items_voices_list(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Item '{item_id}' not found in category '{category_name}'",
         )
-    return ItemVoicesResponse(item_id=item_id, voices=_mock_item_voices(category_name, item_id))
+    item = next((i for i in result.items if i.id == item_id), None)
+    item_name = item.name if item else LocalizedString({})
+    return ItemVoicesResponse(
+        item_id=item_id,
+        name=item_name,
+        voices=_mock_item_voices(category_name, item_id),
+    )
 
 
 @router.put(
@@ -954,24 +962,10 @@ _MOCK_LANGS = [
 ]
 
 
-def _mock_category_voices(category_name: str) -> list[VoiceResponse]:
-    return [
-        VoiceResponse(
-            id=f"{category_name}-v-{lang}",
-            name=LocalizedString({"en": category_name.replace("_", " ")}),
-            language=lang,
-            type=voice_type,
-            file_uri=f"/content/{category_name}/{category_name}_{lang}.mp3",
-        )
-        for lang, voice_type in _MOCK_LANGS
-    ]
-
-
 def _mock_item_voices(category_name: str, item_id: str) -> list[VoiceResponse]:
     return [
         VoiceResponse(
             id=f"{item_id}-{lang}",
-            name=LocalizedString({"en": item_id.replace("_", " ")}),
             language=lang,
             type=voice_type,
             file_uri=f"/content/{category_name}/images/{item_id}/{item_id}_{lang}.mp3",

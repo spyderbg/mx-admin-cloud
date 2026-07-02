@@ -18,7 +18,6 @@ import httpx
 from openai import OpenAI
 
 from src.core.config import settings
-from src.core.localization import LocalizedString
 from src.security.tokens import create_internal_token
 from src.services.content.models import (
     ArchiveCategory,
@@ -387,7 +386,6 @@ class FileSystemContentProvider(ContentProvider):
             if f.is_file() and pattern.match(f.name):
                 images.append(CategoryImage(
                     id=f.stem,
-                    name=LocalizedString({"en": f.stem}),
                     file_uri=f"/content/{category_name}/{f.name}",
                 ))
         return images
@@ -405,7 +403,6 @@ class FileSystemContentProvider(ContentProvider):
             if voice_file.exists() and voice_file.is_file():
                 voices.append(CategoryVoice(
                     id=f"{category_name}-v-{lang}",
-                    name=LocalizedString(localized_names),
                     language=lang,
                     type="tts",
                     file_uri=f"/content/{category_name}/{category_name}_{lang}.mp3",

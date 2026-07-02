@@ -45,11 +45,18 @@ const toCategoryDetailResponse = (category: ReturnType<typeof findCategory>): Re
 
 const toVoiceResponse = (voice: Voice): Record<string, unknown> => ({
   id: voice.id,
-  name: voice.name,
   language: voice.language,
   type: voice.type,
   file_uri: voice.fileUri ?? '',
 })
+
+const itemLocalizedName = (item: NonNullable<ReturnType<typeof findItem>>): Record<string, string> =>
+  Object.fromEntries(
+    (['en', 'es', 'fr', 'bg'] as const).map((lang) => {
+      const localized = item.voices.find((v) => v.language === lang)?.name
+      return [lang, localized ?? item.name]
+    }),
+  )
 
 export const contentHandlers = [
   http.post('/api/v1/login', () => HttpResponse.json({ access_token: 'debug-token' })),
@@ -174,14 +181,19 @@ export const contentHandlers = [
     if (!category) return new HttpResponse(null, { status: 404 })
     return HttpResponse.json({
       category_id: category.id,
-      images: category.images.map((img) => ({ id: img.id, name: { en: img.name }, file_uri: img.iconUri })),
+      name: category.name,
+      images: category.images.map((img) => ({ id: img.id, file_uri: img.iconUri })),
     })
   }),
 
   http.get('/api/v1/content/categories/:category_name/voices', ({ params }) => {
     const category = findCategory(String(params.category_name))
     if (!category) return new HttpResponse(null, { status: 404 })
-    return HttpResponse.json({ category_id: category.id, voices: category.voices.map(toVoiceResponse) })
+    return HttpResponse.json({
+      category_id: category.id,
+      name: category.name,
+      voices: category.voices.map(toVoiceResponse),
+    })
   }),
 
   http.post('/api/v1/content/categories/:category_name/voices', ({ params }) => {
@@ -218,9 +230,10 @@ export const contentHandlers = [
     const item = findItem(category, String(params.item_id))
     if (!item) return new HttpResponse(null, { status: 404 })
     return HttpResponse.json({
-      item: item.name,
-      images: item.images,
-      voices: item.voices.map(toVoiceResponse),
+      id: item.id,
+      name: itemLocalizedName(item),
+      thumbnail_uri: item.thumbnailUri ?? null,
+      images_count: item.images.length,
     })
   }),
 
@@ -296,7 +309,11 @@ export const contentHandlers = [
     if (!category) return new HttpResponse(null, { status: 404 })
     const item = findItem(category, String(params.item_id))
     if (!item) return new HttpResponse(null, { status: 404 })
-    return HttpResponse.json({ voices: item.voices.map(toVoiceResponse) })
+    return HttpResponse.json({
+      item_id: item.id,
+      name: itemLocalizedName(item),
+      voices: item.voices.map(toVoiceResponse),
+    })
   }),
 
   http.put('/api/v1/content/categories/:category_name/items/:item_id/voices/:voice_id', async ({ params, request }) => {

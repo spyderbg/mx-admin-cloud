@@ -1,5 +1,5 @@
 import { ref, shallowRef } from 'vue'
-import type { CategoryFull, Item, Voice, Language } from '../types/viewModels'
+import type { CategoryFull, Item, Voice } from '../types/viewModels'
 import { LocalizedString, SUPPORTED_LANGUAGES } from '../types/viewModels'
 import {
   categoriesList,
@@ -53,13 +53,6 @@ export const sharedError = ref('')
 // Basic category loader
 // ---------------------------------------------------------------------------
 
-const fallbackVoice = (itemId: string, language: Language) => ({
-  id: `${itemId}-${language}`,
-  name: itemId.replaceAll('_', ' '),
-  language,
-  type: language === 'en' || language === 'fr' ? 'male' : 'female',
-  fileUri: '',
-})
 
 async function _loadCategoriesBasic(): Promise<CategoryFull[]> {
   const list = await categoriesList()
@@ -140,9 +133,13 @@ const normalizeImages = (raw: unknown, fallback: string[]): string[] => {
 
 const normalizeVoices = (
   raw: unknown,
-  itemId: string,
+  localizedNames: Record<string, string>,
   fallback?: Voice[],
 ): Voice[] => {
+  const baseId = localizedNames['en'] ?? Object.values(localizedNames)[0] ?? 'voice'
+  const nameFor = (lang: string): string =>
+    localizedNames[lang] ?? localizedNames['en'] ?? baseId.replaceAll('_', ' ')
+
   if (Array.isArray(raw) && raw.length > 0) {
     const parsed: Voice[] = []
     raw.forEach((entry, index) => {
@@ -160,9 +157,8 @@ const normalizeVoices = (
         id:
           typeof voice.id === 'string'
             ? voice.id
-            : `${itemId}-${language}-${index}`,
-        name:
-          typeof voice.name === 'string' ? voice.name : itemId.replaceAll('_', ' '),
+            : `${baseId}-${language}-${index}`,
+        name: nameFor(language as string),
         language,
         type: typeof voice.type === 'string' ? voice.type : 'male',
         fileUri: typeof voice.file_uri === 'string' ? voice.file_uri : '',
@@ -171,7 +167,13 @@ const normalizeVoices = (
     if (parsed.length > 0) return parsed
   }
   if (fallback && fallback.length > 0) return fallback
-  return SUPPORTED_LANGUAGES.map((lang) => fallbackVoice(itemId, lang))
+  return SUPPORTED_LANGUAGES.map((lang) => ({
+    id: `${baseId}-${lang}`,
+    name: nameFor(lang),
+    language: lang,
+    type: lang === 'en' || lang === 'fr' ? 'male' : 'female',
+    fileUri: '',
+  }))
 }
 
 /**
@@ -186,7 +188,7 @@ export const ensureCategoryFull = async (
     categoriesDetails(categoryName),
     withInflight(
       `cat-voices:${categoryName}`,
-      () => categoriesVoicesList(categoryName).catch(() => ({ category_id: '', voices: [] })),
+      () => categoriesVoicesList(categoryName).catch(() => ({ category_id: '', name: {} as LocalizedString, voices: [] })),
     ),
     withInflight(
       `cat-images:${categoryName}`,
@@ -195,10 +197,6 @@ export const ensureCategoryFull = async (
   ])
 
   const nameDict = detail.name as unknown as Record<string, string>
-  const rawDetailEn = nameDict['en']
-  const detailEnName = typeof rawDetailEn === 'string' && rawDetailEn
-    ? rawDetailEn
-    : (Object.values(nameDict)[0] ?? categoryName)
 
   const items = await Promise.all(
     (detail.items ?? []).map(async (itemSummary: ItemSummary) => {
@@ -216,7 +214,8 @@ export const ensureCategoryFull = async (
         ),
       ])
       const images = normalizeImages(imagesResponse.files, [])
-      const voices = normalizeVoices(itemVoicesResponse.voices, itemId)
+      const itemNamesDict = (itemVoicesResponse.name as unknown as Record<string, string>) ?? {}
+      const voices = normalizeVoices(itemVoicesResponse.voices, itemNamesDict)
       return {
         id: itemId,
         name: itemName,
@@ -236,7 +235,7 @@ export const ensureCategoryFull = async (
     description: detail.description ?? '',
     images: [],
     thumbnail_uri: categoryThumbnail,
-    voices: normalizeVoices(voicesResponse.voices, detailEnName),
+    voices: normalizeVoices(voicesResponse.voices, (voicesResponse.name as unknown as Record<string, string>) ?? {}),
     items,
   }
 

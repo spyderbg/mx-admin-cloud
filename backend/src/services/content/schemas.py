@@ -140,7 +140,6 @@ class ImageResponse(BaseModel):
     """Response for a single item image entry."""
 
     id: str
-    name: LocalizedString
     file_uri: str | None = None
 
 
@@ -148,6 +147,7 @@ class CategoryImagesResponse(BaseModel):
     """Response for GET /categories/{name}/images."""
 
     category_id: str
+    name: LocalizedString
     images: list[ImageResponse] = []
 
 
@@ -159,7 +159,6 @@ class VoiceResponse(BaseModel):
     """A single voice entry."""
 
     id: str
-    name: LocalizedString
     language: str
     type: str
     file_uri: str | None = None
@@ -169,6 +168,7 @@ class CategoryVoicesResponse(BaseModel):
     """Response for GET /categories/{name}/voices."""
 
     category_id: str
+    name: LocalizedString
     voices: list[VoiceResponse] = []
 
 
@@ -198,6 +198,7 @@ class ItemVoicesResponse(BaseModel):
     """Response for GET /categories/{name}/items/{item_id}/voices."""
 
     item_id: str
+    name: LocalizedString
     voices: list[VoiceResponse] = []
 
 # endregion

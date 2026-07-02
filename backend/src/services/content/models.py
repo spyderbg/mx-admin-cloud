@@ -88,25 +88,15 @@ class ItemDetail:
 @dataclass
 class CategoryImage:
     id: str = ""
-    name: LocalizedString = field(default_factory=lambda: LocalizedString({}))
     file_uri: str | None = None
-
-    def __post_init__(self) -> None:
-        if isinstance(self.name, dict):
-            self.name = LocalizedString(self.name)
 
 
 @dataclass
 class CategoryVoice:
     id: str = ""
-    name: LocalizedString = field(default_factory=lambda: LocalizedString({}))
     language: str = ""
     type: str = ""
     file_uri: str | None = None
-
-    def __post_init__(self) -> None:
-        if isinstance(self.name, dict):
-            self.name = LocalizedString(self.name)
 
 
 @dataclass
