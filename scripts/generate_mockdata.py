@@ -284,30 +284,39 @@ def generate(content_path: Path, script_path: Path | None = None, output_path: P
 
 
 def main() -> None:
+    script_dir = Path(__file__).resolve().parent
+    project_root = script_dir.parent
+
     parser = argparse.ArgumentParser(
         description='Generate frontend/src/data/mockData.ts from content directory'
     )
     parser.add_argument(
         'content_dir',
         nargs='?',
-        default='content',
+        default=str(project_root / 'content'),
         help='Path to the content directory (default: content/)',
     )
     parser.add_argument(
         '-o', '--output',
-        default='frontend/src/data/mockData.ts',
+        default=str(project_root / 'frontend/src/data/mockData.ts'),
         help='Path to output file (default: frontend/src/data/mockData.ts)',
     )
     args = parser.parse_args()
 
-    content_path = Path(args.content_dir).resolve()
+    content_path = Path(args.content_dir)
+    if not content_path.is_absolute():
+        content_path = (project_root / content_path).resolve()
+    else:
+        content_path = content_path.resolve()
     if not content_path.is_dir():
         print(f"Error: '{content_path}' is not a directory", file=sys.stderr)
         sys.exit(1)
 
     out_path = Path(args.output)
     if not out_path.is_absolute():
-        out_path = content_path.parent / args.output
+        out_path = (project_root / out_path).resolve()
+    else:
+        out_path = out_path.resolve()
 
     output = generate(content_path, script_path=Path(__file__), output_path=out_path)
 
