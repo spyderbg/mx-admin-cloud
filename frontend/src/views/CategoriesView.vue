@@ -51,7 +51,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ensureCategoriesLoaded, ensureCategoryDetail, invalidateCategoriesCache, sharedCategories, sharedCategoryNames } from '../api/cache'
+import { ensureCategoriesLoaded, ensureCategoryDetail, sharedCategories, sharedCategoryNames } from '../api/cache'
 import type { Voice } from '../types/viewModels'
 import CategoryDetail from '../components/CategoryDetail.vue'
 import ItemGrid from '../components/ItemGrid.vue'
@@ -63,7 +63,6 @@ const route = useRoute()
 const router = useRouter()
 
 const goToDashboard = (): void => {
-  invalidateCategoriesCache()
   router.push({ name: 'dashboard' })
 }
 

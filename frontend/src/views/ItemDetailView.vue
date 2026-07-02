@@ -186,7 +186,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ensureCategoriesLoaded, ensureCategoryDetail, ensureItemDetail, invalidateCategoriesCache, sharedCategories } from '../api/cache'
+import { ensureCategoriesLoaded, ensureCategoryDetail, ensureItemDetail, sharedCategories } from '../api/cache'
 import type { Language, Voice } from '../types/viewModels'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import cameraPlaceholderUrl from '../assets/images/samples/camera-placeholder.svg'
@@ -201,7 +201,6 @@ const route = useRoute()
 const router = useRouter()
 
 const goToDashboard = (): void => {
-  invalidateCategoriesCache()
   router.push({ name: 'dashboard' })
 }
 
