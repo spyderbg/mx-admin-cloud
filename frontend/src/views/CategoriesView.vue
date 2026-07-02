@@ -3,7 +3,7 @@
     <nav aria-label="breadcrumb">
       <ol class="breadcrumb bg-transparent p-0 mb-3">
         <li class="breadcrumb-item">
-          <router-link :to="{ name: 'dashboard' }">{{ breadcrumbRoot }}</router-link>
+          <a href="#" @click.prevent="goToDashboard">{{ breadcrumbRoot }}</a>
         </li>
         <li class="breadcrumb-item active" aria-current="page">{{ breadcrumbCategory }}</li>
       </ol>
@@ -51,7 +51,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ensureCategoriesLoaded, ensureCategoryFull, sharedCategories, sharedCategoryNames } from '../api/cache'
+import { ensureCategoriesLoaded, ensureCategoryFull, invalidateCategoriesCache, sharedCategories, sharedCategoryNames } from '../api/cache'
 import type { Voice } from '../types/viewModels'
 import CategoryDetail from '../components/CategoryDetail.vue'
 import ItemGrid from '../components/ItemGrid.vue'
@@ -61,6 +61,11 @@ import { toPascalCaseWords } from '../utils/pascalCaseWords'
 
 const route = useRoute()
 const router = useRouter()
+
+const goToDashboard = (): void => {
+  invalidateCategoriesCache()
+  router.push({ name: 'dashboard' })
+}
 
 const contentLanguage = useContentLanguage()
 

@@ -4,7 +4,7 @@
     <nav aria-label="breadcrumb">
       <ol class="breadcrumb bg-transparent p-0 mb-3">
         <li class="breadcrumb-item">
-          <router-link :to="{ name: 'dashboard' }">{{ breadcrumbRoot }}</router-link>
+          <a href="#" @click.prevent="goToDashboard">{{ breadcrumbRoot }}</a>
         </li>
         <li class="breadcrumb-item">
           <router-link :to="`/categories/${category.id}`">{{ breadcrumbCategory }}</router-link>
@@ -185,8 +185,8 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
-import { ensureCategoriesLoaded, ensureCategoryFull, sharedCategories } from '../api/cache'
+import { useRoute, useRouter } from 'vue-router'
+import { ensureCategoriesLoaded, ensureCategoryFull, invalidateCategoriesCache, sharedCategories } from '../api/cache'
 import type { Language, Voice } from '../types/viewModels'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import cameraPlaceholderUrl from '../assets/images/samples/camera-placeholder.svg'
@@ -198,6 +198,13 @@ import {
 import { toPascalCaseWords } from '../utils/pascalCaseWords'
 
 const route = useRoute()
+const router = useRouter()
+
+const goToDashboard = (): void => {
+  invalidateCategoriesCache()
+  router.push({ name: 'dashboard' })
+}
+
 const contentLanguage = useContentLanguage()
 
 onMounted(async () => {

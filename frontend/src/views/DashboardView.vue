@@ -84,7 +84,7 @@ const cards = computed(() => {
     id: c.id,
     name: localizedCategoryLabel(c, lang),
     iconUri: c.thumbnail_uri ?? `/content/${localizedCategoryLabel(c, 'en')}/icon.png`,
-    itemCount: c.items?.length ?? 0,
+    itemCount: c.items_count ?? 0,
   }))
 })
 

@@ -37,6 +37,7 @@ export interface CategoryFull {
     name: LocalizedString
     description: string
     thumbnail_uri?: string | null
+    items_count?: number
     images: Image[]
     voices: Voice[]
     items: Item[]

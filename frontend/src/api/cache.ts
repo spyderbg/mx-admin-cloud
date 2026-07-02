@@ -76,6 +76,7 @@ async function _loadCategoriesBasic(): Promise<CategoryFull[]> {
       name: new LocalizedString(detailNameDict),
       description: detail.description ?? '',
       thumbnail_uri: summary.thumbnail_uri,
+      items_count: summary.items_count,
       images: [],
       voices: [],
       items: (detail.items ?? []).map((itemSummary: ItemSummary) => {
@@ -100,6 +101,12 @@ async function _loadCategoriesBasic(): Promise<CategoryFull[]> {
   sharedCategoryNames.value = nameMap
   sharedLoading.value = false
   return categories
+}
+
+/** Clear the category cache so the next ensureCategoriesLoaded call re-fetches. */
+export const invalidateCategoriesCache = (): void => {
+  sharedCategories.value = []
+  sharedCategoryNames.value = new Map()
 }
 
 /**
