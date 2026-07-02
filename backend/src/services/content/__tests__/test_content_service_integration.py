@@ -20,6 +20,7 @@ from src.api.dependencies import get_current_user
 from src.services.content import routes as content_routes
 from src.services.content.models import (
     ArchiveCategory,
+    CategoryConflictError,
     CategoryDetails,
     CategoryList,
     CategoryNotFoundError,
@@ -615,12 +616,12 @@ async def test_create_item_strips_whitespace(tmp_resolved: Path) -> None:
     class _TrackingProvider(_StubContentProvider):
         def create_item(self, category_name, english_word, image_data, image_extension=".png"):
             seen.append((category_name, english_word))
-            return {
-                "category": category_name,
-                "item": english_word,
-                "folder": english_word.lower(),
-                "image_id": f"I_{english_word.title()}",
-            }
+            return CreateItem(
+                category=category_name,
+                item=english_word,
+                folder=english_word.lower(),
+                image_id=f"I_{english_word.title()}",
+            )
 
     app = _make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
@@ -639,7 +640,7 @@ async def test_create_item_picks_correct_extension(tmp_resolved: Path) -> None:
     class _ExtProvider(_StubContentProvider):
         def create_item(self, category_name, english_word, image_data, image_extension=".png"):
             seen_ext.append(image_extension)
-            return {"category": category_name, "item": english_word, "folder": english_word, "image_id": "X"}
+            return CreateItem(category=category_name, item=english_word, folder=english_word, image_id="X")
 
     app = _make_app(_ExtProvider(tmp_resolved), tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
@@ -658,7 +659,7 @@ async def test_create_item_defaults_unknown_extension_to_png(tmp_resolved: Path)
     class _ExtProvider(_StubContentProvider):
         def create_item(self, category_name, english_word, image_data, image_extension=".png"):
             seen_ext.append(image_extension)
-            return {"category": category_name, "item": english_word, "folder": english_word, "image_id": "X"}
+            return CreateItem(category=category_name, item=english_word, folder=english_word, image_id="X")
 
     app = _make_app(_ExtProvider(tmp_resolved), tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
@@ -684,8 +685,8 @@ async def test_create_item_missing_filename_returns_error(client: AsyncClient) -
 
 @pytest.mark.asyncio
 async def test_create_item_service_error_returns_400(tmp_resolved: Path) -> None:
-    provider = _StubContentProvider(tmp_resolved).returns(
-        "create_item", {"error": "Item folder already exists: apple"}
+    provider = _StubContentProvider(tmp_resolved).raises(
+        "create_item", CategoryConflictError("Item folder already exists: apple")
     )
     app = _make_app(provider, tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
