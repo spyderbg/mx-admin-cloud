@@ -37,3 +37,43 @@ export function breadcrumbCategoriesLabel(lang: Language): string {
   }
   return labels[lang] ?? labels.en
 }
+
+/** Label for the items section heading; unknown `lang` falls back to English. */
+export function itemsLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Items',
+    es: 'Elementos',
+    fr: 'Éléments',
+    bg: 'Елементи',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Counted item label: plural form for >1, singular for exactly 1. */
+export function itemCountLabel(lang: Language, count: number): string {
+  const singular: Record<Language, string> = {
+    en: 'item',
+    es: 'elemento',
+    fr: 'élément',
+    bg: 'елемент',
+  }
+  const plural: Record<Language, string> = {
+    en: 'items',
+    es: 'elementos',
+    fr: 'éléments',
+    bg: 'елемента',
+  }
+  const word = count === 1 ? singular[lang] ?? singular.en : plural[lang] ?? plural.en
+  return `${count} ${word}`
+}
+
+/** Search empty-state label for the category sidebar; unknown `lang` falls back to English. */
+export function noCategoriesMatchLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'No categories match',
+    es: 'No hay categorías que coincidan',
+    fr: 'Aucune catégorie ne correspond',
+    bg: 'Няма съвпадащи категории',
+  }
+  return labels[lang] ?? labels.en
+}

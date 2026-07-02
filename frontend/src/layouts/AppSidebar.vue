@@ -43,7 +43,7 @@
           class="d-flex align-items-center justify-content-between flex-nowrap"
           style="gap: 0.35rem;"
         >
-          <span class="text-truncate">Categories</span>
+          <span class="text-truncate">{{ breadcrumbCategoriesLabel(contentLanguage) }}</span>
           <div class="d-flex align-items-center flex-shrink-0" style="gap: 2px;">
             <button
               type="button"
@@ -108,7 +108,7 @@
       </li>
 
       <li v-if="filteredCategories.length === 0" class="nav-item">
-        <span class="nav-link" style="opacity: 0.5; font-style: italic;">No categories match</span>
+        <span class="nav-link" style="opacity: 0.5; font-style: italic;">{{ noCategoriesMatchLabel(contentLanguage) }}</span>
       </li>
     </ul>
   </nav>
@@ -120,7 +120,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { mockUser } from '../data/mockData'
 import { sharedCategories } from '../api/cache'
 import { useContentLanguage } from '../composables/useContentLanguage'
-import { localizedCategoryLabel, localizedImageLabel } from '../utils/localizedLabels'
+import { localizedCategoryLabel, localizedImageLabel, breadcrumbCategoriesLabel, noCategoriesMatchLabel } from '../utils/localizedLabels'
 
 defineProps<{
   isActive: boolean

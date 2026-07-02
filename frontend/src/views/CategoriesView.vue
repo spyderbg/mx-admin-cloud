@@ -21,7 +21,7 @@
       @delete-voice="onDeleteVoice"
     />
     <div class="d-flex justify-content-between align-items-center mt-4 mb-3">
-      <h4 class="mb-0">Items</h4>
+      <h4 class="mb-0">{{ itemsLabel(contentLanguage) }}</h4>
       <div class="d-flex align-items-center" style="gap: 1rem;">
         <div class="d-flex align-items-center" style="gap: 0.5rem;">
           <i class="mdi mdi-view-grid-outline text-muted" style="font-size: 1.1rem;"></i>
@@ -56,7 +56,7 @@ import type { Voice } from '../types/viewModels'
 import CategoryDetail from '../components/CategoryDetail.vue'
 import ItemGrid from '../components/ItemGrid.vue'
 import { useContentLanguage } from '../composables/useContentLanguage'
-import { localizedCategoryLabel, breadcrumbCategoriesLabel } from '../utils/localizedLabels'
+import { localizedCategoryLabel, breadcrumbCategoriesLabel, itemsLabel } from '../utils/localizedLabels'
 import { toPascalCaseWords } from '../utils/pascalCaseWords'
 
 const route = useRoute()

@@ -11,7 +11,7 @@
 
     <p v-else-if="error" class="text-danger text-center py-5">{{ error }}</p>
 
-    <div v-else-if="cards.length === 0" class="text-center py-5">
+    <div v-if="cards.length === 0" class="text-center py-5">
       <p class="text-muted">No categories found.</p>
     </div>
 
@@ -41,7 +41,7 @@
             <div class="flex-grow-1">
               <h5 class="mb-1 text-truncate" :title="card.name">{{ card.name }}</h5>
               <p class="text-muted mb-0" style="font-size: 0.875rem;">
-                {{ card.itemCount }} item{{ card.itemCount !== 1 ? 's' : '' }}
+                {{ itemCountLabel(contentLanguage, card.itemCount) }}
               </p>
             </div>
           </div>
@@ -56,21 +56,14 @@ import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import { ensureCategoriesLoaded, sharedCategories } from '../api/cache'
-import { breadcrumbCategoriesLabel, localizedCategoryLabel } from '../utils/localizedLabels'
+import { breadcrumbCategoriesLabel, localizedCategoryLabel, itemCountLabel } from '../utils/localizedLabels'
 import { toPascalCaseWords } from '../utils/pascalCaseWords'
 
-interface CategoryCard {
-  id: string
-  name: string
-  iconUri: string
-  itemCount: number
-}
 
 const router = useRouter()
 const contentLanguage = useContentLanguage()
 const loading = ref(true)
 const error = ref('')
-const cards = ref<CategoryCard[]>([])
 const hoveredCard = ref('')
 
 const pageTitle = computed(() =>
@@ -85,19 +78,19 @@ const goToCategory = (id: string): void => {
   router.push(`/categories/${id}`)
 }
 
+const cards = computed(() => {
+  const lang = contentLanguage.value
+  return sharedCategories.value.map((c) => ({
+    id: c.id,
+    name: localizedCategoryLabel(c, lang),
+    iconUri: c.thumbnail_uri ?? `/content/${localizedCategoryLabel(c, 'en')}/icon.png`,
+    itemCount: c.items?.length ?? 0,
+  }))
+})
+
 onMounted(async () => {
   try {
-    // Single shared fetch — no duplicate calls.
     await ensureCategoriesLoaded()
-
-    const cardList: CategoryCard[] = sharedCategories.value.map((c) => ({
-      id: c.id,
-      name: localizedCategoryLabel(c, contentLanguage.value),
-      iconUri: c.thumbnail_uri ?? `/content/${localizedCategoryLabel(c, 'en')}/icon.png`,
-      itemCount: c.items?.length ?? 0,
-    }))
-
-    cards.value = cardList
   } catch (err) {
     error.value = 'Failed to load categories.'
     console.error(err)
