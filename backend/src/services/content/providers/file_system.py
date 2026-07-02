@@ -310,7 +310,7 @@ class FileSystemContentProvider(ContentProvider):
             name=category_name_dict,
             items=self._collect_items(category_path, category_name, item_ids, items_by_lang),
             images=self._collect_images(category_path, category_name),
-            voices=self._collect_voices(category_path, category_name, category_name_dict),
+            voices=self._collect_voices(category_path, category_name),
         )
 
     def _read_item_csv_data(
@@ -394,7 +394,6 @@ class FileSystemContentProvider(ContentProvider):
             self,
             category_path: Path,
             category_name: str,
-            localized_names: dict[str, str],
     ) -> list[CategoryVoice]:
         """Build CategoryVoice list from existing TTS files in the category directory."""
         voices = []

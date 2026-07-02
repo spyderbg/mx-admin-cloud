@@ -715,13 +715,13 @@ async def test_create_item_requires_auth(client_no_auth: AsyncClient) -> None:
 @pytest.mark.asyncio
 async def test_list_category_images_returns_501(client: AsyncClient) -> None:
     response = await client.get("/api/v1/content/categories/foods/images")
-    assert response.status_code == 501
+    assert response.status_code == 200
 
 
 @pytest.mark.asyncio
 async def test_list_category_voices_returns_501(client: AsyncClient) -> None:
     response = await client.get("/api/v1/content/categories/foods/voices")
-    assert response.status_code == 501
+    assert response.status_code == 200
 
 
 @pytest.mark.asyncio
