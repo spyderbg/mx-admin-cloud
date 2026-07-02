@@ -77,3 +77,36 @@ export function noCategoriesMatchLabel(lang: Language): string {
   }
   return labels[lang] ?? labels.en
 }
+
+/** Label for the "Category name" field; unknown `lang` falls back to English. */
+export function categoryNameLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Category Name',
+    es: 'Nombre de la categoría',
+    fr: 'Nom de la catégorie',
+    bg: 'Име на категорията',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Label for the "Category icon" field; unknown `lang` falls back to English. */
+export function categoryIconLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Category Icon',
+    es: 'Icono de la categoría',
+    fr: 'Icône de la catégorie',
+    bg: 'Икона на категорията',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Label for the "Category voices" section; unknown `lang` falls back to English. */
+export function categoryVoicesLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Category Voices',
+    es: 'Voces de la categoría',
+    fr: 'Voix de la catégorie',
+    bg: 'Гласове на категорията',
+  }
+  return labels[lang] ?? labels.en
+}

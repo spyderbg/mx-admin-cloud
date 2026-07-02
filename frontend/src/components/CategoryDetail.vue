@@ -4,7 +4,7 @@
       <!-- Row 1: name spans left; empty cell on md+ keeps column grid for row 2 -->
       <div class="row">
         <div class="col-lg-5 col-md-5 mb-2 mb-md-3">
-          <label class="text-muted small mb-1 d-block">Category Name</label>
+          <label class="text-muted small mb-1 d-block">{{ categoryNameLabel(contentLanguage) }}</label>
           <ServerWord :category="category" @edit="openRenameModal" />
         </div>
         <div class="col-lg-7 col-md-7 d-none d-md-block" aria-hidden="true"></div>
@@ -13,7 +13,7 @@
       <div class="row">
         <div class="col-lg-5 col-md-5 mb-3 mb-md-0">
           <div class="mb-3">
-            <label class="text-muted small mb-1 d-block">Category Icon</label>
+            <label class="text-muted small mb-1 d-block">{{ categoryIconLabel(contentLanguage) }}</label>
             <div class="category-icon-wrap">
               <img
                 :src="category.thumbnail_uri ?? ''"
@@ -44,7 +44,7 @@
         </div>
 
         <div class="col-lg-7 col-md-7">
-          <label class="text-muted small mb-1 d-block">Category Voices</label>
+          <label class="text-muted small mb-1 d-block">{{ categoryVoicesLabel(contentLanguage) }}</label>
           <div class="voice-cards-grid">
             <div v-for="voice in category.voices" :key="voice.id" class="voice-card">
               <button
@@ -262,12 +262,16 @@
 import { ref, computed } from 'vue'
 import ServerWord from './ServerWord.vue'
 import type { CategoryFull, Language, Voice } from '../types/viewModels'
+import { categoryNameLabel, categoryIconLabel, categoryVoicesLabel } from '../utils/localizedLabels'
+import { useContentLanguage } from '../composables/useContentLanguage'
 
 const props = defineProps<{
   category: CategoryFull
 }>()
 
 const categoryLabel = computed(() => props.category.name.en)
+
+const contentLanguage = useContentLanguage()
 
 const emit = defineEmits<{
   edit: []
