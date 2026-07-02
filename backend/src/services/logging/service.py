@@ -219,7 +219,7 @@ class LoggingService(Service):
             try:
                 provider.log(provider.name, msg)
                 return idx
-            except Exception:
+            except Exception:  # pylint: disable=broad-exception-caught
                 continue
         return None
 
@@ -233,7 +233,7 @@ class LoggingService(Service):
                 continue
             try:
                 provider.log(provider.name, msg)
-            except Exception:
+            except Exception:  # pylint: disable=broad-exception-caught
                 continue
 
     def log(self, logger_name: str, msg: LogMessage) -> None:
@@ -245,7 +245,7 @@ class LoggingService(Service):
         if provider is not None:
             try:
                 provider.log(logger_name, msg)
-            except Exception:
+            except Exception:  # pylint: disable=broad-exception-caught
                 pass
 
     def log_to_all_active_loggers(self, msg: LogMessage) -> None:
@@ -253,5 +253,5 @@ class LoggingService(Service):
         for provider in self.get_active_providers():
             try:
                 provider.log_to_all_active_loggers(msg)
-            except Exception:
+            except Exception:  # pylint: disable=broad-exception-caught
                 continue

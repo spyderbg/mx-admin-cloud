@@ -21,6 +21,7 @@ from src.services.content.models import (
     CategoryConflictError,
     InvalidCategoryNameError,
     ContentError,
+    CreateItem,
 )
 from src.services.content.schemas import (
     ArchivedEntry,
@@ -93,14 +94,14 @@ class _StubProvider(ContentProvider):
             english_word: str,
             image_data: bytes,
             image_extension: str = ".png",
-    ) -> dict[str, Any]:
+    ) -> CreateItem:
         self._record("create_item", category_name, english_word, image_data, image_extension)
-        return self._returns.get("create_item", {
-            "category": category_name,
-            "item": english_word,
-            "folder": english_word.lower(),
-            "image_id": f"I_{english_word.title()}",
-        })
+        return self._returns.get("create_item", CreateItem(
+            category=category_name,
+            item=english_word,
+            folder=english_word.lower(),
+            image_id=f"I_{english_word.title()}",
+        ))
 
     def archive_category(self, category_name: str) -> dict[str, Any]:
         self._record("archive_category", category_name)
@@ -348,7 +349,7 @@ def test_create_item_delegates(tmp_path: Path) -> None:
     stub = _StubProvider(tmp_path)
     svc = _make_service(tmp_path, [stub])
     result = svc.create_item("foods", "apple", b"\x89PNG", ".png")
-    assert result["item"] == "apple"
+    assert result.item == "apple"
     assert stub.calls["create_item"] == [("foods", "apple", b"\x89PNG", ".png")]
 
 
