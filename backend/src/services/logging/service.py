@@ -219,7 +219,7 @@ class LoggingService(Service):
             try:
                 provider.log(provider.name, msg)
                 return idx
-            except (OSError, AttributeError, TypeError):
+            except Exception:
                 continue
         return None
 
@@ -233,7 +233,7 @@ class LoggingService(Service):
                 continue
             try:
                 provider.log(provider.name, msg)
-            except (OSError, AttributeError, TypeError):
+            except Exception:
                 continue
 
     def log(self, logger_name: str, msg: LogMessage) -> None:
@@ -243,9 +243,15 @@ class LoggingService(Service):
         """
         provider = self._resolve_provider(logger_name)
         if provider is not None:
-            provider.log(logger_name, msg)
+            try:
+                provider.log(logger_name, msg)
+            except Exception:
+                pass
 
     def log_to_all_active_loggers(self, msg: LogMessage) -> None:
         """Broadcast *msg* through every active provider."""
         for provider in self.get_active_providers():
-            provider.log_to_all_active_loggers(msg)
+            try:
+                provider.log_to_all_active_loggers(msg)
+            except Exception:
+                continue
