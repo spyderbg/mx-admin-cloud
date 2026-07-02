@@ -151,6 +151,21 @@ Compose may set `INTERNAL_SERVICE_TOKEN` in containers. `Settings` uses `extra="
 
 ---
 
+## OpenCode AI Commands
+
+This project defines custom commands for [OpenCode](https://opencode.ai) (terminal AI coding agent) under `.opencode/commands/`:
+
+| Command | Description |
+|---------|-------------|
+| `/api-sync` | Export OpenAPI spec + regenerate TypeScript client + schemas |
+| `/verify` | Validate backend build + run tests + verify frontend build |
+| `/frontend` | Regenerate TypeScript types + build frontend |
+| `/mockdata` | Generate mock data from `content/` directory |
+
+Usage: type `/<command>` in the OpenCode TUI.
+
+---
+
 ## Repository
 
 Git remote: `http://82.103.77.45/marxman/mx-admin.git` (GitLab). Default branch: `main`.
