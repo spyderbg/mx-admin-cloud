@@ -250,11 +250,18 @@ components:
         item_id:
           type: string
           title: Item Id
-        files:
-          items:
+        name:
+          additionalProperties:
             type: string
+          type: object
+          title: Name
+          description: 'Language-code → translation map (e.g. {"en": "dog", "fr":
+            "chien"})'
+        images:
+          items:
+            $ref: '#/components/schemas/ImageResponse'
           type: array
-          title: Files
+          title: Images
           default: []
         thumbnail_uri:
           anyOf:
@@ -264,13 +271,14 @@ components:
       type: object
       required:
       - item_id
+      - name
       title: ItemImagesResponse
       description: Response for GET /categories/{name}/items/{item_id}/images.
     ItemListResponse:
       properties:
         items:
           items:
-            type: string
+            $ref: '#/components/schemas/ItemSummary'
           type: array
           title: Items
       type: object

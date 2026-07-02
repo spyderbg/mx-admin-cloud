@@ -179,18 +179,15 @@ class CategoryVoicesResponse(BaseModel):
 class ItemListResponse(BaseModel):
     """Response for GET /categories/{category_name}/items."""
 
-    items: list[str]
+    items: list[ItemSummary]
 
-
-# endregion
-
-# region Mock-backed response models
 
 class ItemImagesResponse(BaseModel):
     """Response for GET /categories/{name}/items/{item_id}/images."""
 
     item_id: str
-    files: list[str] = []
+    name: LocalizedString
+    images: list[ImageResponse] = []
     thumbnail_uri: str | None = None
 
 

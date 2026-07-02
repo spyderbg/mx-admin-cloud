@@ -83,13 +83,14 @@ export interface ImageResponse {
 /** Response for GET /categories/{name}/items/{item_id}/images. */
 export interface ItemImagesResponse {
     item_id: string
-    files?: string[]
+    name: LocalizedString
+    images?: ImageResponse[]
     thumbnail_uri?: string | null
 }
 
 /** Response for GET /categories/{category_name}/items. */
 export interface ItemListResponse {
-    items: string[]
+    items: ItemSummary[]
 }
 
 /** Item entry returned inside CategoryDetailsResponse. */

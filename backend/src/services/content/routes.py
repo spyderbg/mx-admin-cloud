@@ -555,7 +555,12 @@ def items_list(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
-    return ItemListResponse(items=[item.id for item in result.items])
+    return ItemListResponse(
+        items=[
+            ItemSummary(id=item.id, name=item.name, thumbnail_uri=item.thumbnail_uri, images_count=item.images_count)
+            for item in result.items
+        ]
+    )
 
 
 @router.get(
@@ -685,8 +690,15 @@ def items_images_list(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Item '{item_id}' not found in category '{category_name}'",
         )
-    files = _mock_item_files(category_name, item_id)
-    return ItemImagesResponse(item_id=item_id, files=files, thumbnail_uri=files[0])
+    item = next((i for i in result.items if i.id == item_id), None)
+    item_name = item.name if item else LocalizedString({})
+    images = _mock_item_files(category_name, item_id)
+    return ItemImagesResponse(
+        item_id=item_id,
+        name=item_name,
+        images=images,
+        thumbnail_uri=images[0].file_uri if images else None,
+    )
 
 
 @router.post(
@@ -974,8 +986,11 @@ def _mock_item_voices(category_name: str, item_id: str) -> list[VoiceResponse]:
     ]
 
 
-def _mock_item_files(category_name: str, item_id: str) -> list[str]:
-    return [f"/content/{category_name}/images/{item_id}/{item_id}_01.png"]
+def _mock_item_files(category_name: str, item_id: str) -> list[ImageResponse]:
+    return [ImageResponse(
+        id=f"{item_id}_01",
+        file_uri=f"/content/{category_name}/images/{item_id}/{item_id}_01.png",
+    )]
 
 
 # endregion

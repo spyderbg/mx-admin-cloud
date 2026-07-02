@@ -221,7 +221,14 @@ export const contentHandlers = [
   http.get('/api/v1/content/categories/:category_name/items', ({ params }) => {
     const category = findCategory(String(params.category_name))
     if (!category) return new HttpResponse(null, { status: 404 })
-    return HttpResponse.json({ items: category.items.map((item) => item.name) })
+    return HttpResponse.json({
+      items: category.items.map((item) => ({
+        id: item.id,
+        name: itemLocalizedName(item),
+        thumbnail_uri: item.thumbnailUri ?? null,
+        images_count: item.images.length,
+      })),
+    })
   }),
 
   http.get('/api/v1/content/categories/:category_name/items/:item_id', ({ params }) => {
@@ -276,7 +283,12 @@ export const contentHandlers = [
     if (!category) return new HttpResponse(null, { status: 404 })
     const item = findItem(category, String(params.item_id))
     if (!item) return new HttpResponse(null, { status: 404 })
-    return HttpResponse.json({ item_id: item.id, files: item.images, thumbnail_uri: item.thumbnailUri ?? null })
+    return HttpResponse.json({
+      item_id: item.id,
+      name: itemLocalizedName(item),
+      images: item.images.map((uri, index) => ({ id: `${item.id}_${String(index + 1).padStart(2, '0')}`, file_uri: uri })),
+      thumbnail_uri: item.thumbnailUri ?? null,
+    })
   }),
 
   http.post('/api/v1/content/categories/:category_name/items/:item_id/images', async ({ params, request }) => {

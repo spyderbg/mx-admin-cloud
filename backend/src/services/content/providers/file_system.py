@@ -283,7 +283,7 @@ class FileSystemContentProvider(ContentProvider):
                 items_count = sum(1 for c in p.iterdir() if c.is_dir() and not c.name.startswith("."))
                 fn = p.name.lower()
                 summaries.append(CategorySummary(
-                    id=ids_by_folder.get(fn, ""),
+                    id=ids_by_folder.get(fn, p.name),
                     name=dict(names_by_folder.get(fn, {})),
                     items_count=items_count,
                     thumbnail_uri=f"/content/{p.name}/{p.name}.png",

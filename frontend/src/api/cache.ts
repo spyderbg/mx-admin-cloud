@@ -213,7 +213,10 @@ export const ensureCategoryFull = async (
           () => itemsVoicesList(categoryName, itemId).catch(() => ({}) as ItemVoicesResponse),
         ),
       ])
-      const images = normalizeImages(imagesResponse.files, [])
+      const images = normalizeImages(
+        (imagesResponse.images ?? []).map((img) => img.file_uri ?? ''),
+        [],
+      )
       const itemNamesDict = (itemVoicesResponse.name as unknown as Record<string, string>) ?? {}
       const voices = normalizeVoices(itemVoicesResponse.voices, itemNamesDict)
       return {

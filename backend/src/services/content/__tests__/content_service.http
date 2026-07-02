@@ -13,16 +13,16 @@ GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_name
 GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_name}}/voices
 
 
-### Category items
+### Items
 GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_name}}/items
 
-### Category item details
+### Item details
 GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_name}}/items/{{item_id}}
 
-### Category item images
+### Item images
 GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_name}}/items/{{item_id}}/images
 
-### Category item voices
+### Item voices
 GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_name}}/items/{{item_id}}/voices
 
 

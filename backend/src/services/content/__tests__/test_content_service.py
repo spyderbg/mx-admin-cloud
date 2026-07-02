@@ -26,6 +26,7 @@ from src.services.content.schemas import (
     ArchivedEntry,
     CategoryDetailsResponse,
     CategoryListResponse,
+    CategorySummary,
     CreateCategoryBody,
     CreateCategoryResponse,
     CreateItemResponse,
@@ -410,7 +411,10 @@ def test_archived_entry_model() -> None:
 
 
 def test_category_list_response_defaults() -> None:
-    resp = CategoryListResponse(categories=["foods", "drinks"])
+    resp = CategoryListResponse(categories=[
+        CategorySummary(id="C_Foods", name={"en": "Foods"}, items_count=3),
+        CategorySummary(id="C_Drinks", name={"en": "Drinks"}, items_count=1),
+    ])
     assert resp.archived is None
     assert resp.error is None
 

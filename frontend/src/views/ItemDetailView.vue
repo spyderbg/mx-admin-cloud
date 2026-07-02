@@ -4,7 +4,7 @@
     <nav aria-label="breadcrumb">
       <ol class="breadcrumb bg-transparent p-0 mb-3">
         <li class="breadcrumb-item">
-          <router-link to="/categories">{{ breadcrumbRoot }}</router-link>
+          <router-link :to="{ name: 'dashboard' }">{{ breadcrumbRoot }}</router-link>
         </li>
         <li class="breadcrumb-item">
           <router-link :to="`/categories/${category.id}`">{{ breadcrumbCategory }}</router-link>
@@ -161,7 +161,7 @@
 
   <div v-else class="text-center py-5">
     <h4 class="text-muted">Item not found</h4>
-    <router-link to="/categories" class="btn btn-primary mt-3">Back to Categories</router-link>
+    <router-link :to="{ name: 'dashboard' }" class="btn btn-primary mt-3">Back to Categories</router-link>
   </div>
 
   <Teleport to="body">

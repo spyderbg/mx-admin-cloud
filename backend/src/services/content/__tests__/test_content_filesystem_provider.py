@@ -17,6 +17,7 @@ from src.services.content.models import (
     ContentOperationError,
     InvalidCategoryNameError,
 )
+from src.core.localization import LocalizedString
 from src.services.content.providers.file_system import FileSystemContentProvider
 
 
@@ -204,7 +205,7 @@ def test_list_categories_returns_sorted_names(tmp_path: Path) -> None:
         mock_settings.ARCHIVE_DIR = ""
         result = provider.list_categories()
 
-    assert result.categories == ["apple", "zebra"]
+    assert [c.id for c in result.categories] == ["apple", "zebra"]
 
 
 def test_list_categories_error_when_root_missing(tmp_path: Path) -> None:
@@ -246,7 +247,7 @@ def test_list_categories_include_archived(tmp_path: Path) -> None:
         mock_settings.archive_path = archive_root
         result = provider.list_categories(include_archived=True)
 
-    assert "foods" in result.categories
+    assert any(c.id == "foods" for c in result.categories)
     assert len(result.archived) == 1
 
 
@@ -289,12 +290,12 @@ def test_category_details_returns_items_and_csv(tmp_path: Path) -> None:
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
         result = provider.category_details("foods")
 
-    assert result.name == {"en": "Foods", "fr": "Aliments"}
+    assert result.name == LocalizedString({"en": "Foods", "fr": "Aliments"})
     assert len(result.items) == 2
     assert result.items[0].id == "I_Apple"
-    assert result.items[0].name == {"en": "apple", "fr": "pomme"}
+    assert result.items[0].name == LocalizedString({"en": "apple", "fr": "pomme"})
     assert result.items[1].id == "I_Banana"
-    assert result.items[1].name == {"en": "banana", "fr": "banane"}
+    assert result.items[1].name == LocalizedString({"en": "banana", "fr": "banane"})
 
 
 # ---------------------------------------------------------------------------
