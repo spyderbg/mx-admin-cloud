@@ -103,7 +103,7 @@ class CategoryVoice:
 class CategoryDetails:
     id: str = ""
     name: LocalizedString = field(default_factory=lambda: LocalizedString({}))
-    description: str = "Lorem ipsum ..."
+    description: str = ""
     images: list[CategoryImage] = field(default_factory=list)
     voices: list[CategoryVoice] = field(default_factory=list)
     items: list[ItemDetail] = field(default_factory=list)

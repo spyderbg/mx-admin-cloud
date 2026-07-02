@@ -18,6 +18,7 @@ import httpx
 from openai import OpenAI
 
 from src.core.config import settings
+from src.core.localization import LocalizedString
 from src.security.tokens import create_internal_token
 from src.services.content.models import (
     ArchiveCategory,
@@ -48,6 +49,7 @@ _SAFE_NAME_RE = re.compile(r"^[a-zA-Z0-9_]+$")
 # --- File name constants ---
 _CATEGORIES_IDS = "categories_ids.csv"
 _CATEGORIES_LANG_CSV = "categories_{}.csv"
+_DESCRIPTIONS_LANG_CSV = "descriptions_{}.csv"
 _ITEMS_IDS = "items_ids.csv"
 _ITEMS_LANG_CSV = "items_{}.csv"
 _CATEGORY_ICON = "category_icon.png"
@@ -258,6 +260,35 @@ class FileSystemContentProvider(ContentProvider):
 
         return ids_by_folder, names_by_folder
 
+    def _load_category_description(self, category_name: str) -> str:
+        """Return the English description for *category_name* from descriptions_en.csv."""
+        root = self._content_root()
+        try:
+            with open(root / _CATEGORIES_IDS, newline="", encoding="utf-8") as fh:
+                id_entries = [r[0].strip() for r in csv.reader(fh) if r and r[0].strip()]
+        except (OSError, csv.Error):
+            return ""
+
+        index = next(
+            (
+                i for i, e in enumerate(id_entries)
+                if (e.split("_", 1)[1].lower() if "_" in e else e.lower()) == category_name.lower()
+            ),
+            None,
+        )
+        if index is None:
+            return ""
+
+        desc_path = root / _DESCRIPTIONS_LANG_CSV.format("en")
+        try:
+            with open(desc_path, newline="", encoding="utf-8") as fh:
+                rows = [r[0].strip() for r in csv.reader(fh) if r]
+            if index < len(rows):
+                return rows[index]
+        except (OSError, csv.Error):
+            pass
+        return ""
+
     # ------------------------------------------------------------------
     # ContentProvider interface
     # ------------------------------------------------------------------
@@ -284,7 +315,7 @@ class FileSystemContentProvider(ContentProvider):
                 fn = p.name.lower()
                 summaries.append(CategorySummary(
                     id=ids_by_folder.get(fn, p.name),
-                    name=dict(names_by_folder.get(fn, {})),
+                    name=LocalizedString(names_by_folder.get(fn, {})),
                     items_count=items_count,
                     thumbnail_uri=f"/content/{p.name}/{p.name}.png",
                 ))
@@ -301,13 +332,15 @@ class FileSystemContentProvider(ContentProvider):
         category_path = self._category_path(category_name)
 
         _, names_by_folder = self._load_category_localized_names()
-        category_name_dict = dict(names_by_folder.get(category_name.lower(), {}))
+        category_localized_name = LocalizedString(names_by_folder.get(category_name.lower(), {}))
 
         item_ids, items_by_lang = self._read_item_csv_data(category_path)
+        description = self._load_category_description(category_name)
 
         return CategoryDetails(
             id=category_id,
-            name=category_name_dict,
+            name=category_localized_name,
+            description=description,
             items=self._collect_items(category_path, category_name, item_ids, items_by_lang),
             images=self._collect_images(category_path, category_name),
             voices=self._collect_voices(category_path, category_name),
@@ -365,7 +398,7 @@ class FileSystemContentProvider(ContentProvider):
                         thumbnail_uri = f"/content/{category_name}/{folder_name}/{image_files[0].name}"
             items.append(ItemDetail(
                 id=iid,
-                name={lang: names[i] for lang, names in items_by_lang.items() if i < len(names)},
+                name=LocalizedString({lang: names[i] for lang, names in items_by_lang.items() if i < len(names)}),
                 thumbnail_uri=thumbnail_uri,
                 images_count=images_count,
             ))
