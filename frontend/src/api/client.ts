@@ -11,6 +11,17 @@ client.interceptors.request.use((config) => {
   return config
 })
 
+if (import.meta.env.VITE_LOG_REQUESTS === 'true') {
+  client.interceptors.request.use((config) => {
+    const method = config.method?.toUpperCase() ?? 'GET'
+    const url = config.url ?? ''
+    const params = config.params ? ` params=${JSON.stringify(config.params)}` : ''
+    const body = config.data ? ` body=${JSON.stringify(config.data)}` : ''
+    console.log(`[REQUEST] ${method} ${url}${params}${body}`)
+    return config
+  })
+}
+
 if (import.meta.env.VITE_VERBOSE_REQUESTS === 'true') {
   client.interceptors.response.use(
     (response) => {

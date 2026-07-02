@@ -51,7 +51,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ensureCategoriesLoaded, ensureCategoryFull, invalidateCategoriesCache, sharedCategories, sharedCategoryNames } from '../api/cache'
+import { ensureCategoriesLoaded, ensureCategoryDetail, invalidateCategoriesCache, sharedCategories, sharedCategoryNames } from '../api/cache'
 import type { Voice } from '../types/viewModels'
 import CategoryDetail from '../components/CategoryDetail.vue'
 import ItemGrid from '../components/ItemGrid.vue'
@@ -108,7 +108,7 @@ watch(
     await ensureCategoriesLoaded()
     const name = sharedCategoryNames.value.get(id)
     if (!name) return
-    await ensureCategoryFull(name)
+    await ensureCategoryDetail(name)
   },
   { immediate: true },
 )

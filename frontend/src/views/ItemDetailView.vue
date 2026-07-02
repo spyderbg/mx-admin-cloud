@@ -186,7 +186,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ensureCategoriesLoaded, ensureCategoryFull, invalidateCategoriesCache, sharedCategories } from '../api/cache'
+import { ensureCategoriesLoaded, ensureCategoryDetail, ensureItemDetail, invalidateCategoriesCache, sharedCategories } from '../api/cache'
 import type { Language, Voice } from '../types/viewModels'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import cameraPlaceholderUrl from '../assets/images/samples/camera-placeholder.svg'
@@ -213,12 +213,16 @@ onMounted(async () => {
 
 watch(() => route.params.categoryId as string, async (id) => {
   if (!id) return
-  const cat = sharedCategories.value.find(
-    (c) => c.id.toLowerCase() === id.toLowerCase(),
-  )
-  if (cat) {
-    await ensureCategoryFull(cat.name.en)
-  }
+  const cat = sharedCategories.value.find((c) => c.id.toLowerCase() === id.toLowerCase())
+  if (!cat) return
+  await ensureCategoryDetail(cat.name.en)
+  const itemId = route.params.itemId as string
+  if (itemId) await ensureItemDetail(cat.name.en, itemId)
+})
+
+watch(() => route.params.itemId as string, async (itemId) => {
+  if (!itemId || !category.value) return
+  await ensureItemDetail(category.value.name.en, itemId)
 })
 
 const category = computed(() => {

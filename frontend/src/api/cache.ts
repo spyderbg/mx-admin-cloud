@@ -4,12 +4,11 @@ import { LocalizedString, SUPPORTED_LANGUAGES } from '../types/viewModels'
 import {
   categoriesList,
   categoriesDetails,
-  categoriesImagesList,
   categoriesVoicesList,
   itemsImagesList,
   itemsVoicesList,
 } from './contentClient'
-import type { CategoryImagesResponse, ItemImagesResponse, ItemSummary, ItemVoicesResponse } from '../types/contentSchemas'
+import type { ItemImagesResponse, ItemSummary, ItemVoicesResponse } from '../types/contentSchemas'
 
 // ---------------------------------------------------------------------------
 // In-flight promise deduplication
@@ -37,10 +36,10 @@ function withInflight<T>(
 // Shared reactive state (visible to all views)
 // ---------------------------------------------------------------------------
 
-/** All categories loaded at the "basic" level (names + items). */
+/** All categories loaded at the "basic" level (names + thumbnail + count). */
 export const sharedCategories = shallowRef<CategoryFull[]>([])
 
-/** id → name mapping for the shared categories. */
+/** id → english name mapping for the shared categories. */
 export const sharedCategoryNames = ref(new Map<string, string>())
 
 /** Whether the basic category list is currently loading. */
@@ -50,82 +49,14 @@ export const sharedLoading = ref(false)
 export const sharedError = ref('')
 
 // ---------------------------------------------------------------------------
-// Basic category loader
+// Loaded-state tracking (prevent duplicate fetches across navigations)
 // ---------------------------------------------------------------------------
 
-
-async function _loadCategoriesBasic(): Promise<CategoryFull[]> {
-  const list = await categoriesList()
-  if (!list.categories.length) {
-    sharedCategories.value = []
-    sharedCategoryNames.value = new Map()
-    sharedLoading.value = false
-    return []
-  }
-
-  const categories: CategoryFull[] = []
-
-  for (const summary of list.categories) {
-    const nameDict = summary.name as unknown as Record<string, string>
-    const enName = nameDict['en'] ?? Object.values(nameDict)[0] ?? summary.id
-    const detail = await withInflight(`detail:${enName}`, () => categoriesDetails(enName))
-    const detailNameDict = detail.name as unknown as Record<string, string>
-
-    const category: CategoryFull = {
-      id: summary.id,
-      name: new LocalizedString(detailNameDict),
-      description: detail.description ?? '',
-      thumbnail_uri: summary.thumbnail_uri,
-      items_count: summary.items_count,
-      images: [],
-      voices: [],
-      items: (detail.items ?? []).map((itemSummary: ItemSummary) => {
-        const itemNameDict = itemSummary.name as unknown as Record<string, string>
-        const itemName = itemNameDict['en'] ?? Object.values(itemNameDict)[0] ?? itemSummary.id
-        return {
-          id: itemSummary.id,
-          name: itemName,
-          images: [],
-          voices: [],
-          thumbnailUri: itemSummary.thumbnail_uri ?? '',
-        }
-      }),
-    }
-    categories.push(category)
-  }
-
-  const nameMap = new Map<string, string>()
-  for (const c of categories) nameMap.set(c.id, c.name.en)
-
-  sharedCategories.value = categories
-  sharedCategoryNames.value = nameMap
-  sharedLoading.value = false
-  return categories
-}
-
-/** Clear the category cache so the next ensureCategoriesLoaded call re-fetches. */
-export const invalidateCategoriesCache = (): void => {
-  sharedCategories.value = []
-  sharedCategoryNames.value = new Map()
-}
-
-/**
- * Public entry point to load the basic category list. If data is already
- * cached, returns it immediately without fetching.
- */
-export const ensureCategoriesLoaded = async (): Promise<CategoryFull[]> => {
-  if (sharedCategories.value.length > 0) {
-    return sharedCategories.value
-  }
-
-  sharedLoading.value = true
-  sharedError.value = ''
-
-  return withInflight('basic:all', _loadCategoriesBasic)
-}
+const loadedCategoryDetailIds = new Set<string>()
+const loadedItemIds = new Map<string, Set<string>>()
 
 // ---------------------------------------------------------------------------
-// Full category loader
+// Shared normalizers (used by ensureCategoryDetail + ensureItemDetail)
 // ---------------------------------------------------------------------------
 
 const normalizeImages = (raw: unknown, fallback: string[]): string[] => {
@@ -183,75 +114,114 @@ const normalizeVoices = (
   }))
 }
 
+// ---------------------------------------------------------------------------
+// Basic category loader — one request: GET /content/categories
+// ---------------------------------------------------------------------------
+
+async function _loadCategoriesBasic(): Promise<CategoryFull[]> {
+  const list = await categoriesList()
+  if (!list.categories.length) {
+    sharedCategories.value = []
+    sharedCategoryNames.value = new Map()
+    sharedLoading.value = false
+    return []
+  }
+
+  const categories: CategoryFull[] = list.categories.map((summary) => {
+    const nameDict = summary.name as unknown as Record<string, string>
+    return {
+      id: summary.id,
+      name: new LocalizedString(nameDict),
+      description: '',
+      thumbnail_uri: summary.thumbnail_uri,
+      items_count: summary.items_count,
+      images: [],
+      voices: [],
+      items: [],
+    }
+  })
+
+  const nameMap = new Map<string, string>()
+  for (const c of categories) nameMap.set(c.id, c.name.en)
+
+  sharedCategories.value = categories
+  sharedCategoryNames.value = nameMap
+  sharedLoading.value = false
+  return categories
+}
+
+/** Clear the category cache so the next ensureCategoriesLoaded call re-fetches. */
+export const invalidateCategoriesCache = (): void => {
+  sharedCategories.value = []
+  sharedCategoryNames.value = new Map()
+  loadedCategoryDetailIds.clear()
+  loadedItemIds.clear()
+}
+
 /**
- * Load full category data (images + voices) for a category by name.
- * Updates shared state and tracks which categories have been fully
- * loaded. Uses in-flight deduplication.
+ * Load the basic category list (names, thumbnails, item counts).
+ * Used by DashboardView. One request: GET /content/categories.
  */
-export const ensureCategoryFull = async (
-  categoryName: string,
-): Promise<CategoryFull | null> => {
-  const [detail, voicesResponse, categoryImagesResponse] = await Promise.all([
-    categoriesDetails(categoryName),
+export const ensureCategoriesLoaded = async (): Promise<CategoryFull[]> => {
+  if (sharedCategories.value.length > 0) {
+    return sharedCategories.value
+  }
+
+  sharedLoading.value = true
+  sharedError.value = ''
+
+  return withInflight('basic:all', _loadCategoriesBasic)
+}
+
+// ---------------------------------------------------------------------------
+// Category detail loader — for CategoriesView
+// Two requests: GET /content/categories/{name} + GET /content/categories/{name}/voices
+// ---------------------------------------------------------------------------
+
+/**
+ * Load full category data (items list + voices) for a category by English name.
+ * Skips if already loaded. Used by CategoriesView.
+ */
+export const ensureCategoryDetail = async (categoryName: string): Promise<CategoryFull | null> => {
+  if (loadedCategoryDetailIds.has(categoryName)) {
+    return sharedCategories.value.find((c) => c.name.en === categoryName) ?? null
+  }
+
+  const [detail, voicesResponse] = await Promise.all([
+    withInflight(`detail:${categoryName}`, () => categoriesDetails(categoryName)),
     withInflight(
       `cat-voices:${categoryName}`,
       () => categoriesVoicesList(categoryName).catch(() => ({ category_id: '', name: {} as LocalizedString, voices: [] })),
     ),
-    withInflight(
-      `cat-images:${categoryName}`,
-      () => categoriesImagesList(categoryName).catch(() => ({}) as CategoryImagesResponse),
-    ),
   ])
 
   const nameDict = detail.name as unknown as Record<string, string>
+  const items: Item[] = (detail.items ?? []).map((itemSummary: ItemSummary) => {
+    const itemNameDict = itemSummary.name as unknown as Record<string, string>
+    return {
+      id: itemSummary.id,
+      name: itemNameDict['en'] ?? Object.values(itemNameDict)[0] ?? itemSummary.id,
+      images: [],
+      voices: [],
+      thumbnailUri: itemSummary.thumbnail_uri ?? '',
+    }
+  })
 
-  const items = await Promise.all(
-    (detail.items ?? []).map(async (itemSummary: ItemSummary) => {
-      const itemId = itemSummary.id
-      const itemNameDict = itemSummary.name as unknown as Record<string, string>
-      const itemName = itemNameDict['en'] ?? Object.values(itemNameDict)[0] ?? itemId
-      const [imagesResponse, itemVoicesResponse] = await Promise.all([
-        withInflight(
-          `images:${categoryName}:${itemId}`,
-          () => itemsImagesList(categoryName, itemId).catch(() => ({}) as ItemImagesResponse),
-        ),
-        withInflight(
-          `voices:${categoryName}:${itemId}`,
-          () => itemsVoicesList(categoryName, itemId).catch(() => ({}) as ItemVoicesResponse),
-        ),
-      ])
-      const images = normalizeImages(
-        (imagesResponse.images ?? []).map((img) => img.file_uri ?? ''),
-        [],
-      )
-      const itemNamesDict = (itemVoicesResponse.name as unknown as Record<string, string>) ?? {}
-      const voices = normalizeVoices(itemVoicesResponse.voices, itemNamesDict)
-      return {
-        id: itemId,
-        name: itemName,
-        images,
-        thumbnailUri: images[0] ?? itemSummary.thumbnail_uri ?? '',
-        voices,
-      } satisfies Item
-    }),
-  )
-
-  const categoryThumbnail =
-    categoryImagesResponse.images?.[0]?.file_uri ?? items[0]?.thumbnailUri ?? null
+  // CategoryDetailsResponse has no thumbnail_uri — preserve from basic load
+  const existingCat = sharedCategories.value.find((c) => c.id.toLowerCase() === detail.id.toLowerCase())
 
   const fullCategory: CategoryFull = {
     id: detail.id,
     name: new LocalizedString(nameDict),
     description: detail.description ?? '',
+    thumbnail_uri: existingCat?.thumbnail_uri,
+    items_count: existingCat?.items_count ?? items.length,
     images: [],
-    thumbnail_uri: categoryThumbnail,
     voices: normalizeVoices(voicesResponse.voices, (voicesResponse.name as unknown as Record<string, string>) ?? {}),
     items,
   }
 
-  const idx = sharedCategories.value.findIndex(
-    (c) => c.id.toLowerCase() === fullCategory.id.toLowerCase(),
-  )
+  const idx = sharedCategories.value.findIndex((c) => c.id.toLowerCase() === fullCategory.id.toLowerCase())
   if (idx !== -1) {
     const arr = [...sharedCategories.value]
     arr[idx] = fullCategory
@@ -260,5 +230,80 @@ export const ensureCategoryFull = async (
     sharedCategories.value = [...sharedCategories.value, fullCategory]
   }
 
+  loadedCategoryDetailIds.add(categoryName)
   return fullCategory
+}
+
+/** Clear the detail cache for a single category so the next ensureCategoryDetail re-fetches. */
+export const invalidateCategoryDetail = (categoryName: string): void => {
+  loadedCategoryDetailIds.delete(categoryName)
+}
+
+// ---------------------------------------------------------------------------
+// Item detail loader — for ItemDetailView
+// Two requests: GET …/items/{id}/images + GET …/items/{id}/voices
+// ---------------------------------------------------------------------------
+
+/**
+ * Load images and voices for a single item by ID.
+ * Skips if already loaded. Used by ItemDetailView.
+ */
+export const ensureItemDetail = async (
+  categoryName: string,
+  itemId: string,
+): Promise<Item | null> => {
+  if (loadedItemIds.get(categoryName)?.has(itemId)) {
+    return (
+      sharedCategories.value.find((c) => c.name.en === categoryName)?.items.find((i) => i.id === itemId) ?? null
+    )
+  }
+
+  const [imagesResponse, voicesResponse] = await Promise.all([
+    withInflight(
+      `images:${categoryName}:${itemId}`,
+      () => itemsImagesList(categoryName, itemId).catch(() => ({}) as ItemImagesResponse),
+    ),
+    withInflight(
+      `voices:${categoryName}:${itemId}`,
+      () => itemsVoicesList(categoryName, itemId).catch(() => ({}) as ItemVoicesResponse),
+    ),
+  ])
+
+  const images = normalizeImages(
+    (imagesResponse.images ?? []).map((img) => img.file_uri ?? ''),
+    [],
+  )
+  const itemNamesDict = (voicesResponse.name as unknown as Record<string, string>) ?? {}
+  const voices = normalizeVoices(voicesResponse.voices, itemNamesDict)
+
+  const catIdx = sharedCategories.value.findIndex((c) => c.name.en === categoryName)
+  if (catIdx !== -1) {
+    const arr = [...sharedCategories.value]
+    const cat = { ...arr[catIdx] }
+    const itemIdx = cat.items.findIndex((i) => i.id === itemId)
+    if (itemIdx !== -1) {
+      const items = [...cat.items]
+      items[itemIdx] = {
+        ...items[itemIdx],
+        images,
+        voices,
+        thumbnailUri: images[0] ?? items[itemIdx].thumbnailUri,
+      }
+      cat.items = items
+      arr[catIdx] = cat
+      sharedCategories.value = arr
+    }
+  }
+
+  if (!loadedItemIds.has(categoryName)) loadedItemIds.set(categoryName, new Set())
+  loadedItemIds.get(categoryName)!.add(itemId)
+
+  return (
+    sharedCategories.value.find((c) => c.name.en === categoryName)?.items.find((i) => i.id === itemId) ?? null
+  )
+}
+
+/** Clear the detail cache for a single item so the next ensureItemDetail re-fetches. */
+export const invalidateItemDetail = (categoryName: string, itemId: string): void => {
+  loadedItemIds.get(categoryName)?.delete(itemId)
 }
