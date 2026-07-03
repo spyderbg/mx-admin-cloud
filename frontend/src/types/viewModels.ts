@@ -30,6 +30,7 @@ export interface Item {
     images: string[]
     voices: Voice[]
     thumbnailUri: string
+    imagesCount?: number
 }
 
 export interface CategoryFull {

@@ -165,6 +165,7 @@ async function _loadCategoriesBasic(): Promise<CategoryFull[]> {
         images: [],
         voices: [],
         thumbnailUri: itemSummary.thumbnail_uri ?? '',
+        imagesCount: itemSummary.images_count ?? 0,
       }
     })
     return { ...cat, items, description: detail.description ?? '' }
@@ -304,6 +305,7 @@ export const ensureItemDetail = async (
         images,
         voices,
         thumbnailUri: images[0] ?? items[itemIdx].thumbnailUri,
+        imagesCount: images.length,
       }
       cat.items = items
       arr[catIdx] = cat

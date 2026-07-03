@@ -11,7 +11,7 @@
         :alt="item.name"
         class="item-card-thumb"
       />
-      <span class="image-count-badge">{{ item.images.length }}</span>
+      <span class="file-count-badge">{{ item.imagesCount ?? item.images.length }}</span>
       <button
         class="edit-badge"
         @click.stop="navigateToDetail(item.id)"
