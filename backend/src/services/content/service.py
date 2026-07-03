@@ -14,6 +14,8 @@ from src.services.content.models import (
     ContentProviderUnavailableError,
     CreateCategory,
     CreateItem,
+    ItemImages,
+    ItemVoices,
     RenameCategory,
     RestoreCategory,
 )
@@ -112,6 +114,14 @@ class ContentService(Service):
     def restore_category(self, category_name: str) -> RestoreCategory:
         """Restore a category via the active provider."""
         return self._select_provider().restore_category(category_name)
+
+    def item_images(self, category_name: str, item_id: str) -> ItemImages:
+        """Return image files for a specific item via the active provider."""
+        return self._select_provider().item_images(category_name, item_id)
+
+    def item_voices(self, category_name: str, item_id: str) -> ItemVoices:
+        """Return voice files for a specific item via the active provider."""
+        return self._select_provider().item_voices(category_name, item_id)
 
     # ------------------------------------------------------------------
 

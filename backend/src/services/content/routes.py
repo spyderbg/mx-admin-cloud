@@ -692,12 +692,12 @@ def items_images_list(
         )
     item = next((i for i in result.items if i.id == item_id), None)
     item_name = item.name if item else LocalizedString({})
-    images = _mock_item_files(category_name, item_id)
+    images_result = service.item_images(category_name, item_id)
     return ItemImagesResponse(
         item_id=item_id,
         name=item_name,
-        images=images,
-        thumbnail_uri=images[0].file_uri if images else None,
+        images=[ImageResponse(id=img.id, file_uri=img.file_uri) for img in images_result.images],
+        thumbnail_uri=images_result.thumbnail_uri,
     )
 
 
@@ -821,10 +821,14 @@ def items_voices_list(
         )
     item = next((i for i in result.items if i.id == item_id), None)
     item_name = item.name if item else LocalizedString({})
+    voices_result = service.item_voices(category_name, item_id)
     return ItemVoicesResponse(
         item_id=item_id,
         name=item_name,
-        voices=_mock_item_voices(category_name, item_id),
+        voices=[
+            VoiceResponse(id=v.id, language=v.language, type=v.type, file_uri=v.file_uri)
+            for v in voices_result.voices
+        ],
     )
 
 
@@ -960,37 +964,6 @@ def create_item_endpoint(
         folder=result.folder,
         image_id=result.image_id,
     )
-
-
-# endregion
-
-# region Mock helpers
-
-_MOCK_LANGS = [
-    ("en", "male"),
-    ("es", "female"),
-    ("fr", "male"),
-    ("bg", "female"),
-]
-
-
-def _mock_item_voices(category_name: str, item_id: str) -> list[VoiceResponse]:
-    return [
-        VoiceResponse(
-            id=f"{item_id}-{lang}",
-            language=lang,
-            type=voice_type,
-            file_uri=f"/content/{category_name}/images/{item_id}/{item_id}_{lang}.mp3",
-        )
-        for lang, voice_type in _MOCK_LANGS
-    ]
-
-
-def _mock_item_files(category_name: str, item_id: str) -> list[ImageResponse]:
-    return [ImageResponse(
-        id=f"{item_id}_01",
-        file_uri=f"/content/{category_name}/images/{item_id}/{item_id}_01.png",
-    )]
 
 
 # endregion

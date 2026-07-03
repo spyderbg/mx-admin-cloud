@@ -114,6 +114,19 @@ class CategoryDetails:
 
 
 @dataclass
+class ItemImages:
+    item_id: str = ""
+    images: list[CategoryImage] = field(default_factory=list)
+    thumbnail_uri: str | None = None
+
+
+@dataclass
+class ItemVoices:
+    item_id: str = ""
+    voices: list[CategoryVoice] = field(default_factory=list)
+
+
+@dataclass
 class CreateCategory:
     category: str = ""
     message: str = ""
@@ -201,6 +214,14 @@ class ContentProvider(ServiceProvider, ABC):
     @abstractmethod
     def restore_category(self, category_name: str) -> RestoreCategory:
         """Restore a category from the archive to the content directory."""
+
+    @abstractmethod
+    def item_images(self, category_name: str, item_id: str) -> ItemImages:
+        """Return image files for a specific item."""
+
+    @abstractmethod
+    def item_voices(self, category_name: str, item_id: str) -> ItemVoices:
+        """Return voice files for a specific item."""
 
     # ------------------------------------------------------------------
     # Naming helpers

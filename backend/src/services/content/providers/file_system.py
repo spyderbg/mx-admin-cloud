@@ -37,6 +37,8 @@ from src.services.content.models import (
     CreateItem,
     InvalidCategoryNameError,
     ItemDetail,
+    ItemImages,
+    ItemVoices,
     RenameCategory,
     RestoreCategory,
 )
@@ -707,6 +709,70 @@ class FileSystemContentProvider(ContentProvider):
             )
         except (OSError, shutil.Error) as exc:
             raise ContentOperationError(f"Failed to restore category: {exc}") from exc
+
+    def _item_folder_for_id(self, category_path: Path, item_id: str) -> str | None:
+        """Return the filesystem folder name for the given item_id, or None if not found."""
+        ids_path = category_path / _ITEMS_IDS
+        en_path = category_path / _ITEMS_LANG_CSV.format("en")
+        try:
+            with open(ids_path, newline="", encoding="utf-8") as fh:
+                item_ids = [r[0].strip() for r in csv.reader(fh) if r and r[0].strip()]
+        except (OSError, csv.Error):
+            return None
+        try:
+            index = item_ids.index(item_id)
+        except ValueError:
+            return None
+        try:
+            with open(en_path, newline="", encoding="utf-8") as fh:
+                en_names = [r[0].strip() for r in csv.reader(fh) if r and r[0].strip()]
+        except (OSError, csv.Error):
+            return None
+        if index >= len(en_names):
+            return None
+        return self._english_word_to_folder_name(en_names[index])
+
+    def item_images(self, category_name: str, item_id: str) -> ItemImages:
+        category_path = self._category_path(category_name)
+        folder_name = self._item_folder_for_id(category_path, item_id)
+        images: list[CategoryImage] = []
+        if folder_name:
+            item_folder = category_path / folder_name
+            if item_folder.is_dir():
+                for f in sorted(item_folder.iterdir()):
+                    if f.is_file() and f.suffix.lower() in _IMAGE_EXTENSIONS:
+                        images.append(CategoryImage(
+                            id=f.stem,
+                            file_uri=f"/content/{category_name}/{folder_name}/{f.name}",
+                        ))
+        return ItemImages(
+            item_id=item_id,
+            images=images,
+            thumbnail_uri=images[0].file_uri if images else None,
+        )
+
+    def item_voices(self, category_name: str, item_id: str) -> ItemVoices:
+        category_path = self._category_path(category_name)
+        folder_name = self._item_folder_for_id(category_path, item_id)
+        voices: list[CategoryVoice] = []
+        if folder_name:
+            item_folder = category_path / folder_name
+            if item_folder.is_dir():
+                for lang in settings.SUPPORTED_LANGUAGES:
+                    pattern = re.compile(
+                        r"^" + re.escape(folder_name) + r"_" + re.escape(lang) + r"(_\d+)?\.mp3$",
+                        re.IGNORECASE,
+                    )
+                    for f in sorted(item_folder.iterdir()):
+                        if f.is_file() and pattern.match(f.name):
+                            voices.append(CategoryVoice(
+                                id=f"{item_id}-{lang}",
+                                language=lang,
+                                type="tts",
+                                file_uri=f"/content/{category_name}/{folder_name}/{f.name}",
+                            ))
+                            break
+        return ItemVoices(item_id=item_id, voices=voices)
 
     # ------------------------------------------------------------------
     # Factory registration
