@@ -208,6 +208,13 @@ const contentLanguage = useContentLanguage()
 
 onMounted(async () => {
   await ensureCategoriesLoaded()
+  const categoryId = route.params.categoryId as string
+  const itemId = route.params.itemId as string
+  if (!categoryId || !itemId) return
+  const cat = sharedCategories.value.find((c) => c.id.toLowerCase() === categoryId.toLowerCase())
+  if (!cat) return
+  await ensureCategoryDetail(cat.name.en)
+  await ensureItemDetail(cat.name.en, itemId)
 })
 
 watch(() => route.params.categoryId as string, async (id) => {
