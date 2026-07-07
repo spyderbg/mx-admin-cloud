@@ -192,19 +192,10 @@ class FileSystemContentProvider(ContentProvider):
         if not category_path.exists() or not category_path.is_dir():
             raise CategoryNotFoundError(f"Category '{category_name}': directory is missing.")
 
-        root = self._content_root()
-        ids_path = root / _CATEGORIES_IDS
-        try:
-            with open(ids_path, newline="", encoding="utf-8") as fh:
-                rows = list(csv.reader(fh))
-            for row in rows:
-                if not row or not row[0].strip():
-                    continue
-                entry = row[0].strip()
-                if "_" in entry and entry.split("_", 1)[1].lower() == category_name.lower():
-                    return entry
-        except (OSError, csv.Error):
-            pass
+        ids_by_folder, _ = self._load_category_localized_names()
+        cid = ids_by_folder.get(category_name.lower())
+        if cid:
+            return cid
         raise CategoryNotFoundError(f"Category '{category_name}': ID is not found in categories_ids.csv.")
 
     def _list_archived_entries(self) -> list[ArchivedEntry]:
@@ -238,7 +229,11 @@ class FileSystemContentProvider(ContentProvider):
         return sorted(candidates, key=lambda x: x[1], reverse=True)
 
     def _load_category_localized_names(self) -> tuple[dict[str, str], dict[str, dict[str, str]]]:
-        """Return (ids_by_folder, names_by_folder) built from root categories_ids.csv and categories_{lang}.csv."""
+        """Return (ids_by_folder, names_by_folder) built from root CSVs.
+
+        Folder keys are derived from the English name at the same line position as the ID,
+        not from the ID string itself (IDs are opaque identifiers).
+        """
         root = self._content_root()
         try:
             with open(root / _CATEGORIES_IDS, newline="", encoding="utf-8") as fh:
@@ -246,17 +241,31 @@ class FileSystemContentProvider(ContentProvider):
         except (OSError, csv.Error):
             return {}, {}
 
-        folders = [(e.split("_", 1)[1].lower() if "_" in e else e.lower(), e) for e in id_entries]
-        ids_by_folder = {fn: cid for fn, cid in folders}
-        names_by_folder: dict[str, dict[str, str]] = {fn: {} for fn, _ in folders}
+        try:
+            with open(root / _CATEGORIES_LANG_CSV.format("en"), newline="", encoding="utf-8") as fh:
+                en_names = [r[0].strip() for r in csv.reader(fh) if r and r[0].strip()]
+        except (OSError, csv.Error):
+            en_names = []
+
+        folder_keys: list[str] = [
+            self._english_word_to_folder_name(en_names[i]) if i < len(en_names) else ""
+            for i in range(len(id_entries))
+        ]
+
+        ids_by_folder: dict[str, str] = {}
+        names_by_folder: dict[str, dict[str, str]] = {}
+        for fk, cid in zip(folder_keys, id_entries):
+            if fk:
+                ids_by_folder[fk] = cid
+                names_by_folder[fk] = {}
 
         for lang in settings.SUPPORTED_LANGUAGES:
             try:
                 with open(root / _CATEGORIES_LANG_CSV.format(lang), newline="", encoding="utf-8") as fh:
                     lang_names = [r[0].strip() for r in csv.reader(fh) if r and r[0].strip()]
-                for idx, (fn, _) in enumerate(folders):
-                    if idx < len(lang_names):
-                        names_by_folder[fn][lang] = lang_names[idx]
+                for i, fk in enumerate(folder_keys):
+                    if fk and i < len(lang_names):
+                        names_by_folder[fk][lang] = lang_names[i]
             except (OSError, csv.Error):
                 pass
 
@@ -266,15 +275,15 @@ class FileSystemContentProvider(ContentProvider):
         """Return the English description for *category_name* from descriptions_en.csv."""
         root = self._content_root()
         try:
-            with open(root / _CATEGORIES_IDS, newline="", encoding="utf-8") as fh:
-                id_entries = [r[0].strip() for r in csv.reader(fh) if r and r[0].strip()]
+            with open(root / _CATEGORIES_LANG_CSV.format("en"), newline="", encoding="utf-8") as fh:
+                en_names = [r[0].strip() for r in csv.reader(fh) if r and r[0].strip()]
         except (OSError, csv.Error):
             return ""
 
         index = next(
             (
-                i for i, e in enumerate(id_entries)
-                if (e.split("_", 1)[1].lower() if "_" in e else e.lower()) == category_name.lower()
+                i for i, name in enumerate(en_names)
+                if self._english_word_to_folder_name(name) == category_name.lower()
             ),
             None,
         )
@@ -452,6 +461,7 @@ class FileSystemContentProvider(ContentProvider):
 
         category_path.mkdir(parents=True, exist_ok=True)
 
+        labels_by_lang: dict[str, str] = {}
         for lang in settings.SUPPORTED_LANGUAGES:
             if lang == "en":
                 label = category_name.replace("_", " ").strip() or category_name
@@ -462,6 +472,7 @@ class FileSystemContentProvider(ContentProvider):
                     )
                 except (ValueError, RuntimeError, httpx.HTTPError, KeyError) as exc:
                     raise ContentOperationError(f"Translation failed for {lang}: {exc}") from exc
+            labels_by_lang[lang] = label
             try:
                 audio_bytes = self._generate_audio(label, lang)
                 voice_path = category_path / _CATEGORY_VOICE_MP3.format(category_name, lang)
@@ -482,6 +493,15 @@ class FileSystemContentProvider(ContentProvider):
             raise ContentOperationError(f"Icon generation failed: {exc}") from exc
         except OSError as exc:
             raise ContentOperationError(f"Icon file write failed: {exc}") from exc
+
+        root = self._content_root()
+        category_id = f"C_{category_name}"
+        self._append_csv_line(root / _CATEGORIES_IDS, category_id)
+        for lang in settings.SUPPORTED_LANGUAGES:
+            self._append_csv_line(
+                root / _CATEGORIES_LANG_CSV.format(lang),
+                labels_by_lang.get(lang, category_name.replace("_", " ").strip()),
+            )
 
         return CreateCategory(category=category_name, message=f"Category '{category_name}' created.")
 
