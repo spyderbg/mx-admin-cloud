@@ -54,13 +54,30 @@ TAG_ITEMS = "Items"
 TAG_ITEMS_IMAGES = "Items Images"
 TAG_ITEMS_VOICES = "Items Voices"
 
+CATEGORIES = "/categories"
+CATEGORIES_RESTORE = "/categories/restore"
+CATEGORY = "/categories/{category_name}"
+CATEGORY_IMAGES = "/categories/{category_name}/images"
+CATEGORY_IMAGE = "/categories/{category_name}/images/{image_id}"
+CATEGORY_VOICES = "/categories/{category_name}/voices"
+CATEGORY_VOICE = "/categories/{category_name}/voices/{voice_id}"
+CATEGORY_ITEMS = "/categories/{category_name}/items"
+CATEGORY_ITEM = "/categories/{category_name}/items/{item_id}"
+CATEGORY_ITEM_IMAGES = "/categories/{category_name}/items/{item_id}/images"
+CATEGORY_ITEM_IMAGE = "/categories/{category_name}/items/{item_id}/images/{image_index}"
+CATEGORY_ITEM_FILES = "/categories/{category_name}/items/{item_id}/files/{file_index}"
+CATEGORY_ITEM_VOICES = "/categories/{category_name}/items/{item_id}/voices"
+CATEGORY_ITEM_VOICE = "/categories/{category_name}/items/{item_id}/voices/{voice_id}"
+CATEGORY_ITEM_VOICE_AUDIO = "/categories/{category_name}/items/{item_id}/voices/{voice_id}/audio"
+ITEMS = "/items"
+
 router = APIRouter(prefix=f"{settings.API_V1_STR}/content")
 
 
 # region Categories
 
 @router.get(
-    "/categories",
+    CATEGORIES,
     response_model=CategoryListResponse,
     status_code=status.HTTP_200_OK,
     tags=[TAG_CATEGORIES],
@@ -105,7 +122,7 @@ def categories_list(
 
 
 @router.post(
-    "/categories",
+    CATEGORIES,
     response_model=CreateCategoryResponse,
     status_code=status.HTTP_201_CREATED,
     tags=[TAG_CATEGORIES],
@@ -134,7 +151,7 @@ def categories_create(
 
 
 @router.post(
-    "/categories/restore",
+    CATEGORIES_RESTORE,
     response_model=RestoreCategoryResponse,
     tags=[TAG_CATEGORIES],
     summary="Restore a category from archive",
@@ -169,7 +186,7 @@ def categories_restore(
 
 
 @router.get(
-    "/categories/{category_name}",
+    CATEGORY,
     response_model=CategoryDetailsResponse,
     status_code=status.HTTP_200_OK,
     tags=[TAG_CATEGORIES],
@@ -204,7 +221,7 @@ def categories_details(
 
 
 @router.put(
-    "/categories/{category_name}",
+    CATEGORY,
     response_model=None,
     status_code=status.HTTP_200_OK,
     tags=[TAG_CATEGORIES],
@@ -228,7 +245,7 @@ def categories_update(
 
 
 @router.patch(
-    "/categories/{category_name}",
+    CATEGORY,
     response_model=RenameCategoryResponse,
     status_code=status.HTTP_200_OK,
     tags=[TAG_CATEGORIES],
@@ -258,7 +275,7 @@ def categories_rename(
 
 
 @router.delete(
-    "/categories/{category_name}",
+    CATEGORY,
     response_model=RemoveCategoryResponse,
     status_code=status.HTTP_200_OK,
     tags=[TAG_CATEGORIES],
@@ -296,7 +313,7 @@ def categories_remove(
 # region Category Images
 
 @router.get(
-    "/categories/{category_name}/images",
+    CATEGORY_IMAGES,
     response_model=CategoryImagesResponse,
     status_code=status.HTTP_200_OK,
     tags=[TAG_CATEGORIES_IMAGES],
@@ -332,7 +349,7 @@ def categories_images_list(
 
 
 @router.post(
-    "/categories/{category_name}/images",
+    CATEGORY_IMAGES,
     response_model=None,
     status_code=status.HTTP_201_CREATED,
     tags=[TAG_CATEGORIES_IMAGES],
@@ -357,7 +374,7 @@ def categories_images_add(
 
 
 @router.put(
-    "/categories/{category_name}/images/{image_id}",
+    CATEGORY_IMAGE,
     response_model=None,
     status_code=status.HTTP_501_NOT_IMPLEMENTED,
     tags=[TAG_CATEGORIES_IMAGES],
@@ -382,7 +399,7 @@ def categories_images_update(
 
 
 @router.delete(
-    "/categories/{category_name}/images/{image_id}",
+    CATEGORY_IMAGE,
     status_code=status.HTTP_204_NO_CONTENT,
     tags=[TAG_CATEGORIES_IMAGES],
     summary="Delete category image",
@@ -409,7 +426,7 @@ def categories_images_delete(
 # region Category Voices
 
 @router.get(
-    "/categories/{category_name}/voices",
+    CATEGORY_VOICES,
     response_model=CategoryVoicesResponse,
     status_code=status.HTTP_200_OK,
     tags=[TAG_CATEGORIES_VOICES],
@@ -450,7 +467,7 @@ def categories_voices_list(
 
 
 @router.post(
-    "/categories/{category_name}/voices",
+    CATEGORY_VOICES,
     response_model=None,
     status_code=status.HTTP_201_CREATED,
     tags=[TAG_CATEGORIES_VOICES],
@@ -475,7 +492,7 @@ def categories_voices_add(
 
 
 @router.put(
-    "/categories/{category_name}/voices/{voice_id}",
+    CATEGORY_VOICE,
     response_model=None,
     status_code=status.HTTP_501_NOT_IMPLEMENTED,
     tags=[TAG_CATEGORIES_VOICES],
@@ -501,7 +518,7 @@ def categories_voices_update(
 
 
 @router.delete(
-    "/categories/{category_name}/voices/{voice_id}",
+    CATEGORY_VOICE,
     response_model=None,
     status_code=status.HTTP_204_NO_CONTENT,
     tags=[TAG_CATEGORIES_VOICES],
@@ -530,7 +547,7 @@ def categories_voices_delete(
 # region Items
 
 @router.get(
-    "/categories/{category_name}/items",
+    CATEGORY_ITEMS,
     response_model=ItemListResponse,
     status_code=status.HTTP_200_OK,
     tags=[TAG_ITEMS],
@@ -564,7 +581,7 @@ def items_list(
 
 
 @router.get(
-    "/categories/{category_name}/items/{item_id}",
+    CATEGORY_ITEM,
     response_model=ItemSummary,
     status_code=status.HTTP_200_OK,
     tags=[TAG_ITEMS],
@@ -605,7 +622,7 @@ def items_get(
 
 
 @router.put(
-    "/categories/{category_name}/items/{item_id}",
+    CATEGORY_ITEM,
     response_model=None,
     status_code=status.HTTP_200_OK,
     tags=[TAG_ITEMS],
@@ -630,7 +647,7 @@ def items_update(
 
 
 @router.delete(
-    "/categories/{category_name}/items/{item_id}",
+    CATEGORY_ITEM,
     response_model=None,
     status_code=status.HTTP_204_NO_CONTENT,
     tags=[TAG_ITEMS],
@@ -659,7 +676,7 @@ def items_delete(
 # region Items Images
 
 @router.get(
-    "/categories/{category_name}/items/{item_id}/images",
+    CATEGORY_ITEM_IMAGES,
     response_model=ItemImagesResponse,
     status_code=status.HTTP_200_OK,
     tags=[TAG_ITEMS_IMAGES],
@@ -702,7 +719,7 @@ def items_images_list(
 
 
 @router.post(
-    "/categories/{category_name}/items/{item_id}/images",
+    CATEGORY_ITEM_IMAGES,
     response_model=None,
     status_code=status.HTTP_201_CREATED,
     tags=[TAG_ITEMS_IMAGES],
@@ -728,7 +745,7 @@ def items_images_add(
 
 
 @router.put(
-    "/categories/{category_name}/items/{item_id}/images/{image_index}",
+    CATEGORY_ITEM_IMAGE,
     response_model=None,
     status_code=status.HTTP_501_NOT_IMPLEMENTED,
     tags=[TAG_ITEMS_IMAGES],
@@ -756,7 +773,7 @@ def items_images_replace(
 
 
 @router.delete(
-    "/categories/{category_name}/items/{item_id}/files/{file_index}",
+    CATEGORY_ITEM_FILES,
     response_model=None,
     status_code=status.HTTP_204_NO_CONTENT,
     tags=[TAG_ITEMS_IMAGES],
@@ -788,7 +805,7 @@ def items_images_delete(
 # region Items Voices
 
 @router.get(
-    "/categories/{category_name}/items/{item_id}/voices",
+    CATEGORY_ITEM_VOICES,
     response_model=ItemVoicesResponse,
     status_code=status.HTTP_200_OK,
     tags=[TAG_ITEMS_VOICES],
@@ -833,7 +850,7 @@ def items_voices_list(
 
 
 @router.put(
-    "/categories/{category_name}/items/{item_id}/voices/{voice_id}",
+    CATEGORY_ITEM_VOICE,
     response_model=None,
     status_code=status.HTTP_501_NOT_IMPLEMENTED,
     tags=[TAG_ITEMS_VOICES],
@@ -860,7 +877,7 @@ def items_voices_update(
 
 
 @router.put(
-    "/categories/{category_name}/items/{item_id}/voices/{voice_id}/audio",
+    CATEGORY_ITEM_VOICE_AUDIO,
     response_model=None,
     status_code=status.HTTP_501_NOT_IMPLEMENTED,
     tags=[TAG_ITEMS_VOICES],
@@ -888,7 +905,7 @@ def items_voices_upload(
 
 
 @router.delete(
-    "/categories/{category_name}/items/{item_id}/voices/{voice_id}",
+    CATEGORY_ITEM_VOICE,
     response_model=None,
     status_code=status.HTTP_204_NO_CONTENT,
     tags=[TAG_ITEMS_VOICES],
@@ -919,7 +936,7 @@ def items_voices_delete(
 # region Legacy item creation
 
 @router.post(
-    "/items",
+    ITEMS,
     response_model=CreateItemResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a new content item",
