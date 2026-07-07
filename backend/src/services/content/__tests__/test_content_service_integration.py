@@ -28,6 +28,8 @@ from src.services.content.models import (
     CreateCategory,
     CreateItem,
     InvalidCategoryNameError,
+    ItemImages,
+    ItemVoices,
     RenameCategory,
     RestoreCategory,
 )
@@ -129,6 +131,12 @@ class _StubContentProvider(ContentProvider):
             from_archive=f"{category_name}_1000",
             message="restored",
         ))
+
+    def item_images(self, category_name: str, item_id: str) -> ItemImages:
+        return self._call("item_images", ItemImages(item_id=item_id))
+
+    def item_voices(self, category_name: str, item_id: str) -> ItemVoices:
+        return self._call("item_voices", ItemVoices(item_id=item_id))
 
 
 def _make_content_service(

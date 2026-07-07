@@ -137,6 +137,14 @@ class _StubProvider(ContentProvider):
             "message": "restored",
         })
 
+    def item_images(self, category_name: str, item_id: str) -> dict[str, Any]:
+        self._record("item_images", category_name, item_id)
+        return self._returns.get("item_images", {"item_id": item_id, "images": [], "thumbnail_uri": None})
+
+    def item_voices(self, category_name: str, item_id: str) -> dict[str, Any]:
+        self._record("item_voices", category_name, item_id)
+        return self._returns.get("item_voices", {"item_id": item_id, "voices": []})
+
 
 def _make_service(tmp_path: Path, providers: list[Any] | None = None) -> ContentService:
     svc = ContentService(
@@ -192,6 +200,12 @@ class _ConcreteProvider(ContentProvider):
         return {}
 
     def restore_category(self, category_name):
+        return {}
+
+    def item_images(self, category_name, item_id):
+        return {}
+
+    def item_voices(self, category_name, item_id):
         return {}
 
 
