@@ -41,7 +41,7 @@ class Settings(BaseSettings):
 
     # Directory settings
     CONFIG_DIR: str = "config"
-    CONTENT_DIR: str = "/home/plamen/nextcloud/_Projects/KiddoWords/Content/"
+    CONTENT_DIR: str = "../content"
     ARCHIVE_DIR: str = "../archive"
     OUTPUT_DIR: str = "../output"
     TEMP_DIR: str = "../temp"
