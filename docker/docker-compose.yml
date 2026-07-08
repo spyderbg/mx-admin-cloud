@@ -8,7 +8,7 @@ services:
     ports:
       - "9000:8000"
     volumes:
-      - ../content:/app/content
+      - /home/spyder/Nextcloud/_Projects/KiddoWords/Content:/app/content
       - ../archive:/app/archive
       - backend-data:/app/data
       - ../backend/config:/app/config
@@ -34,7 +34,7 @@ services:
     ports:
       - "9001:80"
     volumes:
-      - ../content:/app/content:ro
+      - /home/spyder/Nextcloud/_Projects/KiddoWords/Content:/app/content:ro
     depends_on:
       - backend
 
@@ -44,7 +44,7 @@ services:
       context: ..
       dockerfile: docker/backend.Dockerfile
     volumes:
-      - ../content:/app/content
+      - /home/spyder/Nextcloud/_Projects/KiddoWords/Content:/app/content
       - ../archive:/app/archive
       - backend-data:/app/data
       - ../backend/config:/app/config
