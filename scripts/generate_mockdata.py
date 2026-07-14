@@ -129,7 +129,7 @@ def build_items(cat_dir: Path, content_root: Path, cat_key: str) -> tuple[list[d
             })
 
         items.append({
-            'id': f'{cat_key}-{folder}',
+            'id': item_ids[i_idx],
             'name': name_en,
             'images': img_uris,
             'thumbnailUri': thumbnail,
@@ -239,7 +239,7 @@ def generate(content_path: Path, script_path: Path | None = None, output_path: P
         desc_en = descriptions['en'][idx] if idx < len(descriptions['en']) else ''
 
         lines.append('  {')
-        lines.append(f"    id: '{cat_key}',")
+        lines.append(f"    id: '{cat_ids[idx]}',")
         lines.append(f"    name: {{ {', '.join(name_parts)} }},")
         lines.append(f"    description: '{js_str(desc_en)}',")
         lines.append('    archived: false,')
