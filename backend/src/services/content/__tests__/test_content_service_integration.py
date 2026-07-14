@@ -81,11 +81,14 @@ class _StubContentProvider(ContentProvider):
     ) -> CategoryList:
         return self._call("list_categories", CategoryList(categories=["foods", "drinks"]))
 
-    def category_details(self, category_name: str) -> CategoryDetails:
+    def category_id_by_name(self, category_name: str) -> str:
+        return self._call("category_id_by_name", category_name)
+
+    def category_details(self, category_id: str) -> CategoryDetails:
         from src.services.content.models import ItemDetail
         return self._call("category_details", CategoryDetails(
-            name={"en": category_name},
-            items=[ItemDetail(id=f"I_{category_name.title()}", name={"en": "apple"})],
+            name={"en": category_id},
+            items=[ItemDetail(id=f"I_{category_id.title()}", name={"en": "apple"})],
         ))
 
     def create_category(self, category_name: str) -> CreateCategory:

@@ -181,22 +181,18 @@ class FileSystemContentProvider(ContentProvider):
                 return i
         return 1
 
-    def _get_category_id(self, category_name: str) -> str:
-        """Validate the category exists and return its ID from categories_ids.csv.
+    def _folder_name_for_id(self, category_id: str) -> str:
+        """Return the on-disk folder name registered for *category_id*.
 
-        Raises CategoryNotFoundError with a specific message when either condition fails:
-        - The category directory is absent
-        - The category has no entry in categories_ids.csv
+        Pure registry lookup (categories_ids.csv / categories_en.csv) — does not
+        check whether the folder currently exists under the content root, so it
+        also resolves categories that have been moved to the archive.
         """
-        category_path = self._category_path(category_name)
-        if not category_path.exists() or not category_path.is_dir():
-            raise CategoryNotFoundError(f"Category '{category_name}': directory is missing.")
-
         ids_by_folder, _ = self._load_category_localized_names()
-        cid = ids_by_folder.get(category_name.lower())
-        if cid:
-            return cid
-        raise CategoryNotFoundError(f"Category '{category_name}': ID is not found in categories_ids.csv.")
+        for folder, cid in ids_by_folder.items():
+            if cid == category_id:
+                return folder
+        raise CategoryNotFoundError(f"Category id '{category_id}' is not found in categories_ids.csv.")
 
     def _list_archived_entries(self) -> list[ArchivedEntry]:
         """Scan archive root for folders matching ``{base}_{timestamp}``."""
@@ -324,23 +320,35 @@ class FileSystemContentProvider(ContentProvider):
             if p.is_dir() and not p.name.startswith("."):
                 items_count = sum(1 for c in p.iterdir() if c.is_dir() and not c.name.startswith("."))
                 fn = p.name.lower()
+                icon_path = next(
+                    (p / f"{p.name}{ext}" for ext in _IMAGE_EXTENSIONS if (p / f"{p.name}{ext}").is_file()),
+                    None,
+                )
                 summaries.append(CategorySummary(
                     id=ids_by_folder.get(fn, p.name),
                     name=LocalizedString(names_by_folder.get(fn, {})),
                     items_count=items_count,
-                    thumbnail_uri=f"/content/{p.name}/{p.name}.png",
+                    thumbnail_uri=f"/content/{p.name}/{icon_path.name}" if icon_path else "",
                 ))
         return CategoryList(
             categories=summaries,
             archived=archived if include_archived else [],
         )
 
-    def category_details(self, category_name: str) -> CategoryDetails:
+    def category_id_by_name(self, category_name: str) -> str:
         if not self._is_safe_category_name(category_name):
             raise InvalidCategoryNameError(category_name)
+        ids_by_folder, _ = self._load_category_localized_names()
+        cid = ids_by_folder.get(category_name.lower())
+        if cid:
+            return cid
+        raise CategoryNotFoundError(f"Category '{category_name}': ID is not found in categories_ids.csv.")
 
-        category_id = self._get_category_id(category_name)
+    def category_details(self, category_id: str) -> CategoryDetails:
+        category_name = self._folder_name_for_id(category_id)
         category_path = self._category_path(category_name)
+        if not category_path.exists() or not category_path.is_dir():
+            raise CategoryNotFoundError(f"Category '{category_name}': directory is missing.")
 
         _, names_by_folder = self._load_category_localized_names()
         category_localized_name = LocalizedString(names_by_folder.get(category_name.lower(), {}))
@@ -507,13 +515,12 @@ class FileSystemContentProvider(ContentProvider):
 
     def create_item(  # pylint: disable=too-many-locals
             self,
-            category_name: str,
+            category_id: str,
             english_word: str,
             image_data: bytes,
             image_extension: str = ".png",
     ) -> CreateItem:
-        if not self._is_safe_category_name(category_name):
-            raise InvalidCategoryNameError(category_name)
+        category_name = self._folder_name_for_id(category_id)
         if not english_word or not english_word.strip():
             raise ContentOperationError("Item word is required")
         english_word = english_word.strip()
@@ -574,9 +581,8 @@ class FileSystemContentProvider(ContentProvider):
             image_id=image_id,
         )
 
-    def archive_category(self, category_name: str) -> ArchiveCategory:
-        if not self._is_safe_category_name(category_name):
-            raise InvalidCategoryNameError(category_name)
+    def archive_category(self, category_id: str) -> ArchiveCategory:
+        category_name = self._folder_name_for_id(category_id)
         category_path = self._category_path(category_name)
         if not category_path.exists() or not category_path.is_dir():
             raise CategoryNotFoundError(category_name)
@@ -601,11 +607,10 @@ class FileSystemContentProvider(ContentProvider):
 
     def rename_category(
             self,
-            old_name: str,
+            category_id: str,
             new_name: str,
     ) -> RenameCategory:
-        if not self._is_safe_category_name(old_name):
-            raise InvalidCategoryNameError(old_name)
+        old_name = self._folder_name_for_id(category_id)
         if not self._is_safe_category_name(new_name):
             raise InvalidCategoryNameError(new_name)
         old_path = self._category_path(old_name)
@@ -671,14 +676,13 @@ class FileSystemContentProvider(ContentProvider):
                     old_icon_path.rename(new_icon_path)
                 break
 
-    def remove_category(self, category_name: str) -> ArchiveCategory:
-        if not self._is_safe_category_name(category_name):
-            raise InvalidCategoryNameError(category_name)
+    def remove_category(self, category_id: str) -> ArchiveCategory:
+        category_name = self._folder_name_for_id(category_id)
         category_path = self._category_path(category_name)
         if not category_path.exists() or not category_path.is_dir():
             raise CategoryNotFoundError(category_name)
         if settings.ARCHIVE_DIR and settings.ARCHIVE_DIR.strip():
-            return self.archive_category(category_name)
+            return self.archive_category(category_id)
         try:
             shutil.rmtree(category_path)
             return ArchiveCategory(
@@ -691,26 +695,22 @@ class FileSystemContentProvider(ContentProvider):
 
     def restore_category(
             self,
-            category_name: str,
+            category_id: str,
     ) -> RestoreCategory:
-        name = (category_name or "").strip()
-        if not name:
-            raise InvalidCategoryNameError("No category name provided")
+        cid = (category_id or "").strip()
+        if not cid:
+            raise InvalidCategoryNameError("No category id provided")
 
         content_root = self._content_root()
         archive_root = self._archive_root()
         if not archive_root.exists() or not archive_root.is_dir():
             raise ArchiveUnavailableError("Archive directory does not exist")
 
-        if re.match(r"^.+_\d+$", name):
-            base_name = re.sub(r"_\d+$", "", name)
-            archive_folder = name
-        else:
-            base_name = name
-            candidates = self._archive_folders_for_base(archive_root, base_name)
-            if not candidates:
-                raise CategoryNotFoundError(f"No archive found for category '{base_name}'")
-            archive_folder = candidates[0][0]
+        base_name = self._folder_name_for_id(cid)
+        candidates = self._archive_folders_for_base(archive_root, base_name)
+        if not candidates:
+            raise CategoryNotFoundError(f"No archive found for category '{base_name}'")
+        archive_folder = candidates[0][0]
 
         archive_path = archive_root / archive_folder
         if not archive_path.exists() or not archive_path.is_dir():
@@ -752,7 +752,8 @@ class FileSystemContentProvider(ContentProvider):
             return None
         return self._english_word_to_folder_name(en_names[index])
 
-    def item_images(self, category_name: str, item_id: str) -> ItemImages:
+    def item_images(self, category_id: str, item_id: str) -> ItemImages:
+        category_name = self._folder_name_for_id(category_id)
         category_path = self._category_path(category_name)
         folder_name = self._item_folder_for_id(category_path, item_id)
         images: list[CategoryImage] = []
@@ -771,7 +772,8 @@ class FileSystemContentProvider(ContentProvider):
             thumbnail_uri=images[0].file_uri if images else None,
         )
 
-    def item_voices(self, category_name: str, item_id: str) -> ItemVoices:
+    def item_voices(self, category_id: str, item_id: str) -> ItemVoices:
+        category_name = self._folder_name_for_id(category_id)
         category_path = self._category_path(category_name)
         folder_name = self._item_folder_for_id(category_path, item_id)
         voices: list[CategoryVoice] = []

@@ -57,6 +57,7 @@ TAG_ITEMS_VOICES = "Items Voices"
 CATEGORIES = "/categories"
 CATEGORIES_RESTORE = "/categories/restore"
 CATEGORY = "/categories/{category_name}"
+CATEGORY_DETAILS = "/categories/{category_id}"
 CATEGORY_IMAGES = "/categories/{category_name}/images"
 CATEGORY_IMAGE = "/categories/{category_name}/images/{image_id}"
 CATEGORY_VOICES = "/categories/{category_name}/voices"
@@ -186,7 +187,7 @@ def categories_restore(
 
 
 @router.get(
-    CATEGORY,
+    CATEGORY_DETAILS,
     response_model=CategoryDetailsResponse,
     status_code=status.HTTP_200_OK,
     tags=[TAG_CATEGORIES],
@@ -198,13 +199,13 @@ def categories_restore(
     ),
 )
 def categories_details(
-        category_name: str,
+        category_id: str,
         service: ContentServiceDep,
         _user: dict = Depends(get_current_user),
 ) -> CategoryDetailsResponse:
     """Get category details."""
     try:
-        result = service.category_details(category_name)
+        result = service.category_details_by_id(category_id)
     except CategoryNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except InvalidCategoryNameError as exc:
@@ -331,7 +332,7 @@ def categories_images_list(
 ) -> CategoryImagesResponse:
     """List images for a category."""
     try:
-        result = service.category_details(category_name)
+        result = service.category_details_by_name(category_name)
     except CategoryNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except InvalidCategoryNameError as exc:
@@ -444,7 +445,7 @@ def categories_voices_list(
 ) -> CategoryVoicesResponse:
     """List voices for a category."""
     try:
-        result = service.category_details(category_name)
+        result = service.category_details_by_name(category_name)
     except CategoryNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except InvalidCategoryNameError as exc:
@@ -565,7 +566,7 @@ def items_list(
 ) -> ItemListResponse:
     """List all items in a category."""
     try:
-        result = service.category_details(category_name)
+        result = service.category_details_by_name(category_name)
     except CategoryNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except InvalidCategoryNameError as exc:
@@ -600,7 +601,7 @@ def items_get(
 ) -> ItemSummary:
     """Get a single item by ID."""
     try:
-        result = service.category_details(category_name)
+        result = service.category_details_by_name(category_name)
     except CategoryNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except InvalidCategoryNameError as exc:
@@ -695,7 +696,7 @@ def items_images_list(
 ) -> ItemImagesResponse:
     """List image file variants for an item."""
     try:
-        result = service.category_details(category_name)
+        result = service.category_details_by_name(category_name)
     except CategoryNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except InvalidCategoryNameError as exc:
@@ -824,7 +825,7 @@ def items_voices_list(
 ) -> ItemVoicesResponse:
     """List voices for an item."""
     try:
-        result = service.category_details(category_name)
+        result = service.category_details_by_name(category_name)
     except CategoryNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except InvalidCategoryNameError as exc:

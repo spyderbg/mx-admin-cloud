@@ -149,7 +149,7 @@ async function _loadCategoriesBasic(): Promise<CategoryFull[]> {
   // Fetch all category details in parallel to populate items for sidebar search
   const detailResults = await Promise.allSettled(
     shells.map((cat) =>
-      withInflight(`detail:${cat.name.en}`, () => categoriesDetails(cat.name.en))
+      withInflight(`detail:${cat.id}`, () => categoriesDetails(cat.id))
     ),
   )
 

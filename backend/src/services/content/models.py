@@ -182,7 +182,7 @@ class ContentProvider(ServiceProvider, ABC):
         """List content categories, optionally including archived ones."""
 
     @abstractmethod
-    def category_details(self, category_name: str) -> CategoryDetails:
+    def category_details(self, category_id: str) -> CategoryDetails:
         """Return object folders and CSV-derived data for a category."""
 
     @abstractmethod
@@ -192,7 +192,7 @@ class ContentProvider(ServiceProvider, ABC):
     @abstractmethod
     def create_item(
             self,
-            category_name: str,
+            category_id: str,
             english_word: str,
             image_data: bytes,
             image_extension: str = ".png",
@@ -200,28 +200,32 @@ class ContentProvider(ServiceProvider, ABC):
         """Create an item folder with image, translations, and voice files."""
 
     @abstractmethod
-    def archive_category(self, category_name: str) -> ArchiveCategory:
+    def archive_category(self, category_id: str) -> ArchiveCategory:
         """Move a category from the content directory to the archive."""
 
     @abstractmethod
-    def rename_category(self, old_name: str, new_name: str) -> RenameCategory:
+    def rename_category(self, category_id: str, new_name: str) -> RenameCategory:
         """Rename a category and regenerate its voice files."""
 
     @abstractmethod
-    def remove_category(self, category_name: str) -> ArchiveCategory:
+    def remove_category(self, category_id: str) -> ArchiveCategory:
         """Remove a category (archive if configured, else delete permanently)."""
 
     @abstractmethod
-    def restore_category(self, category_name: str) -> RestoreCategory:
+    def restore_category(self, category_id: str) -> RestoreCategory:
         """Restore a category from the archive to the content directory."""
 
     @abstractmethod
-    def item_images(self, category_name: str, item_id: str) -> ItemImages:
+    def item_images(self, category_id: str, item_id: str) -> ItemImages:
         """Return image files for a specific item."""
 
     @abstractmethod
-    def item_voices(self, category_name: str, item_id: str) -> ItemVoices:
+    def item_voices(self, category_id: str, item_id: str) -> ItemVoices:
         """Return voice files for a specific item."""
+
+    @abstractmethod
+    def category_id_by_name(self, category_name: str) -> str:
+        """Return the category_id registered for the given category_name."""
 
     # ------------------------------------------------------------------
     # Naming helpers

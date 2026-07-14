@@ -39,8 +39,8 @@ export const categoriesRestore = async (body: RestoreCategoryBody): Promise<Rest
 }
 
 /** Get details of a specific content category */
-export const categoriesDetails = async (categoryName: string): Promise<CategoryDetailsResponse> => {
-  const r = await client.get<CategoryDetailsResponse>(`/content/categories/${categoryName}`)
+export const categoriesDetails = async (categoryId: string): Promise<CategoryDetailsResponse> => {
+  const r = await client.get<CategoryDetailsResponse>(`/content/categories/${categoryId}`)
   return r.data
 }
 

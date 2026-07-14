@@ -76,9 +76,14 @@ class ContentService(Service):
             archived_only=archived_only,
         )
 
-    def category_details(self, category_name: str) -> CategoryDetails:
+    def category_details_by_name(self, category_name: str) -> CategoryDetails:
+        """Return category details via the active provider, looked up by category_name."""
+        provider = self._select_provider()
+        return provider.category_details(provider.category_id_by_name(category_name))
+
+    def category_details_by_id(self, category_id: str) -> CategoryDetails:
         """Return category details via the active provider."""
-        return self._select_provider().category_details(category_name)
+        return self._select_provider().category_details(category_id)
 
     def create_category(self, category_name: str) -> CreateCategory:
         """Create a new category via the active provider."""
@@ -92,36 +97,43 @@ class ContentService(Service):
             image_extension: str = ".png",
     ) -> CreateItem:
         """Create a content item via the active provider."""
-        return self._select_provider().create_item(
-            category_name=category_name,
-            english_word=english_word,
-            image_data=image_data,
-            image_extension=image_extension,
+        provider = self._select_provider()
+        return provider.create_item(
+            provider.category_id_by_name(category_name),
+            english_word,
+            image_data,
+            image_extension,
         )
 
     def archive_category(self, category_name: str) -> ArchiveCategory:
         """Archive a category via the active provider."""
-        return self._select_provider().archive_category(category_name)
+        provider = self._select_provider()
+        return provider.archive_category(provider.category_id_by_name(category_name))
 
     def rename_category(self, old_name: str, new_name: str) -> RenameCategory:
         """Rename a category via the active provider."""
-        return self._select_provider().rename_category(old_name, new_name)
+        provider = self._select_provider()
+        return provider.rename_category(provider.category_id_by_name(old_name), new_name)
 
     def remove_category(self, category_name: str) -> ArchiveCategory:
         """Remove a category via the active provider."""
-        return self._select_provider().remove_category(category_name)
+        provider = self._select_provider()
+        return provider.remove_category(provider.category_id_by_name(category_name))
 
     def restore_category(self, category_name: str) -> RestoreCategory:
         """Restore a category via the active provider."""
-        return self._select_provider().restore_category(category_name)
+        provider = self._select_provider()
+        return provider.restore_category(provider.category_id_by_name(category_name))
 
     def item_images(self, category_name: str, item_id: str) -> ItemImages:
         """Return image files for a specific item via the active provider."""
-        return self._select_provider().item_images(category_name, item_id)
+        provider = self._select_provider()
+        return provider.item_images(provider.category_id_by_name(category_name), item_id)
 
     def item_voices(self, category_name: str, item_id: str) -> ItemVoices:
         """Return voice files for a specific item via the active provider."""
-        return self._select_provider().item_voices(category_name, item_id)
+        provider = self._select_provider()
+        return provider.item_voices(provider.category_id_by_name(category_name), item_id)
 
     # ------------------------------------------------------------------
 

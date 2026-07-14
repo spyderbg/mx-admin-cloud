@@ -586,23 +586,23 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - OAuth2PasswordBearer: []
-  /api/v1/content/categories/{category_name}:
+  /api/v1/content/categories/{category_id}:
     get:
       tags:
       - Categories
       summary: Get details of a specific content category
       description: Retrieve detailed information about a content category. Returns the
         category name, description, and associated metadata. Requires authentication.
-      operationId: categories_details_api_v1_content_categories__category_name__get
+      operationId: categories_details_api_v1_content_categories__category_id__get
       security:
       - OAuth2PasswordBearer: []
       parameters:
-      - name: category_name
+      - name: category_id
         in: path
         required: true
         schema:
           type: string
-          title: Category Name
+          title: Category Id
       responses:
         '200':
           description: Successful Response
@@ -616,6 +616,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/content/categories/{category_name}:
     put:
       tags:
       - Categories

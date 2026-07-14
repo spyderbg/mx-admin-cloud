@@ -80,9 +80,13 @@ class _StubProvider(ContentProvider):
         self._record("list_categories", include_archived, archived_only)
         return self._returns.get("list_categories", {"categories": ["cats", "dogs"]})
 
-    def category_details(self, category_name: str) -> dict[str, Any]:
-        self._record("category_details", category_name)
-        return self._returns.get("category_details", {"name": category_name, "objects": []})
+    def category_id_by_name(self, category_name: str) -> str:
+        self._record("category_id_by_name", category_name)
+        return self._returns.get("category_id_by_name", category_name)
+
+    def category_details(self, category_id: str) -> dict[str, Any]:
+        self._record("category_details", category_id)
+        return self._returns.get("category_details", {"name": category_id, "objects": []})
 
     def create_category(self, category_name: str) -> dict[str, Any]:
         self._record("create_category", category_name)
@@ -90,59 +94,59 @@ class _StubProvider(ContentProvider):
 
     def create_item(
             self,
-            category_name: str,
+            category_id: str,
             english_word: str,
             image_data: bytes,
             image_extension: str = ".png",
     ) -> CreateItem:
-        self._record("create_item", category_name, english_word, image_data, image_extension)
+        self._record("create_item", category_id, english_word, image_data, image_extension)
         return self._returns.get("create_item", CreateItem(
-            category=category_name,
+            category=category_id,
             item=english_word,
             folder=english_word.lower(),
             image_id=f"I_{english_word.title()}",
         ))
 
-    def archive_category(self, category_name: str) -> dict[str, Any]:
-        self._record("archive_category", category_name)
+    def archive_category(self, category_id: str) -> dict[str, Any]:
+        self._record("archive_category", category_id)
         return self._returns.get("archive_category", {
             "archived": True,
-            "name": category_name,
-            "archive_folder": f"{category_name}_1000",
-            "destination": f"/archive/{category_name}_1000",
+            "name": category_id,
+            "archive_folder": f"{category_id}_1000",
+            "destination": f"/archive/{category_id}_1000",
             "message": "archived",
         })
 
-    def rename_category(self, old_name: str, new_name: str) -> dict[str, Any]:
-        self._record("rename_category", old_name, new_name)
+    def rename_category(self, category_id: str, new_name: str) -> dict[str, Any]:
+        self._record("rename_category", category_id, new_name)
         return self._returns.get("rename_category", {
             "category": new_name,
-            "message": f"renamed {old_name} to {new_name}",
+            "message": f"renamed {category_id} to {new_name}",
         })
 
-    def remove_category(self, category_name: str) -> dict[str, Any]:
-        self._record("remove_category", category_name)
+    def remove_category(self, category_id: str) -> dict[str, Any]:
+        self._record("remove_category", category_id)
         return self._returns.get("remove_category", {
             "removed": True,
-            "name": category_name,
+            "name": category_id,
             "message": "removed",
         })
 
-    def restore_category(self, category_name: str) -> dict[str, Any]:
-        self._record("restore_category", category_name)
+    def restore_category(self, category_id: str) -> dict[str, Any]:
+        self._record("restore_category", category_id)
         return self._returns.get("restore_category", {
             "restored": True,
-            "name": category_name,
-            "from_archive": f"{category_name}_1000",
+            "name": category_id,
+            "from_archive": f"{category_id}_1000",
             "message": "restored",
         })
 
-    def item_images(self, category_name: str, item_id: str) -> dict[str, Any]:
-        self._record("item_images", category_name, item_id)
+    def item_images(self, category_id: str, item_id: str) -> dict[str, Any]:
+        self._record("item_images", category_id, item_id)
         return self._returns.get("item_images", {"item_id": item_id, "images": [], "thumbnail_uri": None})
 
-    def item_voices(self, category_name: str, item_id: str) -> dict[str, Any]:
-        self._record("item_voices", category_name, item_id)
+    def item_voices(self, category_id: str, item_id: str) -> dict[str, Any]:
+        self._record("item_voices", category_id, item_id)
         return self._returns.get("item_voices", {"item_id": item_id, "voices": []})
 
 
@@ -181,31 +185,34 @@ class _ConcreteProvider(ContentProvider):
     def list_categories(self, include_archived=False, archived_only=False):
         return {}
 
-    def category_details(self, category_name):
+    def category_id_by_name(self, category_name):
+        return ""
+
+    def category_details(self, category_id):
         return {}
 
     def create_category(self, category_name):
         return {}
 
-    def create_item(self, category_name, english_word, image_data, image_extension=".png"):
+    def create_item(self, category_id, english_word, image_data, image_extension=".png"):
         return {}
 
-    def archive_category(self, category_name):
+    def archive_category(self, category_id):
         return {}
 
-    def rename_category(self, old_name, new_name):
+    def rename_category(self, category_id, new_name):
         return {}
 
-    def remove_category(self, category_name):
+    def remove_category(self, category_id):
         return {}
 
-    def restore_category(self, category_name):
+    def restore_category(self, category_id):
         return {}
 
-    def item_images(self, category_name, item_id):
+    def item_images(self, category_id, item_id):
         return {}
 
-    def item_voices(self, category_name, item_id):
+    def item_voices(self, category_id, item_id):
         return {}
 
 
@@ -343,12 +350,20 @@ def test_list_categories_archived_only(tmp_path: Path) -> None:
     assert result["categories"] == []
 
 
-def test_category_details_delegates(tmp_path: Path) -> None:
+def test_category_details_by_name_delegates(tmp_path: Path) -> None:
     stub = _StubProvider(tmp_path)
     svc = _make_service(tmp_path, [stub])
-    result = svc.category_details("foods")
+    result = svc.category_details_by_name("foods")
     assert result["name"] == "foods"
     assert stub.calls["category_details"] == [("foods",)]
+
+
+def test_category_details_by_id_delegates(tmp_path: Path) -> None:
+    stub = _StubProvider(tmp_path)
+    svc = _make_service(tmp_path, [stub])
+    result = svc.category_details_by_id("C_Foods")
+    assert result["name"] == "C_Foods"
+    assert stub.calls["category_details"] == [("C_Foods",)]
 
 
 def test_create_category_delegates(tmp_path: Path) -> None:
