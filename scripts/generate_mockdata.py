@@ -209,14 +209,18 @@ def generate(content_path: Path, script_path: Path | None = None, output_path: P
 
         items, cat_thumb = build_items(cat_dir, content_path, cat_key)
 
+        # Use category-level image matching the category name if available
+        for f in sorted(cat_dir.iterdir()):
+            if f.suffix.lower() in IMAGE_EXTS and not f.name.endswith('.meta') and f.stem == cat_key:
+                cat_thumb = content_path_uri(f, content_path)
+                break
+
         # Build category name dict
         name_parts = []
         for lang in LANGUAGES:
             val = cat_names[lang][idx] if idx < len(cat_names[lang]) else ''
             name_parts.append(f"{lang}: '{js_str(val)}'")
 
-        # Category image (from first item or category-level image)
-        cat_img_icon = cat_thumb
         cat_name_en = cat_names['en'][idx] if idx < len(cat_names['en']) else cat_key
 
         # Category voices
@@ -245,7 +249,14 @@ def generate(content_path: Path, script_path: Path | None = None, output_path: P
         lines.append('    archived: false,')
         lines.append(f"    thumbnailUri: '{js_str(cat_thumb)}',")
         lines.append('    images: [')
-        lines.append(f"      {{ id: '{cat_key}', name: '{cat_name_en.capitalize()}', language: 'en', iconUri: '{js_str(cat_img_icon)}' }},")
+        for f in sorted(cat_dir.iterdir()):
+            if f.suffix.lower() in IMAGE_EXTS and not f.name.endswith('.meta'):
+                stem = f.stem
+                if stem.startswith(f'{cat_key}_') and len(stem) == len(cat_key) + 3:
+                    num = stem[len(cat_key) + 1:]
+                    if num.isdigit():
+                        uri = content_path_uri(f, content_path)
+                        lines.append(f"      {{ id: '{cat_ids[idx]}-img-{num}', name: '{cat_name_en} {num}', language: 'en', iconUri: '{js_str(uri)}' }},")
         lines.append('    ],')
         lines.append('    voices: [')
         for v in cat_voices:
