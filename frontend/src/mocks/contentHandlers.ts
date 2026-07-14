@@ -20,6 +20,9 @@ const slugify = (value: string): string =>
 const findCategory = (categoryName: string) =>
   mockCategories.find((c) => c.name['en']?.toLowerCase() === categoryName.toLowerCase())
 
+const findCategoryById = (categoryId: string) =>
+  mockCategories.find((c) => c.id.toLowerCase() === categoryId.toLowerCase())
+
 const findItem = (category: ReturnType<typeof findCategory>, itemId: string) =>
   category?.items.find((item) => item.id === itemId || item.name.toLowerCase() === itemId.toLowerCase())
 
@@ -176,8 +179,8 @@ export const contentHandlers = [
     })
   }),
 
-  http.get('/api/v1/content/categories/:category_name/images', ({ params }) => {
-    const category = findCategory(String(params.category_name))
+  http.get('/api/v1/content/categories/:category_id/images', ({ params }) => {
+    const category = findCategoryById(String(params.category_id))
     if (!category) return new HttpResponse(null, { status: 404 })
     return HttpResponse.json({
       category_id: category.id,
@@ -397,11 +400,11 @@ export const contentHandlers = [
   }),
 
   // Add an image to a category
-  http.post('/api/v1/content/categories/:category_name/images', () => new HttpResponse(null, { status: 404 })),
+  http.post('/api/v1/content/categories/:category_id/images', () => HttpResponse.json({}, { status: 201 })),
 
-  // Rename a category image
-  http.put('/api/v1/content/categories/:category_name/images/:image_id', () => new HttpResponse(null, { status: 404 })),
+  // Replace a category image file
+  http.put('/api/v1/content/categories/:category_id/images/:image_id', () => HttpResponse.json({})),
 
   // Delete category image
-  http.delete('/api/v1/content/categories/:category_name/images/:image_id', () => new HttpResponse(null, { status: 404 })),
+  http.delete('/api/v1/content/categories/:category_id/images/:image_id', () => new HttpResponse(null, { status: 404 })),
 ]

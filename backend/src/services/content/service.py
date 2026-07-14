@@ -9,6 +9,7 @@ from typing_extensions import override
 from src.services.content.models import (
     ArchiveCategory,
     CategoryDetails,
+    CategoryImage,
     CategoryList,
     ContentProvider,
     ContentProviderUnavailableError,
@@ -104,6 +105,25 @@ class ContentService(Service):
             image_data,
             image_extension,
         )
+
+    def add_category_image(
+            self,
+            category_id: str,
+            image_data: bytes,
+            image_extension: str = ".png",
+    ) -> CategoryImage:
+        """Add a new image to a category via the active provider."""
+        return self._select_provider().add_category_image(category_id, image_data, image_extension)
+
+    def update_category_image(
+            self,
+            category_id: str,
+            image_id: str,
+            image_data: bytes,
+            image_extension: str = ".png",
+    ) -> CategoryImage:
+        """Replace an existing category image via the active provider."""
+        return self._select_provider().update_category_image(category_id, image_id, image_data, image_extension)
 
     def archive_category(self, category_name: str) -> ArchiveCategory:
         """Archive a category via the active provider."""

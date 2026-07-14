@@ -1,0 +1,35 @@
+### Add a new image to a category
+# category_id is used to locate the category; the file is written as {{category_name}}_1.png
+# in the category folder (first available index).
+POST {{settings.CONTENT_URL}}/categories/{{category_id}}/images
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="image"; filename="sample_image.png"
+Content-Type: image/png
+
+< ./fixtures/sample_image.png
+--WebAppBoundary--
+
+### Override an existing category image
+# image_id is the on-disk filename stem; replaces the file created by the request above (run it first).
+PUT {{settings.CONTENT_URL}}/categories/{{category_id}}/images/{{category_name}}_1
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="image"; filename="sample_image.png"
+Content-Type: image/png
+
+< ./fixtures/sample_image.png
+--WebAppBoundary--
+
+### Override an existing category image - not found
+PUT {{settings.CONTENT_URL}}/categories/{{category_id}}/images/does_not_exist
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="image"; filename="sample_image.png"
+Content-Type: image/png
+
+< ./fixtures/sample_image.png
+--WebAppBoundary--

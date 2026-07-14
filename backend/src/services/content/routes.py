@@ -58,8 +58,8 @@ CATEGORIES = "/categories"
 CATEGORIES_RESTORE = "/categories/restore"
 CATEGORY = "/categories/{category_name}"
 CATEGORY_DETAILS = "/categories/{category_id}"
-CATEGORY_IMAGES = "/categories/{category_name}/images"
-CATEGORY_IMAGE = "/categories/{category_name}/images/{image_id}"
+CATEGORY_IMAGES = "/categories/{category_id}/images"
+CATEGORY_IMAGE = "/categories/{category_id}/images/{image_id}"
 CATEGORY_VOICES = "/categories/{category_name}/voices"
 CATEGORY_VOICE = "/categories/{category_name}/voices/{voice_id}"
 CATEGORY_ITEMS = "/categories/{category_name}/items"
@@ -326,13 +326,13 @@ def categories_remove(
     ),
 )
 def categories_images_list(
-        category_name: str,
+        category_id: str,
         service: ContentServiceDep,
         _user: dict = Depends(get_current_user),
 ) -> CategoryImagesResponse:
     """List images for a category."""
     try:
-        result = service.category_details_by_name(category_name)
+        result = service.category_details_by_id(category_id)
     except CategoryNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except InvalidCategoryNameError as exc:
@@ -351,7 +351,7 @@ def categories_images_list(
 
 @router.post(
     CATEGORY_IMAGES,
-    response_model=None,
+    response_model=ImageResponse,
     status_code=status.HTTP_201_CREATED,
     tags=[TAG_CATEGORIES_IMAGES],
     summary="Add an image to a category",
@@ -363,40 +363,73 @@ def categories_images_list(
     ),
 )
 def categories_images_add(
-        category_name: str,
+        category_id: str,
         service: ContentServiceDep,
+        image: UploadFile = File(...),
         _user: dict = Depends(get_current_user),
-) -> None:
+) -> ImageResponse:
     """Add a new image to a category."""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=f"Not implemented: add image to category '{category_name}'",
-    )
+    if not image.filename:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Image file is required")
+    image_data = image.file.read()
+    if not image_data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Image file is empty")
+    ext = ""
+    if "." in image.filename:
+        ext = "." + image.filename.rsplit(".", 1)[-1].lower()
+    if ext not in (".png", ".jpg", ".jpeg"):
+        ext = ".png"
+    try:
+        result = service.add_category_image(category_id, image_data, ext)
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidCategoryNameError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return ImageResponse(id=result.id, file_uri=result.file_uri)
 
 
 @router.put(
     CATEGORY_IMAGE,
-    response_model=None,
-    status_code=status.HTTP_501_NOT_IMPLEMENTED,
+    response_model=ImageResponse,
+    status_code=status.HTTP_200_OK,
     tags=[TAG_CATEGORIES_IMAGES],
-    summary="Rename a category image",
+    summary="Replace a category image file",
     description=(
-            "Rename an image file associated with a category. "
-            "The image must exist in the category and be accessible. "
+            "Upload a new file to override an existing image associated with a category. "
+            "The image must already exist in the category; its file contents (and extension, "
+            "if the uploaded file differs) are replaced. "
             "Requires authentication."
     ),
 )
 def categories_images_update(
-        category_name: str,
+        category_id: str,
         image_id: str,
         service: ContentServiceDep,
+        image: UploadFile = File(...),
         _user: dict = Depends(get_current_user),
-) -> None:
-    """Rename a category image."""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=f"Not implemented: update image '{image_id}' in category '{category_name}'",
-    )
+) -> ImageResponse:
+    """Override an existing category image with an uploaded file."""
+    if not image.filename:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Image file is required")
+    image_data = image.file.read()
+    if not image_data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Image file is empty")
+    ext = ""
+    if "." in image.filename:
+        ext = "." + image.filename.rsplit(".", 1)[-1].lower()
+    if ext not in (".png", ".jpg", ".jpeg"):
+        ext = ".png"
+    try:
+        result = service.update_category_image(category_id, image_id, image_data, ext)
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidCategoryNameError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return ImageResponse(id=result.id, file_uri=result.file_uri)
 
 
 @router.delete(
@@ -410,7 +443,7 @@ def categories_images_update(
     )
 )
 def categories_images_delete(
-        category_name: str,
+        category_id: str,
         image_id: str,
         service: ContentServiceDep,
         _user: dict = Depends(get_current_user),
@@ -418,7 +451,7 @@ def categories_images_delete(
     """Delete or reset a category image."""
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=f"Not implemented: delete image '{image_id}' in category '{category_name}'",
+        detail=f"Not implemented: delete image '{image_id}' in category '{category_id}'",
     )
 
 

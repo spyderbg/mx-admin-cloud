@@ -107,7 +107,7 @@ watch(
     await ensureCategoriesLoaded()
     const name = sharedCategoryNames.value.get(id)
     if (!name) return
-    await ensureCategoryDetail(name)
+    await ensureCategoryDetail(id, name)
   },
   { immediate: true },
 )

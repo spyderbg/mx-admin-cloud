@@ -9,6 +9,7 @@ import type {
   CreateCategoryBody,
   CreateCategoryResponse,
   CreateItemResponse,
+  ImageResponse,
   ItemImagesResponse,
   ItemListResponse,
   ItemSummary,
@@ -57,8 +58,20 @@ export const categoriesRemove = async (categoryName: string): Promise<RemoveCate
 }
 
 /** List all images in a category */
-export const categoriesImagesList = async (categoryName: string): Promise<CategoryImagesResponse> => {
-  const r = await client.get<CategoryImagesResponse>(`/content/categories/${categoryName}/images`)
+export const categoriesImagesList = async (categoryId: string): Promise<CategoryImagesResponse> => {
+  const r = await client.get<CategoryImagesResponse>(`/content/categories/${categoryId}/images`)
+  return r.data
+}
+
+/** Add an image to a category */
+export const categoriesImagesAdd = async (categoryId: string, formData: FormData): Promise<ImageResponse> => {
+  const r = await client.post<ImageResponse>(`/content/categories/${categoryId}/images`, formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+  return r.data
+}
+
+/** Replace a category image file */
+export const categoriesImagesUpdate = async (categoryId: string, imageId: string, formData: FormData): Promise<ImageResponse> => {
+  const r = await client.put<ImageResponse>(`/content/categories/${categoryId}/images/${imageId}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } })
   return r.data
 }
 

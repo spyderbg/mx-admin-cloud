@@ -200,6 +200,25 @@ class ContentProvider(ServiceProvider, ABC):
         """Create an item folder with image, translations, and voice files."""
 
     @abstractmethod
+    def add_category_image(
+            self,
+            category_id: str,
+            image_data: bytes,
+            image_extension: str = ".png",
+    ) -> CategoryImage:
+        """Add a new image file to a category."""
+
+    @abstractmethod
+    def update_category_image(
+            self,
+            category_id: str,
+            image_id: str,
+            image_data: bytes,
+            image_extension: str = ".png",
+    ) -> CategoryImage:
+        """Replace the file contents of an existing category image."""
+
+    @abstractmethod
     def archive_category(self, category_id: str) -> ArchiveCategory:
         """Move a category from the content directory to the archive."""
 

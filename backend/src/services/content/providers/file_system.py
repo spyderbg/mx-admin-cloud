@@ -181,6 +181,28 @@ class FileSystemContentProvider(ContentProvider):
                 return i
         return 1
 
+    @staticmethod
+    def _first_available_category_image_index(category_path: Path, category_name: str) -> int:
+        """First 1-based index where no ``{category_name}_{index}.{ext}`` file exists yet."""
+        for i in range(1, 1000):
+            if not any(
+                    (category_path / f"{category_name}_{i}{ext}").exists()
+                    for ext in _IMAGE_EXTENSIONS
+            ):
+                return i
+        return 1
+
+    @staticmethod
+    def _find_category_image_file(category_path: Path, image_id: str) -> Path | None:
+        """Return the existing category image file whose stem matches *image_id*, if any."""
+        if not FileSystemContentProvider._is_safe_category_name(image_id):
+            return None
+        for ext in _IMAGE_EXTENSIONS:
+            candidate = category_path / f"{image_id}{ext}"
+            if candidate.is_file():
+                return candidate
+        return None
+
     def _folder_name_for_id(self, category_id: str) -> str:
         """Return the on-disk folder name registered for *category_id*.
 
@@ -580,6 +602,63 @@ class FileSystemContentProvider(ContentProvider):
             folder=folder_name,
             image_id=image_id,
         )
+
+    def add_category_image(
+            self,
+            category_id: str,
+            image_data: bytes,
+            image_extension: str = ".png",
+    ) -> CategoryImage:
+        category_name = self._folder_name_for_id(category_id)
+        category_path = self._category_path(category_name)
+        if not category_path.exists() or not category_path.is_dir():
+            raise CategoryNotFoundError(f"Category '{category_name}': directory is missing.")
+
+        ext = image_extension if image_extension.startswith(".") else f".{image_extension}"
+        if ext.lower() not in _IMAGE_EXTENSIONS:
+            ext = ".png"
+
+        idx = self._first_available_category_image_index(category_path, category_name)
+        file_name = f"{category_name}_{idx}{ext}"
+        image_path = category_path / file_name
+        try:
+            with open(image_path, "wb") as fh:
+                fh.write(image_data)
+        except OSError as exc:
+            raise ContentOperationError(f"Failed to save category image: {exc}") from exc
+
+        return CategoryImage(id=image_path.stem, file_uri=f"/content/{category_name}/{file_name}")
+
+    def update_category_image(
+            self,
+            category_id: str,
+            image_id: str,
+            image_data: bytes,
+            image_extension: str = ".png",
+    ) -> CategoryImage:
+        category_name = self._folder_name_for_id(category_id)
+        category_path = self._category_path(category_name)
+        if not category_path.exists() or not category_path.is_dir():
+            raise CategoryNotFoundError(f"Category '{category_name}': directory is missing.")
+
+        existing = self._find_category_image_file(category_path, image_id)
+        if existing is None:
+            raise CategoryNotFoundError(f"Image '{image_id}' not found in category '{category_name}'.")
+
+        ext = image_extension if image_extension.startswith(".") else f".{image_extension}"
+        if ext.lower() not in _IMAGE_EXTENSIONS:
+            ext = ".png"
+
+        new_path = category_path / f"{image_id}{ext}"
+        try:
+            if existing != new_path:
+                existing.unlink()
+            with open(new_path, "wb") as fh:
+                fh.write(image_data)
+        except OSError as exc:
+            raise ContentOperationError(f"Failed to update category image: {exc}") from exc
+
+        return CategoryImage(id=new_path.stem, file_uri=f"/content/{category_name}/{new_path.name}")
 
     def archive_category(self, category_id: str) -> ArchiveCategory:
         category_name = self._folder_name_for_id(category_id)

@@ -4,10 +4,10 @@ GET {{settings.CONTENT_URL}}/categories
 
 
 ### Category details
-GET {{settings.CONTENT_URL}}/categories/{{category_name}}
+GET {{settings.CONTENT_URL}}/categories/{{category_id}}
 
 ### Category images
-GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_name}}/images
+GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_id}}/images
 
 ### Category voices
 GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_name}}/voices

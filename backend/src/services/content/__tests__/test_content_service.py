@@ -107,6 +107,31 @@ class _StubProvider(ContentProvider):
             image_id=f"I_{english_word.title()}",
         ))
 
+    def add_category_image(
+            self,
+            category_id: str,
+            image_data: bytes,
+            image_extension: str = ".png",
+    ) -> dict[str, Any]:
+        self._record("add_category_image", category_id, image_data, image_extension)
+        return self._returns.get("add_category_image", {
+            "id": f"{category_id}_1",
+            "file_uri": f"/content/{category_id}/{category_id}_1{image_extension}",
+        })
+
+    def update_category_image(
+            self,
+            category_id: str,
+            image_id: str,
+            image_data: bytes,
+            image_extension: str = ".png",
+    ) -> dict[str, Any]:
+        self._record("update_category_image", category_id, image_id, image_data, image_extension)
+        return self._returns.get("update_category_image", {
+            "id": image_id,
+            "file_uri": f"/content/{category_id}/{image_id}{image_extension}",
+        })
+
     def archive_category(self, category_id: str) -> dict[str, Any]:
         self._record("archive_category", category_id)
         return self._returns.get("archive_category", {
@@ -195,6 +220,12 @@ class _ConcreteProvider(ContentProvider):
         return {}
 
     def create_item(self, category_id, english_word, image_data, image_extension=".png"):
+        return {}
+
+    def add_category_image(self, category_id, image_data, image_extension=".png"):
+        return {}
+
+    def update_category_image(self, category_id, image_id, image_data, image_extension=".png"):
         return {}
 
     def archive_category(self, category_id):

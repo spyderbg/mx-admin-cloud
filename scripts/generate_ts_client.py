@@ -97,6 +97,23 @@ def collect_imported_schema_names(tree: ast.Module) -> set[str]:
     return names
 
 
+def collect_path_constants(tree: ast.Module) -> dict[str, str]:
+    """Return name -> value for module-level string constants (e.g. route path templates).
+
+    routes.py defines paths as constants (``CATEGORY_IMAGES = "/categories/{category_id}/images"``)
+    referenced by name in the decorator (``@router.get(CATEGORY_IMAGES)``) rather than as inline
+    string literals, so decorator path arguments must be resolved through this table.
+    """
+    constants: dict[str, str] = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and isinstance(node.value, ast.Constant) \
+                        and isinstance(node.value.value, str):
+                    constants[target.id] = node.value.value
+    return constants
+
+
 def collect_annotated_aliases(tree: ast.Module) -> set[str]:
     """Return names assigned via ``X = Annotated[..., Depends(...)]``.
 
@@ -152,6 +169,7 @@ def parse_routes(tree: ast.Module) -> list[dict]:
     schema_names = collect_imported_schema_names(tree)
     annotated_deps = collect_annotated_aliases(tree)
     prefix = extract_router_prefix(tree)
+    path_constants = collect_path_constants(tree)
 
     routes: list[dict] = []
 
@@ -173,7 +191,7 @@ def parse_routes(tree: ast.Module) -> list[dict]:
             continue
 
         # --- Decode decorator arguments ---
-        path = _extract_path(route_dec)
+        path = _extract_path(route_dec, path_constants)
         response_model = _extract_response_model(route_dec)
         summary = _extract_summary(route_dec)
         dec_status_code = _extract_status_code(route_dec)
@@ -245,9 +263,14 @@ def parse_routes(tree: ast.Module) -> list[dict]:
     return routes
 
 
-def _extract_path(dec: ast.Call) -> str:
-    if dec.args and isinstance(dec.args[0], ast.Constant) and isinstance(dec.args[0].value, str):
-        return dec.args[0].value
+def _extract_path(dec: ast.Call, constants: dict[str, str] | None = None) -> str:
+    if not dec.args:
+        return "/"
+    arg0 = dec.args[0]
+    if isinstance(arg0, ast.Constant) and isinstance(arg0.value, str):
+        return arg0.value
+    if isinstance(arg0, ast.Name) and constants and arg0.id in constants:
+        return constants[arg0.id]
     return "/"
 
 
@@ -612,6 +635,7 @@ def _parse_all_routes_for_handlers(tree: ast.Module) -> list[dict]:
     is_501, dec_status_code.
     """
     prefix = extract_router_prefix(tree)
+    path_constants = collect_path_constants(tree)
     routes: list[dict] = []
 
     for node in ast.walk(tree):
@@ -632,7 +656,7 @@ def _parse_all_routes_for_handlers(tree: ast.Module) -> list[dict]:
         if route_dec is None:
             continue
 
-        path = _extract_path(route_dec)
+        path = _extract_path(route_dec, path_constants)
         summary = _extract_summary(route_dec)
         dec_status_code = _extract_status_code(route_dec)
         is_501 = dec_status_code == 501 or parse_function_body_raises_501(node.body)

@@ -213,7 +213,7 @@ onMounted(async () => {
   if (!categoryId || !itemId) return
   const cat = sharedCategories.value.find((c) => c.id.toLowerCase() === categoryId.toLowerCase())
   if (!cat) return
-  await ensureCategoryDetail(cat.name.en)
+  await ensureCategoryDetail(cat.id, cat.name.en)
   await ensureItemDetail(cat.name.en, itemId)
 })
 
@@ -221,7 +221,7 @@ watch(() => route.params.categoryId as string, async (id) => {
   if (!id) return
   const cat = sharedCategories.value.find((c) => c.id.toLowerCase() === id.toLowerCase())
   if (!cat) return
-  await ensureCategoryDetail(cat.name.en)
+  await ensureCategoryDetail(cat.id, cat.name.en)
   const itemId = route.params.itemId as string
   if (itemId) await ensureItemDetail(cat.name.en, itemId)
 })

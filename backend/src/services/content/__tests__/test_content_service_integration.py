@@ -22,6 +22,7 @@ from src.services.content.models import (
     ArchiveCategory,
     CategoryConflictError,
     CategoryDetails,
+    CategoryImage,
     CategoryList,
     CategoryNotFoundError,
     ContentProvider,
@@ -106,6 +107,29 @@ class _StubContentProvider(ContentProvider):
             item=english_word,
             folder=english_word.lower(),
             image_id=f"I_{english_word.title()}",
+        ))
+
+    def add_category_image(
+            self,
+            category_id: str,
+            image_data: bytes,
+            image_extension: str = ".png",
+    ) -> CategoryImage:
+        return self._call("add_category_image", CategoryImage(
+            id=f"{category_id}_1",
+            file_uri=f"/content/{category_id}/{category_id}_1{image_extension}",
+        ))
+
+    def update_category_image(
+            self,
+            category_id: str,
+            image_id: str,
+            image_data: bytes,
+            image_extension: str = ".png",
+    ) -> CategoryImage:
+        return self._call("update_category_image", CategoryImage(
+            id=image_id,
+            file_uri=f"/content/{category_id}/{image_id}{image_extension}",
         ))
 
     def archive_category(self, category_name: str) -> ArchiveCategory:
@@ -737,13 +761,77 @@ async def test_list_category_voices_returns_501(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_add_image_to_category_returns_501(client: AsyncClient) -> None:
+async def test_add_image_to_category_returns_201(client: AsyncClient) -> None:
     response = await client.post(
         "/api/v1/content/categories/foods/images",
-        files={"file": ("img.png", _PNG_BYTES, "image/png")},
-        data={"name": "apple"},
+        files={"image": ("img.png", _PNG_BYTES, "image/png")},
     )
-    assert response.status_code == 501
+    assert response.status_code == 201
+    body = response.json()
+    assert body["id"] == "foods_1"
+    assert body["file_uri"] == "/content/foods/foods_1.png"
+
+
+@pytest.mark.asyncio
+async def test_add_image_to_category_forwards_bytes_and_extension(tmp_resolved: Path) -> None:
+    seen: list[tuple[str, bytes, str]] = []
+
+    class _TrackingProvider(_StubContentProvider):
+        def add_category_image(self, category_id, image_data, image_extension=".png"):
+            seen.append((category_id, image_data, image_extension))
+            return CategoryImage(id=f"{category_id}_1", file_uri="/content/foods/foods_1.jpg")
+
+    app = _make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        await c.post(
+            "/api/v1/content/categories/foods/images",
+            files={"image": ("photo.JPEG", _PNG_BYTES, "image/jpeg")},
+        )
+    assert seen == [("foods", _PNG_BYTES, ".jpeg")]
+
+
+@pytest.mark.asyncio
+async def test_update_category_image_returns_200(client: AsyncClient) -> None:
+    response = await client.put(
+        "/api/v1/content/categories/foods/images/I_Apple",
+        files={"image": ("img.png", _PNG_BYTES, "image/png")},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == "I_Apple"
+    assert body["file_uri"] == "/content/foods/I_Apple.png"
+
+
+@pytest.mark.asyncio
+async def test_update_category_image_forwards_bytes_and_extension(tmp_resolved: Path) -> None:
+    seen: list[tuple[str, str, bytes, str]] = []
+
+    class _TrackingProvider(_StubContentProvider):
+        def update_category_image(self, category_id, image_id, image_data, image_extension=".png"):
+            seen.append((category_id, image_id, image_data, image_extension))
+            return CategoryImage(id=image_id, file_uri=f"/content/foods/{image_id}.jpg")
+
+    app = _make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        await c.put(
+            "/api/v1/content/categories/foods/images/I_Apple",
+            files={"image": ("photo.bmp", _PNG_BYTES, "image/bmp")},
+        )
+    assert seen == [("foods", "I_Apple", _PNG_BYTES, ".png")]
+
+
+@pytest.mark.asyncio
+async def test_update_category_image_not_found_returns_404(client: AsyncClient, tmp_resolved: Path) -> None:
+    provider = _StubContentProvider(tmp_resolved).raises(
+        "update_category_image", CategoryNotFoundError("Image 'I_Missing' not found in category 'foods'."),
+    )
+    app = _make_app(provider, tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.put(
+            "/api/v1/content/categories/foods/images/I_Missing",
+            files={"image": ("img.png", _PNG_BYTES, "image/png")},
+        )
+    assert response.status_code == 404
 
 
 @pytest.mark.asyncio

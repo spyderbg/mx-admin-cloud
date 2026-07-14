@@ -30,6 +30,26 @@ components:
       - archived_at
       title: ArchivedEntry
       description: Single archived category entry.
+    Body_categories_images_add_api_v1_content_categories__category_id__images_post:
+      properties:
+        image:
+          type: string
+          contentMediaType: application/octet-stream
+          title: Image
+      type: object
+      required:
+      - image
+      title: Body_categories_images_add_api_v1_content_categories__category_id__images_post
+    Body_categories_images_update_api_v1_content_categories__category_id__images__image_id__put:
+      properties:
+        image:
+          type: string
+          contentMediaType: application/octet-stream
+          title: Image
+      type: object
+      required:
+      - image
+      title: Body_categories_images_update_api_v1_content_categories__category_id__images__image_id__put
     Body_create_item_endpoint_api_v1_content_items_post:
       properties:
         image:
@@ -711,23 +731,23 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
 
   # ─── Categories Images ──────────────────────────────────────────────
-  /api/v1/content/categories/{category_name}/images:
+  /api/v1/content/categories/{category_id}/images:
     get:
       tags:
       - Categories Images
       summary: List all images in a category
       description: Retrieve a list of all image files associated with a content category.
         Returns the image filenames and their metadata. Requires authentication.
-      operationId: categories_images_list_api_v1_content_categories__category_name__images_get
+      operationId: categories_images_list_api_v1_content_categories__category_id__images_get
       security:
       - OAuth2PasswordBearer: []
       parameters:
-      - name: category_name
+      - name: category_id
         in: path
         required: true
         schema:
           type: string
-          title: Category Name
+          title: Category Id
       responses:
         '200':
           description: Successful Response
@@ -748,57 +768,72 @@ paths:
       description: Add a new image file to the specified content category. This endpoint
         allows uploading image files and associating them with a category. The image
         file will be stored in the category's image directory. Requires authentication.
-      operationId: categories_images_add_api_v1_content_categories__category_name__images_post
+      operationId: categories_images_add_api_v1_content_categories__category_id__images_post
       security:
       - OAuth2PasswordBearer: []
       parameters:
-      - name: category_name
+      - name: category_id
         in: path
         required: true
         schema:
           type: string
-          title: Category Name
+          title: Category Id
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_categories_images_add_api_v1_content_categories__category_id__images_post'
       responses:
         '201':
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/ImageResponse'
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/content/categories/{category_name}/images/{image_id}:
+  /api/v1/content/categories/{category_id}/images/{image_id}:
     put:
       tags:
       - Categories Images
-      summary: Rename a category image
-      description: Rename an image file associated with a category. The image must exist
-        in the category and be accessible. Requires authentication.
-      operationId: categories_images_update_api_v1_content_categories__category_name__images__image_id__put
+      summary: Replace a category image file
+      description: Upload a new file to override an existing image associated with a
+        category. The image must already exist in the category; its file contents (and
+        extension, if the uploaded file differs) are replaced. Requires authentication.
+      operationId: categories_images_update_api_v1_content_categories__category_id__images__image_id__put
       security:
       - OAuth2PasswordBearer: []
       parameters:
-      - name: category_name
+      - name: category_id
         in: path
         required: true
         schema:
           type: string
-          title: Category Name
+          title: Category Id
       - name: image_id
         in: path
         required: true
         schema:
           type: string
           title: Image Id
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_categories_images_update_api_v1_content_categories__category_id__images__image_id__put'
       responses:
-        '501':
+        '200':
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/ImageResponse'
         '422':
           description: Validation Error
           content:
@@ -811,16 +846,16 @@ paths:
       summary: Delete category image
       description: Delete or reset a category image.Removes the specified image from
         the given category.
-      operationId: categories_images_delete_api_v1_content_categories__category_name__images__image_id__delete
+      operationId: categories_images_delete_api_v1_content_categories__category_id__images__image_id__delete
       security:
       - OAuth2PasswordBearer: []
       parameters:
-      - name: category_name
+      - name: category_id
         in: path
         required: true
         schema:
           type: string
-          title: Category Name
+          title: Category Id
       - name: image_id
         in: path
         required: true

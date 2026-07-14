@@ -213,7 +213,10 @@ export const ensureCategoriesLoaded = async (): Promise<CategoryFull[]> => {
  * Load voices for a category. Items are guaranteed to exist from the basic load.
  * Skips if already loaded. Used by CategoriesView.
  */
-export const ensureCategoryDetail = async (categoryName: string): Promise<CategoryFull | null> => {
+export const ensureCategoryDetail = async (
+  categoryId: string,
+  categoryName: string,
+): Promise<CategoryFull | null> => {
   if (loadedCategoryDetailIds.has(categoryName)) {
     return sharedCategories.value.find((c) => c.name.en === categoryName) ?? null
   }
@@ -228,8 +231,8 @@ export const ensureCategoryDetail = async (categoryName: string): Promise<Catego
       })),
     ),
     withInflight(
-      `cat-images:${categoryName}`,
-      () => categoriesImagesList(categoryName).catch(() => ({}) as CategoryImagesResponse),
+      `cat-images:${categoryId}`,
+      () => categoriesImagesList(categoryId).catch(() => ({}) as CategoryImagesResponse),
     ),
   ])
 
