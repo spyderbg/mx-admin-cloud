@@ -219,6 +219,10 @@ class ContentProvider(ServiceProvider, ABC):
         """Replace the file contents of an existing category image."""
 
     @abstractmethod
+    def delete_category_image(self, category_id: str, image_id: str) -> None:
+        """Delete an existing image file from a category."""
+
+    @abstractmethod
     def archive_category(self, category_id: str) -> ArchiveCategory:
         """Move a category from the content directory to the archive."""
 

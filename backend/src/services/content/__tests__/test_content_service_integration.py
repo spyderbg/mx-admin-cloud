@@ -132,6 +132,9 @@ class _StubContentProvider(ContentProvider):
             file_uri=f"/content/{category_id}/{image_id}{image_extension}",
         ))
 
+    def delete_category_image(self, category_id: str, image_id: str) -> None:
+        self._call("delete_category_image", None)
+
     def archive_category(self, category_name: str) -> ArchiveCategory:
         return self._call("archive_category", ArchiveCategory(
             archived=True,
@@ -835,6 +838,31 @@ async def test_update_category_image_not_found_returns_404(client: AsyncClient, 
 
 
 @pytest.mark.asyncio
-async def test_delete_category_image_returns_501(client: AsyncClient) -> None:
+async def test_delete_category_image_returns_204(client: AsyncClient) -> None:
     response = await client.delete("/api/v1/content/categories/foods/images/I_Apple")
-    assert response.status_code == 501
+    assert response.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_delete_category_image_forwards_ids(tmp_resolved: Path) -> None:
+    seen: list[tuple[str, str]] = []
+
+    class _TrackingProvider(_StubContentProvider):
+        def delete_category_image(self, category_id, image_id):
+            seen.append((category_id, image_id))
+
+    app = _make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        await c.delete("/api/v1/content/categories/foods/images/I_Apple")
+    assert seen == [("foods", "I_Apple")]
+
+
+@pytest.mark.asyncio
+async def test_delete_category_image_not_found_returns_404(client: AsyncClient, tmp_resolved: Path) -> None:
+    provider = _StubContentProvider(tmp_resolved).raises(
+        "delete_category_image", CategoryNotFoundError("Image 'I_Missing' not found in category 'foods'."),
+    )
+    app = _make_app(provider, tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.delete("/api/v1/content/categories/foods/images/I_Missing")
+    assert response.status_code == 404

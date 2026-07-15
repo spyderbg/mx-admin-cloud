@@ -183,10 +183,10 @@ class FileSystemContentProvider(ContentProvider):
 
     @staticmethod
     def _first_available_category_image_index(category_path: Path, category_name: str) -> int:
-        """First 1-based index where no ``{category_name}_{index}.{ext}`` file exists yet."""
+        """First 1-based index where no ``{category_name}_{index:02d}.{ext}`` file exists yet."""
         for i in range(1, 1000):
             if not any(
-                    (category_path / f"{category_name}_{i}{ext}").exists()
+                    (category_path / f"{category_name}_{i:02d}{ext}").exists()
                     for ext in _IMAGE_EXTENSIONS
             ):
                 return i
@@ -619,7 +619,7 @@ class FileSystemContentProvider(ContentProvider):
             ext = ".png"
 
         idx = self._first_available_category_image_index(category_path, category_name)
-        file_name = f"{category_name}_{idx}{ext}"
+        file_name = f"{category_name}_{idx:02d}{ext}"
         image_path = category_path / file_name
         try:
             with open(image_path, "wb") as fh:
@@ -659,6 +659,21 @@ class FileSystemContentProvider(ContentProvider):
             raise ContentOperationError(f"Failed to update category image: {exc}") from exc
 
         return CategoryImage(id=new_path.stem, file_uri=f"/content/{category_name}/{new_path.name}")
+
+    def delete_category_image(self, category_id: str, image_id: str) -> None:
+        category_name = self._folder_name_for_id(category_id)
+        category_path = self._category_path(category_name)
+        if not category_path.exists() or not category_path.is_dir():
+            raise CategoryNotFoundError(f"Category '{category_name}': directory is missing.")
+
+        existing = self._find_category_image_file(category_path, image_id)
+        if existing is None:
+            raise CategoryNotFoundError(f"Image '{image_id}' not found in category '{category_name}'.")
+
+        try:
+            existing.unlink()
+        except OSError as exc:
+            raise ContentOperationError(f"Failed to delete category image: {exc}") from exc
 
     def archive_category(self, category_id: str) -> ArchiveCategory:
         category_name = self._folder_name_for_id(category_id)

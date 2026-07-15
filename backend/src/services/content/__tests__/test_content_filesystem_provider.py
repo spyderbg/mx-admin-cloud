@@ -482,6 +482,45 @@ def test_archive_category_moves_to_archive(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# delete_category_image
+# ---------------------------------------------------------------------------
+
+def test_delete_category_image_category_not_found(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    content_root.mkdir()
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        with pytest.raises(CategoryNotFoundError):
+            provider.delete_category_image("C_Nonexistent", "foods_01")
+
+
+def test_delete_category_image_image_not_found(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    (content_root / "foods").mkdir(parents=True)
+    _write_category_registry(content_root, [("C_Foods", "Foods")])
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        with pytest.raises(CategoryNotFoundError):
+            provider.delete_category_image("C_Foods", "foods_01")
+
+
+def test_delete_category_image_removes_file(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    (content_root / "foods").mkdir(parents=True)
+    image_path = content_root / "foods" / "foods_01.png"
+    image_path.write_bytes(b"fake-png")
+    _write_category_registry(content_root, [("C_Foods", "Foods")])
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        provider.delete_category_image("C_Foods", "foods_01")
+
+    assert not image_path.exists()
+
+
+# ---------------------------------------------------------------------------
 # rename_category
 # ---------------------------------------------------------------------------
 

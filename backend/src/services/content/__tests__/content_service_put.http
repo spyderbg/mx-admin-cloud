@@ -33,3 +33,12 @@ Content-Type: image/png
 
 < ./fixtures/sample_image.png
 --WebAppBoundary--
+
+### Delete an existing category image
+# image_id is the on-disk filename stem; deletes the file created by the POST request above (run it first).
+DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/images/{{category_name}}_1
+
+### Delete a category image - not found
+DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/images/does_not_exist
+
+

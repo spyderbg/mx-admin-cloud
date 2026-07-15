@@ -125,6 +125,10 @@ class ContentService(Service):
         """Replace an existing category image via the active provider."""
         return self._select_provider().update_category_image(category_id, image_id, image_data, image_extension)
 
+    def delete_category_image(self, category_id: str, image_id: str) -> None:
+        """Delete an existing category image via the active provider."""
+        self._select_provider().delete_category_image(category_id, image_id)
+
     def archive_category(self, category_name: str) -> ArchiveCategory:
         """Archive a category via the active provider."""
         provider = self._select_provider()

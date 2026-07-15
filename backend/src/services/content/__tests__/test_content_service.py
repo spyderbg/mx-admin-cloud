@@ -132,6 +132,10 @@ class _StubProvider(ContentProvider):
             "file_uri": f"/content/{category_id}/{image_id}{image_extension}",
         })
 
+    def delete_category_image(self, category_id: str, image_id: str) -> None:
+        self._record("delete_category_image", category_id, image_id)
+        return self._returns.get("delete_category_image")
+
     def archive_category(self, category_id: str) -> dict[str, Any]:
         self._record("archive_category", category_id)
         return self._returns.get("archive_category", {
@@ -227,6 +231,9 @@ class _ConcreteProvider(ContentProvider):
 
     def update_category_image(self, category_id, image_id, image_data, image_extension=".png"):
         return {}
+
+    def delete_category_image(self, category_id, image_id):
+        return None
 
     def archive_category(self, category_id):
         return {}

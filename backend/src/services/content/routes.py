@@ -449,10 +449,14 @@ def categories_images_delete(
         _user: dict = Depends(get_current_user),
 ) -> None:
     """Delete or reset a category image."""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=f"Not implemented: delete image '{image_id}' in category '{category_id}'",
-    )
+    try:
+        service.delete_category_image(category_id, image_id)
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidCategoryNameError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 # endregion
