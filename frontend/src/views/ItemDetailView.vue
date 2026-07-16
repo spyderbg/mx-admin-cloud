@@ -227,8 +227,15 @@ watch(() => route.params.categoryId as string, async (id) => {
 })
 
 watch(() => route.params.itemId as string, async (itemId) => {
+  document.documentElement.scrollTop = 0
+  document.body.scrollTop = 0
   if (!itemId || !category.value) return
   await ensureItemDetail(category.value.name.en, itemId)
+})
+
+watch(() => route.fullPath, () => {
+  document.documentElement.scrollTop = 0
+  document.body.scrollTop = 0
 })
 
 const category = computed(() => {

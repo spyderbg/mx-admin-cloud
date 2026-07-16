@@ -58,6 +58,7 @@ import { useContentLanguage } from '../composables/useContentLanguage'
 import { ensureCategoriesLoaded, sharedCategories } from '../api/cache'
 import { breadcrumbCategoriesLabel, localizedCategoryLabel, itemCountLabel } from '../utils/localizedLabels'
 import { toPascalCaseWords } from '../utils/pascalCaseWords'
+import cameraPlaceholderUrl from '../assets/images/samples/camera-placeholder.svg'
 
 
 const router = useRouter()
@@ -83,7 +84,7 @@ const cards = computed(() => {
   return sharedCategories.value.map((c) => ({
     id: c.id,
     name: localizedCategoryLabel(c, lang),
-    iconUri: c.thumbnail_uri ?? `/content/${localizedCategoryLabel(c, 'en')}/icon.png`,
+    iconUri: c.thumbnail_uri ?? cameraPlaceholderUrl,
     itemCount: c.items_count ?? 0,
   }))
 })
