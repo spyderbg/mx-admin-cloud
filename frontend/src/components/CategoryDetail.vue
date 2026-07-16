@@ -16,7 +16,7 @@
             <label class="text-muted small mb-1 d-block">{{ categoryIconLabel(contentLanguage) }}</label>
             <div class="category-icon-wrap">
               <img
-                :src="category.thumbnail_uri ?? ''"
+                :src="thumbnailSrc"
                 alt="Category icon"
                 class="rounded"
               />
@@ -32,7 +32,8 @@
                 <button
                   type="button"
                   class="btn-icon btn-icon-delete"
-                  title="Delete category"
+                  title="Delete category image"
+                  :disabled="!category.thumbnail_uri"
                   @click="openDeleteModal"
                 >
                   <i class="mdi mdi-delete"></i>
@@ -125,20 +126,20 @@
     </div>
   </Teleport>
 
-  <!-- Delete confirmation modal -->
+  <!-- Delete category image confirmation modal -->
   <Teleport to="body">
     <div v-if="showDelete" class="cd-modal-overlay" @click.self="showDelete = false">
       <div class="cd-modal-box">
         <div class="cd-modal-header">
-          <h5 class="cd-modal-title">Delete category</h5>
+          <h5 class="cd-modal-title">Delete category image</h5>
           <button type="button" class="cd-modal-close" @click="showDelete = false">&times;</button>
         </div>
         <div class="cd-modal-body">
-          Are you sure you want to delete the category "{{ categoryLabel }}"?
+          Are you sure you want to delete the image for category "{{ categoryLabel }}"?
         </div>
         <div class="cd-modal-footer">
           <button type="button" class="btn btn-secondary" @click="showDelete = false">Cancel</button>
-          <button type="button" class="btn btn-danger" @click="showDelete = false; $emit('delete')">Delete</button>
+          <button type="button" class="btn btn-danger" @click="confirmImageDelete">Delete</button>
         </div>
       </div>
     </div>
@@ -256,14 +257,36 @@
       </div>
     </div>
   </Teleport>
+
+  <!-- Result toast -->
+  <Teleport to="body">
+    <div
+      v-if="toast"
+      class="cd-toast"
+      :class="toast.variant === 'error' ? 'cd-toast-error' : 'cd-toast-success'"
+    >
+      <i :class="toast.variant === 'error' ? 'mdi mdi-alert-circle' : 'mdi mdi-check-circle'"></i>
+      <span>{{ toast.message }}</span>
+    </div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import type { AxiosError } from 'axios'
 import ServerWord from './ServerWord.vue'
 import type { CategoryFull, Language, Voice } from '../types/viewModels'
 import { categoryNameLabel, categoryIconLabel, categoryVoicesLabel } from '../utils/localizedLabels'
 import { useContentLanguage } from '../composables/useContentLanguage'
+import {
+  categoriesImagesAdd,
+  categoriesImagesDelete,
+  categoriesImagesUpdate,
+  categoriesVoicesAdd,
+  categoriesVoicesDelete,
+  categoriesVoicesUpdate,
+} from '../api/contentClient'
+import { ensureCategoryDetail, invalidateCategoryDetail } from '../api/cache'
 
 const props = defineProps<{
   category: CategoryFull
@@ -277,7 +300,7 @@ const emit = defineEmits<{
   edit: []
   delete: []
   rename: [name: string]
-  'edit-voice': [voice: Voice]
+  'edit-voice': [voice: Voice, action: 'add' | 'update']
   'delete-voice': [voice: Voice]
   'rename-voice': [voice: Voice, name: string]
 }>()
@@ -305,6 +328,61 @@ const editingVoice = ref<Voice | null>(null)
 const renameValue = ref('')
 const playingVoiceId = ref<string | null>(null)
 let activeAudio: HTMLAudioElement | null = null
+
+type ToastVariant = 'success' | 'error'
+const toast = ref<{ message: string; variant: ToastVariant } | null>(null)
+let toastTimer: ReturnType<typeof setTimeout> | null = null
+
+// Cache-busting: file URIs are stable across re-uploads (same filename), so the
+// browser keeps serving the old cached file unless we force a fresh request.
+const thumbnailVersion = ref(0)
+const voiceVersions = ref<Record<string, number>>({})
+
+function cacheBustedUri(uri: string | null | undefined, version: number): string {
+  if (!uri) return ''
+  if (!version) return uri
+  const sep = uri.includes('?') ? '&' : '?'
+  return `${uri}${sep}v=${version}`
+}
+
+const thumbnailSrc = computed(() => cacheBustedUri(props.category.thumbnail_uri, thumbnailVersion.value))
+
+function voiceSrc(voice: Voice): string {
+  return cacheBustedUri(voice.fileUri, voiceVersions.value[voice.id] ?? 0)
+}
+
+function showToast(message: string, variant: ToastVariant): void {
+  if (variant === 'error') {
+    console.error(message)
+  } else {
+    console.log(message)
+  }
+  if (toastTimer) clearTimeout(toastTimer)
+  toast.value = { message, variant }
+  toastTimer = setTimeout(() => { toast.value = null }, 4000)
+}
+
+function extractErrorMessage(err: unknown): string {
+  const axiosErr = err as AxiosError<{ detail?: string }>
+  return axiosErr.response?.data?.detail || 'The operation failed. Please try again.'
+}
+
+const actionPastTense: Record<string, string> = { add: 'added', update: 'updated', delete: 'deleted' }
+function pastTense(action?: string | null): string {
+  return action ? (actionPastTense[action] ?? action) : 'saved'
+}
+
+function imageIdFromUri(uri: string): string {
+  const filename = uri.split('/').pop() ?? ''
+  const dot = filename.lastIndexOf('.')
+  return dot > -1 ? filename.slice(0, dot) : filename
+}
+
+async function refreshCategory(): Promise<void> {
+  const name = props.category.name.en
+  invalidateCategoryDetail(name)
+  await ensureCategoryDetail(props.category.id, name)
+}
 
 function hasAudio(voice: Voice): boolean {
   return !!(voice.fileUri && voice.fileUri.trim())
@@ -342,13 +420,21 @@ function closeVoiceDeleteModal(): void {
   voiceDeleteTarget.value = null
 }
 
-function confirmVoiceDelete(): void {
+async function confirmVoiceDelete(): Promise<void> {
   const voice = voiceDeleteTarget.value
   showVoiceDeleteConfirm.value = false
   voiceDeleteTarget.value = null
-  if (voice) {
-    if (playingVoiceId.value === voice.id) stopAudio()
+  if (!voice) return
+  if (playingVoiceId.value === voice.id) stopAudio()
+
+  try {
+    const result = await categoriesVoicesDelete(props.category.id, voice.id)
+    showToast(`Voice for ${voice.name} (${voice.language.toUpperCase()}) ${pastTense(result.action)}.`, 'success')
+    await refreshCategory()
+    voiceVersions.value = { ...voiceVersions.value, [voice.id]: (voiceVersions.value[voice.id] ?? 0) + 1 }
     emit('delete-voice', voice)
+  } catch (err) {
+    showToast(extractErrorMessage(err), 'error')
   }
 }
 
@@ -384,6 +470,22 @@ function openDeleteModal(): void {
   showDelete.value = true
 }
 
+async function confirmImageDelete(): Promise<void> {
+  showDelete.value = false
+  const uri = props.category.thumbnail_uri
+  if (!uri || !uri.trim()) return
+
+  try {
+    const result = await categoriesImagesDelete(props.category.id, imageIdFromUri(uri))
+    showToast(`Category icon ${pastTense(result.action)}.`, 'success')
+    await refreshCategory()
+    thumbnailVersion.value += 1
+    emit('delete')
+  } catch (err) {
+    showToast(extractErrorMessage(err), 'error')
+  }
+}
+
 function openVoiceUpload(voice: Voice): void {
   closeAllModals()
   editingVoice.value = voice
@@ -395,12 +497,33 @@ function closeVoiceUpload(): void {
   editingVoice.value = null
 }
 
-function onVoiceFileSelected(e: Event): void {
+async function onVoiceFileSelected(e: Event): Promise<void> {
   const input = e.target as HTMLInputElement
-  if (input.files?.length && editingVoice.value) {
-    console.log('Voice file selected:', editingVoice.value.id, input.files[0].name)
-    emit('edit-voice', editingVoice.value)
-    closeVoiceUpload()
+  const file = input.files?.[0]
+  const voice = editingVoice.value
+  closeVoiceUpload()
+  if (!file || !voice) return
+
+  const wasAdd = !hasAudio(voice)
+  try {
+    let result
+    if (wasAdd) {
+      const formData = new FormData()
+      formData.append('language', voice.language)
+      formData.append('audio', file)
+      result = await categoriesVoicesAdd(props.category.id, formData)
+    } else {
+      const formData = new FormData()
+      formData.append('audio', file)
+      result = await categoriesVoicesUpdate(props.category.id, voice.id, formData)
+    }
+    showToast(`Voice for ${voice.name} (${voice.language.toUpperCase()}) ${pastTense(result.action)}.`, 'success')
+    await refreshCategory()
+    voiceVersions.value = { ...voiceVersions.value, [voice.id]: (voiceVersions.value[voice.id] ?? 0) + 1 }
+    emit('edit-voice', voice, wasAdd ? 'add' : 'update')
+  } catch (err) {
+    showToast(extractErrorMessage(err), 'error')
+  } finally {
     input.value = ''
   }
 }
@@ -419,12 +542,27 @@ function confirmRename(): void {
   showRename.value = false
 }
 
-function onFileSelected(e: Event): void {
+async function onFileSelected(e: Event): Promise<void> {
   const input = e.target as HTMLInputElement
-  if (input.files?.length) {
-    console.log('Category icon file selected:', input.files[0].name)
+  const file = input.files?.[0]
+  showUpload.value = false
+  if (!file) return
+
+  const formData = new FormData()
+  formData.append('image', file)
+  try {
+    const existingUri = props.category.thumbnail_uri
+    const result = existingUri && existingUri.trim()
+      ? await categoriesImagesUpdate(props.category.id, imageIdFromUri(existingUri), formData)
+      : await categoriesImagesAdd(props.category.id, formData)
+    showToast(`Category icon ${pastTense(result.action)}.`, 'success')
+    await refreshCategory()
+    thumbnailVersion.value += 1
     emit('edit')
-    showUpload.value = false
+  } catch (err) {
+    showToast(extractErrorMessage(err), 'error')
+  } finally {
+    input.value = ''
   }
 }
 
@@ -435,7 +573,7 @@ function togglePlay(voice: Voice): void {
     return
   }
   stopAudio()
-  const audio = new Audio(voice.fileUri)
+  const audio = new Audio(voiceSrc(voice))
   activeAudio = audio
   playingVoiceId.value = voice.id
   audio.addEventListener('ended', stopAudio, { once: true })
@@ -492,6 +630,14 @@ function togglePlay(voice: Voice): void {
 }
 .btn-icon-delete:hover {
   background: #b91c1c;
+}
+.btn-icon:disabled {
+  background: #d1d5db;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+.btn-icon:disabled:hover {
+  background: #d1d5db;
 }
 
 /* Voice cards: wrap to extra rows when the column is narrow (was fixed 4 columns). */
@@ -655,5 +801,32 @@ function togglePlay(voice: Voice): void {
   display: flex;
   justify-content: flex-end;
   gap: 0.5rem;
+}
+
+/* Result toast */
+.cd-toast {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 360px;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 0.9rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+.cd-toast i {
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+.cd-toast-success {
+  background: #16a34a;
+}
+.cd-toast-error {
+  background: #dc2626;
 }
 </style>

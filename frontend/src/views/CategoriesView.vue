@@ -121,8 +121,8 @@ const onDeleteCategory = (): void => {
 const onRenameCategory = (name: string): void => {
   console.log('Rename category:', category.value?.id, 'to', name)
 }
-const onEditVoice = (voice: Voice): void => {
-  console.log('Edit voice:', voice.id)
+const onEditVoice = (voice: Voice, action: 'add' | 'update'): void => {
+  console.log(`${action === 'add' ? 'Add' : 'Edit'} voice:`, voice.id)
 }
 const onRenameVoice = (voice: Voice, name: string): void => {
   console.log('Rename voice word:', voice.id, 'to', name)

@@ -488,17 +488,21 @@ class FileSystemContentProvider(ContentProvider):
             category_path: Path,
             category_name: str,
     ) -> list[CategoryVoice]:
-        """Build CategoryVoice list from existing TTS files in the category directory."""
+        """Build one CategoryVoice entry per supported language.
+
+        A language with no TTS file yet is still included (file_uri=None) so
+        callers can render a placeholder/upload slot for it.
+        """
         voices = []
         for lang in settings.SUPPORTED_LANGUAGES:
             voice_file = category_path / _CATEGORY_VOICE_MP3.format(category_name, lang)
-            if voice_file.exists() and voice_file.is_file():
-                voices.append(CategoryVoice(
-                    id=f"{category_name}-v-{lang}",
-                    language=lang,
-                    type="tts",
-                    file_uri=f"/content/{category_name}/{category_name}_{lang}.mp3",
-                ))
+            has_file = voice_file.exists() and voice_file.is_file()
+            voices.append(CategoryVoice(
+                id=f"{category_name}-v-{lang}",
+                language=lang,
+                type="tts",
+                file_uri=f"/content/{category_name}/{voice_file.name}" if has_file else None,
+            ))
         return voices
 
     def create_category(self, category_name: str) -> CreateCategory:
