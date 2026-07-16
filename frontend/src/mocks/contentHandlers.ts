@@ -407,4 +407,19 @@ export const contentHandlers = [
 
   // Delete category image
   http.delete('/api/v1/content/categories/:category_id/images/:image_id', () => new HttpResponse(null, { status: 404 })),
+
+  // Get details of a specific content category
+  http.get('/api/v1/content/categories/:category_id', () => HttpResponse.json({})),
+
+  // List voices for a category
+  http.get('/api/v1/content/categories/:category_id/voices', () => HttpResponse.json({})),
+
+  // Add a voice to a category
+  http.post('/api/v1/content/categories/:category_id/voices', () => HttpResponse.json({}, { status: 201 })),
+
+  // Replace audio for a category voice
+  http.put('/api/v1/content/categories/:category_id/voices/:voice_id', () => HttpResponse.json({})),
+
+  // Delete a voice from a category
+  http.delete('/api/v1/content/categories/:category_id/voices/:voice_id', () => new HttpResponse(null, { status: 204 })),
 ]

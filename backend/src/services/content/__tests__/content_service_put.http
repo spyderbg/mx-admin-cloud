@@ -1,5 +1,5 @@
 ### Add a new image to a category
-# category_id is used to locate the category; the file is written as {{category_name}}_1.png
+# category_id is used to locate the category;
 # in the category folder (first available index).
 POST {{settings.CONTENT_URL}}/categories/{{category_id}}/images
 Content-Type: multipart/form-data; boundary=WebAppBoundary
@@ -13,7 +13,7 @@ Content-Type: image/png
 
 ### Override an existing category image
 # image_id is the on-disk filename stem; replaces the file created by the request above (run it first).
-PUT {{settings.CONTENT_URL}}/categories/{{category_id}}/images/{{category_name}}_1
+PUT {{settings.CONTENT_URL}}/categories/{{category_id}}/images/{{category_image_id}}
 Content-Type: multipart/form-data; boundary=WebAppBoundary
 
 --WebAppBoundary
@@ -36,9 +36,71 @@ Content-Type: image/png
 
 ### Delete an existing category image
 # image_id is the on-disk filename stem; deletes the file created by the POST request above (run it first).
-DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/images/{{category_name}}_1
+DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/images/{{category_image_id}}
 
 ### Delete a category image - not found
 DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/images/does_not_exist
 
 
+### Add a new voice to a category
+# language is the ISO code for the new voice; fails with 409 if a voice for
+# that language already exists in the category (categories are seeded with
+# a voice per supported language on creation).
+POST {{settings.CONTENT_URL}}/categories/{{category_id}}/voices
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="language"
+
+de
+--WebAppBoundary
+Content-Disposition: form-data; name="audio"; filename="sample_voice.mp3"
+Content-Type: audio/mpeg
+
+< ./fixtures/sample_voice.mp3
+--WebAppBoundary--
+
+### Add a new voice to a category - already exists
+POST {{settings.CONTENT_URL}}/categories/{{category_id}}/voices
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="language"
+
+en
+--WebAppBoundary
+Content-Disposition: form-data; name="audio"; filename="sample_voice.mp3"
+Content-Type: audio/mpeg
+
+< ./fixtures/sample_voice.mp3
+--WebAppBoundary--
+
+### Replace audio for an existing category voice
+# voice_id identifies the category+language pair; replaces the audio file created at category creation.
+PUT {{settings.CONTENT_URL}}/categories/{{category_id}}/voices/{{category_voice_id}}
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="audio"; filename="sample_voice.mp3"
+Content-Type: audio/mpeg
+
+< ./fixtures/sample_voice.mp3
+--WebAppBoundary--
+
+### Replace audio for an existing category voice - not found
+PUT {{settings.CONTENT_URL}}/categories/{{category_id}}/voices/does_not_exist
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="audio"; filename="sample_voice.mp3"
+Content-Type: audio/mpeg
+
+< ./fixtures/sample_voice.mp3
+--WebAppBoundary--
+
+### Delete an existing category voice
+# Deletes the voice added by the "Add a new voice to a category" request above (run it first).
+DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/voices/{{category_voice_id}}
+
+### Delete a category voice - not found
+DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/voices/does_not_exist

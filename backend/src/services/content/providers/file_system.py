@@ -203,6 +203,25 @@ class FileSystemContentProvider(ContentProvider):
                 return candidate
         return None
 
+    @staticmethod
+    def _category_voice_path(category_path: Path, category_name: str, language: str) -> Path:
+        return category_path / _CATEGORY_VOICE_MP3.format(category_name, language)
+
+    @staticmethod
+    def _find_category_voice_file(
+            category_path: Path,
+            category_name: str,
+            voice_id: str,
+    ) -> tuple[str, Path] | None:
+        """Return the (language, path) for the existing voice file matching *voice_id*, if any."""
+        for lang in settings.SUPPORTED_LANGUAGES:
+            if voice_id != f"{category_name}-v-{lang}":
+                continue
+            voice_path = FileSystemContentProvider._category_voice_path(category_path, category_name, lang)
+            if voice_path.is_file():
+                return lang, voice_path
+        return None
+
     def _folder_name_for_id(self, category_id: str) -> str:
         """Return the on-disk folder name registered for *category_id*.
 
@@ -660,7 +679,7 @@ class FileSystemContentProvider(ContentProvider):
 
         return CategoryImage(id=new_path.stem, file_uri=f"/content/{category_name}/{new_path.name}")
 
-    def delete_category_image(self, category_id: str, image_id: str) -> None:
+    def delete_category_image(self, category_id: str, image_id: str) -> CategoryImage:
         category_name = self._folder_name_for_id(category_id)
         category_path = self._category_path(category_name)
         if not category_path.exists() or not category_path.is_dir():
@@ -670,10 +689,84 @@ class FileSystemContentProvider(ContentProvider):
         if existing is None:
             raise CategoryNotFoundError(f"Image '{image_id}' not found in category '{category_name}'.")
 
+        file_uri = f"/content/{category_name}/{existing.name}"
         try:
             existing.unlink()
         except OSError as exc:
             raise ContentOperationError(f"Failed to delete category image: {exc}") from exc
+
+        return CategoryImage(id=image_id, file_uri=file_uri)
+
+    def add_category_voice(self, category_id: str, language: str, audio_data: bytes) -> CategoryVoice:
+        category_name = self._folder_name_for_id(category_id)
+        category_path = self._category_path(category_name)
+        if not category_path.exists() or not category_path.is_dir():
+            raise CategoryNotFoundError(f"Category '{category_name}': directory is missing.")
+
+        if language not in settings.SUPPORTED_LANGUAGES:
+            raise ContentOperationError(f"Unsupported language: {language}")
+
+        voice_path = self._category_voice_path(category_path, category_name, language)
+        if voice_path.exists():
+            raise CategoryConflictError(
+                f"Voice for language '{language}' already exists in category '{category_name}'.",
+            )
+
+        try:
+            with open(voice_path, "wb") as fh:
+                fh.write(audio_data)
+        except OSError as exc:
+            raise ContentOperationError(f"Failed to save category voice: {exc}") from exc
+
+        return CategoryVoice(
+            id=f"{category_name}-v-{language}",
+            language=language,
+            type="tts",
+            file_uri=f"/content/{category_name}/{voice_path.name}",
+        )
+
+    def update_category_voice(self, category_id: str, voice_id: str, audio_data: bytes) -> CategoryVoice:
+        category_name = self._folder_name_for_id(category_id)
+        category_path = self._category_path(category_name)
+        if not category_path.exists() or not category_path.is_dir():
+            raise CategoryNotFoundError(f"Category '{category_name}': directory is missing.")
+
+        found = self._find_category_voice_file(category_path, category_name, voice_id)
+        if found is None:
+            raise CategoryNotFoundError(f"Voice '{voice_id}' not found in category '{category_name}'.")
+        language, voice_path = found
+
+        try:
+            with open(voice_path, "wb") as fh:
+                fh.write(audio_data)
+        except OSError as exc:
+            raise ContentOperationError(f"Failed to update category voice: {exc}") from exc
+
+        return CategoryVoice(
+            id=voice_id,
+            language=language,
+            type="tts",
+            file_uri=f"/content/{category_name}/{voice_path.name}",
+        )
+
+    def delete_category_voice(self, category_id: str, voice_id: str) -> CategoryVoice:
+        category_name = self._folder_name_for_id(category_id)
+        category_path = self._category_path(category_name)
+        if not category_path.exists() or not category_path.is_dir():
+            raise CategoryNotFoundError(f"Category '{category_name}': directory is missing.")
+
+        found = self._find_category_voice_file(category_path, category_name, voice_id)
+        if found is None:
+            raise CategoryNotFoundError(f"Voice '{voice_id}' not found in category '{category_name}'.")
+        language, voice_path = found
+        file_uri = f"/content/{category_name}/{voice_path.name}"
+
+        try:
+            voice_path.unlink()
+        except OSError as exc:
+            raise ContentOperationError(f"Failed to delete category voice: {exc}") from exc
+
+        return CategoryVoice(id=voice_id, language=language, type="tts", file_uri=file_uri)
 
     def archive_category(self, category_id: str) -> ArchiveCategory:
         category_name = self._folder_name_for_id(category_id)

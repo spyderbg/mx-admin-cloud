@@ -25,6 +25,7 @@ from src.services.content.models import (
     CategoryImage,
     CategoryList,
     CategoryNotFoundError,
+    CategoryVoice,
     ContentProvider,
     CreateCategory,
     CreateItem,
@@ -132,8 +133,11 @@ class _StubContentProvider(ContentProvider):
             file_uri=f"/content/{category_id}/{image_id}{image_extension}",
         ))
 
-    def delete_category_image(self, category_id: str, image_id: str) -> None:
-        self._call("delete_category_image", None)
+    def delete_category_image(self, category_id: str, image_id: str) -> CategoryImage:
+        return self._call("delete_category_image", CategoryImage(
+            id=image_id,
+            file_uri=f"/content/{category_id}/{image_id}.png",
+        ))
 
     def archive_category(self, category_name: str) -> ArchiveCategory:
         return self._call("archive_category", ArchiveCategory(
@@ -167,6 +171,30 @@ class _StubContentProvider(ContentProvider):
 
     def item_voices(self, category_name: str, item_id: str) -> ItemVoices:
         return self._call("item_voices", ItemVoices(item_id=item_id))
+
+    def add_category_voice(self, category_id: str, language: str, audio_data: bytes) -> CategoryVoice:
+        return self._call("add_category_voice", CategoryVoice(
+            id=f"{category_id}-v-{language}",
+            language=language,
+            type="tts",
+            file_uri=f"/content/{category_id}/{category_id}_{language}.mp3",
+        ))
+
+    def update_category_voice(self, category_id: str, voice_id: str, audio_data: bytes) -> CategoryVoice:
+        return self._call("update_category_voice", CategoryVoice(
+            id=voice_id,
+            language="en",
+            type="tts",
+            file_uri=f"/content/{category_id}/{voice_id}.mp3",
+        ))
+
+    def delete_category_voice(self, category_id: str, voice_id: str) -> CategoryVoice:
+        return self._call("delete_category_voice", CategoryVoice(
+            id=voice_id,
+            language="en",
+            type="tts",
+            file_uri=f"/content/{category_id}/{voice_id}.mp3",
+        ))
 
 
 def _make_content_service(
@@ -773,6 +801,7 @@ async def test_add_image_to_category_returns_201(client: AsyncClient) -> None:
     body = response.json()
     assert body["id"] == "foods_1"
     assert body["file_uri"] == "/content/foods/foods_1.png"
+    assert body["action"] == "add"
 
 
 @pytest.mark.asyncio
@@ -803,6 +832,7 @@ async def test_update_category_image_returns_200(client: AsyncClient) -> None:
     body = response.json()
     assert body["id"] == "I_Apple"
     assert body["file_uri"] == "/content/foods/I_Apple.png"
+    assert body["action"] == "update"
 
 
 @pytest.mark.asyncio
@@ -838,9 +868,12 @@ async def test_update_category_image_not_found_returns_404(client: AsyncClient, 
 
 
 @pytest.mark.asyncio
-async def test_delete_category_image_returns_204(client: AsyncClient) -> None:
+async def test_delete_category_image_returns_200(client: AsyncClient) -> None:
     response = await client.delete("/api/v1/content/categories/foods/images/I_Apple")
-    assert response.status_code == 204
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == "I_Apple"
+    assert body["action"] == "delete"
 
 
 @pytest.mark.asyncio
@@ -850,6 +883,7 @@ async def test_delete_category_image_forwards_ids(tmp_resolved: Path) -> None:
     class _TrackingProvider(_StubContentProvider):
         def delete_category_image(self, category_id, image_id):
             seen.append((category_id, image_id))
+            return CategoryImage(id=image_id, file_uri=f"/content/{category_id}/{image_id}.png")
 
     app = _make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:

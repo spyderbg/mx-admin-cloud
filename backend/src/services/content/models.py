@@ -219,8 +219,20 @@ class ContentProvider(ServiceProvider, ABC):
         """Replace the file contents of an existing category image."""
 
     @abstractmethod
-    def delete_category_image(self, category_id: str, image_id: str) -> None:
+    def delete_category_image(self, category_id: str, image_id: str) -> CategoryImage:
         """Delete an existing image file from a category."""
+
+    @abstractmethod
+    def add_category_voice(self, category_id: str, language: str, audio_data: bytes) -> CategoryVoice:
+        """Add a new voice audio file to a category for the given language."""
+
+    @abstractmethod
+    def update_category_voice(self, category_id: str, voice_id: str, audio_data: bytes) -> CategoryVoice:
+        """Replace the audio file contents of an existing category voice."""
+
+    @abstractmethod
+    def delete_category_voice(self, category_id: str, voice_id: str) -> CategoryVoice:
+        """Delete an existing voice audio file from a category."""
 
     @abstractmethod
     def archive_category(self, category_id: str) -> ArchiveCategory:

@@ -11,6 +11,7 @@ from src.services.content.models import (
     CategoryDetails,
     CategoryImage,
     CategoryList,
+    CategoryVoice,
     ContentProvider,
     ContentProviderUnavailableError,
     CreateCategory,
@@ -63,7 +64,7 @@ class ContentService(Service):
         return [p for p in self._providers if p.is_active()]
 
     # ------------------------------------------------------------------
-    # Delegation methods
+    # Category methods
     # ------------------------------------------------------------------
 
     def list_categories(
@@ -90,45 +91,6 @@ class ContentService(Service):
         """Create a new category via the active provider."""
         return self._select_provider().create_category(category_name)
 
-    def create_item(
-            self,
-            category_name: str,
-            english_word: str,
-            image_data: bytes,
-            image_extension: str = ".png",
-    ) -> CreateItem:
-        """Create a content item via the active provider."""
-        provider = self._select_provider()
-        return provider.create_item(
-            provider.category_id_by_name(category_name),
-            english_word,
-            image_data,
-            image_extension,
-        )
-
-    def add_category_image(
-            self,
-            category_id: str,
-            image_data: bytes,
-            image_extension: str = ".png",
-    ) -> CategoryImage:
-        """Add a new image to a category via the active provider."""
-        return self._select_provider().add_category_image(category_id, image_data, image_extension)
-
-    def update_category_image(
-            self,
-            category_id: str,
-            image_id: str,
-            image_data: bytes,
-            image_extension: str = ".png",
-    ) -> CategoryImage:
-        """Replace an existing category image via the active provider."""
-        return self._select_provider().update_category_image(category_id, image_id, image_data, image_extension)
-
-    def delete_category_image(self, category_id: str, image_id: str) -> None:
-        """Delete an existing category image via the active provider."""
-        self._select_provider().delete_category_image(category_id, image_id)
-
     def archive_category(self, category_name: str) -> ArchiveCategory:
         """Archive a category via the active provider."""
         provider = self._select_provider()
@@ -149,6 +111,53 @@ class ContentService(Service):
         provider = self._select_provider()
         return provider.restore_category(provider.category_id_by_name(category_name))
 
+    # ------------------------------------------------------------------
+    # Category images methods
+    # ------------------------------------------------------------------
+
+    def add_category_image(
+            self,
+            category_id: str,
+            image_data: bytes,
+            image_extension: str = ".png",
+    ) -> CategoryImage:
+        """Add a new image to a category via the active provider."""
+        return self._select_provider().add_category_image(category_id, image_data, image_extension)
+
+    def update_category_image(
+            self,
+            category_id: str,
+            image_id: str,
+            image_data: bytes,
+            image_extension: str = ".png",
+    ) -> CategoryImage:
+        """Replace an existing category image via the active provider."""
+        return self._select_provider().update_category_image(category_id, image_id, image_data, image_extension)
+
+    def delete_category_image(self, category_id: str, image_id: str) -> CategoryImage:
+        """Delete an existing category image via the active provider."""
+        return self._select_provider().delete_category_image(category_id, image_id)
+
+    # ------------------------------------------------------------------
+    # Category voices methods
+    # ------------------------------------------------------------------
+
+    def add_category_voice(self, category_id: str, language: str, audio_data: bytes) -> CategoryVoice:
+        """Add a new voice to a category via the active provider."""
+        return self._select_provider().add_category_voice(category_id, language, audio_data)
+
+    def update_category_voice(self, category_id: str, voice_id: str, audio_data: bytes) -> CategoryVoice:
+        """Replace an existing category voice via the active provider."""
+        return self._select_provider().update_category_voice(category_id, voice_id, audio_data)
+
+    def delete_category_voice(self, category_id: str, voice_id: str) -> CategoryVoice:
+        """Delete an existing category voice via the active provider."""
+        return self._select_provider().delete_category_voice(category_id, voice_id)
+
+    # ------------------------------------------------------------------
+    # Item methods
+    # ------------------------------------------------------------------
+
     def item_images(self, category_name: str, item_id: str) -> ItemImages:
         """Return image files for a specific item via the active provider."""
         provider = self._select_provider()
@@ -158,6 +167,30 @@ class ContentService(Service):
         """Return voice files for a specific item via the active provider."""
         provider = self._select_provider()
         return provider.item_voices(provider.category_id_by_name(category_name), item_id)
+
+    def create_item(
+            self,
+            category_name: str,
+            english_word: str,
+            image_data: bytes,
+            image_extension: str = ".png",
+    ) -> CreateItem:
+        """Create a content item via the active provider."""
+        provider = self._select_provider()
+        return provider.create_item(
+            provider.category_id_by_name(category_name),
+            english_word,
+            image_data,
+            image_extension,
+        )
+
+    # ------------------------------------------------------------------
+    # Item images methods
+    # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # Item voices methods
+    # ------------------------------------------------------------------
 
     # ------------------------------------------------------------------
 

@@ -60,8 +60,8 @@ CATEGORY = "/categories/{category_name}"
 CATEGORY_DETAILS = "/categories/{category_id}"
 CATEGORY_IMAGES = "/categories/{category_id}/images"
 CATEGORY_IMAGE = "/categories/{category_id}/images/{image_id}"
-CATEGORY_VOICES = "/categories/{category_name}/voices"
-CATEGORY_VOICE = "/categories/{category_name}/voices/{voice_id}"
+CATEGORY_VOICES = "/categories/{category_id}/voices"
+CATEGORY_VOICE = "/categories/{category_id}/voices/{voice_id}"
 CATEGORY_ITEMS = "/categories/{category_name}/items"
 CATEGORY_ITEM = "/categories/{category_name}/items/{item_id}"
 CATEGORY_ITEM_IMAGES = "/categories/{category_name}/items/{item_id}/images"
@@ -387,7 +387,7 @@ def categories_images_add(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return ImageResponse(id=result.id, file_uri=result.file_uri)
+    return ImageResponse(id=result.id, file_uri=result.file_uri, action="add")
 
 
 @router.put(
@@ -429,12 +429,13 @@ def categories_images_update(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return ImageResponse(id=result.id, file_uri=result.file_uri)
+    return ImageResponse(id=result.id, file_uri=result.file_uri, action="update")
 
 
 @router.delete(
     CATEGORY_IMAGE,
-    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=ImageResponse,
+    status_code=status.HTTP_200_OK,
     tags=[TAG_CATEGORIES_IMAGES],
     summary="Delete category image",
     description=(
@@ -447,16 +448,17 @@ def categories_images_delete(
         image_id: str,
         service: ContentServiceDep,
         _user: dict = Depends(get_current_user),
-) -> None:
+) -> ImageResponse:
     """Delete or reset a category image."""
     try:
-        service.delete_category_image(category_id, image_id)
+        result = service.delete_category_image(category_id, image_id)
     except CategoryNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except InvalidCategoryNameError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return ImageResponse(id=result.id, file_uri=result.file_uri, action="delete")
 
 
 # endregion
@@ -476,13 +478,13 @@ def categories_images_delete(
     ),
 )
 def categories_voices_list(
-        category_name: str,
+        category_id: str,
         service: ContentServiceDep,
         _user: dict = Depends(get_current_user),
 ) -> CategoryVoicesResponse:
     """List voices for a category."""
     try:
-        result = service.category_details_by_name(category_name)
+        result = service.category_details_by_id(category_id)
     except CategoryNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except InvalidCategoryNameError as exc:
@@ -506,7 +508,7 @@ def categories_voices_list(
 
 @router.post(
     CATEGORY_VOICES,
-    response_model=None,
+    response_model=VoiceResponse,
     status_code=status.HTTP_201_CREATED,
     tags=[TAG_CATEGORIES_VOICES],
     summary="Add a voice to a category",
@@ -518,21 +520,37 @@ def categories_voices_list(
     ),
 )
 def categories_voices_add(
-        category_name: str,
+        category_id: str,
         service: ContentServiceDep,
+        language: str = Form(...),
+        audio: UploadFile = File(...),
         _user: dict = Depends(get_current_user),
-) -> None:
+) -> VoiceResponse:
     """Add a voice to a category."""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=f"Not implemented: add voice to category '{category_name}'",
+    if not audio.filename:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Audio file is required")
+    audio_data = audio.file.read()
+    if not audio_data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Audio file is empty")
+    try:
+        result = service.add_category_voice(category_id, language.strip(), audio_data)
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except CategoryConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except InvalidCategoryNameError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return VoiceResponse(
+        id=result.id, language=result.language, type=result.type, file_uri=result.file_uri, action="add",
     )
 
 
 @router.put(
     CATEGORY_VOICE,
-    response_model=None,
-    status_code=status.HTTP_501_NOT_IMPLEMENTED,
+    response_model=VoiceResponse,
+    status_code=status.HTTP_200_OK,
     tags=[TAG_CATEGORIES_VOICES],
     summary="Replace audio for a category voice",
     description=(
@@ -542,23 +560,35 @@ def categories_voices_add(
     ),
 )
 def categories_voices_update(
-        category_name: str,
+        category_id: str,
         voice_id: str,
-        # file: UploadFile = File(...),
         service: ContentServiceDep,
+        audio: UploadFile = File(...),
         _user: dict = Depends(get_current_user),
-) -> None:
+) -> VoiceResponse:
     """Upload or replace audio for a category voice."""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=f"Not implemented: upload audio for voice '{voice_id}' in category '{category_name}'",
+    if not audio.filename:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Audio file is required")
+    audio_data = audio.file.read()
+    if not audio_data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Audio file is empty")
+    try:
+        result = service.update_category_voice(category_id, voice_id, audio_data)
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidCategoryNameError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return VoiceResponse(
+        id=result.id, language=result.language, type=result.type, file_uri=result.file_uri, action="update",
     )
 
 
 @router.delete(
     CATEGORY_VOICE,
-    response_model=None,
-    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=VoiceResponse,
+    status_code=status.HTTP_200_OK,
     tags=[TAG_CATEGORIES_VOICES],
     summary="Delete a voice from a category",
     description=(
@@ -568,15 +598,22 @@ def categories_voices_update(
     ),
 )
 def categories_voices_delete(
-        category_name: str,
+        category_id: str,
         voice_id: str,
         service: ContentServiceDep,
         _user: dict = Depends(get_current_user),
-) -> None:
+) -> VoiceResponse:
     """Delete or reset a category voice."""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=f"Not implemented: delete voice '{voice_id}' in category '{category_name}'",
+    try:
+        result = service.delete_category_voice(category_id, voice_id)
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidCategoryNameError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return VoiceResponse(
+        id=result.id, language=result.language, type=result.type, file_uri=result.file_uri, action="delete",
     )
 
 

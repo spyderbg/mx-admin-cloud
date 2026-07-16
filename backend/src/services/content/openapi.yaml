@@ -50,6 +50,30 @@ components:
       required:
       - image
       title: Body_categories_images_update_api_v1_content_categories__category_id__images__image_id__put
+    Body_categories_voices_add_api_v1_content_categories__category_id__voices_post:
+      properties:
+        language:
+          type: string
+          title: Language
+        audio:
+          type: string
+          contentMediaType: application/octet-stream
+          title: Audio
+      type: object
+      required:
+      - language
+      - audio
+      title: Body_categories_voices_add_api_v1_content_categories__category_id__voices_post
+    Body_categories_voices_update_api_v1_content_categories__category_id__voices__voice_id__put:
+      properties:
+        audio:
+          type: string
+          contentMediaType: application/octet-stream
+          title: Audio
+      type: object
+      required:
+      - audio
+      title: Body_categories_voices_update_api_v1_content_categories__category_id__voices__voice_id__put
     Body_create_item_endpoint_api_v1_content_items_post:
       properties:
         image:
@@ -241,6 +265,15 @@ components:
       - image_id
       title: CreateItemResponse
       description: Response for POST /content/items.
+    FileAction:
+      type: string
+      enum:
+      - add
+      - update
+      - delete
+      title: FileAction
+      description: Action performed on a category/item file (image or voice), echoed
+        back in the response.
     HTTPValidationError:
       properties:
         detail:
@@ -260,6 +293,10 @@ components:
           - type: string
           - type: 'null'
           title: File Uri
+        action:
+          anyOf:
+          - $ref: '#/components/schemas/FileAction'
+          - type: 'null'
       type: object
       required:
       - id
@@ -496,6 +533,10 @@ components:
           - type: string
           - type: 'null'
           title: File Uri
+        action:
+          anyOf:
+          - $ref: '#/components/schemas/FileAction'
+          - type: 'null'
       type: object
       required:
       - id
@@ -863,8 +904,12 @@ paths:
           type: string
           title: Image Id
       responses:
-        '204':
+        '200':
           description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageResponse'
         '422':
           description: Validation Error
           content:
@@ -873,23 +918,23 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
 
   # ─── Categories Voices ──────────────────────────────────────────────
-  /api/v1/content/categories/{category_name}/voices:
+  /api/v1/content/categories/{category_id}/voices:
     get:
       tags:
       - Categories Voices
       summary: List voices for a category
       description: Retrieve a list of all voice files associated with a content category.
         Returns the voice filenames and their metadata. Requires authentication.
-      operationId: categories_voices_list_api_v1_content_categories__category_name__voices_get
+      operationId: categories_voices_list_api_v1_content_categories__category_id__voices_get
       security:
       - OAuth2PasswordBearer: []
       parameters:
-      - name: category_name
+      - name: category_id
         in: path
         required: true
         schema:
           type: string
-          title: Category Name
+          title: Category Id
       responses:
         '200':
           description: Successful Response
@@ -910,29 +955,36 @@ paths:
       description: Add a new voice file to the specified content category. This endpoint
         allows uploading voice files and associating them with a category. The voice
         file will be stored in the category's voice directory. Requires authentication.
-      operationId: categories_voices_add_api_v1_content_categories__category_name__voices_post
+      operationId: categories_voices_add_api_v1_content_categories__category_id__voices_post
       security:
       - OAuth2PasswordBearer: []
       parameters:
-      - name: category_name
+      - name: category_id
         in: path
         required: true
         schema:
           type: string
-          title: Category Name
+          title: Category Id
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_categories_voices_add_api_v1_content_categories__category_id__voices_post'
       responses:
         '201':
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/VoiceResponse'
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/content/categories/{category_name}/voices/{voice_id}:
+  /api/v1/content/categories/{category_id}/voices/{voice_id}:
     put:
       tags:
       - Categories Voices
@@ -940,28 +992,35 @@ paths:
       description: Upload or replace the audio file for a specific voice in a content
         category. This endpoint allows replacing the audio file associated with a voice.
         Requires authentication.
-      operationId: categories_voices_update_api_v1_content_categories__category_name__voices__voice_id__put
+      operationId: categories_voices_update_api_v1_content_categories__category_id__voices__voice_id__put
       security:
       - OAuth2PasswordBearer: []
       parameters:
-      - name: category_name
+      - name: category_id
         in: path
         required: true
         schema:
           type: string
-          title: Category Name
+          title: Category Id
       - name: voice_id
         in: path
         required: true
         schema:
           type: string
           title: Voice Id
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_categories_voices_update_api_v1_content_categories__category_id__voices__voice_id__put'
       responses:
-        '501':
+        '200':
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/VoiceResponse'
         '422':
           description: Validation Error
           content:
@@ -975,16 +1034,16 @@ paths:
       description: Delete or reset a voice file associated with a content category.
         This operation removes the specified voice from the given category. Requires
         authentication.
-      operationId: categories_voices_delete_api_v1_content_categories__category_name__voices__voice_id__delete
+      operationId: categories_voices_delete_api_v1_content_categories__category_id__voices__voice_id__delete
       security:
       - OAuth2PasswordBearer: []
       parameters:
-      - name: category_name
+      - name: category_id
         in: path
         required: true
         schema:
           type: string
-          title: Category Name
+          title: Category Id
       - name: voice_id
         in: path
         required: true
@@ -992,8 +1051,12 @@ paths:
           type: string
           title: Voice Id
       responses:
-        '204':
+        '200':
           description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoiceResponse'
         '422':
           description: Validation Error
           content:

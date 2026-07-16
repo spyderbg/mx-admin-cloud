@@ -19,6 +19,7 @@ import type {
   RenameCategoryResponse,
   RestoreCategoryBody,
   RestoreCategoryResponse,
+  VoiceResponse,
 } from '../types/contentSchemas'
 
 /** List all content categories */
@@ -75,9 +76,33 @@ export const categoriesImagesUpdate = async (categoryId: string, imageId: string
   return r.data
 }
 
+/** Delete category image */
+export const categoriesImagesDelete = async (categoryId: string, imageId: string): Promise<ImageResponse> => {
+  const r = await client.delete<ImageResponse>(`/content/categories/${categoryId}/images/${imageId}`)
+  return r.data
+}
+
 /** List voices for a category */
-export const categoriesVoicesList = async (categoryName: string): Promise<CategoryVoicesResponse> => {
-  const r = await client.get<CategoryVoicesResponse>(`/content/categories/${categoryName}/voices`)
+export const categoriesVoicesList = async (categoryId: string): Promise<CategoryVoicesResponse> => {
+  const r = await client.get<CategoryVoicesResponse>(`/content/categories/${categoryId}/voices`)
+  return r.data
+}
+
+/** Add a voice to a category */
+export const categoriesVoicesAdd = async (categoryId: string, formData: FormData): Promise<VoiceResponse> => {
+  const r = await client.post<VoiceResponse>(`/content/categories/${categoryId}/voices`, formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+  return r.data
+}
+
+/** Replace audio for a category voice */
+export const categoriesVoicesUpdate = async (categoryId: string, voiceId: string, formData: FormData): Promise<VoiceResponse> => {
+  const r = await client.put<VoiceResponse>(`/content/categories/${categoryId}/voices/${voiceId}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+  return r.data
+}
+
+/** Delete a voice from a category */
+export const categoriesVoicesDelete = async (categoryId: string, voiceId: string): Promise<VoiceResponse> => {
+  const r = await client.delete<VoiceResponse>(`/content/categories/${categoryId}/voices/${voiceId}`)
   return r.data
 }
 

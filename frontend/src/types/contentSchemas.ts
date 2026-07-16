@@ -1,6 +1,9 @@
 // Auto-generated – do not edit manually
 import { LocalizedString } from './localization'
 
+/** Action performed on a category/item file (image or voice), echoed back in the response. */
+export type FileAction = 'add' | 'update' | 'delete'
+
 /** Response for archiving (or removing via archive) a category. */
 export interface ArchiveCategoryResponse {
     archived?: boolean | null
@@ -78,6 +81,7 @@ export interface CreateItemResponse {
 export interface ImageResponse {
     id: string
     file_uri?: string | null
+    action?: FileAction | null
 }
 
 /** Response for GET /categories/{name}/items/{item_id}/images. */
@@ -151,4 +155,5 @@ export interface VoiceResponse {
     language: string
     type: string
     file_uri?: string | null
+    action?: FileAction | null
 }

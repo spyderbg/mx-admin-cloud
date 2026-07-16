@@ -205,7 +205,7 @@ export const ensureCategoriesLoaded = async (): Promise<CategoryFull[]> => {
 
 // ---------------------------------------------------------------------------
 // Category voice loader — for CategoriesView
-// 1 request: GET /content/categories/{name}/voices
+// 1 request: GET /content/categories/{category_id}/voices
 // (items already loaded during ensureCategoriesLoaded)
 // ---------------------------------------------------------------------------
 
@@ -223,8 +223,8 @@ export const ensureCategoryDetail = async (
 
   const [voicesResponse, imagesResponse] = await Promise.all([
     withInflight(
-      `cat-voices:${categoryName}`,
-      () => categoriesVoicesList(categoryName).catch(() => ({
+      `cat-voices:${categoryId}`,
+      () => categoriesVoicesList(categoryId).catch(() => ({
         category_id: '',
         name: {} as LocalizedString,
         voices: [],

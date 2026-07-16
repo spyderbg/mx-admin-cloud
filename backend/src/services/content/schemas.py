@@ -2,9 +2,19 @@
 
 from __future__ import annotations
 
+from enum import Enum
+
 from pydantic import BaseModel
 
 from src.core.localization import LocalizedString
+
+
+class FileAction(str, Enum):
+    """Action performed on a category/item file (image or voice), echoed back in the response."""
+
+    ADD = "add"
+    UPDATE = "update"
+    DELETE = "delete"
 
 
 # region Request bodies
@@ -141,6 +151,7 @@ class ImageResponse(BaseModel):
 
     id: str
     file_uri: str | None = None
+    action: FileAction | None = None
 
 
 class CategoryImagesResponse(BaseModel):
@@ -162,6 +173,7 @@ class VoiceResponse(BaseModel):
     language: str
     type: str
     file_uri: str | None = None
+    action: FileAction | None = None
 
 
 class CategoryVoicesResponse(BaseModel):

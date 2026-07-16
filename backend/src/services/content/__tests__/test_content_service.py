@@ -132,9 +132,12 @@ class _StubProvider(ContentProvider):
             "file_uri": f"/content/{category_id}/{image_id}{image_extension}",
         })
 
-    def delete_category_image(self, category_id: str, image_id: str) -> None:
+    def delete_category_image(self, category_id: str, image_id: str) -> dict[str, Any]:
         self._record("delete_category_image", category_id, image_id)
-        return self._returns.get("delete_category_image")
+        return self._returns.get("delete_category_image", {
+            "id": image_id,
+            "file_uri": f"/content/{category_id}/{image_id}.png",
+        })
 
     def archive_category(self, category_id: str) -> dict[str, Any]:
         self._record("archive_category", category_id)
@@ -177,6 +180,27 @@ class _StubProvider(ContentProvider):
     def item_voices(self, category_id: str, item_id: str) -> dict[str, Any]:
         self._record("item_voices", category_id, item_id)
         return self._returns.get("item_voices", {"item_id": item_id, "voices": []})
+
+    def add_category_voice(self, category_id: str, language: str, audio_data: bytes) -> dict[str, Any]:
+        self._record("add_category_voice", category_id, language, audio_data)
+        return self._returns.get("add_category_voice", {
+            "id": f"{category_id}-v-{language}", "language": language, "type": "tts",
+            "file_uri": f"/content/{category_id}/{category_id}_{language}.mp3",
+        })
+
+    def update_category_voice(self, category_id: str, voice_id: str, audio_data: bytes) -> dict[str, Any]:
+        self._record("update_category_voice", category_id, voice_id, audio_data)
+        return self._returns.get("update_category_voice", {
+            "id": voice_id, "language": "en", "type": "tts",
+            "file_uri": f"/content/{category_id}/{voice_id}.mp3",
+        })
+
+    def delete_category_voice(self, category_id: str, voice_id: str) -> dict[str, Any]:
+        self._record("delete_category_voice", category_id, voice_id)
+        return self._returns.get("delete_category_voice", {
+            "id": voice_id, "language": "en", "type": "tts",
+            "file_uri": f"/content/{category_id}/{voice_id}.mp3",
+        })
 
 
 def _make_service(tmp_path: Path, providers: list[Any] | None = None) -> ContentService:
@@ -233,7 +257,7 @@ class _ConcreteProvider(ContentProvider):
         return {}
 
     def delete_category_image(self, category_id, image_id):
-        return None
+        return {}
 
     def archive_category(self, category_id):
         return {}
@@ -251,6 +275,15 @@ class _ConcreteProvider(ContentProvider):
         return {}
 
     def item_voices(self, category_id, item_id):
+        return {}
+
+    def add_category_voice(self, category_id, language, audio_data):
+        return {}
+
+    def update_category_voice(self, category_id, voice_id, audio_data):
+        return {}
+
+    def delete_category_voice(self, category_id, voice_id):
         return {}
 
 
