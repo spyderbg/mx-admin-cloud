@@ -82,6 +82,18 @@ export const categoriesImagesDelete = async (categoryId: string, imageId: string
   return r.data
 }
 
+/** Create or replace a category's icon/thumbnail image */
+export const categoriesIconUpdate = async (categoryId: string, formData: FormData): Promise<ImageResponse> => {
+  const r = await client.post<ImageResponse>(`/content/categories/${categoryId}/icon`, formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+  return r.data
+}
+
+/** Delete a category's icon/thumbnail image */
+export const categoriesIconDelete = async (categoryId: string): Promise<ImageResponse> => {
+  const r = await client.delete<ImageResponse>(`/content/categories/${categoryId}/icon`)
+  return r.data
+}
+
 /** List voices for a category */
 export const categoriesVoicesList = async (categoryId: string): Promise<CategoryVoicesResponse> => {
   const r = await client.get<CategoryVoicesResponse>(`/content/categories/${categoryId}/voices`)

@@ -360,6 +360,7 @@ def test_category_details_returns_items_and_csv(tmp_path: Path) -> None:
     _write_category_registry(content_root, [("C_Foods", "Foods")])
     (content_root / "categories_fr.csv").write_text("Aliments\n", encoding="utf-8")
     (content_root / "descriptions_en.csv").write_text("Delicious meals and snacks.\n", encoding="utf-8")
+    (content_root / "descriptions_fr.csv").write_text("Repas delicieux et collations.\n", encoding="utf-8")
     (cat / "items_en.csv").write_text("apple\nbanana\n", encoding="utf-8")
     (cat / "items_fr.csv").write_text("pomme\nbanane\n", encoding="utf-8")
     (cat / "items_ids.csv").write_text("I_Apple\nI_Banana\n", encoding="utf-8")
@@ -372,7 +373,10 @@ def test_category_details_returns_items_and_csv(tmp_path: Path) -> None:
 
     assert result.id == "C_Foods"
     assert result.name == LocalizedString({"en": "Foods", "fr": "Aliments"})
-    assert result.description == "Delicious meals and snacks."
+    assert result.description == LocalizedString({
+        "en": "Delicious meals and snacks.",
+        "fr": "Repas delicieux et collations.",
+    })
     assert len(result.items) == 2
     assert result.items[0].id == "I_Apple"
     assert result.items[0].name == LocalizedString({"en": "apple", "fr": "pomme"})

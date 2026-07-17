@@ -137,7 +137,7 @@ async function _loadCategoriesBasic(): Promise<CategoryFull[]> {
     return {
       id: summary.id,
       name: new LocalizedString(nameDict),
-      description: '',
+      description: new LocalizedString({}),
       thumbnail_uri: summary.thumbnail_uri,
       items_count: summary.items_count,
       images: [],
@@ -168,7 +168,8 @@ async function _loadCategoriesBasic(): Promise<CategoryFull[]> {
         imagesCount: itemSummary.images_count ?? 0,
       }
     })
-    return { ...cat, items, description: detail.description ?? '' }
+    const descriptionDict = detail.description as unknown as Record<string, string> | undefined
+    return { ...cat, items, description: new LocalizedString(descriptionDict ?? {}) }
   })
 
   const nameMap = new Map<string, string>()

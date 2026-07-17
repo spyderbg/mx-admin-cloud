@@ -41,7 +41,7 @@
               </div>
             </div>
           </div>
-          <p class="text-muted mb-0" style="font-size: 0.9rem;">{{ category.description }}</p>
+          <p class="text-muted mb-0" style="font-size: 0.9rem;">{{ category.description.get(contentLanguage) }}</p>
         </div>
 
         <div class="col-lg-7 col-md-7">

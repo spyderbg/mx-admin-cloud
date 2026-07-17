@@ -95,7 +95,7 @@ export const contentHandlers = [
     mockCategories.push({
       id,
       name: { en: name },
-      description: '',
+      description: {},
       images: [],
       archived: false,
       thumbnailUri: '',
@@ -118,7 +118,7 @@ export const contentHandlers = [
       mockCategories.push({
         id: slugify(name),
         name: { en: name },
-        description: '',
+        description: {},
         images: [],
         archived: false,
         thumbnailUri: '',
@@ -422,4 +422,10 @@ export const contentHandlers = [
 
   // Delete a voice from a category
   http.delete('/api/v1/content/categories/:category_id/voices/:voice_id', () => new HttpResponse(null, { status: 204 })),
+
+  // Create or replace a category's icon/thumbnail image
+  http.post('/api/v1/content/categories/:category_id/icon', () => HttpResponse.json({})),
+
+  // Delete a category's icon/thumbnail image
+  http.delete('/api/v1/content/categories/:category_id/icon', () => HttpResponse.json({})),
 ]

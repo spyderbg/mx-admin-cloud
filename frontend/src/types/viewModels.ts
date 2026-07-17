@@ -36,7 +36,7 @@ export interface Item {
 export interface CategoryFull {
     id: string
     name: LocalizedString
-    description: string
+    description: LocalizedString
     thumbnail_uri?: string | null
     items_count?: number
     images: Image[]

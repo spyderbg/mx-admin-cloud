@@ -180,7 +180,7 @@ def generate(content_path: Path, script_path: Path | None = None, output_path: P
     lines.append('interface MockCategory {')
     lines.append('  id: string')
     lines.append('  name: Record<string, string>')
-    lines.append('  description: string')
+    lines.append('  description: Record<string, string>')
     lines.append('  images: Image[]')
     lines.append('  archived: boolean')
     lines.append('  thumbnailUri?: string')
@@ -240,12 +240,15 @@ def generate(content_path: Path, script_path: Path | None = None, output_path: P
             })
 
         # Description
-        desc_en = descriptions['en'][idx] if idx < len(descriptions['en']) else ''
+        desc_parts = []
+        for lang in LANGUAGES:
+            val = descriptions[lang][idx] if idx < len(descriptions[lang]) else ''
+            desc_parts.append(f"{lang}: '{js_str(val)}'")
 
         lines.append('  {')
         lines.append(f"    id: '{cat_ids[idx]}',")
         lines.append(f"    name: {{ {', '.join(name_parts)} }},")
-        lines.append(f"    description: '{js_str(desc_en)}',")
+        lines.append(f"    description: {{ {', '.join(desc_parts)} }},")
         lines.append('    archived: false,')
         lines.append(f"    thumbnailUri: '{js_str(cat_thumb)}',")
         lines.append('    images: [')

@@ -30,6 +30,16 @@ components:
       - archived_at
       title: ArchivedEntry
       description: Single archived category entry.
+    Body_categories_icon_update_api_v1_content_categories__category_id__icon_post:
+      properties:
+        image:
+          type: string
+          contentMediaType: application/octet-stream
+          title: Image
+      type: object
+      required:
+      - image
+      title: Body_categories_icon_update_api_v1_content_categories__category_id__icon_post
     Body_categories_images_add_api_v1_content_categories__category_id__images_post:
       properties:
         image:
@@ -105,9 +115,12 @@ components:
           description: 'Language-code → translation map (e.g. {"en": "dog", "fr":
             "chien"})'
         description:
-          type: string
+          additionalProperties:
+            type: string
+          type: object
           title: Description
-          default: ''
+          description: 'Language-code → translation map (e.g. {"en": "dog", "fr":
+            "chien"})'
         items:
           items:
             $ref: '#/components/schemas/ItemSummary'
@@ -772,6 +785,72 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
 
   # ─── Categories Images ──────────────────────────────────────────────
+  /api/v1/content/categories/{category_id}/icon:
+    post:
+      tags:
+      - Categories Images
+      summary: Create or replace a category's icon/thumbnail image
+      description: Upload a file to set the category's icon image, creating it if it
+        doesn't yet exist or overriding it otherwise. The icon is stored as '{category_name}/{category_name}.<ext>'
+        and is used for both the category thumbnail and its app icon. Requires authentication.
+      operationId: categories_icon_update_api_v1_content_categories__category_id__icon_post
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_categories_icon_update_api_v1_content_categories__category_id__icon_post'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Categories Images
+      summary: Delete a category's icon/thumbnail image
+      description: Delete the category's icon image. The icon is stored as '{category_name}/{category_name}.<ext>'
+        and is used for both the category thumbnail and its app icon. Requires authentication.
+      operationId: categories_icon_delete_api_v1_content_categories__category_id__icon_delete
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/content/categories/{category_id}/images:
     get:
       tags:

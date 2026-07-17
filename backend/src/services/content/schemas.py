@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from enum import Enum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from src.core.localization import LocalizedString
 
@@ -80,7 +80,7 @@ class CategoryDetailsResponse(BaseModel):
 
     id: str
     name: LocalizedString
-    description: str = ""
+    description: LocalizedString = Field(default_factory=lambda: LocalizedString({}))
     items: list[ItemSummary] = []
 
 

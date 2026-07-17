@@ -308,14 +308,18 @@ class FileSystemContentProvider(ContentProvider):
 
         return ids_by_folder, names_by_folder
 
-    def _load_category_description(self, category_name: str) -> str:
-        """Return the English description for *category_name* from descriptions_en.csv."""
+    def _load_category_localized_descriptions(self, category_name: str) -> dict[str, str]:
+        """Return per-language descriptions for *category_name* from descriptions_{lang}.csv.
+
+        Descriptions share row position with the category's entry in categories_en.csv,
+        the same convention used by _load_category_localized_names.
+        """
         root = self._content_root()
         try:
             with open(root / _CATEGORIES_LANG_CSV.format("en"), newline="", encoding="utf-8") as fh:
                 en_names = [r[0].strip() for r in csv.reader(fh) if r and r[0].strip()]
         except (OSError, csv.Error):
-            return ""
+            return {}
 
         index = next(
             (
@@ -325,17 +329,19 @@ class FileSystemContentProvider(ContentProvider):
             None,
         )
         if index is None:
-            return ""
+            return {}
 
-        desc_path = root / _DESCRIPTIONS_LANG_CSV.format("en")
-        try:
-            with open(desc_path, newline="", encoding="utf-8") as fh:
-                rows = [r[0].strip() for r in csv.reader(fh) if r]
-            if index < len(rows):
-                return rows[index]
-        except (OSError, csv.Error):
-            pass
-        return ""
+        descriptions: dict[str, str] = {}
+        for lang in settings.SUPPORTED_LANGUAGES:
+            desc_path = root / _DESCRIPTIONS_LANG_CSV.format(lang)
+            try:
+                with open(desc_path, newline="", encoding="utf-8") as fh:
+                    rows = [r[0].strip() for r in csv.reader(fh) if r]
+                if index < len(rows):
+                    descriptions[lang] = rows[index]
+            except (OSError, csv.Error):
+                pass
+        return descriptions
 
     # ------------------------------------------------------------------
     # ContentProvider interface
@@ -395,7 +401,7 @@ class FileSystemContentProvider(ContentProvider):
         category_localized_name = LocalizedString(names_by_folder.get(category_name.lower(), {}))
 
         item_ids, items_by_lang = self._read_item_csv_data(category_path)
-        description = self._load_category_description(category_name)
+        description = LocalizedString(self._load_category_localized_descriptions(category_name))
 
         return CategoryDetails(
             id=category_id,

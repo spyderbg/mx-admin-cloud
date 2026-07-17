@@ -25,7 +25,7 @@ export interface ArchivedEntry {
 export interface CategoryDetailsResponse {
     id: string
     name: LocalizedString
-    description?: string
+    description?: LocalizedString
     items?: ItemSummary[]
 }
 
