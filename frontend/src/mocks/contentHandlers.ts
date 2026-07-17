@@ -428,4 +428,40 @@ export const contentHandlers = [
 
   // Delete a category's icon/thumbnail image
   http.delete('/api/v1/content/categories/:category_id/icon', () => HttpResponse.json({})),
+
+  // List all items in a category
+  http.get('/api/v1/content/categories/:category_id/items', () => HttpResponse.json({})),
+
+  // Get a single item by ID
+  http.get('/api/v1/content/categories/:category_id/items/:item_id', () => HttpResponse.json({})),
+
+  // Update an item in a category
+  http.put('/api/v1/content/categories/:category_id/items/:item_id', () => new HttpResponse(null, { status: 404 })),
+
+  // Delete an item from a category
+  http.delete('/api/v1/content/categories/:category_id/items/:item_id', () => new HttpResponse(null, { status: 404 })),
+
+  // List image variants for an item
+  http.get('/api/v1/content/categories/:category_id/items/:item_id/images', () => HttpResponse.json({})),
+
+  // Add an image file variant to an item
+  http.post('/api/v1/content/categories/:category_id/items/:item_id/images', () => new HttpResponse(null, { status: 404 })),
+
+  // Replace a specific image file variant
+  http.put('/api/v1/content/categories/:category_id/items/:item_id/images/:image_index', () => new HttpResponse(null, { status: 404 })),
+
+  // Delete a file variant from an item
+  http.delete('/api/v1/content/categories/:category_id/items/:item_id/files/:file_index', () => new HttpResponse(null, { status: 404 })),
+
+  // List voices for an item
+  http.get('/api/v1/content/categories/:category_id/items/:item_id/voices', () => HttpResponse.json({})),
+
+  // Update voice for an item
+  http.put('/api/v1/content/categories/:category_id/items/:item_id/voices/:voice_id', () => new HttpResponse(null, { status: 404 })),
+
+  // Upload audio for an item voice
+  http.put('/api/v1/content/categories/:category_id/items/:item_id/voices/:voice_id/audio', () => new HttpResponse(null, { status: 404 })),
+
+  // Delete a voice from an item
+  http.delete('/api/v1/content/categories/:category_id/items/:item_id/voices/:voice_id', () => new HttpResponse(null, { status: 404 })),
 ]

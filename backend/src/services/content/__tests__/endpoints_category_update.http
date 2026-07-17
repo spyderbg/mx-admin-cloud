@@ -41,6 +41,7 @@ DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/images/{{category_ima
 ### Delete a category image - not found
 DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/images/does_not_exist
 
+################################################################################
 
 ### Replace a category's icon/thumbnail image
 # Updates the icon file ({category_name}/{category_name}.<ext>); the icon must already exist.
@@ -72,6 +73,7 @@ DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/icon
 ### Delete a category's icon/thumbnail image - category not found
 DELETE {{settings.CONTENT_URL}}/categories/does_not_exist/icon
 
+################################################################################
 
 ### Add a new voice to a category
 # language is the ISO code for the new voice; fails with 409 if a voice for
@@ -135,3 +137,7 @@ DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/voices/{{category_voi
 
 ### Delete a category voice - not found
 DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/voices/does_not_exist
+
+
+################################################################################
+

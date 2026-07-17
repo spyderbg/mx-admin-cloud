@@ -14,16 +14,16 @@ GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_id}}
 
 
 ### Items
-GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_name}}/items
+GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_id}}/items
 
 ### Item details
-GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_name}}/items/{{item_id}}
+GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_id}}/items/{{item_id}}
 
 ### Item images
-GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_name}}/items/{{item_id}}/images
+GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_id}}/items/{{item_id}}/images
 
 ### Item voices
-GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_name}}/items/{{item_id}}/voices
+GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_id}}/items/{{item_id}}/voices
 
 
 

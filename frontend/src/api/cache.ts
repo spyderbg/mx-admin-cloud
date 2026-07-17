@@ -270,23 +270,23 @@ export const invalidateCategoryDetail = (categoryName: string): void => {
  * Skips if already loaded. Used by ItemDetailView.
  */
 export const ensureItemDetail = async (
-  categoryName: string,
+  categoryId: string,
   itemId: string,
 ): Promise<Item | null> => {
-  if (loadedItemIds.get(categoryName)?.has(itemId)) {
+  if (loadedItemIds.get(categoryId)?.has(itemId)) {
     return (
-      sharedCategories.value.find((c) => c.name.en === categoryName)?.items.find((i) => i.id === itemId) ?? null
+      sharedCategories.value.find((c) => c.id === categoryId)?.items.find((i) => i.id === itemId) ?? null
     )
   }
 
   const [imagesResponse, voicesResponse] = await Promise.all([
     withInflight(
-      `images:${categoryName}:${itemId}`,
-      () => itemsImagesList(categoryName, itemId).catch(() => ({}) as ItemImagesResponse),
+      `images:${categoryId}:${itemId}`,
+      () => itemsImagesList(categoryId, itemId).catch(() => ({}) as ItemImagesResponse),
     ),
     withInflight(
-      `voices:${categoryName}:${itemId}`,
-      () => itemsVoicesList(categoryName, itemId).catch(() => ({}) as ItemVoicesResponse),
+      `voices:${categoryId}:${itemId}`,
+      () => itemsVoicesList(categoryId, itemId).catch(() => ({}) as ItemVoicesResponse),
     ),
   ])
 
@@ -297,7 +297,7 @@ export const ensureItemDetail = async (
   const itemNamesDict = (voicesResponse.name as unknown as Record<string, string>) ?? {}
   const voices = normalizeVoices(voicesResponse.voices, itemNamesDict)
 
-  const catIdx = sharedCategories.value.findIndex((c) => c.name.en === categoryName)
+  const catIdx = sharedCategories.value.findIndex((c) => c.id === categoryId)
   if (catIdx !== -1) {
     const arr = [...sharedCategories.value]
     const cat = { ...arr[catIdx] }
@@ -317,15 +317,15 @@ export const ensureItemDetail = async (
     }
   }
 
-  if (!loadedItemIds.has(categoryName)) loadedItemIds.set(categoryName, new Set())
-  loadedItemIds.get(categoryName)!.add(itemId)
+  if (!loadedItemIds.has(categoryId)) loadedItemIds.set(categoryId, new Set())
+  loadedItemIds.get(categoryId)!.add(itemId)
 
   return (
-    sharedCategories.value.find((c) => c.name.en === categoryName)?.items.find((i) => i.id === itemId) ?? null
+    sharedCategories.value.find((c) => c.id === categoryId)?.items.find((i) => i.id === itemId) ?? null
   )
 }
 
 /** Clear the detail cache for a single item so the next ensureItemDetail re-fetches. */
-export const invalidateItemDetail = (categoryName: string, itemId: string): void => {
-  loadedItemIds.get(categoryName)?.delete(itemId)
+export const invalidateItemDetail = (categoryId: string, itemId: string): void => {
+  loadedItemIds.get(categoryId)?.delete(itemId)
 }

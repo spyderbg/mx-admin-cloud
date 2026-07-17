@@ -980,16 +980,16 @@ class FileSystemContentProvider(ContentProvider):
     def item_images(self, category_id: str, item_id: str) -> ItemImages:
         category_name = self._folder_name_for_id(category_id)
         category_path = self._category_path(category_name)
-        folder_name = self._item_folder_for_id(category_path, item_id)
+        item_folder_name = self._item_folder_for_id(category_path, item_id)
         images: list[CategoryImage] = []
-        if folder_name:
-            item_folder = category_path / folder_name
+        if item_folder_name:
+            item_folder = category_path / item_folder_name
             if item_folder.is_dir():
                 for f in sorted(item_folder.iterdir()):
                     if f.is_file() and f.suffix.lower() in _IMAGE_EXTENSIONS:
                         images.append(CategoryImage(
                             id=f.stem,
-                            file_uri=f"/content/{category_name}/{folder_name}/{f.name}",
+                            file_uri=f"/content/{category_name}/{item_folder_name}/{f.name}",
                         ))
         return ItemImages(
             item_id=item_id,
@@ -998,27 +998,29 @@ class FileSystemContentProvider(ContentProvider):
         )
 
     def item_voices(self, category_id: str, item_id: str) -> ItemVoices:
+        """Build one CategoryVoice entry per supported language for the item.
+
+        A language with no TTS file yet is still included (file_uri=None) so
+        callers can render a placeholder/upload slot for it.
+        """
         category_name = self._folder_name_for_id(category_id)
         category_path = self._category_path(category_name)
-        folder_name = self._item_folder_for_id(category_path, item_id)
+        item_folder_name = self._item_folder_for_id(category_path, item_id)
+        item_folder = category_path / item_folder_name if item_folder_name else None
+        files = sorted(item_folder.iterdir()) if item_folder and item_folder.is_dir() else []
         voices: list[CategoryVoice] = []
-        if folder_name:
-            item_folder = category_path / folder_name
-            if item_folder.is_dir():
-                for lang in settings.SUPPORTED_LANGUAGES:
-                    pattern = re.compile(
-                        r"^" + re.escape(folder_name) + r"_" + re.escape(lang) + r"(_\d+)?\.mp3$",
-                        re.IGNORECASE,
-                    )
-                    for f in sorted(item_folder.iterdir()):
-                        if f.is_file() and pattern.match(f.name):
-                            voices.append(CategoryVoice(
-                                id=f"{item_id}-{lang}",
-                                language=lang,
-                                type="tts",
-                                file_uri=f"/content/{category_name}/{folder_name}/{f.name}",
-                            ))
-                            break
+        for lang in settings.SUPPORTED_LANGUAGES:
+            pattern = re.compile(
+                r"^" + re.escape(item_folder_name or "") + r"_" + re.escape(lang) + r"(_\d+)?\.mp3$",
+                re.IGNORECASE,
+            )
+            match = next((f for f in files if f.is_file() and pattern.match(f.name)), None)
+            voices.append(CategoryVoice(
+                id=f"{item_folder_name}-v-{lang}",
+                language=lang,
+                type="tts",
+                file_uri=f"/content/{category_name}/{item_folder_name}/{match.name}" if match else None,
+            ))
         return ItemVoices(item_id=item_id, voices=voices)
 
     # ------------------------------------------------------------------

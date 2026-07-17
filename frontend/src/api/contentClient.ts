@@ -119,26 +119,26 @@ export const categoriesVoicesDelete = async (categoryId: string, voiceId: string
 }
 
 /** List all items in a category */
-export const itemsList = async (categoryName: string): Promise<ItemListResponse> => {
-  const r = await client.get<ItemListResponse>(`/content/categories/${categoryName}/items`)
+export const itemsList = async (categoryId: string): Promise<ItemListResponse> => {
+  const r = await client.get<ItemListResponse>(`/content/categories/${categoryId}/items`)
   return r.data
 }
 
 /** Get a single item by ID */
-export const itemsGet = async (categoryName: string, itemId: string): Promise<ItemSummary> => {
-  const r = await client.get<ItemSummary>(`/content/categories/${categoryName}/items/${itemId}`)
+export const itemsGet = async (categoryId: string, itemId: string): Promise<ItemSummary> => {
+  const r = await client.get<ItemSummary>(`/content/categories/${categoryId}/items/${itemId}`)
   return r.data
 }
 
 /** List image variants for an item */
-export const itemsImagesList = async (categoryName: string, itemId: string): Promise<ItemImagesResponse> => {
-  const r = await client.get<ItemImagesResponse>(`/content/categories/${categoryName}/items/${itemId}/images`)
+export const itemsImagesList = async (categoryId: string, itemId: string): Promise<ItemImagesResponse> => {
+  const r = await client.get<ItemImagesResponse>(`/content/categories/${categoryId}/items/${itemId}/images`)
   return r.data
 }
 
 /** List voices for an item */
-export const itemsVoicesList = async (categoryName: string, itemId: string): Promise<ItemVoicesResponse> => {
-  const r = await client.get<ItemVoicesResponse>(`/content/categories/${categoryName}/items/${itemId}/voices`)
+export const itemsVoicesList = async (categoryId: string, itemId: string): Promise<ItemVoicesResponse> => {
+  const r = await client.get<ItemVoicesResponse>(`/content/categories/${categoryId}/items/${itemId}/voices`)
   return r.data
 }
 

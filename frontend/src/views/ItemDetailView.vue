@@ -214,7 +214,7 @@ onMounted(async () => {
   const cat = sharedCategories.value.find((c) => c.id.toLowerCase() === categoryId.toLowerCase())
   if (!cat) return
   await ensureCategoryDetail(cat.id, cat.name.en)
-  await ensureItemDetail(cat.name.en, itemId)
+  await ensureItemDetail(cat.id, itemId)
 })
 
 watch(() => route.params.categoryId as string, async (id) => {
@@ -223,14 +223,14 @@ watch(() => route.params.categoryId as string, async (id) => {
   if (!cat) return
   await ensureCategoryDetail(cat.id, cat.name.en)
   const itemId = route.params.itemId as string
-  if (itemId) await ensureItemDetail(cat.name.en, itemId)
+  if (itemId) await ensureItemDetail(cat.id, itemId)
 })
 
 watch(() => route.params.itemId as string, async (itemId) => {
   document.documentElement.scrollTop = 0
   document.body.scrollTop = 0
   if (!itemId || !category.value) return
-  await ensureItemDetail(category.value.name.en, itemId)
+  await ensureItemDetail(category.value.id, itemId)
 })
 
 watch(() => route.fullPath, () => {

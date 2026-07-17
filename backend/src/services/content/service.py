@@ -167,15 +167,13 @@ class ContentService(Service):
     # Item methods
     # ------------------------------------------------------------------
 
-    def item_images(self, category_name: str, item_id: str) -> ItemImages:
+    def item_images(self, category_id: str, item_id: str) -> ItemImages:
         """Return image files for a specific item via the active provider."""
-        provider = self._select_provider()
-        return provider.item_images(provider.category_id_by_name(category_name), item_id)
+        return self._select_provider().item_images(category_id, item_id)
 
-    def item_voices(self, category_name: str, item_id: str) -> ItemVoices:
+    def item_voices(self, category_id: str, item_id: str) -> ItemVoices:
         """Return voice files for a specific item via the active provider."""
-        provider = self._select_provider()
-        return provider.item_voices(provider.category_id_by_name(category_name), item_id)
+        return self._select_provider().item_voices(category_id, item_id)
 
     def create_item(
             self,

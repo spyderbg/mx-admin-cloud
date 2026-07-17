@@ -64,14 +64,14 @@ CATEGORY_IMAGE = "/categories/{category_id}/images/{image_id}"
 CATEGORY_ICON = "/categories/{category_id}/icon"
 CATEGORY_VOICES = "/categories/{category_id}/voices"
 CATEGORY_VOICE = "/categories/{category_id}/voices/{voice_id}"
-CATEGORY_ITEMS = "/categories/{category_name}/items"
-CATEGORY_ITEM = "/categories/{category_name}/items/{item_id}"
-CATEGORY_ITEM_IMAGES = "/categories/{category_name}/items/{item_id}/images"
-CATEGORY_ITEM_IMAGE = "/categories/{category_name}/items/{item_id}/images/{image_index}"
-CATEGORY_ITEM_FILES = "/categories/{category_name}/items/{item_id}/files/{file_index}"
-CATEGORY_ITEM_VOICES = "/categories/{category_name}/items/{item_id}/voices"
-CATEGORY_ITEM_VOICE = "/categories/{category_name}/items/{item_id}/voices/{voice_id}"
-CATEGORY_ITEM_VOICE_AUDIO = "/categories/{category_name}/items/{item_id}/voices/{voice_id}/audio"
+CATEGORY_ITEMS = "/categories/{category_id}/items"
+CATEGORY_ITEM = "/categories/{category_id}/items/{item_id}"
+CATEGORY_ITEM_IMAGES = "/categories/{category_id}/items/{item_id}/images"
+CATEGORY_ITEM_IMAGE = "/categories/{category_id}/items/{item_id}/images/{image_index}"
+CATEGORY_ITEM_FILES = "/categories/{category_id}/items/{item_id}/files/{file_index}"
+CATEGORY_ITEM_VOICES = "/categories/{category_id}/items/{item_id}/voices"
+CATEGORY_ITEM_VOICE = "/categories/{category_id}/items/{item_id}/voices/{voice_id}"
+CATEGORY_ITEM_VOICE_AUDIO = "/categories/{category_id}/items/{item_id}/voices/{voice_id}/audio"
 ITEMS = "/items"
 
 router = APIRouter(prefix=f"{settings.API_V1_STR}/content")
@@ -723,13 +723,13 @@ def categories_voices_delete(
     ),
 )
 def items_list(
-        category_name: str,
+        category_id: str,
         service: ContentServiceDep,
         _user: dict = Depends(get_current_user),
 ) -> ItemListResponse:
     """List all items in a category."""
     try:
-        result = service.category_details_by_name(category_name)
+        result = service.category_details_by_id(category_id)
     except CategoryNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except InvalidCategoryNameError as exc:
@@ -757,14 +757,14 @@ def items_list(
     ),
 )
 def items_get(
-        category_name: str,
+        category_id: str,
         item_id: str,
         service: ContentServiceDep,
         _user: dict = Depends(get_current_user),
 ) -> ItemSummary:
     """Get a single item by ID."""
     try:
-        result = service.category_details_by_name(category_name)
+        result = service.category_details_by_id(category_id)
     except CategoryNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except InvalidCategoryNameError as exc:
@@ -775,7 +775,7 @@ def items_get(
     if matched is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Item '{item_id}' not found in category '{category_name}'",
+            detail=f"Item '{item_id}' not found in category '{category_id}'",
         )
     return ItemSummary(
         id=matched.id,
@@ -798,7 +798,7 @@ def items_get(
     ),
 )
 def items_update(
-        category_name: str,
+        category_id: str,
         item_id: str,
         service: ContentServiceDep,
         _user: dict = Depends(get_current_user),
@@ -806,7 +806,7 @@ def items_update(
     """Update item name."""
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=f"Not implemented: update item '{item_id}' in category '{category_name}'",
+        detail=f"Not implemented: update item '{item_id}' in category '{category_id}'",
     )
 
 
@@ -823,7 +823,7 @@ def items_update(
     ),
 )
 def items_delete(
-        category_name: str,
+        category_id: str,
         item_id: str,
         service: ContentServiceDep,
         _user: dict = Depends(get_current_user),
@@ -831,7 +831,7 @@ def items_delete(
     """Delete an item from a category."""
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=f"Not implemented: delete item '{item_id}' in category '{category_name}'",
+        detail=f"Not implemented: delete item '{item_id}' in category '{category_id}'",
     )
 
 
@@ -852,14 +852,14 @@ def items_delete(
     ),
 )
 def items_images_list(
-        category_name: str,
+        category_id: str,
         item_id: str,
         service: ContentServiceDep,
         _user: dict = Depends(get_current_user),
 ) -> ItemImagesResponse:
     """List image file variants for an item."""
     try:
-        result = service.category_details_by_name(category_name)
+        result = service.category_details_by_id(category_id)
     except CategoryNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except InvalidCategoryNameError as exc:
@@ -869,11 +869,11 @@ def items_images_list(
     if item_id not in [item.id for item in result.items]:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Item '{item_id}' not found in category '{category_name}'",
+            detail=f"Item '{item_id}' not found in category '{category_id}'",
         )
     item = next((i for i in result.items if i.id == item_id), None)
     item_name = item.name if item else LocalizedString({})
-    images_result = service.item_images(category_name, item_id)
+    images_result = service.item_images(category_id, item_id)
     return ItemImagesResponse(
         item_id=item_id,
         name=item_name,
@@ -895,7 +895,7 @@ def items_images_list(
     ),
 )
 def items_images_add(
-        category_name: str,
+        category_id: str,
         item_id: str,
         # file: UploadFile = File(...),
         service: ContentServiceDep,
@@ -904,7 +904,7 @@ def items_images_add(
     """Upload an additional file variant for an image."""
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=f"Not implemented: add file to image '{item_id}' in category '{category_name}'",
+        detail=f"Not implemented: add file to image '{item_id}' in category '{category_id}'",
     )
 
 
@@ -921,7 +921,7 @@ def items_images_add(
     ),
 )
 def items_images_replace(
-        category_name: str,
+        category_id: str,
         item_id: str,
         image_index: int,
         # file: UploadFile = File(...),
@@ -932,7 +932,7 @@ def items_images_replace(
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
         detail=f"Not implemented: replace file {image_index} of image '{item_id}' "
-               f"in category '{category_name}'",
+               f"in category '{category_id}'",
     )
 
 
@@ -950,7 +950,7 @@ def items_images_replace(
     ),
 )
 def items_images_delete(
-        category_name: str,
+        category_id: str,
         item_id: str,
         file_index: int,
         service: ContentServiceDep,
@@ -960,7 +960,7 @@ def items_images_delete(
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
         detail=f"Not implemented: delete file {file_index} of image '{item_id}' "
-               f"in category '{category_name}'",
+               f"in category '{category_id}'",
     )
 
 
@@ -981,14 +981,14 @@ def items_images_delete(
     ),
 )
 def items_voices_list(
-        category_name: str,
+        category_id: str,
         item_id: str,
         service: ContentServiceDep,
         _user: dict = Depends(get_current_user),
 ) -> ItemVoicesResponse:
     """List voices for an item."""
     try:
-        result = service.category_details_by_name(category_name)
+        result = service.category_details_by_id(category_id)
     except CategoryNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except InvalidCategoryNameError as exc:
@@ -998,11 +998,11 @@ def items_voices_list(
     if item_id not in [item.id for item in result.items]:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Item '{item_id}' not found in category '{category_name}'",
+            detail=f"Item '{item_id}' not found in category '{category_id}'",
         )
     item = next((i for i in result.items if i.id == item_id), None)
     item_name = item.name if item else LocalizedString({})
-    voices_result = service.item_voices(category_name, item_id)
+    voices_result = service.item_voices(category_id, item_id)
     return ItemVoicesResponse(
         item_id=item_id,
         name=item_name,
@@ -1026,7 +1026,7 @@ def items_voices_list(
     ),
 )
 def items_voices_update(
-        category_name: str,
+        category_id: str,
         item_id: str,
         voice_id: str,
         service: ContentServiceDep,
@@ -1036,7 +1036,7 @@ def items_voices_update(
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
         detail=f"Not implemented: update voice '{voice_id}' of image '{item_id}' "
-               f"in category '{category_name}'",
+               f"in category '{category_id}'",
     )
 
 
@@ -1053,7 +1053,7 @@ def items_voices_update(
     ),
 )
 def items_voices_upload(
-        category_name: str,
+        category_id: str,
         item_id: str,
         voice_id: str,
         # file: UploadFile = File(...),
@@ -1064,7 +1064,7 @@ def items_voices_upload(
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
         detail=f"Not implemented: upload audio for voice '{voice_id}' of image '{item_id}' "
-               f"in category '{category_name}'",
+               f"in category '{category_id}'",
     )
 
 
@@ -1081,7 +1081,7 @@ def items_voices_upload(
     ),
 )
 def items_voices_delete(
-        category_name: str,
+        category_id: str,
         item_id: str,
         voice_id: str,
         service: ContentServiceDep,
@@ -1091,7 +1091,7 @@ def items_voices_delete(
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
         detail=f"Not implemented: delete voice '{voice_id}' of image '{item_id}' "
-               f"in category '{category_name}'",
+               f"in category '{category_id}'",
     )
 
 

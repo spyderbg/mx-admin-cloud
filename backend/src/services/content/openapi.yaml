@@ -1144,23 +1144,23 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
 
   # ─── Items ──────────────────────────────────────────────────────────
-  /api/v1/content/categories/{category_name}/items:
+  /api/v1/content/categories/{category_id}/items:
     get:
       tags:
       - Items
       summary: List all items in a category
       description: Retrieve a list of all content items within a specific category.
         Returns the item names and their metadata. Requires authentication.
-      operationId: items_list_api_v1_content_categories__category_name__items_get
+      operationId: items_list_api_v1_content_categories__category_id__items_get
       security:
       - OAuth2PasswordBearer: []
       parameters:
-      - name: category_name
+      - name: category_id
         in: path
         required: true
         schema:
           type: string
-          title: Category Name
+          title: Category Id
       responses:
         '200':
           description: Successful Response
@@ -1174,23 +1174,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/content/categories/{category_name}/items/{item_id}:
+  /api/v1/content/categories/{category_id}/items/{item_id}:
     get:
       tags:
       - Items
       summary: Get a single item by ID
       description: Retrieve detailed information about a single content item. Returns
         the item name, associated images, and metadata. Requires authentication.
-      operationId: items_get_api_v1_content_categories__category_name__items__item_id__get
+      operationId: items_get_api_v1_content_categories__category_id__items__item_id__get
       security:
       - OAuth2PasswordBearer: []
       parameters:
-      - name: category_name
+      - name: category_id
         in: path
         required: true
         schema:
           type: string
-          title: Category Name
+          title: Category Id
       - name: item_id
         in: path
         required: true
@@ -1216,16 +1216,16 @@ paths:
       summary: Update an item in a category
       description: Update the name of a content item within a specific category. This
         endpoint allows modifying the item name for a given item ID. Requires authentication.
-      operationId: items_update_api_v1_content_categories__category_name__items__item_id__put
+      operationId: items_update_api_v1_content_categories__category_id__items__item_id__put
       security:
       - OAuth2PasswordBearer: []
       parameters:
-      - name: category_name
+      - name: category_id
         in: path
         required: true
         schema:
           type: string
-          title: Category Name
+          title: Category Id
       - name: item_id
         in: path
         required: true
@@ -1251,16 +1251,16 @@ paths:
       description: Permanently delete a content item from its category. This operation
         cannot be undone and will remove the item and all associated metadata. Requires
         authentication.
-      operationId: items_delete_api_v1_content_categories__category_name__items__item_id__delete
+      operationId: items_delete_api_v1_content_categories__category_id__items__item_id__delete
       security:
       - OAuth2PasswordBearer: []
       parameters:
-      - name: category_name
+      - name: category_id
         in: path
         required: true
         schema:
           type: string
-          title: Category Name
+          title: Category Id
       - name: item_id
         in: path
         required: true
@@ -1278,7 +1278,7 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
 
   # ─── Items Images ───────────────────────────────────────────────────
-  /api/v1/content/categories/{category_name}/items/{item_id}/files/{file_index}:
+  /api/v1/content/categories/{category_id}/items/{item_id}/files/{file_index}:
     delete:
       tags:
       - Items Images
@@ -1286,16 +1286,16 @@ paths:
       description: Remove a specific file variant (e.g., image at a given index) from
         a content item. This endpoint allows deleting a file variant from an item in
         a category. At least one file variant must remain after deletion. Requires authentication.
-      operationId: items_images_delete_api_v1_content_categories__category_name__items__item_id__files__file_index__delete
+      operationId: items_images_delete_api_v1_content_categories__category_id__items__item_id__files__file_index__delete
       security:
       - OAuth2PasswordBearer: []
       parameters:
-      - name: category_name
+      - name: category_id
         in: path
         required: true
         schema:
           type: string
-          title: Category Name
+          title: Category Id
       - name: item_id
         in: path
         required: true
@@ -1317,7 +1317,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/content/categories/{category_name}/items/{item_id}/images:
+  /api/v1/content/categories/{category_id}/items/{item_id}/images:
     get:
       tags:
       - Items Images
@@ -1325,16 +1325,16 @@ paths:
       description: Retrieve a list of all image file variants associated with a content
         item. Returns the image filenames, URLs, and metadata for each variant. Requires
         authentication.
-      operationId: items_images_list_api_v1_content_categories__category_name__items__item_id__images_get
+      operationId: items_images_list_api_v1_content_categories__category_id__items__item_id__images_get
       security:
       - OAuth2PasswordBearer: []
       parameters:
-      - name: category_name
+      - name: category_id
         in: path
         required: true
         schema:
           type: string
-          title: Category Name
+          title: Category Id
       - name: item_id
         in: path
         required: true
@@ -1361,16 +1361,16 @@ paths:
       description: Add an additional image file variant to the specified content item.
         This endpoint allows uploading multiple image files (e.g., different resolutions,
         formats) for a single item. Requires authentication.
-      operationId: items_images_add_api_v1_content_categories__category_name__items__item_id__images_post
+      operationId: items_images_add_api_v1_content_categories__category_id__items__item_id__images_post
       security:
       - OAuth2PasswordBearer: []
       parameters:
-      - name: category_name
+      - name: category_id
         in: path
         required: true
         schema:
           type: string
-          title: Category Name
+          title: Category Id
       - name: item_id
         in: path
         required: true
@@ -1389,7 +1389,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/content/categories/{category_name}/items/{item_id}/images/{image_index}:
+  /api/v1/content/categories/{category_id}/items/{item_id}/images/{image_index}:
     put:
       tags:
       - Items Images
@@ -1397,16 +1397,16 @@ paths:
       description: Replace the image file variant at the specified index for the given
         item in the category. Uploads the new file and stores it in place of the existing
         variant at this index. Requires authentication.
-      operationId: items_images_replace_api_v1_content_categories__category_name__items__item_id__images__image_index__put
+      operationId: items_images_replace_api_v1_content_categories__category_id__items__item_id__images__image_index__put
       security:
       - OAuth2PasswordBearer: []
       parameters:
-      - name: category_name
+      - name: category_id
         in: path
         required: true
         schema:
           type: string
-          title: Category Name
+          title: Category Id
       - name: item_id
         in: path
         required: true
@@ -1433,23 +1433,23 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
 
   # ─── Items Voices ───────────────────────────────────────────────────
-  /api/v1/content/categories/{category_name}/items/{item_id}/voices:
+  /api/v1/content/categories/{category_id}/items/{item_id}/voices:
     get:
       tags:
       - Items Voices
       summary: List voices for an item
       description: Retrieve a list of all voice files associated with a content item.
         Returns the voice filenames and their metadata. Requires authentication.
-      operationId: items_voices_list_api_v1_content_categories__category_name__items__item_id__voices_get
+      operationId: items_voices_list_api_v1_content_categories__category_id__items__item_id__voices_get
       security:
       - OAuth2PasswordBearer: []
       parameters:
-      - name: category_name
+      - name: category_id
         in: path
         required: true
         schema:
           type: string
-          title: Category Name
+          title: Category Id
       - name: item_id
         in: path
         required: true
@@ -1469,7 +1469,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/content/categories/{category_name}/items/{item_id}/voices/{voice_id}:
+  /api/v1/content/categories/{category_id}/items/{item_id}/voices/{voice_id}:
     put:
       tags:
       - Items Voices
@@ -1477,16 +1477,16 @@ paths:
       description: Update or replace a voice file associated with a content item. This
         endpoint allows modifying the voice file for a specific item in a category.
         Requires authentication.
-      operationId: items_voices_update_api_v1_content_categories__category_name__items__item_id__voices__voice_id__put
+      operationId: items_voices_update_api_v1_content_categories__category_id__items__item_id__voices__voice_id__put
       security:
       - OAuth2PasswordBearer: []
       parameters:
-      - name: category_name
+      - name: category_id
         in: path
         required: true
         schema:
           type: string
-          title: Category Name
+          title: Category Id
       - name: item_id
         in: path
         required: true
@@ -1518,16 +1518,16 @@ paths:
       description: Delete or reset a voice file associated with a content item. This
         operation removes the specified voice from the given item in a category. Requires
         authentication.
-      operationId: items_voices_delete_api_v1_content_categories__category_name__items__item_id__voices__voice_id__delete
+      operationId: items_voices_delete_api_v1_content_categories__category_id__items__item_id__voices__voice_id__delete
       security:
       - OAuth2PasswordBearer: []
       parameters:
-      - name: category_name
+      - name: category_id
         in: path
         required: true
         schema:
           type: string
-          title: Category Name
+          title: Category Id
       - name: item_id
         in: path
         required: true
@@ -1549,7 +1549,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/content/categories/{category_name}/items/{item_id}/voices/{voice_id}/audio:
+  /api/v1/content/categories/{category_id}/items/{item_id}/voices/{voice_id}/audio:
     put:
       tags:
       - Items Voices
@@ -1557,16 +1557,16 @@ paths:
       description: Upload or replace the audio file for a specific voice associated
         with a content item. This endpoint allows uploading audio files for voices linked
         to items in a category. Requires authentication.
-      operationId: items_voices_upload_api_v1_content_categories__category_name__items__item_id__voices__voice_id__audio_put
+      operationId: items_voices_upload_api_v1_content_categories__category_id__items__item_id__voices__voice_id__audio_put
       security:
       - OAuth2PasswordBearer: []
       parameters:
-      - name: category_name
+      - name: category_id
         in: path
         required: true
         schema:
           type: string
-          title: Category Name
+          title: Category Id
       - name: item_id
         in: path
         required: true
