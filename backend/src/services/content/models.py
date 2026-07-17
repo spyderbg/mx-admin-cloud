@@ -223,6 +223,15 @@ class ContentProvider(ServiceProvider, ABC):
         """Delete an existing image file from a category."""
 
     @abstractmethod
+    def set_category_icon(
+            self,
+            category_id: str,
+            image_data: bytes,
+            image_extension: str = ".png",
+    ) -> CategoryImage:
+        """Create or replace the category's icon file ({category_name}/{category_name}.<ext>)."""
+
+    @abstractmethod
     def add_category_voice(self, category_id: str, language: str, audio_data: bytes) -> CategoryVoice:
         """Add a new voice audio file to a category for the given language."""
 

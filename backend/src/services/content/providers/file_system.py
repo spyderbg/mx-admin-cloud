@@ -701,6 +701,34 @@ class FileSystemContentProvider(ContentProvider):
 
         return CategoryImage(id=image_id, file_uri=file_uri)
 
+    def set_category_icon(
+            self,
+            category_id: str,
+            image_data: bytes,
+            image_extension: str = ".png",
+    ) -> CategoryImage:
+        """Create or replace the category's icon file, regardless of whether one already exists."""
+        category_name = self._folder_name_for_id(category_id)
+        category_path = self._category_path(category_name)
+        if not category_path.exists() or not category_path.is_dir():
+            raise CategoryNotFoundError(f"Category '{category_name}': directory is missing.")
+
+        ext = image_extension if image_extension.startswith(".") else f".{image_extension}"
+        if ext.lower() not in _IMAGE_EXTENSIONS:
+            ext = ".png"
+
+        existing = self._find_category_image_file(category_path, category_name)
+        new_path = category_path / f"{category_name}{ext}"
+        try:
+            if existing is not None and existing != new_path:
+                existing.unlink()
+            with open(new_path, "wb") as fh:
+                fh.write(image_data)
+        except OSError as exc:
+            raise ContentOperationError(f"Failed to save category icon: {exc}") from exc
+
+        return CategoryImage(id=new_path.stem, file_uri=f"/content/{category_name}/{new_path.name}")
+
     def add_category_voice(self, category_id: str, language: str, audio_data: bytes) -> CategoryVoice:
         category_name = self._folder_name_for_id(category_id)
         category_path = self._category_path(category_name)

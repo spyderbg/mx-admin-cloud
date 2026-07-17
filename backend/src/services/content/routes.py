@@ -6,6 +6,7 @@ resolved from the ServiceRegistry.
 
 from __future__ import annotations
 
+import re
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
@@ -60,6 +61,7 @@ CATEGORY = "/categories/{category_name}"
 CATEGORY_DETAILS = "/categories/{category_id}"
 CATEGORY_IMAGES = "/categories/{category_id}/images"
 CATEGORY_IMAGE = "/categories/{category_id}/images/{image_id}"
+CATEGORY_ICON = "/categories/{category_id}/icon"
 CATEGORY_VOICES = "/categories/{category_id}/voices"
 CATEGORY_VOICE = "/categories/{category_id}/voices/{voice_id}"
 CATEGORY_ITEMS = "/categories/{category_name}/items"
@@ -451,6 +453,93 @@ def categories_images_delete(
 ) -> ImageResponse:
     """Delete or reset a category image."""
     try:
+        result = service.delete_category_image(category_id, image_id)
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidCategoryNameError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return ImageResponse(id=result.id, file_uri=result.file_uri, action="delete")
+
+
+def _resolve_category_icon_image_id(service: ContentService, category_id: str) -> str:
+    """Return the image_id of the category's icon file (stored as {category_name}/{category_name}.<ext>).
+
+    Unlike regular category images (added via ``categories_images_add``, always named
+    ``{category_name}_NN.<ext>``), the icon file has no numeric suffix, so it's the one
+    entry in the category's images whose id doesn't end in ``_NN``.
+    """
+    result = service.category_details_by_id(category_id)
+    icon = next((img for img in result.images if not re.search(r"_\d+$", img.id)), None)
+    if icon is None:
+        raise CategoryNotFoundError(f"Category '{category_id}' has no icon image.")
+    return icon.id
+
+
+@router.post(
+    CATEGORY_ICON,
+    response_model=ImageResponse,
+    status_code=status.HTTP_200_OK,
+    tags=[TAG_CATEGORIES_IMAGES],
+    summary="Create or replace a category's icon/thumbnail image",
+    description=(
+            "Upload a file to set the category's icon image, creating it if it doesn't yet exist "
+            "or overriding it otherwise. "
+            "The icon is stored as '{category_name}/{category_name}.<ext>' and is used for "
+            "both the category thumbnail and its app icon. "
+            "Requires authentication."
+    ),
+)
+def categories_icon_update(
+        category_id: str,
+        service: ContentServiceDep,
+        image: UploadFile = File(...),
+        _user: dict = Depends(get_current_user),
+) -> ImageResponse:
+    """Create or replace the category's icon/thumbnail image with an uploaded file."""
+    if not image.filename:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Image file is required")
+    image_data = image.file.read()
+    if not image_data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Image file is empty")
+    ext = ""
+    if "." in image.filename:
+        ext = "." + image.filename.rsplit(".", 1)[-1].lower()
+    if ext not in (".png", ".jpg", ".jpeg"):
+        ext = ".png"
+    try:
+        result = service.set_category_icon(category_id, image_data, ext)
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidCategoryNameError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return ImageResponse(id=result.id, file_uri=result.file_uri, action="update")
+
+
+@router.delete(
+    CATEGORY_ICON,
+    response_model=ImageResponse,
+    status_code=status.HTTP_200_OK,
+    tags=[TAG_CATEGORIES_IMAGES],
+    summary="Delete a category's icon/thumbnail image",
+    description=(
+            "Delete the category's icon image. "
+            "The icon is stored as '{category_name}/{category_name}.<ext>' and is used for "
+            "both the category thumbnail and its app icon. "
+            "Requires authentication."
+    ),
+)
+def categories_icon_delete(
+        category_id: str,
+        service: ContentServiceDep,
+        _user: dict = Depends(get_current_user),
+) -> ImageResponse:
+    """Delete the category's icon/thumbnail image."""
+    try:
+        image_id = _resolve_category_icon_image_id(service, category_id)
         result = service.delete_category_image(category_id, image_id)
     except CategoryNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

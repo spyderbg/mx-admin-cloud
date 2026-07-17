@@ -139,6 +139,18 @@ class _StubProvider(ContentProvider):
             "file_uri": f"/content/{category_id}/{image_id}.png",
         })
 
+    def set_category_icon(
+            self,
+            category_id: str,
+            image_data: bytes,
+            image_extension: str = ".png",
+    ) -> dict[str, Any]:
+        self._record("set_category_icon", category_id, image_data, image_extension)
+        return self._returns.get("set_category_icon", {
+            "id": category_id,
+            "file_uri": f"/content/{category_id}/{category_id}{image_extension}",
+        })
+
     def archive_category(self, category_id: str) -> dict[str, Any]:
         self._record("archive_category", category_id)
         return self._returns.get("archive_category", {
@@ -257,6 +269,9 @@ class _ConcreteProvider(ContentProvider):
         return {}
 
     def delete_category_image(self, category_id, image_id):
+        return {}
+
+    def set_category_icon(self, category_id, image_data, image_extension=".png"):
         return {}
 
     def archive_category(self, category_id):

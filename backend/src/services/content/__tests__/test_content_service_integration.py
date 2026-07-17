@@ -139,6 +139,17 @@ class _StubContentProvider(ContentProvider):
             file_uri=f"/content/{category_id}/{image_id}.png",
         ))
 
+    def set_category_icon(
+            self,
+            category_id: str,
+            image_data: bytes,
+            image_extension: str = ".png",
+    ) -> CategoryImage:
+        return self._call("set_category_icon", CategoryImage(
+            id=category_id,
+            file_uri=f"/content/{category_id}/{category_id}{image_extension}",
+        ))
+
     def archive_category(self, category_name: str) -> ArchiveCategory:
         return self._call("archive_category", ArchiveCategory(
             archived=True,

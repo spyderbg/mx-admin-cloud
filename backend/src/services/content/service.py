@@ -138,6 +138,15 @@ class ContentService(Service):
         """Delete an existing category image via the active provider."""
         return self._select_provider().delete_category_image(category_id, image_id)
 
+    def set_category_icon(
+            self,
+            category_id: str,
+            image_data: bytes,
+            image_extension: str = ".png",
+    ) -> CategoryImage:
+        """Create or replace the category's icon via the active provider."""
+        return self._select_provider().set_category_icon(category_id, image_data, image_extension)
+
     # ------------------------------------------------------------------
     # Category voices methods
     # ------------------------------------------------------------------
