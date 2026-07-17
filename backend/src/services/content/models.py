@@ -270,6 +270,43 @@ class ContentProvider(ServiceProvider, ABC):
         """Return voice files for a specific item."""
 
     @abstractmethod
+    def add_item_image(
+            self,
+            category_id: str,
+            item_id: str,
+            image_data: bytes,
+            image_extension: str = ".png",
+    ) -> CategoryImage:
+        """Add a new image file variant to an item."""
+
+    @abstractmethod
+    def update_item_image(
+            self,
+            category_id: str,
+            item_id: str,
+            image_index: int,
+            image_data: bytes,
+            image_extension: str = ".png",
+    ) -> CategoryImage:
+        """Replace the image file variant at the given index for an item."""
+
+    @abstractmethod
+    def delete_item_image(self, category_id: str, item_id: str, file_index: int) -> CategoryImage:
+        """Delete the image file variant at the given index from an item (at least one must remain)."""
+
+    @abstractmethod
+    def add_item_voice(self, category_id: str, item_id: str, voice_id: str, audio_data: bytes) -> CategoryVoice:
+        """Add the audio file for an item voice that doesn't have one yet."""
+
+    @abstractmethod
+    def update_item_voice(self, category_id: str, item_id: str, voice_id: str, audio_data: bytes) -> CategoryVoice:
+        """Replace the audio file for an existing item voice."""
+
+    @abstractmethod
+    def delete_item_voice(self, category_id: str, item_id: str, voice_id: str) -> CategoryVoice:
+        """Delete the audio file for an existing item voice."""
+
+    @abstractmethod
     def category_id_by_name(self, category_name: str) -> str:
         """Return the category_id registered for the given category_name."""
 

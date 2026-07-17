@@ -204,6 +204,26 @@ class FileSystemContentProvider(ContentProvider):
         return None
 
     @staticmethod
+    def _first_available_item_image_index(item_path: Path, item_folder_name: str) -> int:
+        """First 1-based index where no ``{item_folder_name}_{index:02d}.{ext}`` file exists yet."""
+        for i in range(1, 1000):
+            if not any(
+                    (item_path / f"{item_folder_name}_{i:02d}{ext}").exists()
+                    for ext in _IMAGE_EXTENSIONS
+            ):
+                return i
+        return 1
+
+    @staticmethod
+    def _find_item_image_file(item_path: Path, item_folder_name: str, index: int) -> Path | None:
+        """Return the existing item image file at the given 1-based *index*, if any."""
+        for ext in _IMAGE_EXTENSIONS:
+            candidate = item_path / f"{item_folder_name}_{index:02d}{ext}"
+            if candidate.is_file():
+                return candidate
+        return None
+
+    @staticmethod
     def _category_voice_path(category_path: Path, category_name: str, language: str) -> Path:
         return category_path / _CATEGORY_VOICE_MP3.format(category_name, language)
 
@@ -221,6 +241,42 @@ class FileSystemContentProvider(ContentProvider):
             if voice_path.is_file():
                 return lang, voice_path
         return None
+
+    @staticmethod
+    def _item_voice_path(item_path: Path, item_folder_name: str, language: str) -> Path:
+        return item_path / _CATEGORY_VOICE_MP3.format(item_folder_name, language)
+
+    @staticmethod
+    def _language_for_item_voice_id(item_folder_name: str, voice_id: str) -> str | None:
+        """Return the language encoded in *voice_id* for this item, or None if unrecognized."""
+        for lang in settings.SUPPORTED_LANGUAGES:
+            if voice_id == f"{item_folder_name}-v-{lang}":
+                return lang
+        return None
+
+    @staticmethod
+    def _find_item_voice_file(
+            item_path: Path,
+            item_folder_name: str,
+            voice_id: str,
+    ) -> tuple[str, Path] | None:
+        """Return the (language, path) for the existing item voice file matching *voice_id*, if any.
+
+        Tolerates an optional numeric suffix (e.g. ``{name}_en_01.mp3``) to match how
+        ``item_voices`` locates files created by different content pipelines.
+        """
+        lang = FileSystemContentProvider._language_for_item_voice_id(item_folder_name, voice_id)
+        if lang is None:
+            return None
+        pattern = re.compile(
+            r"^" + re.escape(item_folder_name) + r"_" + re.escape(lang) + r"(_\d+)?\.mp3$",
+            re.IGNORECASE,
+        )
+        match = next(
+            (f for f in sorted(item_path.iterdir()) if f.is_file() and pattern.match(f.name)),
+            None,
+        )
+        return (lang, match) if match else None
 
     def _folder_name_for_id(self, category_id: str) -> str:
         """Return the on-disk folder name registered for *category_id*.
@@ -977,6 +1033,15 @@ class FileSystemContentProvider(ContentProvider):
             return None
         return self._english_word_to_folder_name(en_names[index])
 
+    def _resolve_item_path(self, category_path: Path, category_name: str, item_id: str) -> tuple[str, Path]:
+        """Return (item_folder_name, item_path) for *item_id*, or raise CategoryNotFoundError."""
+        item_folder_name = self._item_folder_for_id(category_path, item_id)
+        if item_folder_name:
+            item_path = category_path / item_folder_name
+            if item_path.exists() and item_path.is_dir():
+                return item_folder_name, item_path
+        raise CategoryNotFoundError(f"Item '{item_id}' not found in category '{category_name}'.")
+
     def item_images(self, category_id: str, item_id: str) -> ItemImages:
         category_name = self._folder_name_for_id(category_id)
         category_path = self._category_path(category_name)
@@ -1022,6 +1087,173 @@ class FileSystemContentProvider(ContentProvider):
                 file_uri=f"/content/{category_name}/{item_folder_name}/{match.name}" if match else None,
             ))
         return ItemVoices(item_id=item_id, voices=voices)
+
+    def add_item_image(
+            self,
+            category_id: str,
+            item_id: str,
+            image_data: bytes,
+            image_extension: str = ".png",
+    ) -> CategoryImage:
+        category_name = self._folder_name_for_id(category_id)
+        category_path = self._category_path(category_name)
+        item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
+
+        ext = image_extension if image_extension.startswith(".") else f".{image_extension}"
+        if ext.lower() not in _IMAGE_EXTENSIONS:
+            ext = ".png"
+
+        idx = self._first_available_item_image_index(item_path, item_folder_name)
+        file_name = f"{item_folder_name}_{idx:02d}{ext}"
+        image_path = item_path / file_name
+        try:
+            with open(image_path, "wb") as fh:
+                fh.write(image_data)
+        except OSError as exc:
+            raise ContentOperationError(f"Failed to save item image: {exc}") from exc
+
+        return CategoryImage(
+            id=image_path.stem,
+            file_uri=f"/content/{category_name}/{item_folder_name}/{file_name}",
+        )
+
+    def update_item_image(
+            self,
+            category_id: str,
+            item_id: str,
+            image_index: int,
+            image_data: bytes,
+            image_extension: str = ".png",
+    ) -> CategoryImage:
+        category_name = self._folder_name_for_id(category_id)
+        category_path = self._category_path(category_name)
+        item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
+
+        existing = self._find_item_image_file(item_path, item_folder_name, image_index)
+        if existing is None:
+            raise CategoryNotFoundError(
+                f"Image variant {image_index} not found for item '{item_id}' in category '{category_name}'.",
+            )
+
+        ext = image_extension if image_extension.startswith(".") else f".{image_extension}"
+        if ext.lower() not in _IMAGE_EXTENSIONS:
+            ext = ".png"
+
+        new_path = item_path / f"{item_folder_name}_{image_index:02d}{ext}"
+        try:
+            if existing != new_path:
+                existing.unlink()
+            with open(new_path, "wb") as fh:
+                fh.write(image_data)
+        except OSError as exc:
+            raise ContentOperationError(f"Failed to update item image: {exc}") from exc
+
+        return CategoryImage(
+            id=new_path.stem,
+            file_uri=f"/content/{category_name}/{item_folder_name}/{new_path.name}",
+        )
+
+    def delete_item_image(self, category_id: str, item_id: str, file_index: int) -> CategoryImage:
+        category_name = self._folder_name_for_id(category_id)
+        category_path = self._category_path(category_name)
+        item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
+
+        existing = self._find_item_image_file(item_path, item_folder_name, file_index)
+        if existing is None:
+            raise CategoryNotFoundError(
+                f"Image variant {file_index} not found for item '{item_id}' in category '{category_name}'.",
+            )
+
+        remaining = [
+            f for f in item_path.iterdir()
+            if f.is_file() and f.suffix.lower() in _IMAGE_EXTENSIONS
+        ]
+        if len(remaining) <= 1:
+            raise ContentOperationError(
+                f"Cannot delete the last remaining image variant for item '{item_id}'.",
+            )
+
+        file_uri = f"/content/{category_name}/{item_folder_name}/{existing.name}"
+        image_id = existing.stem
+        try:
+            existing.unlink()
+        except OSError as exc:
+            raise ContentOperationError(f"Failed to delete item image: {exc}") from exc
+
+        return CategoryImage(id=image_id, file_uri=file_uri)
+
+    def add_item_voice(self, category_id: str, item_id: str, voice_id: str, audio_data: bytes) -> CategoryVoice:
+        category_name = self._folder_name_for_id(category_id)
+        category_path = self._category_path(category_name)
+        item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
+
+        if self._find_item_voice_file(item_path, item_folder_name, voice_id) is not None:
+            raise CategoryConflictError(f"Voice '{voice_id}' already has an audio file for item '{item_id}'.")
+
+        language = self._language_for_item_voice_id(item_folder_name, voice_id)
+        if language is None:
+            raise CategoryNotFoundError(
+                f"Voice '{voice_id}' not found for item '{item_id}' in category '{category_name}'.",
+            )
+
+        voice_path = self._item_voice_path(item_path, item_folder_name, language)
+        try:
+            with open(voice_path, "wb") as fh:
+                fh.write(audio_data)
+        except OSError as exc:
+            raise ContentOperationError(f"Failed to save item voice: {exc}") from exc
+
+        return CategoryVoice(
+            id=voice_id,
+            language=language,
+            type="tts",
+            file_uri=f"/content/{category_name}/{item_folder_name}/{voice_path.name}",
+        )
+
+    def update_item_voice(self, category_id: str, item_id: str, voice_id: str, audio_data: bytes) -> CategoryVoice:
+        category_name = self._folder_name_for_id(category_id)
+        category_path = self._category_path(category_name)
+        item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
+
+        found = self._find_item_voice_file(item_path, item_folder_name, voice_id)
+        if found is None:
+            raise CategoryNotFoundError(
+                f"Voice '{voice_id}' not found for item '{item_id}' in category '{category_name}'.",
+            )
+        language, voice_path = found
+
+        try:
+            with open(voice_path, "wb") as fh:
+                fh.write(audio_data)
+        except OSError as exc:
+            raise ContentOperationError(f"Failed to update item voice: {exc}") from exc
+
+        return CategoryVoice(
+            id=voice_id,
+            language=language,
+            type="tts",
+            file_uri=f"/content/{category_name}/{item_folder_name}/{voice_path.name}",
+        )
+
+    def delete_item_voice(self, category_id: str, item_id: str, voice_id: str) -> CategoryVoice:
+        category_name = self._folder_name_for_id(category_id)
+        category_path = self._category_path(category_name)
+        item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
+
+        found = self._find_item_voice_file(item_path, item_folder_name, voice_id)
+        if found is None:
+            raise CategoryNotFoundError(
+                f"Voice '{voice_id}' not found for item '{item_id}' in category '{category_name}'.",
+            )
+        language, voice_path = found
+        file_uri = f"/content/{category_name}/{item_folder_name}/{voice_path.name}"
+
+        try:
+            voice_path.unlink()
+        except OSError as exc:
+            raise ContentOperationError(f"Failed to delete item voice: {exc}") from exc
+
+        return CategoryVoice(id=voice_id, language=language, type="tts", file_uri=file_uri)
 
     # ------------------------------------------------------------------
     # Factory registration

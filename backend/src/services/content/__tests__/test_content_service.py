@@ -193,6 +193,61 @@ class _StubProvider(ContentProvider):
         self._record("item_voices", category_id, item_id)
         return self._returns.get("item_voices", {"item_id": item_id, "voices": []})
 
+    def add_item_image(
+            self,
+            category_id: str,
+            item_id: str,
+            image_data: bytes,
+            image_extension: str = ".png",
+    ) -> dict[str, Any]:
+        self._record("add_item_image", category_id, item_id, image_data, image_extension)
+        return self._returns.get("add_item_image", {
+            "id": f"{item_id}_1",
+            "file_uri": f"/content/{category_id}/{item_id}/{item_id}_1{image_extension}",
+        })
+
+    def update_item_image(
+            self,
+            category_id: str,
+            item_id: str,
+            image_index: int,
+            image_data: bytes,
+            image_extension: str = ".png",
+    ) -> dict[str, Any]:
+        self._record("update_item_image", category_id, item_id, image_index, image_data, image_extension)
+        return self._returns.get("update_item_image", {
+            "id": f"{item_id}_{image_index}",
+            "file_uri": f"/content/{category_id}/{item_id}/{item_id}_{image_index}{image_extension}",
+        })
+
+    def delete_item_image(self, category_id: str, item_id: str, file_index: int) -> dict[str, Any]:
+        self._record("delete_item_image", category_id, item_id, file_index)
+        return self._returns.get("delete_item_image", {
+            "id": f"{item_id}_{file_index}",
+            "file_uri": f"/content/{category_id}/{item_id}/{item_id}_{file_index}.png",
+        })
+
+    def add_item_voice(self, category_id: str, item_id: str, voice_id: str, audio_data: bytes) -> dict[str, Any]:
+        self._record("add_item_voice", category_id, item_id, voice_id, audio_data)
+        return self._returns.get("add_item_voice", {
+            "id": voice_id, "language": "en", "type": "tts",
+            "file_uri": f"/content/{category_id}/{item_id}/{voice_id}.mp3",
+        })
+
+    def update_item_voice(self, category_id: str, item_id: str, voice_id: str, audio_data: bytes) -> dict[str, Any]:
+        self._record("update_item_voice", category_id, item_id, voice_id, audio_data)
+        return self._returns.get("update_item_voice", {
+            "id": voice_id, "language": "en", "type": "tts",
+            "file_uri": f"/content/{category_id}/{item_id}/{voice_id}.mp3",
+        })
+
+    def delete_item_voice(self, category_id: str, item_id: str, voice_id: str) -> dict[str, Any]:
+        self._record("delete_item_voice", category_id, item_id, voice_id)
+        return self._returns.get("delete_item_voice", {
+            "id": voice_id, "language": "en", "type": "tts",
+            "file_uri": f"/content/{category_id}/{item_id}/{voice_id}.mp3",
+        })
+
     def add_category_voice(self, category_id: str, language: str, audio_data: bytes) -> dict[str, Any]:
         self._record("add_category_voice", category_id, language, audio_data)
         return self._returns.get("add_category_voice", {
@@ -290,6 +345,24 @@ class _ConcreteProvider(ContentProvider):
         return {}
 
     def item_voices(self, category_id, item_id):
+        return {}
+
+    def add_item_image(self, category_id, item_id, image_data, image_extension=".png"):
+        return {}
+
+    def update_item_image(self, category_id, item_id, image_index, image_data, image_extension=".png"):
+        return {}
+
+    def delete_item_image(self, category_id, item_id, file_index):
+        return {}
+
+    def add_item_voice(self, category_id, item_id, voice_id, audio_data):
+        return {}
+
+    def update_item_voice(self, category_id, item_id, voice_id, audio_data):
+        return {}
+
+    def delete_item_voice(self, category_id, item_id, voice_id):
         return {}
 
     def add_category_voice(self, category_id, language, audio_data):

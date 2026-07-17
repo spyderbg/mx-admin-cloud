@@ -1,5 +1,51 @@
-### GET request to example server
-GET https://examples.http-client.intellij.net/get
-    ?generated-in=PyCharm
+### Add an image file variant to an item
+# category_id/item_id locate the item; not yet implemented (always returns 501).
+POST {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}/images
+Content-Type: multipart/form-data; boundary=WebAppBoundary
 
-###
+--WebAppBoundary
+Content-Disposition: form-data; name="image"; filename="item_image.png"
+Content-Type: image/png
+
+< ./fixtures/item_image.png
+--WebAppBoundary--
+
+### Replace a specific image file variant
+# item_image_index is the variant's position (e.g. 1 for the "_01" file); not yet implemented (always returns 501).
+PUT {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}/images/{{item_image_index}}
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="image"; filename="item_image.png"
+Content-Type: image/png
+
+< ./fixtures/item_image.png
+--WebAppBoundary--
+
+### Delete a file variant from an item
+# item_file_index is the variant's position; at least one variant must remain. Not yet implemented (always returns 501).
+DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}/files/{{item_file_index}}
+
+################################################################################
+
+### Update voice metadata for an item
+# voice_id identifies the item+language pair; not yet implemented (always returns 501).
+PUT {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}/voices/{{item_voice_id}}
+
+### Upload audio for an item voice
+# Replaces the audio file for the given item voice; not yet implemented (always returns 501).
+PUT {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}/voices/{{item_voice_id}}/audio
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="audio"; filename="item_voice.mp3"
+Content-Type: audio/mpeg
+
+< ./fixtures/item_voice.mp3
+--WebAppBoundary--
+
+### Delete a voice from an item
+# Not yet implemented (always returns 501).
+DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}/voices/{{item_voice_id}}
+
+################################################################################

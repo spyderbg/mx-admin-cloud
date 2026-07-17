@@ -183,6 +183,61 @@ class _StubContentProvider(ContentProvider):
     def item_voices(self, category_name: str, item_id: str) -> ItemVoices:
         return self._call("item_voices", ItemVoices(item_id=item_id))
 
+    def add_item_image(
+            self,
+            category_id: str,
+            item_id: str,
+            image_data: bytes,
+            image_extension: str = ".png",
+    ) -> CategoryImage:
+        return self._call("add_item_image", CategoryImage(
+            id=f"{item_id}_1",
+            file_uri=f"/content/{category_id}/{item_id}/{item_id}_1{image_extension}",
+        ))
+
+    def update_item_image(
+            self,
+            category_id: str,
+            item_id: str,
+            image_index: int,
+            image_data: bytes,
+            image_extension: str = ".png",
+    ) -> CategoryImage:
+        return self._call("update_item_image", CategoryImage(
+            id=f"{item_id}_{image_index}",
+            file_uri=f"/content/{category_id}/{item_id}/{item_id}_{image_index}{image_extension}",
+        ))
+
+    def delete_item_image(self, category_id: str, item_id: str, file_index: int) -> CategoryImage:
+        return self._call("delete_item_image", CategoryImage(
+            id=f"{item_id}_{file_index}",
+            file_uri=f"/content/{category_id}/{item_id}/{item_id}_{file_index}.png",
+        ))
+
+    def add_item_voice(self, category_id: str, item_id: str, voice_id: str, audio_data: bytes) -> CategoryVoice:
+        return self._call("add_item_voice", CategoryVoice(
+            id=voice_id,
+            language="en",
+            type="tts",
+            file_uri=f"/content/{category_id}/{item_id}/{voice_id}.mp3",
+        ))
+
+    def update_item_voice(self, category_id: str, item_id: str, voice_id: str, audio_data: bytes) -> CategoryVoice:
+        return self._call("update_item_voice", CategoryVoice(
+            id=voice_id,
+            language="en",
+            type="tts",
+            file_uri=f"/content/{category_id}/{item_id}/{voice_id}.mp3",
+        ))
+
+    def delete_item_voice(self, category_id: str, item_id: str, voice_id: str) -> CategoryVoice:
+        return self._call("delete_item_voice", CategoryVoice(
+            id=voice_id,
+            language="en",
+            type="tts",
+            file_uri=f"/content/{category_id}/{item_id}/{voice_id}.mp3",
+        ))
+
     def add_category_voice(self, category_id: str, language: str, audio_data: bytes) -> CategoryVoice:
         return self._call("add_category_voice", CategoryVoice(
             id=f"{category_id}-v-{language}",
