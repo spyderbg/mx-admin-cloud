@@ -209,26 +209,26 @@ class ContentService(Service):
             self,
             category_id: str,
             item_id: str,
-            image_index: int,
+            image_id: str,
             image_data: bytes,
             image_extension: str = ".png",
     ) -> CategoryImage:
         """Replace an item's image file variant via the active provider."""
         return self._select_provider().update_item_image(
-            category_id, item_id, image_index, image_data, image_extension,
+            category_id, item_id, image_id, image_data, image_extension,
         )
 
-    def delete_item_image(self, category_id: str, item_id: str, file_index: int) -> CategoryImage:
+    def delete_item_image(self, category_id: str, item_id: str, image_id: str) -> CategoryImage:
         """Delete an item's image file variant via the active provider."""
-        return self._select_provider().delete_item_image(category_id, item_id, file_index)
+        return self._select_provider().delete_item_image(category_id, item_id, image_id)
 
     # ------------------------------------------------------------------
     # Item voices methods
     # ------------------------------------------------------------------
 
-    def add_item_voice(self, category_id: str, item_id: str, voice_id: str, audio_data: bytes) -> CategoryVoice:
-        """Add audio for an item voice that has none yet, via the active provider."""
-        return self._select_provider().add_item_voice(category_id, item_id, voice_id, audio_data)
+    def add_item_voice(self, category_id: str, item_id: str, language: str, audio_data: bytes) -> CategoryVoice:
+        """Add audio for an item voice in the given language, via the active provider."""
+        return self._select_provider().add_item_voice(category_id, item_id, language, audio_data)
 
     def update_item_voice(self, category_id: str, item_id: str, voice_id: str, audio_data: bytes) -> CategoryVoice:
         """Replace audio for an existing item voice via the active provider."""

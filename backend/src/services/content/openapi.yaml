@@ -102,6 +102,50 @@ components:
       - category
       - item
       title: Body_create_item_endpoint_api_v1_content_items_post
+    Body_items_images_add_api_v1_content_categories__category_id__items__item_id__images_post:
+      properties:
+        image:
+          type: string
+          contentMediaType: application/octet-stream
+          title: Image
+      type: object
+      required:
+      - image
+      title: Body_items_images_add_api_v1_content_categories__category_id__items__item_id__images_post
+    Body_items_images_update_api_v1_content_categories__category_id__items__item_id__images__image_id__put:
+      properties:
+        image:
+          type: string
+          contentMediaType: application/octet-stream
+          title: Image
+      type: object
+      required:
+      - image
+      title: Body_items_images_update_api_v1_content_categories__category_id__items__item_id__images__image_id__put
+    Body_items_voices_add_api_v1_content_categories__category_id__items__item_id__voices_post:
+      properties:
+        language:
+          type: string
+          title: Language
+        audio:
+          type: string
+          contentMediaType: application/octet-stream
+          title: Audio
+      type: object
+      required:
+      - language
+      - audio
+      title: Body_items_voices_add_api_v1_content_categories__category_id__items__item_id__voices_post
+    Body_items_voices_update_api_v1_content_categories__category_id__items__item_id__voices__voice_id__put:
+      properties:
+        audio:
+          type: string
+          contentMediaType: application/octet-stream
+          title: Audio
+      type: object
+      required:
+      - audio
+      title: Body_items_voices_update_api_v1_content_categories__category_id__items__item_id__voices__voice_id__put
     CategoryDetailsResponse:
       properties:
         id:
@@ -1278,45 +1322,6 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
 
   # ─── Items Images ───────────────────────────────────────────────────
-  /api/v1/content/categories/{category_id}/items/{item_id}/files/{file_index}:
-    delete:
-      tags:
-      - Items Images
-      summary: Delete a file variant from an item
-      description: Remove a specific file variant (e.g., image at a given index) from
-        a content item. This endpoint allows deleting a file variant from an item in
-        a category. At least one file variant must remain after deletion. Requires authentication.
-      operationId: items_images_delete_api_v1_content_categories__category_id__items__item_id__files__file_index__delete
-      security:
-      - OAuth2PasswordBearer: []
-      parameters:
-      - name: category_id
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Category Id
-      - name: item_id
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Item Id
-      - name: file_index
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: File Index
-      responses:
-        '204':
-          description: Successful Response
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/content/categories/{category_id}/items/{item_id}/images:
     get:
       tags:
@@ -1358,9 +1363,10 @@ paths:
       tags:
       - Items Images
       summary: Add an image file variant to an item
-      description: Add an additional image file variant to the specified content item.
-        This endpoint allows uploading multiple image files (e.g., different resolutions,
-        formats) for a single item. Requires authentication.
+      description: Add an additional image file variant to the specified content item,
+        stored at the next available index. This endpoint allows uploading multiple
+        image files (e.g., different resolutions, formats) for a single item. Requires
+        authentication.
       operationId: items_images_add_api_v1_content_categories__category_id__items__item_id__images_post
       security:
       - OAuth2PasswordBearer: []
@@ -1377,27 +1383,34 @@ paths:
         schema:
           type: string
           title: Item Id
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_items_images_add_api_v1_content_categories__category_id__items__item_id__images_post'
       responses:
         '201':
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/ImageResponse'
         '422':
           description: Validation Error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/content/categories/{category_id}/items/{item_id}/images/{image_index}:
+  /api/v1/content/categories/{category_id}/items/{item_id}/images/{image_id}:
     put:
       tags:
       - Items Images
       summary: Replace a specific image file variant
-      description: Replace the image file variant at the specified index for the given
+      description: Replace the image file variant with the given image_id for the given
         item in the category. Uploads the new file and stores it in place of the existing
-        variant at this index. Requires authentication.
-      operationId: items_images_replace_api_v1_content_categories__category_id__items__item_id__images__image_index__put
+        variant. Requires authentication.
+      operationId: items_images_update_api_v1_content_categories__category_id__items__item_id__images__image_id__put
       security:
       - OAuth2PasswordBearer: []
       parameters:
@@ -1413,18 +1426,67 @@ paths:
         schema:
           type: string
           title: Item Id
-      - name: image_index
+      - name: image_id
         in: path
         required: true
         schema:
-          type: integer
-          title: Image Index
+          type: string
+          title: Image Id
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_items_images_update_api_v1_content_categories__category_id__items__item_id__images__image_id__put'
       responses:
-        '501':
+        '200':
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/ImageResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Items Images
+      summary: Delete a file variant from an item
+      description: Remove a specific image file variant, identified by image_id, from
+        a content item. At least one file variant must remain after deletion. Requires
+        authentication.
+      operationId: items_images_delete_api_v1_content_categories__category_id__items__item_id__images__image_id__delete
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Item Id
+      - name: image_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Image Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageResponse'
         '422':
           description: Validation Error
           content:
@@ -1469,14 +1531,56 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - Items Voices
+      summary: Add a voice to an item
+      description: Add a new voice file to the specified content item for the given
+        language. Fails with 409 if the item already has a voice for that language;
+        use the update endpoint to replace it. Requires authentication.
+      operationId: items_voices_add_api_v1_content_categories__category_id__items__item_id__voices_post
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Item Id
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_items_voices_add_api_v1_content_categories__category_id__items__item_id__voices_post'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoiceResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/content/categories/{category_id}/items/{item_id}/voices/{voice_id}:
     put:
       tags:
       - Items Voices
       summary: Update voice for an item
-      description: Update or replace a voice file associated with a content item. This
-        endpoint allows modifying the voice file for a specific item in a category.
-        Requires authentication.
+      description: Replace the audio file for an item voice that already has one. Fails
+        with 404 if the voice has no audio file yet; use the add endpoint to create
+        it. Requires authentication.
       operationId: items_voices_update_api_v1_content_categories__category_id__items__item_id__voices__voice_id__put
       security:
       - OAuth2PasswordBearer: []
@@ -1499,12 +1603,19 @@ paths:
         schema:
           type: string
           title: Voice Id
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_items_voices_update_api_v1_content_categories__category_id__items__item_id__voices__voice_id__put'
       responses:
-        '501':
+        '200':
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/VoiceResponse'
         '422':
           description: Validation Error
           content:
@@ -1541,50 +1652,12 @@ paths:
           type: string
           title: Voice Id
       responses:
-        '204':
+        '200':
           description: Successful Response
-        '422':
-          description: Validation Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/content/categories/{category_id}/items/{item_id}/voices/{voice_id}/audio:
-    put:
-      tags:
-      - Items Voices
-      summary: Upload audio for an item voice
-      description: Upload or replace the audio file for a specific voice associated
-        with a content item. This endpoint allows uploading audio files for voices linked
-        to items in a category. Requires authentication.
-      operationId: items_voices_upload_api_v1_content_categories__category_id__items__item_id__voices__voice_id__audio_put
-      security:
-      - OAuth2PasswordBearer: []
-      parameters:
-      - name: category_id
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Category Id
-      - name: item_id
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Item Id
-      - name: voice_id
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Voice Id
-      responses:
-        '501':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
+                $ref: '#/components/schemas/VoiceResponse'
         '422':
           description: Validation Error
           content:

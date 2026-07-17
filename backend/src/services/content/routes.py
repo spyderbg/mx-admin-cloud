@@ -67,11 +67,10 @@ CATEGORY_VOICE = "/categories/{category_id}/voices/{voice_id}"
 CATEGORY_ITEMS = "/categories/{category_id}/items"
 CATEGORY_ITEM = "/categories/{category_id}/items/{item_id}"
 CATEGORY_ITEM_IMAGES = "/categories/{category_id}/items/{item_id}/images"
-CATEGORY_ITEM_IMAGE = "/categories/{category_id}/items/{item_id}/images/{image_index}"
-CATEGORY_ITEM_FILES = "/categories/{category_id}/items/{item_id}/files/{file_index}"
+CATEGORY_ITEM_IMAGE = "/categories/{category_id}/items/{item_id}/images/{image_id}"
 CATEGORY_ITEM_VOICES = "/categories/{category_id}/items/{item_id}/voices"
 CATEGORY_ITEM_VOICE = "/categories/{category_id}/items/{item_id}/voices/{voice_id}"
-CATEGORY_ITEM_VOICE_AUDIO = "/categories/{category_id}/items/{item_id}/voices/{voice_id}/audio"
+
 ITEMS = "/items"
 
 router = APIRouter(prefix=f"{settings.API_V1_STR}/content")
@@ -889,9 +888,9 @@ def items_images_list(
     tags=[TAG_ITEMS_IMAGES],
     summary="Add an image file variant to an item",
     description=(
-            "Add an additional image file variant to the specified content item. "
-            "This endpoint allows uploading multiple image files (e.g., different resolutions, formats) "
-            "for a single item. Requires authentication."
+            "Add an additional image file variant to the specified content item, stored at the next "
+            "available index. This endpoint allows uploading multiple image files (e.g., different "
+            "resolutions, formats) for a single item. Requires authentication."
     ),
 )
 def items_images_add(
@@ -901,7 +900,7 @@ def items_images_add(
         image: UploadFile = File(...),
         _user: dict = Depends(get_current_user),
 ) -> ImageResponse:
-    """Add a new image file variant to an item."""
+    """Add a new image file variant to an item at the next available index."""
     if not image.filename:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Image file is required")
     image_data = image.file.read()
@@ -930,15 +929,15 @@ def items_images_add(
     tags=[TAG_ITEMS_IMAGES],
     summary="Replace a specific image file variant",
     description=(
-            "Replace the image file variant at the specified index for the given item in the category. "
-            "Uploads the new file and stores it in place of the existing variant at this index. "
+            "Replace the image file variant with the given image_id for the given item in the category. "
+            "Uploads the new file and stores it in place of the existing variant. "
             "Requires authentication."
     ),
 )
 def items_images_update(
         category_id: str,
         item_id: str,
-        image_index: int,
+        image_id: str,
         service: ContentServiceDep,
         image: UploadFile = File(...),
         _user: dict = Depends(get_current_user),
@@ -955,7 +954,7 @@ def items_images_update(
     if ext not in (".png", ".jpg", ".jpeg"):
         ext = ".png"
     try:
-        result = service.update_item_image(category_id, item_id, image_index, image_data, ext)
+        result = service.update_item_image(category_id, item_id, image_id, image_data, ext)
     except CategoryNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except InvalidCategoryNameError as exc:
@@ -966,14 +965,13 @@ def items_images_update(
 
 
 @router.delete(
-    CATEGORY_ITEM_FILES,
+    CATEGORY_ITEM_IMAGE,
     response_model=ImageResponse,
     status_code=status.HTTP_200_OK,
     tags=[TAG_ITEMS_IMAGES],
     summary="Delete a file variant from an item",
     description=(
-            "Remove a specific file variant (e.g., image at a given index) from a content item. "
-            "This endpoint allows deleting a file variant from an item in a category. "
+            "Remove a specific image file variant, identified by image_id, from a content item. "
             "At least one file variant must remain after deletion. "
             "Requires authentication."
     ),
@@ -981,13 +979,13 @@ def items_images_update(
 def items_images_delete(
         category_id: str,
         item_id: str,
-        file_index: int,
+        image_id: str,
         service: ContentServiceDep,
         _user: dict = Depends(get_current_user),
 ) -> ImageResponse:
     """Delete a file variant (at least one must remain)."""
     try:
-        result = service.delete_item_image(category_id, item_id, file_index)
+        result = service.delete_item_image(category_id, item_id, image_id)
     except CategoryNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except InvalidCategoryNameError as exc:
@@ -1046,6 +1044,47 @@ def items_voices_list(
     )
 
 
+@router.post(
+    CATEGORY_ITEM_VOICES,
+    response_model=VoiceResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=[TAG_ITEMS_VOICES],
+    summary="Add a voice to an item",
+    description=(
+            "Add a new voice file to the specified content item for the given language. "
+            "Fails with 409 if the item already has a voice for that language; use the update endpoint "
+            "to replace it. Requires authentication."
+    ),
+)
+def items_voices_add(
+        category_id: str,
+        item_id: str,
+        service: ContentServiceDep,
+        language: str = Form(...),
+        audio: UploadFile = File(...),
+        _user: dict = Depends(get_current_user),
+) -> VoiceResponse:
+    """Add a voice to an item for the given language."""
+    if not audio.filename:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Audio file is required")
+    audio_data = audio.file.read()
+    if not audio_data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Audio file is empty")
+    try:
+        result = service.add_item_voice(category_id, item_id, language.strip(), audio_data)
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except CategoryConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except InvalidCategoryNameError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return VoiceResponse(
+        id=result.id, language=result.language, type=result.type, file_uri=result.file_uri, action="add",
+    )
+
+
 @router.put(
     CATEGORY_ITEM_VOICE,
     response_model=VoiceResponse,
@@ -1054,7 +1093,7 @@ def items_voices_list(
     summary="Update voice for an item",
     description=(
             "Replace the audio file for an item voice that already has one. "
-            "Fails with 404 if the voice has no audio file yet; use the /audio endpoint to add it. "
+            "Fails with 404 if the voice has no audio file yet; use the add endpoint to create it. "
             "Requires authentication."
     ),
 )
@@ -1082,47 +1121,6 @@ def items_voices_update(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return VoiceResponse(
         id=result.id, language=result.language, type=result.type, file_uri=result.file_uri, action="update",
-    )
-
-
-@router.put(
-    CATEGORY_ITEM_VOICE_AUDIO,
-    response_model=VoiceResponse,
-    status_code=status.HTTP_201_CREATED,
-    tags=[TAG_ITEMS_VOICES],
-    summary="Upload audio for an item voice",
-    description=(
-            "Upload the audio file for an item voice that doesn't have one yet. "
-            "Fails with 409 if the voice already has an audio file; use the base voice endpoint to replace it. "
-            "Requires authentication."
-    ),
-)
-def items_voices_upload(
-        category_id: str,
-        item_id: str,
-        voice_id: str,
-        service: ContentServiceDep,
-        audio: UploadFile = File(...),
-        _user: dict = Depends(get_current_user),
-) -> VoiceResponse:
-    """Upload audio for an item voice that has none yet."""
-    if not audio.filename:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Audio file is required")
-    audio_data = audio.file.read()
-    if not audio_data:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Audio file is empty")
-    try:
-        result = service.add_item_voice(category_id, item_id, voice_id, audio_data)
-    except CategoryNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except CategoryConflictError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    except InvalidCategoryNameError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    except ContentError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return VoiceResponse(
-        id=result.id, language=result.language, type=result.type, file_uri=result.file_uri, action="add",
     )
 
 

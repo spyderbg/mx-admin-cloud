@@ -204,6 +204,17 @@ class FileSystemContentProvider(ContentProvider):
         return None
 
     @staticmethod
+    def _find_item_image_by_id(item_path: Path, image_id: str) -> Path | None:
+        """Return the existing item image file whose stem matches *image_id*, if any."""
+        if not FileSystemContentProvider._is_safe_category_name(image_id):
+            return None
+        for ext in _IMAGE_EXTENSIONS:
+            candidate = item_path / f"{image_id}{ext}"
+            if candidate.is_file():
+                return candidate
+        return None
+
+    @staticmethod
     def _first_available_item_image_index(item_path: Path, item_folder_name: str) -> int:
         """First 1-based index where no ``{item_folder_name}_{index:02d}.{ext}`` file exists yet."""
         for i in range(1, 1000):
@@ -213,15 +224,6 @@ class FileSystemContentProvider(ContentProvider):
             ):
                 return i
         return 1
-
-    @staticmethod
-    def _find_item_image_file(item_path: Path, item_folder_name: str, index: int) -> Path | None:
-        """Return the existing item image file at the given 1-based *index*, if any."""
-        for ext in _IMAGE_EXTENSIONS:
-            candidate = item_path / f"{item_folder_name}_{index:02d}{ext}"
-            if candidate.is_file():
-                return candidate
-        return None
 
     @staticmethod
     def _category_voice_path(category_path: Path, category_name: str, language: str) -> Path:
@@ -1121,7 +1123,7 @@ class FileSystemContentProvider(ContentProvider):
             self,
             category_id: str,
             item_id: str,
-            image_index: int,
+            image_id: str,
             image_data: bytes,
             image_extension: str = ".png",
     ) -> CategoryImage:
@@ -1129,17 +1131,17 @@ class FileSystemContentProvider(ContentProvider):
         category_path = self._category_path(category_name)
         item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
 
-        existing = self._find_item_image_file(item_path, item_folder_name, image_index)
+        existing = self._find_item_image_by_id(item_path, image_id)
         if existing is None:
             raise CategoryNotFoundError(
-                f"Image variant {image_index} not found for item '{item_id}' in category '{category_name}'.",
+                f"Image '{image_id}' not found for item '{item_id}' in category '{category_name}'.",
             )
 
         ext = image_extension if image_extension.startswith(".") else f".{image_extension}"
         if ext.lower() not in _IMAGE_EXTENSIONS:
             ext = ".png"
 
-        new_path = item_path / f"{item_folder_name}_{image_index:02d}{ext}"
+        new_path = item_path / f"{image_id}{ext}"
         try:
             if existing != new_path:
                 existing.unlink()
@@ -1153,15 +1155,15 @@ class FileSystemContentProvider(ContentProvider):
             file_uri=f"/content/{category_name}/{item_folder_name}/{new_path.name}",
         )
 
-    def delete_item_image(self, category_id: str, item_id: str, file_index: int) -> CategoryImage:
+    def delete_item_image(self, category_id: str, item_id: str, image_id: str) -> CategoryImage:
         category_name = self._folder_name_for_id(category_id)
         category_path = self._category_path(category_name)
         item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
 
-        existing = self._find_item_image_file(item_path, item_folder_name, file_index)
+        existing = self._find_item_image_by_id(item_path, image_id)
         if existing is None:
             raise CategoryNotFoundError(
-                f"Image variant {file_index} not found for item '{item_id}' in category '{category_name}'.",
+                f"Image '{image_id}' not found for item '{item_id}' in category '{category_name}'.",
             )
 
         remaining = [
@@ -1174,7 +1176,6 @@ class FileSystemContentProvider(ContentProvider):
             )
 
         file_uri = f"/content/{category_name}/{item_folder_name}/{existing.name}"
-        image_id = existing.stem
         try:
             existing.unlink()
         except OSError as exc:
@@ -1182,19 +1183,17 @@ class FileSystemContentProvider(ContentProvider):
 
         return CategoryImage(id=image_id, file_uri=file_uri)
 
-    def add_item_voice(self, category_id: str, item_id: str, voice_id: str, audio_data: bytes) -> CategoryVoice:
+    def add_item_voice(self, category_id: str, item_id: str, language: str, audio_data: bytes) -> CategoryVoice:
         category_name = self._folder_name_for_id(category_id)
         category_path = self._category_path(category_name)
         item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
 
-        if self._find_item_voice_file(item_path, item_folder_name, voice_id) is not None:
-            raise CategoryConflictError(f"Voice '{voice_id}' already has an audio file for item '{item_id}'.")
+        if language not in settings.SUPPORTED_LANGUAGES:
+            raise ContentOperationError(f"Unsupported language: {language}")
 
-        language = self._language_for_item_voice_id(item_folder_name, voice_id)
-        if language is None:
-            raise CategoryNotFoundError(
-                f"Voice '{voice_id}' not found for item '{item_id}' in category '{category_name}'.",
-            )
+        voice_id = f"{item_folder_name}-v-{language}"
+        if self._find_item_voice_file(item_path, item_folder_name, voice_id) is not None:
+            raise CategoryConflictError(f"Voice for language '{language}' already exists for item '{item_id}'.")
 
         voice_path = self._item_voice_path(item_path, item_folder_name, language)
         try:

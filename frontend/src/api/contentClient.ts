@@ -136,9 +136,45 @@ export const itemsImagesList = async (categoryId: string, itemId: string): Promi
   return r.data
 }
 
+/** Add an image file variant to an item */
+export const itemsImagesAdd = async (categoryId: string, itemId: string, formData: FormData): Promise<ImageResponse> => {
+  const r = await client.post<ImageResponse>(`/content/categories/${categoryId}/items/${itemId}/images`, formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+  return r.data
+}
+
+/** Replace a specific image file variant */
+export const itemsImagesUpdate = async (categoryId: string, itemId: string, imageId: string, formData: FormData): Promise<ImageResponse> => {
+  const r = await client.put<ImageResponse>(`/content/categories/${categoryId}/items/${itemId}/images/${imageId}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+  return r.data
+}
+
+/** Delete a file variant from an item */
+export const itemsImagesDelete = async (categoryId: string, itemId: string, imageId: string): Promise<ImageResponse> => {
+  const r = await client.delete<ImageResponse>(`/content/categories/${categoryId}/items/${itemId}/images/${imageId}`)
+  return r.data
+}
+
 /** List voices for an item */
 export const itemsVoicesList = async (categoryId: string, itemId: string): Promise<ItemVoicesResponse> => {
   const r = await client.get<ItemVoicesResponse>(`/content/categories/${categoryId}/items/${itemId}/voices`)
+  return r.data
+}
+
+/** Add a voice to an item */
+export const itemsVoicesAdd = async (categoryId: string, itemId: string, formData: FormData): Promise<VoiceResponse> => {
+  const r = await client.post<VoiceResponse>(`/content/categories/${categoryId}/items/${itemId}/voices`, formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+  return r.data
+}
+
+/** Update voice for an item */
+export const itemsVoicesUpdate = async (categoryId: string, itemId: string, voiceId: string, formData: FormData): Promise<VoiceResponse> => {
+  const r = await client.put<VoiceResponse>(`/content/categories/${categoryId}/items/${itemId}/voices/${voiceId}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+  return r.data
+}
+
+/** Delete a voice from an item */
+export const itemsVoicesDelete = async (categoryId: string, itemId: string, voiceId: string): Promise<VoiceResponse> => {
+  const r = await client.delete<VoiceResponse>(`/content/categories/${categoryId}/items/${itemId}/voices/${voiceId}`)
   return r.data
 }
 

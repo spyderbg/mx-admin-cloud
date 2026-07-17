@@ -1,5 +1,5 @@
 ### Add an image file variant to an item
-# category_id/item_id locate the item; not yet implemented (always returns 501).
+# Stored at the next available index ({item_folder_name}_{NN}.<ext>); no id is supplied by the caller.
 POST {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}/images
 Content-Type: multipart/form-data; boundary=WebAppBoundary
 
@@ -11,8 +11,8 @@ Content-Type: image/png
 --WebAppBoundary--
 
 ### Replace a specific image file variant
-# item_image_index is the variant's position (e.g. 1 for the "_01" file); not yet implemented (always returns 501).
-PUT {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}/images/{{item_image_index}}
+# image_id is the on-disk filename stem; replaces the file created at item creation.
+PUT {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}/images/{{item_image_id}}
 Content-Type: multipart/form-data; boundary=WebAppBoundary
 
 --WebAppBoundary
@@ -22,19 +22,51 @@ Content-Type: image/png
 < ./fixtures/item_image.png
 --WebAppBoundary--
 
-### Delete a file variant from an item
-# item_file_index is the variant's position; at least one variant must remain. Not yet implemented (always returns 501).
-DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}/files/{{item_file_index}}
+### Replace a specific image file variant - not found
+PUT {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}/images/does_not_exist
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="image"; filename="item_image.png"
+Content-Type: image/png
+
+< ./fixtures/item_image.png
+--WebAppBoundary--
+
+### Delete an image from an item
+# item_file_index is the variant's position; at least one variant must remain.
+DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}/images/{{image_image_id}}
+
+### Delete an image from and item - category not found
+DELETE {{settings.CONTENT_URL}}/categories/does_not_exist/icon
+
+### Delete an image from and item - item not found
+DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/items/does_not_exist
+
+### Delete an image from and item - image not found
+DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}/images/does_not_exist
 
 ################################################################################
 
-### Update voice metadata for an item
-# voice_id identifies the item+language pair; not yet implemented (always returns 501).
-PUT {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}/voices/{{item_voice_id}}
+### Add a voice to an item
+# language is the ISO code for the new voice; fails with 409 if the item already has a voice for it.
+POST {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}/voices
+Content-Type: multipart/form-data; boundary=WebAppBoundary
 
-### Upload audio for an item voice
-# Replaces the audio file for the given item voice; not yet implemented (always returns 501).
-PUT {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}/voices/{{item_voice_id}}/audio
+--WebAppBoundary
+Content-Disposition: form-data; name="language"
+
+de
+--WebAppBoundary
+Content-Disposition: form-data; name="audio"; filename="item_voice.mp3"
+Content-Type: audio/mpeg
+
+< ./fixtures/item_voice.mp3
+--WebAppBoundary--
+
+### Update voice for an item
+# voice_id identifies the item+language pair; fails with 404 if it has no audio file yet.
+PUT {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}/voices/{{item_voice_id}}
 Content-Type: multipart/form-data; boundary=WebAppBoundary
 
 --WebAppBoundary
@@ -45,7 +77,15 @@ Content-Type: audio/mpeg
 --WebAppBoundary--
 
 ### Delete a voice from an item
-# Not yet implemented (always returns 501).
 DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}/voices/{{item_voice_id}}
+
+### Delete a voice from an item - category not found
+DELETE {{settings.CONTENT_URL}}/categories/does_not_exist/icon
+
+### Delete a voice from an item - item not found
+DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/items/does_not_exist
+
+### Delete a voice from an item - voice not found
+DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}/voices/does_not_exist
 
 ################################################################################

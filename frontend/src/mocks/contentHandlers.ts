@@ -464,4 +464,19 @@ export const contentHandlers = [
 
   // Delete a voice from an item
   http.delete('/api/v1/content/categories/:category_id/items/:item_id/voices/:voice_id', () => new HttpResponse(null, { status: 404 })),
+
+  // Add an image file variant to an item
+  http.post('/api/v1/content/categories/:category_id/items/:item_id/images/:image_id', () => HttpResponse.json({}, { status: 201 })),
+
+  // Replace a specific image file variant
+  http.put('/api/v1/content/categories/:category_id/items/:item_id/images/:image_id', () => HttpResponse.json({})),
+
+  // Upload audio for an item voice
+  http.post('/api/v1/content/categories/:category_id/items/:item_id/voices/:voice_id/audio', () => HttpResponse.json({}, { status: 201 })),
+
+  // Add a voice to an item
+  http.post('/api/v1/content/categories/:category_id/items/:item_id/voices', () => HttpResponse.json({}, { status: 201 })),
+
+  // Delete a file variant from an item
+  http.delete('/api/v1/content/categories/:category_id/items/:item_id/images/:image_id', () => HttpResponse.json({})),
 ]

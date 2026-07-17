@@ -199,27 +199,27 @@ class _StubContentProvider(ContentProvider):
             self,
             category_id: str,
             item_id: str,
-            image_index: int,
+            image_id: str,
             image_data: bytes,
             image_extension: str = ".png",
     ) -> CategoryImage:
         return self._call("update_item_image", CategoryImage(
-            id=f"{item_id}_{image_index}",
-            file_uri=f"/content/{category_id}/{item_id}/{item_id}_{image_index}{image_extension}",
+            id=image_id,
+            file_uri=f"/content/{category_id}/{item_id}/{image_id}{image_extension}",
         ))
 
-    def delete_item_image(self, category_id: str, item_id: str, file_index: int) -> CategoryImage:
+    def delete_item_image(self, category_id: str, item_id: str, image_id: str) -> CategoryImage:
         return self._call("delete_item_image", CategoryImage(
-            id=f"{item_id}_{file_index}",
-            file_uri=f"/content/{category_id}/{item_id}/{item_id}_{file_index}.png",
+            id=image_id,
+            file_uri=f"/content/{category_id}/{item_id}/{image_id}.png",
         ))
 
-    def add_item_voice(self, category_id: str, item_id: str, voice_id: str, audio_data: bytes) -> CategoryVoice:
+    def add_item_voice(self, category_id: str, item_id: str, language: str, audio_data: bytes) -> CategoryVoice:
         return self._call("add_item_voice", CategoryVoice(
-            id=voice_id,
-            language="en",
+            id=f"{item_id}-v-{language}",
+            language=language,
             type="tts",
-            file_uri=f"/content/{category_id}/{item_id}/{voice_id}.mp3",
+            file_uri=f"/content/{category_id}/{item_id}/{item_id}-v-{language}.mp3",
         ))
 
     def update_item_voice(self, category_id: str, item_id: str, voice_id: str, audio_data: bytes) -> CategoryVoice:
