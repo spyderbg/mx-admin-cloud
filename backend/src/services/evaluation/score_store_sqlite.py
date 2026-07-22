@@ -10,6 +10,8 @@ from .score_store import ScoreStore
 
 
 class SQLiteScoreStore(ScoreStore):
+    """SQLite-backed ScoreStore: persists evaluations and computes rolling provider aggregates."""
+
     def __init__(self, database_path: Path) -> None:
         self.database_path = database_path
         self.database_path.parent.mkdir(parents=True, exist_ok=True)

@@ -8,12 +8,16 @@ from src.core.models import EvaluationResult, GeneratedAudio, ProviderAggregate
 
 
 class ScoreStore(ABC):
+    """Interface for persisting evaluation results and computing provider aggregates."""
+
     @abstractmethod
     async def save(self, generated_audio: GeneratedAudio, evaluation_result: EvaluationResult) -> ProviderAggregate:
         """Persist one evaluation and return the latest provider aggregate."""
 
 
 class MultiScoreStore(ScoreStore):
+    """Fan out each save() call to multiple ScoreStore backends."""
+
     def __init__(self, stores: list[ScoreStore]) -> None:
         self.stores = stores
 

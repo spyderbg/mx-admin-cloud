@@ -121,10 +121,10 @@ class UsersDb:
             if role:
                 conditions.append("role = ?")
                 params.append(role)
-            
+
             if conditions:
                 query += " WHERE " + " AND ".join(conditions)
-            
+
             query += " ORDER BY id"
             return conn.execute(query, params).fetchall()
         finally:

@@ -90,7 +90,6 @@ class _StubContentProvider(ContentProvider):
         return self._call("category_id_by_name", category_name)
 
     def category_details(self, category_id: str) -> CategoryDetails:
-        from src.services.content.models import ItemDetail
         return self._call("category_details", CategoryDetails(
             name={"en": category_id},
             items=[ItemDetail(id=f"I_{category_id.title()}", name={"en": "apple"})],
@@ -101,13 +100,13 @@ class _StubContentProvider(ContentProvider):
 
     def create_item(
             self,
-            category_name: str,
+            category_id: str,
             english_word: str,
             image_data: bytes,
             image_extension: str = ".png",
     ) -> CreateItem:
         return self._call("create_item", CreateItem(
-            category=category_name,
+            category=category_id,
             item=english_word,
             folder=english_word.lower(),
             image_id=f"I_{english_word.title()}",
@@ -159,12 +158,12 @@ class _StubContentProvider(ContentProvider):
             file_uri=f"/content/{category_id}/{category_id}{image_extension}",
         ))
 
-    def archive_category(self, category_name: str) -> ArchiveCategory:
+    def archive_category(self, category_id: str) -> ArchiveCategory:
         return self._call("archive_category", ArchiveCategory(
             archived=True,
-            name=category_name,
-            archive_folder=f"{category_name}_1000",
-            destination=f"/archive/{category_name}_1000",
+            name=category_id,
+            archive_folder=f"{category_id}_1000",
+            destination=f"/archive/{category_id}_1000",
             message="archived",
         ))
 
@@ -175,25 +174,25 @@ class _StubContentProvider(ContentProvider):
             "update_category_details", RenameCategory(category=category_id, message="updated"),
         )
 
-    def remove_category(self, category_name: str) -> ArchiveCategory:
+    def remove_category(self, category_id: str) -> ArchiveCategory:
         return self._call("remove_category", ArchiveCategory(
             removed=True,
-            name=category_name,
+            name=category_id,
             message="removed",
         ))
 
-    def restore_category(self, category_name: str) -> RestoreCategory:
+    def restore_category(self, category_id: str) -> RestoreCategory:
         return self._call("restore_category", RestoreCategory(
             restored=True,
-            name=category_name,
-            from_archive=f"{category_name}_1000",
+            name=category_id,
+            from_archive=f"{category_id}_1000",
             message="restored",
         ))
 
-    def item_images(self, category_name: str, item_id: str) -> ItemImages:
+    def item_images(self, category_id: str, item_id: str) -> ItemImages:
         return self._call("item_images", ItemImages(item_id=item_id))
 
-    def item_voices(self, category_name: str, item_id: str) -> ItemVoices:
+    def item_voices(self, category_id: str, item_id: str) -> ItemVoices:
         return self._call("item_voices", ItemVoices(item_id=item_id))
 
     def add_item_image(
@@ -670,7 +669,6 @@ async def test_category_details_returns_200(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_category_details_with_items(tmp_resolved: Path) -> None:
-    from src.services.content.models import ItemDetail
     provider = _StubContentProvider(tmp_resolved).returns(
         "category_details",
         CategoryDetails(
@@ -748,10 +746,10 @@ async def test_create_item_strips_whitespace(tmp_resolved: Path) -> None:
     seen: list[tuple[str, str]] = []
 
     class _TrackingProvider(_StubContentProvider):
-        def create_item(self, category_name, english_word, image_data, image_extension=".png"):
-            seen.append((category_name, english_word))
+        def create_item(self, category_id, english_word, image_data, image_extension=".png"):
+            seen.append((category_id, english_word))
             return CreateItem(
-                category=category_name,
+                category=category_id,
                 item=english_word,
                 folder=english_word.lower(),
                 image_id=f"I_{english_word.title()}",
@@ -772,9 +770,9 @@ async def test_create_item_picks_correct_extension(tmp_resolved: Path) -> None:
     seen_ext: list[str] = []
 
     class _ExtProvider(_StubContentProvider):
-        def create_item(self, category_name, english_word, image_data, image_extension=".png"):
+        def create_item(self, category_id, english_word, image_data, image_extension=".png"):
             seen_ext.append(image_extension)
-            return CreateItem(category=category_name, item=english_word, folder=english_word, image_id="X")
+            return CreateItem(category=category_id, item=english_word, folder=english_word, image_id="X")
 
     app = _make_app(_ExtProvider(tmp_resolved), tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
@@ -791,9 +789,9 @@ async def test_create_item_defaults_unknown_extension_to_png(tmp_resolved: Path)
     seen_ext: list[str] = []
 
     class _ExtProvider(_StubContentProvider):
-        def create_item(self, category_name, english_word, image_data, image_extension=".png"):
+        def create_item(self, category_id, english_word, image_data, image_extension=".png"):
             seen_ext.append(image_extension)
-            return CreateItem(category=category_name, item=english_word, folder=english_word, image_id="X")
+            return CreateItem(category=category_id, item=english_word, folder=english_word, image_id="X")
 
     app = _make_app(_ExtProvider(tmp_resolved), tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:

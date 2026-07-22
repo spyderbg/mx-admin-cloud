@@ -97,6 +97,7 @@ class ProviderRunRecord:
     optimized_paths: dict[str, str] = field(default_factory=dict)  # optimizer_name -> path
 
     def to_dict(self) -> dict[str, Any]:
+        """Return this record as a plain dict, suitable for JSON/CSV serialization."""
         return asdict(self)
 
 
@@ -110,6 +111,7 @@ class RunSummary:
     provider_records: list[ProviderRunRecord]  # per-request results
 
     def to_dict(self) -> dict[str, Any]:
+        """Return this summary as a plain dict, suitable for JSON/CSV serialization."""
         return {
             "run_id": self.run_id,
             "input_file": self.input_file,

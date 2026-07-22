@@ -120,6 +120,7 @@ async def log_api_request(request: LogApiRequest) -> None:
 async def log_service_request(
         request: LogServiceRequest,
 ) -> None:
+    """Post a structured log message to "/internal/loggers/logging/log/service"."""
     if _client is None:
         return
     try:
@@ -134,6 +135,7 @@ async def log_service_request(
 async def log_provider_request(
         request: LogProviderRequest,
 ) -> None:
+    """Post a structured log message to "/internal/loggers/logging/log/provider"."""
     if _client is None:
         return
     try:
@@ -148,6 +150,7 @@ async def log_provider_request(
 async def log_payment_request(
         request: LogRequest,
 ) -> None:
+    """Post a structured log message to "/internal/loggers/logging/log/payment"."""
     if _client is None:
         return
     try:
