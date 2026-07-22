@@ -492,14 +492,26 @@ components:
         "archived" and "removed" are optional.'
     RenameCategoryBody:
       properties:
-        name:
-          type: string
-          title: Name
+        category_name:
+          additionalProperties:
+            type: string
+          type: object
+          title: Category Name
+          description: 'Language-code → translation map (e.g. {"en": "dog", "fr":
+            "chien"})'
+        description:
+          additionalProperties:
+            type: string
+          type: object
+          title: Description
+          description: 'Language-code → translation map (e.g. {"en": "dog", "fr":
+            "chien"})'
       type: object
       required:
-      - name
+      - category_name
+      - description
       title: RenameCategoryBody
-      description: Request body for renaming a category.
+      description: Request body for updating a category's localized name and description.
     RenameCategoryResponse:
       properties:
         category:
@@ -548,6 +560,20 @@ components:
       - message
       title: RestoreCategoryResponse
       description: Response for POST /content/categories/restore.
+    UpdateItemBody:
+      properties:
+        item_name:
+          additionalProperties:
+            type: string
+          type: object
+          title: Item Name
+          description: 'Language-code → translation map (e.g. {"en": "dog", "fr":
+            "chien"})'
+      type: object
+      required:
+      - item_name
+      title: UpdateItemBody
+      description: Request body for updating an item's localized name.
     ValidationError:
       properties:
         loc:
@@ -734,51 +760,22 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/content/categories/{category_name}:
-    put:
-      tags:
-      - Categories
-      summary: Update category name or description
-      description: Update the name or description of a content category. The category
-        must exist and be active to be updated. Requires authentication.
-      operationId: categories_update_api_v1_content_categories__category_name__put
-      security:
-      - OAuth2PasswordBearer: []
-      parameters:
-      - name: category_name
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Category Name
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
     patch:
       tags:
       - Categories
-      summary: Rename a content category
-      description: Renames an existing content category. The new name must be unique
-        and follow naming conventions. Requires authentication.
-      operationId: categories_rename_api_v1_content_categories__category_name__patch
+      summary: Update a content category's name and description
+      description: Update the localized name and description of a content category,
+        identified by category_id. The category must exist to be updated. Requires authentication.
+      operationId: categories_rename_api_v1_content_categories__category_id__patch
       security:
       - OAuth2PasswordBearer: []
       parameters:
-      - name: category_name
+      - name: category_id
         in: path
         required: true
         schema:
           type: string
-          title: Category Name
+          title: Category Id
       requestBody:
         required: true
         content:
@@ -804,12 +801,12 @@ paths:
       summary: Remove a content category
       description: Delete a content category permanently. This operation cannot be undone
         and will remove the category and all associated content. Requires authentication.
-      operationId: categories_remove_api_v1_content_categories__category_name__delete
+      operationId: categories_remove_api_v1_content_categories__category_id__delete
       security:
       - OAuth2PasswordBearer: []
       parameters:
       - name: category_name
-        in: path
+        in: query
         required: true
         schema:
           type: string
@@ -1258,8 +1255,8 @@ paths:
       tags:
       - Items
       summary: Update an item in a category
-      description: Update the name of a content item within a specific category. This
-        endpoint allows modifying the item name for a given item ID. Requires authentication.
+      description: Update the localized name of a content item within a specific category.
+        Requires authentication.
       operationId: items_update_api_v1_content_categories__category_id__items__item_id__put
       security:
       - OAuth2PasswordBearer: []
@@ -1276,12 +1273,19 @@ paths:
         schema:
           type: string
           title: Item Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateItemBody'
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/ItemSummary'
         '422':
           description: Validation Error
           content:

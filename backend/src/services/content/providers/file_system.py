@@ -39,6 +39,7 @@ from src.services.content.models import (
     ItemDetail,
     ItemImages,
     ItemVoices,
+    RemoveItem,
     RenameCategory,
     RestoreCategory,
 )
@@ -54,8 +55,6 @@ _CATEGORIES_LANG_CSV = "categories_{}.csv"
 _DESCRIPTIONS_LANG_CSV = "descriptions_{}.csv"
 _ITEMS_IDS = "items_ids.csv"
 _ITEMS_LANG_CSV = "items_{}.csv"
-_CATEGORY_ICON = "category_icon.png"
-_LEGACY_CATEGORY_VOICE_MP3 = "category_{}.mp3"
 _CATEGORY_VOICE_MP3 = "{}_{}.mp3"
 _ITEM_VOICE_MP3 = "{}_{}_01.mp3"
 
@@ -690,6 +689,50 @@ class FileSystemContentProvider(ContentProvider):
             image_id=image_id,
         )
 
+    def update_item_name(
+            self,
+            category_id: str,
+            item_id: str,
+            item_name: LocalizedString,
+    ) -> ItemDetail:
+        category_name = self._folder_name_for_id(category_id)
+        category_path = self._category_path(category_name)
+        self._resolve_item_path(category_path, category_name, item_id)
+
+        index = self._read_csv_column(category_path / _ITEMS_IDS).index(item_id)
+        for lang, value in item_name.to_dict().items():
+            if lang in settings.SUPPORTED_LANGUAGES:
+                self._write_csv_row_at_index(category_path / _ITEMS_LANG_CSV.format(lang), index, value)
+
+        item_ids, items_by_lang = self._read_item_csv_data(category_path)
+        updated = next(
+            (
+                item for item in self._collect_items(category_path, category_name, item_ids, items_by_lang)
+                if item.id == item_id
+            ),
+            None,
+        )
+        if updated is None:
+            raise CategoryNotFoundError(f"Item '{item_id}' not found in category '{category_name}'.")
+        return updated
+
+    def remove_item(self, category_id: str, item_id: str) -> RemoveItem:
+        category_name = self._folder_name_for_id(category_id)
+        category_path = self._category_path(category_name)
+        _, item_path = self._resolve_item_path(category_path, category_name, item_id)
+
+        index = self._read_csv_column(category_path / _ITEMS_IDS).index(item_id)
+        try:
+            shutil.rmtree(item_path)
+        except (OSError, shutil.Error) as exc:
+            raise ContentOperationError(f"Failed to delete item: {exc}") from exc
+
+        self._delete_csv_row_at_index(category_path / _ITEMS_IDS, index)
+        for lang in settings.SUPPORTED_LANGUAGES:
+            self._delete_csv_row_at_index(category_path / _ITEMS_LANG_CSV.format(lang), index)
+
+        return RemoveItem(category=category_name, item=item_id)
+
     def add_category_image(
             self,
             category_id: str,
@@ -888,76 +931,72 @@ class FileSystemContentProvider(ContentProvider):
         except (OSError, shutil.Error) as exc:
             raise ContentOperationError(f"Failed to archive category: {exc}") from exc
 
-    def rename_category(
+    def update_category_details(
             self,
             category_id: str,
-            new_name: str,
+            category_name: LocalizedString,
+            description: LocalizedString,
     ) -> RenameCategory:
-        old_name = self._folder_name_for_id(category_id)
-        if not self._is_safe_category_name(new_name):
-            raise InvalidCategoryNameError(new_name)
-        old_path = self._category_path(old_name)
-        new_path = self._category_path(new_name)
-        if not old_path.exists() or not old_path.is_dir():
-            raise CategoryNotFoundError(old_name)
-        if new_path.exists() and new_path.is_dir():
-            raise CategoryConflictError(f"Target category already exists: {new_name}")
-        try:
-            shutil.move(str(old_path), str(new_path))
-        except (OSError, shutil.Error) as exc:
-            raise ContentOperationError(f"Failed to rename: {exc}") from exc
+        folder_name = self._folder_name_for_id(category_id)
+        index = self._category_row_index(category_id)
+        root = self._content_root()
 
-        self._cleanup_old_voices(new_path, old_name)
-        self._recreate_voices(new_path, new_name)
-        self._update_category_icon(new_path, old_name, new_name)
+        for lang, value in category_name.to_dict().items():
+            if lang in settings.SUPPORTED_LANGUAGES:
+                self._write_csv_row_at_index(root / _CATEGORIES_LANG_CSV.format(lang), index, value)
+
+        for lang, value in description.to_dict().items():
+            if lang in settings.SUPPORTED_LANGUAGES:
+                self._write_csv_row_at_index(root / _DESCRIPTIONS_LANG_CSV.format(lang), index, value)
 
         return RenameCategory(
-            category=new_name,
-            message=f"Category renamed from '{old_name}' to '{new_name}'.",
+            category=folder_name,
+            message=f"Category '{folder_name}' details updated.",
         )
 
-    def _cleanup_old_voices(self, category_path: Path, old_name: str) -> None:
-        """Remove audio files associated with the old category name."""
-        for lang in settings.SUPPORTED_LANGUAGES:
-            old_voice = category_path / _CATEGORY_VOICE_MP3.format(old_name, lang)
-            if old_voice.exists() and old_voice.is_file():
-                old_voice.unlink()
-        for lang in settings.SUPPORTED_LANGUAGES:
-            legacy_voice = category_path / _LEGACY_CATEGORY_VOICE_MP3.format(lang)
-            if legacy_voice.exists() and legacy_voice.is_file():
-                legacy_voice.unlink()
+    def _category_row_index(self, category_id: str) -> int:
+        """Return the CSV row index registered for *category_id* in categories_ids.csv."""
+        id_entries = self._read_csv_column(self._content_root() / _CATEGORIES_IDS)
+        try:
+            return id_entries.index(category_id)
+        except ValueError:
+            raise CategoryNotFoundError(
+                f"Category id '{category_id}' is not found in categories_ids.csv.",
+            ) from None
 
-    def _recreate_voices(self, category_path: Path, category_name: str) -> None:
-        """Translate category name and generate audio files for all languages."""
-        for lang in settings.SUPPORTED_LANGUAGES:
-            if lang == "en":
-                label = category_name.replace("_", " ").strip() or category_name
-            else:
-                try:
-                    label = self._translate_word(
-                        category_name.replace("_", " ").strip() or category_name, lang, category_name,
-                    )
-                except (ValueError, RuntimeError, httpx.HTTPError, KeyError) as exc:
-                    raise ContentOperationError(f"Translation failed for {lang}: {exc}") from exc
-            try:
-                audio_bytes = self._generate_audio(label, lang)
-                voice_path = category_path / _CATEGORY_VOICE_MP3.format(category_name, lang)
-                with open(voice_path, "wb") as fh:
-                    fh.write(audio_bytes)
-            except (ValueError, RuntimeError) as exc:
-                raise ContentOperationError(f"TTS failed for {lang}: {exc}") from exc
-            except OSError as exc:
-                raise ContentOperationError(f"File write failed for {lang}: {exc}") from exc
+    @staticmethod
+    def _read_csv_column(file_path: Path) -> list[str]:
+        """Return non-blank first-column values from a single-column CSV file."""
+        try:
+            with open(file_path, newline="", encoding="utf-8") as fh:
+                return [r[0].strip() for r in csv.reader(fh) if r and r[0].strip()]
+        except (OSError, csv.Error):
+            return []
 
-    def _update_category_icon(self, category_path: Path, old_name: str, new_name: str) -> None:
-        """Rename the category icon to match the new category name."""
-        new_icon_path = category_path / f"{new_name}.png"
-        for old_icon_name in (f"{old_name}.png", _CATEGORY_ICON):
-            old_icon_path = category_path / old_icon_name
-            if old_icon_path.exists() and old_icon_path.is_file():
-                if old_icon_path != new_icon_path:
-                    old_icon_path.rename(new_icon_path)
-                break
+    @staticmethod
+    def _write_csv_row_at_index(file_path: Path, index: int, value: str) -> None:
+        """Overwrite the row at *index* in a single-column CSV file, padding with blanks as needed."""
+        rows = FileSystemContentProvider._read_csv_column(file_path)
+        while len(rows) <= index:
+            rows.append("")
+        rows[index] = value
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(file_path, "w", newline="", encoding="utf-8") as fh:
+            writer = csv.writer(fh)
+            for row in rows:
+                writer.writerow([row])
+
+    @staticmethod
+    def _delete_csv_row_at_index(file_path: Path, index: int) -> None:
+        """Remove the row at *index* from a single-column CSV file, shifting later rows up."""
+        rows = FileSystemContentProvider._read_csv_column(file_path)
+        if 0 <= index < len(rows):
+            del rows[index]
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(file_path, "w", newline="", encoding="utf-8") as fh:
+            writer = csv.writer(fh)
+            for row in rows:
+                writer.writerow([row])
 
     def remove_category(self, category_id: str) -> ArchiveCategory:
         category_name = self._folder_name_for_id(category_id)

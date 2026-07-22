@@ -26,12 +26,15 @@ from src.services.content.models import (
     CategoryList,
     CategoryNotFoundError,
     CategoryVoice,
+    ContentOperationError,
     ContentProvider,
     CreateCategory,
     CreateItem,
     InvalidCategoryNameError,
+    ItemDetail,
     ItemImages,
     ItemVoices,
+    RemoveItem,
     RenameCategory,
     RestoreCategory,
 )
@@ -110,6 +113,12 @@ class _StubContentProvider(ContentProvider):
             image_id=f"I_{english_word.title()}",
         ))
 
+    def update_item_name(self, category_id: str, item_id: str, item_name: Any) -> ItemDetail:
+        return self._call("update_item_name", ItemDetail(id=item_id, name=item_name))
+
+    def remove_item(self, category_id: str, item_id: str) -> RemoveItem:
+        return self._call("remove_item", RemoveItem(category=category_id, item=item_id))
+
     def add_category_image(
             self,
             category_id: str,
@@ -159,8 +168,12 @@ class _StubContentProvider(ContentProvider):
             message="archived",
         ))
 
-    def rename_category(self, old_name: str, new_name: str) -> RenameCategory:
-        return self._call("rename_category", RenameCategory(category=new_name, message="renamed"))
+    def update_category_details(
+            self, category_id: str, category_name: Any, description: Any,
+    ) -> RenameCategory:
+        return self._call(
+            "update_category_details", RenameCategory(category=category_id, message="updated"),
+        )
 
     def remove_category(self, category_name: str) -> ArchiveCategory:
         return self._call("remove_category", ArchiveCategory(
@@ -510,68 +523,74 @@ async def test_restore_category_requires_auth(client_no_auth: AsyncClient) -> No
 
 
 # ---------------------------------------------------------------------------
-# PATCH /api/v1/content/categories/{category_name}
+# PATCH /api/v1/content/categories/{category_id}
 # ---------------------------------------------------------------------------
+
+_RENAME_BODY = {
+    "category_name": {"en": "meals"},
+    "description": {"en": "tasty meals"},
+}
+
 
 @pytest.mark.asyncio
 async def test_rename_category_returns_200(client: AsyncClient) -> None:
-    response = await client.patch("/api/v1/content/categories/foods", json={"name": "meals"})
+    response = await client.patch("/api/v1/content/categories/foods", json=_RENAME_BODY)
     assert response.status_code == 200
     body = response.json()
-    assert body["category"] == "meals"
+    assert body["category"] == "foods"
 
 
 @pytest.mark.asyncio
-async def test_rename_category_strips_whitespace(tmp_resolved: Path) -> None:
-    seen: list[tuple[str, str]] = []
+async def test_rename_category_passes_category_id_and_body(tmp_resolved: Path) -> None:
+    seen: list[tuple[str, dict[str, str], dict[str, str]]] = []
 
     class _TrackingProvider(_StubContentProvider):
-        def rename_category(self, old_name: str, new_name: str) -> dict[str, Any]:
-            seen.append((old_name, new_name))
-            return {"category": new_name, "message": "renamed"}
+        def update_category_details(self, category_id: str, category_name: Any, description: Any) -> RenameCategory:
+            seen.append((category_id, category_name.to_dict(), description.to_dict()))
+            return RenameCategory(category=category_id, message="updated")
 
     app = _make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        await c.patch("/api/v1/content/categories/foods", json={"name": "  meals  "})
-    assert seen == [("foods", "meals")]
+        await c.patch("/api/v1/content/categories/foods", json=_RENAME_BODY)
+    assert seen == [("foods", {"en": "meals"}, {"en": "tasty meals"})]
 
 
 @pytest.mark.asyncio
 async def test_rename_category_not_found_returns_404(tmp_resolved: Path) -> None:
-    provider = _StubContentProvider(tmp_resolved).returns(
-        "rename_category", {"error": "Category not found", "name": "foods"}
+    provider = _StubContentProvider(tmp_resolved).raises(
+        "update_category_details", CategoryNotFoundError("Category not found")
     )
     app = _make_app(provider, tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        response = await c.patch("/api/v1/content/categories/foods", json={"name": "meals"})
+        response = await c.patch("/api/v1/content/categories/foods", json=_RENAME_BODY)
     assert response.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_rename_category_target_exists_returns_409(tmp_resolved: Path) -> None:
-    provider = _StubContentProvider(tmp_resolved).returns(
-        "rename_category", {"error": "Target category already exists: meals", "name": "meals"}
+async def test_rename_category_conflict_returns_409(tmp_resolved: Path) -> None:
+    provider = _StubContentProvider(tmp_resolved).raises(
+        "update_category_details", CategoryConflictError("Target category already exists: meals")
     )
     app = _make_app(provider, tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        response = await c.patch("/api/v1/content/categories/foods", json={"name": "meals"})
+        response = await c.patch("/api/v1/content/categories/foods", json=_RENAME_BODY)
     assert response.status_code == 409
 
 
 @pytest.mark.asyncio
 async def test_rename_category_generic_error_returns_400(tmp_resolved: Path) -> None:
-    provider = _StubContentProvider(tmp_resolved).returns(
-        "rename_category", {"error": "TTS failed for fr: timeout"}
+    provider = _StubContentProvider(tmp_resolved).raises(
+        "update_category_details", ContentOperationError("Failed to write CSV: disk full")
     )
     app = _make_app(provider, tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        response = await c.patch("/api/v1/content/categories/foods", json={"name": "meals"})
+        response = await c.patch("/api/v1/content/categories/foods", json=_RENAME_BODY)
     assert response.status_code == 400
 
 
 @pytest.mark.asyncio
 async def test_rename_category_requires_auth(client_no_auth: AsyncClient) -> None:
-    response = await client_no_auth.patch("/api/v1/content/categories/foods", json={"name": "meals"})
+    response = await client_no_auth.patch("/api/v1/content/categories/foods", json=_RENAME_BODY)
     assert response.status_code == 401
 
 
@@ -703,23 +722,6 @@ async def test_category_details_requires_auth(client_no_auth: AsyncClient) -> No
 
 
 # ---------------------------------------------------------------------------
-# PUT /api/v1/content/categories/{category_name}  (not implemented)
-# ---------------------------------------------------------------------------
-
-@pytest.mark.asyncio
-async def test_update_category_returns_501(client: AsyncClient) -> None:
-    response = await client.put("/api/v1/content/categories/foods")
-    assert response.status_code == 501
-    assert "Not implemented" in response.json()["detail"]
-
-
-@pytest.mark.asyncio
-async def test_update_category_requires_auth(client_no_auth: AsyncClient) -> None:
-    response = await client_no_auth.put("/api/v1/content/categories/foods")
-    assert response.status_code == 401
-
-
-# ---------------------------------------------------------------------------
 # POST /api/v1/content/items  (multipart form)
 # ---------------------------------------------------------------------------
 
@@ -838,6 +840,105 @@ async def test_create_item_requires_auth(client_no_auth: AsyncClient) -> None:
         files={"image": ("a.png", _PNG_BYTES, "image/png")},
         data={"category": "foods", "item": "apple"},
     )
+    assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# PUT /api/v1/content/categories/{category_id}/items/{item_id}
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_update_item_returns_200(client: AsyncClient) -> None:
+    response = await client.put(
+        "/api/v1/content/categories/foods/items/I_Apple",
+        json={"item_name": {"en": "green apple"}},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == "I_Apple"
+    assert body["name"] == {"en": "green apple"}
+
+
+@pytest.mark.asyncio
+async def test_update_item_passes_category_and_item_id(tmp_resolved: Path) -> None:
+    seen: list[tuple[str, str, dict[str, str]]] = []
+
+    class _TrackingProvider(_StubContentProvider):
+        def update_item_name(self, category_id: str, item_id: str, item_name: Any) -> ItemDetail:
+            seen.append((category_id, item_id, item_name.to_dict()))
+            return ItemDetail(id=item_id, name=item_name)
+
+    app = _make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        await c.put(
+            "/api/v1/content/categories/foods/items/I_Apple",
+            json={"item_name": {"en": "green apple"}},
+        )
+    assert seen == [("foods", "I_Apple", {"en": "green apple"})]
+
+
+@pytest.mark.asyncio
+async def test_update_item_not_found_returns_404(tmp_resolved: Path) -> None:
+    provider = _StubContentProvider(tmp_resolved).raises(
+        "update_item_name", CategoryNotFoundError("Item not found")
+    )
+    app = _make_app(provider, tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.put(
+            "/api/v1/content/categories/foods/items/I_Missing",
+            json={"item_name": {"en": "green apple"}},
+        )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_update_item_requires_auth(client_no_auth: AsyncClient) -> None:
+    response = await client_no_auth.put(
+        "/api/v1/content/categories/foods/items/I_Apple",
+        json={"item_name": {"en": "green apple"}},
+    )
+    assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# DELETE /api/v1/content/categories/{category_id}/items/{item_id}
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_delete_item_returns_204(client: AsyncClient) -> None:
+    response = await client.delete("/api/v1/content/categories/foods/items/I_Apple")
+    assert response.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_delete_item_passes_category_and_item_id(tmp_resolved: Path) -> None:
+    seen: list[tuple[str, str]] = []
+
+    class _TrackingProvider(_StubContentProvider):
+        def remove_item(self, category_id: str, item_id: str) -> RemoveItem:
+            seen.append((category_id, item_id))
+            return RemoveItem(category=category_id, item=item_id)
+
+    app = _make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        await c.delete("/api/v1/content/categories/foods/items/I_Apple")
+    assert seen == [("foods", "I_Apple")]
+
+
+@pytest.mark.asyncio
+async def test_delete_item_not_found_returns_404(tmp_resolved: Path) -> None:
+    provider = _StubContentProvider(tmp_resolved).raises(
+        "remove_item", CategoryNotFoundError("Item not found")
+    )
+    app = _make_app(provider, tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.delete("/api/v1/content/categories/foods/items/I_Missing")
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_item_requires_auth(client_no_auth: AsyncClient) -> None:
+    response = await client_no_auth.delete("/api/v1/content/categories/foods/items/I_Apple")
     assert response.status_code == 401
 
 

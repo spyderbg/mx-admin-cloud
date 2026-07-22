@@ -125,9 +125,10 @@ export interface RemoveCategoryResponse {
     message: string
 }
 
-/** Request body for renaming a category. */
+/** Request body for updating a category's localized name and description. */
 export interface RenameCategoryBody {
-    name: string
+    category_name: LocalizedString
+    description: LocalizedString
 }
 
 /** Response for PATCH /content/categories/{name}. */
@@ -147,6 +148,11 @@ export interface RestoreCategoryResponse {
     name?: string | null
     from_archive?: string | null
     message: string
+}
+
+/** Request body for updating an item's localized name. */
+export interface UpdateItemBody {
+    item_name: LocalizedString
 }
 
 /** A single voice entry. */

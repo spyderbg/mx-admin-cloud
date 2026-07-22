@@ -14,6 +14,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
+from src.core.localization import LocalizedString
 from src.services.content.models import (
     ContentProvider,
     ContentProviderUnavailableError,
@@ -107,6 +108,20 @@ class _StubProvider(ContentProvider):
             image_id=f"I_{english_word.title()}",
         ))
 
+    def update_item_name(self, category_id: str, item_id: str, item_name: Any) -> dict[str, Any]:
+        self._record("update_item_name", category_id, item_id, item_name)
+        return self._returns.get("update_item_name", {
+            "id": item_id,
+            "name": item_name,
+        })
+
+    def remove_item(self, category_id: str, item_id: str) -> dict[str, Any]:
+        self._record("remove_item", category_id, item_id)
+        return self._returns.get("remove_item", {
+            "category": category_id,
+            "item": item_id,
+        })
+
     def add_category_image(
             self,
             category_id: str,
@@ -161,11 +176,13 @@ class _StubProvider(ContentProvider):
             "message": "archived",
         })
 
-    def rename_category(self, category_id: str, new_name: str) -> dict[str, Any]:
-        self._record("rename_category", category_id, new_name)
-        return self._returns.get("rename_category", {
-            "category": new_name,
-            "message": f"renamed {category_id} to {new_name}",
+    def update_category_details(
+            self, category_id: str, category_name: Any, description: Any,
+    ) -> dict[str, Any]:
+        self._record("update_category_details", category_id, category_name, description)
+        return self._returns.get("update_category_details", {
+            "category": category_id,
+            "message": f"updated details for {category_id}",
         })
 
     def remove_category(self, category_id: str) -> dict[str, Any]:
@@ -317,6 +334,12 @@ class _ConcreteProvider(ContentProvider):
     def create_item(self, category_id, english_word, image_data, image_extension=".png"):
         return {}
 
+    def update_item_name(self, category_id, item_id, item_name):
+        return {}
+
+    def remove_item(self, category_id, item_id):
+        return {}
+
     def add_category_image(self, category_id, image_data, image_extension=".png"):
         return {}
 
@@ -332,7 +355,7 @@ class _ConcreteProvider(ContentProvider):
     def archive_category(self, category_id):
         return {}
 
-    def rename_category(self, category_id, new_name):
+    def update_category_details(self, category_id, category_name, description):
         return {}
 
     def remove_category(self, category_id):
@@ -549,12 +572,31 @@ def test_archive_category_delegates(tmp_path: Path) -> None:
     assert stub.calls["archive_category"] == [("foods",)]
 
 
-def test_rename_category_delegates(tmp_path: Path) -> None:
+def test_update_item_delegates(tmp_path: Path) -> None:
     stub = _StubProvider(tmp_path)
     svc = _make_service(tmp_path, [stub])
-    result = svc.rename_category("foods", "meals")
-    assert result["category"] == "meals"
-    assert stub.calls["rename_category"] == [("foods", "meals")]
+    item_name = LocalizedString({"en": "banana"})
+    result = svc.update_item("C_Foods", "I_Apple", item_name)
+    assert result["id"] == "I_Apple"
+    assert stub.calls["update_item_name"] == [("C_Foods", "I_Apple", item_name)]
+
+
+def test_remove_item_delegates(tmp_path: Path) -> None:
+    stub = _StubProvider(tmp_path)
+    svc = _make_service(tmp_path, [stub])
+    result = svc.remove_item("C_Foods", "I_Apple")
+    assert result["item"] == "I_Apple"
+    assert stub.calls["remove_item"] == [("C_Foods", "I_Apple")]
+
+
+def test_update_category_details_delegates(tmp_path: Path) -> None:
+    stub = _StubProvider(tmp_path)
+    svc = _make_service(tmp_path, [stub])
+    name = LocalizedString({"en": "meals"})
+    description = LocalizedString({"en": "tasty meals"})
+    result = svc.update_category_details("C_Foods", name, description)
+    assert result["category"] == "C_Foods"
+    assert stub.calls["update_category_details"] == [("C_Foods", name, description)]
 
 
 def test_remove_category_delegates(tmp_path: Path) -> None:
@@ -584,9 +626,12 @@ def test_create_category_body_requires_name() -> None:
         CreateCategoryBody()  # type: ignore[call-arg]
 
 
-def test_rename_category_body_requires_name() -> None:
-    body = RenameCategoryBody(name="meals")
-    assert body.name == "meals"
+def test_rename_category_body_requires_name_and_description() -> None:
+    body = RenameCategoryBody(category_name={"en": "meals"}, description={"en": "tasty meals"})
+    assert body.category_name.en == "meals"
+    assert body.description.en == "tasty meals"
+    with pytest.raises(ValidationError):
+        RenameCategoryBody(category_name={"en": "meals"})  # type: ignore[call-arg]
 
 
 def test_restore_category_body_requires_name() -> None:

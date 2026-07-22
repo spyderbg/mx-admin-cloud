@@ -26,15 +26,22 @@ class CreateCategoryBody(BaseModel):
 
 
 class RenameCategoryBody(BaseModel):
-    """Request body for renaming a category."""
+    """Request body for updating a category's localized name and description."""
 
-    name: str
+    category_name: LocalizedString
+    description: LocalizedString
 
 
 class RestoreCategoryBody(BaseModel):
     """Request body for restoring a category."""
 
     name: str
+
+
+class UpdateItemBody(BaseModel):
+    """Request body for updating an item's localized name."""
+
+    item_name: LocalizedString
 
 
 # endregion

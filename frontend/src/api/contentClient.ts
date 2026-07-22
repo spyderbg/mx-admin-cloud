@@ -19,6 +19,7 @@ import type {
   RenameCategoryResponse,
   RestoreCategoryBody,
   RestoreCategoryResponse,
+  UpdateItemBody,
   VoiceResponse,
 } from '../types/contentSchemas'
 
@@ -46,15 +47,15 @@ export const categoriesDetails = async (categoryId: string): Promise<CategoryDet
   return r.data
 }
 
-/** Rename a content category */
-export const categoriesRename = async (categoryName: string, body: RenameCategoryBody): Promise<RenameCategoryResponse> => {
-  const r = await client.patch<RenameCategoryResponse>(`/content/categories/${categoryName}`, body)
+/** Update a content category's name and description */
+export const categoriesRename = async (categoryId: string, body: RenameCategoryBody): Promise<RenameCategoryResponse> => {
+  const r = await client.patch<RenameCategoryResponse>(`/content/categories/${categoryId}`, body)
   return r.data
 }
 
 /** Remove a content category */
-export const categoriesRemove = async (categoryName: string): Promise<RemoveCategoryResponse> => {
-  const r = await client.delete<RemoveCategoryResponse>(`/content/categories/${categoryName}`)
+export const categoriesRemove = async (params?: { categoryName?: string }): Promise<RemoveCategoryResponse> => {
+  const r = await client.delete<RemoveCategoryResponse>('/content/categories/{category_id}', { params: { category_name: params?.categoryName } })
   return r.data
 }
 
@@ -128,6 +129,17 @@ export const itemsList = async (categoryId: string): Promise<ItemListResponse> =
 export const itemsGet = async (categoryId: string, itemId: string): Promise<ItemSummary> => {
   const r = await client.get<ItemSummary>(`/content/categories/${categoryId}/items/${itemId}`)
   return r.data
+}
+
+/** Update an item in a category */
+export const itemsUpdate = async (categoryId: string, itemId: string, body: UpdateItemBody): Promise<ItemSummary> => {
+  const r = await client.put<ItemSummary>(`/content/categories/${categoryId}/items/${itemId}`, body)
+  return r.data
+}
+
+/** Delete an item from a category */
+export const itemsDelete = async (categoryId: string, itemId: string): Promise<void> => {
+  await client.delete(`/content/categories/${categoryId}/items/${itemId}`)
 }
 
 /** List image variants for an item */

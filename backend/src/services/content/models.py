@@ -143,6 +143,12 @@ class CreateItem:
 
 
 @dataclass
+class RemoveItem:
+    category: str = ""
+    item: str = ""
+
+
+@dataclass
 class ArchiveCategory:
     """Used for both archive_category and remove_category results."""
     name: str = ""
@@ -190,16 +196,6 @@ class ContentProvider(ServiceProvider, ABC):
     @abstractmethod
     def create_category(self, category_name: str) -> CreateCategory:
         """Create a new category with voice files and icon."""
-
-    @abstractmethod
-    def create_item(
-            self,
-            category_id: str,
-            english_word: str,
-            image_data: bytes,
-            image_extension: str = ".png",
-    ) -> CreateItem:
-        """Create an item folder with image, translations, and voice files."""
 
     @abstractmethod
     def add_category_image(
@@ -250,8 +246,13 @@ class ContentProvider(ServiceProvider, ABC):
         """Move a category from the content directory to the archive."""
 
     @abstractmethod
-    def rename_category(self, category_id: str, new_name: str) -> RenameCategory:
-        """Rename a category and regenerate its voice files."""
+    def update_category_details(
+            self,
+            category_id: str,
+            category_name: LocalizedString,
+            description: LocalizedString,
+    ) -> RenameCategory:
+        """Update a category's localized name and description, keyed by category_id."""
 
     @abstractmethod
     def remove_category(self, category_id: str) -> ArchiveCategory:
@@ -260,6 +261,29 @@ class ContentProvider(ServiceProvider, ABC):
     @abstractmethod
     def restore_category(self, category_id: str) -> RestoreCategory:
         """Restore a category from the archive to the content directory."""
+
+    @abstractmethod
+    def create_item(
+            self,
+            category_id: str,
+            english_word: str,
+            image_data: bytes,
+            image_extension: str = ".png",
+    ) -> CreateItem:
+        """Create an item folder with image, translations, and voice files."""
+
+    @abstractmethod
+    def update_item_name(
+            self,
+            category_id: str,
+            item_id: str,
+            item_name: LocalizedString,
+    ) -> ItemDetail:
+        """Update an item's localized name, keyed by category_id and item_id."""
+
+    @abstractmethod
+    def remove_item(self, category_id: str, item_id: str) -> RemoveItem:
+        """Permanently delete an item folder from its category."""
 
     @abstractmethod
     def item_images(self, category_id: str, item_id: str) -> ItemImages:

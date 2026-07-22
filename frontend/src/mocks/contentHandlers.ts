@@ -479,4 +479,10 @@ export const contentHandlers = [
 
   // Delete a file variant from an item
   http.delete('/api/v1/content/categories/:category_id/items/:item_id/images/:image_id', () => HttpResponse.json({})),
+
+  // Update a content category's name and description
+  http.patch('/api/v1/content/categories/:category_id', () => HttpResponse.json({})),
+
+  // Remove a content category
+  http.delete('/api/v1/content/categories/:category_id', () => HttpResponse.json({})),
 ]

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from typing_extensions import override
 
+from src.core.localization import LocalizedString
 from src.services.content.models import (
     ArchiveCategory,
     CategoryDetails,
@@ -16,8 +17,10 @@ from src.services.content.models import (
     ContentProviderUnavailableError,
     CreateCategory,
     CreateItem,
+    ItemDetail,
     ItemImages,
     ItemVoices,
+    RemoveItem,
     RenameCategory,
     RestoreCategory,
 )
@@ -96,10 +99,14 @@ class ContentService(Service):
         provider = self._select_provider()
         return provider.archive_category(provider.category_id_by_name(category_name))
 
-    def rename_category(self, old_name: str, new_name: str) -> RenameCategory:
-        """Rename a category via the active provider."""
-        provider = self._select_provider()
-        return provider.rename_category(provider.category_id_by_name(old_name), new_name)
+    def update_category_details(
+            self,
+            category_id: str,
+            category_name: LocalizedString,
+            description: LocalizedString,
+    ) -> RenameCategory:
+        """Update a category's localized name and description via the active provider."""
+        return self._select_provider().update_category_details(category_id, category_name, description)
 
     def remove_category(self, category_name: str) -> ArchiveCategory:
         """Remove a category via the active provider."""
@@ -190,6 +197,14 @@ class ContentService(Service):
             image_data,
             image_extension,
         )
+
+    def update_item(self, category_id: str, item_id: str, item_name: LocalizedString) -> ItemDetail:
+        """Update an item's localized name via the active provider."""
+        return self._select_provider().update_item_name(category_id, item_id, item_name)
+
+    def remove_item(self, category_id: str, item_id: str) -> RemoveItem:
+        """Remove an item via the active provider."""
+        return self._select_provider().remove_item(category_id, item_id)
 
     # ------------------------------------------------------------------
     # Item images methods

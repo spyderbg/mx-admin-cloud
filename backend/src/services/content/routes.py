@@ -43,6 +43,7 @@ from src.services.content.schemas import (
     RenameCategoryResponse,
     RestoreCategoryBody,
     RestoreCategoryResponse,
+    UpdateItemBody,
     VoiceResponse,
 )
 from src.services.content.service import ContentService
@@ -57,7 +58,6 @@ TAG_ITEMS_VOICES = "Items Voices"
 
 CATEGORIES = "/categories"
 CATEGORIES_RESTORE = "/categories/restore"
-CATEGORY = "/categories/{category_name}"
 CATEGORY_DETAILS = "/categories/{category_id}"
 CATEGORY_IMAGES = "/categories/{category_id}/images"
 CATEGORY_IMAGE = "/categories/{category_id}/images/{image_id}"
@@ -222,51 +222,27 @@ def categories_details(
     )
 
 
-@router.put(
-    CATEGORY,
-    response_model=None,
-    status_code=status.HTTP_200_OK,
-    tags=[TAG_CATEGORIES],
-    summary="Update category name or description",
-    description=(
-            "Update the name or description of a content category. "
-            "The category must exist and be active to be updated. "
-            "Requires authentication."
-    ),
-)
-def categories_update(
-        category_name: str,
-        service: ContentServiceDep,
-        _user: dict = Depends(get_current_user),
-) -> None:
-    """Update category name or description."""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=f"Not implemented: update category '{category_name}'",
-    )
-
-
 @router.patch(
-    CATEGORY,
+    CATEGORY_DETAILS,
     response_model=RenameCategoryResponse,
     status_code=status.HTTP_200_OK,
     tags=[TAG_CATEGORIES],
-    summary="Rename a content category",
+    summary="Update a content category's name and description",
     description=(
-            "Renames an existing content category. "
-            "The new name must be unique and follow naming conventions. "
+            "Update the localized name and description of a content category, identified by category_id. "
+            "The category must exist to be updated. "
             "Requires authentication."
     ),
 )
 def categories_rename(
-        category_name: str,
+        category_id: str,
         body: RenameCategoryBody,
         service: ContentServiceDep,
         _user: dict = Depends(get_current_user),
 ) -> RenameCategoryResponse:
-    """Rename a category."""
+    """Update a category's localized name and description."""
     try:
-        result = service.rename_category(category_name, body.name.strip())
+        result = service.update_category_details(category_id, body.category_name, body.description)
     except CategoryNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except CategoryConflictError as exc:
@@ -277,7 +253,7 @@ def categories_rename(
 
 
 @router.delete(
-    CATEGORY,
+    CATEGORY_DETAILS,
     response_model=RemoveCategoryResponse,
     status_code=status.HTTP_200_OK,
     tags=[TAG_CATEGORIES],
@@ -786,26 +762,34 @@ def items_get(
 
 @router.put(
     CATEGORY_ITEM,
-    response_model=None,
+    response_model=ItemSummary,
     status_code=status.HTTP_200_OK,
     tags=[TAG_ITEMS],
     summary="Update an item in a category",
     description=(
-            "Update the name of a content item within a specific category. "
-            "This endpoint allows modifying the item name for a given item ID. "
+            "Update the localized name of a content item within a specific category. "
             "Requires authentication."
     ),
 )
 def items_update(
         category_id: str,
         item_id: str,
+        body: UpdateItemBody,
         service: ContentServiceDep,
         _user: dict = Depends(get_current_user),
-) -> None:
-    """Update item name."""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=f"Not implemented: update item '{item_id}' in category '{category_id}'",
+) -> ItemSummary:
+    """Update an item's localized name."""
+    try:
+        result = service.update_item(category_id, item_id, body.item_name)
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return ItemSummary(
+        id=result.id,
+        name=result.name,
+        thumbnail_uri=result.thumbnail_uri or None,
+        images_count=result.images_count,
     )
 
 
@@ -828,10 +812,12 @@ def items_delete(
         _user: dict = Depends(get_current_user),
 ) -> None:
     """Delete an item from a category."""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=f"Not implemented: delete item '{item_id}' in category '{category_id}'",
-    )
+    try:
+        service.remove_item(category_id, item_id)
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 # endregion
