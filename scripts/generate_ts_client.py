@@ -174,7 +174,7 @@ def parse_routes(tree: ast.Module) -> list[dict]:
     routes: list[dict] = []
 
     for node in ast.walk(tree):
-        if not isinstance(node, ast.FunctionDef):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
 
         # --- Find router decorator ---
@@ -279,6 +279,14 @@ def _extract_response_model(dec: ast.Call) -> str | None:
         if kw.arg == "response_model":
             if isinstance(kw.value, ast.Name):
                 return kw.value.id
+            if isinstance(kw.value, ast.Subscript):
+                sub = kw.value
+                if (
+                        isinstance(sub.value, ast.Name)
+                        and sub.value.id in ("list", "List")
+                        and isinstance(sub.slice, ast.Name)
+                ):
+                    return f"{sub.slice.id}[]"
             if isinstance(kw.value, ast.Constant) and kw.value.value is None:
                 return None
     return None
@@ -447,15 +455,19 @@ def generate_ts(routes: list[dict], service_name: str) -> str:
     for r in routes:
         rm = r.get("response_model")
         if rm:
-            schema_types.add(rm)
+            schema_types.add(str(rm).removesuffix("[]"))
         bp = r.get("body_param")
         if bp:
             schema_types.add(bp[1])
         # form types are not from schemas
 
+    # Internal routers bypass the /api/v1 axios instance
+    is_internal = bool(routes) and str(routes[0]["prefix"]).startswith("/internal")
+    client_module = "./internalClient" if is_internal else "./client"
+
     lines.append("// Auto-generated – do not edit manually")
     lines.append("")
-    lines.append("import client from './client'")
+    lines.append(f"import client from '{client_module}'")
 
     if schema_types:
         sorted_types = sorted(schema_types, key=lambda x: x.lower())
@@ -623,8 +635,10 @@ def _fastapi_path_to_msw(prefix: str, route_path: str) -> str:
     """Convert a FastAPI route path to an MSW URL pattern.
 
     Example: prefix='/content', path='/categories/{name}' → '/api/v1/content/categories/:name'
+    Internal routers (prefix '/internal/...') are served at the root, not under /api/v1.
     """
-    full = API_V1_PREFIX + prefix + route_path
+    base = "" if prefix.startswith("/internal") else API_V1_PREFIX
+    full = base + prefix + route_path
     return re.sub(r"\{([^}]+)\}", r":\1", full)
 
 
@@ -639,7 +653,7 @@ def _parse_all_routes_for_handlers(tree: ast.Module) -> list[dict]:
     routes: list[dict] = []
 
     for node in ast.walk(tree):
-        if not isinstance(node, ast.FunctionDef):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
 
         route_dec = None

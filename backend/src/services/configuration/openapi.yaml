@@ -100,6 +100,25 @@ components:
       required:
       - file
       title: Body_upload_config_file_internal_configurations_upload_post
+    ConfigurationFileResponse:
+      properties:
+        config_name:
+          type: string
+          title: Config Name
+        filename:
+          type: string
+          title: Filename
+        payload:
+          additionalProperties: true
+          type: object
+          title: Payload
+      type: object
+      required:
+      - config_name
+      - filename
+      - payload
+      title: ConfigurationFileResponse
+      description: Full JSON payload of one configuration file.
     ConfigurationFileSummaryResponse:
       properties:
         config_name:
@@ -131,6 +150,11 @@ components:
           - type: string
           - type: 'null'
           title: Error
+        version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Version
       type: object
       required:
       - config_name
@@ -157,6 +181,18 @@ components:
       - changed
       title: ConfigurationMutationResponse
       description: Result model for one add/remove/patch mutation.
+    ConfigurationServicesResponse:
+      properties:
+        services:
+          items:
+            type: string
+          type: array
+          title: Services
+      type: object
+      required:
+      - services
+      title: ConfigurationServicesResponse
+      description: Names of services that accept configuration files.
     HTTPValidationError:
       properties:
         detail:
@@ -207,6 +243,24 @@ components:
 paths:
 
   # ─── internal-configurations ────────────────────────────────────────
+  /internal/configurations:
+    get:
+      tags:
+      - internal-configurations
+      summary: List configurable services
+      description: Return the names of every registered service that accepts JSON configuration
+        files. The runtime-only 'configuration' service itself is excluded because it
+        has no on-disk configuration directory.
+      operationId: list_configuration_services_internal_configurations_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigurationServicesResponse'
+      security:
+      - OAuth2PasswordBearer: []
   /internal/configurations/apply:
     post:
       tags:
@@ -479,6 +533,42 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
   /internal/configurations/{service_name}/{config_name}:
+    get:
+      tags:
+      - internal-configurations
+      summary: Get one configuration file
+      description: Return the full JSON payload of the configuration file identified
+        by 'config_name' under 'service_name'. Responds with HTTP 404 when the service
+        or configuration is unknown and HTTP 422 for invalid names or unreadable JSON.
+      operationId: get_service_config_internal_configurations__service_name___config_name__get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: service_name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Service Name
+      - name: config_name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Config Name
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigurationFileResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
     delete:
       tags:
       - internal-configurations

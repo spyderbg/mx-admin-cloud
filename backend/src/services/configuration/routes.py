@@ -27,15 +27,22 @@ from src.services.configuration.schemas import (
     ApplyConfigurationResponse,
     BatchToggleConfigurationsRequest,
     BatchToggleConfigurationsResponse,
+    ConfigurationFileResponse,
     ConfigurationFileSummaryResponse,
     ConfigurationMutationResponse,
+    ConfigurationServicesResponse,
     PatchConfigurationRequest,
 )
 from src.services.service_registry import ServiceRegistry
 from src.services.service_registry import ServiceRegistryBuilder
 
-router = APIRouter(prefix="/internal/configurations", tags=["internal-configurations"])
+router = APIRouter(
+    prefix="/internal/configurations",
+    tags=["internal-configurations"],
+    dependencies=[Depends(require_internal)],
+)
 
+CONFIG_SERVICES = ""
 CONFIG_APPLY = "/apply"
 CONFIG_UPLOAD = "/upload"
 CONFIG_SERVICE = "/{service_name}"
@@ -44,6 +51,27 @@ CONFIG_ENABLE_CONFIGURATIONS = "/{service_name}/enable-configurations"
 CONFIG_DISABLE_CONFIGURATIONS = "/{service_name}/disable-configurations"
 CONFIG_ENABLE_ALL_CONFIGURATIONS = "/{service_name}/enable-all-configurations"
 CONFIG_DISABLE_ALL_CONFIGURATIONS = "/{service_name}/disable-all-configurations"
+
+
+@router.get(
+    CONFIG_SERVICES,
+    response_model=ConfigurationServicesResponse,
+    status_code=status.HTTP_200_OK,
+    summary="List configurable services",
+    description=(
+            "Return the names of every registered service that accepts JSON "
+            "configuration files. The runtime-only 'configuration' service itself "
+            "is excluded because it has no on-disk configuration directory."
+    ),
+)
+def list_configuration_services(
+        builder: ServiceRegistryBuilder = Depends(get_registry_builder),
+) -> ConfigurationServicesResponse:
+    """List service names that accept configuration files."""
+    names = sorted(
+        name for name in builder.get_accept_criteria() if name != configuration.SERVICE_NAME
+    )
+    return ConfigurationServicesResponse(services=names)
 
 
 @router.post(
@@ -60,7 +88,6 @@ CONFIG_DISABLE_ALL_CONFIGURATIONS = "/{service_name}/disable-all-configurations"
 )
 async def apply_config_payload(
         body: ApplyConfigurationRequest,
-        _user: dict = Depends(require_internal),
         builder: ServiceRegistryBuilder = Depends(get_registry_builder),
 ) -> ApplyConfigurationResponse:
     """Validate and apply one service config payload in memory."""
@@ -88,7 +115,6 @@ async def apply_config_payload(
 )
 async def upload_config_file(
         file: UploadFile = File(...),
-        _user: dict = Depends(require_internal),
         builder: ServiceRegistryBuilder = Depends(get_registry_builder),
 ) -> ApplyConfigurationResponse:
     """Validate and apply uploaded config content in memory without persisting."""
@@ -124,7 +150,6 @@ async def upload_config_file(
 def list_service_configs(
         service_name: str,
         service: ConfigurationServiceDep,
-        _user: dict = Depends(require_internal),
 ) -> list[ConfigurationFileSummaryResponse]:
     """List JSON config files for one service."""
     try:
@@ -132,6 +157,33 @@ def list_service_configs(
     except UnknownConfigurationServiceError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return [ConfigurationFileSummaryResponse(**summary.__dict__) for summary in summaries]
+
+
+@router.get(
+    CONFIG_SERVICE_ITEM,
+    response_model=ConfigurationFileResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get one configuration file",
+    description=(
+            "Return the full JSON payload of the configuration file identified by "
+            "'config_name' under 'service_name'. "
+            "Responds with HTTP 404 when the service or configuration is unknown "
+            "and HTTP 422 for invalid names or unreadable JSON."
+    ),
+)
+def get_service_config(
+        service_name: str,
+        config_name: str,
+        service: ConfigurationServiceDep,
+) -> ConfigurationFileResponse:
+    """Read one JSON config file for one service."""
+    try:
+        result = service.get_configuration(service_name=service_name, config_name=config_name)
+    except (UnknownConfigurationServiceError, ConfigurationNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (InvalidConfigurationNameError, ConfigurationValidationError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return ConfigurationFileResponse(**result.__dict__)
 
 
 @router.post(
@@ -150,7 +202,6 @@ def add_service_config(
         service_name: str,
         body: AddConfigurationRequest,
         service: ConfigurationServiceDep,
-        _user: dict = Depends(require_internal),
 ) -> ConfigurationMutationResponse:
     """Create a new JSON config file for one service."""
     try:
@@ -184,7 +235,6 @@ def remove_service_config(
         service_name: str,
         config_name: str,
         service: ConfigurationServiceDep,
-        _user: dict = Depends(require_internal),
 ) -> ConfigurationMutationResponse:
     """Remove one JSON config file for one service."""
     try:
@@ -213,7 +263,6 @@ def patch_service_config(
         config_name: str,
         body: PatchConfigurationRequest,
         service: ConfigurationServiceDep,
-        _user: dict = Depends(require_internal),
 ) -> ConfigurationMutationResponse:
     """Merge-patch one JSON config file for one service."""
     try:
@@ -244,7 +293,6 @@ def enable_configurations(
         service_name: str,
         body: BatchToggleConfigurationsRequest,
         service: ConfigurationServiceDep,
-        _user: dict = Depends(require_internal),
 ) -> BatchToggleConfigurationsResponse:
     """Enable selected configs for one service."""
     return _toggle_configurations(
@@ -270,7 +318,6 @@ def disable_configurations(
         service_name: str,
         body: BatchToggleConfigurationsRequest,
         service: ConfigurationServiceDep,
-        _user: dict = Depends(require_internal),
 ) -> BatchToggleConfigurationsResponse:
     """Disable selected configs for one service."""
     return _toggle_configurations(
@@ -295,7 +342,6 @@ def disable_configurations(
 def enable_all_configurations(
         service_name: str,
         service: ConfigurationServiceDep,
-        _user: dict = Depends(require_internal),
 ) -> BatchToggleConfigurationsResponse:
     """Enable all configs for one service."""
     return _toggle_all_configurations(
@@ -319,7 +365,6 @@ def enable_all_configurations(
 def disable_all_configurations(
         service_name: str,
         service: ConfigurationServiceDep,
-        _user: dict = Depends(require_internal),
 ) -> BatchToggleConfigurationsResponse:
     """Disable all configs for one service."""
     return _toggle_all_configurations(

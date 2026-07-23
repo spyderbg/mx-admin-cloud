@@ -13,10 +13,12 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from src.api.dependencies import get_registry_builder, require_internal
-from src.services.acceptance import ConfigApplyResult
+from src.core.config import settings
+from src.services.acceptance import ConfigApplyResult, ServiceAcceptCriteria
 from src.services.configuration import routes as cfg_routes
 from src.services.configuration.models import (
     ConfigurationConflictError,
+    ConfigurationFileResult,
     ConfigurationMutationResult,
     ConfigurationNotFoundError,
     ConfigurationProvider,
@@ -50,6 +52,8 @@ class _StubConfigurationProvider(ConfigurationProvider):
             base_dir=base,
         )
         self._list_result: list[ConfigurationSummary] = []
+        self._get_result: ConfigurationFileResult | None = None
+        self._get_exc: Exception | None = None
         self._add_exc: Exception | None = None
         self._remove_exc: Exception | None = None
         self._patch_exc: Exception | None = None
@@ -57,6 +61,14 @@ class _StubConfigurationProvider(ConfigurationProvider):
 
     def with_summaries(self, summaries: list[ConfigurationSummary]) -> "_StubConfigurationProvider":
         self._list_result = summaries
+        return self
+
+    def with_payload(self, result: ConfigurationFileResult) -> "_StubConfigurationProvider":
+        self._get_result = result
+        return self
+
+    def raise_on_get(self, exc: Exception) -> "_StubConfigurationProvider":
+        self._get_exc = exc
         return self
 
     def raise_on_add(self, exc: Exception) -> "_StubConfigurationProvider":
@@ -83,6 +95,17 @@ class _StubConfigurationProvider(ConfigurationProvider):
         if isinstance(self._list_result, Exception):
             raise self._list_result  # type: ignore[misc]
         return self._list_result
+
+    def get_configuration(self, service_name: str, config_name: str) -> ConfigurationFileResult:
+        if self._get_exc:
+            raise self._get_exc
+        if self._get_result is not None:
+            return self._get_result
+        return ConfigurationFileResult(
+            config_name=config_name,
+            filename=f"{config_name}.json",
+            payload={},
+        )
 
     def add_configuration(
             self, service_name: str, config_name: str, payload: dict[str, Any]
@@ -118,12 +141,28 @@ class _StubConfigurationProvider(ConfigurationProvider):
         return [ConfigurationMutationResult(config_name="cfg", changed=True)]
 
 
+def _make_accept_criteria(service_name: str) -> ServiceAcceptCriteria:
+    return ServiceAcceptCriteria(
+        service_name=service_name,
+        config_subdir=service_name,
+        validate_provider=lambda provider: None,
+        build_provider=lambda provider, base_dir: provider,
+    )
+
+
 class _FakeRegistryBuilder:
     """Minimal builder stub for apply/upload route tests."""
 
-    def __init__(self, *, accepted: bool = True, error: str | None = None) -> None:
+    def __init__(
+            self,
+            *,
+            accepted: bool = True,
+            error: str | None = None,
+            service_names: list[str] | None = None,
+    ) -> None:
         self._accepted = accepted
         self._error = error
+        self._service_names = service_names or ["configuration", "logging", "text_to_speech"]
 
     def apply_runtime_payload(  # pylint: disable=unused-argument
             self,
@@ -135,6 +174,9 @@ class _FakeRegistryBuilder:
             accepted=self._accepted,
             error=self._error,
         )
+
+    def get_accept_criteria(self) -> dict[str, ServiceAcceptCriteria]:
+        return {name: _make_accept_criteria(name) for name in self._service_names}
 
 
 def _make_configuration_service(
@@ -174,6 +216,7 @@ _SUMMARY = ConfigurationSummary(
     enabled=True,
     priority=1,
     valid_json=True,
+    version="1.0",
 )
 
 
@@ -221,12 +264,99 @@ async def client_empty(tmp_resolved: Path) -> AsyncClient:
 
 
 @pytest.fixture
-async def client_no_auth() -> AsyncClient:
+async def client_no_auth(monkeypatch: pytest.MonkeyPatch) -> AsyncClient:
+    # The dev default AUTH_DISABLED=True bypasses verify_token; the 401 paths
+    # under test only exist with auth enabled.
+    monkeypatch.setattr(settings, "AUTH_DISABLED", False)
     app = FastAPI()
     app.include_router(cfg_routes.router)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
+
+
+# ---------------------------------------------------------------------------
+# GET /internal/configurations  (list configurable services)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_list_services_returns_sorted_names_without_configuration() -> None:
+    builder = _FakeRegistryBuilder(service_names=["text_to_speech", "configuration", "logging"])
+    app = _make_app(builder=builder)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/internal/configurations")
+    assert response.status_code == 200
+    assert response.json() == {"services": ["logging", "text_to_speech"]}
+
+
+@pytest.mark.asyncio
+async def test_list_services_requires_auth(client_no_auth: AsyncClient) -> None:
+    response = await client_no_auth.get("/internal/configurations")
+    assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# GET /internal/configurations/{service_name}/{config_name}
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_get_config_returns_full_payload(tmp_resolved: Path) -> None:
+    payload = {"service_provider": {"service": "logging", "version": "1.0", "config": {"a": 1}}}
+    stub = _StubConfigurationProvider(tmp_resolved).with_payload(
+        ConfigurationFileResult(config_name="default", filename="default.json", payload=payload),
+    )
+    app = _make_app(stub, tmp_resolved)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/internal/configurations/logging/default")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["config_name"] == "default"
+    assert body["filename"] == "default.json"
+    assert body["payload"] == payload
+
+
+@pytest.mark.asyncio
+async def test_get_config_not_found_returns_404(tmp_resolved: Path) -> None:
+    stub = _StubConfigurationProvider(tmp_resolved).raise_on_get(
+        ConfigurationNotFoundError("Not found.")
+    )
+    app = _make_app(stub, tmp_resolved)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/internal/configurations/logging/missing")
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_config_unknown_service_returns_404(tmp_resolved: Path) -> None:
+    stub = _StubConfigurationProvider(tmp_resolved).raise_on_get(
+        UnknownConfigurationServiceError("Unknown service.")
+    )
+    app = _make_app(stub, tmp_resolved)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/internal/configurations/foo/bar")
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_config_invalid_name_returns_422(tmp_resolved: Path) -> None:
+    stub = _StubConfigurationProvider(tmp_resolved).raise_on_get(
+        InvalidConfigurationNameError("Bad name.")
+    )
+    app = _make_app(stub, tmp_resolved)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/internal/configurations/logging/bad-name!")
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_get_config_requires_auth(client_no_auth: AsyncClient) -> None:
+    response = await client_no_auth.get("/internal/configurations/logging/default")
+    assert response.status_code == 401
 
 
 # ---------------------------------------------------------------------------
@@ -341,6 +471,7 @@ async def test_list_configs_returns_summaries(client_with_summaries: AsyncClient
     assert data[0]["config_name"] == "openai"
     assert data[0]["enabled"] is True
     assert data[0]["valid_json"] is True
+    assert data[0]["version"] == "1.0"
 
 
 @pytest.mark.asyncio
@@ -378,7 +509,7 @@ _ADD_BODY = {"config_name": "new_provider", "payload": {"service_provider": {"se
 @pytest.mark.asyncio
 async def test_add_config_success(client_empty: AsyncClient) -> None:
     response = await client_empty.post("/internal/configurations/text_to_speech", json=_ADD_BODY)
-    assert response.status_code == 200
+    assert response.status_code == 201
     body = response.json()
     assert body["config_name"] == "new_provider"
     assert body["changed"] is True

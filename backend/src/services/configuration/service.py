@@ -8,6 +8,7 @@ from typing import Any
 from typing_extensions import override
 
 from src.services.configuration.models import (
+    ConfigurationFileResult,
     ConfigurationMutationResult,
     ConfigurationProvider,
     ConfigurationProviderUnavailableError,
@@ -61,6 +62,10 @@ class ConfigurationService(Service):
     def list_configurations(self, service_name: str) -> list[ConfigurationSummary]:
         """Return configuration summaries for one registered service."""
         return self._select_provider().list_configurations(service_name)
+
+    def get_configuration(self, service_name: str, config_name: str) -> ConfigurationFileResult:
+        """Return the full payload of one configuration file."""
+        return self._select_provider().get_configuration(service_name, config_name)
 
     def add_configuration(
             self,

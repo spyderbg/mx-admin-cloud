@@ -4,14 +4,18 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from src.services.acceptance import ServiceAcceptCriteria
 from src.services.configuration.merge import deep_merge, prune_payload
 from src.services.configuration.models import (
+    ConfigurationFileResult,
     ConfigurationMutationResult,
+    ConfigurationNotFoundError,
     ConfigurationProvider,
     ConfigurationProviderUnavailableError,
     ConfigurationSummary,
@@ -65,6 +69,14 @@ class _StubProvider(ConfigurationProvider):
                 valid_json=True,
             )
         ]
+
+    def get_configuration(self, service_name: str, config_name: str) -> ConfigurationFileResult:
+        self._record("get_configuration", service_name, config_name)
+        return ConfigurationFileResult(
+            config_name=config_name,
+            filename=f"{config_name}.json",
+            payload={"service_provider": {"service": service_name}},
+        )
 
     def add_configuration(
             self, service_name: str, config_name: str, payload: dict[str, Any]
@@ -196,6 +208,15 @@ def test_list_configurations_delegates_to_provider(tmp_path: Path) -> None:
     assert len(results) == 1
     assert results[0].config_name == "test_cfg"
     assert stub.calls["list_configurations"] == [("text_to_speech",)]
+
+
+def test_get_configuration_delegates(tmp_path: Path) -> None:
+    stub = _StubProvider(tmp_path)
+    svc = _make_service(tmp_path, [stub])
+    result = svc.get_configuration("logging", "default")
+    assert result.config_name == "default"
+    assert result.filename == "default.json"
+    assert stub.calls["get_configuration"] == [("logging", "default")]
 
 
 def test_add_configuration_delegates(tmp_path: Path) -> None:
@@ -338,6 +359,82 @@ def test_prune_payload_nested_empty_values_removed() -> None:
 def test_prune_payload_list_items_pruned() -> None:
     payload = {"items": [None, "keep", ""]}
     assert prune_payload(payload) == {"items": ["keep"]}
+
+
+# ---------------------------------------------------------------------------
+# FileSystemConfigurationProvider — disk reads
+# ---------------------------------------------------------------------------
+
+class _FakeBuilder:
+    """Registry-builder stub exposing accept criteria for disk-read tests."""
+
+    def __init__(self, config_subdir: str = "logging") -> None:
+        self._criteria = ServiceAcceptCriteria(
+            service_name="logging",
+            config_subdir=config_subdir,
+            validate_provider=lambda provider: None,
+            build_provider=lambda provider, base_dir: provider,
+        )
+
+    def get_accept_criteria(self) -> dict[str, ServiceAcceptCriteria]:
+        return {"logging": self._criteria}
+
+
+def _make_fs_provider(tmp_path: Path) -> FileSystemConfigurationProvider:
+    return FileSystemConfigurationProvider.build_runtime(tmp_path, _FakeBuilder())  # type: ignore[arg-type]
+
+
+_DISK_PAYLOAD: dict[str, Any] = {
+    "service_provider": {
+        "service": "logging",
+        "provider": "struct_log",
+        "enabled": True,
+        "priority": 20,
+        "version": "1.0",
+        "config": {"structlog": {"renderer": "console"}},
+    }
+}
+
+
+def _write_config(tmp_path: Path, name: str, payload: dict[str, Any]) -> Path:
+    config_dir = tmp_path / "logging"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config_path = config_dir / f"{name}.json"
+    config_path.write_text(json.dumps(payload), encoding="utf-8")
+    return config_path
+
+
+def test_fs_get_configuration_returns_full_payload(tmp_path: Path) -> None:
+    _write_config(tmp_path, "default", _DISK_PAYLOAD)
+    provider = _make_fs_provider(tmp_path)
+    result = provider.get_configuration("logging", "default")
+    assert result.config_name == "default"
+    assert result.filename == "default.json"
+    assert result.payload == _DISK_PAYLOAD
+
+
+def test_fs_get_configuration_missing_raises_not_found(tmp_path: Path) -> None:
+    provider = _make_fs_provider(tmp_path)
+    with pytest.raises(ConfigurationNotFoundError):
+        provider.get_configuration("logging", "missing")
+
+
+def test_fs_list_configurations_includes_version(tmp_path: Path) -> None:
+    _write_config(tmp_path, "default", _DISK_PAYLOAD)
+    provider = _make_fs_provider(tmp_path)
+    summaries = provider.list_configurations("logging")
+    assert len(summaries) == 1
+    assert summaries[0].version == "1.0"
+    assert summaries[0].priority == 20
+    assert summaries[0].enabled is True
+
+
+def test_fs_list_configurations_version_absent_is_none(tmp_path: Path) -> None:
+    payload = {"service_provider": {"service": "logging", "provider": "struct_log", "enabled": True}}
+    _write_config(tmp_path, "no_version", payload)
+    provider = _make_fs_provider(tmp_path)
+    summaries = provider.list_configurations("logging")
+    assert summaries[0].version is None
 
 
 # ---------------------------------------------------------------------------
