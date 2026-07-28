@@ -23,7 +23,7 @@
             href="#"
             @click.prevent="toggleConfig"
           >
-            <div class="d-inline-flex mr-0 mr-md-3">
+            <div class="d-inline-flex config-nav-icon-wrap">
               <i class="mdi mdi-settings cfg-nav-icon"></i>
             </div>
             <span class="profile-text font-weight-medium d-none d-md-block">Configuration</span>
@@ -294,6 +294,10 @@ nav.navbar.default-layout .navbar-menu-wrapper .navbar-nav .nav-item.config-drop
 .cfg-nav-icon {
   font-size: 1.25rem;
   line-height: 1;
+}
+
+.config-nav-icon-wrap {
+  margin-right: 0.35rem;
 }
 
 .cfg-item-icon {
