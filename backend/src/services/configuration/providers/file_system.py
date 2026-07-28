@@ -12,6 +12,7 @@ from src.core.utils import JsonObjectReadError, read_json_object
 from src.services.configuration.merge import deep_merge, prune_payload
 from src.services.configuration.models import (
     ConfigurationConflictError,
+    ConfigurationFileResult,
     ConfigurationMutationResult,
     ConfigurationNotFoundError,
     ConfigurationProvider,
@@ -106,6 +107,7 @@ class FileSystemConfigurationProvider(ConfigurationProvider):
             provider = service_provider.get("provider") if isinstance(service_provider, dict) else None
             enabled = service_provider.get("enabled") if isinstance(service_provider, dict) else None
             priority = service_provider.get("priority") if isinstance(service_provider, dict) else None
+            version = service_provider.get("version") if isinstance(service_provider, dict) else None
             priority_int = int(priority) if isinstance(priority, int) else None
             enabled_bool = bool(enabled) if isinstance(enabled, bool) else None
             results.append(
@@ -116,9 +118,20 @@ class FileSystemConfigurationProvider(ConfigurationProvider):
                     enabled=enabled_bool,
                     priority=priority_int,
                     valid_json=True,
+                    version=str(version) if isinstance(version, str) else None,
                 )
             )
         return results
+
+    def get_configuration(self, service_name: str, config_name: str) -> ConfigurationFileResult:
+        """Return the full payload of one config file for a service."""
+        target_path = self._config_path(service_name, config_name)
+        payload = self._read_required_json(service_name, config_name, target_path)
+        return ConfigurationFileResult(
+            config_name=target_path.stem,
+            filename=target_path.name,
+            payload=payload,
+        )
 
     def add_configuration(
             self,

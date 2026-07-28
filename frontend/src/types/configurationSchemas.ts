@@ -29,6 +29,13 @@ export interface BatchToggleConfigurationsResponse {
     results: ConfigurationMutationResponse[]
 }
 
+/** Full JSON payload of one configuration file. */
+export interface ConfigurationFileResponse {
+    config_name: string
+    filename: string
+    payload: Record<string, any>
+}
+
 /** One configuration file entry returned by list operations. */
 export interface ConfigurationFileSummaryResponse {
     config_name: string
@@ -38,6 +45,7 @@ export interface ConfigurationFileSummaryResponse {
     priority?: number | null
     valid_json: boolean
     error?: string | null
+    version?: string | null
 }
 
 /** Result model for one add/remove/patch mutation. */
@@ -45,6 +53,11 @@ export interface ConfigurationMutationResponse {
     config_name: string
     changed: boolean
     error?: string | null
+}
+
+/** Names of services that accept configuration files. */
+export interface ConfigurationServicesResponse {
+    services: string[]
 }
 
 /** Body model for merge-patching an existing configuration file. */

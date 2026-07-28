@@ -7,6 +7,7 @@ import os
 
 import typer # pylint: disable=import-error
 
+from kiddo_cli.commands import config_commands as config_commands  # pylint: disable=import-error
 from kiddo_cli.commands import content_commands as content_commands  # pylint: disable=import-error
 from kiddo_cli.commands import generate_commands as generate_commands  # pylint: disable=import-error
 from kiddo_cli.commands import list_commands as list_commands  # pylint: disable=import-error
@@ -18,6 +19,10 @@ from kiddo_cli.commands import logging_commands as logging_commands  # pylint: d
 app = typer.Typer(no_args_is_help=True)
 
 common_app = typer.Typer(help="Task commands: ping, status, operation, list-files.")
+config_app = typer.Typer(
+    help="Configuration commands: services, list, show, set, patch, create, delete, "
+         "enable, disable, enable-all, disable-all, apply, upload."
+)
 content_app = typer.Typer(help="Content commands: categories, category-details, create-item.")
 list_app = typer.Typer(help="List configured components: generators, translators, optimizers, evaluators.")
 translate_app = typer.Typer(help="Translation commands: translate words.")
@@ -39,6 +44,7 @@ def main(
     os.environ["KIDDO_CLI_VERBOSE"] = "1" if verbose else "0"
 
 tasks_commands.register(common_app)
+config_commands.register(config_app)
 content_commands.register(content_app)
 list_commands.register(list_app)
 generate_commands.register(generate_app)
@@ -47,6 +53,7 @@ users_commands.register(users_app)
 logging_commands.register(logging_app)
 
 app.add_typer(common_app, name="common")
+app.add_typer(config_app, name="config")
 app.add_typer(content_app, name="content")
 app.add_typer(list_app, name="list")
 app.add_typer(generate_app, name="generate")

@@ -38,7 +38,7 @@ class ConfigurationProviderUnavailableError(ConfigurationError):
 
 
 @dataclass(frozen=True)
-class ConfigurationSummary:
+class ConfigurationSummary:  # pylint: disable=too-many-instance-attributes
     """Lightweight metadata returned by list operations."""
 
     config_name: str
@@ -48,6 +48,16 @@ class ConfigurationSummary:
     priority: int | None
     valid_json: bool
     error: str | None = None
+    version: str | None = None
+
+
+@dataclass(frozen=True)
+class ConfigurationFileResult:
+    """Full JSON payload of one configuration file."""
+
+    config_name: str
+    filename: str
+    payload: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -65,6 +75,10 @@ class ConfigurationProvider(ServiceProvider, ABC):
     @abstractmethod
     def list_configurations(self, service_name: str) -> list[ConfigurationSummary]:
         """Return configuration file summaries for one service."""
+
+    @abstractmethod
+    def get_configuration(self, service_name: str, config_name: str) -> ConfigurationFileResult:
+        """Return the full payload of one configuration file."""
 
     @abstractmethod
     def add_configuration(

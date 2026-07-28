@@ -19,11 +19,17 @@ if [[ -n "${UVICORN_PYTHON:-}" ]]; then
   PY="$UVICORN_PYTHON"
 elif [[ -x "$SCRIPT_DIR/.venv/bin/python" ]]; then
   PY="$SCRIPT_DIR/.venv/bin/python"
+elif [[ -x "$SCRIPT_DIR/../.venv/bin/python" ]]; then
+  PY="$SCRIPT_DIR/../.venv/bin/python"
 else
   PY="$(command -v python3)"
 fi
 if [[ -z "$PY" || ! -x "$PY" ]]; then
   echo "Error: no Python interpreter found. Use .venv (see README) or set UVICORN_PYTHON." >&2
+  exit 1
+fi
+if ! "$PY" -c "import uvicorn" 2>/dev/null; then
+  echo "Error: $PY has no 'uvicorn' module installed. Create backend/.venv (see README) or set UVICORN_PYTHON to an interpreter with dependencies installed." >&2
   exit 1
 fi
 

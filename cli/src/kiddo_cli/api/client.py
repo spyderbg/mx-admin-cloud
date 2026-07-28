@@ -340,3 +340,33 @@ def internal_post_bytes(
     )
     r.raise_for_status()
     return r.content
+
+
+def internal_patch(
+        path: str,
+        token: str | None = None,
+        json: dict | None = None,
+        timeout: int = 30,
+) -> dict:
+    """Patch the data on the internal API."""
+    _vprint(f"PATCH {INTERNAL_PREFIX}{path}")
+    r = requests.patch(
+        f"{base_url()}{INTERNAL_PREFIX}{path}",
+        headers=headers(token),
+        json=json,
+        timeout=timeout,
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+def internal_delete(path: str, token: str | None = None, timeout: int = 30) -> dict:
+    """Delete the data from the internal API."""
+    _vprint(f"DELETE {INTERNAL_PREFIX}{path}")
+    r = requests.delete(
+        f"{base_url()}{INTERNAL_PREFIX}{path}",
+        headers=headers(token),
+        timeout=timeout,
+    )
+    r.raise_for_status()
+    return r.json()

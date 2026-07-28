@@ -29,6 +29,21 @@ class ConfigurationFileSummaryResponse(BaseModel):
     priority: int | None = None
     valid_json: bool
     error: str | None = None
+    version: str | None = None
+
+
+class ConfigurationServicesResponse(BaseModel):
+    """Names of services that accept configuration files."""
+
+    services: list[str]
+
+
+class ConfigurationFileResponse(BaseModel):
+    """Full JSON payload of one configuration file."""
+
+    config_name: str
+    filename: str
+    payload: dict[str, Any]
 
 
 class ConfigurationMutationResponse(BaseModel):
