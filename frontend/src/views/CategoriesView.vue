@@ -52,6 +52,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ensureCategoriesLoaded, ensureCategoryDetail, sharedCategories, sharedCategoryNames } from '../api/cache'
+import { readUiConfiguration, writeUiConfiguration } from '../api/uiConfigurationDb'
 import type { Voice } from '../types/viewModels'
 import CategoryDetail from '../components/CategoryDetail.vue'
 import ItemGrid from '../components/ItemGrid.vue'
@@ -68,11 +69,27 @@ const goToDashboard = (): void => {
 
 const contentLanguage = useContentLanguage()
 
+const GRID_COLUMNS_CONFIG_KEY = 'categories.itemsGrid.columns'
+const MIN_GRID_COLUMNS = 1
+const MAX_GRID_COLUMNS = 6
+
 const gridColumns = ref(3)
+
+function normalizeGridColumns(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isInteger(value)) return null
+  if (value < MIN_GRID_COLUMNS || value > MAX_GRID_COLUMNS) return null
+  return value
+}
 
 onMounted(async () => {
   // Use shared store — deduplicates with DashboardView if it already fetched
+  const storedColumns = await readUiConfiguration(GRID_COLUMNS_CONFIG_KEY).catch((error) => {
+    console.warn('Failed to load item grid column preference:', error)
+    return null
+  })
   await ensureCategoriesLoaded()
+  const normalizedColumns = normalizeGridColumns(storedColumns?.value)
+  if (normalizedColumns !== null) gridColumns.value = normalizedColumns
 })
 
 const category = computed(() => {
@@ -111,6 +128,12 @@ watch(
   },
   { immediate: true },
 )
+
+watch(gridColumns, (columns) => {
+  void writeUiConfiguration(GRID_COLUMNS_CONFIG_KEY, columns).catch((error) => {
+    console.warn('Failed to persist item grid column preference:', error)
+  })
+})
 
 const onEditCategory = (): void => {
   console.log('Edit category:', category.value?.id)

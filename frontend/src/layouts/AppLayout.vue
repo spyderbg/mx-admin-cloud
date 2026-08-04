@@ -5,7 +5,7 @@
       @toggle-sidebar="toggleSidebar"
       @close-sidebar="closeSidebar"
     />
-    <div class="container-fluid page-body-wrapper">
+    <div class="container-fluid page-body-wrapper mx-page-body">
       <AppSidebar :is-active="isSidebarActive" @close-sidebar="closeSidebar" />
       <div class="main-panel">
         <div class="content-wrapper">
@@ -37,3 +37,22 @@ const closeSidebar = (): void => {
   isSidebarActive.value = false
 }
 </script>
+
+<style scoped>
+@media (min-width: 992px) {
+  .mx-page-body :deep(.sidebar) {
+    position: fixed;
+    top: 63px;
+    bottom: 0;
+    left: 0;
+    height: calc(100vh - 63px);
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: hidden;
+  }
+
+  .mx-page-body .main-panel {
+    margin-left: 270px;
+  }
+}
+</style>

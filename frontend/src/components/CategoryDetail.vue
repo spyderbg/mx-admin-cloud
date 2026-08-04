@@ -23,6 +23,14 @@
               <div class="category-icon-actions">
                 <button
                   type="button"
+                  class="btn-icon btn-icon-regenerate"
+                  title="Regenerate category image"
+                  @click="requestCategoryImageRegeneration"
+                >
+                  <i class="mdi mdi-auto-fix"></i>
+                </button>
+                <button
+                  type="button"
                   class="btn-icon btn-icon-edit"
                   title="Upload category icon"
                   @click="openUploadModal"
@@ -48,14 +56,35 @@
           <label class="text-muted small mb-1 d-block">{{ categoryVoicesLabel(contentLanguage) }}</label>
           <div class="voice-cards-grid">
             <div v-for="voice in category.voices" :key="voice.id" class="voice-card">
-              <button
-                type="button"
-                class="voice-card-delete-icon"
-                title="Delete or reset voice"
-                @click="openVoiceDeleteModal(voice)"
-              >
-                <i class="mdi mdi-delete"></i>
-              </button>
+              <div class="voice-card-top-actions">
+                <button
+                  class="btn-icon btn-icon-regenerate voice-card-action"
+                  type="button"
+                  title="Regenerate voice"
+                  aria-label="Regenerate voice"
+                  @click="requestCategoryVoiceRegeneration(voice)"
+                >
+                  <i class="mdi mdi-auto-fix"></i>
+                </button>
+                <button
+                  class="btn-icon btn-icon-edit voice-card-action"
+                  type="button"
+                  title="Upload voice"
+                  aria-label="Upload voice"
+                  @click="openVoiceUpload(voice)"
+                >
+                  <i class="mdi mdi-pencil"></i>
+                </button>
+                <button
+                  type="button"
+                  class="btn-icon btn-icon-delete voice-card-action"
+                  title="Delete or reset voice"
+                  aria-label="Delete or reset voice"
+                  @click="openVoiceDeleteModal(voice)"
+                >
+                  <i class="mdi mdi-delete"></i>
+                </button>
+              </div>
               <div class="voice-card-flag">
                 <i
                   :class="'flag-icon flag-icon-' + langFlag(voice.language)"
@@ -84,13 +113,6 @@
                   <span>{{ playingVoiceId === voice.id ? 'Stop' : 'Play' }}</span>
                 </button>
               </div>
-              <button
-                class="btn btn-primary btn-sm voice-card-btn"
-                type="button"
-                @click="openVoiceUpload(voice)"
-              >
-                Upload
-              </button>
             </div>
           </div>
         </div>
@@ -470,6 +492,14 @@ function openDeleteModal(): void {
   showDelete.value = true
 }
 
+function requestCategoryImageRegeneration(): void {
+  showToast('Backend task pending: regenerate the category image from the saved category metadata.', 'error')
+}
+
+function requestCategoryVoiceRegeneration(voice: Voice): void {
+  showToast(`Backend task pending: regenerate ${voice.language.toUpperCase()} audio for ${voice.name}.`, 'error')
+}
+
 async function confirmImageDelete(): Promise<void> {
   showDelete.value = false
   const uri = props.category.thumbnail_uri
@@ -625,6 +655,12 @@ function togglePlay(voice: Voice): void {
 .btn-icon-edit:hover {
   background: #4338ca;
 }
+.btn-icon-regenerate {
+  background: #0f766e;
+}
+.btn-icon-regenerate:hover {
+  background: #0f5f59;
+}
 .btn-icon-delete {
   background: #dc2626;
 }
@@ -651,27 +687,19 @@ function togglePlay(voice: Voice): void {
   min-width: 0;
   border: 1.5px solid #b8d4f0;
   border-radius: 10px;
-  padding: 1rem 0.75rem 0.75rem;
+  padding: 2.15rem 0.75rem 0.75rem;
   text-align: center;
   background: #f8fbff;
   display: flex;
   flex-direction: column;
   align-items: center;
 }
-.voice-card-delete-icon {
+.voice-card-top-actions {
   position: absolute;
   top: 6px;
   right: 6px;
-  background: none;
-  border: none;
-  color: #6b7280;
-  cursor: pointer;
-  font-size: 14px;
-  padding: 2px;
-  line-height: 1;
-}
-.voice-card-delete-icon:hover {
-  color: #dc2626;
+  display: flex;
+  gap: 0.3rem;
 }
 .voice-card-flag {
   width: 56px;
@@ -742,10 +770,10 @@ function togglePlay(voice: Voice): void {
   background: transparent;
   color: #9ca3af;
 }
-.voice-card-btn {
-  width: 100%;
-  font-size: 0.75rem;
-  padding: 0.25rem 0.5rem;
+.voice-card-action {
+  width: 26px;
+  height: 26px;
+  font-size: 13px;
 }
 
 /* Modal styles — prefixed to avoid Star Admin .close conflicts */

@@ -37,18 +37,23 @@
       <div class="card-body">
         <div class="d-flex justify-content-between align-items-center mb-3">
           <h4 class="card-title mb-0">Files</h4>
-          <input
-            ref="addFileInputRef"
-            type="file"
-            accept="image/*"
-            class="d-none"
-            aria-hidden="true"
-            tabindex="-1"
-            @change="onAddFilePicked"
-          />
-          <button v-if="hasFiles" type="button" class="btn btn-primary btn-sm" @click="onAddFile">
-            <i class="mdi mdi-plus mr-1"></i>Add File
-          </button>
+          <div class="d-flex align-items-center" style="gap: 0.5rem;">
+            <input
+              ref="addFileInputRef"
+              type="file"
+              accept="image/*"
+              class="d-none"
+              aria-hidden="true"
+              tabindex="-1"
+              @change="onAddFilePicked"
+            />
+            <button v-if="hasFiles" type="button" class="btn btn-outline-primary btn-sm" @click="onRegenerateAllItemImages">
+              <i class="mdi mdi-auto-fix mr-1"></i>Regenerate Images
+            </button>
+            <button v-if="hasFiles" type="button" class="btn btn-primary btn-sm" @click="onAddFile">
+              <i class="mdi mdi-plus mr-1"></i>Add File
+            </button>
+          </div>
         </div>
         <input
           ref="replaceFileInputRef"
@@ -73,6 +78,13 @@
                 style="width: 100%; aspect-ratio: 1/1; object-fit: cover;"
               />
               <div class="file-actions">
+                <button
+                  class="btn btn-sm btn-outline-light"
+                  title="Regenerate"
+                  @click="onRegenerateFile(index)"
+                >
+                  <i class="mdi mdi-auto-fix"></i>
+                </button>
                 <button
                   class="btn btn-sm btn-outline-light"
                   title="Replace"
@@ -102,7 +114,14 @@
             <div class="file-actions">
               <button
                 class="btn btn-sm btn-outline-light"
-                title="Edit"
+                title="Regenerate"
+                @click="onRegenerateAllItemImages"
+              >
+                <i class="mdi mdi-auto-fix"></i>
+              </button>
+              <button
+                class="btn btn-sm btn-outline-light"
+                title="Upload"
                 @click="onAddFile"
               >
                 <i class="mdi mdi-pencil"></i>
@@ -116,7 +135,12 @@
     <!-- Voices -->
     <div class="card mb-4">
       <div class="card-body">
-        <h4 class="card-title">Voices</h4>
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h4 class="card-title mb-0">Voices</h4>
+          <button type="button" class="btn btn-outline-primary btn-sm" @click="onRegenerateAllItemVoices">
+            <i class="mdi mdi-auto-fix mr-1"></i>Regenerate Voices
+          </button>
+        </div>
         <div class="table-responsive">
           <table class="table table-hover mb-0">
             <thead>
@@ -124,7 +148,7 @@
                 <th>Language</th>
                 <th>Word</th>
                 <th>Type</th>
-                <th style="width: 120px;">Actions</th>
+                <th style="width: 150px;">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -136,18 +160,47 @@
                 <td>{{ voice.name }}</td>
                 <td><span class="badge badge-light">{{ voice.type }}</span></td>
                 <td>
-                  <div class="d-flex align-items-center" style="gap: 0.4rem;">
+                  <div class="item-voice-actions">
                     <button
-                      class="btn btn-sm py-0 px-2"
-                      :class="playingVoiceId === voice.id ? 'btn-danger' : 'btn-outline-success'"
+                      class="voice-play-btn"
+                      :class="{
+                        'voice-play-btn-ready': hasAudio(voice) && playingVoiceId !== voice.id,
+                        'voice-play-btn-playing': playingVoiceId === voice.id,
+                        'voice-play-btn-disabled': !hasAudio(voice),
+                      }"
                       :disabled="!hasAudio(voice)"
+                      :aria-label="!hasAudio(voice) ? 'Voice file missing' : (playingVoiceId === voice.id ? 'Stop voice playback' : 'Play voice')"
                       :title="!hasAudio(voice) ? 'Voice file missing' : (playingVoiceId === voice.id ? 'Stop' : 'Play')"
                       @click="togglePlay(voice)"
                     >
                       <i :class="playingVoiceId === voice.id ? 'mdi mdi-stop' : 'mdi mdi-play'"></i>
                     </button>
-                    <button class="btn btn-outline-primary btn-sm py-0 px-2" @click="onUploadVoice(voice.language)">
-                      <i class="mdi mdi-upload mr-1"></i>Replace
+                    <button
+                      class="btn-icon btn-icon-regenerate item-voice-action"
+                      type="button"
+                      title="Regenerate voice"
+                      aria-label="Regenerate voice"
+                      @click="onRegenerateVoice(voice)"
+                    >
+                      <i class="mdi mdi-auto-fix"></i>
+                    </button>
+                    <button
+                      class="btn-icon btn-icon-edit item-voice-action"
+                      type="button"
+                      title="Replace voice"
+                      aria-label="Replace voice"
+                      @click="onUploadVoice(voice.language)"
+                    >
+                      <i class="mdi mdi-pencil"></i>
+                    </button>
+                    <button
+                      class="btn-icon btn-icon-delete item-voice-action"
+                      type="button"
+                      title="Delete or reset voice"
+                      aria-label="Delete or reset voice"
+                      @click="openVoiceDeleteModal(voice)"
+                    >
+                      <i class="mdi mdi-delete"></i>
                     </button>
                   </div>
                 </td>
@@ -181,12 +234,40 @@
       </div>
     </div>
   </Teleport>
+
+  <Teleport to="body">
+    <div v-if="pendingNotice" class="id-toast">
+      <i class="mdi mdi-information"></i>
+      <span>{{ pendingNotice }}</span>
+    </div>
+  </Teleport>
+
+  <Teleport to="body">
+    <div v-if="voiceDeleteTarget" class="cd-modal-overlay" @click.self="cancelVoiceDelete">
+      <div class="cd-modal-box">
+        <div class="cd-modal-header">
+          <h5 class="cd-modal-title">Delete or reset voice</h5>
+          <button type="button" class="cd-modal-close" @click="cancelVoiceDelete">&times;</button>
+        </div>
+        <div class="cd-modal-body">
+          Are you sure you want to delete or reset the voice for
+          <strong>{{ voiceDeleteTarget.name }}</strong>
+          (<span class="text-uppercase">{{ voiceDeleteTarget.language }}</span>)?
+        </div>
+        <div class="cd-modal-footer">
+          <button type="button" class="btn btn-secondary" @click="cancelVoiceDelete">Cancel</button>
+          <button type="button" class="btn btn-danger" @click="confirmVoiceDelete">Delete</button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ensureCategoriesLoaded, ensureCategoryDetail, ensureItemDetail, sharedCategories } from '../api/cache'
+import { ensureCategoriesLoaded, ensureCategoryDetail, ensureItemDetail, invalidateItemDetail, sharedCategories } from '../api/cache'
+import { itemsVoicesDelete } from '../api/contentClient'
 import type { Language, Voice } from '../types/viewModels'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import cameraPlaceholderUrl from '../assets/images/samples/camera-placeholder.svg'
@@ -278,6 +359,17 @@ const onNameChange = (e: Event): void => {
   const val = (e.target as HTMLInputElement).value
   console.log('Name changed to:', val)
 }
+
+const announceBackendPending = (message: string): void => {
+  if (pendingNoticeTimer) clearTimeout(pendingNoticeTimer)
+  pendingNotice.value = `Backend task pending: ${message}.`
+  pendingNoticeTimer = setTimeout(() => { pendingNotice.value = null }, 4000)
+  console.info(`Backend task pending: ${message}`)
+}
+
+const pendingNotice = ref<string | null>(null)
+let pendingNoticeTimer: ReturnType<typeof setTimeout> | null = null
+
 const addFileInputRef = ref<HTMLInputElement | null>(null)
 
 const onAddFile = (): void => {
@@ -298,6 +390,14 @@ const replaceFileIndex = ref<number>(-1)
 const onReplaceFile = (index: number): void => {
   replaceFileIndex.value = index
   replaceFileInputRef.value?.click()
+}
+
+const onRegenerateFile = (index: number): void => {
+  announceBackendPending(`regenerate image ${index + 1} for item ${item.value?.id ?? 'unknown item'}`)
+}
+
+const onRegenerateAllItemImages = (): void => {
+  announceBackendPending(`regenerate images for item ${item.value?.id ?? 'unknown item'}`)
 }
 
 const onReplaceFilePicked = (e: Event): void => {
@@ -328,6 +428,41 @@ const confirmDelete = (): void => {
 }
 const onUploadVoice = (language: Language): void => {
   console.log('Upload voice for language:', language)
+}
+
+const onRegenerateVoice = (voice: Voice): void => {
+  announceBackendPending(`regenerate ${voice.language.toUpperCase()} voice ${voice.id} for item ${item.value?.id ?? 'unknown item'}`)
+}
+
+const onRegenerateAllItemVoices = (): void => {
+  announceBackendPending(`regenerate voices for item ${item.value?.id ?? 'unknown item'}`)
+}
+
+const voiceDeleteTarget = ref<Voice | null>(null)
+
+const openVoiceDeleteModal = (voice: Voice): void => {
+  voiceDeleteTarget.value = voice
+}
+
+const cancelVoiceDelete = (): void => {
+  voiceDeleteTarget.value = null
+}
+
+const confirmVoiceDelete = async (): Promise<void> => {
+  const voice = voiceDeleteTarget.value
+  const cat = category.value
+  const currentItem = item.value
+  voiceDeleteTarget.value = null
+  if (!voice || !cat || !currentItem) return
+  if (playingVoiceId.value === voice.id) stopAudio()
+
+  try {
+    await itemsVoicesDelete(cat.id, currentItem.id, voice.id)
+    invalidateItemDetail(cat.id, currentItem.id)
+    await ensureItemDetail(cat.id, currentItem.id)
+  } catch (error) {
+    console.error('Failed to delete item voice', error)
+  }
 }
 
 const playingVoiceId = ref<string | null>(null)
@@ -395,6 +530,89 @@ function togglePlay(voice: Voice): void {
 .file-card-empty {
   background: #eff3f8;
 }
+.item-voice-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.btn-icon {
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 15px;
+  color: #fff;
+  padding: 0;
+}
+.btn-icon-edit {
+  background: #4f46e5;
+}
+.btn-icon-edit:hover {
+  background: #4338ca;
+}
+.btn-icon-regenerate {
+  background: #0f766e;
+}
+.btn-icon-regenerate:hover {
+  background: #0f5f59;
+}
+.btn-icon-delete {
+  background: #dc2626;
+}
+.btn-icon-delete:hover {
+  background: #b91c1c;
+}
+.item-voice-action {
+  width: 26px;
+  height: 26px;
+  font-size: 13px;
+}
+.voice-play-btn {
+  width: 34px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.voice-play-btn.voice-play-btn-ready {
+  background: #047857 !important;
+  border-color: #047857 !important;
+  color: #fff !important;
+}
+.voice-play-btn.voice-play-btn-ready:hover,
+.voice-play-btn.voice-play-btn-ready:focus {
+  background: #065f46 !important;
+  border-color: #065f46 !important;
+  color: #fff !important;
+}
+.voice-play-btn.voice-play-btn-playing {
+  background: #dc2626 !important;
+  border-color: #dc2626 !important;
+  color: #fff !important;
+}
+.voice-play-btn.voice-play-btn-playing:hover,
+.voice-play-btn.voice-play-btn-playing:focus {
+  background: #b91c1c !important;
+  border-color: #b91c1c !important;
+  color: #fff !important;
+}
+.voice-play-btn.voice-play-btn-disabled,
+.voice-play-btn:disabled {
+  background: #e5e7eb !important;
+  border-color: #cbd5e1 !important;
+  color: #64748b !important;
+  cursor: not-allowed;
+  opacity: 1;
+}
 .cd-modal-overlay {
   position: fixed;
   inset: 0;
@@ -447,5 +665,21 @@ function togglePlay(voice: Voice): void {
   display: flex;
   justify-content: flex-end;
   gap: 0.5rem;
+}
+.id-toast {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 380px;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  background: #0f766e;
+  color: #fff;
+  font-size: 0.9rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
 }
 </style>

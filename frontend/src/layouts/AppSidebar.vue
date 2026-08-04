@@ -67,48 +67,52 @@
         </div>
       </li>
 
-      <!-- Category tree -->
-      <li
-        v-for="cat in filteredCategories"
-        :key="cat.id"
-        class="nav-item"
-        :class="{ active: cat.id === activeCategoryId }"
-      >
-        <a
-          class="nav-link"
-          href="#"
-          @click.prevent="toggleCategory(cat.id)"
-          :aria-expanded="expandedIds.has(cat.id) ? 'true' : 'false'"
-        >
-          <i class="menu-icon mdi mdi-folder-image"></i>
-          <span class="menu-title">{{ cat.name }}</span>
-          <i class="menu-arrow"></i>
-        </a>
-        <div class="collapse" :class="{ show: expandedIds.has(cat.id) }">
-          <ul class="nav flex-column sub-menu">
-            <li
-              v-for="item in cat.filteredItems"
-              :key="item.id"
-              class="nav-item"
+      <li class="nav-item cd-sidebar-tree">
+        <ul class="nav cd-sidebar-tree-list">
+          <!-- Category tree -->
+          <li
+            v-for="cat in filteredCategories"
+            :key="cat.id"
+            class="nav-item"
+            :class="{ active: cat.id === activeCategoryId }"
+          >
+            <a
+              class="nav-link"
+              href="#"
+              @click.prevent="toggleCategory(cat.id)"
+              :aria-expanded="expandedIds.has(cat.id) ? 'true' : 'false'"
             >
-              <router-link
-                class="nav-link"
-                :to="`/categories/${cat.id}/items/${item.id}`"
-                :class="{ active: item.id === activeItemId }"
-                @click="requestCloseSidebar"
-              >
-                {{ item.name }}
-              </router-link>
-            </li>
-            <li v-if="cat.filteredItems.length === 0" class="nav-item">
-              <span class="nav-link" style="opacity: 0.5; font-style: italic;">No matches</span>
-            </li>
-          </ul>
-        </div>
-      </li>
+              <i class="menu-icon mdi mdi-folder-image"></i>
+              <span class="menu-title">{{ cat.name }}</span>
+              <i class="menu-arrow"></i>
+            </a>
+            <div class="collapse" :class="{ show: expandedIds.has(cat.id) }">
+              <ul class="nav flex-column sub-menu">
+                <li
+                  v-for="item in cat.filteredItems"
+                  :key="item.id"
+                  class="nav-item"
+                >
+                  <router-link
+                    class="nav-link"
+                    :to="`/categories/${cat.id}/items/${item.id}`"
+                    :class="{ active: item.id === activeItemId }"
+                    @click="requestCloseSidebar"
+                  >
+                    {{ item.name }}
+                  </router-link>
+                </li>
+                <li v-if="cat.filteredItems.length === 0" class="nav-item">
+                  <span class="nav-link" style="opacity: 0.5; font-style: italic;">No matches</span>
+                </li>
+              </ul>
+            </div>
+          </li>
 
-      <li v-if="filteredCategories.length === 0" class="nav-item">
-        <span class="nav-link" style="opacity: 0.5; font-style: italic;">{{ noCategoriesMatchLabel(contentLanguage) }}</span>
+          <li v-if="filteredCategories.length === 0" class="nav-item">
+            <span class="nav-link" style="opacity: 0.5; font-style: italic;">{{ noCategoriesMatchLabel(contentLanguage) }}</span>
+          </li>
+        </ul>
       </li>
     </ul>
   </nav>
@@ -223,6 +227,33 @@ const toggleCategory = (id: string): void => {
 </script>
 
 <style scoped>
+nav.sidebar.sidebar-offcanvas {
+  display: flex;
+  flex-direction: column;
+}
+
+nav.sidebar.sidebar-offcanvas > .nav {
+  height: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.cd-sidebar-tree {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.cd-sidebar-tree-list {
+  height: 100%;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  flex-wrap: nowrap;
+  flex-direction: column;
+}
+
 /* Placeholder defaults are dim; sidebar field needs high contrast on blue. */
 .cd-sidebar-filter-input::placeholder {
   color: rgba(255, 255, 255, 0.9);
