@@ -12,11 +12,38 @@ npm run type-check  # vue-tsc --noEmit only
 npm run preview     # serve production build locally
 ```
 
-The dev server proxies `**/api**` to `**http://127.0.0.1:8000**` and serves the monorepo `**content/**` tree at `**/content**` (see `vite.config.ts`). Run the FastAPI backend on port 8000 for a full API-backed app.
+**Optional offline UI:** If `VITE_DEBUG_MODE=true` (e.g. in `.env.development.local`), the app starts [MSW](https://mswjs.io/) (`src/mocks/`) and seeds a placeholder token when none is set.
 
-**Optional offline UI:** If `VITE_DEBUG_MODE=true` (e.g. in `.env.development.local`), the app starts [MSW](https://mswjs.io/) (`src/mocks/`), seeds a placeholder token when none is set, and unhandled requests bypass the worker so real APIs still work when reachable.
+**Verbose request logging:** If `VITE_VERBOSE_REQUESTS=true`, every axios request/response is logged to the browser console with method, URL, status, and JSON body. Useful during development to inspect payloads.
 
-**Verbose request logging:** If `VITE_VERBOSE_REQUESTS=true`, every axios request/response is logged to the browser console as `[VERBOSE] METHOD /api/endpoint → status` with the JSON body. Useful during development to inspect API payloads.
+## Mock Data Mode
+
+Use this mode when developing the UI with local fixtures.
+
+```bash
+# in frontend/.env.development.local
+VITE_DEBUG_MODE=true
+VITE_LOG_REQUESTS=true
+VITE_VERBOSE_REQUESTS=true
+
+# in frontend/
+npm run dev
+```
+
+In this mode:
+
+- `src/main.ts` starts the MSW browser worker before mounting Vue.
+- `src/mocks/browser.ts` registers handlers from `src/mocks/contentHandlers.ts` and `src/mocks/configurationHandlers.ts`.
+- `src/mocks/contentHandlers.ts` serves content fixtures from `src/data/mockData.ts`.
+- `src/mocks/configurationHandlers.ts` serves in-memory configuration fixtures for the navbar configuration popup.
+- If `localStorage.token` is empty, the app seeds `debug-token` so authenticated routes work.
+
+Quick verification:
+
+1. Open DevTools Console and confirm MSW starts without unhandled request errors.
+2. Visit `/categories`; the category sidebar should populate from `mockCategories`.
+3. Select a category and an item; the page should receive MSW responses.
+4. Rename, delete, upload, or configuration actions should either update the in-memory mock state or return the intentional mock response from the handler.
 
 ## Project Structure
 
@@ -24,12 +51,11 @@ The dev server proxies `**/api**` to `**http://127.0.0.1:8000**` and serves the 
 src/
 ├── api/              # REST API client modules
 │   ├── auth.ts       # Login, status, file-list endpoints
-│   ├── categories.ts # Category CRUD + restore/list
-│   ├── categoryVoices.ts
-│   ├── items.ts
-│   ├── itemImages.ts
-│   ├── itemVoices.ts
-│   └── content.ts    # Aggregates OpenAPI endpoints into UI tree data
+│   ├── cache.ts      # Shared content cache + DTO-to-view-model mapping
+│   ├── client.ts     # Axios client factory for app requests
+│   ├── internalClient.ts
+│   ├── configurationClient.ts # [generated] Configuration API client
+│   └── contentClient.ts       # [generated] Content API client
 ├── assets/           # Static assets (copied from vue3-demo)
 │   ├── css/          # Shared + demo_1 Star Admin stylesheets
 │   ├── images/       # Faces, logos, samples, auth backgrounds
@@ -42,7 +68,7 @@ src/
 ├── composables/      # Shared composition helpers (e.g. content UI language)
 ├── utils/            # Pure helpers (labels from voices, title-case formatting, etc.)
 ├── data/
-│   └── mockData.ts   # Sidebar / MSW sample categories; toys includes a no-image placeholder item for empty-state testing
+│   └── mockData.ts   # [generated] Sidebar / MSW sample categories
 ├── mocks/            # MSW handlers (used when VITE_DEBUG_MODE=true)
 ├── layouts/          # Application shell components
 │   ├── AppLayout.vue
@@ -53,8 +79,16 @@ src/
 │   └── index.ts      # Route definitions and auth guard
 ├── types/
 │   ├── index.ts      # Hand-written UI view-model types (Category, Image, Voice, etc.)
-│   ├── localization.ts  # LocalizedString class (mirrors backend; typed getters + JSON serialization)
-│   └── contentSchemas.ts  # Auto-generated backend DTOs (do not edit; re-run generate_ts_schemas.py)
+│   ├── localization.ts  # LocalizedString class with typed getters + JSON serialization
+│   ├── viewModels.ts # Hand-written mock/view-model helper types
+│   ├── configurationSchemas.ts     # [generated] Configuration DTOs
+│   ├── contentSchemas.ts           # [generated] Content DTOs
+│   ├── evaluationSchemas.ts        # [generated] Evaluation DTOs
+│   ├── loggingSchemas.ts           # [generated] Logging DTOs
+│   ├── sharedSchemas.ts            # [generated] Shared DTOs
+│   ├── textToSpeechSchemas.ts      # [generated] Text-to-speech DTOs
+│   ├── textTranslationSchemas.ts   # [generated] Text-translation DTOs
+│   └── voiceOptimizationSchemas.ts # [generated] Voice-optimization DTOs
 ├── views/            # Route-level page components
 │   ├── CategoriesView.vue
 │   ├── ItemDetailView.vue
@@ -154,9 +188,9 @@ data shapes (`src/data/mockData.ts`), and the UI actions exposed by components.
 
 Two type layers exist:
 
-- **`src/types/localization.ts`** — `LocalizedString` class, mirrors the Python backend class. Typed property getters for every supported language code (`en`, `es`, `fr`, `bg`, `de`, `it`, `pl`, `uk`, `ro`, `nl`); falls back to English when a translation is absent. Serializes to/from the JSON wire format `{"en": "dog", "fr": "chien"}` via `toJSON()`. Use `LocalizedString.fromJSON(data)` to deserialize from API responses.
-- **`src/types/contentSchemas.ts`** — Auto-generated backend DTOs (do not edit). Imports `LocalizedString`. Regenerate by running `scripts/generate_ts_schemas.py`.
-- **`src/types/index.ts`** — Hand-written UI view-model types (camelCase; UI-only fields the backend doesn't provide). `src/api/cache.ts` maps backend DTOs → these types.
+- **`src/types/localization.ts`** — `LocalizedString` class with typed property getters for every supported language code (`en`, `es`, `fr`, `bg`, `de`, `it`, `pl`, `uk`, `ro`, `nl`); falls back to English when a translation is absent. Serializes to/from the JSON wire format `{"en": "dog", "fr": "chien"}` via `toJSON()`. Use `LocalizedString.fromJSON(data)` to deserialize responses.
+- **`src/types/contentSchemas.ts`** — Auto-generated content DTOs (do not edit). Imports `LocalizedString`. Regenerate by running `scripts/generate_ts_schemas.py`.
+- **`src/types/index.ts`** — Hand-written UI view-model types (camelCase; UI-only fields). `src/api/cache.ts` maps content DTOs → these types.
 
 ```typescript
 // src/types/index.ts (hand-written view-models)
@@ -188,7 +222,7 @@ interface Category {
   archived?: boolean
   voices: Voice[]
   items: Item[]
-  thumbnailUri?: string  // returned by backend CategorySummary
+  thumbnailUri?: string  // returned by category summary data
 }
 
 interface User {
@@ -198,7 +232,7 @@ interface User {
 }
 ```
 
-`name` fields on categories and items are `LocalizedString` in the backend DTOs (`contentSchemas.ts`) and are mapped to plain `string` in the UI view-models (`index.ts`) via the content language selected in the navbar.
+`name` fields on categories and items are localized in `contentSchemas.ts` and are mapped to plain `string` in the UI view-models (`index.ts`) via the content language selected in the navbar.
 
 ## Styles
 
@@ -210,4 +244,3 @@ Imported from `src/main.ts` (Star Admin / vue3-demo lineage):
 - `assets/css/demo_1/style.css` -- Demo skin overrides (sidebar, navbar, cards)
 - `assets/css/auth.css` -- Login page styles
 - Icon fonts under `assets/vendors/`: MDI, Font Awesome 4.7, flag-icon-css
-
