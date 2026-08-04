@@ -38,6 +38,17 @@ export function breadcrumbCategoriesLabel(lang: Language): string {
   return labels[lang] ?? labels.en
 }
 
+/** Header label for the configuration menu; unknown `lang` falls back to English. */
+export function configurationLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Configuration',
+    es: 'Configuración',
+    fr: 'Configuration',
+    bg: 'Конфигурация',
+  }
+  return labels[lang] ?? labels.en
+}
+
 /** Label for the items section heading; unknown `lang` falls back to English. */
 export function itemsLabel(lang: Language): string {
   const labels: Record<Language, string> = {

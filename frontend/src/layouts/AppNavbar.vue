@@ -26,7 +26,7 @@
             <div class="d-inline-flex config-nav-icon-wrap">
               <i class="mdi mdi-settings cfg-nav-icon"></i>
             </div>
-            <span class="profile-text font-weight-medium d-none d-md-block">Configuration</span>
+            <span class="profile-text font-weight-medium d-none d-md-block">{{ configurationLabel(selectedLang) }}</span>
           </a>
           <div class="dropdown-menu dropdown-menu-right navbar-dropdown py-2" :class="{ show: configOpen }">
             <span v-if="configServicesLoading" class="dropdown-item cfg-menu-status text-muted">Loading…</span>
@@ -116,6 +116,7 @@ import { listConfigurationServices } from '../api/configurationClient'
 import { mockUser } from '../data/mockData'
 import type { Language } from '../types/viewModels'
 import { useContentLanguage } from '../composables/useContentLanguage'
+import { configurationLabel } from '../utils/localizedLabels'
 import logoUrl from '../assets/images/logo.svg'
 import logoMiniUrl from '../assets/images/logo-mini.svg'
 
