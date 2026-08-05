@@ -10,7 +10,7 @@ import App from './App.vue'
 import router from './router'
 
 async function main() {
-  if (import.meta.env.VITE_DEBUG_MODE === 'true') {
+  if (import.meta.env.VITE_MOCK_DATA === 'true') {
     const { worker } = await import('./mocks/browser')
     await worker.start({
       onUnhandledRequest(request, print) {

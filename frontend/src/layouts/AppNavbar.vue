@@ -16,6 +16,7 @@
       </router-link>
     </div>
     <div class="navbar-menu-wrapper d-flex align-items-center flex-grow-1 justify-content-end">
+      <MockDataBadge v-if="areBackendRequestsMocked" class="navbar-mock-badge" />
       <ul class="navbar-nav flex-row align-items-center">
         <li class="nav-item dropdown config-dropdown">
           <a
@@ -112,6 +113,7 @@ import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import type { AxiosError } from 'axios'
 import ConfigurationModal from '../components/ConfigurationModal.vue'
+import MockDataBadge from '../components/MockDataBadge.vue'
 import { listConfigurationServices } from '../api/configurationClient'
 import { mockUser } from '../data/mockData'
 import type { Language } from '../types/viewModels'
@@ -151,6 +153,7 @@ const emit = defineEmits<{
 
 const router = useRouter()
 const user = mockUser
+const areBackendRequestsMocked = import.meta.env.VITE_MOCK_DATA === 'true'
 
 const languages: Language[] = ['en', 'es', 'fr', 'bg']
 const langFlags: Record<Language, string> = { en: 'us', es: 'es', fr: 'fr', bg: 'bg' }
@@ -267,6 +270,11 @@ const logout = (): void => {
 
 .cd-brand-sidebar-trigger {
   cursor: pointer;
+}
+
+.navbar-mock-badge {
+  flex-shrink: 0;
+  margin-right: 0.75rem;
 }
 
 /*

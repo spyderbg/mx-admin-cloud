@@ -12,7 +12,7 @@ npm run type-check  # vue-tsc --noEmit only
 npm run preview     # serve production build locally
 ```
 
-**Optional offline UI:** If `VITE_DEBUG_MODE=true` (e.g. in `.env.development.local`), the app starts [MSW](https://mswjs.io/) (`src/mocks/`) and seeds a placeholder token when none is set.
+**Optional offline UI:** If `VITE_MOCK_DATA=true` (e.g. in `.env.development.local`), the app starts [MSW](https://mswjs.io/) (`src/mocks/`) and seeds a placeholder token when none is set.
 
 **Verbose request logging:** If `VITE_VERBOSE_REQUESTS=true`, every axios request/response is logged to the browser console with method, URL, status, and JSON body. Useful during development to inspect payloads.
 
@@ -22,7 +22,7 @@ Use this mode when developing the UI with local fixtures.
 
 ```bash
 # in frontend/.env.development.local
-VITE_DEBUG_MODE=true
+VITE_MOCK_DATA=true
 VITE_LOG_REQUESTS=true
 VITE_VERBOSE_REQUESTS=true
 
@@ -69,7 +69,7 @@ src/
 ├── utils/            # Pure helpers (labels from voices, title-case formatting, etc.)
 ├── data/
 │   └── mockData.ts   # [generated] Sidebar / MSW sample categories
-├── mocks/            # MSW handlers (used when VITE_DEBUG_MODE=true)
+├── mocks/            # MSW handlers (used when VITE_MOCK_DATA=true)
 ├── layouts/          # Application shell components
 │   ├── AppLayout.vue
 │   ├── AppNavbar.vue

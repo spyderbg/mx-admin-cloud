@@ -11,10 +11,10 @@ at the end.
 ## 1. Critical — mock mode and backend mode are both compromised
 
 ### 1.1 The production Docker image ships with mocks enabled
-- `docker/docker-compose.yml` builds the frontend with `VITE_DEBUG_MODE: "true"`, and
+- `docker/docker-compose.yml` builds the frontend with `VITE_MOCK_DATA: "true"`, and
   `docker/frontend.Dockerfile` bakes that env into the production bundle.
 - `src/main.ts:13–25` starts the MSW service worker and **seeds a fake `debug-token`** whenever
-  `VITE_DEBUG_MODE === 'true'`. Since MSW intercepts every `/api/v1/content/*` route it has a
+  `VITE_MOCK_DATA === 'true'`. Since MSW intercepts every `/api/v1/content/*` route it has a
   handler for, the deployed container on port 9001 serves **mock data**, not the real backend that
   nginx dutifully proxies to (`docker/nginx.conf`).
 - Anyone "testing the deployment" sees mock categories and a bypassed login and may not notice.

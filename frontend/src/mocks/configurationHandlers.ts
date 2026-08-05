@@ -1,7 +1,7 @@
 import { http, HttpResponse } from 'msw'
 import type { ConfigurationFileSummaryResponse } from '../types/configurationSchemas'
 
-// In-memory fixtures so the configuration popup works in VITE_DEBUG_MODE.
+// In-memory fixtures so the configuration popup works with VITE_MOCK_DATA.
 const mockConfigs: Record<string, ConfigurationFileSummaryResponse[]> = {
   content: [
     { config_name: 'file_system', filename: 'file_system.json', provider: 'file_system', enabled: true, priority: 1, valid_json: true, error: null, version: null },
