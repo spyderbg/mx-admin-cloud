@@ -17,14 +17,29 @@ const slugify = (value: string): string =>
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '')
 
-const findCategory = (categoryName: string) =>
-  mockCategories.find((c) => c.name['en']?.toLowerCase() === categoryName.toLowerCase())
+const findCategory = (categoryRef: string) => {
+  const normalizedRef = categoryRef.toLowerCase()
+  const slugRef = slugify(categoryRef)
+  return mockCategories.find((category) => {
+    const englishName = category.name['en'] ?? ''
+    return (
+      category.id.toLowerCase() === normalizedRef ||
+      category.id.toLowerCase() === slugRef ||
+      englishName.toLowerCase() === normalizedRef ||
+      slugify(englishName) === slugRef
+    )
+  })
+}
 
 const findCategoryById = (categoryId: string) =>
   mockCategories.find((c) => c.id.toLowerCase() === categoryId.toLowerCase())
 
+type CategoryRecord = NonNullable<ReturnType<typeof findCategoryById>>
+
 const findItem = (category: ReturnType<typeof findCategory>, itemId: string) =>
   category?.items.find((item) => item.id === itemId || item.name.toLowerCase() === itemId.toLowerCase())
+
+type ItemRecord = NonNullable<ReturnType<typeof findItem>>
 
 const toCategoryDetailResponse = (category: ReturnType<typeof findCategory>): Record<string, unknown> => {
   if (!category) return {}
@@ -61,9 +76,29 @@ const itemLocalizedName = (item: NonNullable<ReturnType<typeof findItem>>): Reco
     }),
   )
 
+// Category-level images/voices carry their own id; item-level images don't, so their
+// id is synthesized positionally (matches the backend's "{item_id}_NN" file naming).
+const categoryImageId = (category: CategoryRecord, index: number): string =>
+  `${category.id}-img-${String(index + 1).padStart(2, '0')}`
+
+const itemImageId = (item: ItemRecord, index: number): string =>
+  `${item.id}_${String(index + 1).padStart(2, '0')}`
+
+const itemImageIndex = (item: ItemRecord, imageId: string): number =>
+  item.images.findIndex((_, index) => itemImageId(item, index) === imageId)
+
+const findCategoryAndItem = (categoryId: string, itemId: string): [CategoryRecord, ItemRecord] | null => {
+  const category = findCategoryById(categoryId)
+  if (!category) return null
+  const item = findItem(category, itemId)
+  if (!item) return null
+  return [category, item]
+}
+
 export const contentHandlers = [
   http.post('/api/v1/login', () => HttpResponse.json({ access_token: 'debug-token' })),
 
+  // List all content categories
   http.get('/api/v1/content/categories', ({ request }) => {
     const url = new URL(request.url)
     const includeArchived = url.searchParams.get('include_archived') === 'true'
@@ -84,6 +119,7 @@ export const contentHandlers = [
     })
   }),
 
+  // Create a new content category
   http.post('/api/v1/content/categories', async ({ request }) => {
     const body = (await request.json()) as { name?: string }
     const name = body.name?.trim()
@@ -105,6 +141,7 @@ export const contentHandlers = [
     return HttpResponse.json({ category: name, message: 'Category created' }, { status: 201 })
   }),
 
+  // Restore a category from archive
   http.post('/api/v1/content/categories/restore', async ({ request }) => {
     const body = (await request.json()) as { name?: string }
     const name = body.name?.trim()
@@ -134,35 +171,35 @@ export const contentHandlers = [
     })
   }),
 
-  http.get('/api/v1/content/categories/:category_name', ({ params }) => {
-    const category = findCategory(String(params.category_name))
+  // Get details of a specific content category
+  http.get('/api/v1/content/categories/:category_id', ({ params }) => {
+    const category = findCategoryById(String(params.category_id))
     if (!category) return new HttpResponse(null, { status: 404 })
     return HttpResponse.json(toCategoryDetailResponse(category))
   }),
 
-  http.put('/api/v1/content/categories/:category_name', ({ params }) => {
-    const category = findCategory(String(params.category_name))
+  // Update a content category's name and description
+  http.patch('/api/v1/content/categories/:category_id', async ({ params, request }) => {
+    const category = findCategoryById(String(params.category_id))
     if (!category) return new HttpResponse(null, { status: 404 })
-    return HttpResponse.json({})
-  }),
-
-  http.patch('/api/v1/content/categories/:category_name', async ({ params, request }) => {
-    const category = findCategory(String(params.category_name))
-    if (!category) return new HttpResponse(null, { status: 404 })
-    const body = (await request.json()) as { name?: string }
-    const nextName = body.name?.trim()
-    if (!nextName) return HttpResponse.json({ detail: 'Name is required' }, { status: 422 })
-    category.name = { ...category.name, en: nextName }
+    const body = (await request.json()) as {
+      category_name?: Record<string, string>
+      description?: Record<string, string>
+    }
+    if (body.category_name) category.name = { ...category.name, ...body.category_name }
+    if (body.description) category.description = { ...category.description, ...body.description }
+    const nextName = category.name['en'] ?? category.id
     category.id = slugify(nextName)
     return HttpResponse.json({ category: nextName, message: 'Category renamed' })
   }),
 
-  http.delete('/api/v1/content/categories/:category_name', ({ params }) => {
-    const name = String(params.category_name)
-    const idx = mockCategories.findIndex((category) => category.name['en']?.toLowerCase() === name.toLowerCase())
-    if (idx < 0) return new HttpResponse(null, { status: 404 })
-    const [removed] = mockCategories.splice(idx, 1)
-    const removedName = removed.name['en'] ?? ''
+  // Remove a content category
+  http.delete('/api/v1/content/categories/:category_id', ({ params }) => {
+    const category = findCategoryById(String(params.category_id))
+    if (!category) return new HttpResponse(null, { status: 404 })
+    const idx = mockCategories.findIndex((entry) => entry.id === category.id)
+    mockCategories.splice(idx, 1)
+    const removedName = category.name['en'] ?? category.id
     const archiveFolder = `${slugify(removedName)}-${Date.now()}`
     archivedCategories.push({
       base_name: removedName,
@@ -179,6 +216,7 @@ export const contentHandlers = [
     })
   }),
 
+  // List all images in a category
   http.get('/api/v1/content/categories/:category_id/images', ({ params }) => {
     const category = findCategoryById(String(params.category_id))
     if (!category) return new HttpResponse(null, { status: 404 })
@@ -189,8 +227,58 @@ export const contentHandlers = [
     })
   }),
 
-  http.get('/api/v1/content/categories/:category_name/voices', ({ params }) => {
-    const category = findCategory(String(params.category_name))
+  // Add an image to a category
+  http.post('/api/v1/content/categories/:category_id/images', async ({ params, request }) => {
+    const category = findCategoryById(String(params.category_id))
+    if (!category) return new HttpResponse(null, { status: 404 })
+    await request.formData()
+    const id = categoryImageId(category, category.images.length)
+    const uri = `/content/${category.id}/${id}.png`
+    category.images.push({ id, name: category.name['en'] ?? category.id, language: 'en', iconUri: uri })
+    return HttpResponse.json({ id, file_uri: uri, action: 'add' }, { status: 201 })
+  }),
+
+  // Replace a category image file
+  http.put('/api/v1/content/categories/:category_id/images/:image_id', async ({ params, request }) => {
+    const category = findCategoryById(String(params.category_id))
+    if (!category) return new HttpResponse(null, { status: 404 })
+    const image = category.images.find((entry) => entry.id === String(params.image_id))
+    if (!image) return new HttpResponse(null, { status: 404 })
+    await request.formData()
+    image.iconUri = `/content/${category.id}/${image.id}.png`
+    return HttpResponse.json({ id: image.id, file_uri: image.iconUri, action: 'update' })
+  }),
+
+  // Delete category image
+  http.delete('/api/v1/content/categories/:category_id/images/:image_id', ({ params }) => {
+    const category = findCategoryById(String(params.category_id))
+    if (!category) return new HttpResponse(null, { status: 404 })
+    const index = category.images.findIndex((entry) => entry.id === String(params.image_id))
+    if (index < 0) return new HttpResponse(null, { status: 404 })
+    const [removed] = category.images.splice(index, 1)
+    return HttpResponse.json({ id: removed.id, file_uri: removed.iconUri, action: 'delete' })
+  }),
+
+  // Create or replace a category's icon/thumbnail image
+  http.post('/api/v1/content/categories/:category_id/icon', async ({ params, request }) => {
+    const category = findCategoryById(String(params.category_id))
+    if (!category) return new HttpResponse(null, { status: 404 })
+    await request.formData()
+    category.thumbnailUri = `/content/${category.id}/${category.id}.png`
+    return HttpResponse.json({ id: `${category.id}-icon`, file_uri: category.thumbnailUri, action: 'update' })
+  }),
+
+  // Delete a category's icon/thumbnail image
+  http.delete('/api/v1/content/categories/:category_id/icon', ({ params }) => {
+    const category = findCategoryById(String(params.category_id))
+    if (!category) return new HttpResponse(null, { status: 404 })
+    category.thumbnailUri = ''
+    return HttpResponse.json({ id: `${category.id}-icon`, file_uri: '', action: 'delete' })
+  }),
+
+  // List voices for a category
+  http.get('/api/v1/content/categories/:category_id/voices', ({ params }) => {
+    const category = findCategoryById(String(params.category_id))
     if (!category) return new HttpResponse(null, { status: 404 })
     return HttpResponse.json({
       category_id: category.id,
@@ -199,30 +287,49 @@ export const contentHandlers = [
     })
   }),
 
-  http.post('/api/v1/content/categories/:category_name/voices', ({ params }) => {
-    const category = findCategory(String(params.category_name))
+  // Add a voice to a category
+  http.post('/api/v1/content/categories/:category_id/voices', async ({ params, request }) => {
+    const category = findCategoryById(String(params.category_id))
     if (!category) return new HttpResponse(null, { status: 404 })
-    return HttpResponse.json({}, { status: 201 })
+    const form = await request.formData()
+    const language = String(form.get('language') ?? '') as Voice['language']
+    const voice: Voice = {
+      id: `${category.id}-v-${language}`,
+      name: category.name['en'] ?? category.id,
+      language,
+      type: language === 'en' || language === 'fr' ? 'male' : 'female',
+      fileUri: `/content/${category.id}/${category.id}_${language}.mp3`,
+    }
+    const existingIndex = category.voices.findIndex((entry) => entry.language === language)
+    if (existingIndex >= 0) category.voices[existingIndex] = voice
+    else category.voices.push(voice)
+    return HttpResponse.json({ ...toVoiceResponse(voice), action: 'add' }, { status: 201 })
   }),
 
-  http.put('/api/v1/content/categories/:category_name/voices/:voice_id', ({ params }) => {
-    const category = findCategory(String(params.category_name))
+  // Replace audio for a category voice
+  http.put('/api/v1/content/categories/:category_id/voices/:voice_id', async ({ params, request }) => {
+    const category = findCategoryById(String(params.category_id))
     if (!category) return new HttpResponse(null, { status: 404 })
     const voice = category.voices.find((entry) => entry.id === String(params.voice_id))
     if (!voice) return new HttpResponse(null, { status: 404 })
-    return HttpResponse.json({})
+    await request.formData()
+    voice.fileUri = `/content/${category.id}/${voice.id}.mp3`
+    return HttpResponse.json({ ...toVoiceResponse(voice), action: 'update' })
   }),
 
-  http.delete('/api/v1/content/categories/:category_name/voices/:voice_id', ({ params }) => {
-    const category = findCategory(String(params.category_name))
+  // Delete a voice from a category
+  http.delete('/api/v1/content/categories/:category_id/voices/:voice_id', ({ params }) => {
+    const category = findCategoryById(String(params.category_id))
     if (!category) return new HttpResponse(null, { status: 404 })
     const voice = category.voices.find((entry) => entry.id === String(params.voice_id))
-    if (voice) voice.fileUri = ''
-    return new HttpResponse(null, { status: 204 })
+    if (!voice) return new HttpResponse(null, { status: 404 })
+    voice.fileUri = ''
+    return HttpResponse.json({ ...toVoiceResponse(voice), action: 'delete' })
   }),
 
-  http.get('/api/v1/content/categories/:category_name/items', ({ params }) => {
-    const category = findCategory(String(params.category_name))
+  // List all items in a category
+  http.get('/api/v1/content/categories/:category_id/items', ({ params }) => {
+    const category = findCategoryById(String(params.category_id))
     if (!category) return new HttpResponse(null, { status: 404 })
     return HttpResponse.json({
       items: category.items.map((item) => ({
@@ -234,11 +341,11 @@ export const contentHandlers = [
     })
   }),
 
-  http.get('/api/v1/content/categories/:category_name/items/:item_id', ({ params }) => {
-    const category = findCategory(String(params.category_name))
-    if (!category) return new HttpResponse(null, { status: 404 })
-    const item = findItem(category, String(params.item_id))
-    if (!item) return new HttpResponse(null, { status: 404 })
+  // Get a single item by ID
+  http.get('/api/v1/content/categories/:category_id/items/:item_id', ({ params }) => {
+    const found = findCategoryAndItem(String(params.category_id), String(params.item_id))
+    if (!found) return new HttpResponse(null, { status: 404 })
+    const [, item] = found
     return HttpResponse.json({
       id: item.id,
       name: itemLocalizedName(item),
@@ -247,83 +354,95 @@ export const contentHandlers = [
     })
   }),
 
-  http.put('/api/v1/content/categories/:category_name/items/:item_id', async ({ params, request }) => {
-    const category = findCategory(String(params.category_name))
-    if (!category) return new HttpResponse(null, { status: 404 })
-    const item = findItem(category, String(params.item_id))
-    if (!item) return new HttpResponse(null, { status: 404 })
-    const body = (await request.json()) as { name?: string }
-    if (body.name?.trim()) {
-      item.name = body.name.trim()
-      item.id = `${slugify(category.name['en'] ?? '')}-${slugify(item.name)}`
+  // Update an item in a category
+  http.put('/api/v1/content/categories/:category_id/items/:item_id', async ({ params, request }) => {
+    const found = findCategoryAndItem(String(params.category_id), String(params.item_id))
+    if (!found) return new HttpResponse(null, { status: 404 })
+    const [, item] = found
+    const body = (await request.json()) as { item_name?: Record<string, string> }
+    if (body.item_name) {
+      for (const voice of item.voices) {
+        const localized = body.item_name[voice.language]
+        if (localized) voice.name = localized
+      }
+      item.name = body.item_name['en'] ?? item.name
     }
-    return HttpResponse.json({})
+    return HttpResponse.json({
+      id: item.id,
+      name: itemLocalizedName(item),
+      thumbnail_uri: item.thumbnailUri ?? null,
+      images_count: item.images.length,
+    })
   }),
 
-  http.delete('/api/v1/content/categories/:category_name/items/:item_id', ({ params }) => {
-    const category = findCategory(String(params.category_name))
+  // Delete an item from a category
+  http.delete('/api/v1/content/categories/:category_id/items/:item_id', ({ params }) => {
+    const category = findCategoryById(String(params.category_id))
     if (!category) return new HttpResponse(null, { status: 404 })
-    const idx = category.items.findIndex((item) => item.id === String(params.item_id) || item.name === String(params.item_id))
+    const idx = category.items.findIndex((item) => item.id === String(params.item_id))
     if (idx < 0) return new HttpResponse(null, { status: 404 })
     category.items.splice(idx, 1)
     return new HttpResponse(null, { status: 204 })
   }),
 
-  http.delete('/api/v1/content/categories/:category_name/items/:item_id/files/:file_index', ({ params }) => {
-    const category = findCategory(String(params.category_name))
-    if (!category) return new HttpResponse(null, { status: 404 })
-    const item = findItem(category, String(params.item_id))
-    if (!item) return new HttpResponse(null, { status: 404 })
-    const index = Number(params.file_index)
-    if (!Number.isInteger(index) || index < 0 || index >= item.images.length) return new HttpResponse(null, { status: 404 })
-    if (item.images.length > 1) item.images.splice(index, 1)
-    item.thumbnailUri = item.images[0] ?? ''
-    return new HttpResponse(null, { status: 204 })
-  }),
-
-  http.get('/api/v1/content/categories/:category_name/items/:item_id/images', ({ params }) => {
-    const category = findCategory(String(params.category_name))
-    if (!category) return new HttpResponse(null, { status: 404 })
-    const item = findItem(category, String(params.item_id))
-    if (!item) return new HttpResponse(null, { status: 404 })
+  // List image variants for an item
+  http.get('/api/v1/content/categories/:category_id/items/:item_id/images', ({ params }) => {
+    const found = findCategoryAndItem(String(params.category_id), String(params.item_id))
+    if (!found) return new HttpResponse(null, { status: 404 })
+    const [, item] = found
     return HttpResponse.json({
       item_id: item.id,
       name: itemLocalizedName(item),
-      images: item.images.map((uri, index) => ({ id: `${item.id}_${String(index + 1).padStart(2, '0')}`, file_uri: uri })),
+      images: item.images.map((uri, index) => ({ id: itemImageId(item, index), file_uri: uri })),
       thumbnail_uri: item.thumbnailUri ?? null,
     })
   }),
 
-  http.post('/api/v1/content/categories/:category_name/items/:item_id/images', async ({ params, request }) => {
-    const category = findCategory(String(params.category_name))
-    if (!category) return new HttpResponse(null, { status: 404 })
-    const item = findItem(category, String(params.item_id))
-    if (!item) return new HttpResponse(null, { status: 404 })
-    const body = (await request.json().catch(() => ({}))) as { file?: string }
-    if (body.file) item.images.push(body.file)
+  // Add an image file variant to an item
+  http.post('/api/v1/content/categories/:category_id/items/:item_id/images', async ({ params, request }) => {
+    const found = findCategoryAndItem(String(params.category_id), String(params.item_id))
+    if (!found) return new HttpResponse(null, { status: 404 })
+    const [category, item] = found
+    await request.formData()
+    const id = itemImageId(item, item.images.length)
+    const uri = `/content/${category.id}/${item.id}/${id}.png`
+    item.images.push(uri)
     item.thumbnailUri = item.images[0] ?? ''
-    return HttpResponse.json({}, { status: 201 })
+    return HttpResponse.json({ id, file_uri: uri, action: 'add' }, { status: 201 })
   }),
 
-  http.put('/api/v1/content/categories/:category_name/items/:item_id/images/:image_index', async ({ params, request }) => {
-    const category = findCategory(String(params.category_name))
-    if (!category) return new HttpResponse(null, { status: 404 })
-    const item = findItem(category, String(params.item_id))
-    if (!item) return new HttpResponse(null, { status: 404 })
-    const index = Number(params.image_index)
-    const body = (await request.json().catch(() => ({}))) as { file?: string }
-    if (body.file && Number.isInteger(index) && index >= 0 && index < item.images.length) {
-      item.images[index] = body.file
-      item.thumbnailUri = item.images[0] ?? ''
-    }
-    return HttpResponse.json({})
+  // Replace a specific image file variant
+  http.put('/api/v1/content/categories/:category_id/items/:item_id/images/:image_id', async ({ params, request }) => {
+    const found = findCategoryAndItem(String(params.category_id), String(params.item_id))
+    if (!found) return new HttpResponse(null, { status: 404 })
+    const [category, item] = found
+    const index = itemImageIndex(item, String(params.image_id))
+    if (index < 0) return new HttpResponse(null, { status: 404 })
+    await request.formData()
+    const uri = `/content/${category.id}/${item.id}/${String(params.image_id)}.png`
+    item.images[index] = uri
+    item.thumbnailUri = item.images[0] ?? ''
+    return HttpResponse.json({ id: String(params.image_id), file_uri: uri, action: 'update' })
   }),
 
-  http.get('/api/v1/content/categories/:category_name/items/:item_id/voices', ({ params }) => {
-    const category = findCategory(String(params.category_name))
-    if (!category) return new HttpResponse(null, { status: 404 })
-    const item = findItem(category, String(params.item_id))
-    if (!item) return new HttpResponse(null, { status: 404 })
+  // Delete a file variant from an item
+  http.delete('/api/v1/content/categories/:category_id/items/:item_id/images/:image_id', ({ params }) => {
+    const found = findCategoryAndItem(String(params.category_id), String(params.item_id))
+    if (!found) return new HttpResponse(null, { status: 404 })
+    const [, item] = found
+    const index = itemImageIndex(item, String(params.image_id))
+    if (index < 0) return new HttpResponse(null, { status: 404 })
+    const removedUri = item.images[index]
+    if (item.images.length > 1) item.images.splice(index, 1)
+    item.thumbnailUri = item.images[0] ?? ''
+    return HttpResponse.json({ id: String(params.image_id), file_uri: removedUri, action: 'delete' })
+  }),
+
+  // List voices for an item
+  http.get('/api/v1/content/categories/:category_id/items/:item_id/voices', ({ params }) => {
+    const found = findCategoryAndItem(String(params.category_id), String(params.item_id))
+    if (!found) return new HttpResponse(null, { status: 404 })
+    const [, item] = found
     return HttpResponse.json({
       item_id: item.id,
       name: itemLocalizedName(item),
@@ -331,41 +450,43 @@ export const contentHandlers = [
     })
   }),
 
-  http.put('/api/v1/content/categories/:category_name/items/:item_id/voices/:voice_id', async ({ params, request }) => {
-    const category = findCategory(String(params.category_name))
-    if (!category) return new HttpResponse(null, { status: 404 })
-    const item = findItem(category, String(params.item_id))
-    if (!item) return new HttpResponse(null, { status: 404 })
-    const voice = item.voices.find((entry) => entry.id === String(params.voice_id) || entry.language === String(params.voice_id))
+  // Add a voice to an item
+  http.post('/api/v1/content/categories/:category_id/items/:item_id/voices', async ({ params, request }) => {
+    const found = findCategoryAndItem(String(params.category_id), String(params.item_id))
+    if (!found) return new HttpResponse(null, { status: 404 })
+    const [category, item] = found
+    const form = await request.formData()
+    const language = String(form.get('language') ?? '')
+    const voice = item.voices.find((entry) => entry.language === language)
     if (!voice) return new HttpResponse(null, { status: 404 })
-    const body = (await request.json().catch(() => ({}))) as { name?: string; type?: string }
-    if (body.name?.trim()) voice.name = body.name.trim()
-    if (body.type?.trim()) voice.type = body.type.trim()
-    return HttpResponse.json({})
+    voice.fileUri = `/content/${category.id}/${item.id}/${item.id}_${language}.mp3`
+    return HttpResponse.json({ ...toVoiceResponse(voice), action: 'add' }, { status: 201 })
   }),
 
-  http.delete('/api/v1/content/categories/:category_name/items/:item_id/voices/:voice_id', ({ params }) => {
-    const category = findCategory(String(params.category_name))
-    if (!category) return new HttpResponse(null, { status: 404 })
-    const item = findItem(category, String(params.item_id))
-    if (!item) return new HttpResponse(null, { status: 404 })
-    const voice = item.voices.find((entry) => entry.id === String(params.voice_id) || entry.language === String(params.voice_id))
-    if (voice) voice.fileUri = ''
-    return new HttpResponse(null, { status: 204 })
-  }),
-
-  http.put('/api/v1/content/categories/:category_name/items/:item_id/voices/:voice_id/audio', async ({ params, request }) => {
-    const category = findCategory(String(params.category_name))
-    if (!category) return new HttpResponse(null, { status: 404 })
-    const item = findItem(category, String(params.item_id))
-    if (!item) return new HttpResponse(null, { status: 404 })
-    const voice = item.voices.find((entry) => entry.id === String(params.voice_id) || entry.language === String(params.voice_id))
+  // Update voice for an item
+  http.put('/api/v1/content/categories/:category_id/items/:item_id/voices/:voice_id', async ({ params, request }) => {
+    const found = findCategoryAndItem(String(params.category_id), String(params.item_id))
+    if (!found) return new HttpResponse(null, { status: 404 })
+    const [category, item] = found
+    const voice = item.voices.find((entry) => entry.id === String(params.voice_id))
     if (!voice) return new HttpResponse(null, { status: 404 })
-    const body = (await request.json().catch(() => ({}))) as { fileUri?: string }
-    if (body.fileUri) voice.fileUri = body.fileUri
-    return HttpResponse.json({})
+    await request.formData()
+    voice.fileUri = `/content/${category.id}/${item.id}/${voice.id}.mp3`
+    return HttpResponse.json({ ...toVoiceResponse(voice), action: 'update' })
   }),
 
+  // Delete a voice from an item
+  http.delete('/api/v1/content/categories/:category_id/items/:item_id/voices/:voice_id', ({ params }) => {
+    const found = findCategoryAndItem(String(params.category_id), String(params.item_id))
+    if (!found) return new HttpResponse(null, { status: 404 })
+    const [, item] = found
+    const voice = item.voices.find((entry) => entry.id === String(params.voice_id))
+    if (!voice) return new HttpResponse(null, { status: 404 })
+    voice.fileUri = ''
+    return HttpResponse.json({ ...toVoiceResponse(voice), action: 'delete' })
+  }),
+
+  // Create a new content item
   http.post('/api/v1/content/items', async ({ request }) => {
     const form = await request.formData()
     const categoryName = String(form.get('category') ?? '')
@@ -398,91 +519,4 @@ export const contentHandlers = [
       { status: 201 },
     )
   }),
-
-  // Add an image to a category
-  http.post('/api/v1/content/categories/:category_id/images', () => HttpResponse.json({}, { status: 201 })),
-
-  // Replace a category image file
-  http.put('/api/v1/content/categories/:category_id/images/:image_id', () => HttpResponse.json({})),
-
-  // Delete category image
-  http.delete('/api/v1/content/categories/:category_id/images/:image_id', () => new HttpResponse(null, { status: 404 })),
-
-  // Get details of a specific content category
-  http.get('/api/v1/content/categories/:category_id', () => HttpResponse.json({})),
-
-  // List voices for a category
-  http.get('/api/v1/content/categories/:category_id/voices', () => HttpResponse.json({})),
-
-  // Add a voice to a category
-  http.post('/api/v1/content/categories/:category_id/voices', () => HttpResponse.json({}, { status: 201 })),
-
-  // Replace audio for a category voice
-  http.put('/api/v1/content/categories/:category_id/voices/:voice_id', () => HttpResponse.json({})),
-
-  // Delete a voice from a category
-  http.delete('/api/v1/content/categories/:category_id/voices/:voice_id', () => new HttpResponse(null, { status: 204 })),
-
-  // Create or replace a category's icon/thumbnail image
-  http.post('/api/v1/content/categories/:category_id/icon', () => HttpResponse.json({})),
-
-  // Delete a category's icon/thumbnail image
-  http.delete('/api/v1/content/categories/:category_id/icon', () => HttpResponse.json({})),
-
-  // List all items in a category
-  http.get('/api/v1/content/categories/:category_id/items', () => HttpResponse.json({})),
-
-  // Get a single item by ID
-  http.get('/api/v1/content/categories/:category_id/items/:item_id', () => HttpResponse.json({})),
-
-  // Update an item in a category
-  http.put('/api/v1/content/categories/:category_id/items/:item_id', () => new HttpResponse(null, { status: 404 })),
-
-  // Delete an item from a category
-  http.delete('/api/v1/content/categories/:category_id/items/:item_id', () => new HttpResponse(null, { status: 404 })),
-
-  // List image variants for an item
-  http.get('/api/v1/content/categories/:category_id/items/:item_id/images', () => HttpResponse.json({})),
-
-  // Add an image file variant to an item
-  http.post('/api/v1/content/categories/:category_id/items/:item_id/images', () => new HttpResponse(null, { status: 404 })),
-
-  // Replace a specific image file variant
-  http.put('/api/v1/content/categories/:category_id/items/:item_id/images/:image_index', () => new HttpResponse(null, { status: 404 })),
-
-  // Delete a file variant from an item
-  http.delete('/api/v1/content/categories/:category_id/items/:item_id/files/:file_index', () => new HttpResponse(null, { status: 404 })),
-
-  // List voices for an item
-  http.get('/api/v1/content/categories/:category_id/items/:item_id/voices', () => HttpResponse.json({})),
-
-  // Update voice for an item
-  http.put('/api/v1/content/categories/:category_id/items/:item_id/voices/:voice_id', () => new HttpResponse(null, { status: 404 })),
-
-  // Upload audio for an item voice
-  http.put('/api/v1/content/categories/:category_id/items/:item_id/voices/:voice_id/audio', () => new HttpResponse(null, { status: 404 })),
-
-  // Delete a voice from an item
-  http.delete('/api/v1/content/categories/:category_id/items/:item_id/voices/:voice_id', () => new HttpResponse(null, { status: 404 })),
-
-  // Add an image file variant to an item
-  http.post('/api/v1/content/categories/:category_id/items/:item_id/images/:image_id', () => HttpResponse.json({}, { status: 201 })),
-
-  // Replace a specific image file variant
-  http.put('/api/v1/content/categories/:category_id/items/:item_id/images/:image_id', () => HttpResponse.json({})),
-
-  // Upload audio for an item voice
-  http.post('/api/v1/content/categories/:category_id/items/:item_id/voices/:voice_id/audio', () => HttpResponse.json({}, { status: 201 })),
-
-  // Add a voice to an item
-  http.post('/api/v1/content/categories/:category_id/items/:item_id/voices', () => HttpResponse.json({}, { status: 201 })),
-
-  // Delete a file variant from an item
-  http.delete('/api/v1/content/categories/:category_id/items/:item_id/images/:image_id', () => HttpResponse.json({})),
-
-  // Update a content category's name and description
-  http.patch('/api/v1/content/categories/:category_id', () => HttpResponse.json({})),
-
-  // Remove a content category
-  http.delete('/api/v1/content/categories/:category_id', () => HttpResponse.json({})),
 ]

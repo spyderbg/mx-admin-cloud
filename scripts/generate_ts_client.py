@@ -8,7 +8,8 @@ Usage:
 Example:
     python generate_ts_client.py content
     →  ../frontend/src/api/contentClient.ts
-    →  ../frontend/src/mocks/contentHandlers.ts  (missing stubs only)
+    →  ../frontend/src/mocks/contentHandlers.ts  (adds missing stubs, refreshes
+       auto-generated stubs whose route changed — e.g. 501 → implemented)
 """
 
 from __future__ import annotations
@@ -709,6 +710,50 @@ def _stub_response(route: dict) -> str:
     return "HttpResponse.json({})"
 
 
+# The exhaustive set of bodies _stub_response() can produce. A handler line is
+# only ever rewritten in place when its current body is still one of these —
+# i.e. it still looks auto-generated and hasn't been hand-customized.
+KNOWN_STUB_BODIES = {
+    "new HttpResponse(null, { status: 404 })",
+    "new HttpResponse(null, { status: 204 })",
+    "HttpResponse.json({}, { status: 201 })",
+    "HttpResponse.json({})",
+}
+
+HANDLER_STUB_LINE_RE = re.compile(
+    r"^(?P<indent>[ \t]*)http\.(?P<method>get|post|put|patch|delete)\(\s*"
+    r"'(?P<path>[^']+)'\s*,\s*\(\)\s*=>\s*(?P<body>.+?)\)(?P<trailing>,?)[ \t]*$",
+    re.MULTILINE,
+)
+
+
+def _refresh_existing_stubs(
+        source: str, routes_by_key: dict[tuple[str, str], dict]
+) -> tuple[str, list[tuple[str, str]]]:
+    """Rewrite handler lines whose route changed (e.g. a 501 stub that got
+    implemented, or a status code change).
+
+    Only lines whose body still exactly matches one of the auto-generated
+    forms are rewritten — hand-customized handler bodies are left untouched.
+    """
+    updated: list[tuple[str, str]] = []
+
+    def repl(m: re.Match) -> str:
+        route = routes_by_key.get((m.group("method"), m.group("path")))
+        if route is None or m.group("body") not in KNOWN_STUB_BODIES:
+            return m.group(0)
+        new_body = _stub_response(route)
+        if new_body == m.group("body"):
+            return m.group(0)
+        updated.append((m.group("method"), m.group("path")))
+        return (
+            f"{m.group('indent')}http.{m.group('method')}"
+            f"('{m.group('path')}', () => {new_body}){m.group('trailing')}"
+        )
+
+    return HANDLER_STUB_LINE_RE.sub(repl, source), updated
+
+
 def _generate_handler_stubs(routes: list[dict]) -> list[str]:
     """Return formatted stub lines (without surrounding array brackets)."""
     lines: list[str] = []
@@ -724,28 +769,31 @@ def _generate_handler_stubs(routes: list[dict]) -> list[str]:
 
 
 def update_handlers_file(service_name: str, all_routes: list[dict]) -> None:
-    """Create or extend the MSW handlers file with stubs for missing routes.
+    """Create the MSW handlers file, add stubs for new routes, and refresh
+    auto-generated stubs for routes that changed (e.g. 501 → implemented).
 
-    Never touches handlers that already exist in the file.
+    Hand-customized handler bodies are never overwritten — only handler lines
+    that still look auto-generated are rewritten in place.
     """
     ts_name = snake_to_camel(service_name)
     handlers_path = FRONTEND_MOCKS_DIR / f"{ts_name}Handlers.ts"
 
-    existing_keys = _parse_existing_handler_keys(handlers_path)
+    routes_by_key = {
+        (r["method"], _fastapi_path_to_msw(r["prefix"], r["path"])): r
+        for r in all_routes
+    }
 
+    existing_keys = _parse_existing_handler_keys(handlers_path)
     missing = [
         r for r in all_routes
-        if (_fastapi_path_to_msw(r["prefix"], r["path"]), r["method"]) not in
-           {(path, m) for m, path in existing_keys}
+        if (r["method"], _fastapi_path_to_msw(r["prefix"], r["path"])) not in existing_keys
     ]
 
-    if not missing:
-        print(f"✔  {handlers_path.name} up to date — no new stubs needed")
-        return
-
-    stub_lines = _generate_handler_stubs(missing)
-
     if not handlers_path.exists():
+        if not missing:
+            print(f"✔  No routes to generate handlers for")
+            return
+        stub_lines = _generate_handler_stubs(missing)
         FRONTEND_MOCKS_DIR.mkdir(parents=True, exist_ok=True)
         content = "\n".join([
             "// Auto-generated – do not edit manually",
@@ -759,20 +807,41 @@ def update_handlers_file(service_name: str, all_routes: list[dict]) -> None:
         ])
         handlers_path.write_text(content)
         print(f"✔  Created \033[32m{handlers_path}\033[0m with {len(missing)} stubs")
-    else:
-        source = handlers_path.read_text()
+        for r in missing:
+            msw_path = _fastapi_path_to_msw(r["prefix"], r["path"])
+            tag = " [501→404]" if r["is_501"] else ""
+            print(f"  {r['method'].upper():6s} {msw_path}{tag}")
+        return
+
+    source = handlers_path.read_text()
+    source, updated = _refresh_existing_stubs(source, routes_by_key)
+
+    if missing:
+        stub_lines = _generate_handler_stubs(missing)
         last_bracket = source.rfind("]")
         if last_bracket == -1:
             print(f"⚠  Could not find closing ] in {handlers_path.name}; skipping handler update")
             return
         insertion = "\n" + "\n".join(stub_lines)
-        handlers_path.write_text(source[:last_bracket] + insertion + source[last_bracket:])
-        print(f"✔  Added {len(missing)} stubs to \033[32m{handlers_path}\033[0m")
+        source = source[:last_bracket] + insertion + source[last_bracket:]
 
-    for r in missing:
-        msw_path = _fastapi_path_to_msw(r["prefix"], r["path"])
-        tag = " [501→404]" if r["is_501"] else ""
-        print(f"  {r['method'].upper():6s} {msw_path}{tag}")
+    if not updated and not missing:
+        print(f"✔  {handlers_path.name} up to date — no changes needed")
+        return
+
+    handlers_path.write_text(source)
+
+    if updated:
+        print(f"✔  Refreshed {len(updated)} stub(s) in \033[32m{handlers_path}\033[0m")
+        for method, path in updated:
+            print(f"  {method.upper():6s} {path}")
+
+    if missing:
+        print(f"✔  Added {len(missing)} stubs to \033[32m{handlers_path}\033[0m")
+        for r in missing:
+            msw_path = _fastapi_path_to_msw(r["prefix"], r["path"])
+            tag = " [501→404]" if r["is_501"] else ""
+            print(f"  {r['method'].upper():6s} {msw_path}{tag}")
 
 
 # ---------------------------------------------------------------------------
