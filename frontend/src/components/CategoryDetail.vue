@@ -309,6 +309,7 @@ import {
   categoriesVoicesUpdate,
 } from '../api/contentClient'
 import { ensureCategoryDetail, invalidateCategoryDetail } from '../api/cache'
+import { resizeImageToMaxDimension } from '../utils/imageResize'
 
 const props = defineProps<{
   category: CategoryFull
@@ -579,8 +580,9 @@ async function onFileSelected(e: Event): Promise<void> {
   if (!file) return
 
   const formData = new FormData()
-  formData.append('image', file)
   try {
+    const resizedFile = await resizeImageToMaxDimension(file)
+    formData.append('image', resizedFile)
     const existingUri = props.category.thumbnail_uri
     const result = existingUri && existingUri.trim()
       ? await categoriesImagesUpdate(props.category.id, imageIdFromUri(existingUri), formData)
@@ -617,7 +619,7 @@ function togglePlay(voice: Voice): void {
 .category-icon-wrap {
   position: relative;
   width: 100%;
-  max-width: 100%;
+  max-width: 512px;
   aspect-ratio: 1 / 1;
   background: rgba(0, 0, 0, 0.04);
 }
