@@ -71,7 +71,7 @@ async def emit(request: LogRequest) -> None:
 
 
 async def log(request: LogRequest, logger_name: str | None = None) -> None:
-    """Post a structured log message to a specific logger or emit to default.
+    """Post a structured log message to a specific logger or emit by default.
 
     Args:
         request: The log request to send.
