@@ -185,6 +185,13 @@ class _StubProvider(ContentProvider):
             "message": f"updated details for {category_id}",
         })
 
+    def rename_category(self, category_id: str, new_category_id: str) -> dict[str, Any]:
+        self._record("rename_category", category_id, new_category_id)
+        return self._returns.get("rename_category", {
+            "category": category_id,
+            "message": f"renamed {category_id} to {new_category_id}",
+        })
+
     def remove_category(self, category_id: str) -> dict[str, Any]:
         self._record("remove_category", category_id)
         return self._returns.get("remove_category", {
@@ -358,6 +365,9 @@ class _ConcreteProvider(ContentProvider):
     def update_category_details(self, category_id, category_name, description):
         return {}
 
+    def rename_category(self, category_id, new_category_id):
+        return {}
+
     def remove_category(self, category_id):
         return {}
 
@@ -413,6 +423,29 @@ _provider = _ConcreteProvider()
 ])
 def test_to_pascal(word: str, expected: str) -> None:
     assert ContentProvider._to_pascal(word) == expected
+
+
+@pytest.mark.parametrize("word,expected", [
+    ("Hello", "hello"),
+    ("HelloWorld", "hello_world"),
+    ("AtSchool", "at_school"),
+    ("already_snake", "already_snake"),
+    ("Foods", "foods"),
+    ("", ""),
+])
+def test_to_snake(word: str, expected: str) -> None:
+    assert ContentProvider._to_snake(word) == expected
+
+
+@pytest.mark.parametrize("category_id,expected", [
+    ("C_Foods", "foods"),
+    ("C_AtSchool", "at_school"),
+    ("C_AtHome", "at_home"),
+    ("C_Vegetables", "vegetables"),
+    ("C_already_snake", "already_snake"),
+])
+def test_folder_name_from_category_id(category_id: str, expected: str) -> None:
+    assert ContentProvider._folder_name_from_category_id(category_id) == expected
 
 
 @pytest.mark.parametrize("word,expected", [
@@ -599,6 +632,14 @@ def test_update_category_details_delegates(tmp_path: Path) -> None:
     assert stub.calls["update_category_details"] == [("C_Foods", name, description)]
 
 
+def test_rename_category_delegates(tmp_path: Path) -> None:
+    stub = _StubProvider(tmp_path)
+    svc = _make_service(tmp_path, [stub])
+    result = svc.rename_category("C_Foods", "C_Meals")
+    assert result["category"] == "C_Foods"
+    assert stub.calls["rename_category"] == [("C_Foods", "C_Meals")]
+
+
 def test_remove_category_delegates(tmp_path: Path) -> None:
     stub = _StubProvider(tmp_path)
     svc = _make_service(tmp_path, [stub])
@@ -630,8 +671,16 @@ def test_rename_category_body_requires_name_and_description() -> None:
     body = RenameCategoryBody(category_name={"en": "meals"}, description={"en": "tasty meals"})
     assert body.category_name.en == "meals"
     assert body.description.en == "tasty meals"
+    assert body.new_category_id is None
     with pytest.raises(ValidationError):
         RenameCategoryBody(category_name={"en": "meals"})  # type: ignore[call-arg]
+
+
+def test_rename_category_body_accepts_new_category_id() -> None:
+    body = RenameCategoryBody(
+        category_name={"en": "meals"}, description={"en": "tasty meals"}, new_category_id="C_Meals",
+    )
+    assert body.new_category_id == "C_Meals"
 
 
 def test_restore_category_body_requires_name() -> None:
@@ -681,8 +730,11 @@ def test_create_item_response() -> None:
 
 
 def test_rename_category_response() -> None:
-    resp = RenameCategoryResponse(category="meals", message="renamed")
+    resp = RenameCategoryResponse(
+        category="meals", message="renamed", category_id="C_Foods", old_category_id="C_Foods",
+    )
     assert resp.category == "meals"
+    assert resp.category_id == resp.old_category_id == "C_Foods"
 
 
 def test_remove_category_response_optional_fields() -> None:

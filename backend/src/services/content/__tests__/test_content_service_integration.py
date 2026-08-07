@@ -174,6 +174,11 @@ class _StubContentProvider(ContentProvider):
             "update_category_details", RenameCategory(category=category_id, message="updated"),
         )
 
+    def rename_category(self, category_id: str, new_category_id: str) -> RenameCategory:
+        return self._call(
+            "rename_category", RenameCategory(category=new_category_id, message="renamed"),
+        )
+
     def remove_category(self, category_id: str) -> ArchiveCategory:
         return self._call("remove_category", ArchiveCategory(
             removed=True,
@@ -591,6 +596,52 @@ async def test_rename_category_generic_error_returns_400(tmp_resolved: Path) -> 
 async def test_rename_category_requires_auth(client_no_auth: AsyncClient) -> None:
     response = await client_no_auth.patch("/api/v1/content/categories/foods", json=_RENAME_BODY)
     assert response.status_code == 401
+
+
+_RENAME_BODY_WITH_NEW_ID = {
+    "category_name": {"en": "meals"},
+    "description": {"en": "tasty meals"},
+    "new_category_id": "C_Meals",
+}
+
+
+@pytest.mark.asyncio
+async def test_rename_category_without_new_id_keeps_same_category_id(tmp_resolved: Path) -> None:
+    app = _make_app(_StubContentProvider(tmp_resolved), tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.patch("/api/v1/content/categories/foods", json=_RENAME_BODY)
+    body = response.json()
+    assert body["category_id"] == "foods"
+    assert body["old_category_id"] == "foods"
+
+
+@pytest.mark.asyncio
+async def test_rename_category_with_new_id_calls_rename_category(tmp_resolved: Path) -> None:
+    seen: list[tuple[str, str]] = []
+
+    class _TrackingProvider(_StubContentProvider):
+        def rename_category(self, category_id: str, new_category_id: str) -> RenameCategory:
+            seen.append((category_id, new_category_id))
+            return RenameCategory(category="meals", message="renamed")
+
+    app = _make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.patch("/api/v1/content/categories/foods", json=_RENAME_BODY_WITH_NEW_ID)
+    assert seen == [("foods", "C_Meals")]
+    body = response.json()
+    assert body["category_id"] == "C_Meals"
+    assert body["old_category_id"] == "foods"
+
+
+@pytest.mark.asyncio
+async def test_rename_category_new_id_conflict_returns_409(tmp_resolved: Path) -> None:
+    provider = _StubContentProvider(tmp_resolved).raises(
+        "rename_category", CategoryConflictError("Category id already exists: C_Meals"),
+    )
+    app = _make_app(provider, tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.patch("/api/v1/content/categories/foods", json=_RENAME_BODY_WITH_NEW_ID)
+    assert response.status_code == 409
 
 
 # ---------------------------------------------------------------------------

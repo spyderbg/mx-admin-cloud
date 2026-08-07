@@ -597,6 +597,149 @@ def test_update_category_details_preserves_other_rows(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# rename_category
+# ---------------------------------------------------------------------------
+
+def test_rename_category_not_found(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    content_root.mkdir()
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        with pytest.raises(CategoryNotFoundError):
+            provider.rename_category("C_Foods", "C_Meals")
+
+
+def test_rename_category_invalid_new_id(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    (content_root / "foods").mkdir(parents=True)
+    _write_category_registry(content_root, [("C_Foods", "Foods")])
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        with pytest.raises(InvalidCategoryNameError):
+            provider.rename_category("C_Foods", "not a valid id!")
+
+
+def test_rename_category_conflict(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    (content_root / "foods").mkdir(parents=True)
+    (content_root / "drinks").mkdir(parents=True)
+    _write_category_registry(content_root, [("C_Foods", "Foods"), ("C_Drinks", "Drinks")])
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        with pytest.raises(CategoryConflictError):
+            provider.rename_category("C_Foods", "C_Drinks")
+
+    assert (content_root / "categories_ids.csv").read_text(encoding="utf-8") == "C_Foods\nC_Drinks\n"
+    assert (content_root / "foods").is_dir()
+    assert (content_root / "drinks").is_dir()
+
+
+def test_rename_category_moves_folder_and_updates_id_only(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    (content_root / "foods").mkdir(parents=True)
+    (content_root / "drinks").mkdir(parents=True)
+    _write_category_registry(content_root, [("C_Foods", "Foods"), ("C_Drinks", "Drinks")])
+    (content_root / "categories_fr.csv").write_text("Aliments\nBoissons\n", encoding="utf-8")
+
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
+        result = provider.rename_category("C_Foods", "C_Meals")
+
+    assert result.category == "meals"
+    assert not (content_root / "foods").exists()
+    assert (content_root / "meals").is_dir()
+    assert (content_root / "categories_ids.csv").read_text(encoding="utf-8") == "C_Meals\nC_Drinks\n"
+    # categories_{lang}.csv must be untouched by the rename step.
+    assert (content_root / "categories_en.csv").read_text(encoding="utf-8") == "Foods\nDrinks\n"
+    assert (content_root / "categories_fr.csv").read_text(encoding="utf-8") == "Aliments\nBoissons\n"
+
+
+def test_rename_category_list_categories_returns_new_id_not_folder_name(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    (content_root / "foods").mkdir(parents=True)
+    _write_category_registry(content_root, [("C_Foods", "Foods")])
+
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.ARCHIVE_DIR = ""
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        provider.rename_category("C_Foods", "C_Meals")
+        result = provider.list_categories()
+
+    assert [c.id for c in result.categories] == ["C_Meals"]
+    assert result.categories[0].name.to_dict() == {"en": "Foods"}
+
+
+def test_rename_category_details_resolve_by_new_id(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    (content_root / "foods").mkdir(parents=True)
+    _write_category_registry(content_root, [("C_Foods", "Foods")])
+    (content_root / "descriptions_en.csv").write_text("Tasty meals\n", encoding="utf-8")
+
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        provider.rename_category("C_Foods", "C_Meals")
+
+        with pytest.raises(CategoryNotFoundError):
+            provider.category_details("C_Foods")
+
+        details = provider.category_details("C_Meals")
+
+    assert details.id == "C_Meals"
+    assert details.name.to_dict() == {"en": "Foods"}
+    assert details.description.to_dict() == {"en": "Tasty meals"}
+
+
+def test_rename_category_renames_prefixed_voice_and_icon_files(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    foods = content_root / "foods"
+    foods.mkdir(parents=True)
+    (foods / "foods_en.mp3").write_bytes(b"english voice")
+    (foods / "foods_fr.mp3").write_bytes(b"french voice")
+    (foods / "foods.png").write_bytes(b"icon")
+    (foods / "foods_01.png").write_bytes(b"extra image")
+    _write_category_registry(content_root, [("C_Foods", "Foods")])
+
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
+        provider.rename_category("C_Foods", "C_Meals")
+
+    meals = content_root / "meals"
+    assert (meals / "meals_en.mp3").read_bytes() == b"english voice"
+    assert (meals / "meals_fr.mp3").read_bytes() == b"french voice"
+    assert (meals / "meals.png").read_bytes() == b"icon"
+    assert (meals / "meals_01.png").read_bytes() == b"extra image"
+    assert not (meals / "foods_en.mp3").exists()
+    assert not (meals / "foods.png").exists()
+
+
+def test_rename_category_same_id_is_noop(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    (content_root / "foods").mkdir(parents=True)
+    _write_category_registry(content_root, [("C_Foods", "Foods")])
+
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        result = provider.rename_category("C_Foods", "C_Foods")
+
+    assert result.category == "foods"
+    assert (content_root / "categories_ids.csv").read_text(encoding="utf-8") == "C_Foods\n"
+    assert (content_root / "foods").is_dir()
+
+
+# ---------------------------------------------------------------------------
 # remove_category
 # ---------------------------------------------------------------------------
 

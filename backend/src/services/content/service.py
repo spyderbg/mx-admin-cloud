@@ -108,6 +108,10 @@ class ContentService(Service):
         """Update a category's localized name and description via the active provider."""
         return self._select_provider().update_category_details(category_id, category_name, description)
 
+    def rename_category(self, category_id: str, new_category_id: str) -> RenameCategory:
+        """Rename a category's id via the active provider."""
+        return self._select_provider().rename_category(category_id, new_category_id)
+
     def remove_category(self, category_name: str) -> ArchiveCategory:
         """Remove a category via the active provider."""
         provider = self._select_provider()

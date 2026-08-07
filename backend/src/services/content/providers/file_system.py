@@ -325,8 +325,9 @@ class FileSystemContentProvider(ContentProvider):
     def _load_category_localized_names(self) -> tuple[dict[str, str], dict[str, dict[str, str]]]:
         """Return (ids_by_folder, names_by_folder) built from root CSVs.
 
-        Folder keys are derived from the English name at the same line position as the ID,
-        not from the ID string itself (IDs are opaque identifiers).
+        Folder keys are derived from each category's id (see _folder_name_from_category_id),
+        matching the on-disk folder name — not from the mutable English display name, which
+        can be updated independently of the id/folder (see rename_category).
         """
         root = self._content_root()
         try:
@@ -335,16 +336,7 @@ class FileSystemContentProvider(ContentProvider):
         except (OSError, csv.Error):
             return {}, {}
 
-        try:
-            with open(root / _CATEGORIES_LANG_CSV.format("en"), newline="", encoding="utf-8") as fh:
-                en_names = [r[0].strip() for r in csv.reader(fh) if r and r[0].strip()]
-        except (OSError, csv.Error):
-            en_names = []
-
-        folder_keys: list[str] = [
-            self._english_word_to_folder_name(en_names[i]) if i < len(en_names) else ""
-            for i in range(len(id_entries))
-        ]
+        folder_keys: list[str] = [self._folder_name_from_category_id(cid) for cid in id_entries]
 
         ids_by_folder: dict[str, str] = {}
         names_by_folder: dict[str, dict[str, str]] = {}
@@ -366,22 +358,22 @@ class FileSystemContentProvider(ContentProvider):
         return ids_by_folder, names_by_folder
 
     def _load_category_localized_descriptions(self, category_name: str) -> dict[str, str]:
-        """Return per-language descriptions for *category_name* from descriptions_{lang}.csv.
+        """Return per-language descriptions for *category_name* (a folder name) from descriptions_{lang}.csv.
 
-        Descriptions share row position with the category's entry in categories_en.csv,
+        Descriptions share row position with the category's entry in categories_ids.csv,
         the same convention used by _load_category_localized_names.
         """
         root = self._content_root()
         try:
-            with open(root / _CATEGORIES_LANG_CSV.format("en"), newline="", encoding="utf-8") as fh:
-                en_names = [r[0].strip() for r in csv.reader(fh) if r and r[0].strip()]
+            with open(root / _CATEGORIES_IDS, newline="", encoding="utf-8") as fh:
+                id_entries = [r[0].strip() for r in csv.reader(fh) if r and r[0].strip()]
         except (OSError, csv.Error):
             return {}
 
         index = next(
             (
-                i for i, name in enumerate(en_names)
-                if self._english_word_to_folder_name(name) == category_name.lower()
+                i for i, cid in enumerate(id_entries)
+                if self._folder_name_from_category_id(cid) == category_name.lower()
             ),
             None,
         )
@@ -953,6 +945,57 @@ class FileSystemContentProvider(ContentProvider):
             category=folder_name,
             message=f"Category '{folder_name}' details updated.",
         )
+
+    def rename_category(self, category_id: str, new_category_id: str) -> RenameCategory:
+        if not self._is_safe_category_name(new_category_id):
+            raise InvalidCategoryNameError(new_category_id)
+
+        index = self._category_row_index(category_id)
+        old_folder_name = self._folder_name_from_category_id(category_id)
+        old_category_path = self._category_path(old_folder_name)
+        if not old_category_path.exists() or not old_category_path.is_dir():
+            raise CategoryNotFoundError(f"Category '{old_folder_name}': directory is missing.")
+
+        new_folder_name = self._folder_name_from_category_id(new_category_id)
+
+        if new_category_id == category_id:
+            return RenameCategory(
+                category=old_folder_name,
+                message=f"Category id '{category_id}' unchanged.",
+            )
+
+        new_category_path = self._category_path(new_folder_name)
+        if new_folder_name != old_folder_name:
+            if new_category_path.exists():
+                raise CategoryConflictError(f"Category already exists: {new_folder_name}")
+            try:
+                shutil.move(str(old_category_path), str(new_category_path))
+                self._rename_category_content_files(new_category_path, old_folder_name, new_folder_name)
+            except (OSError, shutil.Error) as exc:
+                raise ContentOperationError(f"Failed to rename category folder: {exc}") from exc
+
+        self._write_csv_row_at_index(self._content_root() / _CATEGORIES_IDS, index, new_category_id)
+
+        return RenameCategory(
+            category=new_folder_name,
+            message=f"Category id '{category_id}' renamed to '{new_category_id}'.",
+        )
+
+    @staticmethod
+    def _rename_category_content_files(category_path: Path, old_name: str, new_name: str) -> None:
+        """Rename category-prefixed files (voices, icon, extra images) after a folder move."""
+        for lang in settings.SUPPORTED_LANGUAGES:
+            old_voice = category_path / _CATEGORY_VOICE_MP3.format(old_name, lang)
+            if old_voice.is_file():
+                old_voice.rename(category_path / _CATEGORY_VOICE_MP3.format(new_name, lang))
+
+        image_pattern = re.compile(r"^" + re.escape(old_name) + r"(_\d+)?\.(png|jpg|jpeg)$", re.IGNORECASE)
+        for f in list(category_path.iterdir()):
+            if f.is_file():
+                match = image_pattern.match(f.name)
+                if match:
+                    suffix = match.group(1) or ""
+                    f.rename(category_path / f"{new_name}{suffix}.{match.group(2)}")
 
     def _category_row_index(self, category_id: str) -> int:
         """Return the CSV row index registered for *category_id* in categories_ids.csv."""

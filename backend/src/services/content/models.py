@@ -255,6 +255,10 @@ class ContentProvider(ServiceProvider, ABC):
         """Update a category's localized name and description, keyed by category_id."""
 
     @abstractmethod
+    def rename_category(self, category_id: str, new_category_id: str) -> RenameCategory:
+        """Change a category's id from category_id to new_category_id."""
+
+    @abstractmethod
     def remove_category(self, category_id: str) -> ArchiveCategory:
         """Remove a category (archive if configured, else delete permanently)."""
 
@@ -342,6 +346,17 @@ class ContentProvider(ServiceProvider, ABC):
     def _to_pascal(s: str) -> str:
         parts = [p for p in re.split(r"[^A-Za-z0-9]+", s) if p]
         return "".join(p[:1].upper() + p[1:].lower() for p in parts)
+
+    @staticmethod
+    def _to_snake(s: str) -> str:
+        """Convert a PascalCase (or already-snake) string to snake_case."""
+        return re.sub(r"(?<!^)(?=[A-Z])", "_", s).lower()
+
+    @classmethod
+    def _folder_name_from_category_id(cls, category_id: str) -> str:
+        """Derive the on-disk folder name from a category id, e.g. 'C_AtSchool' -> 'at_school'."""
+        _, _, remainder = category_id.partition("_")
+        return cls._to_snake(remainder or category_id)
 
     @staticmethod
     def _english_word_to_folder_name(word: str) -> str:

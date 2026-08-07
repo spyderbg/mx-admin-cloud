@@ -240,16 +240,31 @@ def categories_rename(
         service: ContentServiceDep,
         _user: dict = Depends(get_current_user),
 ) -> RenameCategoryResponse:
-    """Update a category's localized name and description."""
+    """Update a category's localized name and description, and optionally its id."""
     try:
         result = service.update_category_details(category_id, body.category_name, body.description)
+        new_category_id = category_id
+        category = result.category
+        message = result.message
+        if body.new_category_id:
+            requested_id = body.new_category_id
+            if requested_id != category_id:
+                rename_result = service.rename_category(category_id, requested_id)
+                category = rename_result.category
+                message = f"{message} {rename_result.message}"
+            new_category_id = requested_id
     except CategoryNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except CategoryConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return RenameCategoryResponse(category=result.category, message=result.message)
+    return RenameCategoryResponse(
+        category=category,
+        message=message,
+        category_id=new_category_id,
+        old_category_id=category_id,
+    )
 
 
 @router.delete(

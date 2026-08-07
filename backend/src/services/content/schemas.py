@@ -9,6 +9,8 @@ from pydantic import BaseModel, Field
 from src.core.localization import LocalizedString
 
 
+# region Command models
+
 class FileAction(str, Enum):
     """Action performed on a category/item file (image or voice), echoed back in the response."""
 
@@ -17,7 +19,18 @@ class FileAction(str, Enum):
     DELETE = "delete"
 
 
-# region Request bodies
+class ItemSummary(BaseModel):
+    """Item entry returned inside CategoryDetailsResponse."""
+
+    id: str
+    name: LocalizedString
+    thumbnail_uri: str | None = None
+    images_count: int = 0
+
+
+# endregion
+
+# region Categories Request bodies
 
 class CreateCategoryBody(BaseModel):
     """Request body for creating a new category."""
@@ -28,6 +41,7 @@ class CreateCategoryBody(BaseModel):
 class RenameCategoryBody(BaseModel):
     """Request body for updating a category's localized name and description."""
 
+    new_category_id: str | None = None
     category_name: LocalizedString
     description: LocalizedString
 
@@ -36,12 +50,6 @@ class RestoreCategoryBody(BaseModel):
     """Request body for restoring a category."""
 
     name: str
-
-
-class UpdateItemBody(BaseModel):
-    """Request body for updating an item's localized name."""
-
-    item_name: LocalizedString
 
 
 # endregion
@@ -73,15 +81,6 @@ class CategoryListResponse(BaseModel):
     error: str | None = None
 
 
-class ItemSummary(BaseModel):
-    """Item entry returned inside CategoryDetailsResponse."""
-
-    id: str
-    name: LocalizedString
-    thumbnail_uri: str | None = None
-    images_count: int = 0
-
-
 class CategoryDetailsResponse(BaseModel):
     """Response for GET /content/categories/{name}."""
 
@@ -98,19 +97,21 @@ class CreateCategoryResponse(BaseModel):
     message: str
 
 
-class CreateItemResponse(BaseModel):
-    """Response for POST /content/items."""
-
-    category: str
-    item: str
-    folder: str
-    image_id: str
-
-
 class RenameCategoryResponse(BaseModel):
-    """Response for PATCH /content/categories/{name}."""
+    """Response for PATCH /content/categories/{category_id}."""
 
     category: str
+    message: str
+    category_id: str
+    old_category_id: str
+
+
+class RestoreCategoryResponse(BaseModel):
+    """Response for POST /content/categories/restore."""
+
+    restored: bool
+    name: str | None = None
+    from_archive: str | None = None
     message: str
 
 
@@ -122,15 +123,6 @@ class ArchiveCategoryResponse(BaseModel):
     name: str
     archive_folder: str | None = None
     destination: str | None = None
-    message: str
-
-
-class RestoreCategoryResponse(BaseModel):
-    """Response for POST /content/categories/restore."""
-
-    restored: bool
-    name: str | None = None
-    from_archive: str | None = None
     message: str
 
 
@@ -193,7 +185,27 @@ class CategoryVoicesResponse(BaseModel):
 
 # endregion
 
+# region Items Request bodies
+
+
+class UpdateItemBody(BaseModel):
+    """Request body for updating an item's localized name."""
+
+    item_name: LocalizedString
+
+
+# endregion
+
 # region Items Response models
+
+class CreateItemResponse(BaseModel):
+    """Response for POST /content/items."""
+
+    category: str
+    item: str
+    folder: str
+    image_id: str
+
 
 class ItemListResponse(BaseModel):
     """Response for GET /categories/{category_name}/items."""
