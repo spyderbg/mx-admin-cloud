@@ -254,10 +254,6 @@ under `settings.output_path` (e.g. `path.resolve().is_relative_to(output_root)`)
 meant to be public, wrap it in an authenticated route; if it is, document that explicitly.
 
 ### 4.6 Smaller items
-- `datetime.utcnow()` in `security/tokens.py` is deprecated — use timezone-aware
-  `datetime.now(timezone.utc)`.
-- `UsersDb.init_db` swallows all errors with `print(...)` — at minimum log and re-raise so the app
-  doesn't start with a broken user store.
 - CORS: no middleware configured; fine while the frontend is same-origin/proxied — revisit before
   serving the SPA from another origin.
 
