@@ -1,6 +1,7 @@
 """SQLite user store; auto-creates the admin account on first run."""
 
 import hashlib
+import logging
 import os
 import sqlite3
 from pathlib import Path
@@ -8,6 +9,8 @@ from pathlib import Path
 import bcrypt
 
 from src.core.config import settings
+
+logger = logging.getLogger("db.database")
 
 
 class UsersDb:
@@ -58,8 +61,9 @@ class UsersDb:
                     ("admin", "admin", hashed),
                 )
                 conn.commit()
-        except (OSError, sqlite3.Error, ValueError) as e:
-            print(f"Error initializing database: {e}")
+        except (OSError, sqlite3.Error, ValueError):
+            logger.exception("Failed to initialize user database at %s", path)
+            raise
         finally:
             conn.close()
 
