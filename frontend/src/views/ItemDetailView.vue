@@ -20,7 +20,7 @@
     <!-- Item name edit -->
     <div class="card mb-4">
       <div class="card-body">
-        <h4 class="card-title">Item Name</h4>
+        <h4 class="card-title">{{ itemNameLabel(contentLanguage) }}</h4>
         <div class="form-group mb-0">
           <input
             type="text"
@@ -36,7 +36,7 @@
     <div class="card mb-4">
       <div class="card-body">
         <div class="d-flex justify-content-between align-items-center mb-3">
-          <h4 class="card-title mb-0">Files</h4>
+          <h4 class="card-title mb-0">{{ filesLabel(contentLanguage) }}</h4>
           <div class="d-flex align-items-center" style="gap: 0.5rem;">
             <input
               ref="addFileInputRef"
@@ -136,7 +136,7 @@
     <div class="card mb-4">
       <div class="card-body">
         <div class="d-flex justify-content-between align-items-center mb-3">
-          <h4 class="card-title mb-0">Voices</h4>
+          <h4 class="card-title mb-0">{{ voicesLabel(contentLanguage) }}</h4>
           <button type="button" class="btn btn-outline-primary btn-sm" @click="onRegenerateAllItemVoices">
             <i class="mdi mdi-auto-fix mr-1"></i>Regenerate Voices
           </button>
@@ -145,10 +145,10 @@
           <table class="table table-hover mb-0">
             <thead>
               <tr>
-                <th>Language</th>
-                <th>Word</th>
-                <th>Type</th>
-                <th style="width: 150px;">Actions</th>
+                <th>{{ languageColumnLabel(contentLanguage) }}</th>
+                <th>{{ wordColumnLabel(contentLanguage) }}</th>
+                <th>{{ typeColumnLabel(contentLanguage) }}</th>
+                <th style="width: 150px;">{{ actionsColumnLabel(contentLanguage) }}</th>
               </tr>
             </thead>
             <tbody>
@@ -272,9 +272,16 @@ import type { Language, Voice } from '../types/viewModels'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import cameraPlaceholderUrl from '../assets/images/samples/camera-placeholder.svg'
 import {
+  actionsColumnLabel,
   breadcrumbCategoriesLabel,
+  filesLabel,
+  itemNameLabel,
+  languageColumnLabel,
   localizedCategoryLabel,
   localizedImageLabel,
+  typeColumnLabel,
+  voicesLabel,
+  wordColumnLabel,
 } from '../utils/localizedLabels'
 import { toPascalCaseWords } from '../utils/pascalCaseWords'
 

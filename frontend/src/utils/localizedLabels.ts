@@ -49,6 +49,17 @@ export function configurationLabel(lang: Language): string {
   return labels[lang] ?? labels.en
 }
 
+/** Placeholder label for sidebar filtering; unknown `lang` falls back to English. */
+export function filterLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Filter...',
+    es: 'Filtrar...',
+    fr: 'Filtrer...',
+    bg: 'Филтър...',
+  }
+  return labels[lang] ?? labels.en
+}
+
 /** Label for the items section heading; unknown `lang` falls back to English. */
 export function itemsLabel(lang: Language): string {
   const labels: Record<Language, string> = {
@@ -56,6 +67,83 @@ export function itemsLabel(lang: Language): string {
     es: 'Elementos',
     fr: 'Éléments',
     bg: 'Елементи',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Label for the "Item name" field; unknown `lang` falls back to English. */
+export function itemNameLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Item Name',
+    es: 'Nombre del elemento',
+    fr: "Nom de l'élément",
+    bg: 'Име на елемента',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Label for the item files section; unknown `lang` falls back to English. */
+export function filesLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Files',
+    es: 'Archivos',
+    fr: 'Fichiers',
+    bg: 'Файлове',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Label for the item voices section; unknown `lang` falls back to English. */
+export function voicesLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Voices',
+    es: 'Voces',
+    fr: 'Voix',
+    bg: 'Гласове',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Label for a language column; unknown `lang` falls back to English. */
+export function languageColumnLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Language',
+    es: 'Idioma',
+    fr: 'Langue',
+    bg: 'Език',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Label for a word column; unknown `lang` falls back to English. */
+export function wordColumnLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Word',
+    es: 'Palabra',
+    fr: 'Mot',
+    bg: 'Дума',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Label for a type column; unknown `lang` falls back to English. */
+export function typeColumnLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Type',
+    es: 'Tipo',
+    fr: 'Type',
+    bg: 'Тип',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Label for an actions column; unknown `lang` falls back to English. */
+export function actionsColumnLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Actions',
+    es: 'Acciones',
+    fr: 'Actions',
+    bg: 'Действия',
   }
   return labels[lang] ?? labels.en
 }
@@ -85,6 +173,17 @@ export function noCategoriesMatchLabel(lang: Language): string {
     es: 'No hay categorías que coincidan',
     fr: 'Aucune catégorie ne correspond',
     bg: 'Няма съвпадащи категории',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Search empty-state label for one expanded category; unknown `lang` falls back to English. */
+export function noMatchesLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'No matches',
+    es: 'Sin coincidencias',
+    fr: 'Aucune correspondance',
+    bg: 'Няма съвпадения',
   }
   return labels[lang] ?? labels.en
 }

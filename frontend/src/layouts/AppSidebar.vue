@@ -21,7 +21,7 @@
           <input
             type="text"
             class="form-control form-control-sm cd-sidebar-filter-input"
-            placeholder="Filter..."
+            :placeholder="filterLabel(contentLanguage)"
             v-model="filterText"
             style="background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.2); color: #fff; padding-left: 2rem; padding-right: 2rem;"
           />
@@ -103,7 +103,7 @@
                   </router-link>
                 </li>
                 <li v-if="cat.filteredItems.length === 0" class="nav-item">
-                  <span class="nav-link" style="opacity: 0.5; font-style: italic;">No matches</span>
+                  <span class="nav-link" style="opacity: 0.5; font-style: italic;">{{ noMatchesLabel(contentLanguage) }}</span>
                 </li>
               </ul>
             </div>
@@ -124,7 +124,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { mockUser } from '../data/mockData'
 import { sharedCategories } from '../api/cache'
 import { useContentLanguage } from '../composables/useContentLanguage'
-import { localizedCategoryLabel, localizedImageLabel, breadcrumbCategoriesLabel, noCategoriesMatchLabel } from '../utils/localizedLabels'
+import { localizedCategoryLabel, localizedImageLabel, breadcrumbCategoriesLabel, noCategoriesMatchLabel, noMatchesLabel, filterLabel } from '../utils/localizedLabels'
 
 defineProps<{
   isActive: boolean
