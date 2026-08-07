@@ -78,9 +78,9 @@ src/
 ├── router/
 │   └── index.ts      # Route definitions and auth guard
 ├── types/
-│   ├── index.ts      # Hand-written UI view-model types (Category, Image, Voice, etc.)
+│   ├── index.ts      # Hand-written mock-only helper types (currently just `User`)
 │   ├── localization.ts  # LocalizedString class with typed getters + JSON serialization
-│   ├── viewModels.ts # Hand-written mock/view-model helper types
+│   ├── viewModels.ts # Hand-written UI view-model types (CategoryFull, Item, Voice, Image, etc.)
 │   ├── configurationSchemas.ts     # [generated] Configuration DTOs
 │   ├── contentSchemas.ts           # [generated] Content DTOs
 │   ├── evaluationSchemas.ts        # [generated] Evaluation DTOs
@@ -169,7 +169,7 @@ Displayed for a specific image within a category:
 | Component        | Props                                   | Emits                                                                    | Purpose                                         |
 | ---------------- | --------------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------- |
 | `ServerWord`     | `category` and/or `text` + style props  | `edit`                                                                   | Label + pencil; `text` overrides display source |
-| `CategoryDetail` | `category: Category`                    | `edit`, `delete`, `rename`, `edit-voice`, `rename-voice`, `delete-voice` | Category info card with voice list              |
+| `CategoryDetail` | `category: CategoryFull`                | `edit`, `delete`, `rename`, `edit-voice`, `rename-voice`, `delete-voice` | Category info card with voice list              |
 | `ItemGrid`       | `items: Item[]`, `categoryId: string` | —                                                                        | Thumbnail grid with camera fallback for missing items |
 | `LoginForm`      | —                                       | —                                                                        | Login form with auth API integration            |
 
@@ -186,17 +186,25 @@ data shapes (`src/data/mockData.ts`), and the UI actions exposed by components.
 
 ## Domain Types
 
-Two type layers exist:
+Three type layers exist:
 
 - **`src/types/localization.ts`** — `LocalizedString` class with typed property getters for every supported language code (`en`, `es`, `fr`, `bg`, `de`, `it`, `pl`, `uk`, `ro`, `nl`); falls back to English when a translation is absent. Serializes to/from the JSON wire format `{"en": "dog", "fr": "chien"}` via `toJSON()`. Use `LocalizedString.fromJSON(data)` to deserialize responses.
 - **`src/types/contentSchemas.ts`** — Auto-generated content DTOs (do not edit). Imports `LocalizedString`. Regenerate by running `scripts/generate_ts_schemas.py`.
-- **`src/types/index.ts`** — Hand-written UI view-model types (camelCase; UI-only fields). `src/api/cache.ts` maps content DTOs → these types.
+- **`src/types/viewModels.ts`** — Hand-written UI view-model types (camelCase; UI-only fields). `src/api/cache.ts` maps content DTOs → these types.
+- **`src/types/index.ts`** — Hand-written helper types outside the DTO/view-model split. Currently just `User` — used by `src/composables/useCurrentUser.ts`, which decodes it from the logged-in user's JWT payload (`src/utils/jwt.ts`) rather than from mock data.
 
 ```typescript
-// src/types/index.ts (hand-written view-models)
+// src/types/viewModels.ts (hand-written view-models)
 type Language = 'en' | 'es' | 'fr' | 'bg'
 
 const SUPPORTED_LANGUAGES: Language[] = ['en', 'es', 'fr', 'bg']
+
+interface Image {
+  id: string
+  name: string
+  language: Language
+  iconUri: string
+}
 
 interface Voice {
   id: string
@@ -212,19 +220,23 @@ interface Item {
   images: string[]
   voices: Voice[]
   thumbnailUri: string
+  imagesCount?: number
 }
 
-interface Category {
+interface CategoryFull {
   id: string
-  name: string
-  description: string
+  name: LocalizedString
+  description: LocalizedString
+  thumbnail_uri?: string | null
+  items_count?: number
   images: Image[]
-  archived?: boolean
   voices: Voice[]
   items: Item[]
-  thumbnailUri?: string  // returned by category summary data
 }
+```
 
+```typescript
+// src/types/index.ts (mock-only helper types)
 interface User {
   name: string
   role: string
@@ -232,7 +244,7 @@ interface User {
 }
 ```
 
-`name` fields on categories and items are localized in `contentSchemas.ts` and are mapped to plain `string` in the UI view-models (`index.ts`) via the content language selected in the navbar.
+`name`/`description` fields on categories are `LocalizedString` end to end — both in `contentSchemas.ts` DTOs and in `CategoryFull` — resolved to a plain string only at render time via `localizedCategoryLabel()` / `LocalizedString.get(lang)`, using the content language selected in the navbar. `Item.name` and `Voice.name` are already plain, per-item/per-voice strings (not localized).
 
 ## Styles
 

@@ -85,6 +85,8 @@ searching only after details arrive per category. At minimum, cap the concurrenc
 
 ## 4. Views and components
 
+- **ME endpoints** - add a `/me` endpoint; don't import mock fixtures in production
+  components.
 
 - **Icon upload bypasses the icon endpoint** — `CategoryDetail.onFileSelected` (line 545) calls
   `categoriesImagesAdd`/`categoriesImagesUpdate`, so uploading an icon for a category *without* one
@@ -92,42 +94,29 @@ searching only after details arrive per category. At minimum, cap the concurrenc
   backend derives `thumbnail_uri` from. The generated `categoriesIconUpdate` exists precisely for
   this — use it for both create and replace, and `categoriesIconDelete` in `confirmImageDelete`
   instead of reverse-engineering the image id from the thumbnail URI (`imageIdFromUri`).
-- **`AppSidebar` shows a hardcoded mock user** (`mockUser` import, line 120–139) in real-backend
-  mode: "Allen Moreno, Administrator" regardless of who logged in. Decode the JWT payload
-  (username/role are in it) or add a `/me` endpoint; don't import mock fixtures in production
-  components.
+- 
 - **Audio playback**: `audio.play()` returns a promise that rejects (autoplay policies, 404 file)
   — unhandled in both `CategoryDetail.togglePlay` and `ItemDetailView.togglePlay`; also neither
   view stops audio on unmount (`onUnmounted(stopAudio)`), so audio keeps playing after navigating
   away. The two `togglePlay`/`stopAudio`/`hasAudio` implementations are copy-pasted — extract a
   `useAudioPlayer()` composable.
+- 
 - **`ItemDetailView` delete modal** renders `{{ category?.name }}` (line 175) — a `LocalizedString`
   object; it only works because `toString()` returns the English value. Use the localized label
   helper like everywhere else.
+- 
 - **Voice "rename"** (`ServerWord` pencil on voice cards) emits `rename-voice`, which cannot be
   persisted — the backend has no voice-name concept (names come from the per-language item/category
   labels). Either drop the affordance or route it to the (future) item/category name update
   endpoint; today it's a modal that ends in a console.log.
+- 
 - **Duplicated per-view lang maps** — `langFlagMap`/`langLabelMap` are declared in both
   `CategoryDetail.vue` and `ItemDetailView.vue`; move next to `SUPPORTED_LANGUAGES` in
   `types/viewModels.ts` (single source for language metadata: code → flag, label, display name).
+- 
 - **`DashboardView` double-render state** — `v-if="loading"` / `v-else-if="error"` then a separate
   `v-if="cards.length === 0"` block: while loading, both the spinner *and* "No categories found"
   render. Make the empty state part of the same `v-else` chain.
-
----
-
-## 5. Types
-
-
-- **`Image` view-model is barely used** and doesn't match what the UI actually renders (item images
-  are plain URI strings in `Item.images`). Either model item images as `{ id, fileUri }` (the ids
-  are needed for update/delete wiring — today the Files section has no ids and mutations can't be
-  wired without refetching) or drop the interface.
- 
-- **`Category` (mock) vs `CategoryFull` (business)** overlap almost entirely; after the mock
-  handler regeneration (§1.3) consider one shared shape with optional UI-only fields, so the mock
-  fixtures can't drift from the view-model.
 
 ---
 
@@ -147,8 +136,8 @@ flow, and the codegen-diff check (§2.2). Wire them into `scripts/validate_front
 (`VITE_BACKEND_URL ?? 'http://127.0.0.1:8000'`) and drop the log. Also `VITE_LOG_REQUESTS`
 (client.ts:14) is undocumented — README mentions only `VITE_VERBOSE_REQUESTS`.
 
-### 6.3 Vendored theme weight
-`src/assets/vendors/` ships Bootstrap 4-era bundles (jQuery-based `vendor.bundle.*`, Font Awesome
+### 6.3 **Vendored theme weight
+`src/assets/vendors/` ships** Bootstrap 4-era bundles (jQuery-based `vendor.bundle.*`, Font Awesome
 4.7, jVectorMap, carousel banners, face photos) of which the app uses a small fraction — and it
 inflates both install size and the XSS surface (§3.4). Not urgent, but plan to either prune unused
 vendor files (the `faces/` and `carousel/` imagery, unused icon sets) or migrate the ~6 components
