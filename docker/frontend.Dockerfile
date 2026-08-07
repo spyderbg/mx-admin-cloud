@@ -5,6 +5,8 @@ WORKDIR /app
 
 ARG VITE_DEBUG_MODE=false
 ENV VITE_DEBUG_MODE=${VITE_DEBUG_MODE}
+ARG VITE_MOCK_DATA=false
+ENV VITE_MOCK_DATA=${VITE_MOCK_DATA}
 
 COPY frontend/package.json frontend/package-lock.json* /app/
 RUN npm ci --silent
