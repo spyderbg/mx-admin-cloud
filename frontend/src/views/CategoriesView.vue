@@ -1,5 +1,10 @@
 <template>
-  <div v-if="category" style="width: 100%;">
+  <div v-if="sharedLoading" class="text-center py-5">
+    <div class="spinner-border text-primary" role="status"></div>
+    <p class="mt-2 text-muted">Loading categories...</p>
+  </div>
+  <p v-else-if="sharedError && sharedCategories.length === 0" class="text-danger text-center py-5">{{ sharedError }}</p>
+  <div v-else-if="category" style="width: 100%;">
     <nav aria-label="breadcrumb">
       <ol class="breadcrumb bg-transparent p-0 mb-3">
         <li class="breadcrumb-item">
@@ -114,6 +119,8 @@ import {
   invalidateCategoriesCache,
   sharedCategories,
   sharedCategoryNames,
+  sharedLoading,
+  sharedError,
 } from '../api/cache'
 import { readUiConfiguration, writeUiConfiguration } from '../api/uiConfigurationDb'
 import { LocalizedString, SUPPORTED_LANGUAGES, type Language, type Voice } from '../types/viewModels'

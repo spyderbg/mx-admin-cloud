@@ -69,23 +69,6 @@ since two configs may share the same `provider` implementation (e.g. `openai_en_
   `common_provider.service` — an `AttributeError` on `None` → HTTP 500 instead of a clean
   validation error. Return early after each failed check.
 
-### 1.6 Renaming a category corrupts the ID registry
-- `rename_category` (`src/services/content/providers/file_system.py:891`) moves the folder,
-  regenerates voices and the icon, but **never updates** `categories_ids.csv` /
-  `categories_{lang}.csv`. Category IDs are resolved by aligning the English name row with the ID
-  row (`_load_category_localized_names`), so after a rename:
-  - `category_id_by_name(new_name)` fails (no CSV row maps to the new folder);
-  - `category_details(old_id)` resolves to the **old** folder name and raises
-    "directory is missing";
-  - `list_categories` falls back to `id=<folder name>` with an empty localized name.
-- The same class of problem exists for `archive_category` / `remove_category` (CSV rows are left
-  behind; re-creating a category with the same name appends **duplicate** rows) and for
-  `restore_category`.
-
-**Improvement:** treat the CSV registry as authoritative and update it in the same operation as the
-folder move (rename: rewrite the English name row + regenerate translations; archive/remove: either
-remove rows or mark them; create: reject duplicates by scanning IDs, not just folders). See also
-§5 — the deeper fix is replacing positional CSVs with a single manifest per category.
 
 ---
 
@@ -229,7 +212,6 @@ raise only for programming errors; or always raise typed provider exceptions the
 - `DEBUG_MODE: bool = True` — startup **removes the UDS and admin dependencies** on the user routes
   (`main.py:96–103`);
 - `SECRET_KEY: str = "your-secret-key"` — forgeable JWTs if unset;
-- `DEFAULT_ADMIN_PASSWORD` hardcoded (also printed in CLAUDE.md).
 
 `docker/docker-compose.yml` sets **none** of `AUTH_DISABLED`, `DEBUG_MODE`, or `SECRET_KEY`, so the
 published containers (backend on host port 9000) run with auth disabled, debug bypasses on, and the

@@ -55,7 +55,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useContentLanguage } from '../composables/useContentLanguage'
-import { ensureCategoriesLoaded, sharedCategories } from '../api/cache'
+import { ensureCategoriesLoaded, sharedCategories, sharedLoading, sharedError } from '../api/cache'
 import { breadcrumbCategoriesLabel, localizedCategoryLabel, itemCountLabel } from '../utils/localizedLabels'
 import { toPascalCaseWords } from '../utils/pascalCaseWords'
 import cameraPlaceholderUrl from '../assets/images/samples/camera-placeholder.svg'
@@ -63,8 +63,8 @@ import cameraPlaceholderUrl from '../assets/images/samples/camera-placeholder.sv
 
 const router = useRouter()
 const contentLanguage = useContentLanguage()
-const loading = ref(true)
-const error = ref('')
+const loading = sharedLoading
+const error = sharedError
 const hoveredCard = ref('')
 
 const pageTitle = computed(() =>
@@ -90,14 +90,7 @@ const cards = computed(() => {
 })
 
 onMounted(async () => {
-  try {
-    await ensureCategoriesLoaded()
-  } catch (err) {
-    error.value = 'Failed to load categories.'
-    console.error(err)
-  } finally {
-    loading.value = false
-  }
+  await ensureCategoriesLoaded()
 })
 </script>
 

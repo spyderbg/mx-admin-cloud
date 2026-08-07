@@ -9,36 +9,6 @@ at the end.
 
 ---
 
-## 2. Codegen pipeline (schemas + client generated from backend)
-
-The discipline is right (generated `contentClient.ts` / `*Schemas.ts`, "do not edit" markers,
-`mockData.ts` generated from the real `content/` tree). The mechanics can be strengthened:
-
-### 2.1 Two competing contract sources
-- `scripts/generate_ts_client.py` and `generate_ts_schemas.py` parse backend **Python source via
-  AST** (route decorators, Pydantic classes). Yet `scripts/export_openapi.py` already exports the
-  authoritative OpenAPI document, and `backend/src/services/content/openapi.yaml` is a third,
-  hand-maintained spec whose README even says it was "derived from the MSW handlers" — the contract
-  flowing *from mocks to spec* is the wrong direction.
-- AST parsing silently misses anything it doesn't model (f-string prefixes, `response_model`
-  aliases, multipart params) and must be re-taught every FastAPI idiom. Generating from the
-  exported `openapi.json` (either with the existing custom scripts or an off-the-shelf generator
-  like `openapi-typescript`/`orval`) removes a whole class of drift and lets the same document
-  drive client, schema types, and MSW handler stubs.
-
-**Improvement:** make `export_openapi.py` the single source: backend code → OpenAPI → TS types +
-client + handler skeletons. Delete or auto-regenerate `content/openapi.yaml` from the export so it
-can't rot.
-
-### 2.2 No drift check
-Nothing fails when someone edits backend routes and forgets `/api-sync`. Add a CI/`/verify` step
-that regenerates into a temp dir and diffs against `src/types/*Schemas.ts` + `src/api/*Client.ts`
-(fail on mismatch). This is cheap and catches exactly the bug class that broke the backend's own
-content↔translator route contract.
-
-
----
-
 ## 3. Data layer (`src/api/cache.ts`)
 
 The module-level shared cache with in-flight dedup is a sound lightweight choice (documented "no
@@ -94,12 +64,6 @@ searching only after details arrive per category. At minimum, cap the concurrenc
   backend derives `thumbnail_uri` from. The generated `categoriesIconUpdate` exists precisely for
   this — use it for both create and replace, and `categoriesIconDelete` in `confirmImageDelete`
   instead of reverse-engineering the image id from the thumbnail URI (`imageIdFromUri`).
-
-- **Audio playback**: `audio.play()` returns a promise that rejects (autoplay policies, 404 file)
-  — unhandled in both `CategoryDetail.togglePlay` and `ItemDetailView.togglePlay`; also neither
-  view stops audio on unmount (`onUnmounted(stopAudio)`), so audio keeps playing after navigating
-  away. The two `togglePlay`/`stopAudio`/`hasAudio` implementations are copy-pasted — extract a
-  `useAudioPlayer()` composable.
 
 - **Voice "rename"** (`ServerWord` pencil on voice cards) emits `rename-voice`, which cannot be
   persisted — the backend has no voice-name concept (names come from the per-language item/category
@@ -165,6 +129,4 @@ for this project the READMEs are load-bearing (they are the stated source of tru
 11. Vitest + MSW node tests for the cache layer; ESLint/Prettier (§6.1).
 
 **P3 — cleanup**
-13. Shared language-metadata map, `useAudioPlayer` composable, stop-audio-on-unmount (§4).
-14. Doc sync (README/CLAUDE route table, api module list, type-file comments) (§6.4, §5).
 15. Prune unused vendor assets or plan the theme migration (§6.3).
