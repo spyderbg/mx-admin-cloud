@@ -36,7 +36,7 @@
           />
           <i class="mdi mdi-view-grid text-muted" style="font-size: 1.4rem;"></i>
         </div>
-        <button class="btn btn-primary btn-sm" @click="onAddItem">
+        <button class="btn btn-primary btn-sm" @click="openAddItemModal">
           <i class="mdi mdi-plus mr-1"></i>Add New Item
         </button>
       </div>
@@ -46,11 +46,68 @@
   <div v-else class="text-center py-5">
     <h4 class="text-muted">Select a category from the sidebar</h4>
   </div>
+
+  <!-- Add new item modal -->
+  <Teleport to="body">
+    <div v-if="showAddItem" class="cd-modal-overlay" @click.self="closeAddItemModal">
+      <div class="cd-modal-box">
+        <div class="cd-modal-header">
+          <h5 class="cd-modal-title">Add new item</h5>
+          <button type="button" class="cd-modal-close" @click="closeAddItemModal">&times;</button>
+        </div>
+        <div class="cd-modal-body">
+          <div class="form-group">
+            <label class="col-form-label">Item name (English)</label>
+            <input
+              v-model="newItemWord"
+              type="text"
+              class="form-control"
+              placeholder="Enter item name"
+              @keyup.enter="confirmAddItem"
+            />
+          </div>
+          <div class="form-group mb-0">
+            <label class="col-form-label">Image file</label>
+            <input
+              type="file"
+              class="form-control-file"
+              accept="image/*"
+              @change="onAddItemFileSelected"
+            />
+          </div>
+        </div>
+        <div class="cd-modal-footer">
+          <button type="button" class="btn btn-secondary" @click="closeAddItemModal">Cancel</button>
+          <button
+            type="button"
+            class="btn btn-primary"
+            :disabled="!newItemWord.trim() || !newItemFile"
+            @click="confirmAddItem"
+          >
+            Create
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
+
+  <!-- Result toast -->
+  <Teleport to="body">
+    <div
+      v-if="toast"
+      class="cd-toast"
+      :class="toast.variant === 'error' ? 'cd-toast-error' : 'cd-toast-success'"
+    >
+      <i :class="toast.variant === 'error' ? 'mdi mdi-alert-circle' : 'mdi mdi-check-circle'"></i>
+      <span>{{ toast.message }}</span>
+    </div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import type { AxiosError } from 'axios'
 import {
   ensureCategoriesLoaded,
   ensureCategoryDetail,
@@ -60,7 +117,7 @@ import {
 } from '../api/cache'
 import { readUiConfiguration, writeUiConfiguration } from '../api/uiConfigurationDb'
 import { LocalizedString, SUPPORTED_LANGUAGES, type Language, type Voice } from '../types/viewModels'
-import { categoriesRename } from '../api/contentClient'
+import { categoriesRename, createItemEndpoint } from '../api/contentClient'
 import CategoryDetail from '../components/CategoryDetail.vue'
 import ItemGrid from '../components/ItemGrid.vue'
 import { useContentLanguage } from '../composables/useContentLanguage'
@@ -157,12 +214,10 @@ watch(gridColumns, (columns) => {
   })
 })
 
-const onEditCategory = (): void => {
-  console.log('Edit category:', category.value?.id)
-}
-const onDeleteCategory = (): void => {
-  console.log('Delete category:', category.value?.id)
-}
+// CategoryDetail.vue already performs the API call, cache refresh, and cache-busting
+// for icon edit/delete and voice edit/delete before emitting — these are notification-only.
+const onEditCategory = (): void => {}
+const onDeleteCategory = (): void => {}
 const onRenameCategory = async (name: string, language?: Language): Promise<void> => {
   const currentCategory = category.value
   if (!currentCategory) return
@@ -200,16 +255,152 @@ const onRenameCategory = async (name: string, language?: Language): Promise<void
     console.error('Failed to rename category:', error)
   }
 }
-const onEditVoice = (voice: Voice, action: 'add' | 'update'): void => {
-  console.log(`${action === 'add' ? 'Add' : 'Edit'} voice:`, voice.id)
-}
+const onEditVoice = (): void => {}
 const onRenameVoice = async (voice: Voice, name: string): Promise<void> => {
   await onRenameCategory(name, voice.language)
 }
-const onDeleteVoice = (voice: Voice): void => {
-  console.log('Delete voice:', voice.id)
+const onDeleteVoice = (): void => {}
+
+type ToastVariant = 'success' | 'error'
+const toast = ref<{ message: string; variant: ToastVariant } | null>(null)
+let toastTimer: ReturnType<typeof setTimeout> | null = null
+
+function showToast(message: string, variant: ToastVariant): void {
+  if (toastTimer) clearTimeout(toastTimer)
+  toast.value = { message, variant }
+  toastTimer = setTimeout(() => { toast.value = null }, 4000)
 }
-const onAddItem = (): void => {
-  console.log('Add new item to category:', category.value?.id)
+
+function extractErrorMessage(err: unknown): string {
+  const axiosErr = err as AxiosError<{ detail?: string }>
+  return axiosErr.response?.data?.detail || 'The operation failed. Please try again.'
+}
+
+const showAddItem = ref(false)
+const newItemWord = ref('')
+const newItemFile = ref<File | null>(null)
+
+function openAddItemModal(): void {
+  newItemWord.value = ''
+  newItemFile.value = null
+  showAddItem.value = true
+}
+
+function closeAddItemModal(): void {
+  showAddItem.value = false
+}
+
+function onAddItemFileSelected(e: Event): void {
+  const input = e.target as HTMLInputElement
+  newItemFile.value = input.files?.[0] ?? null
+}
+
+async function confirmAddItem(): Promise<void> {
+  const currentCategory = category.value
+  const word = newItemWord.value.trim()
+  const file = newItemFile.value
+  if (!currentCategory || !word || !file) return
+
+  try {
+    const formData = new FormData()
+    formData.append('category', currentCategory.name.en)
+    formData.append('item', word)
+    formData.append('image', file)
+    const result = await createItemEndpoint(formData)
+
+    showAddItem.value = false
+    invalidateCategoriesCache()
+    const categories = await ensureCategoriesLoaded()
+    const created = categories.find((entry) => entry.id === currentCategory.id)
+    const createdItem = created?.items.find((entry) => entry.id === result.item)
+
+    showToast(`Item "${word}" created.`, 'success')
+    if (created && createdItem) {
+      await router.push(`/categories/${created.id}/items/${createdItem.id}`)
+    }
+  } catch (err) {
+    showToast(extractErrorMessage(err), 'error')
+  }
 }
 </script>
+
+<style scoped>
+.cd-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1050;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cd-modal-box {
+  background: #fff;
+  border-radius: 6px;
+  box-shadow: 0 5px 30px rgba(0, 0, 0, 0.3);
+  width: 100%;
+  max-width: 480px;
+  margin: 1rem;
+  overflow: hidden;
+}
+.cd-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid #dee2e6;
+}
+.cd-modal-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+.cd-modal-close {
+  background: none;
+  border: none;
+  font-size: 1.4rem;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  color: #6b7280;
+  flex-shrink: 0;
+}
+.cd-modal-close:hover {
+  color: #111;
+}
+.cd-modal-body {
+  padding: 1.25rem;
+}
+.cd-modal-footer {
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid #dee2e6;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+.cd-toast {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 360px;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 0.9rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+.cd-toast i {
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+.cd-toast-success {
+  background: #16a34a;
+}
+.cd-toast-error {
+  background: #dc2626;
+}
+</style>

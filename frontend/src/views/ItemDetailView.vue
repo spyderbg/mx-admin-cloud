@@ -26,7 +26,7 @@
             type="text"
             class="form-control"
             :value="item.name"
-            @input="onNameChange"
+            @change="onNameChange"
           />
         </div>
       </div>
@@ -141,6 +141,15 @@
             <i class="mdi mdi-auto-fix mr-1"></i>Regenerate Voices
           </button>
         </div>
+        <input
+          ref="voiceFileInputRef"
+          type="file"
+          accept="audio/*"
+          class="d-none"
+          aria-hidden="true"
+          tabindex="-1"
+          @change="onVoiceFilePicked"
+        />
         <div class="table-responsive">
           <table class="table table-hover mb-0">
             <thead>
@@ -189,7 +198,7 @@
                       type="button"
                       title="Replace voice"
                       aria-label="Replace voice"
-                      @click="onUploadVoice(voice.language)"
+                      @click="onUploadVoice(voice)"
                     >
                       <i class="mdi mdi-pencil"></i>
                     </button>
@@ -243,6 +252,17 @@
   </Teleport>
 
   <Teleport to="body">
+    <div
+      v-if="toast"
+      class="cd-toast"
+      :class="toast.variant === 'error' ? 'cd-toast-error' : 'cd-toast-success'"
+    >
+      <i :class="toast.variant === 'error' ? 'mdi mdi-alert-circle' : 'mdi mdi-check-circle'"></i>
+      <span>{{ toast.message }}</span>
+    </div>
+  </Teleport>
+
+  <Teleport to="body">
     <div v-if="voiceDeleteTarget" class="cd-modal-overlay" @click.self="cancelVoiceDelete">
       <div class="cd-modal-box">
         <div class="cd-modal-header">
@@ -266,10 +286,21 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import type { AxiosError } from 'axios'
 import { ensureCategoriesLoaded, ensureCategoryDetail, ensureItemDetail, invalidateItemDetail, sharedCategories } from '../api/cache'
-import { itemsVoicesDelete } from '../api/contentClient'
-import type { Language, Voice } from '../types/viewModels'
+import {
+  itemsUpdate,
+  itemsImagesAdd,
+  itemsImagesUpdate,
+  itemsImagesDelete,
+  itemsVoicesAdd,
+  itemsVoicesUpdate,
+  itemsVoicesDelete,
+} from '../api/contentClient'
+import { LocalizedString, type Language, type Voice } from '../types/viewModels'
 import { useContentLanguage } from '../composables/useContentLanguage'
+import { resizeImageToMaxDimension } from '../utils/imageResize'
+import { imageIdFromUri } from '../utils/imageId'
 import cameraPlaceholderUrl from '../assets/images/samples/camera-placeholder.svg'
 import {
   actionsColumnLabel,
@@ -338,8 +369,27 @@ const item = computed(() => {
   const itemId = route.params.itemId as string
   return category.value?.items.find((entry) => entry.id === itemId) ?? null
 })
-const itemImages = computed(() => item.value?.images.filter((image) => image.trim().length > 0) ?? [])
+
+// Cache-busting: file URIs are stable across replace (same filename), so the browser
+// keeps serving the old cached file unless we force a fresh request.
+const imageVersions = ref<Record<string, number>>({})
+const voiceVersions = ref<Record<string, number>>({})
+
+function cacheBustedUri(uri: string, version: number): string {
+  if (!uri || !version) return uri
+  const sep = uri.includes('?') ? '&' : '?'
+  return `${uri}${sep}v=${version}`
+}
+
+const rawItemImages = computed(() => item.value?.images.filter((image) => image.trim().length > 0) ?? [])
+const itemImages = computed(() =>
+  rawItemImages.value.map((uri) => cacheBustedUri(uri, imageVersions.value[imageIdFromUri(uri)] ?? 0)),
+)
 const hasFiles = computed(() => itemImages.value.length > 0)
+
+function voiceSrc(voice: Voice): string {
+  return cacheBustedUri(voice.fileUri ?? '', voiceVersions.value[voice.id] ?? 0)
+}
 
 const breadcrumbRoot = computed(() => breadcrumbCategoriesLabel(contentLanguage.value))
 
@@ -362,9 +412,47 @@ const langLabelMap: Record<Language, string> = { en: 'English', es: 'Español', 
 const langFlag = (lang: Language): string => langFlagMap[lang] || lang
 const langLabel = (lang: Language): string => langLabelMap[lang] || lang
 
-const onNameChange = (e: Event): void => {
-  const val = (e.target as HTMLInputElement).value
-  console.log('Name changed to:', val)
+type ToastVariant = 'success' | 'error'
+const toast = ref<{ message: string; variant: ToastVariant } | null>(null)
+let toastTimer: ReturnType<typeof setTimeout> | null = null
+
+function showToast(message: string, variant: ToastVariant): void {
+  if (toastTimer) clearTimeout(toastTimer)
+  toast.value = { message, variant }
+  toastTimer = setTimeout(() => { toast.value = null }, 4000)
+}
+
+function extractErrorMessage(err: unknown): string {
+  const axiosErr = err as AxiosError<{ detail?: string }>
+  return axiosErr.response?.data?.detail || 'The operation failed. Please try again.'
+}
+
+const actionPastTense: Record<string, string> = { add: 'added', update: 'updated', delete: 'deleted' }
+function pastTense(action?: string | null): string {
+  return action ? (actionPastTense[action] ?? action) : 'saved'
+}
+
+async function refreshItem(): Promise<void> {
+  const cat = category.value
+  const currentItem = item.value
+  if (!cat || !currentItem) return
+  invalidateItemDetail(cat.id, currentItem.id)
+  await ensureItemDetail(cat.id, currentItem.id)
+}
+
+const onNameChange = async (e: Event): Promise<void> => {
+  const val = (e.target as HTMLInputElement).value.trim()
+  const cat = category.value
+  const currentItem = item.value
+  if (!cat || !currentItem || !val || val === currentItem.name) return
+
+  try {
+    await itemsUpdate(cat.id, currentItem.id, { item_name: new LocalizedString({ en: val }) })
+    await refreshItem()
+    showToast('Item name updated.', 'success')
+  } catch (err) {
+    showToast(extractErrorMessage(err), 'error')
+  }
 }
 
 const announceBackendPending = (message: string): void => {
@@ -383,13 +471,28 @@ const onAddFile = (): void => {
   addFileInputRef.value?.click()
 }
 
-const onAddFilePicked = (e: Event): void => {
+const onAddFilePicked = async (e: Event): Promise<void> => {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
-  if (file) {
-    console.log('Add file to item:', item.value?.id, file.name)
+  const cat = category.value
+  const currentItem = item.value
+  if (!file || !cat || !currentItem) {
+    input.value = ''
+    return
   }
-  input.value = ''
+
+  try {
+    const resizedFile = await resizeImageToMaxDimension(file)
+    const formData = new FormData()
+    formData.append('image', resizedFile)
+    const result = await itemsImagesAdd(cat.id, currentItem.id, formData)
+    await refreshItem()
+    showToast(`Image ${pastTense(result.action)}.`, 'success')
+  } catch (err) {
+    showToast(extractErrorMessage(err), 'error')
+  } finally {
+    input.value = ''
+  }
 }
 const replaceFileInputRef = ref<HTMLInputElement | null>(null)
 const replaceFileIndex = ref<number>(-1)
@@ -407,13 +510,31 @@ const onRegenerateAllItemImages = (): void => {
   announceBackendPending(`regenerate images for item ${item.value?.id ?? 'unknown item'}`)
 }
 
-const onReplaceFilePicked = (e: Event): void => {
+const onReplaceFilePicked = async (e: Event): Promise<void> => {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
-  if (file) {
-    console.log('Replace file at index:', replaceFileIndex.value, 'with:', file.name)
+  const cat = category.value
+  const currentItem = item.value
+  const rawUri = rawItemImages.value[replaceFileIndex.value]
+  if (!file || !cat || !currentItem || !rawUri) {
+    input.value = ''
+    return
   }
-  input.value = ''
+
+  try {
+    const imageId = imageIdFromUri(rawUri)
+    const resizedFile = await resizeImageToMaxDimension(file)
+    const formData = new FormData()
+    formData.append('image', resizedFile)
+    const result = await itemsImagesUpdate(cat.id, currentItem.id, imageId, formData)
+    await refreshItem()
+    imageVersions.value = { ...imageVersions.value, [imageId]: (imageVersions.value[imageId] ?? 0) + 1 }
+    showToast(`Image ${pastTense(result.action)}.`, 'success')
+  } catch (err) {
+    showToast(extractErrorMessage(err), 'error')
+  } finally {
+    input.value = ''
+  }
 }
 const deleteConfirmVisible = ref(false)
 const deleteFileIndex = ref<number>(-1)
@@ -428,13 +549,64 @@ const cancelDelete = (): void => {
   deleteFileIndex.value = -1
 }
 
-const confirmDelete = (): void => {
-  console.log('Delete file at index:', deleteFileIndex.value)
+const confirmDelete = async (): Promise<void> => {
+  const cat = category.value
+  const currentItem = item.value
+  const rawUri = rawItemImages.value[deleteFileIndex.value]
   deleteConfirmVisible.value = false
   deleteFileIndex.value = -1
+  if (!cat || !currentItem || !rawUri) return
+
+  try {
+    const result = await itemsImagesDelete(cat.id, currentItem.id, imageIdFromUri(rawUri))
+    await refreshItem()
+    showToast(`Image ${pastTense(result.action)}.`, 'success')
+  } catch (err) {
+    showToast(extractErrorMessage(err), 'error')
+  }
 }
-const onUploadVoice = (language: Language): void => {
-  console.log('Upload voice for language:', language)
+
+const voiceFileInputRef = ref<HTMLInputElement | null>(null)
+const voiceUploadTarget = ref<Voice | null>(null)
+
+const onUploadVoice = (voice: Voice): void => {
+  voiceUploadTarget.value = voice
+  voiceFileInputRef.value?.click()
+}
+
+const onVoiceFilePicked = async (e: Event): Promise<void> => {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  const cat = category.value
+  const currentItem = item.value
+  const voice = voiceUploadTarget.value
+  voiceUploadTarget.value = null
+  if (!file || !cat || !currentItem || !voice) {
+    input.value = ''
+    return
+  }
+
+  const wasAdd = !hasAudio(voice)
+  try {
+    let result
+    if (wasAdd) {
+      const formData = new FormData()
+      formData.append('language', voice.language)
+      formData.append('audio', file)
+      result = await itemsVoicesAdd(cat.id, currentItem.id, formData)
+    } else {
+      const formData = new FormData()
+      formData.append('audio', file)
+      result = await itemsVoicesUpdate(cat.id, currentItem.id, voice.id, formData)
+    }
+    await refreshItem()
+    voiceVersions.value = { ...voiceVersions.value, [voice.id]: (voiceVersions.value[voice.id] ?? 0) + 1 }
+    showToast(`Voice for ${voice.name} (${voice.language.toUpperCase()}) ${pastTense(result.action)}.`, 'success')
+  } catch (err) {
+    showToast(extractErrorMessage(err), 'error')
+  } finally {
+    input.value = ''
+  }
 }
 
 const onRegenerateVoice = (voice: Voice): void => {
@@ -464,11 +636,12 @@ const confirmVoiceDelete = async (): Promise<void> => {
   if (playingVoiceId.value === voice.id) stopAudio()
 
   try {
-    await itemsVoicesDelete(cat.id, currentItem.id, voice.id)
-    invalidateItemDetail(cat.id, currentItem.id)
-    await ensureItemDetail(cat.id, currentItem.id)
-  } catch (error) {
-    console.error('Failed to delete item voice', error)
+    const result = await itemsVoicesDelete(cat.id, currentItem.id, voice.id)
+    await refreshItem()
+    voiceVersions.value = { ...voiceVersions.value, [voice.id]: (voiceVersions.value[voice.id] ?? 0) + 1 }
+    showToast(`Voice for ${voice.name} (${voice.language.toUpperCase()}) ${pastTense(result.action)}.`, 'success')
+  } catch (err) {
+    showToast(extractErrorMessage(err), 'error')
   }
 }
 
@@ -495,7 +668,7 @@ function togglePlay(voice: Voice): void {
     return
   }
   stopAudio()
-  const audio = new Audio(voice.fileUri)
+  const audio = new Audio(voiceSrc(voice))
   activeAudio = audio
   playingVoiceId.value = voice.id
   audio.addEventListener('ended', stopAudio, { once: true })
@@ -688,5 +861,30 @@ function togglePlay(voice: Voice): void {
   color: #fff;
   font-size: 0.9rem;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+.cd-toast {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 360px;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 0.9rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+.cd-toast i {
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+.cd-toast-success {
+  background: #16a34a;
+}
+.cd-toast-error {
+  background: #dc2626;
 }
 </style>

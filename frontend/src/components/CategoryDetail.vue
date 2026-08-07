@@ -325,6 +325,7 @@ import {
 } from '../api/contentClient'
 import { ensureCategoryDetail, invalidateCategoryDetail } from '../api/cache'
 import { resizeImageToMaxDimension } from '../utils/imageResize'
+import { imageIdFromUri } from '../utils/imageId'
 
 const props = defineProps<{
   category: CategoryFull
@@ -409,12 +410,6 @@ function extractErrorMessage(err: unknown): string {
 const actionPastTense: Record<string, string> = { add: 'added', update: 'updated', delete: 'deleted' }
 function pastTense(action?: string | null): string {
   return action ? (actionPastTense[action] ?? action) : 'saved'
-}
-
-function imageIdFromUri(uri: string): string {
-  const filename = uri.split('/').pop() ?? ''
-  const dot = filename.lastIndexOf('.')
-  return dot > -1 ? filename.slice(0, dot) : filename
 }
 
 async function refreshCategory(): Promise<void> {
