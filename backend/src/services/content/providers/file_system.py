@@ -1025,7 +1025,7 @@ class FileSystemContentProvider(ContentProvider):
         rows[index] = value
         file_path.parent.mkdir(parents=True, exist_ok=True)
         with open(file_path, "w", newline="", encoding="utf-8") as fh:
-            writer = csv.writer(fh)
+            writer = csv.writer(fh, lineterminator="\n")
             for row in rows:
                 writer.writerow([row])
 
@@ -1037,7 +1037,7 @@ class FileSystemContentProvider(ContentProvider):
             del rows[index]
         file_path.parent.mkdir(parents=True, exist_ok=True)
         with open(file_path, "w", newline="", encoding="utf-8") as fh:
-            writer = csv.writer(fh)
+            writer = csv.writer(fh, lineterminator="\n")
             for row in rows:
                 writer.writerow([row])
 
