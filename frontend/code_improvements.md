@@ -6,87 +6,6 @@ attention to the two stated requirements: the app must work with **both mock dat
 backend**, and the **schemas/client are generated from the backend**. A prioritized action list is
 at the end.
 
----
-
-## 1. Critical — mock mode and backend mode are both compromised
-
-### 1.1 The production Docker image ships with mocks enabled
-- `docker/docker-compose.yml` builds the frontend with `VITE_MOCK_DATA: "true"`, and
-  `docker/frontend.Dockerfile` bakes that env into the production bundle.
-- `src/main.ts:13–25` starts the MSW service worker and **seeds a fake `debug-token`** whenever
-  `VITE_MOCK_DATA === 'true'`. Since MSW intercepts every `/api/v1/content/*` route it has a
-  handler for, the deployed container on port 9001 serves **mock data**, not the real backend that
-  nginx dutifully proxies to (`docker/nginx.conf`).
-- Anyone "testing the deployment" sees mock categories and a bypassed login and may not notice.
-
-**Improvement:** default the compose arg to `"false"` (keep `true` only in a dev/demo override
-file, e.g. `docker-compose.demo.yml`), and make the app render a visible "MOCK MODE" badge whenever
-the worker is active so the mode is never ambiguous.
-
-### 1.2 The MSW handlers were not migrated to the id-based API
-The backend (and the generated client) moved to category **IDs** (`C_Drinks`) in commits
-`22c25cb`/`eee6286`, but most hand-written handlers in `src/mocks/contentHandlers.ts` still look
-categories up **by English name**:
-
-- `findCategory` (line 20) matches `c.name.en` — but the app calls `/content/categories/C_Drinks`,
-  so `GET /categories/:category_name` (line 137), the voices/items/item-images/item-voices handlers
-  (lines 192, 224, 237, 284, 322, …) all return **404** for every real request from `cache.ts`.
-- Because `cache.ts` swallows those failures (see §3.2), mock mode silently degrades: category
-  shells render, but items, voices, and images are empty or fabricated placeholders.
-
-**Improvement:** make every handler resolve by `id` first with a name fallback
-(`findCategoryById(param) ?? findCategory(param)` — `findCategoryById` already exists at line 23),
-and cover the flows with a couple of Vitest tests that run the real `cache.ts` against the MSW
-server (`msw/node`) so mock-mode regressions fail CI instead of failing silently in the browser.
-
-### 1.3 Duplicate and dead handlers from stub appending
-`scripts/generate_ts_client.py` appends "missing stubs only" to `contentHandlers.ts`. The result
-(lines 402–481) is a second block of handlers that:
-- **duplicate** earlier routes with different param names (`:category_name` vs `:category_id` are
-  the *same* path pattern to MSW — first registration wins, so most appended stubs are dead);
-- return `HttpResponse.json({})` for typed responses (`ItemListResponse`, `CategoryVoicesResponse`)
-  — an empty object that satisfies neither the TypeScript types nor the consuming code;
-- return hardcoded 404s for routes the backend now implements (item images/voices mutations,
-  lines 448–466), so wiring those UI actions can never be exercised in mock mode;
-- contain path shapes that don't exist in the backend at all
-  (`…/items/:item_id/files/:file_index`, `…/voices/:voice_id/audio` — the old pre-refactor API).
-
-**Improvement:** treat `contentHandlers.ts` the way `contentClient.ts` is treated — fully
-generated, never appended. Generate one handler per route from the same route table the client
-generator already builds, backed by the generated `mockData.ts` fixtures, and keep hand-written
-behavior (stateful create/rename/archive) in a separate `customHandlers.ts` that is spread first.
-Delete the legacy-path stubs.
-
-### 1.4 Most mutations in the UI are `console.log` stubs
-The backend implements — and the generated client exposes — create/rename/remove/restore category,
-the dedicated icon endpoint, and all item image/voice mutations. None of them are wired:
-
-- `CategoriesView.vue:115–135`: `onEditCategory`, `onDeleteCategory`, `onRenameCategory`,
-  `onEditVoice`, `onRenameVoice`, `onDeleteVoice`, `onAddItem` → all `console.log`.
-- `ItemDetailView.vue:277–331`: item name change, add/replace/delete file, upload voice → all
-  `console.log` (the delete-confirmation modal confirms… a log line).
-- Unused generated functions confirm it: `categoriesCreate`, `categoriesRename`,
-  `categoriesRemove`, `categoriesRestore`, `categoriesIconUpdate`, `itemsImagesAdd/Update/Delete`,
-  `itemsVoicesAdd/Update/Delete`, `createItemEndpoint`, `itemsList`, `itemsGet` are imported
-  nowhere outside `contentClient.ts`.
-- Meanwhile `CategoryDetail.vue` *does* fully wire category voice and image mutations (toasts,
-  cache invalidation, cache-busting). So the same component tree mixes two patterns: child calls
-  API directly in one flow, child emits to a parent that logs in another.
-
-**Improvement:** pick one pattern — given there is no store, the pragmatic one is what
-`CategoryDetail.vue` already does: call the generated client from the owning component, then
-`invalidate… + ensure…` refresh. Wire the stubbed actions to the existing client functions
-(`categoriesRename` for rename, `itemsImagesAdd/Update/Delete` for the Files section,
-`itemsVoicesAdd/Update` for the voice Replace buttons, `createItemEndpoint` for "Add New Item"),
-and remove the emit-to-parent indirection that currently ends in logs. The CLAUDE.md claim that
-"backend mutation routes are currently 501 stubs, so the generator skips them" is stale on both
-counts — the routes exist and the client functions exist.
-
-### 1.5 `listFiles` calls a non-existent endpoint
-`src/api/auth.ts:35–41` does `GET /list`; the backend route is `POST /api/v1/list-files`. Dead
-(and wrong-method) code — fix or delete. Both `getStatus` and `listFiles` also manually attach the
-`Authorization` header (producing `Bearer null` when no token) even though the axios interceptor in
-`client.ts` already does this — drop the manual headers.
 
 ---
 
@@ -117,16 +36,6 @@ that regenerates into a temp dir and diffs against `src/types/*Schemas.ts` + `sr
 (fail on mismatch). This is cheap and catches exactly the bug class that broke the backend's own
 content↔translator route contract.
 
-### 2.3 Generated types lie about `LocalizedString`
-`contentSchemas.ts` types `name` fields as the `LocalizedString` **class**, but the wire format is
-a plain `{ [lang]: string }` object and axios never instantiates the class. Every consumer then
-casts: `summary.name as unknown as Record<string, string>` (`cache.ts:136, 161, 171, 242, 297`).
-Either:
-- generate DTO fields as `Record<string, string>` (honest wire types) and construct
-  `LocalizedString` once at the `cache.ts` boundary (which it already does), or
-- add a response interceptor that revives `LocalizedString` instances.
-The current hybrid gives class-typed fields holding plain objects — the casts are the type system
-telling you the model is wrong.
 
 ---
 
@@ -135,13 +44,6 @@ telling you the model is wrong.
 The module-level shared cache with in-flight dedup is a sound lightweight choice (documented "no
 Pinia"). Specific issues:
 
-### 3.1 Mixed identity keys
-`ensureCategoryDetail(categoryId, categoryName)` takes **both**, tracks loaded state by *name*
-(`loadedCategoryDetailIds.add(categoryName)`, line 254), and finds categories by `c.name.en ===
-categoryName` — while `ensureItemDetail` keys everything by *id*. Name-keying breaks the moment a
-category is renamed (the very operation the UI offers) and forces callers to haul the English name
-around (`ensureCategoryDetail(cat.id, cat.name.en)` in both views). Key everything by `id` and drop
-the second parameter.
 
 ### 3.2 Errors are swallowed into fake-success
 - `categoriesVoicesList(...).catch(() => ({ …empty }))` and
@@ -183,10 +85,7 @@ searching only after details arrive per category. At minimum, cap the concurrenc
 
 ## 4. Views and components
 
-- **`ItemDetailView` / `CategoriesView` case-insensitive id matching** —
-  `c.id.toLowerCase() === id.toLowerCase()` (CategoriesView.vue:80, ItemDetailView.vue:214, 222,
-  244): IDs are opaque (`C_Drinks`); compare them exactly, or normalize once at the boundary.
-  Case-folding ids invites two different ids being treated as one.
+
 - **Icon upload bypasses the icon endpoint** — `CategoryDetail.onFileSelected` (line 545) calls
   `categoriesImagesAdd`/`categoriesImagesUpdate`, so uploading an icon for a category *without* one
   creates a numbered gallery image (`{category}_01.png`), not the icon file (`{category}.png`) the
@@ -220,15 +119,12 @@ searching only after details arrive per category. At minimum, cap the concurrenc
 
 ## 5. Types
 
-- **Header comments are swapped**: `types/viewModels.ts` opens with "Mock-data-only types live-in
-  types/viewModels.ts" (it *is* viewModels.ts — the mock types live in `types/index.ts`), while
-  `types/index.ts` claims business types live elsewhere. Both README.md and CLAUDE.md still
-  document `types/index.ts` as holding `Category`, `Voice`, `Image`, etc. Fix comments + docs, or
-  better: rename `index.ts` → `mockTypes.ts` so the import paths self-describe.
+
 - **`Image` view-model is barely used** and doesn't match what the UI actually renders (item images
   are plain URI strings in `Item.images`). Either model item images as `{ id, fileUri }` (the ids
   are needed for update/delete wiring — today the Files section has no ids and mutations can't be
   wired without refetching) or drop the interface.
+ 
 - **`Category` (mock) vs `CategoryFull` (business)** overlap almost entirely; after the mock
   handler regeneration (§1.3) consider one shared shape with optional UI-only fields, so the mock
   fixtures can't drift from the view-model.

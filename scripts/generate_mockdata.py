@@ -174,7 +174,6 @@ def generate(content_path: Path, script_path: Path | None = None, output_path: P
         descriptions[lang] = read_csv(content_path / f'descriptions_{lang}.csv')
 
     # Header
-    lines.append("import type { User } from '../types'")
     lines.append("import type { Voice, Item, Image } from '../types/viewModels'")
     lines.append('')
     lines.append('interface MockCategory {')
@@ -186,16 +185,6 @@ def generate(content_path: Path, script_path: Path | None = None, output_path: P
     lines.append('  thumbnailUri?: string')
     lines.append('  voices: Voice[]')
     lines.append('  items: Item[]')
-    lines.append('}')
-    lines.append('')
-    lines.append("const faceImgs = import.meta.glob('../assets/images/faces/face*.jpg', { eager: true, import: 'default' }) as Record<string, string>")
-    lines.append('')
-    lines.append("const face = (n: number) => faceImgs[`../assets/images/faces/face${n}.jpg`] ?? ''")
-    lines.append('')
-    lines.append('export const mockUser: User = {')
-    lines.append("  name: 'Allen Moreno',")
-    lines.append("  role: 'Administrator',")
-    lines.append('  avatarUri: face(8),')
     lines.append('}')
     lines.append('')
     lines.append('export const mockCategories: MockCategory[] = [')
@@ -235,7 +224,6 @@ def generate(content_path: Path, script_path: Path | None = None, output_path: P
                 'name': trans_name,
                 'language': lang,
                 'type': vc['type'],
-                'iconUri': f'face({vc["face"]})',
                 'fileUri': audio_uri,
             })
 

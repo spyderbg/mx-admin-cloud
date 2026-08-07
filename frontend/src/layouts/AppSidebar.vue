@@ -121,9 +121,9 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { mockUser } from '../data/mockData'
 import { sharedCategories } from '../api/cache'
 import { useContentLanguage } from '../composables/useContentLanguage'
+import { useCurrentUser } from '../composables/useCurrentUser'
 import { localizedCategoryLabel, localizedImageLabel, breadcrumbCategoriesLabel, noCategoriesMatchLabel, noMatchesLabel, filterLabel } from '../utils/localizedLabels'
 
 defineProps<{
@@ -140,7 +140,7 @@ const requestCloseSidebar = (): void => {
 
 const route = useRoute()
 const router = useRouter()
-const user = mockUser
+const user = useCurrentUser()
 const contentLanguage = useContentLanguage()
 const filterText = ref('')
 const expandedIds = ref(new Set<string>())

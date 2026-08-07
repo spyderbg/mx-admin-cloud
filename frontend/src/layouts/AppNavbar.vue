@@ -115,9 +115,9 @@ import type { AxiosError } from 'axios'
 import ConfigurationModal from '../components/ConfigurationModal.vue'
 import MockDataBadge from '../components/MockDataBadge.vue'
 import { listConfigurationServices } from '../api/configurationClient'
-import { mockUser } from '../data/mockData'
 import type { Language } from '../types/viewModels'
 import { useContentLanguage } from '../composables/useContentLanguage'
+import { useCurrentUser } from '../composables/useCurrentUser'
 import { configurationLabel } from '../utils/localizedLabels'
 import logoUrl from '../assets/images/logo.svg'
 import logoMiniUrl from '../assets/images/logo-mini.svg'
@@ -152,7 +152,7 @@ const emit = defineEmits<{
 }>()
 
 const router = useRouter()
-const user = mockUser
+const user = useCurrentUser()
 const areBackendRequestsMocked = import.meta.env.VITE_MOCK_DATA === 'true'
 
 const languages: Language[] = ['en', 'es', 'fr', 'bg']
