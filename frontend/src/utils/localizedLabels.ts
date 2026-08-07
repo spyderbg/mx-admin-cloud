@@ -199,6 +199,17 @@ export function categoryNameLabel(lang: Language): string {
   return labels[lang] ?? labels.en
 }
 
+/** Label for the "Category id" field; unknown `lang` falls back to English. */
+export function categoryIdLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Category Id',
+    es: 'Id de la categoría',
+    fr: 'Id de la catégorie',
+    bg: 'Идентификатор на категорията',
+  }
+  return labels[lang] ?? labels.en
+}
+
 /** Label for the "Category icon" field; unknown `lang` falls back to English. */
 export function categoryIconLabel(lang: Language): string {
   const labels: Record<Language, string> = {
@@ -217,6 +228,83 @@ export function categoryVoicesLabel(lang: Language): string {
     es: 'Voces de la categoría',
     fr: 'Voix de la catégorie',
     bg: 'Гласове на категорията',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Modal title for category rename; unknown `lang` falls back to English. */
+export function renameCategoryLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Rename category',
+    es: 'Cambiar nombre de la categoría',
+    fr: 'Renommer la catégorie',
+    bg: 'Преименуване на категорията',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Placeholder for category rename input; unknown `lang` falls back to English. */
+export function enterCategoryNameLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Enter category name',
+    es: 'Introduce el nombre de la categoría',
+    fr: 'Saisir le nom de la catégorie',
+    bg: 'Въведете име на категорията',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Placeholder for category id input; unknown `lang` falls back to English. */
+export function enterCategoryIdLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Enter category id',
+    es: 'Introduce el id de la categoría',
+    fr: "Saisir l'id de la catégorie",
+    bg: 'Въведете идентификатор на категорията',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Generic cancel button label; unknown `lang` falls back to English. */
+export function cancelLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Cancel',
+    es: 'Cancelar',
+    fr: 'Annuler',
+    bg: 'Отказ',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Generic save button label; unknown `lang` falls back to English. */
+export function saveLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Save',
+    es: 'Guardar',
+    fr: 'Enregistrer',
+    bg: 'Запази',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Modal title for editing one localized word; unknown `lang` falls back to English. */
+export function editWordLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Edit word',
+    es: 'Editar palabra',
+    fr: 'Modifier le mot',
+    bg: 'Редактиране на дума',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Placeholder for a localized word input; unknown `lang` falls back to English. */
+export function enterWordLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Enter word',
+    es: 'Introduce la palabra',
+    fr: 'Saisir le mot',
+    bg: 'Въведете дума',
   }
   return labels[lang] ?? labels.en
 }

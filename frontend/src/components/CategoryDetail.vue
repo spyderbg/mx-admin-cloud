@@ -4,8 +4,12 @@
       <!-- Row 1: name spans left; empty cell on md+ keeps column grid for row 2 -->
       <div class="row">
         <div class="col-lg-5 col-md-5 mb-2 mb-md-3">
-          <label class="text-muted small mb-1 d-block">{{ categoryNameLabel(contentLanguage) }}</label>
-          <ServerWord :category="category" @edit="openRenameModal" />
+          <label class="text-muted small mb-1 d-block">{{ categoryIdLabel(contentLanguage) }}</label>
+          <ServerWord
+            :text="category.id"
+            :edit-title="renameCategoryLabel(contentLanguage)"
+            @edit="openRenameModal"
+          />
         </div>
         <div class="col-lg-7 col-md-7 d-none d-md-block" aria-hidden="true"></div>
       </div>
@@ -95,7 +99,7 @@
                 text-tag="div"
                 text-class="voice-card-name"
                 root-class="justify-content-center"
-                edit-title="Edit word"
+                :edit-title="editWordLabel(voice.language)"
                 :icon-style="{ fontSize: '0.8rem' }"
                 @edit="openVoiceWordModal(voice)"
               />
@@ -125,24 +129,24 @@
     <div v-if="showRename" class="cd-modal-overlay" @click.self="showRename = false">
       <div class="cd-modal-box">
         <div class="cd-modal-header">
-          <h5 class="cd-modal-title">Rename category</h5>
+          <h5 class="cd-modal-title">{{ renameCategoryLabel(contentLanguage) }}</h5>
           <button type="button" class="cd-modal-close" @click="showRename = false">&times;</button>
         </div>
         <div class="cd-modal-body">
           <div class="form-group mb-0">
-            <label class="col-form-label">Category name</label>
+            <label class="col-form-label">{{ categoryIdLabel(contentLanguage) }}</label>
             <input
               v-model="renameValue"
               type="text"
               class="form-control"
-              placeholder="Enter category name"
+              :placeholder="enterCategoryIdLabel(contentLanguage)"
               @keyup.enter="confirmRename"
             />
           </div>
         </div>
         <div class="cd-modal-footer">
-          <button type="button" class="btn btn-secondary" @click="showRename = false">Cancel</button>
-          <button type="button" class="btn btn-primary" @click="confirmRename">Save</button>
+          <button type="button" class="btn btn-secondary" @click="showRename = false">{{ cancelLabel(contentLanguage) }}</button>
+          <button type="button" class="btn btn-primary" @click="confirmRename">{{ saveLabel(contentLanguage) }}</button>
         </div>
       </div>
     </div>
@@ -198,28 +202,28 @@
     <div v-if="showVoiceWordEdit" class="cd-modal-overlay" @click.self="closeVoiceWordEdit">
       <div class="cd-modal-box">
         <div class="cd-modal-header">
-          <h5 class="cd-modal-title">Edit word</h5>
+          <h5 class="cd-modal-title">{{ editWordLabel(voiceWordEditLanguage) }}</h5>
           <button type="button" class="cd-modal-close" @click="closeVoiceWordEdit">&times;</button>
         </div>
         <div class="cd-modal-body">
           <p v-if="voiceWordEditTarget" class="text-muted small mb-2">
-            <i :class="'flag-icon flag-icon-' + langFlag(voiceWordEditTarget.language)" class="mr-1"></i>
-            {{ voiceWordEditTarget.language.toUpperCase() }}
+            <i :class="'flag-icon flag-icon-' + langFlag(voiceWordEditLanguage)" class="mr-1"></i>
+            {{ voiceWordEditLanguage.toUpperCase() }}
           </p>
           <div class="form-group mb-0">
-            <label class="col-form-label">Word</label>
+            <label class="col-form-label">{{ wordColumnLabel(voiceWordEditLanguage) }}</label>
             <input
               v-model="voiceWordValue"
               type="text"
               class="form-control"
-              placeholder="Enter word"
+              :placeholder="enterWordLabel(voiceWordEditLanguage)"
               @keyup.enter="confirmVoiceWordEdit"
             />
           </div>
         </div>
         <div class="cd-modal-footer">
-          <button type="button" class="btn btn-secondary" @click="closeVoiceWordEdit">Cancel</button>
-          <button type="button" class="btn btn-primary" @click="confirmVoiceWordEdit">Save</button>
+          <button type="button" class="btn btn-secondary" @click="closeVoiceWordEdit">{{ cancelLabel(voiceWordEditLanguage) }}</button>
+          <button type="button" class="btn btn-primary" @click="confirmVoiceWordEdit">{{ saveLabel(voiceWordEditLanguage) }}</button>
         </div>
       </div>
     </div>
@@ -298,7 +302,18 @@ import { ref, computed } from 'vue'
 import type { AxiosError } from 'axios'
 import ServerWord from './ServerWord.vue'
 import type { CategoryFull, Language, Voice } from '../types/viewModels'
-import { categoryNameLabel, categoryIconLabel, categoryVoicesLabel } from '../utils/localizedLabels'
+import {
+  cancelLabel,
+  categoryIdLabel,
+  categoryIconLabel,
+  categoryVoicesLabel,
+  editWordLabel,
+  enterCategoryIdLabel,
+  enterWordLabel,
+  renameCategoryLabel,
+  saveLabel,
+  wordColumnLabel,
+} from '../utils/localizedLabels'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import {
   categoriesImagesAdd,
@@ -345,6 +360,7 @@ const showVoiceUpload = ref(false)
 const showVoiceWordEdit = ref(false)
 const voiceWordEditTarget = ref<Voice | null>(null)
 const voiceWordValue = ref('')
+const voiceWordEditLanguage = computed<Language>(() => voiceWordEditTarget.value?.language ?? contentLanguage.value)
 const showVoiceDeleteConfirm = ref(false)
 const voiceDeleteTarget = ref<Voice | null>(null)
 const editingVoice = ref<Voice | null>(null)
@@ -561,13 +577,13 @@ async function onVoiceFileSelected(e: Event): Promise<void> {
 
 function openRenameModal(): void {
   closeAllModals()
-  renameValue.value = props.category.name.en
+  renameValue.value = props.category.id
   showRename.value = true
 }
 
 function confirmRename(): void {
   const trimmed = renameValue.value.trim()
-  if (trimmed && trimmed !== props.category.name.en) {
+  if (trimmed && trimmed !== props.category.id) {
     emit('rename', trimmed)
   }
   showRename.value = false

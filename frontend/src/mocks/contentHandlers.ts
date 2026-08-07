@@ -183,14 +183,21 @@ export const contentHandlers = [
     const category = findCategoryById(String(params.category_id))
     if (!category) return new HttpResponse(null, { status: 404 })
     const body = (await request.json()) as {
+      new_category_id?: string | null
       category_name?: Record<string, string>
       description?: Record<string, string>
     }
+    const oldCategoryId = category.id
     if (body.category_name) category.name = { ...category.name, ...body.category_name }
     if (body.description) category.description = { ...category.description, ...body.description }
+    if (body.new_category_id?.trim()) category.id = body.new_category_id.trim()
     const nextName = category.name['en'] ?? category.id
-    category.id = slugify(nextName)
-    return HttpResponse.json({ category: nextName, message: 'Category renamed' })
+    return HttpResponse.json({
+      category: nextName,
+      category_id: category.id,
+      old_category_id: oldCategoryId,
+      message: 'Category renamed',
+    })
   }),
 
   // Remove a content category

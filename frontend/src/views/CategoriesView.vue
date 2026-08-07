@@ -51,9 +51,16 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ensureCategoriesLoaded, ensureCategoryDetail, sharedCategories, sharedCategoryNames } from '../api/cache'
+import {
+  ensureCategoriesLoaded,
+  ensureCategoryDetail,
+  invalidateCategoriesCache,
+  sharedCategories,
+  sharedCategoryNames,
+} from '../api/cache'
 import { readUiConfiguration, writeUiConfiguration } from '../api/uiConfigurationDb'
-import type { Voice } from '../types/viewModels'
+import { LocalizedString, SUPPORTED_LANGUAGES, type Language, type Voice } from '../types/viewModels'
+import { categoriesRename } from '../api/contentClient'
 import CategoryDetail from '../components/CategoryDetail.vue'
 import ItemGrid from '../components/ItemGrid.vue'
 import { useContentLanguage } from '../composables/useContentLanguage'
@@ -79,6 +86,21 @@ function normalizeGridColumns(value: unknown): number | null {
   if (typeof value !== 'number' || !Number.isInteger(value)) return null
   if (value < MIN_GRID_COLUMNS || value > MAX_GRID_COLUMNS) return null
   return value
+}
+
+function localizedStringForPatch(
+  source: LocalizedString,
+  update?: { language: Language; value: string },
+): LocalizedString {
+  const values = Object.fromEntries(
+    SUPPORTED_LANGUAGES.map((language) => [
+      language,
+      update?.language === language
+        ? update.value
+        : source.get(language, source.en),
+    ]),
+  )
+  return new LocalizedString(values)
 }
 
 onMounted(async () => {
@@ -141,14 +163,48 @@ const onEditCategory = (): void => {
 const onDeleteCategory = (): void => {
   console.log('Delete category:', category.value?.id)
 }
-const onRenameCategory = (name: string): void => {
-  console.log('Rename category:', category.value?.id, 'to', name)
+const onRenameCategory = async (name: string, language?: Language): Promise<void> => {
+  const currentCategory = category.value
+  if (!currentCategory) return
+
+  const categoryName = localizedStringForPatch(
+    currentCategory.name,
+    language ? { language, value: name } : undefined,
+  )
+  const description = localizedStringForPatch(currentCategory.description)
+  const newCategoryId = language ? undefined : name
+
+  try {
+    const result = await categoriesRename(currentCategory.id, {
+      new_category_id: newCategoryId,
+      category_name: categoryName,
+      description,
+    })
+
+    invalidateCategoriesCache()
+    const categories = await ensureCategoriesLoaded()
+    const targetCategoryId = result.category_id || newCategoryId || currentCategory.id
+    const renamedCategory =
+      categories.find((entry) => entry.id === targetCategoryId) ??
+      categories.find((entry) => entry.id === currentCategory.id) ??
+      categories.find((entry) => entry.name.en === categoryName.en) ??
+      (language ? categories.find((entry) => localizedCategoryLabel(entry, language) === name) : undefined)
+
+    if (renamedCategory) {
+      await ensureCategoryDetail(renamedCategory.id, renamedCategory.name.en)
+      if (route.params.categoryId !== renamedCategory.id) {
+        await router.replace(`/categories/${renamedCategory.id}`)
+      }
+    }
+  } catch (error) {
+    console.error('Failed to rename category:', error)
+  }
 }
 const onEditVoice = (voice: Voice, action: 'add' | 'update'): void => {
   console.log(`${action === 'add' ? 'Add' : 'Edit'} voice:`, voice.id)
 }
-const onRenameVoice = (voice: Voice, name: string): void => {
-  console.log('Rename voice word:', voice.id, 'to', name)
+const onRenameVoice = async (voice: Voice, name: string): Promise<void> => {
+  await onRenameCategory(name, voice.language)
 }
 const onDeleteVoice = (voice: Voice): void => {
   console.log('Delete voice:', voice.id)

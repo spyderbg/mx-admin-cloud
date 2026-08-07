@@ -127,14 +127,17 @@ export interface RemoveCategoryResponse {
 
 /** Request body for updating a category's localized name and description. */
 export interface RenameCategoryBody {
+    new_category_id?: string | null
     category_name: LocalizedString
     description: LocalizedString
 }
 
-/** Response for PATCH /content/categories/{name}. */
+/** Response for PATCH /content/categories/{category_id}. */
 export interface RenameCategoryResponse {
     category: string
     message: string
+    category_id: string
+    old_category_id: string
 }
 
 /** Request body for restoring a category. */
