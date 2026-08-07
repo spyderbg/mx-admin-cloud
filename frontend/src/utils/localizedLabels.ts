@@ -71,6 +71,28 @@ export function itemsLabel(lang: Language): string {
   return labels[lang] ?? labels.en
 }
 
+/** Button label for adding an item; unknown `lang` falls back to English. */
+export function addNewItemLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Add New Item',
+    es: 'Añadir elemento',
+    fr: 'Ajouter un élément',
+    bg: 'Добави елемент',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Modal title for adding an item; unknown `lang` falls back to English. */
+export function addNewItemTitleLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Add new item',
+    es: 'Añadir elemento',
+    fr: 'Ajouter un élément',
+    bg: 'Добавяне на елемент',
+  }
+  return labels[lang] ?? labels.en
+}
+
 /** Label for the "Item name" field; unknown `lang` falls back to English. */
 export function itemNameLabel(lang: Language): string {
   const labels: Record<Language, string> = {
@@ -78,6 +100,50 @@ export function itemNameLabel(lang: Language): string {
     es: 'Nombre del elemento',
     fr: "Nom de l'élément",
     bg: 'Име на елемента',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Label for an English item-name field; unknown `lang` falls back to English. */
+export function itemNameEnglishLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Item name (English)',
+    es: 'Nombre del elemento (inglés)',
+    fr: "Nom de l'élément (anglais)",
+    bg: 'Име на елемента (английски)',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Placeholder for the add-item name field; unknown `lang` falls back to English. */
+export function enterItemNameLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Enter item name',
+    es: 'Introduce el nombre del elemento',
+    fr: "Saisir le nom de l'élément",
+    bg: 'Въведете име на елемента',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Label for an image-file input; unknown `lang` falls back to English. */
+export function imageFileLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Image file',
+    es: 'Archivo de imagen',
+    fr: 'Fichier image',
+    bg: 'Файл с изображение',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Label for an audio-file input; unknown `lang` falls back to English. */
+export function audioFileLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Audio file',
+    es: 'Archivo de audio',
+    fr: 'Fichier audio',
+    bg: 'Аудио файл',
   }
   return labels[lang] ?? labels.en
 }
@@ -221,6 +287,84 @@ export function categoryIconLabel(lang: Language): string {
   return labels[lang] ?? labels.en
 }
 
+/** Modal title for uploading a category icon; unknown `lang` falls back to English. */
+export function uploadCategoryIconLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Upload category icon',
+    es: 'Subir icono de la categoría',
+    fr: "Importer l'icône de la catégorie",
+    bg: 'Качване на икона на категорията',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Modal title for deleting a category image; unknown `lang` falls back to English. */
+export function deleteCategoryImageLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Delete category image',
+    es: 'Eliminar imagen de la categoría',
+    fr: "Supprimer l'image de la catégorie",
+    bg: 'Изтриване на изображение на категорията',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Confirmation text for deleting a category image; unknown `lang` falls back to English. */
+export function deleteCategoryImageConfirmLabel(lang: Language, category: string): string {
+  const labels: Record<Language, string> = {
+    en: `Are you sure you want to delete the image for category "${category}"?`,
+    es: `¿Seguro que quieres eliminar la imagen de la categoría "${category}"?`,
+    fr: `Voulez-vous vraiment supprimer l'image de la catégorie « ${category} » ?`,
+    bg: `Сигурни ли сте, че искате да изтриете изображението за категория „${category}“?`,
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Modal title for uploading a voice file; unknown `lang` falls back to English. */
+export function uploadVoiceFileLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Upload voice file',
+    es: 'Subir archivo de voz',
+    fr: 'Importer un fichier vocal',
+    bg: 'Качване на гласов файл',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Modal title for deleting or resetting a voice; unknown `lang` falls back to English. */
+export function deleteOrResetVoiceLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Delete or reset voice',
+    es: 'Eliminar o restablecer voz',
+    fr: 'Supprimer ou réinitialiser la voix',
+    bg: 'Изтриване или нулиране на глас',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Confirmation text for deleting or resetting a voice; unknown `lang` falls back to English. */
+export function deleteOrResetVoiceConfirmLabel(lang: Language, voice: string, voiceLang: string): string {
+  const languageCode = voiceLang.toUpperCase()
+  const labels: Record<Language, string> = {
+    en: `Are you sure you want to delete or reset the voice for "${voice}" (${languageCode})?`,
+    es: `¿Seguro que quieres eliminar o restablecer la voz de "${voice}" (${languageCode})?`,
+    fr: `Voulez-vous vraiment supprimer ou réinitialiser la voix pour « ${voice} » (${languageCode}) ?`,
+    bg: `Сигурни ли сте, че искате да изтриете или нулирате гласа за „${voice}“ (${languageCode})?`,
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Help text for deleting or resetting a voice; unknown `lang` falls back to English. */
+export function deleteOrResetVoiceHelpLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'This is intended to remove or clear the uploaded audio for that language. You can upload again afterward.',
+    es: 'Esto eliminará o borrará el audio subido para ese idioma. Puedes volver a subirlo después.',
+    fr: "Cela supprimera ou effacera l'audio importé pour cette langue. Vous pourrez l'importer à nouveau ensuite.",
+    bg: 'Това ще премахне или изчисти каченото аудио за този език. Можете да го качите отново след това.',
+  }
+  return labels[lang] ?? labels.en
+}
+
 /** Label for the "Category voices" section; unknown `lang` falls back to English. */
 export function categoryVoicesLabel(lang: Language): string {
   const labels: Record<Language, string> = {
@@ -283,6 +427,39 @@ export function saveLabel(lang: Language): string {
     es: 'Guardar',
     fr: 'Enregistrer',
     bg: 'Запази',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Generic create button label; unknown `lang` falls back to English. */
+export function createLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Create',
+    es: 'Crear',
+    fr: 'Créer',
+    bg: 'Създай',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Generic delete button label; unknown `lang` falls back to English. */
+export function deleteLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Delete',
+    es: 'Eliminar',
+    fr: 'Supprimer',
+    bg: 'Изтрий',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Delete/reset button label; unknown `lang` falls back to English. */
+export function deleteResetLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Delete / reset',
+    es: 'Eliminar / restablecer',
+    fr: 'Supprimer / réinitialiser',
+    bg: 'Изтрий / нулирай',
   }
   return labels[lang] ?? labels.en
 }

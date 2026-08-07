@@ -44,7 +44,7 @@
                 <button
                   type="button"
                   class="btn-icon btn-icon-delete"
-                  title="Delete category image"
+                  :title="deleteCategoryImageLabel(contentLanguage)"
                   :disabled="!category.thumbnail_uri"
                   @click="openDeleteModal"
                 >
@@ -82,8 +82,8 @@
                 <button
                   type="button"
                   class="btn-icon btn-icon-delete voice-card-action"
-                  title="Delete or reset voice"
-                  aria-label="Delete or reset voice"
+                  :title="deleteOrResetVoiceLabel(voice.language)"
+                  :aria-label="deleteOrResetVoiceLabel(voice.language)"
                   @click="openVoiceDeleteModal(voice)"
                 >
                   <i class="mdi mdi-delete"></i>
@@ -157,15 +157,15 @@
     <div v-if="showDelete" class="cd-modal-overlay" @click.self="showDelete = false">
       <div class="cd-modal-box">
         <div class="cd-modal-header">
-          <h5 class="cd-modal-title">Delete category image</h5>
+          <h5 class="cd-modal-title">{{ deleteCategoryImageLabel(contentLanguage) }}</h5>
           <button type="button" class="cd-modal-close" @click="showDelete = false">&times;</button>
         </div>
         <div class="cd-modal-body">
-          Are you sure you want to delete the image for category "{{ categoryLabel }}"?
+          {{ deleteCategoryImageConfirmLabel(contentLanguage, categoryLabel) }}
         </div>
         <div class="cd-modal-footer">
-          <button type="button" class="btn btn-secondary" @click="showDelete = false">Cancel</button>
-          <button type="button" class="btn btn-danger" @click="confirmImageDelete">Delete</button>
+          <button type="button" class="btn btn-secondary" @click="showDelete = false">{{ cancelLabel(contentLanguage) }}</button>
+          <button type="button" class="btn btn-danger" @click="confirmImageDelete">{{ deleteLabel(contentLanguage) }}</button>
         </div>
       </div>
     </div>
@@ -176,12 +176,12 @@
     <div v-if="showUpload" class="cd-modal-overlay" @click.self="showUpload = false">
       <div class="cd-modal-box">
         <div class="cd-modal-header">
-          <h5 class="cd-modal-title">Upload category icon</h5>
+          <h5 class="cd-modal-title">{{ uploadCategoryIconLabel(contentLanguage) }}</h5>
           <button type="button" class="cd-modal-close" @click="showUpload = false">&times;</button>
         </div>
         <div class="cd-modal-body">
           <div class="form-group mb-0">
-            <label class="col-form-label">Choose an image file</label>
+            <label class="col-form-label">{{ imageFileLabel(contentLanguage) }}</label>
             <input
               type="file"
               class="form-control-file"
@@ -191,7 +191,7 @@
           </div>
         </div>
         <div class="cd-modal-footer">
-          <button type="button" class="btn btn-secondary" @click="showUpload = false">Cancel</button>
+          <button type="button" class="btn btn-secondary" @click="showUpload = false">{{ cancelLabel(contentLanguage) }}</button>
         </div>
       </div>
     </div>
@@ -234,24 +234,22 @@
     <div v-if="showVoiceDeleteConfirm" class="cd-modal-overlay" @click.self="closeVoiceDeleteModal">
       <div class="cd-modal-box">
         <div class="cd-modal-header">
-          <h5 class="cd-modal-title">Delete or reset voice</h5>
+          <h5 class="cd-modal-title">{{ deleteOrResetVoiceLabel(voiceDeleteLanguage) }}</h5>
           <button type="button" class="cd-modal-close" @click="closeVoiceDeleteModal">&times;</button>
         </div>
         <div class="cd-modal-body">
           <template v-if="voiceDeleteTarget">
             <p class="mb-2">
-              Are you sure you want to delete or reset the voice for
-              <strong>{{ voiceDeleteTarget.name }}</strong>
-              (<span class="text-uppercase">{{ voiceDeleteTarget.language }}</span>)?
+              {{ deleteOrResetVoiceConfirmLabel(voiceDeleteLanguage, voiceDeleteTarget.name, voiceDeleteTarget.language) }}
             </p>
             <p class="text-muted small mb-0">
-              This is intended to remove or clear the uploaded audio for that language. You can upload again afterward.
+              {{ deleteOrResetVoiceHelpLabel(voiceDeleteLanguage) }}
             </p>
           </template>
         </div>
         <div class="cd-modal-footer">
-          <button type="button" class="btn btn-secondary" @click="closeVoiceDeleteModal">Cancel</button>
-          <button type="button" class="btn btn-danger" @click="confirmVoiceDelete">Delete / reset</button>
+          <button type="button" class="btn btn-secondary" @click="closeVoiceDeleteModal">{{ cancelLabel(voiceDeleteLanguage) }}</button>
+          <button type="button" class="btn btn-danger" @click="confirmVoiceDelete">{{ deleteResetLabel(voiceDeleteLanguage) }}</button>
         </div>
       </div>
     </div>
@@ -262,13 +260,13 @@
     <div v-if="showVoiceUpload" class="cd-modal-overlay" @click.self="closeVoiceUpload">
       <div class="cd-modal-box">
         <div class="cd-modal-header">
-          <h5 class="cd-modal-title">Upload voice file</h5>
+          <h5 class="cd-modal-title">{{ uploadVoiceFileLabel(uploadVoiceLanguage) }}</h5>
           <button type="button" class="cd-modal-close" @click="closeVoiceUpload">&times;</button>
         </div>
         <div class="cd-modal-body">
           <p v-if="editingVoice" class="text-muted small mb-2">{{ editingVoice.name }} ({{ editingVoice.language }})</p>
           <div class="form-group mb-0">
-            <label class="col-form-label">Choose an audio file</label>
+            <label class="col-form-label">{{ audioFileLabel(uploadVoiceLanguage) }}</label>
             <input
               type="file"
               class="form-control-file"
@@ -278,7 +276,7 @@
           </div>
         </div>
         <div class="cd-modal-footer">
-          <button type="button" class="btn btn-secondary" @click="closeVoiceUpload">Cancel</button>
+          <button type="button" class="btn btn-secondary" @click="closeVoiceUpload">{{ cancelLabel(uploadVoiceLanguage) }}</button>
         </div>
       </div>
     </div>
@@ -303,15 +301,27 @@ import type { AxiosError } from 'axios'
 import ServerWord from './ServerWord.vue'
 import type { CategoryFull, Language, Voice } from '../types/viewModels'
 import {
+  audioFileLabel,
   cancelLabel,
   categoryIdLabel,
   categoryIconLabel,
   categoryVoicesLabel,
+  deleteCategoryImageConfirmLabel,
+  deleteCategoryImageLabel,
+  deleteLabel,
+  deleteOrResetVoiceConfirmLabel,
+  deleteOrResetVoiceHelpLabel,
+  deleteOrResetVoiceLabel,
+  deleteResetLabel,
   editWordLabel,
   enterCategoryIdLabel,
   enterWordLabel,
+  imageFileLabel,
+  localizedCategoryLabel,
   renameCategoryLabel,
   saveLabel,
+  uploadCategoryIconLabel,
+  uploadVoiceFileLabel,
   wordColumnLabel,
 } from '../utils/localizedLabels'
 import { useContentLanguage } from '../composables/useContentLanguage'
@@ -332,9 +342,8 @@ const props = defineProps<{
   category: CategoryFull
 }>()
 
-const categoryLabel = computed(() => props.category.name.en)
-
 const contentLanguage = useContentLanguage()
+const categoryLabel = computed(() => localizedCategoryLabel(props.category, contentLanguage.value))
 
 const emit = defineEmits<{
   edit: []
@@ -365,7 +374,9 @@ const voiceWordValue = ref('')
 const voiceWordEditLanguage = computed<Language>(() => voiceWordEditTarget.value?.language ?? contentLanguage.value)
 const showVoiceDeleteConfirm = ref(false)
 const voiceDeleteTarget = ref<Voice | null>(null)
+const voiceDeleteLanguage = computed<Language>(() => voiceDeleteTarget.value?.language ?? contentLanguage.value)
 const editingVoice = ref<Voice | null>(null)
+const uploadVoiceLanguage = computed<Language>(() => editingVoice.value?.language ?? contentLanguage.value)
 const renameValue = ref('')
 
 type ToastVariant = 'success' | 'error'

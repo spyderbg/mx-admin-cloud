@@ -42,7 +42,7 @@
           <i class="mdi mdi-view-grid text-muted" style="font-size: 1.4rem;"></i>
         </div>
         <button class="btn btn-primary btn-sm" @click="openAddItemModal">
-          <i class="mdi mdi-plus mr-1"></i>Add New Item
+          <i class="mdi mdi-plus mr-1"></i>{{ addNewItemLabel(contentLanguage) }}
         </button>
       </div>
     </div>
@@ -57,22 +57,22 @@
     <div v-if="showAddItem" class="cd-modal-overlay" @click.self="closeAddItemModal">
       <div class="cd-modal-box">
         <div class="cd-modal-header">
-          <h5 class="cd-modal-title">Add new item</h5>
+          <h5 class="cd-modal-title">{{ addNewItemTitleLabel(contentLanguage) }}</h5>
           <button type="button" class="cd-modal-close" @click="closeAddItemModal">&times;</button>
         </div>
         <div class="cd-modal-body">
           <div class="form-group">
-            <label class="col-form-label">Item name (English)</label>
+            <label class="col-form-label">{{ itemNameEnglishLabel(contentLanguage) }}</label>
             <input
               v-model="newItemWord"
               type="text"
               class="form-control"
-              placeholder="Enter item name"
+              :placeholder="enterItemNameLabel(contentLanguage)"
               @keyup.enter="confirmAddItem"
             />
           </div>
           <div class="form-group mb-0">
-            <label class="col-form-label">Image file</label>
+            <label class="col-form-label">{{ imageFileLabel(contentLanguage) }}</label>
             <input
               type="file"
               class="form-control-file"
@@ -82,14 +82,14 @@
           </div>
         </div>
         <div class="cd-modal-footer">
-          <button type="button" class="btn btn-secondary" @click="closeAddItemModal">Cancel</button>
+          <button type="button" class="btn btn-secondary" @click="closeAddItemModal">{{ cancelLabel(contentLanguage) }}</button>
           <button
             type="button"
             class="btn btn-primary"
             :disabled="!newItemWord.trim() || !newItemFile"
             @click="confirmAddItem"
           >
-            Create
+            {{ createLabel(contentLanguage) }}
           </button>
         </div>
       </div>
@@ -128,7 +128,18 @@ import { categoriesRename, createItemEndpoint } from '../api/contentClient'
 import CategoryDetail from '../components/CategoryDetail.vue'
 import ItemGrid from '../components/ItemGrid.vue'
 import { useContentLanguage } from '../composables/useContentLanguage'
-import { localizedCategoryLabel, breadcrumbCategoriesLabel, itemsLabel } from '../utils/localizedLabels'
+import {
+  addNewItemLabel,
+  addNewItemTitleLabel,
+  cancelLabel,
+  createLabel,
+  enterItemNameLabel,
+  imageFileLabel,
+  itemNameEnglishLabel,
+  localizedCategoryLabel,
+  breadcrumbCategoriesLabel,
+  itemsLabel,
+} from '../utils/localizedLabels'
 import { toPascalCaseWords } from '../utils/pascalCaseWords'
 
 const route = useRoute()

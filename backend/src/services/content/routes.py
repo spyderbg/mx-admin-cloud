@@ -1185,7 +1185,7 @@ def create_item_endpoint(
     """Create a new content item (image + voices)."""
     if not image.filename:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Image file is required")
-    image_data = image.read()
+    image_data = image.file.read()
     if not image_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Image file is empty")
     ext = ""

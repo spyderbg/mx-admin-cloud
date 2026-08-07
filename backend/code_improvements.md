@@ -37,15 +37,6 @@ can never silently break the content service again. Long term, generate a typed 
 from the OpenAPI spec (you already generate a TS client for the frontend — the same discipline
 would have caught this).
 
-### 1.3 `POST /api/v1/content/items` passes a coroutine as image bytes
-- `src/services/content/routes.py:1187`: `image_data = image.read()` inside a **sync** handler.
-  `UploadFile.read()` is async — this returns a coroutine object, not bytes. The emptiness check
-  passes (a coroutine is truthy) and the provider later crashes on `fh.write(image_data)`.
-- All other upload handlers correctly use `image.file.read()`.
-
-**Improvement:** change to `image.file.read()` (or make the handler `async` and `await` it). Add a
-test that posts a real multipart body to this endpoint.
-
 ### 1.4 `apply_runtime_payload` wipes all other providers of a service
 - `src/services/service_registry.py:414–426` (`_replace_provider_by_identity`) matches providers by
   `getattr(provider, "provider_name", "")` / `getattr(provider, "service_name", "")`. Those
