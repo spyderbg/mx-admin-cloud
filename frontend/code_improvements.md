@@ -94,17 +94,13 @@ searching only after details arrive per category. At minimum, cap the concurrenc
   backend derives `thumbnail_uri` from. The generated `categoriesIconUpdate` exists precisely for
   this — use it for both create and replace, and `categoriesIconDelete` in `confirmImageDelete`
   instead of reverse-engineering the image id from the thumbnail URI (`imageIdFromUri`).
-- 
+
 - **Audio playback**: `audio.play()` returns a promise that rejects (autoplay policies, 404 file)
   — unhandled in both `CategoryDetail.togglePlay` and `ItemDetailView.togglePlay`; also neither
   view stops audio on unmount (`onUnmounted(stopAudio)`), so audio keeps playing after navigating
   away. The two `togglePlay`/`stopAudio`/`hasAudio` implementations are copy-pasted — extract a
   `useAudioPlayer()` composable.
-- 
-- **`ItemDetailView` delete modal** renders `{{ category?.name }}` (line 175) — a `LocalizedString`
-  object; it only works because `toString()` returns the English value. Use the localized label
-  helper like everywhere else.
-- 
+
 - **Voice "rename"** (`ServerWord` pencil on voice cards) emits `rename-voice`, which cannot be
   persisted — the backend has no voice-name concept (names come from the per-language item/category
   labels). Either drop the affordance or route it to the (future) item/category name update
@@ -157,20 +153,11 @@ for this project the READMEs are load-bearing (they are the stated source of tru
 ## 7. Prioritized action list
 
 **P0 — the two operating modes**
-1. Stop shipping mocks in the production image; add a visible mock-mode indicator (§1.1).
-2. Migrate MSW handlers to id-based lookups so mock mode matches the current API (§1.2).
 3. Regenerate handlers as a whole instead of appending stubs; delete dead/legacy-path handlers
    (§1.3).
-4. Add a 401 interceptor + auth-expiry redirect (§3.4) and surface fetch errors instead of
-   `catch(() => empty)` (§3.2).
 
 **P1 — finish the wiring**
-5. Wire the stubbed mutations (rename/create/remove category, item files, item voices, item name,
-   Add New Item) to the already-generated client functions; unify on the CategoryDetail pattern
-   (§1.4).
 6. Use `categoriesIconUpdate`/`categoriesIconDelete` for the icon flow (§4).
-7. Key the cache by category id, not English name (§3.1).
-8. Fix/remove `listFiles` and the manual auth headers (§1.5).
 
 **P2 — contract robustness**
 9. Single OpenAPI-driven codegen path + regeneration drift check in `/verify` (§2.1–2.2).
@@ -178,7 +165,6 @@ for this project the READMEs are load-bearing (they are the stated source of tru
 11. Vitest + MSW node tests for the cache layer; ESLint/Prettier (§6.1).
 
 **P3 — cleanup**
-12. Real user identity in the sidebar; remove mock imports from production components (§4).
 13. Shared language-metadata map, `useAudioPlayer` composable, stop-audio-on-unmount (§4).
 14. Doc sync (README/CLAUDE route table, api module list, type-file comments) (§6.4, §5).
 15. Prune unused vendor assets or plan the theme migration (§6.3).

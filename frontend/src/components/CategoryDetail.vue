@@ -326,6 +326,7 @@ import {
 import { ensureCategoryDetail, invalidateCategoryDetail } from '../api/cache'
 import { resizeImageToMaxDimension } from '../utils/imageResize'
 import { imageIdFromUri } from '../utils/imageId'
+import { useAudioPlayer } from '../composables/useAudioPlayer'
 
 const props = defineProps<{
   category: CategoryFull
@@ -366,8 +367,6 @@ const showVoiceDeleteConfirm = ref(false)
 const voiceDeleteTarget = ref<Voice | null>(null)
 const editingVoice = ref<Voice | null>(null)
 const renameValue = ref('')
-const playingVoiceId = ref<string | null>(null)
-let activeAudio: HTMLAudioElement | null = null
 
 type ToastVariant = 'success' | 'error'
 const toast = ref<{ message: string; variant: ToastVariant } | null>(null)
@@ -390,6 +389,8 @@ const thumbnailSrc = computed(() => cacheBustedUri(props.category.thumbnail_uri,
 function voiceSrc(voice: Voice): string {
   return cacheBustedUri(voice.fileUri, voiceVersions.value[voice.id] ?? 0)
 }
+
+const { playingVoiceId, hasAudio, togglePlay, stopAudio } = useAudioPlayer(voiceSrc)
 
 function showToast(message: string, variant: ToastVariant): void {
   if (variant === 'error') {
@@ -416,19 +417,6 @@ async function refreshCategory(): Promise<void> {
   const name = props.category.name.en
   invalidateCategoryDetail(name)
   await ensureCategoryDetail(props.category.id, name)
-}
-
-function hasAudio(voice: Voice): boolean {
-  return !!(voice.fileUri && voice.fileUri.trim())
-}
-
-function stopAudio(): void {
-  if (activeAudio) {
-    activeAudio.pause()
-    activeAudio.currentTime = 0
-    activeAudio = null
-  }
-  playingVoiceId.value = null
 }
 
 function closeAllModals(): void {
@@ -607,20 +595,6 @@ async function onFileSelected(e: Event): Promise<void> {
   } finally {
     input.value = ''
   }
-}
-
-function togglePlay(voice: Voice): void {
-  if (!hasAudio(voice)) return
-  if (playingVoiceId.value === voice.id) {
-    stopAudio()
-    return
-  }
-  stopAudio()
-  const audio = new Audio(voiceSrc(voice))
-  activeAudio = audio
-  playingVoiceId.value = voice.id
-  audio.addEventListener('ended', stopAudio, { once: true })
-  audio.play()
 }
 
 </script>

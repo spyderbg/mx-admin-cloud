@@ -299,6 +299,7 @@ import {
 } from '../api/contentClient'
 import { LocalizedString, type Language, type Voice } from '../types/viewModels'
 import { useContentLanguage } from '../composables/useContentLanguage'
+import { useAudioPlayer } from '../composables/useAudioPlayer'
 import { resizeImageToMaxDimension } from '../utils/imageResize'
 import { imageIdFromUri } from '../utils/imageId'
 import cameraPlaceholderUrl from '../assets/images/samples/camera-placeholder.svg'
@@ -390,6 +391,8 @@ const hasFiles = computed(() => itemImages.value.length > 0)
 function voiceSrc(voice: Voice): string {
   return cacheBustedUri(voice.fileUri ?? '', voiceVersions.value[voice.id] ?? 0)
 }
+
+const { playingVoiceId, hasAudio, togglePlay, stopAudio } = useAudioPlayer(voiceSrc)
 
 const breadcrumbRoot = computed(() => breadcrumbCategoriesLabel(contentLanguage.value))
 
@@ -645,35 +648,6 @@ const confirmVoiceDelete = async (): Promise<void> => {
   }
 }
 
-const playingVoiceId = ref<string | null>(null)
-let activeAudio: HTMLAudioElement | null = null
-
-function hasAudio(voice: Voice): boolean {
-  return !!(voice.fileUri && voice.fileUri.trim())
-}
-
-function stopAudio(): void {
-  if (activeAudio) {
-    activeAudio.pause()
-    activeAudio.currentTime = 0
-    activeAudio = null
-  }
-  playingVoiceId.value = null
-}
-
-function togglePlay(voice: Voice): void {
-  if (!hasAudio(voice)) return
-  if (playingVoiceId.value === voice.id) {
-    stopAudio()
-    return
-  }
-  stopAudio()
-  const audio = new Audio(voiceSrc(voice))
-  activeAudio = audio
-  playingVoiceId.value = voice.id
-  audio.addEventListener('ended', stopAudio, { once: true })
-  audio.play()
-}
 </script>
 
 <style scoped>
