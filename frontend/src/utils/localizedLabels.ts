@@ -38,6 +38,39 @@ export function breadcrumbCategoriesLabel(lang: Language): string {
   return labels[lang] ?? labels.en
 }
 
+/** Loading state while categories are fetched; unknown `lang` falls back to English. */
+export function loadingCategoriesLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Loading categories...',
+    es: 'Cargando categorías...',
+    fr: 'Chargement des catégories...',
+    bg: 'Зареждане на категориите...',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Error shown when the category list fails to load; unknown `lang` falls back to English. */
+export function failedToLoadCategoriesLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Failed to load categories.',
+    es: 'No se pudieron cargar las categorías.',
+    fr: 'Échec du chargement des catégories.',
+    bg: 'Неуспешно зареждане на категориите.',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Empty state when no categories exist; unknown `lang` falls back to English. */
+export function noCategoriesFoundLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'No categories found.',
+    es: 'No se encontraron categorías.',
+    fr: 'Aucune catégorie trouvée.',
+    bg: 'Не са намерени категории.',
+  }
+  return labels[lang] ?? labels.en
+}
+
 /** Header label for the configuration menu; unknown `lang` falls back to English. */
 export function configurationLabel(lang: Language): string {
   const labels: Record<Language, string> = {

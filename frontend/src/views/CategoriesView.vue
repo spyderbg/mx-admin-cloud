@@ -1,9 +1,9 @@
 <template>
   <div v-if="sharedLoading" class="text-center py-5">
     <div class="spinner-border text-primary" role="status"></div>
-    <p class="mt-2 text-muted">Loading categories...</p>
+    <p class="mt-2 text-muted">{{ loadingCategoriesLabel(contentLanguage) }}</p>
   </div>
-  <p v-else-if="sharedError && sharedCategories.length === 0" class="text-danger text-center py-5">{{ sharedError }}</p>
+  <p v-else-if="sharedError && sharedCategories.length === 0" class="text-danger text-center py-5">{{ failedToLoadCategoriesLabel(contentLanguage) }}</p>
   <div v-else-if="category" style="width: 100%;">
     <nav aria-label="breadcrumb">
       <ol class="breadcrumb bg-transparent p-0 mb-3">
@@ -134,11 +134,13 @@ import {
   cancelLabel,
   createLabel,
   enterItemNameLabel,
+  failedToLoadCategoriesLabel,
   imageFileLabel,
   itemNameEnglishLabel,
   localizedCategoryLabel,
   breadcrumbCategoriesLabel,
   itemsLabel,
+  loadingCategoriesLabel,
 } from '../utils/localizedLabels'
 import { toPascalCaseWords } from '../utils/pascalCaseWords'
 

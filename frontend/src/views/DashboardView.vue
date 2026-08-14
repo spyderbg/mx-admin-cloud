@@ -6,13 +6,13 @@
 
     <div v-if="loading" class="text-center py-5">
       <div class="spinner-border text-primary" role="status"></div>
-      <p class="mt-2 text-muted">Loading categories...</p>
+      <p class="mt-2 text-muted">{{ loadingCategoriesLabel(contentLanguage) }}</p>
     </div>
 
-    <p v-else-if="error" class="text-danger text-center py-5">{{ error }}</p>
+    <p v-else-if="error" class="text-danger text-center py-5">{{ failedToLoadCategoriesLabel(contentLanguage) }}</p>
 
     <div v-if="cards.length === 0" class="text-center py-5">
-      <p class="text-muted">No categories found.</p>
+      <p class="text-muted">{{ noCategoriesFoundLabel(contentLanguage) }}</p>
     </div>
 
     <div v-else class="row">
@@ -56,7 +56,14 @@ import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import { ensureCategoriesLoaded, sharedCategories, sharedLoading, sharedError } from '../api/cache'
-import { breadcrumbCategoriesLabel, localizedCategoryLabel, itemCountLabel } from '../utils/localizedLabels'
+import {
+  breadcrumbCategoriesLabel,
+  failedToLoadCategoriesLabel,
+  itemCountLabel,
+  loadingCategoriesLabel,
+  localizedCategoryLabel,
+  noCategoriesFoundLabel,
+} from '../utils/localizedLabels'
 import { toPascalCaseWords } from '../utils/pascalCaseWords'
 import cameraPlaceholderUrl from '../assets/images/samples/camera-placeholder.svg'
 

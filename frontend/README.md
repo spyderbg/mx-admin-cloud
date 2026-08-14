@@ -67,6 +67,7 @@ src/
 │   └── LoginForm.vue
 ├── composables/      # Shared composition helpers (e.g. content UI language)
 ├── utils/            # Pure helpers (labels from voices, title-case formatting, etc.)
+│   └── localizedLabels.ts  # UI chrome strings keyed by content language (en, es, fr, bg)
 ├── data/
 │   └── mockData.ts   # [generated] Sidebar / MSW sample categories
 ├── mocks/            # MSW handlers (used when VITE_MOCK_DATA=true)
@@ -189,6 +190,7 @@ data shapes (`src/data/mockData.ts`), and the UI actions exposed by components.
 Three type layers exist:
 
 - **`src/types/localization.ts`** — `LocalizedString` class with typed property getters for every supported language code (`en`, `es`, `fr`, `bg`, `de`, `it`, `pl`, `uk`, `ro`, `nl`); falls back to English when a translation is absent. Serializes to/from the JSON wire format `{"en": "dog", "fr": "chien"}` via `toJSON()`. Use `LocalizedString.fromJSON(data)` to deserialize responses.
+- **`src/utils/localizedLabels.ts`** — Static UI strings (buttons, headings, loading/error/empty states) for the four content UI languages (`en`, `es`, `fr`, `bg`). Views call helpers such as `breadcrumbCategoriesLabel()`, `loadingCategoriesLabel()`, and `failedToLoadCategoriesLabel()` with the active `contentLanguage` from `useContentLanguage()`. Category and item display names come from backend voice/name data via `localizedCategoryLabel()` / `localizedImageLabel()`, not from this file.
 - **`src/types/contentSchemas.ts`** — Auto-generated content DTOs (do not edit). Imports `LocalizedString`. Regenerate by running `scripts/generate_ts_schemas.py`.
 - **`src/types/viewModels.ts`** — Hand-written UI view-model types (camelCase; UI-only fields). `src/api/cache.ts` maps content DTOs → these types.
 - **`src/types/index.ts`** — Hand-written helper types outside the DTO/view-model split. Currently just `User` — used by `src/composables/useCurrentUser.ts`, which decodes it from the logged-in user's JWT payload (`src/utils/jwt.ts`) rather than from mock data.
