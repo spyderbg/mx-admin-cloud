@@ -540,3 +540,181 @@ export function enterWordLabel(lang: Language): string {
   }
   return labels[lang] ?? labels.en
 }
+
+/** Button label for adding a category; unknown `lang` falls back to English. */
+export function addNewCategoryLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Add New Category',
+    es: 'Añadir categoría',
+    fr: 'Ajouter une catégorie',
+    bg: 'Добави категория',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Modal title for adding a category; unknown `lang` falls back to English. */
+export function addNewCategoryTitleLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Add new category',
+    es: 'Añadir categoría',
+    fr: 'Ajouter une catégorie',
+    bg: 'Добавяне на категория',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Label for an English category-name field; unknown `lang` falls back to English. */
+export function categoryNameEnglishLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Category name (English)',
+    es: 'Nombre de la categoría (inglés)',
+    fr: 'Nom de la catégorie (anglais)',
+    bg: 'Име на категорията (английски)',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Validation hint for the category-name field; unknown `lang` falls back to English. */
+export function categoryNameRulesLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Use letters, numbers and spaces only. Spaces become underscores.',
+    es: 'Usa solo letras, números y espacios. Los espacios se convierten en guiones bajos.',
+    fr: 'Utilisez uniquement des lettres, des chiffres et des espaces. Les espaces deviennent des tirets bas.',
+    bg: 'Използвайте само букви, цифри и интервали. Интервалите се превръщат в долни черти.',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Warning that the typed category name is already taken; unknown `lang` falls back to English. */
+export function categoryAlreadyExistsLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'A category with this name already exists.',
+    es: 'Ya existe una categoría con este nombre.',
+    fr: 'Une catégorie portant ce nom existe déjà.',
+    bg: 'Вече съществува категория с това име.',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Notice that category creation runs translation, TTS and icon generation. */
+export function categoryGenerationNoticeLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Translations, audio for all languages and a category icon will be generated. This can take up to a minute.',
+    es: 'Se generarán traducciones, audio para todos los idiomas y un icono de categoría. Puede tardar hasta un minuto.',
+    fr: "Les traductions, l'audio pour toutes les langues et une icône de catégorie seront générés. Cela peut prendre jusqu'à une minute.",
+    bg: 'Ще бъдат генерирани преводи, аудио за всички езици и икона на категорията. Това може да отнеме до минута.',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Busy-state label while a category is being created; unknown `lang` falls back to English. */
+export function creatingLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Creating…',
+    es: 'Creando…',
+    fr: 'Création…',
+    bg: 'Създаване…',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Button label and modal title for archiving a category; unknown `lang` falls back to English. */
+export function archiveCategoryLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Archive category',
+    es: 'Archivar categoría',
+    fr: 'Archiver la catégorie',
+    bg: 'Архивиране на категорията',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Generic archive button label; unknown `lang` falls back to English. */
+export function archiveLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Archive',
+    es: 'Archivar',
+    fr: 'Archiver',
+    bg: 'Архивирай',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Confirmation text for archiving a category; unknown `lang` falls back to English. */
+export function archiveCategoryConfirmLabel(lang: Language, category: string): string {
+  const labels: Record<Language, string> = {
+    en: `This will move the category "${category}", its items, images and audio to the archive.`,
+    es: `Esto moverá la categoría "${category}", sus elementos, imágenes y audio al archivo.`,
+    fr: `Cela déplacera la catégorie « ${category} », ses éléments, images et audio vers l'archive.`,
+    bg: `Това ще премести категория „${category}“, елементите, изображенията и аудиото ѝ в архива.`,
+  }
+  return labels[lang] ?? labels.en
+}
+
+/**
+ * Warning shown before archiving. The backend deletes permanently when ARCHIVE_DIR is
+ * unset and the frontend cannot tell in advance, so both outcomes are stated.
+ */
+export function archiveCategoryWarningLabel(lang: Language, itemCount: number): string {
+  const labels: Record<Language, string> = {
+    en: `If archiving is disabled on the server this permanently deletes them. This category contains ${itemCount} items.`,
+    es: `Si el archivado está desactivado en el servidor, esto los elimina permanentemente. Esta categoría contiene ${itemCount} elementos.`,
+    fr: `Si l'archivage est désactivé sur le serveur, cela les supprime définitivement. Cette catégorie contient ${itemCount} éléments.`,
+    bg: `Ако архивирането е изключено на сървъра, това ги изтрива безвъзвратно. Тази категория съдържа ${itemCount} елемента.`,
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Typed-confirmation instruction for archiving; unknown `lang` falls back to English. */
+export function archiveTypeToConfirmLabel(lang: Language, categoryId: string): string {
+  const labels: Record<Language, string> = {
+    en: `Type ${categoryId} to confirm`,
+    es: `Escribe ${categoryId} para confirmar`,
+    fr: `Saisissez ${categoryId} pour confirmer`,
+    bg: `Въведете ${categoryId}, за да потвърдите`,
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Heading for the archived-categories section; unknown `lang` falls back to English. */
+export function archivedCategoriesLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Archived Categories',
+    es: 'Categorías archivadas',
+    fr: 'Catégories archivées',
+    bg: 'Архивирани категории',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Generic restore button label; unknown `lang` falls back to English. */
+export function restoreLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Restore',
+    es: 'Restaurar',
+    fr: 'Restaurer',
+    bg: 'Възстанови',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Relative "archived 3 days ago" label built from a unix-seconds timestamp. */
+export function archivedAgoLabel(lang: Language, archivedAt: number): string {
+  const prefix: Record<Language, string> = {
+    en: 'archived',
+    es: 'archivada',
+    fr: 'archivée',
+    bg: 'архивирана',
+  }
+  const units: [Intl.RelativeTimeFormatUnit, number][] = [
+    ['year', 31_536_000],
+    ['month', 2_592_000],
+    ['day', 86_400],
+    ['hour', 3_600],
+    ['minute', 60],
+  ]
+  const elapsed = Math.max(0, Math.floor(Date.now() / 1000) - archivedAt)
+  const formatter = new Intl.RelativeTimeFormat(lang, { numeric: 'auto' })
+  const [unit, seconds] = units.find(([, size]) => elapsed >= size) ?? ['second', 1]
+  return `${prefix[lang] ?? prefix.en} ${formatter.format(-Math.floor(elapsed / seconds), unit)}`
+}

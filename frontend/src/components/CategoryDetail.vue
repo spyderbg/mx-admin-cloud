@@ -11,7 +11,18 @@
             @edit="openRenameModal"
           />
         </div>
-        <div class="col-lg-7 col-md-7 d-none d-md-block" aria-hidden="true"></div>
+        <div class="col-lg-7 col-md-7 d-flex justify-content-md-end align-items-start mb-2 mb-md-3">
+          <button
+            type="button"
+            class="btn btn-outline-danger btn-sm"
+            :disabled="archiving"
+            @click="openArchiveModal"
+          >
+            <span v-if="archiving" class="spinner-border spinner-border-sm mr-1" role="status"></span>
+            <i v-else class="mdi mdi-archive-arrow-down mr-1"></i>
+            {{ archiveCategoryLabel(contentLanguage) }}
+          </button>
+        </div>
       </div>
       <!-- Row 2: "Category Icon" and "Category Voices" labels share one baseline -->
       <div class="row">
@@ -147,6 +158,50 @@
         <div class="cd-modal-footer">
           <button type="button" class="btn btn-secondary" @click="showRename = false">{{ cancelLabel(contentLanguage) }}</button>
           <button type="button" class="btn btn-primary" @click="confirmRename">{{ saveLabel(contentLanguage) }}</button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
+
+  <!-- Archive category confirmation modal -->
+  <Teleport to="body">
+    <div v-if="showArchive" class="cd-modal-overlay" @click.self="closeArchiveModal">
+      <div class="cd-modal-box">
+        <div class="cd-modal-header">
+          <h5 class="cd-modal-title">{{ archiveCategoryLabel(contentLanguage) }}</h5>
+          <button type="button" class="cd-modal-close" @click="closeArchiveModal">&times;</button>
+        </div>
+        <div class="cd-modal-body">
+          <p class="mb-3">{{ archiveCategoryConfirmLabel(contentLanguage, categoryLabel) }}</p>
+          <div class="alert alert-warning py-2">
+            <small>
+              <i class="mdi mdi-alert mr-1"></i>
+              {{ archiveCategoryWarningLabel(contentLanguage, category.items_count ?? category.items.length) }}
+            </small>
+          </div>
+          <div class="form-group mb-0">
+            <label class="col-form-label">
+              {{ archiveTypeToConfirmLabel(contentLanguage, category.id) }}
+            </label>
+            <input
+              v-model="archiveConfirmText"
+              type="text"
+              class="form-control"
+              :placeholder="category.id"
+              @keyup.enter="confirmArchive"
+            />
+          </div>
+        </div>
+        <div class="cd-modal-footer">
+          <button type="button" class="btn btn-secondary" @click="closeArchiveModal">{{ cancelLabel(contentLanguage) }}</button>
+          <button
+            type="button"
+            class="btn btn-danger"
+            :disabled="!canArchive"
+            @click="confirmArchive"
+          >
+            {{ archiveLabel(contentLanguage) }}
+          </button>
         </div>
       </div>
     </div>
@@ -301,6 +356,11 @@ import type { AxiosError } from 'axios'
 import ServerWord from './ServerWord.vue'
 import type { CategoryFull, Language, Voice } from '../types/viewModels'
 import {
+  archiveCategoryConfirmLabel,
+  archiveCategoryLabel,
+  archiveCategoryWarningLabel,
+  archiveLabel,
+  archiveTypeToConfirmLabel,
   audioFileLabel,
   cancelLabel,
   categoryIdLabel,
@@ -340,6 +400,8 @@ import { useAudioPlayer } from '../composables/useAudioPlayer'
 
 const props = defineProps<{
   category: CategoryFull
+  /** Owned by the parent, which performs the archive request and the redirect. */
+  archiving?: boolean
 }>()
 
 const contentLanguage = useContentLanguage()
@@ -349,6 +411,8 @@ const emit = defineEmits<{
   edit: []
   delete: []
   rename: [name: string]
+  /** The parent owns the route being archived, so it performs the call and redirects. */
+  archive: []
   'edit-voice': [voice: Voice, action: 'add' | 'update']
   'delete-voice': [voice: Voice]
   'rename-voice': [voice: Voice, name: string]
@@ -372,6 +436,8 @@ const showVoiceWordEdit = ref(false)
 const voiceWordEditTarget = ref<Voice | null>(null)
 const voiceWordValue = ref('')
 const voiceWordEditLanguage = computed<Language>(() => voiceWordEditTarget.value?.language ?? contentLanguage.value)
+const showArchive = ref(false)
+const archiveConfirmText = ref('')
 const showVoiceDeleteConfirm = ref(false)
 const voiceDeleteTarget = ref<Voice | null>(null)
 const voiceDeleteLanguage = computed<Language>(() => voiceDeleteTarget.value?.language ?? contentLanguage.value)
@@ -434,12 +500,36 @@ function closeAllModals(): void {
   showDelete.value = false
   showUpload.value = false
   showRename.value = false
+  showArchive.value = false
   showVoiceUpload.value = false
   showVoiceWordEdit.value = false
   showVoiceDeleteConfirm.value = false
   editingVoice.value = null
   voiceWordEditTarget.value = null
   voiceDeleteTarget.value = null
+}
+
+/**
+ * Archiving is only recoverable when ARCHIVE_DIR is configured on the server, which the
+ * frontend cannot detect, so the id must be typed out before the action is enabled.
+ */
+const canArchive = computed(() => archiveConfirmText.value.trim() === props.category.id)
+
+function openArchiveModal(): void {
+  closeAllModals()
+  archiveConfirmText.value = ''
+  showArchive.value = true
+}
+
+function closeArchiveModal(): void {
+  showArchive.value = false
+  archiveConfirmText.value = ''
+}
+
+function confirmArchive(): void {
+  if (!canArchive.value) return
+  closeArchiveModal()
+  emit('archive')
 }
 
 function openVoiceDeleteModal(voice: Voice): void {

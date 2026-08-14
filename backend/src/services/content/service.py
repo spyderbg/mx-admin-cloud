@@ -13,6 +13,7 @@ from src.services.content.models import (
     CategoryImage,
     CategoryList,
     CategoryVoice,
+    ContentError,
     ContentProvider,
     ContentProviderUnavailableError,
     CreateCategory,
@@ -113,14 +114,34 @@ class ContentService(Service):
         return self._select_provider().rename_category(category_id, new_category_id)
 
     def remove_category(self, category_name: str) -> ArchiveCategory:
-        """Remove a category via the active provider."""
+        """Remove a category via the active provider, looked up by folder name."""
         provider = self._select_provider()
         return provider.remove_category(provider.category_id_by_name(category_name))
 
-    def restore_category(self, category_name: str) -> RestoreCategory:
-        """Restore a category via the active provider."""
+    def remove_category_by_id(self, category_id: str) -> ArchiveCategory:
+        """Remove a category via the active provider.
+
+        Accepts either a registry id ('C_Foods') or a folder name ('foods') so the
+        HTTP route and the CLI can both pass whatever identifier they hold.
+        """
         provider = self._select_provider()
-        return provider.restore_category(provider.category_id_by_name(category_name))
+        return provider.remove_category(self._resolve_category_id(provider, category_id))
+
+    def restore_category(self, category_name: str) -> RestoreCategory:
+        """Restore a category via the active provider.
+
+        Takes a base folder name or a full archive folder name — not a registry id,
+        because archiving removes the category's rows from the root CSV registry.
+        """
+        return self._select_provider().restore_category(category_name)
+
+    @staticmethod
+    def _resolve_category_id(provider: ContentProvider, value: str) -> str:
+        """Return the registry id for *value*, which may be an id or a folder name."""
+        try:
+            return provider.category_id_by_name(value)
+        except ContentError:
+            return value
 
     # ------------------------------------------------------------------
     # Category images methods

@@ -442,6 +442,41 @@ def test_create_category_success(tmp_path: Path) -> None:
     assert (content_root / "animals" / "animals.png").exists()
 
 
+def test_create_category_normalizes_name_to_snake_case(tmp_path: Path) -> None:
+    """Folders must be lowercase snake_case or _folder_name_from_category_id() can't find them back."""
+    content_root = tmp_path / "content"
+    content_root.mkdir()
+
+    provider = _make_fs_provider()
+    with (
+        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch.object(FileSystemContentProvider, "_translate_word", return_value="translated"),
+        patch.object(FileSystemContentProvider, "_generate_audio", return_value=b"audio"),
+        patch.object(FileSystemContentProvider, "_generate_icon", return_value=b"icon"),
+    ):
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        result = provider.create_category("At School")
+
+        assert result.category == "at_school"
+        assert (content_root / "at_school").is_dir()
+        assert (content_root / "categories_ids.csv").read_text(encoding="utf-8").strip() == "C_AtSchool"
+        # The created category must be resolvable through the normal id lookup path.
+        assert provider.category_id_by_name("at_school") == "C_AtSchool"
+        assert provider._folder_name_for_id("C_AtSchool") == "at_school"  # pylint: disable=protected-access
+
+
+def test_create_category_rejects_unsafe_name(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    content_root.mkdir()
+
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        with pytest.raises(InvalidCategoryNameError):
+            provider.create_category("foods/../etc")
+
+
 def test_create_category_translation_failure(tmp_path: Path) -> None:
     content_root = tmp_path / "content"
     content_root.mkdir()
@@ -769,6 +804,50 @@ def test_remove_category_permanently_deletes_when_no_archive_dir(tmp_path: Path)
     assert not (content_root / "foods").exists()
 
 
+def test_remove_category_deletes_registry_rows(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    (content_root / "foods").mkdir(parents=True)
+    _write_category_registry(
+        content_root, [("C_Animals", "Animals"), ("C_Foods", "Foods"), ("C_Colors", "Colors")],
+    )
+
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.ARCHIVE_DIR = ""
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        provider.remove_category("C_Foods")
+
+    assert (content_root / "categories_ids.csv").read_text(encoding="utf-8").split() == [
+        "C_Animals", "C_Colors",
+    ]
+    assert (content_root / "categories_en.csv").read_text(encoding="utf-8").split() == [
+        "Animals", "Colors",
+    ]
+
+
+def test_remove_then_create_same_category_leaves_one_registry_row(tmp_path: Path) -> None:
+    """A duplicate id row would make _category_row_index() resolve to the stale first row."""
+    content_root = tmp_path / "content"
+    (content_root / "foods").mkdir(parents=True)
+    _write_category_registry(content_root, [("C_Foods", "Foods")])
+
+    provider = _make_fs_provider()
+    with (
+        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch.object(FileSystemContentProvider, "_translate_word", return_value="translated"),
+        patch.object(FileSystemContentProvider, "_generate_audio", return_value=b"audio"),
+        patch.object(FileSystemContentProvider, "_generate_icon", return_value=b"icon"),
+    ):
+        mock_settings.content_path = content_root
+        mock_settings.ARCHIVE_DIR = ""
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        provider.remove_category("C_Foods")
+        provider.create_category("foods")
+
+    assert (content_root / "categories_ids.csv").read_text(encoding="utf-8").split() == ["C_Foods"]
+
+
 def test_remove_category_archives_when_archive_dir_set(tmp_path: Path) -> None:
     content_root = tmp_path / "content"
     archive_root = tmp_path / "archive"
@@ -818,7 +897,7 @@ def test_restore_category_no_archive_found(tmp_path: Path) -> None:
         mock_settings.archive_path = archive_root
         mock_settings.content_path = content_root
         with pytest.raises(CategoryNotFoundError, match="No archive found"):
-            provider.restore_category("C_Foods")
+            provider.restore_category("foods")
 
 
 def test_restore_category_conflict_with_existing(tmp_path: Path) -> None:
@@ -834,7 +913,7 @@ def test_restore_category_conflict_with_existing(tmp_path: Path) -> None:
         mock_settings.archive_path = archive_root
         mock_settings.content_path = content_root
         with pytest.raises(CategoryConflictError):
-            provider.restore_category("C_Foods")
+            provider.restore_category("foods")
 
 
 def test_restore_category_success(tmp_path: Path) -> None:
@@ -843,18 +922,91 @@ def test_restore_category_success(tmp_path: Path) -> None:
     archived.mkdir(parents=True)
     (archived / "apple").mkdir()
     content_root = tmp_path / "content"
-    _write_category_registry(content_root, [("C_Foods", "Foods")])
+    content_root.mkdir(parents=True, exist_ok=True)
 
     provider = _make_fs_provider()
     with patch("src.services.content.providers.file_system.settings") as mock_settings:
         mock_settings.archive_path = archive_root
         mock_settings.content_path = content_root
-        result = provider.restore_category("C_Foods")
+        mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
+        result = provider.restore_category("foods")
 
     assert result.restored is True
     assert result.name == "foods"
     assert result.from_archive == "foods_1000"
-    assert (content_root / "foods").is_dir()
+    assert (content_root / "foods" / "apple").is_dir()
+    # The snapshot is consumed, so restoring twice cannot conflict with itself.
+    assert not archived.exists()
+
+
+def test_restore_category_accepts_full_archive_folder_name(tmp_path: Path) -> None:
+    archive_root = tmp_path / "archive"
+    (archive_root / "foods_1000").mkdir(parents=True)
+    (archive_root / "foods_2000").mkdir(parents=True)
+    content_root = tmp_path / "content"
+    content_root.mkdir(parents=True, exist_ok=True)
+
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.archive_path = archive_root
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        result = provider.restore_category("foods_1000")
+
+    assert result.from_archive == "foods_1000"
+    assert (archive_root / "foods_2000").is_dir()
+
+
+def test_restore_category_picks_most_recent_archive(tmp_path: Path) -> None:
+    archive_root = tmp_path / "archive"
+    (archive_root / "foods_1000").mkdir(parents=True)
+    (archive_root / "foods_2000").mkdir(parents=True)
+    content_root = tmp_path / "content"
+    content_root.mkdir(parents=True, exist_ok=True)
+
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.archive_path = archive_root
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        result = provider.restore_category("foods")
+
+    assert result.from_archive == "foods_2000"
+
+
+def test_restore_category_rebuilds_registry_rows_from_manifest(tmp_path: Path) -> None:
+    """Archiving deletes the root CSV rows, so restore must rebuild them from the manifest."""
+    content_root = tmp_path / "content"
+    archive_root = tmp_path / "archive"
+    (content_root / "foods").mkdir(parents=True)
+    _write_category_registry(content_root, [("C_Animals", "Animals"), ("C_Foods", "Foods")])
+    (content_root / "categories_fr.csv").write_text("Animaux\nAliments\n", encoding="utf-8")
+
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.archive_path = archive_root
+        mock_settings.ARCHIVE_DIR = str(archive_root)
+        mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
+        provider.remove_category("C_Foods")
+
+        ids_after_archive = (content_root / "categories_ids.csv").read_text(encoding="utf-8")
+        assert "C_Foods" not in ids_after_archive
+        assert "C_Animals" in ids_after_archive
+
+        provider.restore_category("foods")
+
+    assert (content_root / "categories_ids.csv").read_text(encoding="utf-8").split() == [
+        "C_Animals", "C_Foods",
+    ]
+    assert (content_root / "categories_en.csv").read_text(encoding="utf-8").split() == [
+        "Animals", "Foods",
+    ]
+    assert (content_root / "categories_fr.csv").read_text(encoding="utf-8").split() == [
+        "Animaux", "Aliments",
+    ]
+    # The manifest is an archive-only artifact and must not linger in the content dir.
+    assert not (content_root / "foods" / "_category.json").exists()
 
 
 # ---------------------------------------------------------------------------

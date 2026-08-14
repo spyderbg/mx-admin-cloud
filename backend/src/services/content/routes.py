@@ -158,9 +158,11 @@ def categories_create(
     tags=[TAG_CATEGORIES],
     summary="Restore a category from archive",
     description=(
-            "Restores a category from the archive directory."
-            "The category must exist in the archive with a .category extension."
-            "If a category with the same name already exists, it will be restored to its original state."
+            "Restore an archived category back into the content directory. "
+            "Accepts either a base folder name ('foods'), which restores the most recent archive, "
+            "or a full archive folder name ('foods_1738456789') to restore a specific snapshot. "
+            "Fails with 409 when a live category already occupies that folder. "
+            "Requires authentication."
     ),
 )
 def categories_restore(
@@ -274,19 +276,22 @@ def categories_rename(
     tags=[TAG_CATEGORIES],
     summary="Remove a content category",
     description=(
-            "Delete a content category permanently. "
-            "This operation cannot be undone and will remove the category and all associated content. "
+            "Remove a content category and all of its items, images and audio. "
+            "When ARCHIVE_DIR is configured the category is moved to the archive and can be restored "
+            "via 'POST /categories/restore'; otherwise it is deleted permanently. "
+            "The response 'archived' and 'removed' flags report which of the two happened. "
+            "Accepts either a category id ('C_Foods') or a folder name ('foods'). "
             "Requires authentication."
     ),
 )
 def categories_remove(
-        category_name: str,
+        category_id: str,
         service: ContentServiceDep,
         _user: dict = Depends(get_current_user),
 ) -> RemoveCategoryResponse:
     """Remove a category."""
     try:
-        result = service.remove_category(category_name)
+        result = service.remove_category_by_id(category_id)
     except CategoryNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except ContentError as exc:

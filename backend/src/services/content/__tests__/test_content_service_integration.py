@@ -20,6 +20,7 @@ from src.api.dependencies import get_current_user
 from src.services.content import routes as content_routes
 from src.services.content.models import (
     ArchiveCategory,
+    ArchiveUnavailableError,
     CategoryConflictError,
     CategoryDetails,
     CategoryImage,
@@ -420,9 +421,9 @@ async def test_create_category_strips_whitespace(tmp_resolved: Path) -> None:
     seen: list[str] = []
 
     class _TrackingProvider(_StubContentProvider):
-        def create_category(self, category_name: str) -> dict[str, Any]:
+        def create_category(self, category_name: str) -> CreateCategory:
             seen.append(category_name)
-            return {"category": category_name, "message": "created"}
+            return CreateCategory(category=category_name, message="created")
 
     app = _make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
@@ -432,8 +433,8 @@ async def test_create_category_strips_whitespace(tmp_resolved: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_create_category_already_exists_returns_409(tmp_resolved: Path) -> None:
-    provider = _StubContentProvider(tmp_resolved).returns(
-        "create_category", {"error": "Category already exists: animals"}
+    provider = _StubContentProvider(tmp_resolved).raises(
+        "create_category", CategoryConflictError("Category already exists: animals")
     )
     app = _make_app(provider, tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
@@ -444,8 +445,8 @@ async def test_create_category_already_exists_returns_409(tmp_resolved: Path) ->
 
 @pytest.mark.asyncio
 async def test_create_category_generic_error_returns_400(tmp_resolved: Path) -> None:
-    provider = _StubContentProvider(tmp_resolved).returns(
-        "create_category", {"error": "TTS failed for en: connection refused"}
+    provider = _StubContentProvider(tmp_resolved).raises(
+        "create_category", ContentOperationError("TTS failed for en: connection refused")
     )
     app = _make_app(provider, tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
@@ -474,9 +475,8 @@ async def test_restore_category_returns_200(client: AsyncClient) -> None:
 
 @pytest.mark.asyncio
 async def test_restore_category_archive_dir_missing_returns_503(tmp_resolved: Path) -> None:
-    provider = _StubContentProvider(tmp_resolved).returns(
-        "restore_category",
-        {"restored": False, "error": "Archive directory does not exist", "message": "n/a"},
+    provider = _StubContentProvider(tmp_resolved).raises(
+        "restore_category", ArchiveUnavailableError("Archive directory does not exist")
     )
     app = _make_app(provider, tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
@@ -486,9 +486,8 @@ async def test_restore_category_archive_dir_missing_returns_503(tmp_resolved: Pa
 
 @pytest.mark.asyncio
 async def test_restore_category_not_found_returns_404(tmp_resolved: Path) -> None:
-    provider = _StubContentProvider(tmp_resolved).returns(
-        "restore_category",
-        {"restored": False, "error": "No archive found for category 'foods'", "message": "n/a"},
+    provider = _StubContentProvider(tmp_resolved).raises(
+        "restore_category", CategoryNotFoundError("No archive found for category 'foods'")
     )
     app = _make_app(provider, tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
@@ -498,9 +497,8 @@ async def test_restore_category_not_found_returns_404(tmp_resolved: Path) -> Non
 
 @pytest.mark.asyncio
 async def test_restore_category_conflict_returns_409(tmp_resolved: Path) -> None:
-    provider = _StubContentProvider(tmp_resolved).returns(
-        "restore_category",
-        {"restored": False, "error": "Category already exists in content directory: foods", "message": "n/a"},
+    provider = _StubContentProvider(tmp_resolved).raises(
+        "restore_category", CategoryConflictError("Category already exists in content directory: foods")
     )
     app = _make_app(provider, tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
@@ -510,9 +508,8 @@ async def test_restore_category_conflict_returns_409(tmp_resolved: Path) -> None
 
 @pytest.mark.asyncio
 async def test_restore_category_generic_error_returns_400(tmp_resolved: Path) -> None:
-    provider = _StubContentProvider(tmp_resolved).returns(
-        "restore_category",
-        {"restored": False, "error": "Failed to restore: permission denied", "message": "n/a"},
+    provider = _StubContentProvider(tmp_resolved).raises(
+        "restore_category", ContentOperationError("Failed to restore: permission denied")
     )
     app = _make_app(provider, tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
@@ -661,25 +658,66 @@ async def test_remove_category_returns_200(client: AsyncClient) -> None:
 async def test_remove_category_archive_result_returns_200(tmp_resolved: Path) -> None:
     provider = _StubContentProvider(tmp_resolved).returns(
         "remove_category",
-        {
-            "archived": True,
-            "name": "foods",
-            "archive_folder": "foods_1000",
-            "destination": "/archive/foods_1000",
-            "message": "archived",
-        },
+        ArchiveCategory(
+            archived=True,
+            name="foods",
+            archive_folder="foods_1000",
+            destination="/archive/foods_1000",
+            message="archived",
+        ),
     )
     app = _make_app(provider, tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         response = await c.delete("/api/v1/content/categories/foods")
     assert response.status_code == 200
-    assert response.json()["archived"] is True
+    body = response.json()
+    assert body["archived"] is True
+    assert body["archive_folder"] == "foods_1000"
+
+
+@pytest.mark.asyncio
+async def test_remove_category_accepts_category_id_in_path(tmp_resolved: Path) -> None:
+    """The path segment must reach the provider — it used to be ignored for a query param."""
+    seen: list[str] = []
+
+    class _TrackingProvider(_StubContentProvider):
+        def category_id_by_name(self, category_name: str) -> str:
+            raise CategoryNotFoundError(category_name)
+
+        def remove_category(self, category_id: str) -> ArchiveCategory:
+            seen.append(category_id)
+            return ArchiveCategory(archived=True, name=category_id, message="archived")
+
+    app = _make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.delete("/api/v1/content/categories/C_Foods")
+    assert response.status_code == 200
+    assert seen == ["C_Foods"]
+
+
+@pytest.mark.asyncio
+async def test_remove_category_resolves_folder_name_to_id(tmp_resolved: Path) -> None:
+    """A folder name in the path is resolved to its registry id, keeping the CLI working."""
+    seen: list[str] = []
+
+    class _TrackingProvider(_StubContentProvider):
+        def category_id_by_name(self, category_name: str) -> str:
+            return f"C_{category_name.title()}"
+
+        def remove_category(self, category_id: str) -> ArchiveCategory:
+            seen.append(category_id)
+            return ArchiveCategory(archived=True, name=category_id, message="archived")
+
+    app = _make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        await c.delete("/api/v1/content/categories/foods")
+    assert seen == ["C_Foods"]
 
 
 @pytest.mark.asyncio
 async def test_remove_category_not_found_returns_404(tmp_resolved: Path) -> None:
-    provider = _StubContentProvider(tmp_resolved).returns(
-        "remove_category", {"error": "Category not found", "name": "foods", "message": "not found"}
+    provider = _StubContentProvider(tmp_resolved).raises(
+        "remove_category", CategoryNotFoundError("Category not found")
     )
     app = _make_app(provider, tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
@@ -689,9 +727,8 @@ async def test_remove_category_not_found_returns_404(tmp_resolved: Path) -> None
 
 @pytest.mark.asyncio
 async def test_remove_category_generic_error_returns_400(tmp_resolved: Path) -> None:
-    provider = _StubContentProvider(tmp_resolved).returns(
-        "remove_category",
-        {"error": "Permission denied", "name": "foods", "message": "failed"},
+    provider = _StubContentProvider(tmp_resolved).raises(
+        "remove_category", ContentOperationError("Permission denied")
     )
     app = _make_app(provider, tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:

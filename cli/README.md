@@ -58,9 +58,9 @@ Run `kiddo-cli --help`, `kiddo-cli common --help`, `kiddo-cli content --help`, `
 | Command | Description |
 |---------|-------------|
 | [`content categories`](cli/src/kiddo_cli/commands/content_commands.py#L16) | List content categories. Options: `--include-archived`, `--archived-only`. |
-| [`content create-category --name <n>`](cli/src/kiddo_cli/commands/content_commands.py#L35) | Create a category (folder, voices per language, icon). |
+| [`content create-category --name <n>`](cli/src/kiddo_cli/commands/content_commands.py#L35) | Create a category (folder, voices per language, icon). The name is normalized to lowercase snake_case, so `"At School"` becomes folder `at_school` with id `C_AtSchool`. |
 | [`content rename-category <old> --to <new>`](cli/src/kiddo_cli/commands/content_commands.py#L48) | Rename a category (folder + regenerate voices). |
-| [`content remove-category <name>`](cli/src/kiddo_cli/commands/content_commands.py#L75) | Remove a category (archive if `ARCHIVE_DIR` is set, else delete permanently). |
+| [`content remove-category <name>`](cli/src/kiddo_cli/commands/content_commands.py#L75) | Remove a category (archive if `ARCHIVE_DIR` is set, else delete permanently). Accepts a folder name (`foods`) or an id (`C_Foods`). |
 | [`content restore-category <name>`](cli/src/kiddo_cli/commands/content_commands.py#L62) | Restore a category from archive (name or archive folder like `foods_1738...`). |
 | [`content category-details <name>`](cli/src/kiddo_cli/commands/content_commands.py#L88) | Show category details. |
 | [`content create-item`](cli/src/kiddo_cli/commands/content_commands.py#L100) | Create a new content item (image). |

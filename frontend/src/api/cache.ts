@@ -1,5 +1,5 @@
 import { ref, shallowRef } from 'vue'
-import type { CategoryFull, Item, Voice } from '../types/viewModels'
+import type { ArchivedCategory, CategoryFull, Item, Voice } from '../types/viewModels'
 import { LocalizedString } from '../types/viewModels'
 import {
   categoriesList,
@@ -42,6 +42,9 @@ export const sharedCategories = shallowRef<CategoryFull[]>([])
 
 /** id → english name mapping for the shared categories. */
 export const sharedCategoryNames = ref(new Map<string, string>())
+
+/** Categories currently sitting in the archive, most recently archived first. */
+export const sharedArchivedCategories = shallowRef<ArchivedCategory[]>([])
 
 /** Whether the basic category list is currently loading. */
 export const sharedLoading = ref(false)
@@ -117,7 +120,15 @@ const normalizeVoices = (
 
 async function _loadCategoriesBasic(): Promise<CategoryFull[]> {
   try {
-    const list = await categoriesList()
+    const list = await categoriesList({ includeArchived: true })
+    // Assigned before the empty-list guard below, so an installation whose every
+    // category is archived still shows its archive.
+    sharedArchivedCategories.value = (list.archived ?? []).map((entry) => ({
+      baseName: entry.base_name,
+      archiveFolder: entry.archive_folder,
+      archivedAt: entry.archived_at,
+    }))
+
     if (!list.categories.length) {
       sharedCategories.value = []
       sharedCategoryNames.value = new Map()
@@ -194,6 +205,7 @@ async function _loadCategoriesBasic(): Promise<CategoryFull[]> {
 export const invalidateCategoriesCache = (): void => {
   sharedCategories.value = []
   sharedCategoryNames.value = new Map()
+  sharedArchivedCategories.value = []
   loadedCategoryDetailIds.clear()
   loadedItemIds.clear()
   failedCategoryIds.clear()

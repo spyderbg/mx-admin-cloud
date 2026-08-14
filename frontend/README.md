@@ -107,7 +107,7 @@ src/
 | Path                                      | View                                  | Layout                    | Description                               |
 | ----------------------------------------- | ------------------------------------- | ------------------------- | ----------------------------------------- |
 | `/login`                                  | `LoginView`                           | None (full-page)          | Authentication screen                     |
-| `/`                                       | —                                     | —                         | Redirects to `/categories`                |
+| `/`                                       | `[DashboardView](#dashboardview)`     | `[AppLayout](#applayout)` | Category cards, add + archived categories |
 | `/categories`                             | `[CategoriesView](#categoriesview)`   | `[AppLayout](#applayout)` | Shows first category by default           |
 | `/categories/:categoryId`                 | `[CategoriesView](#categoriesview)`   | `[AppLayout](#applayout)` | Selected category details + image grid    |
 | `/categories/:categoryId/items/:itemId` | `[ItemDetailView](#itemdetailview)` | `[AppLayout](#applayout)` | Item detail: files, voices, name editing |
@@ -145,6 +145,19 @@ The main authenticated shell, wrapping all `/categories` routes:
 
 Full-page authentication screen (Star Admin auth theme). Uses `LoginForm` component with username/password fields, "Keep me signed in", and Google login placeholder.
 
+### DashboardView
+
+Landing page after login — a card grid of the active categories plus the category lifecycle controls:
+
+- **Add New Category** — button in the page header (kept outside the loading/error/empty branches so it is still
+  reachable when no categories exist). Opens `AddCategoryModal`.
+- **Archived Categories** — collapsible section below the grid, shown only when the archive is non-empty. Each row
+  lists the base folder name, a relative "archived N days ago" label, and a **Restore** button. Restore posts the
+  full archive folder name, so the exact snapshot is restored rather than the most recent one.
+
+Both actions call `invalidateCategoriesCache()` + `ensureCategoriesLoaded()` and then navigate to the resulting
+category.
+
 ### CategoriesView
 
 Displayed when a category is selected (or defaults to first category):
@@ -153,6 +166,11 @@ Displayed when a category is selected (or defaults to first category):
 - **Page header** -- `h3.page-title` with localized category label + `toPascalCaseWords` (navbar content language; no edit control on the title)
 - **CategoryDetail card** -- **Category Name** and each **voice-card** word use `ServerWord` (category row: localized + rename modal; voice row: `voice.name` as-is, pencil → **Edit word** modal, `rename-voice` emit). Two-row layout: **Category Icon** (`aspect-ratio: 1 / 1`, `object-fit: contain`) and **Category Voices** share a baseline; voice grid `repeat(auto-fit, minmax(7.5rem, 1fr))`; play + **Upload** (audio); corner **delete** icon opens **Delete or reset voice** confirmation, then `delete-voice` emit; modals mutually exclusive
 - **ItemGrid** -- responsive 4-column grid of item thumbnails, each with a pencil edit-icon badge. If an item has no `thumbnailUri` or file entries, a built-in camera placeholder is shown. Clicking navigates to ItemDetailView.
+- **Archive category** -- outlined red button at the top right of the `CategoryDetail` card. Its confirmation modal
+  requires the category id to be typed out before the action is enabled, because the backend deletes permanently when
+  `ARCHIVE_DIR` is unset and the frontend cannot tell which will happen. `CategoriesView` performs the request, then
+  redirects to the first remaining category (or the dashboard) and reports the outcome: a green toast when the response
+  says `archived`, an amber one when it says `removed`.
 
 ### ItemDetailView
 
@@ -170,10 +188,18 @@ Displayed for a specific image within a category:
 | Component        | Props                                   | Emits                                                                    | Purpose                                         |
 | ---------------- | --------------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------- |
 | `ServerWord`     | `category` and/or `text` + style props  | `edit`                                                                   | Label + pencil; `text` overrides display source |
-| `CategoryDetail` | `category: CategoryFull`                | `edit`, `delete`, `rename`, `edit-voice`, `rename-voice`, `delete-voice` | Category info card with voice list              |
+| `CategoryDetail` | `category: CategoryFull`, `archiving?: boolean` | `edit`, `delete`, `rename`, `archive`, `edit-voice`, `rename-voice`, `delete-voice` | Category info card with voice list and archive action |
+| `AddCategoryModal` | `show: boolean`, `existingFolderNames: string[]` | `close`, `created` | Create-category modal with name normalization and busy state |
 | `ItemGrid`       | `items: Item[]`, `categoryId: string` | —                                                                        | Thumbnail grid with camera fallback for missing items |
 | `LoginForm`      | —                                       | —                                                                        | Login form with auth API integration            |
 
+
+**AddCategoryModal** — Normalizes the typed name to the folder name the backend will create (lowercase snake_case) and
+previews the resulting id, e.g. `at school` → folder `at_school`, id `C_AtSchool`. Create stays disabled for names
+outside `[a-z0-9_]+` and for names already taken. The request runs translation, TTS for every language and DALL·E icon
+generation server-side, so the modal locks itself and shows a spinner instead of closing optimistically; failures are
+shown inline so the typed name is not lost. `src/utils/categoryIds.ts` holds the id ⇄ folder-name helpers that mirror
+the backend derivations.
 
 **ServerWord** — Source: non-empty `text` is shown as-is; otherwise `localizedCategoryLabel(category, content language)`. `pascalCase` runs `toPascalCaseWords` on that raw string. Styling: `rootClass`, `textClass`, `buttonClass`, `iconClass`, `iconStyle`; `textTag` (default `h5`, `mb-0` only for `h5`); `inheritAttrs: false` with class/style on the root merged from `$attrs` + `rootClass`. DOM hooks: `server-word-root`, `server-word-text`, `server-word-edit`, `server-word-icon`.
 

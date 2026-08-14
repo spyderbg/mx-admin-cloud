@@ -54,8 +54,8 @@ export const categoriesRename = async (categoryId: string, body: RenameCategoryB
 }
 
 /** Remove a content category */
-export const categoriesRemove = async (params?: { categoryName?: string }): Promise<RemoveCategoryResponse> => {
-  const r = await client.delete<RemoveCategoryResponse>('/content/categories/{category_id}', { params: { category_name: params?.categoryName } })
+export const categoriesRemove = async (categoryId: string): Promise<RemoveCategoryResponse> => {
+  const r = await client.delete<RemoveCategoryResponse>(`/content/categories/${categoryId}`)
   return r.data
 }
 

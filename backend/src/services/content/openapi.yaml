@@ -492,6 +492,11 @@ components:
         "archived" and "removed" are optional.'
     RenameCategoryBody:
       properties:
+        new_category_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: New Category Id
         category_name:
           additionalProperties:
             type: string
@@ -520,12 +525,20 @@ components:
         message:
           type: string
           title: Message
+        category_id:
+          type: string
+          title: Category Id
+        old_category_id:
+          type: string
+          title: Old Category Id
       type: object
       required:
       - category
       - message
+      - category_id
+      - old_category_id
       title: RenameCategoryResponse
-      description: Response for PATCH /content/categories/{name}.
+      description: Response for PATCH /content/categories/{category_id}.
     RestoreCategoryBody:
       properties:
         name:
@@ -705,9 +718,10 @@ paths:
       tags:
       - Categories
       summary: Restore a category from archive
-      description: Restores a category from the archive directory.The category must
-        exist in the archive with a .category extension.If a category with the same
-        name already exists, it will be restored to its original state.
+      description: Restore an archived category back into the content directory. Accepts
+        either a base folder name ('foods'), which restores the most recent archive,
+        or a full archive folder name ('foods_1738456789') to restore a specific snapshot.
+        Fails with 409 when a live category already occupies that folder. Requires authentication.
       operationId: categories_restore_api_v1_content_categories_restore_post
       requestBody:
         content:
@@ -799,18 +813,22 @@ paths:
       tags:
       - Categories
       summary: Remove a content category
-      description: Delete a content category permanently. This operation cannot be undone
-        and will remove the category and all associated content. Requires authentication.
+      description: Remove a content category and all of its items, images and audio.
+        When ARCHIVE_DIR is configured the category is moved to the archive and can
+        be restored via 'POST /categories/restore'; otherwise it is deleted permanently.
+        The response 'archived' and 'removed' flags report which of the two happened.
+        Accepts either a category id ('C_Foods') or a folder name ('foods'). Requires
+        authentication.
       operationId: categories_remove_api_v1_content_categories__category_id__delete
       security:
       - OAuth2PasswordBearer: []
       parameters:
-      - name: category_name
-        in: query
+      - name: category_id
+        in: path
         required: true
         schema:
           type: string
-          title: Category Name
+          title: Category Id
       responses:
         '200':
           description: Successful Response

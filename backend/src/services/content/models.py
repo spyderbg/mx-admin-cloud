@@ -243,7 +243,11 @@ class ContentProvider(ServiceProvider, ABC):
 
     @abstractmethod
     def archive_category(self, category_id: str) -> ArchiveCategory:
-        """Move a category from the content directory to the archive."""
+        """Move a category from the content directory to the archive.
+
+        Implementations must leave the archive self-describing, so that
+        restore_category() can rebuild the category's root CSV registry rows.
+        """
 
     @abstractmethod
     def update_category_details(
@@ -263,8 +267,14 @@ class ContentProvider(ServiceProvider, ABC):
         """Remove a category (archive if configured, else delete permanently)."""
 
     @abstractmethod
-    def restore_category(self, category_id: str) -> RestoreCategory:
-        """Restore a category from the archive to the content directory."""
+    def restore_category(self, name: str) -> RestoreCategory:
+        """Restore a category from the archive to the content directory.
+
+        Args:
+            name (str): Base folder name ('foods'), restoring the most recent archive,
+                or a full archive folder name ('foods_1738456789'). Not a registry id —
+                archive_category() removes the category's rows from the root CSVs.
+        """
 
     @abstractmethod
     def create_item(

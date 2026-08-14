@@ -18,9 +18,11 @@
     </div>
     <CategoryDetail
       :category="category"
+      :archiving="archiving"
       @edit="onEditCategory"
       @delete="onDeleteCategory"
       @rename="onRenameCategory"
+      @archive="onArchiveCategory"
       @edit-voice="onEditVoice"
       @rename-voice="onRenameVoice"
       @delete-voice="onDeleteVoice"
@@ -101,9 +103,9 @@
     <div
       v-if="toast"
       class="cd-toast"
-      :class="toast.variant === 'error' ? 'cd-toast-error' : 'cd-toast-success'"
+      :class="`cd-toast-${toast.variant}`"
     >
-      <i :class="toast.variant === 'error' ? 'mdi mdi-alert-circle' : 'mdi mdi-check-circle'"></i>
+      <i :class="toast.variant === 'success' ? 'mdi mdi-check-circle' : 'mdi mdi-alert-circle'"></i>
       <span>{{ toast.message }}</span>
     </div>
   </Teleport>
@@ -124,7 +126,7 @@ import {
 } from '../api/cache'
 import { readUiConfiguration, writeUiConfiguration } from '../api/uiConfigurationDb'
 import { LocalizedString, SUPPORTED_LANGUAGES, type Language, type Voice } from '../types/viewModels'
-import { categoriesRename, createItemEndpoint } from '../api/contentClient'
+import { categoriesRemove, categoriesRename, createItemEndpoint } from '../api/contentClient'
 import CategoryDetail from '../components/CategoryDetail.vue'
 import ItemGrid from '../components/ItemGrid.vue'
 import { useContentLanguage } from '../composables/useContentLanguage'
@@ -275,13 +277,35 @@ const onRenameCategory = async (name: string, language?: Language): Promise<void
     console.error('Failed to rename category:', error)
   }
 }
+const archiving = ref(false)
+
+const onArchiveCategory = async (): Promise<void> => {
+  const currentCategory = category.value
+  if (!currentCategory || archiving.value) return
+
+  archiving.value = true
+  try {
+    const result = await categoriesRemove(currentCategory.id)
+    // 'removed' means ARCHIVE_DIR was unset server-side and the content is gone for good.
+    showToast(result.message, result.archived ? 'success' : 'warning')
+
+    invalidateCategoriesCache()
+    await ensureCategoriesLoaded()
+    await router.replace({ name: 'dashboard' })
+  } catch (err) {
+    showToast(extractErrorMessage(err), 'error')
+  } finally {
+    archiving.value = false
+  }
+}
+
 const onEditVoice = (): void => {}
 const onRenameVoice = async (voice: Voice, name: string): Promise<void> => {
   await onRenameCategory(name, voice.language)
 }
 const onDeleteVoice = (): void => {}
 
-type ToastVariant = 'success' | 'error'
+type ToastVariant = 'success' | 'error' | 'warning'
 const toast = ref<{ message: string; variant: ToastVariant } | null>(null)
 let toastTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -422,5 +446,8 @@ async function confirmAddItem(): Promise<void> {
 }
 .cd-toast-error {
   background: #dc2626;
+}
+.cd-toast-warning {
+  background: #d97706;
 }
 </style>

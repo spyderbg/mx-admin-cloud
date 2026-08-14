@@ -43,3 +43,13 @@ export interface CategoryFull {
     voices: Voice[]
     items: Item[]
 }
+
+/** A category that lives in the archive rather than the content directory. */
+export interface ArchivedCategory {
+    /** Folder name the category is restored back to, e.g. 'foods'. */
+    baseName: string
+    /** Archive snapshot folder, e.g. 'foods_1738456789'. */
+    archiveFolder: string
+    /** Unix seconds, taken from the archive folder suffix. */
+    archivedAt: number
+}

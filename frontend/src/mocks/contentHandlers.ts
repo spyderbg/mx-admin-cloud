@@ -10,6 +10,13 @@ interface ArchivedEntry {
 
 const archivedCategories: ArchivedEntry[] = []
 
+/**
+ * Removed category records, keyed by archive folder. The real backend moves the whole
+ * category folder into the archive and moves it back on restore, so the mock has to
+ * keep the record around to restore the items with it.
+ */
+const archivedRecords = new Map<string, CategoryRecord>()
+
 const slugify = (value: string): string =>
   value
     .trim()
@@ -146,26 +153,34 @@ export const contentHandlers = [
     const body = (await request.json()) as { name?: string }
     const name = body.name?.trim()
     if (!name) return HttpResponse.json({ restored: false, message: 'Name is required' }, { status: 422 })
-    const index = archivedCategories.findIndex((entry) => entry.base_name.toLowerCase() === name.toLowerCase())
+    // Accepts a base folder name or a full archive folder name, like the backend.
+    const lowered = name.toLowerCase()
+    const index = archivedCategories.findIndex(
+      (entry) => entry.archive_folder.toLowerCase() === lowered || entry.base_name.toLowerCase() === lowered,
+    )
     if (index < 0) {
       return HttpResponse.json({ restored: false, message: 'Category not found in archive' }, { status: 404 })
     }
     const archived = archivedCategories.splice(index, 1)[0]
-    if (!findCategory(name)) {
-      mockCategories.push({
-        id: slugify(name),
-        name: { en: name },
-        description: {},
-        images: [],
-        archived: false,
-        thumbnailUri: '',
-        voices: [],
-        items: [],
-      })
+    const record = archivedRecords.get(archived.archive_folder)
+    archivedRecords.delete(archived.archive_folder)
+    if (!findCategory(archived.base_name)) {
+      mockCategories.push(
+        record ?? {
+          id: slugify(archived.base_name),
+          name: { en: archived.base_name },
+          description: {},
+          images: [],
+          archived: false,
+          thumbnailUri: '',
+          voices: [],
+          items: [],
+        },
+      )
     }
     return HttpResponse.json({
       restored: true,
-      name,
+      name: archived.base_name,
       from_archive: archived.archive_folder,
       message: 'Category restored',
     })
@@ -205,14 +220,19 @@ export const contentHandlers = [
     const category = findCategoryById(String(params.category_id))
     if (!category) return new HttpResponse(null, { status: 404 })
     const idx = mockCategories.findIndex((entry) => entry.id === category.id)
-    mockCategories.splice(idx, 1)
+    const [removed] = mockCategories.splice(idx, 1)
     const removedName = category.name['en'] ?? category.id
-    const archiveFolder = `${slugify(removedName)}-${Date.now()}`
+    // Mirrors the backend's '{folder}_{unix_seconds}' convention, which the UI parses
+    // for the relative "archived N days ago" label and sends back on restore.
+    const baseName = slugify(removedName)
+    const archivedAt = Math.floor(Date.now() / 1000)
+    const archiveFolder = `${baseName}_${archivedAt}`
     archivedCategories.push({
-      base_name: removedName,
+      base_name: baseName,
       archive_folder: archiveFolder,
-      archived_at: Date.now(),
+      archived_at: archivedAt,
     })
+    archivedRecords.set(archiveFolder, removed)
     return HttpResponse.json({
       archived: true,
       removed: null,

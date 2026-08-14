@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import csv
+import json
 import re
 import shutil
 import time
@@ -57,6 +58,10 @@ _ITEMS_IDS = "items_ids.csv"
 _ITEMS_LANG_CSV = "items_{}.csv"
 _CATEGORY_VOICE_MP3 = "{}_{}.mp3"
 _ITEM_VOICE_MP3 = "{}_{}_01.mp3"
+
+# Written into a category folder when it is archived, so restore_category() can rebuild
+# the root CSV registry rows that archive_category() deletes.
+_ARCHIVE_MANIFEST = "_category.json"
 
 
 class FileSystemContentProvider(ContentProvider):
@@ -155,6 +160,16 @@ class FileSystemContentProvider(ContentProvider):
         return bool(name) and bool(_SAFE_NAME_RE.match(name))
 
     @staticmethod
+    def _normalize_category_name(name: str) -> str:
+        """Return the canonical folder name for a requested category name.
+
+        Folder names must be lowercase snake_case: every read path derives the folder
+        back from the id via _folder_name_from_category_id(), which snake_cases it, so
+        a folder created as 'AtSchool' would never be found again ('at_school').
+        """
+        return re.sub(r"[\s-]+", "_", (name or "").strip()).lower()
+
+    @staticmethod
     def _category_name_to_icon_prompt(category_name: str) -> str:
         """Derive a short, child-friendly icon prompt from a category name."""
         label = category_name.replace("_", " ").strip()
@@ -168,6 +183,45 @@ class FileSystemContentProvider(ContentProvider):
         file_path.parent.mkdir(parents=True, exist_ok=True)
         with open(file_path, "a", newline="", encoding="utf-8") as fh:
             fh.write(line.strip() + "\n")
+
+    @staticmethod
+    def _read_csv_rows_aligned(file_path: Path) -> list[str]:
+        """Return first-column values, keeping blank rows so row indexes stay aligned.
+
+        Unlike _read_csv_column(), blanks are preserved. The root category registry
+        addresses every language CSV by row index, so dropping a blank row here would
+        silently shift every category below it onto the wrong name or description.
+        """
+        try:
+            with open(file_path, newline="", encoding="utf-8") as fh:
+                return [(r[0].strip() if r else "") for r in csv.reader(fh)]
+        except (OSError, csv.Error):
+            return []
+
+    @classmethod
+    def _set_csv_row_aligned(cls, file_path: Path, index: int, value: str) -> None:
+        """Write *value* at *index*, padding with blank rows and preserving existing ones."""
+        rows = cls._read_csv_rows_aligned(file_path)
+        while len(rows) <= index:
+            rows.append("")
+        rows[index] = value
+        cls._write_csv_rows(file_path, rows)
+
+    @classmethod
+    def _remove_csv_row_aligned(cls, file_path: Path, index: int) -> None:
+        """Remove the row at *index*, shifting later rows up and preserving blanks."""
+        rows = cls._read_csv_rows_aligned(file_path)
+        if 0 <= index < len(rows):
+            del rows[index]
+            cls._write_csv_rows(file_path, rows)
+
+    @staticmethod
+    def _write_csv_rows(file_path: Path, rows: list[str]) -> None:
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(file_path, "w", newline="", encoding="utf-8") as fh:
+            writer = csv.writer(fh, lineterminator="\n")
+            for row in rows:
+                writer.writerow([row])
 
     @staticmethod
     def _first_available_image_index(object_folder: Path) -> int:
@@ -392,6 +446,89 @@ class FileSystemContentProvider(ContentProvider):
                 pass
         return descriptions
 
+    def _register_category_rows(
+            self,
+            category_id: str,
+            names: dict[str, str],
+            descriptions: dict[str, str] | None = None,
+    ) -> int:
+        """Add *category_id* to the root CSV registry and return its row index.
+
+        Reuses an existing row when the id is already registered, so re-creating a
+        previously removed category cannot leave two rows with the same id — which
+        _category_row_index() would resolve to the first of them.
+        """
+        root = self._content_root()
+        ids = self._read_csv_rows_aligned(root / _CATEGORIES_IDS)
+        if category_id in ids:
+            index = ids.index(category_id)
+        else:
+            index = len(ids)
+            self._set_csv_row_aligned(root / _CATEGORIES_IDS, index, category_id)
+
+        for lang in settings.SUPPORTED_LANGUAGES:
+            label = names.get(lang, "")
+            if label:
+                self._set_csv_row_aligned(root / _CATEGORIES_LANG_CSV.format(lang), index, label)
+            description = (descriptions or {}).get(lang, "")
+            if description:
+                self._set_csv_row_aligned(root / _DESCRIPTIONS_LANG_CSV.format(lang), index, description)
+        return index
+
+    def _unregister_category_rows(self, category_id: str) -> None:
+        """Remove *category_id*'s row from the root id, name and description CSVs."""
+        root = self._content_root()
+        ids = self._read_csv_rows_aligned(root / _CATEGORIES_IDS)
+        if category_id not in ids:
+            return
+        index = ids.index(category_id)
+        for lang in settings.SUPPORTED_LANGUAGES:
+            self._remove_csv_row_aligned(root / _CATEGORIES_LANG_CSV.format(lang), index)
+            self._remove_csv_row_aligned(root / _DESCRIPTIONS_LANG_CSV.format(lang), index)
+        self._remove_csv_row_aligned(root / _CATEGORIES_IDS, index)
+
+    def _write_archive_manifest(self, category_path: Path, category_id: str) -> None:
+        """Persist the category's registry rows into the folder about to be archived."""
+        folder_name = category_path.name
+        _, names_by_folder = self._load_category_localized_names()
+        manifest = {
+            "id": category_id,
+            "folder": folder_name,
+            "names": names_by_folder.get(folder_name.lower(), {}),
+            "descriptions": self._load_category_localized_descriptions(folder_name),
+        }
+        try:
+            with open(category_path / _ARCHIVE_MANIFEST, "w", encoding="utf-8") as fh:
+                json.dump(manifest, fh, ensure_ascii=False, indent=2)
+        except OSError as exc:
+            raise ContentOperationError(f"Failed to write archive manifest: {exc}") from exc
+
+    @staticmethod
+    def _read_archive_manifest(category_path: Path, base_name: str) -> dict[str, dict[str, str] | str]:
+        """Read a restored folder's manifest, deriving defaults for pre-manifest archives."""
+        fallback: dict[str, dict[str, str] | str] = {
+            "id": f"C_{base_name}",
+            "folder": base_name,
+            "names": {"en": base_name.replace("_", " ")},
+            "descriptions": {},
+        }
+        manifest_path = category_path / _ARCHIVE_MANIFEST
+        if not manifest_path.is_file():
+            return fallback
+        try:
+            with open(manifest_path, encoding="utf-8") as fh:
+                loaded = json.load(fh)
+        except (OSError, ValueError):
+            return fallback
+        if not isinstance(loaded, dict) or not loaded.get("id"):
+            return fallback
+        return {
+            "id": str(loaded["id"]),
+            "folder": str(loaded.get("folder") or base_name),
+            "names": loaded.get("names") or fallback["names"],
+            "descriptions": loaded.get("descriptions") or {},
+        }
+
     # ------------------------------------------------------------------
     # ContentProvider interface
     # ------------------------------------------------------------------
@@ -561,6 +698,7 @@ class FileSystemContentProvider(ContentProvider):
         return voices
 
     def create_category(self, category_name: str) -> CreateCategory:
+        category_name = self._normalize_category_name(category_name)
         if not self._is_safe_category_name(category_name):
             raise InvalidCategoryNameError(category_name)
         category_path = self._category_path(category_name)
@@ -602,14 +740,14 @@ class FileSystemContentProvider(ContentProvider):
         except OSError as exc:
             raise ContentOperationError(f"Icon file write failed: {exc}") from exc
 
-        root = self._content_root()
-        category_id = f"C_{category_name}"
-        self._append_csv_line(root / _CATEGORIES_IDS, category_id)
-        for lang in settings.SUPPORTED_LANGUAGES:
-            self._append_csv_line(
-                root / _CATEGORIES_LANG_CSV.format(lang),
-                labels_by_lang.get(lang, category_name.replace("_", " ").strip()),
-            )
+        fallback_label = category_name.replace("_", " ").strip()
+        # PascalCase to match the registry convention ('at_school' -> 'C_AtSchool'), so the id
+        # round-trips through _folder_name_from_category_id() and cannot collide with an
+        # existing row for the same folder under different casing.
+        self._register_category_rows(
+            f"C_{self._to_pascal(category_name)}",
+            {lang: labels_by_lang.get(lang) or fallback_label for lang in settings.SUPPORTED_LANGUAGES},
+        )
 
         return CreateCategory(category=category_name, message=f"Category '{category_name}' created.")
 
@@ -908,20 +1046,25 @@ class FileSystemContentProvider(ContentProvider):
         archive_root.mkdir(parents=True, exist_ok=True)
         archive_folder_name = f"{category_name}_{int(time.time())}"
         dest = archive_root / archive_folder_name
+        # Written before the move so the manifest travels with the folder.
+        self._write_archive_manifest(category_path, category_id)
         try:
             shutil.move(str(category_path), str(dest))
-            return ArchiveCategory(
-                archived=True,
-                name=category_name,
-                archive_folder=archive_folder_name,
-                destination=str(dest),
-                message=(
-                    f"Category '{category_name}' has been archived to "
-                    f"{archive_folder_name} and removed from content."
-                ),
-            )
         except (OSError, shutil.Error) as exc:
+            (category_path / _ARCHIVE_MANIFEST).unlink(missing_ok=True)
             raise ContentOperationError(f"Failed to archive category: {exc}") from exc
+
+        self._unregister_category_rows(category_id)
+        return ArchiveCategory(
+            archived=True,
+            name=category_name,
+            archive_folder=archive_folder_name,
+            destination=str(dest),
+            message=(
+                f"Category '{category_name}' has been archived to "
+                f"{archive_folder_name} and removed from content."
+            ),
+        )
 
     def update_category_details(
             self,
@@ -1050,6 +1193,7 @@ class FileSystemContentProvider(ContentProvider):
             return self.archive_category(category_id)
         try:
             shutil.rmtree(category_path)
+            self._unregister_category_rows(category_id)
             return ArchiveCategory(
                 removed=True,
                 name=category_name,
@@ -1058,27 +1202,19 @@ class FileSystemContentProvider(ContentProvider):
         except (OSError, shutil.Error) as exc:
             raise ContentOperationError(f"Failed to delete category: {exc}") from exc
 
-    def restore_category(
-            self,
-            category_id: str,
-    ) -> RestoreCategory:
-        cid = (category_id or "").strip()
-        if not cid:
-            raise InvalidCategoryNameError("No category id provided")
+    def restore_category(self, name: str) -> RestoreCategory:
+        requested = (name or "").strip()
+        if not requested:
+            raise InvalidCategoryNameError("No category name provided")
 
         content_root = self._content_root()
         archive_root = self._archive_root()
         if not archive_root.exists() or not archive_root.is_dir():
             raise ArchiveUnavailableError("Archive directory does not exist")
 
-        base_name = self._folder_name_for_id(cid)
-        candidates = self._archive_folders_for_base(archive_root, base_name)
-        if not candidates:
-            raise CategoryNotFoundError(f"No archive found for category '{base_name}'")
-        archive_folder = candidates[0][0]
-
+        base_name, archive_folder = self._resolve_archive_folder(archive_root, requested)
         archive_path = archive_root / archive_folder
-        if not archive_path.exists() or not archive_path.is_dir():
+        if not archive_path.is_dir():
             raise CategoryNotFoundError(f"Archive folder not found: {archive_folder}")
 
         content_dest = content_root / base_name
@@ -1086,14 +1222,35 @@ class FileSystemContentProvider(ContentProvider):
             raise CategoryConflictError(f"Category already exists in content directory: {base_name}")
 
         try:
-            shutil.copytree(archive_path, content_dest)
-            return RestoreCategory(
-                name=base_name,
-                from_archive=archive_folder,
-                message=f"Restored category '{base_name}' from archive '{archive_folder}'.",
-            )
+            # Move rather than copy, so the snapshot is consumed and a second restore of the
+            # same archive cannot conflict with the category it just recreated.
+            shutil.move(str(archive_path), str(content_dest))
         except (OSError, shutil.Error) as exc:
             raise ContentOperationError(f"Failed to restore category: {exc}") from exc
+
+        manifest = self._read_archive_manifest(content_dest, base_name)
+        names = manifest["names"] if isinstance(manifest["names"], dict) else {}
+        descriptions = manifest["descriptions"] if isinstance(manifest["descriptions"], dict) else {}
+        self._register_category_rows(str(manifest["id"]), names, descriptions)
+        (content_dest / _ARCHIVE_MANIFEST).unlink(missing_ok=True)
+
+        return RestoreCategory(
+            name=base_name,
+            from_archive=archive_folder,
+            message=f"Restored category '{base_name}' from archive '{archive_folder}'.",
+        )
+
+    def _resolve_archive_folder(self, archive_root: Path, requested: str) -> tuple[str, str]:
+        """Return (base_name, archive_folder) for a base name or a full archive folder name."""
+        match = re.match(r"^(.+)_(\d+)$", requested)
+        if match and (archive_root / requested).is_dir():
+            return match.group(1), requested
+
+        base_name = self._normalize_category_name(requested)
+        candidates = self._archive_folders_for_base(archive_root, base_name)
+        if not candidates:
+            raise CategoryNotFoundError(f"No archive found for category '{base_name}'")
+        return base_name, candidates[0][0]
 
     def _item_folder_for_id(self, category_path: Path, item_id: str) -> str | None:
         """Return the filesystem folder name for the given item_id, or None if not found."""

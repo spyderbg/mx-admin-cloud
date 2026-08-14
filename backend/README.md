@@ -154,7 +154,10 @@ Env (see `src/core/config.py`):
 - `DEBUG_MODE` — if true, `/api/v1/users` skips Unix socket + admin dependency checks
 - `CONTENT_DIR` — content data path
 - `ARCHIVE_DIR` — directory for archived (removed) categories. If empty, remove deletes categories permanently instead
-  of archiving.
+  of archiving. Removing a category also deletes its rows from the root `categories_ids.csv` / `categories_{lang}.csv` /
+  `descriptions_{lang}.csv` registry. Archiving first writes a `_category.json` manifest into the archived folder holding
+  the id, names and descriptions, so restore can rebuild those rows; restore moves the snapshot back and removes the
+  manifest.
 - `OPENAI_API_KEY` — required for TTS, translation, and category icon generation (create/rename category, create
   object).
 - `ELEVENLABS_API_KEY` — ElevenLabs TTS provider (optional)
@@ -190,12 +193,12 @@ Base URL for all routes below: `/api/v1`. Protected routes require `Authorizatio
 | Method   | Path                                                          | Auth | Description                                                                      |
 |----------|---------------------------------------------------------------|------|----------------------------------------------------------------------------------|
 | `GET`    | [/content/categories](src/services/content/routes.py)         | Yes  | List categories. Query: `include_archived`, `archived_only`.                     |
-| `POST`   | [/content/categories](src/services/content/routes.py)         | Yes  | Create a category. Body: `{"name": "..."}`. Returns 201.                         |
-| `POST`   | [/content/categories/restore](src/services/content/routes.py) | Yes  | Restore a category from archive. Body: `{"name": "..."}`.                        |
+| `POST`   | [/content/categories](src/services/content/routes.py)         | Yes  | Create a category. Body: `{"name": "..."}`. Returns 201. Name is normalized to lowercase snake_case. |
+| `POST`   | [/content/categories/restore](src/services/content/routes.py) | Yes  | Restore from archive. Body: `{"name": "..."}` — a folder name (newest archive) or an archive folder. |
 | `GET`    | [/content/categories/{name}](src/services/content/routes.py)  | Yes  | Category details by name.                                                        |
 | `PUT`    | [/content/categories/{name}](src/services/content/routes.py)  | Yes  | Update category name or description. **Stub (501).**                             |
 | `PATCH`  | [/content/categories/{name}](src/services/content/routes.py)  | Yes  | Rename category. Body: `{"name": "..."}`.                                        |
-| `DELETE` | [/content/categories/{name}](src/services/content/routes.py)  | Yes  | Remove category. Archives if `ARCHIVE_DIR` set; otherwise deletes.               |
+| `DELETE` | [/content/categories/{name}](src/services/content/routes.py)  | Yes  | Remove category by id or folder name. Archives if `ARCHIVE_DIR` set; else deletes. |
 | `POST`   | [/content/items](src/services/content/routes.py)              | Yes  | Create a content item. Multipart: `image`, `category`, `item`. Returns 201.      |
 
 #### Category Voices (stub — 501)
