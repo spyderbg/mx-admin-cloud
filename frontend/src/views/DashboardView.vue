@@ -11,7 +11,7 @@
 
     <p v-else-if="error" class="text-danger text-center py-5">{{ failedToLoadCategoriesLabel(contentLanguage) }}</p>
 
-    <div v-if="cards.length === 0" class="text-center py-5">
+    <div v-else-if="cards.length === 0" class="text-center py-5">
       <p class="text-muted">{{ noCategoriesFoundLabel(contentLanguage) }}</p>
     </div>
 

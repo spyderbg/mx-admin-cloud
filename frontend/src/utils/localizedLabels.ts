@@ -82,6 +82,28 @@ export function configurationLabel(lang: Language): string {
   return labels[lang] ?? labels.en
 }
 
+/** Loading state while configuration services are fetched; unknown `lang` falls back to English. */
+export function loadingServicesLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Loading services...',
+    es: 'Cargando servicios...',
+    fr: 'Chargement des services...',
+    bg: 'Зареждане на услугите...',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Error shown when configuration services fail to load; unknown `lang` falls back to English. */
+export function failedToLoadServicesLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Failed to load services.',
+    es: 'No se pudieron cargar los servicios.',
+    fr: 'Échec du chargement des services.',
+    bg: 'Неуспешно зареждане на услугите.',
+  }
+  return labels[lang] ?? labels.en
+}
+
 /** Placeholder label for sidebar filtering; unknown `lang` falls back to English. */
 export function filterLabel(lang: Language): string {
   const labels: Record<Language, string> = {

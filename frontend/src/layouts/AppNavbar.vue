@@ -30,9 +30,11 @@
             <span class="profile-text font-weight-medium d-none d-md-block">{{ configurationLabel(selectedLang) }}</span>
           </a>
           <div class="dropdown-menu dropdown-menu-right navbar-dropdown py-2" :class="{ show: configOpen }">
-            <span v-if="configServicesLoading" class="dropdown-item cfg-menu-status text-muted">Loading…</span>
+            <span v-if="configServicesLoading" class="dropdown-item cfg-menu-status text-muted">
+              {{ loadingServicesLabel(selectedLang) }}
+            </span>
             <span v-else-if="configServicesError" class="dropdown-item cfg-menu-status text-danger">
-              {{ configServicesError }}
+              {{ failedToLoadServicesLabel(selectedLang) }}
             </span>
             <template v-else>
               <a
@@ -111,14 +113,13 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import type { AxiosError } from 'axios'
 import ConfigurationModal from '../components/ConfigurationModal.vue'
 import MockDataBadge from '../components/MockDataBadge.vue'
 import { listConfigurationServices } from '../api/configurationClient'
 import type { Language } from '../types/viewModels'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import { useCurrentUser } from '../composables/useCurrentUser'
-import { configurationLabel } from '../utils/localizedLabels'
+import { configurationLabel, failedToLoadServicesLabel, loadingServicesLabel } from '../utils/localizedLabels'
 import logoUrl from '../assets/images/logo.svg'
 import logoMiniUrl from '../assets/images/logo-mini.svg'
 
@@ -165,7 +166,7 @@ const userOpen = ref(false)
 const configOpen = ref(false)
 const configServices = ref<string[]>([])
 const configServicesLoading = ref(false)
-const configServicesError = ref<string | null>(null)
+const configServicesError = ref(false)
 const configService = ref<string | null>(null)
 const navToast = ref<string | null>(null)
 let navToastTimer: ReturnType<typeof setTimeout> | null = null
@@ -220,13 +221,12 @@ const serviceLabel = (service: string): string =>
 
 const loadConfigServices = async (): Promise<void> => {
   configServicesLoading.value = true
-  configServicesError.value = null
+  configServicesError.value = false
   try {
     const result = await listConfigurationServices()
     configServices.value = result.services
   } catch (err) {
-    const axiosErr = err as AxiosError<{ detail?: string }>
-    configServicesError.value = axiosErr.response?.data?.detail || 'Failed to load services.'
+    configServicesError.value = true
   } finally {
     configServicesLoading.value = false
   }
@@ -315,6 +315,10 @@ nav.navbar.default-layout .navbar-menu-wrapper .navbar-nav .nav-item.config-drop
 
 .cfg-menu-status {
   cursor: default;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+  font-size: 0.78rem;
 }
 
 /* Match Star Admin selector strength so `left: -15px !important` from the theme does not win. */
