@@ -79,22 +79,28 @@
               />
               <div class="file-actions">
                 <button
-                  class="btn btn-sm btn-outline-light"
+                  type="button"
+                  class="btn-icon btn-icon-regenerate"
                   title="Regenerate"
+                  aria-label="Regenerate image"
                   @click="onRegenerateFile(index)"
                 >
                   <i class="mdi mdi-auto-fix"></i>
                 </button>
                 <button
-                  class="btn btn-sm btn-outline-light"
+                  type="button"
+                  class="btn-icon btn-icon-edit"
                   title="Replace"
+                  aria-label="Replace image"
                   @click="onReplaceFile(index)"
                 >
                   <i class="mdi mdi-pencil"></i>
                 </button>
                 <button
-                  class="btn btn-sm btn-outline-light"
+                  type="button"
+                  class="btn-icon btn-icon-delete"
                   title="Delete"
+                  aria-label="Delete image"
                   @click="onDeleteFile(index)"
                 >
                   <i class="mdi mdi-delete"></i>
@@ -113,15 +119,19 @@
             />
             <div class="file-actions">
               <button
-                class="btn btn-sm btn-outline-light"
+                type="button"
+                class="btn-icon btn-icon-regenerate"
                 title="Regenerate"
+                aria-label="Regenerate image"
                 @click="onRegenerateAllItemImages"
               >
                 <i class="mdi mdi-auto-fix"></i>
               </button>
               <button
-                class="btn btn-sm btn-outline-light"
+                type="button"
+                class="btn-icon btn-icon-edit"
                 title="Upload"
+                aria-label="Upload image"
                 @click="onAddFile"
               >
                 <i class="mdi mdi-pencil"></i>
@@ -659,24 +669,11 @@ const confirmVoiceDelete = async (): Promise<void> => {
 }
 .file-actions {
   position: absolute;
-  bottom: 8px;
+  top: 8px;
   right: 8px;
   display: flex;
   gap: 4px;
-}
-.file-actions .btn {
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  background: rgba(0, 0, 0, 0.5);
-  border-color: rgba(255, 255, 255, 0.5);
-}
-.file-actions .btn:hover {
-  background: rgba(0, 0, 0, 0.7);
+  z-index: 2;
 }
 .file-empty {
   max-width: 320px;
@@ -703,10 +700,10 @@ const confirmVoiceDelete = async (): Promise<void> => {
   padding: 0;
 }
 .btn-icon-edit {
-  background: #4f46e5;
+  background: #2563eb;
 }
 .btn-icon-edit:hover {
-  background: #4338ca;
+  background: #1d4ed8;
 }
 .btn-icon-regenerate {
   background: #0f766e;
