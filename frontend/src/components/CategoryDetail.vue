@@ -705,7 +705,7 @@ async function onFileSelected(e: Event): Promise<void> {
 .category-icon-wrap {
   position: relative;
   width: 100%;
-  max-width: 512px;
+  max-width: 256px;
   aspect-ratio: 1 / 1;
   background: rgba(0, 0, 0, 0.04);
 }
