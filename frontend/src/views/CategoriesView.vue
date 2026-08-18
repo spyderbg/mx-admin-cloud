@@ -208,7 +208,7 @@ const pageTitle = computed(() => {
 const breadcrumbRoot = computed(() => breadcrumbCategoriesLabel(contentLanguage.value))
 
 const breadcrumbCategory = computed(() =>
-  category.value ? localizedCategoryLabel(category.value, contentLanguage.value) : '',
+  category.value ? toPascalCaseWords(localizedCategoryLabel(category.value, contentLanguage.value)) : '',
 )
 
 // Auto-redirect from /categories to /categories/:id when a category is selected

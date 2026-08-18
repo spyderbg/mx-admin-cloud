@@ -121,6 +121,7 @@ import { useRouter } from 'vue-router'
 import type { AxiosError } from 'axios'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import {
+  categoryIconVersions,
   ensureCategoriesLoaded,
   invalidateCategoriesCache,
   sharedArchivedCategories,
@@ -129,6 +130,7 @@ import {
   sharedError,
 } from '../api/cache'
 import { categoriesRestore } from '../api/contentClient'
+import { cacheBustedUri } from '../utils/cacheBustedUri'
 import AddCategoryModal from '../components/AddCategoryModal.vue'
 import type { ArchivedCategory } from '../types/viewModels'
 import { categoryIdFromFolderName, folderNameFromCategoryId } from '../utils/categoryIds'
@@ -171,7 +173,9 @@ const cards = computed(() => {
   return sharedCategories.value.map((c) => ({
     id: c.id,
     name: localizedCategoryLabel(c, lang),
-    iconUri: c.thumbnail_uri ?? cameraPlaceholderUrl,
+    iconUri: c.thumbnail_uri
+      ? cacheBustedUri(c.thumbnail_uri, categoryIconVersions.value.get(c.id) ?? 0)
+      : cameraPlaceholderUrl,
     itemCount: c.items_count ?? 0,
   }))
 })

@@ -46,6 +46,20 @@ export const sharedCategoryNames = ref(new Map<string, string>())
 /** Categories currently sitting in the archive, most recently archived first. */
 export const sharedArchivedCategories = shallowRef<ArchivedCategory[]>([])
 
+/**
+ * Per-category cache-busting counter for the icon file, keyed by category id.
+ * Icon uploads/deletes keep the same filename, so views rendering the icon (dashboard
+ * cards, category detail) need this to force a fresh request instead of a stale browser
+ * cache — bump it via bumpCategoryIconVersion() whenever the icon file actually changes.
+ */
+export const categoryIconVersions = ref(new Map<string, number>())
+
+export const bumpCategoryIconVersion = (categoryId: string): void => {
+  const next = new Map(categoryIconVersions.value)
+  next.set(categoryId, (next.get(categoryId) ?? 0) + 1)
+  categoryIconVersions.value = next
+}
+
 /** Whether the basic category list is currently loading. */
 export const sharedLoading = ref(false)
 
