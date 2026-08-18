@@ -35,7 +35,7 @@
           <input
             type="range"
             min="1"
-            max="6"
+            max="7"
             step="1"
             v-model.number="gridColumns"
             style="width: 100px; cursor: pointer;"
@@ -157,7 +157,7 @@ const contentLanguage = useContentLanguage()
 
 const GRID_COLUMNS_CONFIG_KEY = 'categories.itemsGrid.columns'
 const MIN_GRID_COLUMNS = 1
-const MAX_GRID_COLUMNS = 6
+const MAX_GRID_COLUMNS = 7
 
 const gridColumns = ref(3)
 
