@@ -78,7 +78,8 @@ class OpenAITTSProvider(TTSProvider):
         started_at = time.perf_counter()
         response = await client.post(self.ENDPOINT, headers=headers, json=payload)
         latency = time.perf_counter() - started_at
-        response.raise_for_status()
+        if response.is_error:
+            raise RuntimeError(f"OpenAI API {response.status_code}: {response.text}")
         await log_provider_request(
             LogProviderRequest(
                 provider=self.name,
