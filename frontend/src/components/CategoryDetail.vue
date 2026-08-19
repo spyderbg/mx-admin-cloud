@@ -770,19 +770,21 @@ async function onFileSelected(e: Event): Promise<void> {
 .voice-card {
   position: relative;
   min-width: 0;
+  min-height: 14rem;
   border: 1.5px solid #b8d4f0;
   border-radius: 10px;
-  padding: 2.15rem 0.75rem 0.75rem;
+  padding: 3rem 0.75rem 0.75rem;
   text-align: center;
   background: #f8fbff;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: space-between;
 }
 .voice-card-top-actions {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: 0.45rem;
+  right: 0.45rem;
   display: flex;
   gap: 0.3rem;
 }
@@ -795,7 +797,7 @@ async function onFileSelected(e: Event): Promise<void> {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0;
 }
 .voice-card-flag .flag-icon {
   font-size: 1.6rem;
@@ -804,16 +806,16 @@ async function onFileSelected(e: Event): Promise<void> {
   font-weight: 600;
   font-size: 0.85rem;
   color: #1e293b;
-  margin-bottom: 2px;
+  margin-bottom: 0;
   line-height: 1.2;
 }
 .voice-card-type {
   font-size: 0.75rem;
   color: #6b7280;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0;
 }
 .voice-card-controls {
-  margin-bottom: 0.5rem;
+  margin-bottom: 0;
 }
 .btn-play {
   display: inline-flex;
