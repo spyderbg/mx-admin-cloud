@@ -51,6 +51,30 @@ class OpenAITextTranslate(TextTranslationServiceProvider):
         self._model = model
         self._prompt = str(self.config.get("prompt", ""))
 
+    def supports(self, input_lang_code: str, target_lang_code: str) -> bool:
+        """Return whether this config's fixed language pair matches the request.
+
+        One config file exists per language pair (openai_en_es.json, openai_en_fr.json,
+        ...); without this check the service's provider chain would invoke every
+        language's provider on every request, tripling API cost and latency.
+        """
+        expected_input = self.default_input_language()
+        expected_output = self.default_output_language()
+        return (
+                (expected_input is None or expected_input == input_lang_code)
+                and (expected_output is None or expected_output == target_lang_code)
+        )
+
+    def api_key_env_name(self) -> str:
+        """Return "OPENAI_API_KEY".
+
+        The default (config-filename-derived) lookup breaks here: this provider is
+        configured via one file per language pair (openai_en_es.json, openai_en_fr.json,
+        ...), so "self.name" is "openai_en_es" etc., not "openai" — every language file
+        needs to resolve to the same actual OpenAI key.
+        """
+        return "OPENAI_API_KEY"
+
     def _render_prompt(
             self,
             input_lang_code: str,

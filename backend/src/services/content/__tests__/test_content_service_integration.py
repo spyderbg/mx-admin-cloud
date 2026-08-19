@@ -31,6 +31,7 @@ from src.services.content.models import (
     ContentProvider,
     CreateCategory,
     CreateItem,
+    DeleteArchivedCategory,
     InvalidCategoryNameError,
     ItemDetail,
     ItemImages,
@@ -193,6 +194,14 @@ class _StubContentProvider(ContentProvider):
             name=category_id,
             from_archive=f"{category_id}_1000",
             message="restored",
+        ))
+
+    def delete_archived_category(self, name: str) -> DeleteArchivedCategory:
+        return self._call("delete_archived_category", DeleteArchivedCategory(
+            deleted=True,
+            name=name,
+            archive_folder=f"{name}_1000",
+            message="deleted",
         ))
 
     def item_images(self, category_id: str, item_id: str) -> ItemImages:
@@ -521,6 +530,34 @@ async def test_restore_category_generic_error_returns_400(tmp_resolved: Path) ->
 async def test_restore_category_requires_auth(client_no_auth: AsyncClient) -> None:
     response = await client_no_auth.post("/api/v1/content/categories/restore", json={"name": "x"})
     assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# DELETE /api/v1/content/categories/archive/{archive_name}
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_delete_archived_category_returns_200(tmp_resolved: Path) -> None:
+    seen: list[str] = []
+
+    class _TrackingProvider(_StubContentProvider):
+        def delete_archived_category(self, name: str) -> DeleteArchivedCategory:
+            seen.append(name)
+            return DeleteArchivedCategory(
+                deleted=True,
+                name="foods",
+                archive_folder=name,
+                message="deleted",
+            )
+
+    app = _make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.delete("/api/v1/content/categories/archive/foods_1000")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["deleted"] is True
+    assert body["archive_folder"] == "foods_1000"
+    assert seen == ["foods_1000"]
 
 
 # ---------------------------------------------------------------------------

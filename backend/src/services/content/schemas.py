@@ -115,6 +115,15 @@ class RestoreCategoryResponse(BaseModel):
     message: str
 
 
+class DeleteArchivedCategoryResponse(BaseModel):
+    """Response for DELETE /content/categories/archive/{name}."""
+
+    deleted: bool
+    name: str | None = None
+    archive_folder: str | None = None
+    message: str
+
+
 class ArchiveCategoryResponse(BaseModel):
     """Response for archiving (or removing via archive) a category."""
 

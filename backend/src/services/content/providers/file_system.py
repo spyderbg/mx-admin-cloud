@@ -36,6 +36,7 @@ from src.services.content.models import (
     ContentProvider,
     CreateCategory,
     CreateItem,
+    DeleteArchivedCategory,
     InvalidCategoryNameError,
     ItemDetail,
     ItemImages,
@@ -1257,6 +1258,31 @@ class FileSystemContentProvider(ContentProvider):
             name=base_name,
             from_archive=archive_folder,
             message=f"Restored category '{base_name}' from archive '{archive_folder}'.",
+        )
+
+    def delete_archived_category(self, name: str) -> DeleteArchivedCategory:
+        requested = (name or "").strip()
+        if not requested:
+            raise InvalidCategoryNameError("No archive name provided")
+
+        archive_root = self._archive_root()
+        if not archive_root.exists() or not archive_root.is_dir():
+            raise ArchiveUnavailableError("Archive directory does not exist")
+
+        base_name, archive_folder = self._resolve_archive_folder(archive_root, requested)
+        archive_path = archive_root / archive_folder
+        if not archive_path.is_dir():
+            raise CategoryNotFoundError(f"Archive folder not found: {archive_folder}")
+
+        try:
+            shutil.rmtree(archive_path)
+        except (OSError, shutil.Error) as exc:
+            raise ContentOperationError(f"Failed to delete archived category: {exc}") from exc
+
+        return DeleteArchivedCategory(
+            name=base_name,
+            archive_folder=archive_folder,
+            message=f"Deleted archived category '{archive_folder}'.",
         )
 
     def _resolve_archive_folder(self, archive_root: Path, requested: str) -> tuple[str, str]:

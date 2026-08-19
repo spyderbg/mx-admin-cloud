@@ -77,6 +77,14 @@ export interface CreateItemResponse {
     image_id: string
 }
 
+/** Response for DELETE /content/categories/archive/{name}. */
+export interface DeleteArchivedCategoryResponse {
+    deleted: boolean
+    name?: string | null
+    archive_folder?: string | null
+    message: string
+}
+
 /** Response for a single item image entry. */
 export interface ImageResponse {
     id: string

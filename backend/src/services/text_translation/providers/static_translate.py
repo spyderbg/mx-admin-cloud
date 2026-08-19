@@ -17,11 +17,11 @@ class StaticTextTranslate(TextTranslationServiceProvider):
 
         content_dir/
           clothes/              <- category
-            images_en.csv       <- one word per line
-            images_bg.csv       <- same line = same concept
+            items_en.csv        <- one word per line
+            items_bg.csv        <- same line = same concept
           drinks/
-            images_en.csv
-            images_bg.csv
+            items_en.csv
+            items_bg.csv
 
     Config keys (from "self.config"):
         "input_language" — source language code (default ""en"")
@@ -72,7 +72,7 @@ class StaticTextTranslate(TextTranslationServiceProvider):
     def _load_category_csvs(self, category_dir: Path) -> dict[str, list[str]]:
         """Load all images_*.csv files from a category directory."""
         lang_words: dict[str, list[str]] = {}
-        for csv_path in sorted(category_dir.glob("images_*.csv")):
+        for csv_path in sorted(category_dir.glob("items_*.csv")):
             lang_code = csv_path.stem.split("_", 1)[-1].lower()
             with csv_path.open("r", encoding="utf-8", newline="") as fh:
                 reader = csv.reader(fh)

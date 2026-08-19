@@ -186,6 +186,26 @@ export const contentHandlers = [
     })
   }),
 
+  // Permanently delete a category snapshot from archive
+  http.delete('/api/v1/content/categories/archive/:archive_name', ({ params }) => {
+    const name = String(params.archive_name).trim()
+    const lowered = name.toLowerCase()
+    const index = archivedCategories.findIndex(
+      (entry) => entry.archive_folder.toLowerCase() === lowered || entry.base_name.toLowerCase() === lowered,
+    )
+    if (index < 0) {
+      return HttpResponse.json({ deleted: false, message: 'Category not found in archive' }, { status: 404 })
+    }
+    const [archived] = archivedCategories.splice(index, 1)
+    archivedRecords.delete(archived.archive_folder)
+    return HttpResponse.json({
+      deleted: true,
+      name: archived.base_name,
+      archive_folder: archived.archive_folder,
+      message: 'Archived category deleted',
+    })
+  }),
+
   // Get details of a specific content category
   http.get('/api/v1/content/categories/:category_id', ({ params }) => {
     const category = findCategoryById(String(params.category_id))

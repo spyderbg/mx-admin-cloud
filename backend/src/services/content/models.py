@@ -173,6 +173,14 @@ class RestoreCategory:
     message: str = ""
 
 
+@dataclass
+class DeleteArchivedCategory:
+    deleted: bool = True
+    name: str | None = None
+    archive_folder: str | None = None
+    message: str = ""
+
+
 # ---------------------------------------------------------------------------
 # Provider contract
 # ---------------------------------------------------------------------------
@@ -275,6 +283,10 @@ class ContentProvider(ServiceProvider, ABC):
                 or a full archive folder name ('foods_1738456789'). Not a registry id —
                 archive_category() removes the category's rows from the root CSVs.
         """
+
+    @abstractmethod
+    def delete_archived_category(self, name: str) -> DeleteArchivedCategory:
+        """Permanently delete a category snapshot from the archive."""
 
     @abstractmethod
     def create_item(

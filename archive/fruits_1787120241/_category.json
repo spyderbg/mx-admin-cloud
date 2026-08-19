@@ -1,0 +1,11 @@
+{
+  "id": "C_Fruits",
+  "folder": "fruits",
+  "names": {
+    "en": "fruits",
+    "fr": "fruits",
+    "es": "fruits",
+    "bg": "fruits"
+  },
+  "descriptions": {}
+}
