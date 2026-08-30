@@ -1,0 +1,32 @@
+[project]
+name = "kiddo_app"
+version = "0.1.0"
+description = "Backend for Kiddo content management (FastAPI)"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "python-multipart",
+    "python-jose[cryptography]",
+    "bcrypt>=4.0.0",
+    "pydantic-settings",
+    "python-dotenv",
+    "requests",
+    "openai",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+exclude = ["tests*", "*test*", "*__tests__*"]
+
+[tool.pylint.format]
+max-line-length = 120
+
+[tool.pylint.similarities]
+ignore-imports = "yes"
+ignore-signatures = "yes"
+ignore-docstrings = "yes"
+min-similarity-lines = 25
+
+[tool.pylint.design]
+max-args = 10

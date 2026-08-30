@@ -1,80 +1,40 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in the frontend directory.
+This file provides guidance to the AI assistant when working with the mx-admin project.
 
 ## Project Overview
 
-**mx-admin** is a content management and voice synthesis platform for the Kiddo language learning app. It manages
-multilingual categories/images and orchestrates a TTS pipeline across multiple providers.
+**mx-admin** is a content management and voice synthesis platform for the Kiddo language learning app. It manages multilingual categories/images and orchestrates a TTS pipeline across multiple providers.
 
 Three components: **FastAPI backend**, **Vue 3 frontend SPA**, **Typer CLI client**.
 
-## Commands
+## Available Commands
 
-```bash
-npm install
-npm run dev        # Dev server at http://localhost:5173 (proxies /api → :8000)
-npm run build      # Type-check + production build
-npm run type-check # vue-tsc --noEmit only
-```
+Use `/` in the OpenCode TUI to run these project commands:
 
-### Docker (all services, from project root)
+| Command | Description |
+|---------|-------------|
+| `/api-sync` | Export OpenAPI + regenerate TS client + schemas |
+| `/verify` | Validate backend build + tests + frontend build |
+| `/frontend` | Regenerate TS types + build frontend |
+| `/mockdata` | Generate mock data from content directory |
 
-```bash
-./scripts/app.sh start       # Backend :9000, Frontend :9001
-./scripts/app.sh stop
-# Or directly:
-docker compose -f docker/docker-compose.yml up -d --build
-```
+## Workflow Instructions
 
-No test framework is configured.
+When modifying backend APIs:
+1. Update backend route/schema code
+2. Run `/api-sync` (or manually: `export_openapi.py` → `generate_ts_client.py` → `generate_ts_schemas.py`)
+3. Run `/frontend` to verify the frontend still builds
 
-## Architecture
+When fixing issues:
+1. Run `/verify` to identify all problems
+2. Fix grouped by area (backend/frontend/tests)
+3. Run `/verify` again to confirm
 
-Vue 3 + TypeScript + Vite SPA. API proxied to `:8000` in dev via `vite.config.ts`.
-No state management library (no Pinia/Vuex) — data flows via props.
+## Project Structure
 
-### Routing & Auth
-
-`src/router/index.ts` defines two top-level trees:
-
-- `/login` — unauthenticated, renders `LoginView`
-- `/categories` — requires auth (`meta: { requiresAuth: true }`), uses `AppLayout` as shell; children are
-  `CategoriesView` and `ImageDetailView`
-
-Auth guard checks `localStorage.getItem('token')`. Token is written by `src/api/auth.ts` on successful login (POST
-`/api/v1/login` with `application/x-www-form-urlencoded`).
-
-### Data Layer
-
-**All views currently use mock data from `src/data/mockData.ts`** — `AppSidebar` and `AppNavbar` import `mockCategories`
-and `mockUser` directly. `CategoriesView` and `ImageDetailView` use `src/api/categories.ts` which calls the real backend
-`/api/v1/content/categories` but action handlers (e.g., `onEditCategory`, `onDeleteCategory`) still only `console.log`.
-The full API integration is still in progress.
-
-When replacing mock data with real API calls, update existing modules in `src/api/` or add new ones. Note that
-`src/api/auth.ts` handles the token and `src/api/client.ts` defines the base axios instance.
-
-### Component Structure
-
-- `src/layouts/` — `AppLayout` (shell), `AppNavbar`, `AppSidebar`, `AppFooter`
-- `src/views/` — page-level components (`CategoriesView`, `ImageDetailView`, `LoginView`, `DashboardView`)
-- `src/components/` — reusable components (`CategoryDetail`, `ImageGrid`, `LoginForm`)
-- `src/types/index.ts` — shared types: `Category`, `Image`, `Voice`, `User`, `Language`
-
-`AppSidebar` renders a filterable category tree; expanding a category navigates to `/categories/:id`; clicking an image
-navigates to `/categories/:id/images/:imageId`.
-
-### UI Framework
-
-Star Admin Bootstrap 4 theme (vendor CSS/JS in `src/assets/vendors/`). Use Bootstrap 4 utility classes and MDI icons (
-`mdi mdi-*`). Flag icons use `flag-icon flag-icon-<code>` with the mapping `en → us`.
-
-**Modal pattern**: All modals are implemented with `<Teleport to="body">` and `cd-` prefixed CSS classes (e.g.
-`cd-modal-overlay`, `cd-modal-box`) to avoid conflicts with Bootstrap's `.close` and `.modal` styles. Follow this
-pattern for any new modals.
-
-### Types
-
-`Language = 'en' | 'es' | 'fr' | 'bg'` — supported languages. A `Voice` with an absent or empty `audioUrl` is considered
-missing; play controls must be disabled in that case.
+- `backend/` — FastAPI application
+- `frontend/` — Vue 3 + TypeScript SPA
+- `cli/` — Typer CLI client
+- `scripts/` — Development and validation helper scripts
+- `.opencode/commands/` — OpenCode project commands

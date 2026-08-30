@@ -1,0 +1,35 @@
+{
+  "service_provider": {
+    "service": "text_to_speech",
+    "provider": "static",
+    "enabled": false,
+    "priority": 1,
+    "config": {
+      "generate": {
+        "enabled": true,
+        "languages": {
+          "en": {
+            "actor": "Milena",
+            "voice_id": "M1ydWt7KnBCiuv4CnEDC",
+            "model": "eleven_multilingual_v2",
+            "prompt": "",
+            "use_space": "no",
+            "speed": 1.0,
+            "speaker_boost": true,
+            "voice_settings": {
+              "stability": 0.5,
+              "similarity_boost": 0.75
+            }
+          }
+        }
+      },
+      "evaluate": {
+        "enabled": false,
+        "stt_provider": "elevenlabs",
+        "model": "scribe_v1",
+        "prompt": "",
+        "language": "en"
+      }
+    }
+  }
+}

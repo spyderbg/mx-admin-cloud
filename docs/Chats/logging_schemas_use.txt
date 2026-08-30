@@ -1,0 +1,121 @@
+Prompt:
+
+User:
+```python
+async def emit(
+    logger_name: str,
+    level: str,
+    event: str,
+    **fields: Any,
+) -> None:
+    """Post a structured log message to "/internal/logging/emit"."""
+    if _client is None:
+        return
+    try:
+        await _client.post(
+            "/internal/logging/emit",
+            json={
+                "logger_name": logger_name,
+                "level": level,
+                "event": event,
+                "fields": fields,
+            },
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        _stdlib_logging.debug("logging HTTP emit failed", exc_info=True)
+
+```
+What is the purpose of the LogEmitRequest class. Why is not used for calling "emit" method?
+
+Response:
+
+Purpose of LogEmitRequest
+LogEmitRequest is a Pydantic schema used by the FastAPI endpoint to validate and parse the incoming HTTP request body (line 35 in logging_routes.py). It ensures the request matches the expected structure before the endpoint handler processes it.
+Why it's not used in emit()
+The emit() function in log_client.py is a client-side HTTP client—it's on the opposite side of the HTTP boundary. Several reasons it doesn't use LogEmitRequest:
+1.
+HTTP boundary separation: According to your CLAUDE.md, core/ strictly avoids importing from services/ or api/. The schemas live in api/internal/schemas/, so importing them would violate that boundary.
+2.
+No validation needed on the client: The client just needs to serialize a JSON payload. It trusts the caller to pass valid parameters (logger_name, level, event, fields). Validation happens on the server.
+3.
+Simplicity: Using Pydantic models for just constructing JSON adds unnecessary overhead and coupling. A plain dict is lighter and sufficient.
+4.
+Clear separation of concerns:
+◦
+Server-side (endpoint handler): Uses LogEmitRequest to validate/parse the incoming request
+◦
+Client-side (HTTP client): Just constructs and sends JSON; the server validates on receipt
+Pattern: Schemas validate at the API boundary (where data enters the system), while clients just serialize to JSON and let the receiver validate.
+
+Prompt:
+
+1.
+Where is this rule "HTTP boundary separation". I could find it.
+2.
+Yes, no validation is need on the client side but what is the reason to define a schema class if the client do not use them?
+3.
+Using Pydantic models for just constructing JSON, wasn't that the idea of wrapper methods such as "emit_log", to decrease the confusion of multiple json fileds variations that can be use.
+4.
+I think that using a common data schemas for the client and server side is more readable and less confusing.
+
+Response:
+
+You're making excellent points, and I think you've identified a real architectural gap. Let me address each:
+1.
+"HTTP boundary separation" — I overstated this. Looking at CLAUDE.md, it actually says:
+core/ — Shared infrastructure with zero src.services imports (HTTP boundary enforced)
+This forbids importing services/ into core/, not api/ into core/. So that argument doesn't hold.
+2.
+"Why define LogEmitRequest if the client doesn't use it?" — Valid. LogEmitRequest is currently used only by the server-side endpoint handler. But you're right to question this.
+3.
+"Wasn't emit_log() meant to decrease confusion about JSON field variations?" — Exactly. The whole point of wrapper methods is to provide a type-safe interface that prevents mistakes. The client's emit() with **fields: Any undermines that.
+4.
+"Common schemas for both sides is more readable" — You're right. The current design creates a disconnect:
+◦
+Server validates: LogEmitRequest(logger_name, level, event, fields: dict[str, Any])
+◦
+Client just sends raw dicts with no schema validation
+This inconsistency could hide bugs.
+You're correct: Using LogEmitRequest on the client side (or creating a shared utility to construct it) would be more consistent and less error-prone. The client could do:
+async def emit(logger_name: str, level: str, event: str, **fields: Any) -> None:
+    if _client is None:
+        return
+    try:
+        request = LogEmitRequest(logger_name=logger_name, level=level, event=event, fields=fields)
+        await _client.post("/internal/logging/emit", json=request.model_dump())
+    except Exception:
+        _stdlib_logging.debug("logging HTTP emit failed", exc_info=True)
+This gives you type safety, validation, and clarity on both sides
+
+Prompt:
+
+For 4. even the "emit" method can taka LogEmitReuqest as a parameter. What do you think?
+
+Response:
+
+That's even better. Taking LogEmitRequest as a parameter is actually the cleanest approach:
+async def emit(request: LogEmitRequest) -> None:
+    """Post a structured log message to "/internal/logging/emit"."""
+    if _client is None:
+        return
+    try:
+        await _client.post(
+            "/internal/logging/emit",
+            json=request.model_dump(),
+        )
+    except Exception:
+        _stdlib_logging.debug("logging HTTP emit failed", exc_info=True)
+Advantages:
+1.
+Single source of truth — LogEmitRequest defines the contract; both client and server respect it
+2.
+Type safety — Caller must construct a valid request, caught before the HTTP call
+3.
+Symmetry — Mirrors the server-side endpoint handler's signature
+4.
+Less error-prone — Can't accidentally pass malformed data
+5.
+Self-documenting — The signature is crystal clear about what's required
+The only concern: Does core/log_client.py importing from api/internal/schemas/logging.py violate the HTTP boundary?
+Looking at CLAUDE.md again, it only forbids src.services imports into core/. Importing a data schema from api/ seems fine—schemas are just contracts, not business logic.
+This approach makes the architecture cleaner: the schema defines the HTTP contract, and both sides of the boundary use it consistently.

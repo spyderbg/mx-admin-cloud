@@ -1,4 +1,3 @@
-
 # Build artifacts
 build/
 dist/
@@ -11,9 +10,10 @@ venv/
 .venv/
 .venv_wsl/
 
-# JetBrain Rider folder 
+# JetBrain Rider folder
 .idea/
 .run/
+.junie/
 
 # Visual Studio cache directory
 .vs/
@@ -27,6 +27,10 @@ venv/
 __pycache__/
 *.pyc
 
-# node modules
-/node_modules/
+# Backend output folder
+output/
+
+# Database
+backend/data/*.db-shm
+backend/data/*.db-wal
 

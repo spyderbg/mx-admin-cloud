@@ -1,0 +1,30 @@
+
+### Categories
+GET {{settings.CONTENT_URL}}/categories
+
+
+### Category details
+GET {{settings.CONTENT_URL}}/categories/{{category_id}}
+
+### Category images
+GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_id}}/images
+
+### Category voices
+GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_id}}/voices
+
+
+### Items
+GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_id}}/items
+
+### Item details
+GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_id}}/items/{{item_id}}
+
+### Item images
+GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_id}}/items/{{item_id}}/images
+
+### Item voices
+GET {{settings.HOST}}/{{settings.API_V1_STR}}/content/categories/{{category_id}}/items/{{item_id}}/voices
+
+
+
+

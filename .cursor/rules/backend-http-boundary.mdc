@@ -1,0 +1,41 @@
+---
+description: Services communicate only through HTTP endpoints, never by direct imports
+globs: backend/src/**/*.py
+alwaysApply: false
+---
+
+# HTTP Interface as Service Boundary
+
+This project follows the **modular monolith** pattern: every service-to-service interaction goes through a
+defined HTTP endpoint. No service may call another by importing its internals directly.
+
+## Rules
+
+- All inter-service communication MUST use HTTP requests to defined FastAPI endpoints.
+- The HTTP contract is the integration surface: internal paths live under `/internal/…` whether implemented in `src/api/internal/*_routes.py` or co-located as `src/services/<name>/routes.py` (e.g. `logging`, `text_translation`).
+- Pydantic wire models live next to the contract: `src.api.internal.schemas`, `src.api.v1.schemas`, or `src.services.<name>.schemas` for a co-located service; `core/` and `services/` may import **only** those schema modules (see layered rules in `backend-general.mdc`).
+- Never import business logic from one service module into another; call its endpoint instead.
+- FastAPI auto-generates OpenAPI specs for internal routes — keep schemas accurate so endpoints are
+  curl-testable and integration-testable in isolation.
+
+## Why
+
+- Enforces clear boundaries and explicit contracts between services.
+- Each endpoint can be tested independently with `curl` or integration tests.
+- If the monolith is later split into separate processes, the HTTP interface already exists — zero rework.
+
+## Example
+
+```python
+# ❌ BAD — importing another service's internals
+from src.services.translator import translate_text
+
+result = translate_text(text, target_lang)
+
+# ✅ GOOD — calling the internal HTTP endpoint
+response = await http_client.post(
+    "/internal/translators/translate",
+    json={"text": text, "target_lang": target_lang},
+)
+result = response.json()
+```

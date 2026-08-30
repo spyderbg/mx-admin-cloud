@@ -1,0 +1,1772 @@
+openapi: 3.1.0
+info:
+  title: Content Management API
+  version: 0.1.0
+servers: []
+components:
+  securitySchemes:
+    OAuth2PasswordBearer:
+      type: oauth2
+      flows:
+        password:
+          scopes: {}
+          tokenUrl: /api/v1/login
+  schemas:
+    ArchivedEntry:
+      properties:
+        base_name:
+          type: string
+          title: Base Name
+        archive_folder:
+          type: string
+          title: Archive Folder
+        archived_at:
+          type: integer
+          title: Archived At
+      type: object
+      required:
+      - base_name
+      - archive_folder
+      - archived_at
+      title: ArchivedEntry
+      description: Single archived category entry.
+    Body_categories_icon_update_api_v1_content_categories__category_id__icon_post:
+      properties:
+        image:
+          type: string
+          contentMediaType: application/octet-stream
+          title: Image
+      type: object
+      required:
+      - image
+      title: Body_categories_icon_update_api_v1_content_categories__category_id__icon_post
+    Body_categories_images_add_api_v1_content_categories__category_id__images_post:
+      properties:
+        image:
+          type: string
+          contentMediaType: application/octet-stream
+          title: Image
+      type: object
+      required:
+      - image
+      title: Body_categories_images_add_api_v1_content_categories__category_id__images_post
+    Body_categories_images_update_api_v1_content_categories__category_id__images__image_id__put:
+      properties:
+        image:
+          type: string
+          contentMediaType: application/octet-stream
+          title: Image
+      type: object
+      required:
+      - image
+      title: Body_categories_images_update_api_v1_content_categories__category_id__images__image_id__put
+    Body_categories_voices_add_api_v1_content_categories__category_id__voices_post:
+      properties:
+        language:
+          type: string
+          title: Language
+        audio:
+          type: string
+          contentMediaType: application/octet-stream
+          title: Audio
+      type: object
+      required:
+      - language
+      - audio
+      title: Body_categories_voices_add_api_v1_content_categories__category_id__voices_post
+    Body_categories_voices_update_api_v1_content_categories__category_id__voices__voice_id__put:
+      properties:
+        audio:
+          type: string
+          contentMediaType: application/octet-stream
+          title: Audio
+      type: object
+      required:
+      - audio
+      title: Body_categories_voices_update_api_v1_content_categories__category_id__voices__voice_id__put
+    Body_create_item_endpoint_api_v1_content_items_post:
+      properties:
+        image:
+          type: string
+          contentMediaType: application/octet-stream
+          title: Image
+        category:
+          type: string
+          title: Category
+        item:
+          type: string
+          title: Item
+      type: object
+      required:
+      - image
+      - category
+      - item
+      title: Body_create_item_endpoint_api_v1_content_items_post
+    Body_items_images_add_api_v1_content_categories__category_id__items__item_id__images_post:
+      properties:
+        image:
+          type: string
+          contentMediaType: application/octet-stream
+          title: Image
+      type: object
+      required:
+      - image
+      title: Body_items_images_add_api_v1_content_categories__category_id__items__item_id__images_post
+    Body_items_images_update_api_v1_content_categories__category_id__items__item_id__images__image_id__put:
+      properties:
+        image:
+          type: string
+          contentMediaType: application/octet-stream
+          title: Image
+      type: object
+      required:
+      - image
+      title: Body_items_images_update_api_v1_content_categories__category_id__items__item_id__images__image_id__put
+    Body_items_voices_add_api_v1_content_categories__category_id__items__item_id__voices_post:
+      properties:
+        language:
+          type: string
+          title: Language
+        audio:
+          type: string
+          contentMediaType: application/octet-stream
+          title: Audio
+      type: object
+      required:
+      - language
+      - audio
+      title: Body_items_voices_add_api_v1_content_categories__category_id__items__item_id__voices_post
+    Body_items_voices_update_api_v1_content_categories__category_id__items__item_id__voices__voice_id__put:
+      properties:
+        audio:
+          type: string
+          contentMediaType: application/octet-stream
+          title: Audio
+      type: object
+      required:
+      - audio
+      title: Body_items_voices_update_api_v1_content_categories__category_id__items__item_id__voices__voice_id__put
+    CategoryDetailsResponse:
+      properties:
+        id:
+          type: string
+          title: Id
+        name:
+          additionalProperties:
+            type: string
+          type: object
+          title: Name
+          description: 'Language-code → translation map (e.g. {"en": "dog", "fr":
+            "chien"})'
+        description:
+          additionalProperties:
+            type: string
+          type: object
+          title: Description
+          description: 'Language-code → translation map (e.g. {"en": "dog", "fr":
+            "chien"})'
+        items:
+          items:
+            $ref: '#/components/schemas/ItemSummary'
+          type: array
+          title: Items
+          default: []
+      type: object
+      required:
+      - id
+      - name
+      title: CategoryDetailsResponse
+      description: Response for GET /content/categories/{name}.
+    CategoryImagesResponse:
+      properties:
+        category_id:
+          type: string
+          title: Category Id
+        name:
+          additionalProperties:
+            type: string
+          type: object
+          title: Name
+          description: 'Language-code → translation map (e.g. {"en": "dog", "fr":
+            "chien"})'
+        images:
+          items:
+            $ref: '#/components/schemas/ImageResponse'
+          type: array
+          title: Images
+          default: []
+      type: object
+      required:
+      - category_id
+      - name
+      title: CategoryImagesResponse
+      description: Response for GET /categories/{name}/images.
+    CategoryListResponse:
+      properties:
+        categories:
+          items:
+            $ref: '#/components/schemas/CategorySummary'
+          type: array
+          title: Categories
+        archived:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/ArchivedEntry'
+            type: array
+          - type: 'null'
+          title: Archived
+        error:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error
+      type: object
+      required:
+      - categories
+      title: CategoryListResponse
+      description: Response for GET /content/categories.
+    CategorySummary:
+      properties:
+        id:
+          type: string
+          title: Id
+        name:
+          additionalProperties:
+            type: string
+          type: object
+          title: Name
+          description: 'Language-code → translation map (e.g. {"en": "dog", "fr":
+            "chien"})'
+        items_count:
+          type: integer
+          title: Items Count
+        thumbnail_uri:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Thumbnail Uri
+      type: object
+      required:
+      - id
+      - name
+      - items_count
+      title: CategorySummary
+      description: Summary of a single category returned in the list endpoint.
+    CategoryVoicesResponse:
+      properties:
+        category_id:
+          type: string
+          title: Category Id
+        name:
+          additionalProperties:
+            type: string
+          type: object
+          title: Name
+          description: 'Language-code → translation map (e.g. {"en": "dog", "fr":
+            "chien"})'
+        voices:
+          items:
+            $ref: '#/components/schemas/VoiceResponse'
+          type: array
+          title: Voices
+          default: []
+      type: object
+      required:
+      - category_id
+      - name
+      title: CategoryVoicesResponse
+      description: Response for GET /categories/{name}/voices.
+    CreateCategoryBody:
+      properties:
+        name:
+          type: string
+          title: Name
+      type: object
+      required:
+      - name
+      title: CreateCategoryBody
+      description: Request body for creating a new category.
+    CreateCategoryResponse:
+      properties:
+        category:
+          type: string
+          title: Category
+        message:
+          type: string
+          title: Message
+      type: object
+      required:
+      - category
+      - message
+      title: CreateCategoryResponse
+      description: Response for POST /content/categories.
+    CreateItemResponse:
+      properties:
+        category:
+          type: string
+          title: Category
+        item:
+          type: string
+          title: Item
+        folder:
+          type: string
+          title: Folder
+        image_id:
+          type: string
+          title: Image Id
+      type: object
+      required:
+      - category
+      - item
+      - folder
+      - image_id
+      title: CreateItemResponse
+      description: Response for POST /content/items.
+    DeleteArchivedCategoryResponse:
+      properties:
+        deleted:
+          type: boolean
+          title: Deleted
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        archive_folder:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Archive Folder
+        message:
+          type: string
+          title: Message
+      type: object
+      required:
+      - deleted
+      - message
+      title: DeleteArchivedCategoryResponse
+      description: Response for DELETE /content/categories/archive/{name}.
+    FileAction:
+      type: string
+      enum:
+      - add
+      - update
+      - delete
+      title: FileAction
+      description: Action performed on a category/item file (image or voice), echoed
+        back in the response.
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    ImageResponse:
+      properties:
+        id:
+          type: string
+          title: Id
+        file_uri:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: File Uri
+        action:
+          anyOf:
+          - $ref: '#/components/schemas/FileAction'
+          - type: 'null'
+      type: object
+      required:
+      - id
+      title: ImageResponse
+      description: Response for a single item image entry.
+    ItemImagesResponse:
+      properties:
+        item_id:
+          type: string
+          title: Item Id
+        name:
+          additionalProperties:
+            type: string
+          type: object
+          title: Name
+          description: 'Language-code → translation map (e.g. {"en": "dog", "fr":
+            "chien"})'
+        images:
+          items:
+            $ref: '#/components/schemas/ImageResponse'
+          type: array
+          title: Images
+          default: []
+        thumbnail_uri:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Thumbnail Uri
+      type: object
+      required:
+      - item_id
+      - name
+      title: ItemImagesResponse
+      description: Response for GET /categories/{name}/items/{item_id}/images.
+    ItemListResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/ItemSummary'
+          type: array
+          title: Items
+      type: object
+      required:
+      - items
+      title: ItemListResponse
+      description: Response for GET /categories/{category_name}/items.
+    ItemSummary:
+      properties:
+        id:
+          type: string
+          title: Id
+        name:
+          additionalProperties:
+            type: string
+          type: object
+          title: Name
+          description: 'Language-code → translation map (e.g. {"en": "dog", "fr":
+            "chien"})'
+        thumbnail_uri:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Thumbnail Uri
+        images_count:
+          type: integer
+          title: Images Count
+          default: 0
+      type: object
+      required:
+      - id
+      - name
+      title: ItemSummary
+      description: Item entry returned inside CategoryDetailsResponse.
+    ItemVoicesResponse:
+      properties:
+        item_id:
+          type: string
+          title: Item Id
+        name:
+          additionalProperties:
+            type: string
+          type: object
+          title: Name
+          description: 'Language-code → translation map (e.g. {"en": "dog", "fr":
+            "chien"})'
+        voices:
+          items:
+            $ref: '#/components/schemas/VoiceResponse'
+          type: array
+          title: Voices
+          default: []
+      type: object
+      required:
+      - item_id
+      - name
+      title: ItemVoicesResponse
+      description: Response for GET /categories/{name}/items/{item_id}/voices.
+    RemoveCategoryResponse:
+      properties:
+        archived:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Archived
+        removed:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Removed
+        name:
+          type: string
+          title: Name
+        archive_folder:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Archive Folder
+        destination:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Destination
+        message:
+          type: string
+          title: Message
+      type: object
+      required:
+      - name
+      - message
+      title: RemoveCategoryResponse
+      description: 'Response for DELETE /content/categories/{name}.
+
+
+        Maybe an archive result or a permanent delete result, so both
+
+        "archived" and "removed" are optional.'
+    RenameCategoryBody:
+      properties:
+        new_category_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: New Category Id
+        category_name:
+          additionalProperties:
+            type: string
+          type: object
+          title: Category Name
+          description: 'Language-code → translation map (e.g. {"en": "dog", "fr":
+            "chien"})'
+        description:
+          additionalProperties:
+            type: string
+          type: object
+          title: Description
+          description: 'Language-code → translation map (e.g. {"en": "dog", "fr":
+            "chien"})'
+      type: object
+      required:
+      - category_name
+      - description
+      title: RenameCategoryBody
+      description: Request body for updating a category's localized name and description.
+    RenameCategoryResponse:
+      properties:
+        category:
+          type: string
+          title: Category
+        message:
+          type: string
+          title: Message
+        category_id:
+          type: string
+          title: Category Id
+        old_category_id:
+          type: string
+          title: Old Category Id
+      type: object
+      required:
+      - category
+      - message
+      - category_id
+      - old_category_id
+      title: RenameCategoryResponse
+      description: Response for PATCH /content/categories/{category_id}.
+    RestoreCategoryBody:
+      properties:
+        name:
+          type: string
+          title: Name
+      type: object
+      required:
+      - name
+      title: RestoreCategoryBody
+      description: Request body for restoring a category.
+    RestoreCategoryResponse:
+      properties:
+        restored:
+          type: boolean
+          title: Restored
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        from_archive:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: From Archive
+        message:
+          type: string
+          title: Message
+      type: object
+      required:
+      - restored
+      - message
+      title: RestoreCategoryResponse
+      description: Response for POST /content/categories/restore.
+    UpdateItemBody:
+      properties:
+        item_name:
+          additionalProperties:
+            type: string
+          type: object
+          title: Item Name
+          description: 'Language-code → translation map (e.g. {"en": "dog", "fr":
+            "chien"})'
+      type: object
+      required:
+      - item_name
+      title: UpdateItemBody
+      description: Request body for updating an item's localized name.
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+    VoiceResponse:
+      properties:
+        id:
+          type: string
+          title: Id
+        language:
+          type: string
+          title: Language
+        type:
+          type: string
+          title: Type
+        file_uri:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: File Uri
+        action:
+          anyOf:
+          - $ref: '#/components/schemas/FileAction'
+          - type: 'null'
+      type: object
+      required:
+      - id
+      - language
+      - type
+      title: VoiceResponse
+      description: A single voice entry.
+
+paths:
+
+  # ─── Categories ─────────────────────────────────────────────────────
+  /api/v1/content/categories:
+    get:
+      tags:
+      - Categories
+      summary: List all content categories
+      description: Retrieve all content categories. By default returns only active categories.
+        Use 'include_archived=true' to append archived entries to the response, or 'archived_only=true'
+        to return only archived categories. Requires authentication.
+      operationId: categories_list_api_v1_content_categories_get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: include_archived
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: Include Archived
+      - name: archived_only
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: Archived Only
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - Categories
+      summary: Create a new content category
+      description: Create a new content category. The category name must be unique and
+        follow naming conventions. Active categories are returned by default; use 'include_archived=true'
+        to include archived categories in the response or 'archived_only=true' to return
+        only archived categories. Requires authentication.
+      operationId: categories_create_api_v1_content_categories_post
+      security:
+      - OAuth2PasswordBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCategoryBody'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateCategoryResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/content/categories/archive/{archive_name}:
+    delete:
+      tags:
+      - Categories
+      summary: Delete a category from archive
+      description: Permanently delete an archived category snapshot. Accepts either
+        a base folder name ('foods') or a full archive folder name ('foods_1738456789')
+        to delete a specific snapshot. Requires authentication.
+      operationId: categories_archive_delete_api_v1_content_categories_archive__archive_name__delete
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: archive_name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Archive Name
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteArchivedCategoryResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/content/categories/restore:
+    post:
+      tags:
+      - Categories
+      summary: Restore a category from archive
+      description: Restore an archived category back into the content directory. Accepts
+        either a base folder name ('foods'), which restores the most recent archive,
+        or a full archive folder name ('foods_1738456789') to restore a specific snapshot.
+        Fails with 409 when a live category already occupies that folder. Requires authentication.
+      operationId: categories_restore_api_v1_content_categories_restore_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestoreCategoryBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestoreCategoryResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /api/v1/content/categories/{category_id}:
+    get:
+      tags:
+      - Categories
+      summary: Get details of a specific content category
+      description: Retrieve detailed information about a content category. Returns the
+        category name, description, and associated metadata. Requires authentication.
+      operationId: categories_details_api_v1_content_categories__category_id__get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryDetailsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - Categories
+      summary: Update a content category's name and description
+      description: Update the localized name and description of a content category,
+        identified by category_id. The category must exist to be updated. Requires authentication.
+      operationId: categories_rename_api_v1_content_categories__category_id__patch
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenameCategoryBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RenameCategoryResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Categories
+      summary: Remove a content category
+      description: Remove a content category and all of its items, images and audio.
+        When ARCHIVE_DIR is configured the category is moved to the archive and can
+        be restored via 'POST /categories/restore'; otherwise it is deleted permanently.
+        The response 'archived' and 'removed' flags report which of the two happened.
+        Accepts either a category id ('C_Foods') or a folder name ('foods'). Requires
+        authentication.
+      operationId: categories_remove_api_v1_content_categories__category_id__delete
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RemoveCategoryResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+
+  # ─── Categories Images ──────────────────────────────────────────────
+  /api/v1/content/categories/{category_id}/icon:
+    post:
+      tags:
+      - Categories Images
+      summary: Create or replace a category's icon/thumbnail image
+      description: Upload a file to set the category's icon image, creating it if it
+        doesn't yet exist or overriding it otherwise. The icon is stored as '{category_name}/{category_name}.<ext>'
+        and is used for both the category thumbnail and its app icon. Requires authentication.
+      operationId: categories_icon_update_api_v1_content_categories__category_id__icon_post
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_categories_icon_update_api_v1_content_categories__category_id__icon_post'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Categories Images
+      summary: Delete a category's icon/thumbnail image
+      description: Delete the category's icon image. The icon is stored as '{category_name}/{category_name}.<ext>'
+        and is used for both the category thumbnail and its app icon. Requires authentication.
+      operationId: categories_icon_delete_api_v1_content_categories__category_id__icon_delete
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/content/categories/{category_id}/images:
+    get:
+      tags:
+      - Categories Images
+      summary: List all images in a category
+      description: Retrieve a list of all image files associated with a content category.
+        Returns the image filenames and their metadata. Requires authentication.
+      operationId: categories_images_list_api_v1_content_categories__category_id__images_get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryImagesResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - Categories Images
+      summary: Add an image to a category
+      description: Add a new image file to the specified content category. This endpoint
+        allows uploading image files and associating them with a category. The image
+        file will be stored in the category's image directory. Requires authentication.
+      operationId: categories_images_add_api_v1_content_categories__category_id__images_post
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_categories_images_add_api_v1_content_categories__category_id__images_post'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/content/categories/{category_id}/images/{image_id}:
+    put:
+      tags:
+      - Categories Images
+      summary: Replace a category image file
+      description: Upload a new file to override an existing image associated with a
+        category. The image must already exist in the category; its file contents (and
+        extension, if the uploaded file differs) are replaced. Requires authentication.
+      operationId: categories_images_update_api_v1_content_categories__category_id__images__image_id__put
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      - name: image_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Image Id
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_categories_images_update_api_v1_content_categories__category_id__images__image_id__put'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Categories Images
+      summary: Delete category image
+      description: Delete or reset a category image.Removes the specified image from
+        the given category.
+      operationId: categories_images_delete_api_v1_content_categories__category_id__images__image_id__delete
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      - name: image_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Image Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+
+  # ─── Categories Voices ──────────────────────────────────────────────
+  /api/v1/content/categories/{category_id}/voices:
+    get:
+      tags:
+      - Categories Voices
+      summary: List voices for a category
+      description: Retrieve a list of all voice files associated with a content category.
+        Returns the voice filenames and their metadata. Requires authentication.
+      operationId: categories_voices_list_api_v1_content_categories__category_id__voices_get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryVoicesResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - Categories Voices
+      summary: Add a voice to a category
+      description: Add a new voice file to the specified content category. This endpoint
+        allows uploading voice files and associating them with a category. The voice
+        file will be stored in the category's voice directory. Requires authentication.
+      operationId: categories_voices_add_api_v1_content_categories__category_id__voices_post
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_categories_voices_add_api_v1_content_categories__category_id__voices_post'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoiceResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/content/categories/{category_id}/voices/{voice_id}:
+    put:
+      tags:
+      - Categories Voices
+      summary: Replace audio for a category voice
+      description: Upload or replace the audio file for a specific voice in a content
+        category. This endpoint allows replacing the audio file associated with a voice.
+        Requires authentication.
+      operationId: categories_voices_update_api_v1_content_categories__category_id__voices__voice_id__put
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      - name: voice_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Voice Id
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_categories_voices_update_api_v1_content_categories__category_id__voices__voice_id__put'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoiceResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Categories Voices
+      summary: Delete a voice from a category
+      description: Delete or reset a voice file associated with a content category.
+        This operation removes the specified voice from the given category. Requires
+        authentication.
+      operationId: categories_voices_delete_api_v1_content_categories__category_id__voices__voice_id__delete
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      - name: voice_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Voice Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoiceResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+
+  # ─── Items ──────────────────────────────────────────────────────────
+  /api/v1/content/categories/{category_id}/items:
+    get:
+      tags:
+      - Items
+      summary: List all items in a category
+      description: Retrieve a list of all content items within a specific category.
+        Returns the item names and their metadata. Requires authentication.
+      operationId: items_list_api_v1_content_categories__category_id__items_get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/content/categories/{category_id}/items/{item_id}:
+    get:
+      tags:
+      - Items
+      summary: Get a single item by ID
+      description: Retrieve detailed information about a single content item. Returns
+        the item name, associated images, and metadata. Requires authentication.
+      operationId: items_get_api_v1_content_categories__category_id__items__item_id__get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Item Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemSummary'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - Items
+      summary: Update an item in a category
+      description: Update the localized name of a content item within a specific category.
+        Requires authentication.
+      operationId: items_update_api_v1_content_categories__category_id__items__item_id__put
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Item Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateItemBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemSummary'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Items
+      summary: Delete an item from a category
+      description: Permanently delete a content item from its category. This operation
+        cannot be undone and will remove the item and all associated metadata. Requires
+        authentication.
+      operationId: items_delete_api_v1_content_categories__category_id__items__item_id__delete
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Item Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+
+  # ─── Items Images ───────────────────────────────────────────────────
+  /api/v1/content/categories/{category_id}/items/{item_id}/images:
+    get:
+      tags:
+      - Items Images
+      summary: List image variants for an item
+      description: Retrieve a list of all image file variants associated with a content
+        item. Returns the image filenames, URLs, and metadata for each variant. Requires
+        authentication.
+      operationId: items_images_list_api_v1_content_categories__category_id__items__item_id__images_get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Item Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemImagesResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - Items Images
+      summary: Add an image file variant to an item
+      description: Add an additional image file variant to the specified content item,
+        stored at the next available index. This endpoint allows uploading multiple
+        image files (e.g., different resolutions, formats) for a single item. Requires
+        authentication.
+      operationId: items_images_add_api_v1_content_categories__category_id__items__item_id__images_post
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Item Id
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_items_images_add_api_v1_content_categories__category_id__items__item_id__images_post'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/content/categories/{category_id}/items/{item_id}/images/{image_id}:
+    put:
+      tags:
+      - Items Images
+      summary: Replace a specific image file variant
+      description: Replace the image file variant with the given image_id for the given
+        item in the category. Uploads the new file and stores it in place of the existing
+        variant. Requires authentication.
+      operationId: items_images_update_api_v1_content_categories__category_id__items__item_id__images__image_id__put
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Item Id
+      - name: image_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Image Id
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_items_images_update_api_v1_content_categories__category_id__items__item_id__images__image_id__put'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Items Images
+      summary: Delete a file variant from an item
+      description: Remove a specific image file variant, identified by image_id, from
+        a content item. At least one file variant must remain after deletion. Requires
+        authentication.
+      operationId: items_images_delete_api_v1_content_categories__category_id__items__item_id__images__image_id__delete
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Item Id
+      - name: image_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Image Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+
+  # ─── Items Voices ───────────────────────────────────────────────────
+  /api/v1/content/categories/{category_id}/items/{item_id}/voices:
+    get:
+      tags:
+      - Items Voices
+      summary: List voices for an item
+      description: Retrieve a list of all voice files associated with a content item.
+        Returns the voice filenames and their metadata. Requires authentication.
+      operationId: items_voices_list_api_v1_content_categories__category_id__items__item_id__voices_get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Item Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemVoicesResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - Items Voices
+      summary: Add a voice to an item
+      description: Add a new voice file to the specified content item for the given
+        language. Fails with 409 if the item already has a voice for that language;
+        use the update endpoint to replace it. Requires authentication.
+      operationId: items_voices_add_api_v1_content_categories__category_id__items__item_id__voices_post
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Item Id
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_items_voices_add_api_v1_content_categories__category_id__items__item_id__voices_post'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoiceResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/content/categories/{category_id}/items/{item_id}/voices/{voice_id}:
+    put:
+      tags:
+      - Items Voices
+      summary: Update voice for an item
+      description: Replace the audio file for an item voice that already has one. Fails
+        with 404 if the voice has no audio file yet; use the add endpoint to create
+        it. Requires authentication.
+      operationId: items_voices_update_api_v1_content_categories__category_id__items__item_id__voices__voice_id__put
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Item Id
+      - name: voice_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Voice Id
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_items_voices_update_api_v1_content_categories__category_id__items__item_id__voices__voice_id__put'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoiceResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Items Voices
+      summary: Delete a voice from an item
+      description: Delete or reset a voice file associated with a content item. This
+        operation removes the specified voice from the given item in a category. Requires
+        authentication.
+      operationId: items_voices_delete_api_v1_content_categories__category_id__items__item_id__voices__voice_id__delete
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Item Id
+      - name: voice_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Voice Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoiceResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/content/items:
+    post:
+      summary: Create a new content item
+      description: Create a new content item with an image and associated voices. This
+        endpoint allows uploading an image file and creating a new item entry with the
+        specified category and English word. The image must be in PNG, JPG, or JPEG
+        format. Requires authentication.
+      operationId: create_item_endpoint_api_v1_content_items_post
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_create_item_endpoint_api_v1_content_items_post'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateItemResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []

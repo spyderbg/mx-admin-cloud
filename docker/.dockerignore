@@ -1,0 +1,2 @@
+# Frontend: use container's node_modules, not host's
+../frontend/node_modules

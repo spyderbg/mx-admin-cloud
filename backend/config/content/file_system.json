@@ -1,0 +1,12 @@
+{
+  "service_provider": {
+    "service": "content",
+    "provider": "file_system",
+    "enabled": true,
+    "priority": 1,
+    "config": {
+      "content_root": "",
+      "archive_root": ""
+    }
+  }
+}

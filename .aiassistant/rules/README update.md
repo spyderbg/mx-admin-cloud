@@ -1,0 +1,39 @@
+---
+apply: always
+---
+
+---
+description: Keep README files aligned with the current code behavior
+alwaysApply: true
+---
+
+# README Sync Rule
+
+When code changes affect setup, usage, configuration, commands, outputs, or behavior, update README documentation in the same task.
+
+## What to update
+
+- Installation and dependency steps
+- CLI/API examples and command flags
+- File paths, defaults, environment variables, and config keys
+- Feature descriptions, limits, and expected outputs
+
+## Required checks before finishing
+
+1. Compare changed code paths against README sections that describe them.
+2. Remove stale instructions and replace with current behavior.
+3. Ensure examples are runnable and use real command names/flags from the code.
+4. Keep wording concise and avoid duplicating implementation details.
+5. Keep the maximum number of columns less than 120.
+
+## Quick examples
+
+```text
+Code change: rename --voice to --speaker
+README update: replace all --voice usage and explain --speaker values
+```
+
+```text
+Code change: new required OPENAI_API_KEY env var
+README update: add env setup step and mention failure mode when missing
+``` 

@@ -1,0 +1,14 @@
+[FORMAT]
+max-line-length=120
+
+[SIMILARITIES]
+ignore-imports=yes
+ignore-signatures=yes
+ignore-docstrings=yes
+min-similarity-lines=25
+
+[tool.pylint.design]
+max-args = 10
+
+[DESIGN]
+max-args=10

@@ -1,0 +1,96 @@
+"""Internal optimizer-configuration and optimization endpoints.
+
+Exposes audio post-processing (optimizer) configs loaded from "backend/config/voice_optimizers/".
+All endpoints require a JWT with the role "internal" or "admin".
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, status  # pylint: disable=import-error
+
+from src.api.dependencies import get_registry, require_internal
+from src.api.service_resolver import get_typed_service
+from src.services import voice_optimization
+from src.services.service_registry import ServiceRegistry
+from src.services.voice_optimization.schemas import OptimizeRequest
+from src.services.voice_optimization.service import VoiceOptimizationService
+
+ROUTER_PREFIX = "/internal/optimizers"
+
+router = APIRouter(prefix=ROUTER_PREFIX, tags=["internal-optimizers"])
+
+OPTIMIZERS_LIST = "/"
+OPTIMIZER_SINGLE = "/{optimizer}/optimize"
+
+
+@router.get(
+    OPTIMIZERS_LIST,
+    status_code=status.HTTP_200_OK,
+    summary="List audio optimizer configurations",
+    description=(
+            "Return all configured audio post-processing optimizers with their service type, "
+            "activation state, priority, and config path. "
+            "Entries are sorted by priority (ascending)."
+    ),
+)
+async def list_optimizers(
+        _user: dict = Depends(require_internal),
+        registry: ServiceRegistry = Depends(get_registry),
+) -> list[dict[str, Any]]:
+    """Return configured optimizers with service metadata."""
+    service = get_typed_service(registry, voice_optimization.SERVICE_NAME, VoiceOptimizationService)
+    configs = service.providers_snapshot()
+    configs.sort(key=lambda c: c.priority)
+    return [
+        {
+            "name": c.name,
+            "service": c.service,
+            "provider": c.provider,
+            "enabled": c.enabled,
+            "priority": c.priority,
+            "config_path": str(c.config_path),
+        }
+        for c in configs
+    ]
+
+
+@router.post(
+    OPTIMIZER_SINGLE,
+    status_code=status.HTTP_200_OK,
+    summary="Optimize a single audio file",
+    description=(
+            "Run the optimizer identified by the 'optimizer' path parameter on the raw "
+            "audio file at 'raw_path' and write the post-processed audio to 'output_path'. "
+            "Responds with HTTP 404 when the optimizer is unknown or inactive, "
+            "HTTP 400 when the raw file does not exist, and HTTP 500 when optimization "
+            "fails."
+    ),
+)
+async def optimize_single(
+        optimizer: str,
+        body: OptimizeRequest,
+        _user: dict = Depends(require_internal),
+        registry: ServiceRegistry = Depends(get_registry),
+) -> dict[str, Any]:
+    """Optimize an audio file using the named optimizer."""
+    service = get_typed_service(registry, voice_optimization.SERVICE_NAME, VoiceOptimizationService)
+    matched = [opt for opt in service.active_optimizers if opt.name == optimizer]
+    if not matched:
+        raise HTTPException(status_code=404, detail=f"Optimizer '{optimizer}' not found or not active.")
+    opt = matched[0]
+
+    raw = Path(body.raw_path)
+    out = Path(body.output_path)
+    if not raw.exists():
+        raise HTTPException(status_code=400, detail=f"Raw file not found: {body.raw_path}")
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        await opt.optimize(raw, out)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return {"success": True, "output_path": str(out)}

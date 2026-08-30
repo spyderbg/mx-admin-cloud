@@ -1,187 +1,171 @@
-# KiddoWords Content Management - Frontend
+# mx-admin
 
-Vue 3 + TypeScript + Vite application for managing image categories, their voices, and associated image assets.
+Admin application for **Kiddo** content management: categories, content objects, multi-language voices (TTS), translation, and category icons. Consists of a FastAPI backend, a Vue 3 frontend, and a Typer-based CLI that talks to the backend over HTTP.
 
-Browser page title is set to `KiddoWords Admin`.
+## Project structure
 
-## Quick Start
+```
+mx-admin/
+|-- backend/          # FastAPI API (auth, tasks, content, internal voice generation)
+|   |-- config/       # TTS provider and translator JSON configs
+|   `-- src/
+|       |-- api/      # v1/ (public routes) and internal/ (voice generation)
+|       |-- core/     # config, content_service, translation, TTS wrappers
+|       `-- services/ # Multi-provider TTS, translation, evaluation, logging
+|-- frontend/         # Vue 3 + TypeScript + Vite SPA
+|-- cli/              # kiddo-cli (Typer) - HTTP client for the backend
+|-- docker/           # Dockerfiles and docker-compose
+|-- content/          # Content data (categories: drinks, foods, toys, etc.)
+|-- docs/             # Backend/CLI layout, game plugin generation
+|-- scripts/          # app.sh, cli.sh, setup.sh, export_env_variables.py;
+|                     #   validate_build.py (backend lint), validate_frontend_build.py (TS/Vue build);
+|                     #   generate_ts_schemas.py, generate_ts_client.py (codegen)
+`-- README.md
+```
+
+### Backend (`backend/`)
+
+- **Stack:** Python 3.10+, FastAPI, Uvicorn, Pydantic Settings, python-jose, bcrypt (password hashing), OpenAI (TTS/translation/icons), httpx, structlog. `LocalizedString` (`src/core/localization.py`) provides multilingual string handling with Pydantic v2 integration.
+- **Layout:** `src/main.py`; `src/api/v1/` (auth, common routes, content, users); `src/api/internal/` (voice generation); `src/core/` (config, pipeline, content_service, models); `src/services/` (multi-provider TTS, translation, evaluation, logging); `src/security/` (auth, tokens).
+- **API base:** `/api/v1` -- auth, common routes, content; `/internal/*` -- voice generation (JWT with role `internal` or `admin`; short-lived internal JWT is created at startup for in-process calls).
+- **Internal translate response:** `POST /internal/translate` returns `success` and `lang_text` (`{ "lang_code", "text" }`).
+- **Category/item names:** `name` fields in category and item responses are `LocalizedString` objects — a `dict[str, str]` mapping language codes to translations (e.g. `{"en": "coffee", "fr": "café"}`). The frontend maps these to plain strings based on the selected content language.
+- **Category thumbnails:** `CategorySummary` now includes `thumbnail_uri`; category thumbnail images (`<category>.png`) live at the root of each category folder under `content/`.
+- **Services:** Multi-provider TTS (Static, OpenAI, ElevenLabs, Speaktor), priority-based translation (static CSV + OpenAI fallback), evaluation engine (STT + Levenshtein scoring), structured logging (structlog, Seq, file rotation).
+- **Service config flow:** JSON files in `backend/config/*` use a `service_provider` envelope with `service` (type), `provider` (implementation name), `enabled`, `priority`, and a `config` payload. Each service package self-registers a `ServicePlugin` with `ServicePluginRegistry` at import time; `registry_builder` iterates the plugin list generically — adding a new service type requires no changes to registry logic.
+- **TTS priority:** Lower `priority` values are selected first. `backend/config/text_to_speech/static.json` is configured with `priority: 0`, so it is preferred ahead of providers configured with `priority: 1`.
+- **Docs:** See [backend/README.md](backend/README.md) for endpoints and env vars.
+
+### Frontend (`frontend/`)
+
+- **Stack:** Vue 3, TypeScript, Vite, Vue Router, Axios.
+- **Layout:** `src/api/`, `src/components/`, `src/views/`, `src/layouts/`, `src/router/`, `src/types/` (hand-written view-models in `index.ts`, auto-generated DTOs in `contentSchemas.ts`, `LocalizedString` in `localization.ts`), `src/assets/`.
+- **Routes:** `/login`, `/categories`, `/categories/:id`, `/categories/:id/images/:imageId` (auth required for categories).
+- **Docs:** See [frontend/README.md](frontend/README.md) for structure, routes, and components.
+
+### CLI (`cli/`)
+
+- **Stack:** Python 3.10+, Typer, requests/httpx, Rich (formatted terminal output). No backend code; all calls over HTTP. Typer/Click versions are pinned so the CLI can share an environment with packages that require `click<8.2` (for example gtts).
+- **Install:** `./scripts/cli.sh install` or `pip install -e cli/` -> `kiddo-cli` command.
+- **Verbose mode:** Use `kiddo-cli --verbose ...` to print HTTP/debug request messages from the CLI client.
+- **Commands:** `common` (ping, status, operation, list-files), `content` (categories, CRUD, objects), `list` (generators, translators, optimizers, evaluators, services, users), `translate` (word, file), `users` (list, create, update, delete), `generate` (run).
+- **User management from the CLI:** On Linux/macOS, `kiddo-cli users …` and `kiddo-cli list users` use the backend’s Unix socket (same as socket login); start the backend with `backend/uvicorn_start.sh` so that socket exists.
+- **Docs:** See [cli/README.md](cli/README.md) for auth and usage.
+
+### Docker (`docker/`)
+
+- **Ports:** Backend listens on 8000 inside the container and is published on host **9000**. Frontend is nginx on port 80 inside the container, published on host **9001**.
+- **Volumes:** Content `/app/content`, archive `/app/archive`, SQLite on `backend-data`, TTS configs `/app/config`, outputs `/app/tts-output`.
+- **CLI profile:** `docker compose --profile cli` starts `backend-cli` with a Unix socket at `/tmp/kiddo-backend.sock` (requires host `/tmp` mount as in compose).
+- **Compose:** `docker compose -f docker/docker-compose.yml up` from repo root, or `./scripts/app.sh start` / `./scripts/app.sh stop`.
+
+### Docs (`docs/`)
+
+- [backend_first_build.md](docs/backend_first_build.md) -- Backend/CLI layout, run instructions, dependencies.
+- [game_plugin_generate.md](docs/game_plugin_generate.md) -- Mustache template and plugin CPP generation from merged config.
+
+---
+
+## Getting started
+
+### Backend (local)
+
+From repo root:
 
 ```bash
+cd backend
+./uvicorn_start.sh
+```
+
+This starts HTTP on `http://0.0.0.0:8000` and a CLI-only Unix socket at `/tmp/kiddo-backend.sock`, and writes `backend/uvicorn.pid`. To stop: `cd backend && ./kill_uvicorn.sh`.
+
+Or without the socket (HTTP only):
+
+```bash
+cd backend
+export PYTHONPATH="$PWD/src"
+uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### Frontend (local)
+
+```bash
+cd frontend
 npm install
-npm run dev         # Vite dev server: port 5173, host 0.0.0.0 (see vite.config.ts)
-npm run build       # vue-tsc --noEmit && vite build
-npm run type-check  # vue-tsc --noEmit only
-npm run preview     # serve production build locally
+npm run dev
 ```
 
-The dev server proxies `**/api**` to `**http://127.0.0.1:8000**` and serves the monorepo `**content/**` tree at `**/content**` (see `vite.config.ts`). Run the FastAPI backend on port 8000 for a full API-backed app.
+Dev server at `http://localhost:5173`; API proxied to `http://127.0.0.1:8000` (see [frontend/vite.config.ts](frontend/vite.config.ts)).
 
-**Optional offline UI:** If `VITE_DEBUG_MODE=true` (e.g. in `.env.development.local`), the app starts [MSW](https://mswjs.io/) (`src/mocks/`), seeds a placeholder token when none is set, and unhandled requests bypass the worker so real APIs still work when reachable.
+### Docker (backend + frontend)
 
-## Project Structure
+From repo root:
 
-```
-src/
-├── api/              # REST API client modules
-│   └── auth.ts       # Login, status, file-list endpoints
-├── assets/           # Static assets (copied from vue3-demo)
-│   ├── css/          # Shared + demo_1 Star Admin stylesheets
-│   ├── images/       # Faces, logos, samples, auth backgrounds
-│   └── vendors/      # Bootstrap, MDI, Font Awesome, flag-icons, etc.
-├── components/       # Reusable UI components
-│   ├── CategoryDetail.vue
-│   ├── ServerWord.vue
-│   ├── ImageGrid.vue
-│   └── LoginForm.vue
-├── composables/      # Shared composition helpers (e.g. content UI language)
-├── utils/            # Pure helpers (labels from voices, title-case formatting, etc.)
-├── data/
-│   └── mockData.ts   # Sidebar / MSW sample categories aligned with repo ../content (drinks, foods, vegetables, toys)
-├── mocks/            # MSW handlers (used when VITE_DEBUG_MODE=true)
-├── layouts/          # Application shell components
-│   ├── AppLayout.vue
-│   ├── AppNavbar.vue
-│   ├── AppSidebar.vue
-│   └── AppFooter.vue
-├── router/
-│   └── index.ts      # Route definitions and auth guard
-├── types/
-│   └── index.ts      # TypeScript interfaces (Category, Image, Voice, etc.)
-├── views/            # Route-level page components
-│   ├── CategoriesView.vue
-│   ├── ImageDetailView.vue
-│   ├── LoginView.vue
-│   └── DashboardView.vue   # present but not registered in the router
-├── App.vue           # Root component (bare router-view)
-├── env.d.ts          # Vite/Vue/SVG type declarations
-├── main.ts           # App entry point and CSS imports
-└── .cursorignore     # Cursor ignore file NOTE: the file is different in each *-sync branch!!!
+```bash
+./scripts/app.sh start
+# or: docker compose -f docker/docker-compose.yml up -d --build
 ```
 
-## Routes
+Backend: `http://localhost:9000`. Frontend: `http://localhost:9001`. Stop: `./scripts/app.sh stop` or `docker compose -f docker/docker-compose.yml down`.
 
+### CLI
 
-| Path                                      | View              | Layout           | Description                               |
-| ----------------------------------------- | ----------------- | ---------------- | ----------------------------------------- |
-| `/login`                                  | `LoginView`       | None (full-page) | Authentication screen                     |
-| `/`                                       | —                 | —                | Redirects to `/categories`                |
-| `/categories`                             | [`CategoriesView`](#categoriesview)  | [`AppLayout`](#applayout)      | Shows first category by default           |
-| `/categories/:categoryId`                 | [`CategoriesView`](#categoriesview)  | [`AppLayout`](#applayout)      | Selected category details + image grid    |
-| `/categories/:categoryId/images/:imageId` | [`ImageDetailView`](#imagedetailview) | [`AppLayout`](#applayout)      | Image detail: files, voices, name editing |
-
-
-All `/categories` routes require authentication (token in localStorage). Unauthenticated users are redirected to `/login`.
-
-## Layouts
-
-### AppLayout
-
-The main authenticated shell, wrapping all `/categories` routes:
-
-```
-┌──────────────────────────────────────────────┐
-│  AppNavbar (fixed top)                       │
-├──────────┬───────────────────────────────────┤
-│          │                                   │
-│AppSidebar│  <router-view />                  │
-│ (270px)  │  (CategoriesView or               │
-│          │   ImageDetailView)                │
-│          │                                   │
-│          ├───────────────────────────────────┤
-│          │  AppFooter                        │
-└──────────┴───────────────────────────────────┘
+```bash
+./scripts/cli.sh install
+kiddo-cli --help
+kiddo-cli common ping
+kiddo-cli content categories
+kiddo-cli generate list-generators
+kiddo-cli generate run -l bg -f mp3 words.txt
 ```
 
-- **AppNavbar** -- Brand logo; **content language** selector (en/es/fr/bg with flags) and user avatar / sign-out are grouped on the **right** of the bar (`navbar-menu-wrapper` uses remaining width with end alignment; both controls stay visible at all breakpoints). Scoped styles in `AppNavbar.vue` fix vendor + Bootstrap rules that otherwise stretch language and user dropdowns to the full `navbar-menu-wrapper` width under narrow layouts, and anchor menus under their toggles (`top: 100%`, `right: 0`), overriding the theme language rule `left: -15px !important`. Opening one header dropdown closes the other. On small viewports, opening either dropdown closes the off-canvas category sidebar, and opening the sidebar closes both dropdowns. At **max-width 991px**, the logo / mini-logo area toggles the off-canvas categories drawer (home links apply at wider widths; there is no separate header menu button). The drawer slides in from the **left** with a short eased transition (see `AppSidebar.vue` scoped overrides). The selected language is shared with the sidebar (via `AppLayout` provide/inject), persisted in `localStorage` under `mx-admin-content-language`, and controls which `Voice.name` is shown for each category and image in the tree. There is no global header search bar; use the sidebar filter on category routes.
-- **AppSidebar** -- User profile (avatar, name, role), fuzzy-filter input (bright `::placeholder` for contrast on the blue bar), expandable category tree with child image labels in the **navbar-selected language** (`Voice.name` for that language, else **English** `Voice.name`, else the stored category/image `name`). Choosing a category or image emits `close-sidebar` so the off-canvas drawer closes on narrow viewports. Next to the **Categories** heading, **Expand all** / **Collapse all** toggle every top-level category open or closed. Clicking a category navigates to its detail; clicking an image navigates to its detail page.
-- **AppFooter** -- Simple branded footer.
+Use `BACKEND_URL` and `KIDDO_TOKEN` (or socket-based login) as in [cli/README.md](cli/README.md).
+Running `kiddo-cli` with no arguments shows the same help output as `kiddo-cli --help`.
 
-## Views
+---
 
-### LoginView
+## Environment (backend)
 
-Full-page authentication screen (Star Admin auth theme). Uses `LoginForm` component with username/password fields, "Keep me signed in", and Google login placeholder.
+Key settings (see `backend/src/core/config.py`). Use `backend/.env` or the process environment; the repo root [`.env.example`](.env.example) lists optional provider API keys you can copy into `.env`.
 
-### CategoriesView
+| Variable | Description |
+|----------|-------------|
+| `CONTENT_DIR` | Content data directory (default `../content`) |
+| `ARCHIVE_DIR` | Archive directory for removed categories (optional) |
+| `DB_PATH` | SQLite user database path (default `data/users.db`) |
+| `OPENAI_API_KEY` | Required for TTS, translation, and category icon generation |
+| `ELEVENLABS_API_KEY` | ElevenLabs TTS provider (optional) |
+| `SPEAKTOR_API_KEY` | Speaktor TTS provider (optional) |
+| `CONFIG_DIR` | Path to TTS config directory (default `config`) |
+| `OUTPUT_DIR` | Path to TTS output directory (default `../output`) |
+| `TEMP_DIR` | Temp directory for uploads and intermediates (default `../temp`) |
+| `API_BASE_URL` | Base URL for internal HTTP calls (e.g. pipeline → `/internal/...`, default `http://127.0.0.1:8000`) |
+| `TTS_MAX_CONCURRENCY` | Max parallel provider requests (default 5) |
+| `LOG_PROFILE` | Logging profile: `dev` or `prod` (default `dev`) |
+| `SECRET_KEY`, `ALGORITHM` | JWT signing (`ACCESS_TOKEN_EXPIRE_MINUTES`, `CLI_TOKEN_EXPIRE_SECONDS`) |
+| `DEFAULT_ADMIN_PASSWORD` | Initial `admin` password on first DB init |
+| `DEBUG_MODE` | Relaxes some admin/UDS checks when true (local dev only) |
+| `AUTH_DISABLED` | If true, skip auth checks |
 
-Displayed when a category is selected (or defaults to first category):
+Compose may set `INTERNAL_SERVICE_TOKEN` in containers. `Settings` uses `extra="ignore"`, so that variable is unused unless you extend the model to read it.
 
-- **Page header** -- `h3.page-title` with localized category label + `toPascalCaseWords` (navbar content language; no edit control on the title)
-- **CategoryDetail card** -- **Category Name** and each **voice-card** word use `ServerWord` (category row: localized + rename modal; voice row: `voice.name` as-is, pencil → **Edit word** modal, `rename-voice` emit). Two-row layout: **Category Icon** (`aspect-ratio: 1 / 1`, `object-fit: contain`) and **Category Voices** share a baseline; voice grid `repeat(auto-fit, minmax(7.5rem, 1fr))`; play + **Upload** (audio); corner **delete** icon opens **Delete or reset voice** confirmation, then `delete-voice` emit; modals mutually exclusive
-- **ImageGrid** -- responsive 4-column grid of image thumbnails, each with a pencil edit-icon badge. Clicking navigates to ImageDetailView.
+---
 
-### ImageDetailView
+## OpenCode AI Commands
 
-Displayed for a specific image within a category:
+This project defines custom commands for [OpenCode](https://opencode.ai) (terminal AI coding agent) under `.opencode/commands/`:
 
-- **Breadcrumb** navigation: root + category + image labels follow the **navbar content language** (same as the sidebar). Category and image segments use the matching `Voice.name`, then the **English** voice if that language is missing, then the stored `name`. The root crumb is translated for en/es/fr/bg (unknown codes fall back to English).
-- **Page title** (`h3.page-title`) uses the same localized image label as the last breadcrumb segment, formatted with **per-word Pascal-style casing** (first letter of each word uppercased, the rest lowercased via `toLocaleUpperCase` / `toLocaleLowerCase`).
-- **Image name** editable input
-- **Files section** -- grid of the image's file variants with replace/delete actions. At least one file must remain (delete disabled when only one). **Add File** opens the system file picker (`image/`*); selection is logged until upload is wired to the API.
-- **Voices table** -- one row per supported language (en, es, fr, bg) showing flag, voice name (text only), type badge, and replace/upload button.
+| Command | Description |
+|---------|-------------|
+| `/api-sync` | Export OpenAPI spec + regenerate TypeScript client + schemas |
+| `/verify` | Validate backend build + run tests + verify frontend build |
+| `/frontend` | Regenerate TypeScript types + build frontend |
+| `/mockdata` | Generate mock data from `content/` directory |
 
-## Components
+Usage: type `/<command>` in the OpenCode TUI.
 
+---
 
-| Component        | Props                                   | Emits                                          | Purpose                                    |
-| ---------------- | --------------------------------------- | ---------------------------------------------- | ------------------------------------------ |
-| `ServerWord`     | `category` and/or `text` + style props  | `edit` | Label + pencil; `text` overrides display source |
-| `CategoryDetail` | `category: Category`                    | `edit`, `delete`, `rename`, `edit-voice`, `rename-voice`, `delete-voice` | Category info card with voice list         |
-| `ImageGrid`      | `images: Image[]`, `categoryId: string` | — | Responsive thumbnail grid with edit badges |
-| `LoginForm`      | —                                       | — | Login form with auth API integration       |
+## Repository
 
-**ServerWord** — Source: non-empty `text` is shown as-is; otherwise `localizedCategoryLabel(category, content language)`. `pascalCase` runs `toPascalCaseWords` on that raw string. Styling: `rootClass`, `textClass`, `buttonClass`, `iconClass`, `iconStyle`; `textTag` (default `h5`, `mb-0` only for `h5`); `inheritAttrs: false` with class/style on the root merged from `$attrs` + `rootClass`. DOM hooks: `server-word-root`, `server-word-text`, `server-word-edit`, `server-word-icon`.
-
-## Domain Types
-
-Defined in `src/types/index.ts` (excerpt):
-
-```typescript
-type Language = 'en' | 'es' | 'fr' | 'bg'
-
-const SUPPORTED_LANGUAGES: Language[] = ['en', 'es', 'fr', 'bg']
-
-interface Voice {
-  id: string
-  name: string
-  language: Language
-  type: string        // e.g. "male", "female", "ambient"
-  iconUrl: string
-  audioUrl?: string   // if absent/empty, play is disabled for that voice
-}
-
-interface Image {
-  id: string
-  name: string
-  files: string[]     // at least 1 file URL
-  voices: Voice[]     // exactly 1 per language (4 total)
-  thumbnailUrl: string
-}
-
-interface Category {
-  id: string
-  name: string
-  description: string
-  iconUrl: string
-  voices: Voice[]     // category-level voices per language
-  images: Image[]
-}
-
-interface User {
-  name: string
-  role: string
-  avatarUrl: string
-}
-```
-
-## Styles
-
-Imported from `src/main.ts` (Star Admin / vue3-demo lineage):
-
-- `assets/vendors/css/vendor.bundle.base.css` -- Bootstrap 4 + Perfect Scrollbar + jVectorMap
-- `assets/vendors/css/vendor.bundle.addons.css` -- Additional vendor styles
-- `assets/css/shared/style.css` -- Star Admin shared theme
-- `assets/css/demo_1/style.css` -- Demo skin overrides (sidebar, navbar, cards)
-- `assets/css/auth.css` -- Login page styles
-- Icon fonts under `assets/vendors/`: MDI, Font Awesome 4.7, flag-icon-css
-
+Git remote: `http://82.103.77.45/marxman/mx-admin.git` (GitLab). Default branch: `main`.

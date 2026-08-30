@@ -1,0 +1,35 @@
+---
+description: Enforce Vue 3 + TypeScript + Vite for frontend
+globs: frontend/**
+alwaysApply: false
+---
+
+# Frontend Stack Standard
+
+Use Vue 3 as the frontend framework, TypeScript as the primary language, and Vite as the dev/build tool.
+
+## Requirements
+
+- Prefer Vue Single File Components with `<script setup lang="ts">`.
+- Write new frontend logic in TypeScript (`.ts` or Vue SFC TypeScript blocks), not plain JavaScript.
+- Keep tooling and scripts aligned with Vite (`vite`, `vite build`, `vite preview`) for local development and build tasks.
+- Follow Vue 3 Composition API patterns for new component logic.
+
+## Examples
+
+```vue
+<script setup lang="ts">
+import { ref } from 'vue';
+
+const title = ref<string>('Categories');
+</script>
+```
+
+```json
+{
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  }
+}
+```

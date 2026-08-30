@@ -1,0 +1,11 @@
+{
+	"folders": [
+		{
+			"path": "../backend/config/text_translation"
+		},
+		{
+			"path": "../backend/src/services/text_translation"
+		}
+	],
+	"settings": {}
+}

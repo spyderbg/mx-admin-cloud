@@ -1,0 +1,896 @@
+openapi: "3.1.0"
+info:
+  title: KiddoWords Content Management API
+  description: >
+    REST API for the mx-admin content management platform.
+    Manages multilingual categories, images, voices, and authentication
+    for the Kiddo language learning app.
+  version: "0.1.0"
+  contact:
+    name: mx-admin
+
+servers:
+  - url: /api/v1
+    description: Default (Vite proxy → FastAPI backend on port 8000)
+  - url: http://localhost:8000/api/v1
+    description: Direct backend access
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: JWT token obtained from the login endpoint.
+
+  schemas:
+    Language:
+      type: string
+      enum: [en, es, fr, bg]
+      description: Supported UI / content languages.
+
+    Voice:
+      type: object
+      required: [id, name, language, type, iconUrl]
+      properties:
+        id:
+          type: string
+          example: coffee-en
+        name:
+          type: string
+          description: Localised word for this voice entry.
+          example: coffee
+        language:
+          $ref: "#/components/schemas/Language"
+        type:
+          type: string
+          description: Voice variant (e.g. male, female, ambient).
+          example: male
+        iconUrl:
+          type: string
+          format: uri-reference
+          example: /assets/images/faces/face1.jpg
+        audioUrl:
+          type: string
+          format: uri-reference
+          nullable: true
+          description: When absent or empty the voice is considered missing and play controls must be disabled.
+          example: /content/drinks/coffee/coffee_en.mp3
+
+    Image:
+      type: object
+      required: [id, name, files, voices, thumbnailUrl]
+      properties:
+        id:
+          type: string
+          example: drinks-coffee
+        name:
+          type: string
+          example: Coffee
+        files:
+          type: array
+          items:
+            type: string
+            format: uri-reference
+          minItems: 1
+          description: At least one image file URL.
+          example:
+            - /content/drinks/coffee/coffee_01.png
+        voices:
+          type: array
+          items:
+            $ref: "#/components/schemas/Voice"
+          description: One voice entry per supported language.
+        thumbnailUrl:
+          type: string
+          format: uri-reference
+          example: /content/drinks/coffee/coffee_01.png
+
+    Category:
+      type: object
+      required: [id, name, description, iconUrl, voices, images]
+      properties:
+        id:
+          type: string
+          example: drinks
+        name:
+          type: string
+          example: Drinks
+        description:
+          type: string
+          example: Beverages and drinks
+        iconUrl:
+          type: string
+          format: uri-reference
+          example: /content/drinks/coffee/coffee_01.png
+        voices:
+          type: array
+          items:
+            $ref: "#/components/schemas/Voice"
+          description: Category-level voices, one per supported language.
+        images:
+          type: array
+          items:
+            $ref: "#/components/schemas/Image"
+
+    CategorySummary:
+      type: object
+      description: Lightweight category representation without nested images (useful for list endpoints that omit heavy payloads).
+      required: [id, name, description, iconUrl]
+      properties:
+        id:
+          type: string
+          example: drinks
+        name:
+          type: string
+          example: Drinks
+        description:
+          type: string
+          example: Beverages and drinks
+        iconUrl:
+          type: string
+          format: uri-reference
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      description: OAuth2-style form body (application/x-www-form-urlencoded).
+      properties:
+        username:
+          type: string
+          example: admin
+        password:
+          type: string
+          format: password
+          example: secret
+
+    LoginResponse:
+      type: object
+      required: [access_token]
+      properties:
+        access_token:
+          type: string
+          description: JWT bearer token.
+          example: eyJhbGciOiJIUzI1NiIs...
+
+    StatusResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        user:
+          type: string
+          example: admin
+
+    FilesResponse:
+      type: object
+      properties:
+        directory:
+          type: string
+          example: /content
+        files:
+          type: array
+          items:
+            type: string
+          example:
+            - drinks/coffee/coffee_01.png
+            - drinks/coffee/coffee_en.mp3
+
+    User:
+      type: object
+      required: [name, role, avatarUrl]
+      properties:
+        name:
+          type: string
+          example: Allen Moreno
+        role:
+          type: string
+          example: Administrator
+        avatarUrl:
+          type: string
+          format: uri-reference
+          example: /assets/images/faces/face8.jpg
+
+    Error:
+      type: object
+      properties:
+        detail:
+          type: string
+          example: Not found
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid bearer token.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+security:
+  - BearerAuth: []
+
+paths:
+  # ─── Authentication ────────────────────────────────────────────────
+  /login:
+    post:
+      operationId: login
+      summary: Authenticate and obtain a bearer token
+      tags: [Auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Successful login.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          description: Invalid credentials.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /status:
+    get:
+      operationId: getStatus
+      summary: Health check / token validation
+      tags: [Auth]
+      responses:
+        "200":
+          description: Token is valid; service is healthy.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /list:
+    get:
+      operationId: listFiles
+      summary: List content files on the server
+      tags: [Auth]
+      responses:
+        "200":
+          description: File listing returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FilesResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ─── Categories ────────────────────────────────────────────────────
+  /content/categories:
+    get:
+      operationId: getCategories
+      summary: List all categories with their images and voices
+      tags: [Categories]
+      responses:
+        "200":
+          description: Full category tree.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Category"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    post:
+      operationId: createCategory
+      summary: Create a new category
+      tags: [Categories]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, description]
+              properties:
+                name:
+                  type: string
+                  example: Fruits
+                description:
+                  type: string
+                  example: Fresh fruits and berries
+      responses:
+        "201":
+          description: Category created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Category"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /content/categories/{categoryId}:
+    parameters:
+      - name: categoryId
+        in: path
+        required: true
+        schema:
+          type: string
+        example: drinks
+
+    get:
+      operationId: getCategory
+      summary: Get a single category by ID
+      tags: [Categories]
+      responses:
+        "200":
+          description: Category found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Category"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    put:
+      operationId: updateCategory
+      summary: Update category name or description
+      tags: [Categories]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  example: Beverages
+                description:
+                  type: string
+                  example: Hot and cold beverages
+      responses:
+        "200":
+          description: Category updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Category"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    delete:
+      operationId: deleteCategory
+      summary: Delete a category and all its images
+      tags: [Categories]
+      responses:
+        "204":
+          description: Category deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ─── Category Voices ───────────────────────────────────────────────
+  /content/categories/{categoryId}/voices:
+    parameters:
+      - name: categoryId
+        in: path
+        required: true
+        schema:
+          type: string
+        example: drinks
+
+    get:
+      operationId: getCategoryVoices
+      summary: List voices for a category
+      tags: [Category Voices]
+      responses:
+        "200":
+          description: Voice list for the category.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Voice"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /content/categories/{categoryId}/voices/{voiceId}:
+    parameters:
+      - name: categoryId
+        in: path
+        required: true
+        schema:
+          type: string
+        example: drinks
+      - name: voiceId
+        in: path
+        required: true
+        schema:
+          type: string
+        example: drinks-v-en
+
+    put:
+      operationId: updateCategoryVoice
+      summary: Rename a category voice
+      tags: [Category Voices]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  example: beverages
+      responses:
+        "200":
+          description: Voice updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Voice"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    delete:
+      operationId: deleteCategoryVoice
+      summary: Delete or reset a category voice
+      tags: [Category Voices]
+      responses:
+        "204":
+          description: Voice deleted / reset.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /content/categories/{categoryId}/voices/{voiceId}/audio:
+    parameters:
+      - name: categoryId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: voiceId
+        in: path
+        required: true
+        schema:
+          type: string
+
+    put:
+      operationId: uploadCategoryVoiceAudio
+      summary: Upload / replace audio for a category voice
+      tags: [Category Voices]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: MP3 or WAV audio file.
+      responses:
+        "200":
+          description: Audio replaced.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Voice"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ─── Images ────────────────────────────────────────────────────────
+  /content/categories/{categoryId}/images:
+    parameters:
+      - name: categoryId
+        in: path
+        required: true
+        schema:
+          type: string
+        example: drinks
+
+    get:
+      operationId: getCategoryImages
+      summary: List images for a category
+      tags: [Images]
+      responses:
+        "200":
+          description: Image list.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Image"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    post:
+      operationId: addImageToCategory
+      summary: Add a new image to a category
+      tags: [Images]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [name, file]
+              properties:
+                name:
+                  type: string
+                  example: Smoothie
+                file:
+                  type: string
+                  format: binary
+                  description: Initial image file (PNG/JPG).
+      responses:
+        "201":
+          description: Image created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Image"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /content/categories/{categoryId}/images/{imageId}:
+    parameters:
+      - name: categoryId
+        in: path
+        required: true
+        schema:
+          type: string
+        example: drinks
+      - name: imageId
+        in: path
+        required: true
+        schema:
+          type: string
+        example: drinks-coffee
+
+    get:
+      operationId: getImage
+      summary: Get a single image by ID
+      tags: [Images]
+      responses:
+        "200":
+          description: Image found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Image"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    put:
+      operationId: updateImage
+      summary: Update image name
+      tags: [Images]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  example: Espresso
+      responses:
+        "200":
+          description: Image updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Image"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    delete:
+      operationId: deleteImage
+      summary: Delete an image from a category
+      tags: [Images]
+      responses:
+        "204":
+          description: Image deleted.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ─── Image Files ───────────────────────────────────────────────────
+  /content/categories/{categoryId}/images/{imageId}/files:
+    parameters:
+      - name: categoryId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: imageId
+        in: path
+        required: true
+        schema:
+          type: string
+
+    post:
+      operationId: addImageFile
+      summary: Upload an additional file variant for an image
+      tags: [Image Files]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: PNG or JPG image file.
+      responses:
+        "201":
+          description: File added.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Image"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /content/categories/{categoryId}/images/{imageId}/files/{fileIndex}:
+    parameters:
+      - name: categoryId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: imageId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: fileIndex
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 0
+        description: Zero-based index into the image's files array.
+
+    put:
+      operationId: replaceImageFile
+      summary: Replace a specific file variant
+      tags: [Image Files]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: File replaced.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Image"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    delete:
+      operationId: deleteImageFile
+      summary: Delete a file variant (at least one must remain)
+      tags: [Image Files]
+      responses:
+        "200":
+          description: File removed; updated image returned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Image"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Cannot delete the last remaining file.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # ─── Image Voices ──────────────────────────────────────────────────
+  /content/categories/{categoryId}/images/{imageId}/voices:
+    parameters:
+      - name: categoryId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: imageId
+        in: path
+        required: true
+        schema:
+          type: string
+
+    get:
+      operationId: getImageVoices
+      summary: List voices for an image
+      tags: [Image Voices]
+      responses:
+        "200":
+          description: Voice list.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Voice"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /content/categories/{categoryId}/images/{imageId}/voices/{voiceId}:
+    parameters:
+      - name: categoryId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: imageId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: voiceId
+        in: path
+        required: true
+        schema:
+          type: string
+        example: coffee-en
+
+    put:
+      operationId: updateImageVoice
+      summary: Rename an image voice
+      tags: [Image Voices]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  example: espresso
+      responses:
+        "200":
+          description: Voice updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Voice"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    delete:
+      operationId: deleteImageVoice
+      summary: Delete or reset an image voice
+      tags: [Image Voices]
+      responses:
+        "204":
+          description: Voice deleted / reset.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /content/categories/{categoryId}/images/{imageId}/voices/{voiceId}/audio:
+    parameters:
+      - name: categoryId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: imageId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: voiceId
+        in: path
+        required: true
+        schema:
+          type: string
+
+    put:
+      operationId: uploadImageVoiceAudio
+      summary: Upload / replace audio for an image voice
+      tags: [Image Voices]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: MP3 or WAV audio file.
+      responses:
+        "200":
+          description: Audio replaced.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Voice"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+tags:
+  - name: Auth
+    description: Authentication and session management.
+  - name: Categories
+    description: CRUD operations on content categories.
+  - name: Category Voices
+    description: Manage voices attached to categories.
+  - name: Images
+    description: CRUD operations on images within categories.
+  - name: Image Files
+    description: Manage file variants (PNG/JPG) for an image.
+  - name: Image Voices
+    description: Manage voices attached to images.

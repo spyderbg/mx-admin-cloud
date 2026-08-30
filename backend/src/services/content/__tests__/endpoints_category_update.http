@@ -1,0 +1,174 @@
+### Create a new category
+# name is the new category's default display name; the category id is derived from it (slugified).
+# Fails with 409 if a category with that name already exists.
+POST {{settings.CONTENT_URL}}/categories
+Content-Type: application/json
+
+{
+  "name": "Sample Category"
+}
+
+### Create a new category - already exists
+POST {{settings.CONTENT_URL}}/categories
+Content-Type: application/json
+
+{
+  "name": "{{category_name}}"
+}
+
+################################################################################
+
+### Remove a category
+# Identified by category_name (query param), not category_id; archives the category's content
+# folder so it can later be restored via the restore endpoint. Destructive - do not run against
+# category_name/category_id values still used by other requests in this file.
+DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}?category_name={{category_name}}
+
+### Remove a category - not found
+DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}?category_name=does_not_exist
+
+################################################################################
+
+### Add a new image to a category
+# category_id is used to locate the category;
+# in the category folder (first available index).
+POST {{settings.CONTENT_URL}}/categories/{{category_id}}/images
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="image"; filename="sample_image.png"
+Content-Type: image/png
+
+< ./fixtures/sample_image.png
+--WebAppBoundary--
+
+### Override an existing category image
+# image_id is the on-disk filename stem; replaces the file created by the request above (run it first).
+PUT {{settings.CONTENT_URL}}/categories/{{category_id}}/images/{{category_image_id}}
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="image"; filename="sample_image.png"
+Content-Type: image/png
+
+< ./fixtures/sample_image.png
+--WebAppBoundary--
+
+### Override an existing category image - not found
+PUT {{settings.CONTENT_URL}}/categories/{{category_id}}/images/does_not_exist
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="image"; filename="sample_image.png"
+Content-Type: image/png
+
+< ./fixtures/sample_image.png
+--WebAppBoundary--
+
+### Delete an existing category image
+# image_id is the on-disk filename stem; deletes the file created by the POST request above (run it first).
+DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/images/{{category_image_id}}
+
+### Delete a category image - not found
+DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/images/does_not_exist
+
+################################################################################
+
+### Replace a category's icon/thumbnail image
+# Updates the icon file ({category_name}/{category_name}.<ext>); the icon must already exist.
+POST {{settings.CONTENT_URL}}/categories/{{category_id}}/icon
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="image"; filename="sample_icon.jpg"
+Content-Type: image/jpeg
+
+< ./fixtures/sample_icon.jpg
+--WebAppBoundary--
+
+### Replace a category's icon/thumbnail image - category not found
+POST {{settings.CONTENT_URL}}/categories/does_not_exist/icon
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="image"; filename="sample_icon.jpg"
+Content-Type: image/jpeg
+
+< ./fixtures/sample_icon.jpg
+--WebAppBoundary--
+
+### Delete an existing category's icon/thumbnail image
+# Deletes the icon file created at category creation (or replaced by the request above).
+DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/icon
+
+### Delete a category's icon/thumbnail image - category not found
+DELETE {{settings.CONTENT_URL}}/categories/does_not_exist/icon
+
+################################################################################
+
+### Add a new voice to a category
+# language is the ISO code for the new voice; fails with 409 if a voice for
+# that language already exists in the category (categories are seeded with
+# a voice per supported language on creation).
+POST {{settings.CONTENT_URL}}/categories/{{category_id}}/voices
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="language"
+
+de
+--WebAppBoundary
+Content-Disposition: form-data; name="audio"; filename="sample_voice.mp3"
+Content-Type: audio/mpeg
+
+< ./fixtures/sample_voice.mp3
+--WebAppBoundary--
+
+### Add a new voice to a category - already exists
+POST {{settings.CONTENT_URL}}/categories/{{category_id}}/voices
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="language"
+
+en
+--WebAppBoundary
+Content-Disposition: form-data; name="audio"; filename="sample_voice.mp3"
+Content-Type: audio/mpeg
+
+< ./fixtures/sample_voice.mp3
+--WebAppBoundary--
+
+### Replace audio for an existing category voice
+# voice_id identifies the category+language pair; replaces the audio file created at category creation.
+PUT {{settings.CONTENT_URL}}/categories/{{category_id}}/voices/{{category_voice_id}}
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="audio"; filename="sample_voice.mp3"
+Content-Type: audio/mpeg
+
+< ./fixtures/sample_voice.mp3
+--WebAppBoundary--
+
+### Replace audio for an existing category voice - not found
+PUT {{settings.CONTENT_URL}}/categories/{{category_id}}/voices/does_not_exist
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="audio"; filename="sample_voice.mp3"
+Content-Type: audio/mpeg
+
+< ./fixtures/sample_voice.mp3
+--WebAppBoundary--
+
+### Delete an existing category voice
+# Deletes the voice added by the "Add a new voice to a category" request above (run it first).
+DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/voices/{{category_voice_id}}
+
+### Delete a category voice - not found
+DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/voices/does_not_exist
+
+
+################################################################################
+

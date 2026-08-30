@@ -1,0 +1,1 @@
+Always prefer `.venv/bin/python` when running Python commands if it exists.

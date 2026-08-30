@@ -1,0 +1,13 @@
+{
+  "service_provider": {
+    "service": "voice_optimization",
+    "provider": "ffmpeg",
+    "enabled": false,
+    "priority": 1,
+    "config": {
+      "sample_rate": 22050,
+      "mono": true,
+      "vbr_quality": 3
+    }
+  }
+}

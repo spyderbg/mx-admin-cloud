@@ -1,0 +1,70 @@
+services:
+
+  backend:
+    container_name: kiddo-backend
+    build:
+      context: ..
+      dockerfile: docker/backend.Dockerfile
+    ports:
+      - "9000:8000"
+    volumes:
+      - /home/spyder/Nextcloud/_Projects/KiddoWords/Content:/app/content
+      - ../archive:/app/archive
+      - backend-data:/app/data
+      - ../backend/config:/app/config
+      - tts-output:/app/tts-output
+    environment:
+      - CONTENT_DIR=/app/content
+      - ARCHIVE_DIR=/app/archive
+      - DB_PATH=/app/data/users.db
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
+      - SPEAKTOR_API_KEY=${SPEAKTOR_API_KEY}
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN}
+      - CONFIG_DIR=/app/config
+      - OUTPUT_DIR=/app/tts-output
+
+  frontend:
+    container_name: kiddo-frontend
+    build:
+      context: ..
+      dockerfile: docker/frontend.Dockerfile
+      args:
+        VITE_DEBUG_MODE: "true"
+        VITE_MOCK_DATA: "false"
+    ports:
+      - "9001:80"
+    volumes:
+      - /home/spyder/Nextcloud/_Projects/KiddoWords/Content:/app/content:ro
+    depends_on:
+      - backend
+
+  backend-cli:
+    container_name: kiddo-backend-cli
+    build:
+      context: ..
+      dockerfile: docker/backend.Dockerfile
+    volumes:
+      - /home/spyder/Nextcloud/_Projects/KiddoWords/Content:/app/content
+      - ../archive:/app/archive
+      - backend-data:/app/data
+      - ../backend/config:/app/config
+      - tts-output:/app/tts-output
+      - /tmp:/tmp
+    environment:
+      - CONTENT_DIR=/app/content
+      - ARCHIVE_DIR=/app/archive
+      - DB_PATH=/app/data/users.db
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
+      - SPEAKTOR_API_KEY=${SPEAKTOR_API_KEY}
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN}
+      - CONFIG_DIR=/app/config
+      - OUTPUT_DIR=/app/tts-output
+    command: ["uvicorn", "src.main:app", "--uds", "/tmp/kiddo-backend.sock"]
+    profiles:
+      - cli
+
+volumes:
+  backend-data:
+  tts-output:

@@ -1,0 +1,15 @@
+{
+  "service_provider": {
+    "service": "text_translation",
+    "provider": "openai_translate",
+    "enabled": true,
+    "priority": 2,
+    "config": {
+      "input_language": "en",
+      "output_language": "bg",
+      "model": "gpt-4o",
+      "prompt": "You are a professional translator.\nTranslate the given {{ input_language }} word into {{ output_language }}.\nALWAYS treat the input as a NOUN (object name) belonging to the category: {{ category }}.\nReturn ONLY the translated noun, in singular form.\nNo articles, no explanations, no extra text.",
+      "temperature": 0
+    }
+  }
+}
