@@ -1010,6 +1010,136 @@ def test_restore_category_rebuilds_registry_rows_from_manifest(tmp_path: Path) -
 
 
 # ---------------------------------------------------------------------------
+# delete_archived_category
+# ---------------------------------------------------------------------------
+
+def test_delete_archived_category_empty_name(tmp_path: Path) -> None:
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.archive_path = tmp_path / "archive"
+        with pytest.raises(InvalidCategoryNameError):
+            provider.delete_archived_category("")
+
+
+def test_delete_archived_category_archive_dir_missing(tmp_path: Path) -> None:
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.archive_path = tmp_path / "nonexistent"
+        with pytest.raises(ArchiveUnavailableError):
+            provider.delete_archived_category("foods")
+
+
+def test_delete_archived_category_no_archive_found(tmp_path: Path) -> None:
+    archive_root = tmp_path / "archive"
+    archive_root.mkdir()
+
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.archive_path = archive_root
+        with pytest.raises(CategoryNotFoundError, match="No archive found"):
+            provider.delete_archived_category("foods")
+
+
+def test_delete_archived_category_removes_folder(tmp_path: Path) -> None:
+    archive_root = tmp_path / "archive"
+    archived = archive_root / "foods_1000"
+    archived.mkdir(parents=True)
+    (archived / "apple").mkdir()
+
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.archive_path = archive_root
+        result = provider.delete_archived_category("foods")
+
+    assert result.deleted is True
+    assert result.name == "foods"
+    assert result.archive_folder == "foods_1000"
+    assert not archived.exists()
+
+
+def test_delete_archived_category_accepts_full_archive_folder_name(tmp_path: Path) -> None:
+    archive_root = tmp_path / "archive"
+    (archive_root / "foods_1000").mkdir(parents=True)
+    (archive_root / "foods_2000").mkdir(parents=True)
+
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.archive_path = archive_root
+        result = provider.delete_archived_category("foods_1000")
+
+    assert result.archive_folder == "foods_1000"
+    assert not (archive_root / "foods_1000").exists()
+    # The other snapshot for the same base name must be left alone.
+    assert (archive_root / "foods_2000").is_dir()
+
+
+def test_delete_archived_category_picks_most_recent_archive(tmp_path: Path) -> None:
+    archive_root = tmp_path / "archive"
+    (archive_root / "foods_1000").mkdir(parents=True)
+    (archive_root / "foods_2000").mkdir(parents=True)
+
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.archive_path = archive_root
+        result = provider.delete_archived_category("foods")
+
+    assert result.archive_folder == "foods_2000"
+    assert (archive_root / "foods_1000").is_dir()
+    assert not (archive_root / "foods_2000").exists()
+
+
+def test_delete_archived_category_does_not_modify_registry_csvs(tmp_path: Path) -> None:
+    """Registry rows were already dropped by archive_category(); deletion must not touch the CSVs."""
+    content_root = tmp_path / "content"
+    archive_root = tmp_path / "archive"
+    (content_root / "foods").mkdir(parents=True)
+    _write_category_registry(
+        content_root, [("C_Animals", "Animals"), ("C_Foods", "Foods")],
+    )
+
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.archive_path = archive_root
+        mock_settings.ARCHIVE_DIR = str(archive_root)
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        provider.archive_category("C_Foods")
+
+        ids_after_archive = (content_root / "categories_ids.csv").read_text(encoding="utf-8")
+        names_after_archive = (content_root / "categories_en.csv").read_text(encoding="utf-8")
+        assert ids_after_archive.split() == ["C_Animals"]
+        assert names_after_archive.split() == ["Animals"]
+
+        result = provider.delete_archived_category("foods")
+
+    assert result.deleted is True
+    assert not (archive_root / result.archive_folder).exists()
+    # The archived snapshot is gone permanently, but the live registry CSVs (already
+    # missing the archived row) must remain exactly as they were after archiving.
+    assert (content_root / "categories_ids.csv").read_text(encoding="utf-8") == ids_after_archive
+    assert (content_root / "categories_en.csv").read_text(encoding="utf-8") == names_after_archive
+
+
+def test_delete_archived_category_after_restore_cannot_find_snapshot(tmp_path: Path) -> None:
+    """restore_category() consumes the archive folder, so a later delete must report not-found."""
+    archive_root = tmp_path / "archive"
+    archived = archive_root / "foods_1000"
+    archived.mkdir(parents=True)
+    content_root = tmp_path / "content"
+    content_root.mkdir(parents=True, exist_ok=True)
+
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.archive_path = archive_root
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        provider.restore_category("foods")
+
+        with pytest.raises(CategoryNotFoundError, match="No archive found"):
+            provider.delete_archived_category("foods")
+
+
+# ---------------------------------------------------------------------------
 # update_item_name
 # ---------------------------------------------------------------------------
 
