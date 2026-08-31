@@ -87,14 +87,22 @@
 
       <div v-if="hasFiles" class="id-image-grid">
         <div v-for="card in imageCards" :key="card.index" class="id-image-card">
-          <div class="id-image-preview">
+          <div
+            class="id-image-preview id-image-preview-trigger"
+            role="button"
+            tabindex="0"
+            :aria-label="`Open ${card.title} preview`"
+            @click="openImagePreview(card.src, card.title)"
+            @keydown.enter.prevent="openImagePreview(card.src, card.title)"
+            @keydown.space.prevent="openImagePreview(card.src, card.title)"
+          >
             <span v-if="card.isMain" class="id-main-badge">Main</span>
             <img :src="card.src" :alt="card.title" class="id-image" />
-            <div class="file-actions">
-              <button type="button" class="btn-icon btn-icon-edit" title="Replace" aria-label="Replace image" @click="onReplaceFile(card.index)">
+            <div class="file-actions" @click.stop>
+              <button type="button" class="btn-icon btn-icon-edit" title="Replace" aria-label="Replace image" @click.stop="onReplaceFile(card.index)">
                 <i class="mdi mdi-pencil"></i>
               </button>
-              <button type="button" class="btn-icon btn-icon-delete" title="Delete" aria-label="Delete image" @click="onDeleteFile(card.index)">
+              <button type="button" class="btn-icon btn-icon-delete" title="Delete" aria-label="Delete image" @click.stop="onDeleteFile(card.index)">
                 <i class="mdi mdi-delete"></i>
               </button>
             </div>
@@ -277,10 +285,24 @@
       </div>
     </div>
   </Teleport>
+
+  <Teleport to="body">
+    <div v-if="imagePreview" class="image-preview-overlay" @click.self="closeImagePreview">
+      <button
+        type="button"
+        class="image-preview-close"
+        aria-label="Close image preview"
+        @click="closeImagePreview"
+      >
+        &times;
+      </button>
+      <img :src="imagePreview.src" :alt="imagePreview.title" class="image-preview-image" />
+    </div>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onBeforeUnmount, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { AxiosError } from 'axios'
 import { ensureCategoriesLoaded, ensureCategoryDetail, ensureItemDetail, invalidateItemDetail, sharedCategories } from '../api/cache'
@@ -614,6 +636,29 @@ const onReplaceFilePicked = async (e: Event): Promise<void> => {
 }
 const deleteConfirmVisible = ref(false)
 const deleteFileIndex = ref<number>(-1)
+const imagePreview = ref<{ src: string; title: string } | null>(null)
+
+function openImagePreview(src: string, title: string): void {
+  imagePreview.value = { src, title }
+}
+
+function closeImagePreview(): void {
+  imagePreview.value = null
+}
+
+function onDocumentKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape' && imagePreview.value) {
+    closeImagePreview()
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('keydown', onDocumentKeydown)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', onDocumentKeydown)
+})
 
 const onDeleteFile = (index: number): void => {
   deleteFileIndex.value = index
@@ -909,6 +954,13 @@ const confirmVoiceDelete = async (): Promise<void> => {
   border-radius: 6px;
   background: #f6f8fc;
 }
+.id-image-preview-trigger {
+  cursor: zoom-in;
+}
+.id-image-preview-trigger:focus-visible {
+  outline: 3px solid rgba(49, 87, 255, 0.45);
+  outline-offset: 3px;
+}
 .id-image {
   display: block;
   width: 100%;
@@ -934,6 +986,7 @@ const confirmVoiceDelete = async (): Promise<void> => {
   display: flex;
   gap: 0.35rem;
   z-index: 2;
+  cursor: default;
 }
 .file-empty {
   margin-top: 1rem;
@@ -1188,6 +1241,39 @@ const confirmVoiceDelete = async (): Promise<void> => {
   display: flex;
   justify-content: flex-end;
   gap: 0.5rem;
+}
+.image-preview-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1060;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: rgba(0, 0, 0, 0.92);
+}
+.image-preview-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.image-preview-close {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 1;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.6);
+  color: #fff;
+  cursor: pointer;
+  font-size: 2rem;
+  line-height: 1;
+}
+.image-preview-close:hover {
+  background: rgba(15, 23, 42, 0.85);
 }
 .id-toast {
   position: fixed;
