@@ -724,7 +724,9 @@ class FileSystemContentProvider(ContentProvider):
         category_id = f"C_{self._to_pascal(category_name)}"
 
         try:
+            description_en = f"Explore fun items about {category_name.replace('_', ' ').strip() or category_name}."
             labels_by_lang: dict[str, str] = {}
+            descriptions_by_lang: dict[str, str] = {"en": description_en}
             for lang in settings.SUPPORTED_LANGUAGES:
                 if lang == "en":
                     label = category_name.replace("_", " ").strip() or category_name
@@ -733,6 +735,7 @@ class FileSystemContentProvider(ContentProvider):
                         label = self._translate_word(
                             category_name.replace("_", " ").strip() or category_name, lang, category_name,
                         )
+                        descriptions_by_lang[lang] = self._translate_word(description_en, lang, category_name)
                     except (ValueError, RuntimeError, httpx.HTTPError, KeyError) as exc:
                         raise ContentOperationError(f"Translation failed for {lang}: {exc}") from exc
                 labels_by_lang[lang] = label
@@ -761,6 +764,7 @@ class FileSystemContentProvider(ContentProvider):
             self._register_category_rows(
                 category_id,
                 {lang: labels_by_lang.get(lang) or fallback_label for lang in settings.SUPPORTED_LANGUAGES},
+                {lang: descriptions_by_lang.get(lang) or description_en for lang in settings.SUPPORTED_LANGUAGES},
             )
         except Exception:
             # Creation failed partway through: leave no trace (no orphaned folder, no

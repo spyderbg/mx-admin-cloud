@@ -306,7 +306,7 @@ async function onCategoryCreated(folderName: string, message: string): Promise<v
 }
 
 const archivedCategories = computed(() => sharedArchivedCategories.value)
-const archivedExpanded = ref(true)
+const archivedExpanded = ref(false)
 const restoringFolder = ref('')
 const deletingFolder = ref('')
 const deleteTarget = ref<ArchivedCategory | null>(null)
