@@ -11,10 +11,10 @@ git diff --cached --stat
 
 Review the staged changes and generate a concise commit message following the Conventional Commits convention:
 
-- Use a short subject line (imperative mood, lowercase, no period)
+- Use a short subject line (imperative mood, lowercase, no period, no prefix like `feat:` or `docs:`)
 - Use a body to explain what and why, not how
 - Group related changes logically
-- When the commit includes unrelated changes, start each group on a new line formatted as a markdown bullet list (e.g. `- **group:** description`)
+- Always format the body as a markdown bullet list (e.g. `- **group:** description`)
 
 Then run:
 
