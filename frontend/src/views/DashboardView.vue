@@ -89,10 +89,13 @@
             <div class="archived-row-copy">
               <div class="archived-row-name">{{ archivedDisplayName(entry) }}</div>
               <div class="archived-row-items">
-                <i class="mdi mdi-format-list-bulleted"></i>
                 <span>{{ itemCountLabel(contentLanguage, archivedItemCount(entry)) }}</span>
               </div>
             </div>
+          </div>
+          <div class="archived-meta">
+            <span class="archived-meta-label">{{ archivedCreatedColumnLabel() }}</span>
+            <span class="archived-meta-value">{{ archivedCreatedDateLabel(entry) }}</span>
           </div>
           <div class="archived-meta">
             <span class="archived-meta-label">{{ archivedDateColumnLabel() }}</span>
@@ -341,12 +344,31 @@ function archivedDateColumnLabel(): string {
   return labels[contentLanguage.value] ?? labels.en
 }
 
+function archivedCreatedColumnLabel(): string {
+  const labels: Record<string, string> = {
+    en: 'Created',
+    es: 'Creada',
+    fr: 'Créée',
+    bg: 'Създадена',
+  }
+  return labels[contentLanguage.value] ?? labels.en
+}
+
 function archivedDateLabel(entry: ArchivedCategory): string {
   return new Intl.DateTimeFormat(contentLanguage.value, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
   }).format(new Date(entry.archivedAt * 1000))
+}
+
+function archivedCreatedDateLabel(entry: ArchivedCategory): string {
+  const timestamp = entry.createdAt ?? entry.archivedAt
+  return new Intl.DateTimeFormat(contentLanguage.value, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(new Date(timestamp * 1000))
 }
 
 const deleteTargetCategoryId = computed(() =>
@@ -504,7 +526,7 @@ async function confirmDeleteArchivedCategory(): Promise<void> {
 }
 .archived-row {
   display: grid;
-  grid-template-columns: minmax(16rem, 1fr) 11rem auto;
+  grid-template-columns: minmax(16rem, 1fr) 11rem 11rem auto;
   align-items: center;
   gap: 1.5rem;
   min-height: 7.5rem;
@@ -547,10 +569,6 @@ async function confirmDeleteArchivedCategory(): Promise<void> {
   color: #475569;
   font-size: 0.875rem;
   line-height: 1.2;
-}
-.archived-row-items i {
-  color: #64748b;
-  font-size: 1rem;
 }
 .archived-meta {
   display: flex;
