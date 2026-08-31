@@ -14,6 +14,7 @@ Review the staged changes and generate a concise commit message following the Co
 - Use a short subject line (imperative mood, lowercase, no period)
 - Use a body to explain what and why, not how
 - Group related changes logically
+- When the commit includes unrelated changes, start each group on a new line formatted as a markdown bullet list (e.g. `- **group:** description`)
 
 Then run:
 
