@@ -173,13 +173,13 @@
         </div>
         <div class="cd-modal-body">
           <p class="mb-3">{{ archiveCategoryConfirmLabel(contentLanguage, categoryLabel) }}</p>
-          <div class="alert alert-warning py-2">
+          <div v-if="usesComplexArchiveConfirmation" class="alert alert-warning py-2">
             <small>
               <i class="mdi mdi-alert mr-1"></i>
               {{ archiveCategoryWarningLabel(contentLanguage, category.items_count ?? category.items.length) }}
             </small>
           </div>
-          <div class="form-group mb-0">
+          <div v-if="usesComplexArchiveConfirmation" class="form-group mb-0">
             <label class="col-form-label">
               {{ archiveTypeToConfirmLabel(contentLanguage, category.id) }}
             </label>
@@ -193,14 +193,16 @@
           </div>
         </div>
         <div class="cd-modal-footer">
-          <button type="button" class="btn btn-secondary" @click="closeArchiveModal">{{ cancelLabel(contentLanguage) }}</button>
+          <button type="button" class="btn btn-secondary" @click="closeArchiveModal">
+            {{ usesComplexArchiveConfirmation ? cancelLabel(contentLanguage) : noLabel(contentLanguage) }}
+          </button>
           <button
             type="button"
             class="btn btn-danger"
             :disabled="!canArchive"
             @click="confirmArchive"
           >
-            {{ archiveLabel(contentLanguage) }}
+            {{ usesComplexArchiveConfirmation ? archiveLabel(contentLanguage) : yesLabel(contentLanguage) }}
           </button>
         </div>
       </div>
@@ -378,11 +380,13 @@ import {
   enterWordLabel,
   imageFileLabel,
   localizedCategoryLabel,
+  noLabel,
   renameCategoryLabel,
   saveLabel,
   uploadCategoryIconLabel,
   uploadVoiceFileLabel,
   wordColumnLabel,
+  yesLabel,
 } from '../utils/localizedLabels'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import {
@@ -442,6 +446,7 @@ const voiceWordValue = ref('')
 const voiceWordEditLanguage = computed<Language>(() => voiceWordEditTarget.value?.language ?? contentLanguage.value)
 const showArchive = ref(false)
 const archiveConfirmText = ref('')
+const usesComplexArchiveConfirmation = import.meta.env.VITE_ARCHIVE_CONFIRMATION_MODE !== 'simple'
 const showVoiceDeleteConfirm = ref(false)
 const voiceDeleteTarget = ref<Voice | null>(null)
 const voiceDeleteLanguage = computed<Language>(() => voiceDeleteTarget.value?.language ?? contentLanguage.value)
@@ -511,9 +516,13 @@ function closeAllModals(): void {
 
 /**
  * Archiving is only recoverable when ARCHIVE_DIR is configured on the server, which the
- * frontend cannot detect, so the id must be typed out before the action is enabled.
+ * frontend cannot detect. Complex confirmation therefore requires the id to be typed
+ * out, while installations explicitly configured for the simple dialog can proceed
+ * from its Yes button.
  */
-const canArchive = computed(() => archiveConfirmText.value.trim() === props.category.id)
+const canArchive = computed(() =>
+  !usesComplexArchiveConfirmation || archiveConfirmText.value.trim() === props.category.id,
+)
 
 function openArchiveModal(): void {
   closeAllModals()

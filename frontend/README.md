@@ -16,6 +16,8 @@ npm run preview     # serve production build locally
 
 **Verbose request logging:** If `VITE_VERBOSE_REQUESTS=true`, every axios request/response is logged to the browser console with method, URL, status, and JSON body. Useful during development to inspect payloads.
 
+**Archive confirmation:** `VITE_ARCHIVE_CONFIRMATION_MODE` controls the category archive popup. It defaults to `complex`, which shows the server warning and requires the category id to be typed. Set it to `simple` to show the confirmation message with only **Yes** and **No** actions. Like all Vite environment variables, this value is applied at build time.
+
 ## Mock Data Mode
 
 Use this mode when developing the UI with local fixtures.
@@ -166,9 +168,9 @@ Displayed when a category is selected (or defaults to first category):
 - **Page header** -- `h3.page-title` with localized category label + `toPascalCaseWords` (navbar content language; no edit control on the title)
 - **CategoryDetail card** -- **Category Name** and each **voice-card** word use `ServerWord` (category row: localized + rename modal; voice row: `voice.name` as-is, pencil → **Edit word** modal, `rename-voice` emit). Two-row layout: **Category Icon** (`aspect-ratio: 1 / 1`, `object-fit: contain`) and **Category Voices** share a baseline; voice grid `repeat(auto-fit, minmax(7.5rem, 1fr))`; play + **Upload** (audio); corner **delete** icon opens **Delete or reset voice** confirmation, then `delete-voice` emit; modals mutually exclusive
 - **ItemGrid** -- responsive 4-column grid of item thumbnails, each with a pencil edit-icon badge. If an item has no `thumbnailUri` or file entries, a built-in camera placeholder is shown. Clicking navigates to ItemDetailsView.
-- **Archive category** -- outlined red button at the top right of the `CategoryDetail` card. Its confirmation modal
+- **Archive category** -- outlined red button at the top right of the `CategoryDetail` card. By default, its confirmation modal
   requires the category id to be typed out before the action is enabled, because the backend deletes permanently when
-  `ARCHIVE_DIR` is unset and the frontend cannot tell which will happen. `CategoriesView` performs the request, then
+  `ARCHIVE_DIR` is unset and the frontend cannot tell which will happen. Set `VITE_ARCHIVE_CONFIRMATION_MODE=simple` at build time for a Yes/No confirmation instead. `CategoriesView` performs the request, then
   redirects to the first remaining category (or the dashboard) and reports the outcome: a green toast when the response
   says `archived`, an amber one when it says `removed`.
 

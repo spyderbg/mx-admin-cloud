@@ -640,6 +640,28 @@ export function archiveLabel(lang: Language): string {
   return labels[lang] ?? labels.en
 }
 
+/** Affirmative confirmation button label; unknown `lang` falls back to English. */
+export function yesLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Yes',
+    es: 'Sí',
+    fr: 'Oui',
+    bg: 'Да',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Negative confirmation button label; unknown `lang` falls back to English. */
+export function noLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'No',
+    es: 'No',
+    fr: 'Non',
+    bg: 'Не',
+  }
+  return labels[lang] ?? labels.en
+}
+
 /** Confirmation text for archiving a category; unknown `lang` falls back to English. */
 export function archiveCategoryConfirmLabel(lang: Language, category: string): string {
   const labels: Record<Language, string> = {
