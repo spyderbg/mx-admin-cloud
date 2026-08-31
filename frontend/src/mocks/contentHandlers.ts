@@ -6,6 +6,8 @@ interface ArchivedEntry {
   base_name: string
   archive_folder: string
   archived_at: number
+  items_count?: number
+  thumbnail_uri?: string | null
 }
 
 const archivedCategories: ArchivedEntry[] = []
@@ -251,6 +253,8 @@ export const contentHandlers = [
       base_name: baseName,
       archive_folder: archiveFolder,
       archived_at: archivedAt,
+      items_count: removed.items.length,
+      thumbnail_uri: removed.thumbnailUri ?? null,
     })
     archivedRecords.set(archiveFolder, removed)
     return HttpResponse.json({

@@ -137,11 +137,21 @@ async function _loadCategoriesBasic(): Promise<CategoryFull[]> {
     const list = await categoriesList({ includeArchived: true })
     // Assigned before the empty-list guard below, so an installation whose every
     // category is archived still shows its archive.
-    sharedArchivedCategories.value = (list.archived ?? []).map((entry) => ({
-      baseName: entry.base_name,
-      archiveFolder: entry.archive_folder,
-      archivedAt: entry.archived_at,
-    }))
+    sharedArchivedCategories.value = (list.archived ?? []).map((entry) => {
+      const archiveEntry = entry as typeof entry & {
+        items_count?: number | null
+        thumbnail_uri?: string | null
+        created_at?: number | null
+      }
+      return {
+        baseName: entry.base_name,
+        archiveFolder: entry.archive_folder,
+        archivedAt: entry.archived_at,
+        itemsCount: archiveEntry.items_count ?? undefined,
+        thumbnailUri: archiveEntry.thumbnail_uri ?? undefined,
+        createdAt: archiveEntry.created_at ?? undefined,
+      }
+    })
 
     if (!list.categories.length) {
       sharedCategories.value = []

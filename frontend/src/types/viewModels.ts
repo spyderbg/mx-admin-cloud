@@ -52,4 +52,10 @@ export interface ArchivedCategory {
     archiveFolder: string
     /** Unix seconds, taken from the archive folder suffix. */
     archivedAt: number
+    /** Optional number of items preserved in the archive snapshot. */
+    itemsCount?: number
+    /** Optional thumbnail URI for archive list previews. */
+    thumbnailUri?: string
+    /** Optional unix seconds for the category creation date. */
+    createdAt?: number
 }
