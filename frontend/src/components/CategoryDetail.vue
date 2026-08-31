@@ -29,18 +29,26 @@
         <div class="col-lg-5 col-md-5 mb-3 mb-md-0">
           <div class="mb-3">
             <label class="text-muted small mb-1 d-block">{{ categoryIconLabel(contentLanguage) }}</label>
-            <div class="category-icon-wrap">
+            <div
+              class="category-icon-wrap category-icon-preview-trigger"
+              role="button"
+              tabindex="0"
+              aria-label="Open category icon preview"
+              @click="openImagePreview"
+              @keydown.enter.prevent="openImagePreview"
+              @keydown.space.prevent="openImagePreview"
+            >
               <img
                 :src="thumbnailSrc"
                 alt="Category icon"
                 class="rounded"
               />
-              <div class="category-icon-actions">
+              <div class="category-icon-actions" @click.stop>
                 <button
                   type="button"
                   class="btn-icon btn-icon-regenerate"
                   title="Regenerate category image"
-                  @click="requestCategoryImageRegeneration"
+                  @click.stop="requestCategoryImageRegeneration"
                 >
                   <i class="mdi mdi-auto-fix"></i>
                 </button>
@@ -48,7 +56,7 @@
                   type="button"
                   class="btn-icon btn-icon-edit"
                   title="Upload category icon"
-                  @click="openUploadModal"
+                  @click.stop="openUploadModal"
                 >
                   <i class="mdi mdi-pencil"></i>
                 </button>
@@ -57,7 +65,7 @@
                   class="btn-icon btn-icon-delete"
                   :title="deleteCategoryImageLabel(contentLanguage)"
                   :disabled="!category.thumbnail_uri"
-                  @click="openDeleteModal"
+                  @click.stop="openDeleteModal"
                 >
                   <i class="mdi mdi-delete"></i>
                 </button>
@@ -339,6 +347,25 @@
     </div>
   </Teleport>
 
+  <!-- Full-screen category icon preview -->
+  <Teleport to="body">
+    <div v-if="showImagePreview" class="image-preview-overlay" @click.self="closeImagePreview">
+      <button
+        type="button"
+        class="image-preview-close"
+        aria-label="Close image preview"
+        @click="closeImagePreview"
+      >
+        &times;
+      </button>
+      <img
+        :src="thumbnailSrc"
+        :alt="categoryLabel"
+        class="image-preview-image"
+      />
+    </div>
+  </Teleport>
+
   <!-- Result toast -->
   <Teleport to="body">
     <div
@@ -353,7 +380,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
 import type { AxiosError } from 'axios'
 import ServerWord from './ServerWord.vue'
 import type { CategoryFull, Language, Voice } from '../types/viewModels'
@@ -453,6 +480,7 @@ const voiceDeleteLanguage = computed<Language>(() => voiceDeleteTarget.value?.la
 const editingVoice = ref<Voice | null>(null)
 const uploadVoiceLanguage = computed<Language>(() => editingVoice.value?.language ?? contentLanguage.value)
 const renameValue = ref('')
+const showImagePreview = ref(false)
 
 type ToastVariant = 'success' | 'error'
 const toast = ref<{ message: string; variant: ToastVariant } | null>(null)
@@ -509,6 +537,7 @@ function closeAllModals(): void {
   showVoiceUpload.value = false
   showVoiceWordEdit.value = false
   showVoiceDeleteConfirm.value = false
+  showImagePreview.value = false
   editingVoice.value = null
   voiceWordEditTarget.value = null
   voiceDeleteTarget.value = null
@@ -601,6 +630,29 @@ function openDeleteModal(): void {
   closeAllModals()
   showDelete.value = true
 }
+
+function openImagePreview(): void {
+  closeAllModals()
+  showImagePreview.value = true
+}
+
+function closeImagePreview(): void {
+  showImagePreview.value = false
+}
+
+function onDocumentKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape' && showImagePreview.value) {
+    closeImagePreview()
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('keydown', onDocumentKeydown)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', onDocumentKeydown)
+})
 
 function requestCategoryImageRegeneration(): void {
   showToast('Backend task pending: regenerate the category image from the saved category metadata.', 'error')
@@ -715,6 +767,13 @@ async function onFileSelected(e: Event): Promise<void> {
   aspect-ratio: 1 / 1;
   background: rgba(0, 0, 0, 0.04);
 }
+.category-icon-preview-trigger {
+  cursor: zoom-in;
+}
+.category-icon-preview-trigger:focus-visible {
+  outline: 3px solid rgba(49, 87, 255, 0.45);
+  outline-offset: 3px;
+}
 .category-icon-wrap img {
   width: 100%;
   height: 100%;
@@ -729,6 +788,7 @@ async function onFileSelected(e: Event): Promise<void> {
   display: flex;
   gap: 4px;
   z-index: 2;
+  cursor: default;
 }
 .btn-icon {
   width: 30px;
@@ -925,6 +985,40 @@ async function onFileSelected(e: Event): Promise<void> {
   display: flex;
   justify-content: flex-end;
   gap: 0.5rem;
+}
+
+.image-preview-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1060;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: rgba(0, 0, 0, 0.92);
+}
+.image-preview-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.image-preview-close {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 1;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.6);
+  color: #fff;
+  cursor: pointer;
+  font-size: 2rem;
+  line-height: 1;
+}
+.image-preview-close:hover {
+  background: rgba(15, 23, 42, 0.85);
 }
 
 /* Result toast */
