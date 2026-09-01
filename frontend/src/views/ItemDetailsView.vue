@@ -19,9 +19,28 @@
           <div class="id-field-label">Item Id</div>
           <div class="id-value-row">
             <h3 class="id-item-id">{{ item.id }}</h3>
-            <button type="button" class="id-copy-btn" title="Copy item id" aria-label="Copy item id" @click="copyItemId">
-              <i class="mdi mdi-content-copy"></i>
+            <button type="button" class="id-edit-btn" title="Edit item id" aria-label="Edit item id" @click="onEditItemId">
+              <i class="mdi mdi-pencil"></i>
             </button>
+          </div>
+        </div>
+
+        <div>
+          <div class="id-field-label">Current Image</div>
+          <div
+            v-if="currentImageCard"
+            class="id-summary-image-preview id-image-preview-trigger"
+            role="button"
+            tabindex="0"
+            :aria-label="`Open ${currentImageCard.title} preview`"
+            @click="openImagePreview(currentImageCard.src, currentImageCard.title)"
+            @keydown.enter.prevent="openImagePreview(currentImageCard.src, currentImageCard.title)"
+            @keydown.space.prevent="openImagePreview(currentImageCard.src, currentImageCard.title)"
+          >
+            <img :src="currentImageCard.src" :alt="currentImageCard.title" class="id-summary-image" />
+          </div>
+          <div v-else class="id-summary-image-preview">
+            <img :src="cameraPlaceholderUrl" alt="No image available" class="id-summary-image" />
           </div>
         </div>
 
@@ -31,9 +50,8 @@
         </div>
       </div>
 
-      <div class="id-names-panel">
-        <div class="id-summary-actions">
-          <h4 class="id-section-kicker">Names by Language</h4>
+      <div class="id-summary-details">
+        <div class="id-summary-actions id-summary-actions-only">
           <div class="id-release-group">
             <button type="button" class="btn btn-outline-primary btn-sm" @click="onReleaseItem">
               Release Item
@@ -45,18 +63,36 @@
           </div>
         </div>
 
-        <div class="id-language-list">
-          <div v-for="row in languageNameRows" :key="row.language" class="id-language-row">
-            <span class="id-language-flag">
-              <i :class="'flag-icon flag-icon-' + row.flag"></i>
-            </span>
-            <span class="id-language-name">{{ row.label }}</span>
-            <div class="id-language-input-wrap">
-              <input type="text" class="form-control id-language-input" :value="row.value" @change="onLocalizedNameChange(row.language, $event)" />
-              <button type="button" class="id-input-edit-btn" title="Edit name" aria-label="Edit name">
-                <i class="mdi mdi-pencil"></i>
+        <div class="id-summary-voices-panel">
+          <h4 class="id-section-kicker">
+            Item Voices
+            <span>({{ item.voices.length }})</span>
+          </h4>
+          <div class="id-summary-voice-cards-grid">
+            <article v-for="voice in itemVoiceCards" :key="voice.id" class="id-summary-voice-card">
+              <div class="id-summary-voice-actions">
+                <button class="btn-icon btn-icon-release id-summary-voice-action" type="button" title="Release voice" aria-label="Release voice" @click="onReleaseVoice(voice)">
+                  <i class="mdi mdi-upload"></i>
+                </button>
+                <button class="btn-icon btn-icon-edit id-summary-voice-action" type="button" title="Replace voice" aria-label="Replace voice" @click="onUploadVoice(voice)">
+                  <i class="mdi mdi-pencil"></i>
+                </button>
+                <button class="btn-icon btn-icon-delete id-summary-voice-action" type="button" title="Delete or reset voice" aria-label="Delete or reset voice" @click="openVoiceDeleteModal(voice)">
+                  <i class="mdi mdi-delete"></i>
+                </button>
+              </div>
+              <div class="id-summary-voice-flag" :title="langLabel(voice.language)" :aria-label="langLabel(voice.language)">
+                <i :class="'flag-icon flag-icon-' + langFlag(voice.language)"></i>
+              </div>
+              <div class="id-summary-voice-body">
+                <p class="id-summary-voice-name">{{ voice.name }}</p>
+                <p class="id-summary-voice-type">{{ voiceTypeLabel(voice.type) }}</p>
+              </div>
+              <button class="btn-play" :class="{ playing: playingVoiceId === voice.id, disabled: !hasAudio(voice) }" type="button" :disabled="!hasAudio(voice)" :aria-label="!hasAudio(voice) ? 'Voice file missing' : (playingVoiceId === voice.id ? 'Stop voice playback' : 'Play voice')" :title="!hasAudio(voice) ? 'Voice file missing' : (playingVoiceId === voice.id ? 'Stop' : 'Play')" @click="togglePlay(voice)">
+                <i :class="playingVoiceId === voice.id ? 'mdi mdi-stop-circle' : 'mdi mdi-play-circle'"></i>
+                <span>{{ playingVoiceId === voice.id ? 'Stop' : 'Play' }}</span>
               </button>
-            </div>
+            </article>
           </div>
         </div>
       </div>
@@ -76,12 +112,6 @@
             <i class="mdi mdi-plus mr-1"></i>Add Images
           </button>
           <button v-if="hasFiles" type="button" class="btn btn-primary btn-sm" @click="onReleaseAllItemImages">Release All Images</button>
-          <button type="button" class="id-view-btn id-view-btn-active" title="Grid view" aria-label="Grid view">
-            <i class="mdi mdi-view-grid"></i>
-          </button>
-          <button type="button" class="id-view-btn" title="List view" aria-label="List view">
-            <i class="mdi mdi-view-list"></i>
-          </button>
         </div>
       </div>
 
@@ -96,7 +126,6 @@
             @keydown.enter.prevent="openImagePreview(card.src, card.title)"
             @keydown.space.prevent="openImagePreview(card.src, card.title)"
           >
-            <span v-if="card.isMain" class="id-main-badge">Main</span>
             <img :src="card.src" :alt="card.title" class="id-image" />
             <div class="file-actions" @click.stop>
               <button type="button" class="btn-icon btn-icon-edit" title="Replace" aria-label="Replace image" @click.stop="onReplaceFile(card.index)">
@@ -112,9 +141,9 @@
             <strong>{{ card.generator }}</strong>
             <div class="id-meta-label id-meta-spaced">Prompt</div>
             <p>{{ card.prompt }}</p>
-            <button type="button" class="id-release-btn" @click="onReleaseImage(card.index)">
-              <i class="mdi mdi-send-outline"></i>
-              Release Image
+            <button type="button" class="id-release-btn" :class="{ 'id-release-btn-active': card.isSelected }" :disabled="card.isSelected" @click="onSelectImage(card.index)">
+              <i :class="card.isSelected ? 'mdi mdi-check' : 'mdi mdi-image'"></i>
+              {{ card.isSelected ? 'Selected' : 'Select Image' }}
             </button>
           </div>
         </div>
@@ -201,7 +230,7 @@
                 <td>
                   <div class="item-voice-actions">
                     <button class="id-action-square id-action-release" type="button" title="Release voice" aria-label="Release voice" @click="onReleaseVoice(voice)">
-                      <i class="mdi mdi-send-outline"></i>
+                      <i class="mdi mdi-upload"></i>
                     </button>
                     <button class="id-action-square id-action-edit" type="button" title="Replace voice" aria-label="Replace voice" @click="onUploadVoice(voice)">
                       <i class="mdi mdi-pencil"></i>
@@ -261,6 +290,33 @@
   </Teleport>
 
   <Teleport to="body">
+    <div v-if="showItemIdEdit" class="cd-modal-overlay" @click.self="closeItemIdEdit">
+      <div class="cd-modal-box">
+        <div class="cd-modal-header">
+          <h5 class="cd-modal-title">Change Item Id</h5>
+          <button type="button" class="cd-modal-close" @click="closeItemIdEdit">&times;</button>
+        </div>
+        <div class="cd-modal-body">
+          <div class="form-group mb-0">
+            <label class="col-form-label">New Item Id</label>
+            <input
+              v-model="itemIdEditValue"
+              type="text"
+              class="form-control"
+              placeholder="Enter item id"
+              @keyup.enter="confirmItemIdEdit"
+            />
+          </div>
+        </div>
+        <div class="cd-modal-footer">
+          <button type="button" class="btn btn-secondary" @click="closeItemIdEdit">Cancel</button>
+          <button type="button" class="btn btn-primary" @click="confirmItemIdEdit">Save</button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
+
+  <Teleport to="body">
     <div v-if="voiceDeleteTarget" class="cd-modal-overlay" @click.self="cancelVoiceDelete">
       <div class="cd-modal-box">
         <div class="cd-modal-header">
@@ -301,7 +357,6 @@ import { useRoute, useRouter } from 'vue-router'
 import type { AxiosError } from 'axios'
 import { ensureCategoriesLoaded, ensureCategoryDetail, ensureItemDetail, invalidateItemDetail, sharedCategories } from '../api/cache'
 import {
-  itemsUpdate,
   itemsImagesAdd,
   itemsImagesUpdate,
   itemsImagesDelete,
@@ -309,7 +364,7 @@ import {
   itemsVoicesUpdate,
   itemsVoicesDelete,
 } from '../api/contentClient'
-import { LocalizedString, SUPPORTED_LANGUAGES, type Language, type Voice } from '../types/viewModels'
+import { SUPPORTED_LANGUAGES, type Language, type Voice } from '../types/viewModels'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import { useAudioPlayer } from '../composables/useAudioPlayer'
 import { resizeImageToMaxDimension } from '../utils/imageResize'
@@ -392,6 +447,15 @@ const itemImages = computed(() =>
   rawItemImages.value.map((uri) => cacheBustedUri(uri, imageVersions.value[imageIdFromUri(uri)] ?? 0)),
 )
 const hasFiles = computed(() => itemImages.value.length > 0)
+const selectedImageIndex = ref(0)
+
+watch(() => item.value?.id, () => {
+  selectedImageIndex.value = 0
+})
+
+watch(() => itemImages.value.length, (length) => {
+  if (selectedImageIndex.value >= length) selectedImageIndex.value = 0
+})
 
 function voiceSrc(voice: Voice): string {
   return cacheBustedUri(voice.fileUri ?? '', voiceVersions.value[voice.id] ?? 0)
@@ -420,22 +484,6 @@ const langLabelMap: Record<Language, string> = { en: 'English', es: 'Español', 
 const langFlag = (lang: Language): string => langFlagMap[lang] || lang
 const langLabel = (lang: Language): string => langLabelMap[lang] || lang
 
-function itemNameForLanguage(lang: Language): string {
-  const currentItem = item.value
-  if (!currentItem) return ''
-  const voiceName = currentItem.voices.find((voice) => voice.language === lang)?.name?.trim()
-  return voiceName || currentItem.name
-}
-
-const languageNameRows = computed(() =>
-  SUPPORTED_LANGUAGES.map((language) => ({
-    language,
-    flag: langFlag(language),
-    label: langLabel(language),
-    value: itemNameForLanguage(language),
-  })),
-)
-
 const categoryDescriptionText = computed(() => {
   const currentCategory = category.value
   if (!currentCategory) return ''
@@ -456,13 +504,15 @@ const imageCards = computed(() =>
     return {
       src,
       index,
-      isMain: index === 0,
+      isSelected: index === selectedImageIndex.value,
       title: `${breadcrumbItem.value} image ${index + 1}`,
       generator: index === 0 ? 'Main Item Image' : `Image Variant ${index + 1}`,
       prompt: `Source file: ${sourceFile}`,
     }
   }),
 )
+
+const currentImageCard = computed(() => imageCards.value[selectedImageIndex.value] ?? imageCards.value[0] ?? null)
 
 const groupedVoices = computed(() =>
   SUPPORTED_LANGUAGES
@@ -472,6 +522,19 @@ const groupedVoices = computed(() =>
     }))
     .filter((group) => group.voices.length > 0),
 )
+
+const itemVoiceCards = computed(() =>
+  SUPPORTED_LANGUAGES.flatMap((language) =>
+    item.value?.voices.filter((voice) => voice.language === language) ?? [],
+  ),
+)
+
+const voiceTypeLabelMap: Record<string, string> = {
+  male: 'Narrator',
+  female: 'Voiceover Artist',
+  ambient: 'Ambient',
+}
+const voiceTypeLabel = (type: string): string => voiceTypeLabelMap[type] || type
 
 function voiceFileName(voice: Voice): string {
   return fileNameFromUri(voice.fileUri)
@@ -513,37 +576,6 @@ async function refreshItem(): Promise<void> {
   await ensureItemDetail(cat.id, currentItem.id)
 }
 
-const onLocalizedNameChange = async (language: Language, e: Event): Promise<void> => {
-  const val = (e.target as HTMLInputElement).value.trim()
-  const cat = category.value
-  const currentItem = item.value
-  if (!cat || !currentItem || !val || val === itemNameForLanguage(language)) return
-
-  try {
-    const names = SUPPORTED_LANGUAGES.reduce<Record<string, string>>((acc, lang) => {
-      acc[lang] = itemNameForLanguage(lang)
-      return acc
-    }, {})
-    names[language] = val
-    await itemsUpdate(cat.id, currentItem.id, { item_name: new LocalizedString(names) })
-    await refreshItem()
-    showToast('Item name updated.', 'success')
-  } catch (err) {
-    showToast(extractErrorMessage(err), 'error')
-  }
-}
-
-const copyItemId = async (): Promise<void> => {
-  const currentItem = item.value
-  if (!currentItem) return
-  try {
-    await navigator.clipboard.writeText(currentItem.id)
-    showToast('Item id copied.', 'success')
-  } catch {
-    showToast('Unable to copy item id.', 'error')
-  }
-}
-
 const announceBackendPending = (message: string): void => {
   if (pendingNoticeTimer) clearTimeout(pendingNoticeTimer)
   pendingNotice.value = `Backend task pending: ${message}.`
@@ -553,6 +585,26 @@ const announceBackendPending = (message: string): void => {
 
 const pendingNotice = ref<string | null>(null)
 let pendingNoticeTimer: ReturnType<typeof setTimeout> | null = null
+const showItemIdEdit = ref(false)
+const itemIdEditValue = ref('')
+
+const onEditItemId = (): void => {
+  itemIdEditValue.value = item.value?.id ?? ''
+  showItemIdEdit.value = true
+}
+
+const closeItemIdEdit = (): void => {
+  showItemIdEdit.value = false
+}
+
+const confirmItemIdEdit = (): void => {
+  const trimmed = itemIdEditValue.value.trim()
+  const currentId = item.value?.id ?? ''
+  showItemIdEdit.value = false
+  if (trimmed && trimmed !== currentId) {
+    announceBackendPending(`rename item id ${currentId} to ${trimmed}`)
+  }
+}
 
 const addFileInputRef = ref<HTMLInputElement | null>(null)
 
@@ -599,8 +651,8 @@ const onItemAnalytics = (): void => {
   announceBackendPending(`open analytics for item ${item.value?.id ?? 'unknown item'}`)
 }
 
-const onReleaseImage = (index: number): void => {
-  announceBackendPending(`release image ${index + 1} for item ${item.value?.id ?? 'unknown item'}`)
+const onSelectImage = (index: number): void => {
+  selectedImageIndex.value = index
 }
 
 const onReleaseAllItemImages = (): void => {
@@ -789,20 +841,22 @@ const confirmVoiceDelete = async (): Promise<void> => {
 }
 .id-summary-panel {
   display: grid;
-  grid-template-columns: minmax(18rem, 1fr) minmax(24rem, 1fr);
+  grid-template-columns: minmax(16rem, 0.7fr) minmax(30rem, 1.3fr);
   gap: 1.5rem;
 }
 .id-summary-copy {
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  gap: 2rem;
-  min-height: 10.5rem;
+  gap: 1.25rem;
+  min-height: 100%;
   padding-right: 1.25rem;
 }
-.id-names-panel {
+.id-summary-details {
   border-left: 1px solid #e2e7f1;
   padding-left: 1.5rem;
+  display: grid;
+  gap: 1.25rem;
+  min-width: 0;
 }
 .id-field-label,
 .id-section-kicker,
@@ -825,9 +879,7 @@ const confirmVoiceDelete = async (): Promise<void> => {
   line-height: 1.2;
   margin: 0;
 }
-.id-copy-btn,
-.id-input-edit-btn,
-.id-view-btn,
+.id-edit-btn,
 .id-action-square {
   border: 0;
   display: inline-flex;
@@ -836,12 +888,11 @@ const confirmVoiceDelete = async (): Promise<void> => {
   line-height: 1;
   padding: 0;
 }
-.id-copy-btn,
-.id-input-edit-btn {
+.id-edit-btn {
   background: transparent;
   color: #2563eb;
 }
-.id-copy-btn {
+.id-edit-btn {
   font-size: 1.25rem;
 }
 .id-description {
@@ -849,6 +900,22 @@ const confirmVoiceDelete = async (): Promise<void> => {
   font-size: 0.98rem;
   line-height: 1.5;
   margin: 0.6rem 0 0;
+}
+.id-summary-image-preview {
+  position: relative;
+  width: min(100%, 12rem);
+  aspect-ratio: 1 / 1;
+  margin-top: 0.7rem;
+  overflow: hidden;
+  border: 1px solid #dfe5ef;
+  border-radius: 6px;
+  background: #f6f8fc;
+}
+.id-summary-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 .id-summary-actions,
 .id-section-header,
@@ -861,6 +928,9 @@ const confirmVoiceDelete = async (): Promise<void> => {
   justify-content: space-between;
   gap: 1rem;
 }
+.id-summary-actions-only {
+  justify-content: flex-end;
+}
 .id-release-group,
 .id-toolbar {
   gap: 0.55rem;
@@ -870,43 +940,6 @@ const confirmVoiceDelete = async (): Promise<void> => {
   padding-left: 0;
   padding-right: 0;
 }
-.id-language-list {
-  display: grid;
-  gap: 0.55rem;
-  margin-top: 0.8rem;
-}
-.id-language-row {
-  display: grid;
-  grid-template-columns: 1.75rem 8rem minmax(0, 1fr);
-  align-items: center;
-  gap: 0.7rem;
-}
-.id-language-flag {
-  display: flex;
-  justify-content: center;
-}
-.id-language-name {
-  color: #111a3d;
-  font-size: 0.86rem;
-  font-weight: 600;
-}
-.id-language-input-wrap {
-  position: relative;
-}
-.id-language-input {
-  height: 2.15rem;
-  padding-right: 2.25rem;
-  color: #111a3d;
-  font-size: 0.86rem;
-}
-.id-input-edit-btn {
-  position: absolute;
-  top: 1px;
-  right: 1px;
-  width: 2rem;
-  height: calc(100% - 2px);
-  font-size: 1rem;
-}
 .id-section-title {
   color: #111a3d;
   font-size: 1.05rem;
@@ -915,17 +948,6 @@ const confirmVoiceDelete = async (): Promise<void> => {
 }
 .id-section-title span {
   margin-left: 0.35rem;
-}
-.id-view-btn {
-  width: 2rem;
-  height: 2rem;
-  background: #fff;
-  border-radius: 4px;
-  color: #111a3d;
-  font-size: 1.05rem;
-}
-.id-view-btn-active {
-  color: #2563eb;
 }
 .id-image-grid {
   display: grid;
@@ -966,18 +988,6 @@ const confirmVoiceDelete = async (): Promise<void> => {
   height: 100%;
   object-fit: contain;
 }
-.id-main-badge {
-  position: absolute;
-  top: 0.3rem;
-  left: 0.3rem;
-  z-index: 2;
-  border-radius: 4px;
-  background: #2f8f68;
-  color: #fff;
-  font-size: 0.74rem;
-  font-weight: 700;
-  padding: 0.32rem 0.46rem;
-}
 .file-actions {
   position: absolute;
   top: 0.35rem;
@@ -1014,6 +1024,12 @@ const confirmVoiceDelete = async (): Promise<void> => {
 }
 .btn-icon-delete:hover {
   background: #dc2626;
+}
+.btn-icon-release {
+  background: #2f8f68;
+}
+.btn-icon-release:hover {
+  background: #267657;
 }
 .id-image-meta {
   display: flex;
@@ -1055,6 +1071,116 @@ const confirmVoiceDelete = async (): Promise<void> => {
 }
 .id-release-btn:hover {
   background: #eefaf5;
+}
+.id-release-btn-active,
+.id-release-btn-active:hover,
+.id-release-btn:disabled {
+  border-color: #cbd5e1;
+  background: #f1f5f9;
+  color: #64748b;
+  cursor: default;
+}
+.id-summary-voices-panel {
+  min-width: 0;
+}
+.id-summary-voice-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.8rem;
+}
+.id-summary-voice-card {
+  position: relative;
+  min-width: 0;
+  min-height: 13rem;
+  border: 1.5px solid #b8d4f0;
+  border-radius: 8px;
+  padding: 2.85rem 0.75rem 0.75rem;
+  text-align: center;
+  background: #f8fbff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+}
+.id-summary-voice-actions {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.45rem;
+  display: flex;
+  gap: 0.3rem;
+}
+.id-summary-voice-action {
+  width: 1.65rem;
+  height: 1.65rem;
+  font-size: 0.82rem;
+}
+.id-summary-voice-flag {
+  width: 3.5rem;
+  height: 3.5rem;
+  border: 2px solid #d1e3f6;
+  border-radius: 50%;
+  background: #e8f0fe;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.id-summary-voice-flag .flag-icon {
+  font-size: 1.6rem;
+}
+.id-summary-voice-body {
+  min-width: 0;
+  width: 100%;
+}
+.id-summary-voice-name {
+  color: #1e293b;
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.id-summary-voice-type {
+  color: #6b7280;
+  font-size: 0.75rem;
+  line-height: 1.25;
+  margin: 0.25rem 0 0;
+}
+.btn-play {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid #4f46e5;
+  border-radius: 4px;
+  background: #fff;
+  color: #4f46e5;
+  cursor: pointer;
+  font-size: 0.78rem;
+  min-height: 1.7rem;
+  padding: 0.15rem 0.5rem;
+  transition: all 0.15s;
+}
+.btn-play i {
+  font-size: 1rem;
+}
+.btn-play:hover {
+  background: #4f46e5;
+  color: #fff;
+}
+.btn-play.playing {
+  border-color: #dc2626;
+  color: #dc2626;
+}
+.btn-play.playing:hover {
+  background: #dc2626;
+  color: #fff;
+}
+.btn-play.disabled,
+.btn-play:disabled {
+  border-color: #d1d5db;
+  color: #9ca3af;
+  cursor: not-allowed;
+  opacity: 0.7;
 }
 .id-voices-table-wrap {
   margin-top: 0.8rem;
@@ -1190,7 +1316,7 @@ const confirmVoiceDelete = async (): Promise<void> => {
   .id-summary-panel {
     grid-template-columns: 1fr;
   }
-  .id-names-panel {
+  .id-summary-details {
     border-left: 0;
     border-top: 1px solid #e2e7f1;
     padding-left: 0;
@@ -1213,12 +1339,8 @@ const confirmVoiceDelete = async (): Promise<void> => {
   .id-release-group {
     flex-wrap: wrap;
   }
-  .id-language-row,
   .id-image-card {
     grid-template-columns: 1fr;
-  }
-  .id-language-name {
-    margin-top: -0.25rem;
   }
 }
 .cd-modal-overlay {
