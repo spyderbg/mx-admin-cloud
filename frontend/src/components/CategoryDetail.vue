@@ -1,5 +1,5 @@
 <template>
-  <div class="card mb-2" style="width: 100%;">
+  <div class="card category-detail-panel">
     <div class="card-body">
       <!-- Row 1: name spans left; empty cell on md+ keeps column grid for row 2 -->
       <div class="row">
@@ -759,6 +759,18 @@ async function onFileSelected(e: Event): Promise<void> {
 </script>
 
 <style scoped>
+.category-detail-panel {
+  width: 100%;
+  background: #fff;
+  border: 1px solid #e6eaf4;
+  border-radius: 8px;
+  box-shadow: 0 4px 18px rgba(25, 38, 77, 0.04);
+  margin-bottom: 1rem;
+}
+.category-detail-panel .card-body {
+  padding: 1.25rem 1.5rem;
+}
+
 /* Category icon */
 .category-icon-wrap {
   position: relative;

@@ -159,6 +159,215 @@ export function itemNameLabel(lang: Language): string {
   return labels[lang] ?? labels.en
 }
 
+/** Label for the "Item id" field; unknown `lang` falls back to English. */
+export function itemIdLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Item Id',
+    es: 'Id del elemento',
+    fr: "Id de l'élément",
+    bg: 'Идентификатор на елемента',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Label for the current item image; unknown `lang` falls back to English. */
+export function currentImageLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Current Image',
+    es: 'Imagen actual',
+    fr: 'Image actuelle',
+    bg: 'Текущо изображение',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Generic description field label; unknown `lang` falls back to English. */
+export function descriptionLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Description',
+    es: 'Descripción',
+    fr: 'Description',
+    bg: 'Описание',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Label for an item voices card group; unknown `lang` falls back to English. */
+export function itemVoicesLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Item Voices',
+    es: 'Voces del elemento',
+    fr: "Voix de l'élément",
+    bg: 'Гласове на елемента',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Label for an images section heading; unknown `lang` falls back to English. */
+export function imagesLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Images',
+    es: 'Imágenes',
+    fr: 'Images',
+    bg: 'Изображения',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Button label for releasing one item; unknown `lang` falls back to English. */
+export function releaseItemLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Release Item',
+    es: 'Publicar elemento',
+    fr: "Publier l'élément",
+    bg: 'Публикувай елемент',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Button label for adding item images; unknown `lang` falls back to English. */
+export function addImagesLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Add Images',
+    es: 'Añadir imágenes',
+    fr: 'Ajouter des images',
+    bg: 'Добави изображения',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Button label for adding one item image; unknown `lang` falls back to English. */
+export function addImageLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Add Image',
+    es: 'Añadir imagen',
+    fr: 'Ajouter une image',
+    bg: 'Добави изображение',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Button label for releasing all item images; unknown `lang` falls back to English. */
+export function releaseAllImagesLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Release All Images',
+    es: 'Publicar todas las imágenes',
+    fr: 'Publier toutes les images',
+    bg: 'Публикувай всички изображения',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Button label for selecting an item image; unknown `lang` falls back to English. */
+export function selectImageLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Select Image',
+    es: 'Seleccionar imagen',
+    fr: "Sélectionner l'image",
+    bg: 'Избери изображение',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Label for the currently selected item image; unknown `lang` falls back to English. */
+export function selectedLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Selected',
+    es: 'Seleccionada',
+    fr: 'Sélectionnée',
+    bg: 'Избрано',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Button label for adding an item voice; unknown `lang` falls back to English. */
+export function addVoiceLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Add Voice',
+    es: 'Añadir voz',
+    fr: 'Ajouter une voix',
+    bg: 'Добави глас',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Button label for releasing all item voices; unknown `lang` falls back to English. */
+export function releaseAllVoicesLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Release All Voices',
+    es: 'Publicar todas las voces',
+    fr: 'Publier toutes les voix',
+    bg: 'Публикувай всички гласове',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Audio play button label; unknown `lang` falls back to English. */
+export function playLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Play',
+    es: 'Reproducir',
+    fr: 'Lire',
+    bg: 'Пусни',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Audio stop button label; unknown `lang` falls back to English. */
+export function stopLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Stop',
+    es: 'Detener',
+    fr: 'Arrêter',
+    bg: 'Спри',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Audio missing-state label; unknown `lang` falls back to English. */
+export function voiceFileMissingLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Voice file missing',
+    es: 'Falta el archivo de voz',
+    fr: 'Fichier vocal manquant',
+    bg: 'Липсва гласов файл',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Modal title for changing an item id; unknown `lang` falls back to English. */
+export function changeItemIdLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Change Item Id',
+    es: 'Cambiar id del elemento',
+    fr: "Modifier l'id de l'élément",
+    bg: 'Промяна на идентификатора',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Label for a new item id input; unknown `lang` falls back to English. */
+export function newItemIdLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'New Item Id',
+    es: 'Nuevo id del elemento',
+    fr: "Nouvel id de l'élément",
+    bg: 'Нов идентификатор',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Placeholder for an item id input; unknown `lang` falls back to English. */
+export function enterItemIdLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Enter item id',
+    es: 'Introduce el id del elemento',
+    fr: "Saisir l'id de l'élément",
+    bg: 'Въведете идентификатор',
+  }
+  return labels[lang] ?? labels.en
+}
+
 /** Label for an English item-name field; unknown `lang` falls back to English. */
 export function itemNameEnglishLabel(lang: Language): string {
   const labels: Record<Language, string> = {

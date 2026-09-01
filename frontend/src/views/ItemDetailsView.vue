@@ -16,7 +16,7 @@
     <section class="id-panel id-summary-panel">
       <div class="id-summary-copy">
         <div>
-          <div class="id-field-label">Item Id</div>
+          <div class="id-field-label">{{ itemIdLabel(contentLanguage) }}</div>
           <div class="id-value-row">
             <h3 class="id-item-id">{{ item.id }}</h3>
             <button type="button" class="id-edit-btn" title="Edit item id" aria-label="Edit item id" @click="onEditItemId">
@@ -26,7 +26,7 @@
         </div>
 
         <div>
-          <div class="id-field-label">Current Image</div>
+          <div class="id-field-label">{{ currentImageLabel(contentLanguage) }}</div>
           <div
             v-if="currentImageCard"
             class="id-summary-image-preview id-image-preview-trigger"
@@ -45,7 +45,7 @@
         </div>
 
         <div>
-          <div class="id-field-label">Description</div>
+          <div class="id-field-label">{{ descriptionLabel(contentLanguage) }}</div>
           <p class="id-description">{{ categoryDescriptionText }}</p>
         </div>
       </div>
@@ -53,19 +53,15 @@
       <div class="id-summary-details">
         <div class="id-summary-actions id-summary-actions-only">
           <div class="id-release-group">
-            <button type="button" class="btn btn-outline-primary btn-sm" @click="onReleaseItem">
-              Release Item
-              <i class="mdi mdi-chevron-down ml-1"></i>
-            </button>
-            <button type="button" class="btn btn-outline-primary btn-sm id-square-btn" title="Item analytics" aria-label="Item analytics" @click="onItemAnalytics">
-              <i class="mdi mdi-chart-line"></i>
+            <button type="button" class="btn btn-primary btn-sm id-release-item-btn" @click="onReleaseItem">
+              {{ releaseItemLabel(contentLanguage) }}
             </button>
           </div>
         </div>
 
         <div class="id-summary-voices-panel">
           <h4 class="id-section-kicker">
-            Item Voices
+            {{ itemVoicesLabel(contentLanguage) }}
             <span>({{ item.voices.length }})</span>
           </h4>
           <div class="id-summary-voice-cards-grid">
@@ -88,9 +84,9 @@
                 <p class="id-summary-voice-name">{{ voice.name }}</p>
                 <p class="id-summary-voice-type">{{ voiceTypeLabel(voice.type) }}</p>
               </div>
-              <button class="btn-play" :class="{ playing: playingVoiceId === voice.id, disabled: !hasAudio(voice) }" type="button" :disabled="!hasAudio(voice)" :aria-label="!hasAudio(voice) ? 'Voice file missing' : (playingVoiceId === voice.id ? 'Stop voice playback' : 'Play voice')" :title="!hasAudio(voice) ? 'Voice file missing' : (playingVoiceId === voice.id ? 'Stop' : 'Play')" @click="togglePlay(voice)">
+              <button class="btn-play" :class="{ playing: playingVoiceId === voice.id, disabled: !hasAudio(voice) }" type="button" :disabled="!hasAudio(voice)" :aria-label="!hasAudio(voice) ? voiceFileMissingLabel(contentLanguage) : (playingVoiceId === voice.id ? stopLabel(contentLanguage) : playLabel(contentLanguage))" :title="!hasAudio(voice) ? voiceFileMissingLabel(contentLanguage) : (playingVoiceId === voice.id ? stopLabel(contentLanguage) : playLabel(contentLanguage))" @click="togglePlay(voice)">
                 <i :class="playingVoiceId === voice.id ? 'mdi mdi-stop-circle' : 'mdi mdi-play-circle'"></i>
-                <span>{{ playingVoiceId === voice.id ? 'Stop' : 'Play' }}</span>
+                <span>{{ playingVoiceId === voice.id ? stopLabel(contentLanguage) : playLabel(contentLanguage) }}</span>
               </button>
             </article>
           </div>
@@ -104,14 +100,14 @@
     <section class="id-panel">
       <div class="id-section-header">
         <h4 class="id-section-title">
-          Images
+          {{ imagesLabel(contentLanguage) }}
           <span>({{ itemImages.length }})</span>
         </h4>
         <div class="id-toolbar">
           <button type="button" class="btn btn-outline-primary btn-sm" @click="onAddFile">
-            <i class="mdi mdi-plus mr-1"></i>Add Images
+            <i class="mdi mdi-plus mr-1"></i>{{ addImagesLabel(contentLanguage) }}
           </button>
-          <button v-if="hasFiles" type="button" class="btn btn-primary btn-sm" @click="onReleaseAllItemImages">Release All Images</button>
+          <button v-if="hasFiles" type="button" class="btn btn-primary btn-sm" @click="onReleaseAllItemImages">{{ releaseAllImagesLabel(contentLanguage) }}</button>
         </div>
       </div>
 
@@ -143,7 +139,7 @@
             <p>{{ card.prompt }}</p>
             <button type="button" class="id-release-btn" :class="{ 'id-release-btn-active': card.isSelected }" :disabled="card.isSelected" @click="onSelectImage(card.index)">
               <i :class="card.isSelected ? 'mdi mdi-check' : 'mdi mdi-image'"></i>
-              {{ card.isSelected ? 'Selected' : 'Select Image' }}
+              {{ card.isSelected ? selectedLabel(contentLanguage) : selectImageLabel(contentLanguage) }}
             </button>
           </div>
         </div>
@@ -165,7 +161,7 @@
             <p>Add an image variant for this item.</p>
             <button type="button" class="id-release-btn" @click="onAddFile">
               <i class="mdi mdi-plus"></i>
-              Add Image
+              {{ addImageLabel(contentLanguage) }}
             </button>
           </div>
         </div>
@@ -175,14 +171,14 @@
     <section class="id-panel">
       <div class="id-section-header">
         <h4 class="id-section-title">
-          Voices
+          {{ voicesLabel(contentLanguage) }}
           <span>({{ item.voices.length }})</span>
         </h4>
         <div class="id-toolbar">
           <button type="button" class="btn btn-outline-primary btn-sm" @click="onAddVoice">
-            <i class="mdi mdi-plus mr-1"></i>Add Voice
+            <i class="mdi mdi-plus mr-1"></i>{{ addVoiceLabel(contentLanguage) }}
           </button>
-          <button type="button" class="btn btn-primary btn-sm" @click="onReleaseAllItemVoices">Release All Voices</button>
+          <button type="button" class="btn btn-primary btn-sm" @click="onReleaseAllItemVoices">{{ releaseAllVoicesLabel(contentLanguage) }}</button>
         </div>
       </div>
       <input ref="voiceFileInputRef" type="file" accept="audio/*" class="d-none" aria-hidden="true" tabindex="-1" @change="onVoiceFilePicked" />
@@ -214,7 +210,7 @@
                 <td :title="voiceFileName(voice)">{{ voiceFileName(voice) }}</td>
                 <td>
                   <div class="id-audio-preview">
-                    <button class="id-audio-play" :class="{ 'id-audio-play-active': playingVoiceId === voice.id }" :disabled="!hasAudio(voice)" :aria-label="!hasAudio(voice) ? 'Voice file missing' : (playingVoiceId === voice.id ? 'Stop voice playback' : 'Play voice')" :title="!hasAudio(voice) ? 'Voice file missing' : (playingVoiceId === voice.id ? 'Stop' : 'Play')" @click="togglePlay(voice)">
+                    <button class="id-audio-play" :class="{ 'id-audio-play-active': playingVoiceId === voice.id }" :disabled="!hasAudio(voice)" :aria-label="!hasAudio(voice) ? voiceFileMissingLabel(contentLanguage) : (playingVoiceId === voice.id ? stopLabel(contentLanguage) : playLabel(contentLanguage))" :title="!hasAudio(voice) ? voiceFileMissingLabel(contentLanguage) : (playingVoiceId === voice.id ? stopLabel(contentLanguage) : playLabel(contentLanguage))" @click="togglePlay(voice)">
                       <i :class="playingVoiceId === voice.id ? 'mdi mdi-stop' : 'mdi mdi-play'"></i>
                     </button>
                   </div>
@@ -222,7 +218,7 @@
                 <td :title="optimizedVoiceFileName(voice)">{{ optimizedVoiceFileName(voice) }}</td>
                 <td>
                   <div class="id-audio-preview">
-                    <button class="id-audio-play" :class="{ 'id-audio-play-active': playingVoiceId === voice.id }" :disabled="!hasAudio(voice)" :aria-label="!hasAudio(voice) ? 'Voice file missing' : (playingVoiceId === voice.id ? 'Stop optimized voice playback' : 'Play optimized voice')" :title="!hasAudio(voice) ? 'Voice file missing' : (playingVoiceId === voice.id ? 'Stop' : 'Play')" @click="togglePlay(voice)">
+                    <button class="id-audio-play" :class="{ 'id-audio-play-active': playingVoiceId === voice.id }" :disabled="!hasAudio(voice)" :aria-label="!hasAudio(voice) ? voiceFileMissingLabel(contentLanguage) : (playingVoiceId === voice.id ? stopLabel(contentLanguage) : playLabel(contentLanguage))" :title="!hasAudio(voice) ? voiceFileMissingLabel(contentLanguage) : (playingVoiceId === voice.id ? stopLabel(contentLanguage) : playLabel(contentLanguage))" @click="togglePlay(voice)">
                       <i :class="playingVoiceId === voice.id ? 'mdi mdi-stop' : 'mdi mdi-play'"></i>
                     </button>
                   </div>
@@ -293,24 +289,24 @@
     <div v-if="showItemIdEdit" class="cd-modal-overlay" @click.self="closeItemIdEdit">
       <div class="cd-modal-box">
         <div class="cd-modal-header">
-          <h5 class="cd-modal-title">Change Item Id</h5>
+          <h5 class="cd-modal-title">{{ changeItemIdLabel(contentLanguage) }}</h5>
           <button type="button" class="cd-modal-close" @click="closeItemIdEdit">&times;</button>
         </div>
         <div class="cd-modal-body">
           <div class="form-group mb-0">
-            <label class="col-form-label">New Item Id</label>
+            <label class="col-form-label">{{ newItemIdLabel(contentLanguage) }}</label>
             <input
               v-model="itemIdEditValue"
               type="text"
               class="form-control"
-              placeholder="Enter item id"
+              :placeholder="enterItemIdLabel(contentLanguage)"
               @keyup.enter="confirmItemIdEdit"
             />
           </div>
         </div>
         <div class="cd-modal-footer">
-          <button type="button" class="btn btn-secondary" @click="closeItemIdEdit">Cancel</button>
-          <button type="button" class="btn btn-primary" @click="confirmItemIdEdit">Save</button>
+          <button type="button" class="btn btn-secondary" @click="closeItemIdEdit">{{ cancelLabel(contentLanguage) }}</button>
+          <button type="button" class="btn btn-primary" @click="confirmItemIdEdit">{{ saveLabel(contentLanguage) }}</button>
         </div>
       </div>
     </div>
@@ -371,9 +367,31 @@ import { resizeImageToMaxDimension } from '../utils/imageResize'
 import { imageIdFromUri } from '../utils/imageId'
 import cameraPlaceholderUrl from '../assets/images/samples/camera-placeholder.svg'
 import {
+  addImageLabel,
+  addImagesLabel,
+  addVoiceLabel,
   breadcrumbCategoriesLabel,
+  cancelLabel,
+  changeItemIdLabel,
+  currentImageLabel,
+  descriptionLabel,
+  enterItemIdLabel,
+  imagesLabel,
+  itemIdLabel,
+  itemVoicesLabel,
   localizedCategoryLabel,
   localizedImageLabel,
+  newItemIdLabel,
+  playLabel,
+  releaseAllImagesLabel,
+  releaseAllVoicesLabel,
+  releaseItemLabel,
+  saveLabel,
+  selectImageLabel,
+  selectedLabel,
+  stopLabel,
+  voiceFileMissingLabel,
+  voicesLabel,
 } from '../utils/localizedLabels'
 import { toPascalCaseWords } from '../utils/pascalCaseWords'
 
@@ -647,10 +665,6 @@ const onReleaseItem = (): void => {
   announceBackendPending(`release item ${item.value?.id ?? 'unknown item'}`)
 }
 
-const onItemAnalytics = (): void => {
-  announceBackendPending(`open analytics for item ${item.value?.id ?? 'unknown item'}`)
-}
-
 const onSelectImage = (index: number): void => {
   selectedImageIndex.value = index
 }
@@ -840,8 +854,9 @@ const confirmVoiceDelete = async (): Promise<void> => {
   padding: 1.25rem 1.5rem;
 }
 .id-summary-panel {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(16rem, 0.7fr) minmax(30rem, 1.3fr);
+  grid-template-columns: minmax(16rem, 0.7fr) minmax(0, 1.3fr);
   gap: 1.5rem;
 }
 .id-summary-copy {
@@ -852,9 +867,10 @@ const confirmVoiceDelete = async (): Promise<void> => {
   padding-right: 1.25rem;
 }
 .id-summary-details {
-  border-left: 1px solid #e2e7f1;
   padding-left: 1.5rem;
+  padding-top: 4.15rem;
   display: grid;
+  align-content: start;
   gap: 1.25rem;
   min-width: 0;
 }
@@ -929,16 +945,21 @@ const confirmVoiceDelete = async (): Promise<void> => {
   gap: 1rem;
 }
 .id-summary-actions-only {
+  position: absolute;
+  top: 1.25rem;
+  right: 1.5rem;
   justify-content: flex-end;
+  width: auto;
+  max-width: 100%;
+  min-height: 0;
 }
 .id-release-group,
 .id-toolbar {
   gap: 0.55rem;
 }
-.id-square-btn {
-  width: 2.2rem;
-  padding-left: 0;
-  padding-right: 0;
+.id-release-item-btn {
+  width: 9.35rem;
+  max-width: 100%;
 }
 .id-section-title {
   color: #111a3d;
@@ -1081,18 +1102,24 @@ const confirmVoiceDelete = async (): Promise<void> => {
   cursor: default;
 }
 .id-summary-voices-panel {
+  align-self: start;
   min-width: 0;
 }
 .id-summary-voice-cards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 9.5rem));
+  align-items: stretch;
+  justify-content: start;
   gap: 0.75rem;
   margin-top: 0.8rem;
 }
 .id-summary-voice-card {
   position: relative;
-  min-width: 0;
-  min-height: 13rem;
+  width: 100%;
+  min-width: min(8.5rem, 100%);
+  max-width: 9.5rem;
+  min-height: 0;
+  aspect-ratio: 3 / 4;
   border: 1.5px solid #b8d4f0;
   border-radius: 8px;
   padding: 2.85rem 0.75rem 0.75rem;
@@ -1102,6 +1129,7 @@ const confirmVoiceDelete = async (): Promise<void> => {
   flex-direction: column;
   align-items: center;
   justify-content: space-between;
+  overflow: hidden;
 }
 .id-summary-voice-actions {
   position: absolute;
@@ -1317,7 +1345,6 @@ const confirmVoiceDelete = async (): Promise<void> => {
     grid-template-columns: 1fr;
   }
   .id-summary-details {
-    border-left: 0;
     border-top: 1px solid #e2e7f1;
     padding-left: 0;
     padding-top: 1.25rem;
@@ -1341,6 +1368,11 @@ const confirmVoiceDelete = async (): Promise<void> => {
   }
   .id-image-card {
     grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 360px) {
+  .id-summary-voice-cards-grid {
+    grid-template-columns: minmax(0, 9.5rem);
   }
 }
 .cd-modal-overlay {
