@@ -182,26 +182,20 @@
                   </div>
                 </td>
                 <td>{{ voice.type }}</td>
-                <td>{{ voiceFileName(voice) }}</td>
+                <td :title="voiceFileName(voice)">{{ voiceFileName(voice) }}</td>
                 <td>
                   <div class="id-audio-preview">
                     <button class="id-audio-play" :class="{ 'id-audio-play-active': playingVoiceId === voice.id }" :disabled="!hasAudio(voice)" :aria-label="!hasAudio(voice) ? 'Voice file missing' : (playingVoiceId === voice.id ? 'Stop voice playback' : 'Play voice')" :title="!hasAudio(voice) ? 'Voice file missing' : (playingVoiceId === voice.id ? 'Stop' : 'Play')" @click="togglePlay(voice)">
                       <i :class="playingVoiceId === voice.id ? 'mdi mdi-stop' : 'mdi mdi-play'"></i>
                     </button>
-                    <span>0:00 / 0:02</span>
-                    <i class="mdi mdi-dots-vertical"></i>
-                    <span class="id-waveform" aria-hidden="true"></span>
                   </div>
                 </td>
-                <td>{{ optimizedVoiceFileName(voice) }}</td>
+                <td :title="optimizedVoiceFileName(voice)">{{ optimizedVoiceFileName(voice) }}</td>
                 <td>
                   <div class="id-audio-preview">
                     <button class="id-audio-play" :class="{ 'id-audio-play-active': playingVoiceId === voice.id }" :disabled="!hasAudio(voice)" :aria-label="!hasAudio(voice) ? 'Voice file missing' : (playingVoiceId === voice.id ? 'Stop optimized voice playback' : 'Play optimized voice')" :title="!hasAudio(voice) ? 'Voice file missing' : (playingVoiceId === voice.id ? 'Stop' : 'Play')" @click="togglePlay(voice)">
                       <i :class="playingVoiceId === voice.id ? 'mdi mdi-stop' : 'mdi mdi-play'"></i>
                     </button>
-                    <span>0:00 / 0:02</span>
-                    <i class="mdi mdi-dots-vertical"></i>
-                    <span class="id-waveform" aria-hidden="true"></span>
                   </div>
                 </td>
                 <td>
@@ -403,7 +397,12 @@ function voiceSrc(voice: Voice): string {
   return cacheBustedUri(voice.fileUri ?? '', voiceVersions.value[voice.id] ?? 0)
 }
 
-const { playingVoiceId, hasAudio, togglePlay, stopAudio } = useAudioPlayer(voiceSrc)
+const {
+  playingVoiceId,
+  hasAudio,
+  togglePlay,
+  stopAudio,
+} = useAudioPlayer(voiceSrc)
 
 const breadcrumbRoot = computed(() => breadcrumbCategoriesLabel(contentLanguage.value))
 
@@ -1059,9 +1058,12 @@ const confirmVoiceDelete = async (): Promise<void> => {
 }
 .id-voices-table-wrap {
   margin-top: 0.8rem;
+  overflow-x: visible;
 }
 .id-voices-table {
-  min-width: 76rem;
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
 }
 .id-voices-table th {
   border-top: 0;
@@ -1070,11 +1072,43 @@ const confirmVoiceDelete = async (): Promise<void> => {
   font-weight: 700;
   white-space: nowrap;
 }
+.id-voices-table th,
+.id-voices-table td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .id-voices-table td {
   color: #111a3d;
   font-size: 0.82rem;
   vertical-align: middle;
   white-space: nowrap;
+}
+.id-voices-table th:nth-child(1),
+.id-voices-table td:nth-child(1) {
+  width: 16%;
+}
+.id-voices-table th:nth-child(2),
+.id-voices-table td:nth-child(2) {
+  width: 8%;
+}
+.id-voices-table th:nth-child(3),
+.id-voices-table td:nth-child(3) {
+  width: 20%;
+}
+.id-voices-table th:nth-child(4),
+.id-voices-table td:nth-child(4),
+.id-voices-table th:nth-child(6),
+.id-voices-table td:nth-child(6) {
+  width: 8%;
+  text-align: center;
+}
+.id-voices-table th:nth-child(5),
+.id-voices-table td:nth-child(5) {
+  width: 23%;
+}
+.id-voices-table th:nth-child(7),
+.id-voices-table td:nth-child(7) {
+  width: 17%;
 }
 .id-voice-language,
 .item-voice-actions,
@@ -1085,6 +1119,11 @@ const confirmVoiceDelete = async (): Promise<void> => {
 .id-voice-language {
   gap: 0.55rem;
   font-weight: 600;
+  min-width: 0;
+}
+.id-voice-language span:not(.id-count-pill) {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .id-count-pill {
   min-width: 1.25rem;
@@ -1098,6 +1137,7 @@ const confirmVoiceDelete = async (): Promise<void> => {
 .id-audio-preview {
   gap: 0.35rem;
   color: #4b587d;
+  justify-content: center;
 }
 .id-audio-play {
   width: 1.6rem;
@@ -1118,14 +1158,6 @@ const confirmVoiceDelete = async (): Promise<void> => {
 .id-audio-play:disabled {
   color: #94a3b8;
   cursor: not-allowed;
-}
-.id-waveform {
-  width: 5.2rem;
-  height: 1rem;
-  opacity: 0.7;
-  background:
-    linear-gradient(90deg, #9aa3b8 40%, transparent 0) 0 50% / 0.34rem 20% repeat-x,
-    linear-gradient(90deg, #9aa3b8 40%, transparent 0) 0.1rem 50% / 0.42rem 55% repeat-x;
 }
 .item-voice-actions {
   justify-content: flex-end;
