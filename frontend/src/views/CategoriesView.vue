@@ -5,17 +5,7 @@
   </div>
   <p v-else-if="sharedError && sharedCategories.length === 0" class="text-danger text-center py-5">{{ failedToLoadCategoriesLabel(contentLanguage) }}</p>
   <div v-else-if="category" style="width: 100%;">
-    <nav aria-label="breadcrumb">
-      <ol class="breadcrumb bg-transparent p-0 mb-3">
-        <li class="breadcrumb-item">
-          <a href="#" @click.prevent="goToDashboard">{{ breadcrumbRoot }}</a>
-        </li>
-        <li class="breadcrumb-item active" aria-current="page">{{ breadcrumbCategory }}</li>
-      </ol>
-    </nav>
-    <div class="page-header" style="margin-bottom: 0.5rem;">
-      <h3 class="page-title">{{ pageTitle }}</h3>
-    </div>
+    <ViewBreadcrumb :items="breadcrumbItems" />
     <CategoryDetail
       :category="category"
       :archiving="archiving"
@@ -27,28 +17,30 @@
       @rename-voice="onRenameVoice"
       @delete-voice="onDeleteVoice"
     />
-    <div class="d-flex justify-content-between align-items-center mt-4 mb-3">
-      <h4 class="mb-0">{{ itemsLabel(contentLanguage) }}</h4>
-      <div class="d-flex align-items-center" style="gap: 1rem;">
-        <div class="d-flex align-items-center" style="gap: 0.5rem;">
-          <i class="mdi mdi-view-grid-outline text-muted" style="font-size: 1.1rem;"></i>
-          <input
-            type="range"
-            min="1"
-            max="7"
-            step="1"
-            v-model.number="gridColumns"
-            style="width: 100px; cursor: pointer;"
-            :title="`${gridColumns} column${gridColumns > 1 ? 's' : ''}`"
-          />
-          <i class="mdi mdi-view-grid text-muted" style="font-size: 1.4rem;"></i>
+    <section class="category-items-panel">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="mb-0">{{ itemsLabel(contentLanguage) }}</h4>
+        <div class="d-flex align-items-center" style="gap: 1rem;">
+          <div class="d-flex align-items-center" style="gap: 0.5rem;">
+            <i class="mdi mdi-view-grid-outline text-muted" style="font-size: 1.1rem;"></i>
+            <input
+              type="range"
+              min="1"
+              max="7"
+              step="1"
+              v-model.number="gridColumns"
+              style="width: 100px; cursor: pointer;"
+              :title="`${gridColumns} column${gridColumns > 1 ? 's' : ''}`"
+            />
+            <i class="mdi mdi-view-grid text-muted" style="font-size: 1.4rem;"></i>
+          </div>
+          <button class="btn btn-primary btn-sm" @click="openAddItemModal">
+            <i class="mdi mdi-plus mr-1"></i>{{ addNewItemLabel(contentLanguage) }}
+          </button>
         </div>
-        <button class="btn btn-primary btn-sm" @click="openAddItemModal">
-          <i class="mdi mdi-plus mr-1"></i>{{ addNewItemLabel(contentLanguage) }}
-        </button>
       </div>
-    </div>
-    <ItemGrid :items="category.items" :category-id="category.id" :columns="gridColumns" />
+      <ItemGrid :items="category.items" :category-id="category.id" :columns="gridColumns" />
+    </section>
   </div>
   <div v-else class="text-center py-5">
     <h4 class="text-muted">Select a category from the sidebar</h4>
@@ -129,6 +121,7 @@ import { LocalizedString, SUPPORTED_LANGUAGES, type Language, type Voice } from 
 import { categoriesRemove, categoriesRename, createItemEndpoint } from '../api/contentClient'
 import CategoryDetail from '../components/CategoryDetail.vue'
 import ItemGrid from '../components/ItemGrid.vue'
+import ViewBreadcrumb from '../components/ViewBreadcrumb.vue'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import {
   addNewItemLabel,
@@ -148,10 +141,6 @@ import { toPascalCaseWords } from '../utils/pascalCaseWords'
 
 const route = useRoute()
 const router = useRouter()
-
-const goToDashboard = (): void => {
-  router.push({ name: 'dashboard' })
-}
 
 const contentLanguage = useContentLanguage()
 
@@ -199,17 +188,16 @@ const category = computed(() => {
   return sharedCategories.value[0] ?? null
 })
 
-const pageTitle = computed(() => {
-  const cat = category.value
-  if (!cat) return ''
-  return toPascalCaseWords(localizedCategoryLabel(cat, contentLanguage.value))
-})
-
 const breadcrumbRoot = computed(() => breadcrumbCategoriesLabel(contentLanguage.value))
 
 const breadcrumbCategory = computed(() =>
   category.value ? toPascalCaseWords(localizedCategoryLabel(category.value, contentLanguage.value)) : '',
 )
+
+const breadcrumbItems = computed(() => [
+  { label: breadcrumbRoot.value, to: { name: 'dashboard' } },
+  { label: breadcrumbCategory.value },
+])
 
 // Auto-redirect from /categories to /categories/:id when a category is selected
 watch(category, (cat) => {
@@ -369,6 +357,16 @@ async function confirmAddItem(): Promise<void> {
 </script>
 
 <style scoped>
+.category-items-panel {
+  width: 100%;
+  background: #fff;
+  border: 1px solid #e6eaf4;
+  border-radius: 8px;
+  box-shadow: 0 4px 18px rgba(25, 38, 77, 0.04);
+  margin: 1rem 0;
+  padding: 1.25rem 1.5rem;
+}
+
 .cd-modal-overlay {
   position: fixed;
   inset: 0;

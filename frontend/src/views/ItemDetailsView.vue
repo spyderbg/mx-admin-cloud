@@ -1,17 +1,6 @@
 <template>
   <div v-if="category && item" class="item-detail-page">
-    <!-- Breadcrumb -->
-    <nav aria-label="breadcrumb">
-      <ol class="breadcrumb bg-transparent p-0 mb-3">
-        <li class="breadcrumb-item">
-          <a href="#" @click.prevent="goToDashboard">{{ breadcrumbRoot }}</a>
-        </li>
-        <li class="breadcrumb-item">
-          <router-link :to="`/categories/${category.id}`">{{ breadcrumbCategory }}</router-link>
-        </li>
-        <li class="breadcrumb-item active" aria-current="page">{{ breadcrumbItem }}</li>
-      </ol>
-    </nav>
+    <ViewBreadcrumb :items="breadcrumbItems" />
 
     <section class="id-panel id-summary-panel">
       <div class="id-summary-copy">
@@ -349,7 +338,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import type { AxiosError } from 'axios'
 import { ensureCategoriesLoaded, ensureCategoryDetail, ensureItemDetail, invalidateItemDetail, sharedCategories } from '../api/cache'
 import {
@@ -363,6 +352,7 @@ import {
 import { SUPPORTED_LANGUAGES, type Language, type Voice } from '../types/viewModels'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import { useAudioPlayer } from '../composables/useAudioPlayer'
+import ViewBreadcrumb from '../components/ViewBreadcrumb.vue'
 import { resizeImageToMaxDimension } from '../utils/imageResize'
 import { imageIdFromUri } from '../utils/imageId'
 import cameraPlaceholderUrl from '../assets/images/samples/camera-placeholder.svg'
@@ -396,11 +386,6 @@ import {
 import { toPascalCaseWords } from '../utils/pascalCaseWords'
 
 const route = useRoute()
-const router = useRouter()
-
-const goToDashboard = (): void => {
-  router.push({ name: 'dashboard' })
-}
 
 const contentLanguage = useContentLanguage()
 
@@ -495,6 +480,12 @@ const breadcrumbCategory = computed(() =>
 const breadcrumbItem = computed(() =>
   item.value ? toPascalCaseWords(localizedImageLabel(item.value, contentLanguage.value)) : '',
 )
+
+const breadcrumbItems = computed(() => [
+  { label: breadcrumbRoot.value, to: { name: 'dashboard' } },
+  { label: breadcrumbCategory.value, to: { name: 'category', params: { categoryId: category.value?.id ?? '' } } },
+  { label: breadcrumbItem.value },
+])
 
 const langFlagMap: Record<Language, string> = { en: 'us', es: 'es', fr: 'fr', bg: 'bg' }
 const langLabelMap: Record<Language, string> = { en: 'English', es: 'Español', fr: 'Français', bg: 'Български' }
@@ -840,10 +831,6 @@ const confirmVoiceDelete = async (): Promise<void> => {
 <style scoped>
 .item-detail-page {
   color: #111a3d;
-}
-.item-detail-page :deep(.breadcrumb) {
-  font-size: 0.82rem;
-  font-weight: 600;
 }
 .id-panel {
   background: #fff;
