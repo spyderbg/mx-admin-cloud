@@ -51,34 +51,16 @@
         <div class="id-summary-voices-panel">
           <h4 class="id-section-kicker">
             {{ itemVoicesLabel(contentLanguage) }}
-            <span>({{ item.voices.length }})</span>
           </h4>
-          <div class="id-summary-voice-cards-grid">
-            <article v-for="voice in itemVoiceCards" :key="voice.id" class="id-summary-voice-card">
-              <div class="id-summary-voice-actions">
-                <button class="btn-icon btn-icon-release id-summary-voice-action" type="button" title="Release voice" aria-label="Release voice" @click="onReleaseVoice(voice)">
-                  <i class="mdi mdi-upload"></i>
-                </button>
-                <button class="btn-icon btn-icon-edit id-summary-voice-action" type="button" title="Replace voice" aria-label="Replace voice" @click="onUploadVoice(voice)">
-                  <i class="mdi mdi-pencil"></i>
-                </button>
-                <button class="btn-icon btn-icon-delete id-summary-voice-action" type="button" title="Delete or reset voice" aria-label="Delete or reset voice" @click="openVoiceDeleteModal(voice)">
-                  <i class="mdi mdi-delete"></i>
-                </button>
-              </div>
-              <div class="id-summary-voice-flag" :title="langLabel(voice.language)" :aria-label="langLabel(voice.language)">
-                <i :class="'flag-icon flag-icon-' + langFlag(voice.language)"></i>
-              </div>
-              <div class="id-summary-voice-body">
-                <p class="id-summary-voice-name">{{ voice.name }}</p>
-                <p class="id-summary-voice-type">{{ voiceTypeLabel(voice.type) }}</p>
-              </div>
-              <button class="btn-play" :class="{ playing: playingVoiceId === voice.id, disabled: !hasAudio(voice) }" type="button" :disabled="!hasAudio(voice)" :aria-label="!hasAudio(voice) ? voiceFileMissingLabel(contentLanguage) : (playingVoiceId === voice.id ? stopLabel(contentLanguage) : playLabel(contentLanguage))" :title="!hasAudio(voice) ? voiceFileMissingLabel(contentLanguage) : (playingVoiceId === voice.id ? stopLabel(contentLanguage) : playLabel(contentLanguage))" @click="togglePlay(voice)">
-                <i :class="playingVoiceId === voice.id ? 'mdi mdi-stop-circle' : 'mdi mdi-play-circle'"></i>
-                <span>{{ playingVoiceId === voice.id ? stopLabel(contentLanguage) : playLabel(contentLanguage) }}</span>
-              </button>
-            </article>
-          </div>
+          <VoiceCardsGrid
+            :voices="itemVoiceCards"
+            :playing-voice-id="playingVoiceId"
+            :has-audio="hasAudio"
+            :toggle-play="togglePlay"
+            :upload-voice="uploadVoiceCard"
+            :delete-voice="deleteVoiceCard"
+            :extra-action="releaseAction"
+          />
         </div>
       </div>
     </section>
@@ -349,12 +331,15 @@ import {
   itemsVoicesUpdate,
   itemsVoicesDelete,
 } from '../api/contentClient'
-import { SUPPORTED_LANGUAGES, type Language, type Voice } from '../types/viewModels'
+import { SUPPORTED_LANGUAGES, type Voice } from '../types/viewModels'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import { useAudioPlayer } from '../composables/useAudioPlayer'
 import ViewBreadcrumb from '../components/ViewBreadcrumb.vue'
+import VoiceCardsGrid, { type VoiceExtraAction } from '../components/VoiceCardsGrid.vue'
 import { resizeImageToMaxDimension } from '../utils/imageResize'
 import { imageIdFromUri } from '../utils/imageId'
+import { cacheBustedUri } from '../utils/cacheBustedUri'
+import { langFlag, langLabel } from '../utils/voiceLabels'
 import cameraPlaceholderUrl from '../assets/images/samples/camera-placeholder.svg'
 import {
   addImageLabel,
@@ -439,12 +424,6 @@ const item = computed(() => {
 const imageVersions = ref<Record<string, number>>({})
 const voiceVersions = ref<Record<string, number>>({})
 
-function cacheBustedUri(uri: string, version: number): string {
-  if (!uri || !version) return uri
-  const sep = uri.includes('?') ? '&' : '?'
-  return `${uri}${sep}v=${version}`
-}
-
 const rawItemImages = computed(() => item.value?.images.filter((image) => image.trim().length > 0) ?? [])
 const itemImages = computed(() =>
   rawItemImages.value.map((uri) => cacheBustedUri(uri, imageVersions.value[imageIdFromUri(uri)] ?? 0)),
@@ -486,12 +465,6 @@ const breadcrumbItems = computed(() => [
   { label: breadcrumbCategory.value, to: { name: 'category', params: { categoryId: category.value?.id ?? '' } } },
   { label: breadcrumbItem.value },
 ])
-
-const langFlagMap: Record<Language, string> = { en: 'us', es: 'es', fr: 'fr', bg: 'bg' }
-const langLabelMap: Record<Language, string> = { en: 'English', es: 'Español', fr: 'Français', bg: 'Български' }
-
-const langFlag = (lang: Language): string => langFlagMap[lang] || lang
-const langLabel = (lang: Language): string => langLabelMap[lang] || lang
 
 const categoryDescriptionText = computed(() => {
   const currentCategory = category.value
@@ -537,13 +510,6 @@ const itemVoiceCards = computed(() =>
     item.value?.voices.filter((voice) => voice.language === language) ?? [],
   ),
 )
-
-const voiceTypeLabelMap: Record<string, string> = {
-  male: 'Narrator',
-  female: 'Voiceover Artist',
-  ambient: 'Ambient',
-}
-const voiceTypeLabel = (type: string): string => voiceTypeLabelMap[type] || type
 
 function voiceFileName(voice: Voice): string {
   return fileNameFromUri(voice.fileUri)
@@ -826,6 +792,46 @@ const confirmVoiceDelete = async (): Promise<void> => {
   }
 }
 
+async function uploadVoiceCard(voice: Voice, file: File, wasAdd: boolean): Promise<void> {
+  const cat = category.value
+  const currentItem = item.value
+  if (!cat || !currentItem) return
+  try {
+    const formData = new FormData()
+    if (wasAdd) formData.append('language', voice.language)
+    formData.append('audio', file)
+    const result = wasAdd
+      ? await itemsVoicesAdd(cat.id, currentItem.id, formData)
+      : await itemsVoicesUpdate(cat.id, currentItem.id, voice.id, formData)
+    await refreshItem()
+    voiceVersions.value = { ...voiceVersions.value, [voice.id]: (voiceVersions.value[voice.id] ?? 0) + 1 }
+    showToast(`Voice for ${voice.name} (${voice.language.toUpperCase()}) ${pastTense(result.action)}.`, 'success')
+  } catch (err) {
+    showToast(extractErrorMessage(err), 'error')
+  }
+}
+
+async function deleteVoiceCard(voice: Voice): Promise<void> {
+  const cat = category.value
+  const currentItem = item.value
+  if (!cat || !currentItem) return
+  if (playingVoiceId.value === voice.id) stopAudio()
+  try {
+    const result = await itemsVoicesDelete(cat.id, currentItem.id, voice.id)
+    await refreshItem()
+    voiceVersions.value = { ...voiceVersions.value, [voice.id]: (voiceVersions.value[voice.id] ?? 0) + 1 }
+    showToast(`Voice for ${voice.name} (${voice.language.toUpperCase()}) ${pastTense(result.action)}.`, 'success')
+  } catch (err) {
+    showToast(extractErrorMessage(err), 'error')
+  }
+}
+
+const releaseAction: VoiceExtraAction = {
+  icon: 'mdi-upload',
+  title: 'Release voice',
+  onClick: (voice) => announceBackendPending(`release ${voice.language.toUpperCase()} voice ${voice.id} for item ${item.value?.id ?? 'unknown item'}`),
+}
+
 </script>
 
 <style scoped>
@@ -1033,12 +1039,6 @@ const confirmVoiceDelete = async (): Promise<void> => {
 .btn-icon-delete:hover {
   background: #dc2626;
 }
-.btn-icon-release {
-  background: #2f8f68;
-}
-.btn-icon-release:hover {
-  background: #267657;
-}
 .id-image-meta {
   display: flex;
   min-width: 0;
@@ -1091,111 +1091,6 @@ const confirmVoiceDelete = async (): Promise<void> => {
 .id-summary-voices-panel {
   align-self: start;
   min-width: 0;
-}
-.id-summary-voice-cards-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 9.5rem));
-  align-items: stretch;
-  justify-content: start;
-  gap: 0.75rem;
-  margin-top: 0.8rem;
-}
-.id-summary-voice-card {
-  position: relative;
-  width: 100%;
-  min-width: min(8.5rem, 100%);
-  max-width: 9.5rem;
-  min-height: 0;
-  aspect-ratio: 3 / 4;
-  border: 1.5px solid #b8d4f0;
-  border-radius: 8px;
-  padding: 2.85rem 0.75rem 0.75rem;
-  text-align: center;
-  background: #f8fbff;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: space-between;
-  overflow: hidden;
-}
-.id-summary-voice-actions {
-  position: absolute;
-  top: 0.45rem;
-  right: 0.45rem;
-  display: flex;
-  gap: 0.3rem;
-}
-.id-summary-voice-action {
-  width: 1.65rem;
-  height: 1.65rem;
-  font-size: 0.82rem;
-}
-.id-summary-voice-flag {
-  width: 3.5rem;
-  height: 3.5rem;
-  border: 2px solid #d1e3f6;
-  border-radius: 50%;
-  background: #e8f0fe;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.id-summary-voice-flag .flag-icon {
-  font-size: 1.6rem;
-}
-.id-summary-voice-body {
-  min-width: 0;
-  width: 100%;
-}
-.id-summary-voice-name {
-  color: #1e293b;
-  font-size: 0.85rem;
-  font-weight: 700;
-  line-height: 1.2;
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-.id-summary-voice-type {
-  color: #6b7280;
-  font-size: 0.75rem;
-  line-height: 1.25;
-  margin: 0.25rem 0 0;
-}
-.btn-play {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  border: 1px solid #4f46e5;
-  border-radius: 4px;
-  background: #fff;
-  color: #4f46e5;
-  cursor: pointer;
-  font-size: 0.78rem;
-  min-height: 1.7rem;
-  padding: 0.15rem 0.5rem;
-  transition: all 0.15s;
-}
-.btn-play i {
-  font-size: 1rem;
-}
-.btn-play:hover {
-  background: #4f46e5;
-  color: #fff;
-}
-.btn-play.playing {
-  border-color: #dc2626;
-  color: #dc2626;
-}
-.btn-play.playing:hover {
-  background: #dc2626;
-  color: #fff;
-}
-.btn-play.disabled,
-.btn-play:disabled {
-  border-color: #d1d5db;
-  color: #9ca3af;
-  cursor: not-allowed;
-  opacity: 0.7;
 }
 .id-voices-table-wrap {
   margin-top: 0.8rem;
@@ -1355,11 +1250,6 @@ const confirmVoiceDelete = async (): Promise<void> => {
   }
   .id-image-card {
     grid-template-columns: 1fr;
-  }
-}
-@media (max-width: 360px) {
-  .id-summary-voice-cards-grid {
-    grid-template-columns: minmax(0, 9.5rem);
   }
 }
 .cd-modal-overlay {

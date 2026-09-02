@@ -13,9 +13,7 @@
       @delete="onDeleteCategory"
       @rename="onRenameCategory"
       @archive="onArchiveCategory"
-      @edit-voice="onEditVoice"
       @rename-voice="onRenameVoice"
-      @delete-voice="onDeleteVoice"
     />
     <section class="category-items-panel">
       <div class="d-flex justify-content-between align-items-center mb-3">
@@ -287,11 +285,9 @@ const onArchiveCategory = async (): Promise<void> => {
   }
 }
 
-const onEditVoice = (): void => {}
 const onRenameVoice = async (voice: Voice, name: string): Promise<void> => {
   await onRenameCategory(name, voice.language)
 }
-const onDeleteVoice = (): void => {}
 
 type ToastVariant = 'success' | 'error' | 'warning'
 const toast = ref<{ message: string; variant: ToastVariant } | null>(null)

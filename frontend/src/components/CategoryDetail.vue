@@ -77,67 +77,16 @@
 
         <div class="col-lg-7 col-md-7">
           <label class="text-muted small mb-1 d-block">{{ categoryVoicesLabel(contentLanguage) }}</label>
-          <div class="voice-cards-grid">
-            <div v-for="voice in category.voices" :key="voice.id" class="voice-card">
-              <div class="voice-card-top-actions">
-                <button
-                  class="btn-icon btn-icon-regenerate voice-card-action"
-                  type="button"
-                  title="Regenerate voice"
-                  aria-label="Regenerate voice"
-                  @click="requestCategoryVoiceRegeneration(voice)"
-                >
-                  <i class="mdi mdi-auto-fix"></i>
-                </button>
-                <button
-                  class="btn-icon btn-icon-edit voice-card-action"
-                  type="button"
-                  title="Upload voice"
-                  aria-label="Upload voice"
-                  @click="openVoiceUpload(voice)"
-                >
-                  <i class="mdi mdi-pencil"></i>
-                </button>
-                <button
-                  type="button"
-                  class="btn-icon btn-icon-delete voice-card-action"
-                  :title="deleteOrResetVoiceLabel(voice.language)"
-                  :aria-label="deleteOrResetVoiceLabel(voice.language)"
-                  @click="openVoiceDeleteModal(voice)"
-                >
-                  <i class="mdi mdi-delete"></i>
-                </button>
-              </div>
-              <div class="voice-card-flag">
-                <i
-                  :class="'flag-icon flag-icon-' + langFlag(voice.language)"
-                ></i>
-              </div>
-              <ServerWord
-                :text="voice.name"
-                text-tag="div"
-                text-class="voice-card-name"
-                root-class="justify-content-center"
-                :edit-title="editWordLabel(voice.language)"
-                :icon-style="{ fontSize: '0.8rem' }"
-                @edit="openVoiceWordModal(voice)"
-              />
-              <div class="voice-card-type">{{ voiceTypeLabel(voice.type) }}</div>
-              <div class="voice-card-controls">
-                <button
-                  class="btn-play"
-                  :class="{ playing: playingVoiceId === voice.id, disabled: !hasAudio(voice) }"
-                  type="button"
-                  :disabled="!hasAudio(voice)"
-                  @click="togglePlay(voice)"
-                  :title="!hasAudio(voice) ? 'Voice file missing' : (playingVoiceId === voice.id ? 'Stop' : 'Play')"
-                >
-                  <i :class="playingVoiceId === voice.id ? 'mdi mdi-stop-circle' : 'mdi mdi-play-circle'"></i>
-                  <span>{{ playingVoiceId === voice.id ? 'Stop' : 'Play' }}</span>
-                </button>
-              </div>
-            </div>
-          </div>
+          <VoiceCardsGrid
+            :voices="category.voices"
+            :playing-voice-id="playingVoiceId"
+            :has-audio="hasAudio"
+            :toggle-play="togglePlay"
+            :upload-voice="uploadVoice"
+            :delete-voice="deleteVoiceHandler"
+            :rename-voice="renameVoiceHandler"
+            :extra-action="regenerateAction"
+          />
         </div>
       </div>
     </div>
@@ -262,91 +211,6 @@
     </div>
   </Teleport>
 
-  <!-- Edit voice word (label) modal -->
-  <Teleport to="body">
-    <div v-if="showVoiceWordEdit" class="cd-modal-overlay" @click.self="closeVoiceWordEdit">
-      <div class="cd-modal-box">
-        <div class="cd-modal-header">
-          <h5 class="cd-modal-title">{{ editWordLabel(voiceWordEditLanguage) }}</h5>
-          <button type="button" class="cd-modal-close" @click="closeVoiceWordEdit">&times;</button>
-        </div>
-        <div class="cd-modal-body">
-          <p v-if="voiceWordEditTarget" class="text-muted small mb-2">
-            <i :class="'flag-icon flag-icon-' + langFlag(voiceWordEditLanguage)" class="mr-1"></i>
-            {{ voiceWordEditLanguage.toUpperCase() }}
-          </p>
-          <div class="form-group mb-0">
-            <label class="col-form-label">{{ wordColumnLabel(voiceWordEditLanguage) }}</label>
-            <input
-              v-model="voiceWordValue"
-              type="text"
-              class="form-control"
-              :placeholder="enterWordLabel(voiceWordEditLanguage)"
-              @keyup.enter="confirmVoiceWordEdit"
-            />
-          </div>
-        </div>
-        <div class="cd-modal-footer">
-          <button type="button" class="btn btn-secondary" @click="closeVoiceWordEdit">{{ cancelLabel(voiceWordEditLanguage) }}</button>
-          <button type="button" class="btn btn-primary" @click="confirmVoiceWordEdit">{{ saveLabel(voiceWordEditLanguage) }}</button>
-        </div>
-      </div>
-    </div>
-  </Teleport>
-
-  <!-- Delete / reset voice confirmation -->
-  <Teleport to="body">
-    <div v-if="showVoiceDeleteConfirm" class="cd-modal-overlay" @click.self="closeVoiceDeleteModal">
-      <div class="cd-modal-box">
-        <div class="cd-modal-header">
-          <h5 class="cd-modal-title">{{ deleteOrResetVoiceLabel(voiceDeleteLanguage) }}</h5>
-          <button type="button" class="cd-modal-close" @click="closeVoiceDeleteModal">&times;</button>
-        </div>
-        <div class="cd-modal-body">
-          <template v-if="voiceDeleteTarget">
-            <p class="mb-2">
-              {{ deleteOrResetVoiceConfirmLabel(voiceDeleteLanguage, voiceDeleteTarget.name, voiceDeleteTarget.language) }}
-            </p>
-            <p class="text-muted small mb-0">
-              {{ deleteOrResetVoiceHelpLabel(voiceDeleteLanguage) }}
-            </p>
-          </template>
-        </div>
-        <div class="cd-modal-footer">
-          <button type="button" class="btn btn-secondary" @click="closeVoiceDeleteModal">{{ cancelLabel(voiceDeleteLanguage) }}</button>
-          <button type="button" class="btn btn-danger" @click="confirmVoiceDelete">{{ deleteResetLabel(voiceDeleteLanguage) }}</button>
-        </div>
-      </div>
-    </div>
-  </Teleport>
-
-  <!-- Upload voice file modal -->
-  <Teleport to="body">
-    <div v-if="showVoiceUpload" class="cd-modal-overlay" @click.self="closeVoiceUpload">
-      <div class="cd-modal-box">
-        <div class="cd-modal-header">
-          <h5 class="cd-modal-title">{{ uploadVoiceFileLabel(uploadVoiceLanguage) }}</h5>
-          <button type="button" class="cd-modal-close" @click="closeVoiceUpload">&times;</button>
-        </div>
-        <div class="cd-modal-body">
-          <p v-if="editingVoice" class="text-muted small mb-2">{{ editingVoice.name }} ({{ editingVoice.language }})</p>
-          <div class="form-group mb-0">
-            <label class="col-form-label">{{ audioFileLabel(uploadVoiceLanguage) }}</label>
-            <input
-              type="file"
-              class="form-control-file"
-              accept="audio/*"
-              @change="onVoiceFileSelected"
-            />
-          </div>
-        </div>
-        <div class="cd-modal-footer">
-          <button type="button" class="btn btn-secondary" @click="closeVoiceUpload">{{ cancelLabel(uploadVoiceLanguage) }}</button>
-        </div>
-      </div>
-    </div>
-  </Teleport>
-
   <!-- Full-screen category icon preview -->
   <Teleport to="body">
     <div v-if="showImagePreview" class="image-preview-overlay" @click.self="closeImagePreview">
@@ -383,14 +247,14 @@
 import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
 import type { AxiosError } from 'axios'
 import ServerWord from './ServerWord.vue'
-import type { CategoryFull, Language, Voice } from '../types/viewModels'
+import VoiceCardsGrid, { type VoiceExtraAction } from './VoiceCardsGrid.vue'
+import type { CategoryFull, Voice } from '../types/viewModels'
 import {
   archiveCategoryConfirmLabel,
   archiveCategoryLabel,
   archiveCategoryWarningLabel,
   archiveLabel,
   archiveTypeToConfirmLabel,
-  audioFileLabel,
   cancelLabel,
   categoryIdLabel,
   categoryIconLabel,
@@ -398,21 +262,13 @@ import {
   deleteCategoryImageConfirmLabel,
   deleteCategoryImageLabel,
   deleteLabel,
-  deleteOrResetVoiceConfirmLabel,
-  deleteOrResetVoiceHelpLabel,
-  deleteOrResetVoiceLabel,
-  deleteResetLabel,
-  editWordLabel,
   enterCategoryIdLabel,
-  enterWordLabel,
   imageFileLabel,
   localizedCategoryLabel,
   noLabel,
   renameCategoryLabel,
   saveLabel,
   uploadCategoryIconLabel,
-  uploadVoiceFileLabel,
-  wordColumnLabel,
   yesLabel,
 } from '../utils/localizedLabels'
 import { useContentLanguage } from '../composables/useContentLanguage'
@@ -448,37 +304,15 @@ const emit = defineEmits<{
   rename: [name: string]
   /** The parent owns the route being archived, so it performs the call and redirects. */
   archive: []
-  'edit-voice': [voice: Voice, action: 'add' | 'update']
-  'delete-voice': [voice: Voice]
   'rename-voice': [voice: Voice, name: string]
 }>()
-
-const langFlagMap: Record<Language, string> = { en: 'us', es: 'es', fr: 'fr', bg: 'bg' }
-const langFlag = (lang: Language): string => langFlagMap[lang] || lang
-
-const voiceTypeLabelMap: Record<string, string> = {
-  male: 'Narrator',
-  female: 'Voiceover Artist',
-  ambient: 'Ambient',
-}
-const voiceTypeLabel = (type: string): string => voiceTypeLabelMap[type] || type
 
 const showDelete = ref(false)
 const showUpload = ref(false)
 const showRename = ref(false)
-const showVoiceUpload = ref(false)
-const showVoiceWordEdit = ref(false)
-const voiceWordEditTarget = ref<Voice | null>(null)
-const voiceWordValue = ref('')
-const voiceWordEditLanguage = computed<Language>(() => voiceWordEditTarget.value?.language ?? contentLanguage.value)
 const showArchive = ref(false)
 const archiveConfirmText = ref('')
 const usesComplexArchiveConfirmation = import.meta.env.VITE_ARCHIVE_CONFIRMATION_MODE !== 'simple'
-const showVoiceDeleteConfirm = ref(false)
-const voiceDeleteTarget = ref<Voice | null>(null)
-const voiceDeleteLanguage = computed<Language>(() => voiceDeleteTarget.value?.language ?? contentLanguage.value)
-const editingVoice = ref<Voice | null>(null)
-const uploadVoiceLanguage = computed<Language>(() => editingVoice.value?.language ?? contentLanguage.value)
 const renameValue = ref('')
 const showImagePreview = ref(false)
 
@@ -534,13 +368,7 @@ function closeAllModals(): void {
   showUpload.value = false
   showRename.value = false
   showArchive.value = false
-  showVoiceUpload.value = false
-  showVoiceWordEdit.value = false
-  showVoiceDeleteConfirm.value = false
   showImagePreview.value = false
-  editingVoice.value = null
-  voiceWordEditTarget.value = null
-  voiceDeleteTarget.value = null
 }
 
 /**
@@ -570,55 +398,20 @@ function confirmArchive(): void {
   emit('archive')
 }
 
-function openVoiceDeleteModal(voice: Voice): void {
-  closeAllModals()
-  voiceDeleteTarget.value = voice
-  showVoiceDeleteConfirm.value = true
-}
-
-function closeVoiceDeleteModal(): void {
-  showVoiceDeleteConfirm.value = false
-  voiceDeleteTarget.value = null
-}
-
-async function confirmVoiceDelete(): Promise<void> {
-  const voice = voiceDeleteTarget.value
-  showVoiceDeleteConfirm.value = false
-  voiceDeleteTarget.value = null
-  if (!voice) return
+async function deleteVoiceHandler(voice: Voice): Promise<void> {
   if (playingVoiceId.value === voice.id) stopAudio()
-
   try {
     const result = await categoriesVoicesDelete(props.category.id, voice.id)
     showToast(`Voice for ${voice.name} (${voice.language.toUpperCase()}) ${pastTense(result.action)}.`, 'success')
     await refreshCategory()
     voiceVersions.value = { ...voiceVersions.value, [voice.id]: (voiceVersions.value[voice.id] ?? 0) + 1 }
-    emit('delete-voice', voice)
   } catch (err) {
     showToast(extractErrorMessage(err), 'error')
   }
 }
 
-function openVoiceWordModal(voice: Voice): void {
-  closeAllModals()
-  voiceWordEditTarget.value = voice
-  voiceWordValue.value = voice.name
-  showVoiceWordEdit.value = true
-}
-
-function closeVoiceWordEdit(): void {
-  showVoiceWordEdit.value = false
-  voiceWordEditTarget.value = null
-}
-
-function confirmVoiceWordEdit(): void {
-  const voice = voiceWordEditTarget.value
-  const trimmed = voiceWordValue.value.trim()
-  showVoiceWordEdit.value = false
-  voiceWordEditTarget.value = null
-  if (voice && trimmed && trimmed !== voice.name) {
-    emit('rename-voice', voice, trimmed)
-  }
+function renameVoiceHandler(voice: Voice, name: string): void {
+  emit('rename-voice', voice, name)
 }
 
 function openUploadModal(): void {
@@ -658,8 +451,10 @@ function requestCategoryImageRegeneration(): void {
   showToast('Backend task pending: regenerate the category image from the saved category metadata.', 'error')
 }
 
-function requestCategoryVoiceRegeneration(voice: Voice): void {
-  showToast(`Backend task pending: regenerate ${voice.language.toUpperCase()} audio for ${voice.name}.`, 'error')
+const regenerateAction: VoiceExtraAction = {
+  icon: 'mdi-auto-fix',
+  title: 'Regenerate voice',
+  onClick: (voice) => showToast(`Backend task pending: regenerate ${voice.language.toUpperCase()} audio for ${voice.name}.`, 'error'),
 }
 
 async function confirmImageDelete(): Promise<void> {
@@ -678,45 +473,19 @@ async function confirmImageDelete(): Promise<void> {
   }
 }
 
-function openVoiceUpload(voice: Voice): void {
-  closeAllModals()
-  editingVoice.value = voice
-  showVoiceUpload.value = true
-}
-
-function closeVoiceUpload(): void {
-  showVoiceUpload.value = false
-  editingVoice.value = null
-}
-
-async function onVoiceFileSelected(e: Event): Promise<void> {
-  const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  const voice = editingVoice.value
-  closeVoiceUpload()
-  if (!file || !voice) return
-
-  const wasAdd = !hasAudio(voice)
+async function uploadVoice(voice: Voice, file: File, wasAdd: boolean): Promise<void> {
   try {
-    let result
-    if (wasAdd) {
-      const formData = new FormData()
-      formData.append('language', voice.language)
-      formData.append('audio', file)
-      result = await categoriesVoicesAdd(props.category.id, formData)
-    } else {
-      const formData = new FormData()
-      formData.append('audio', file)
-      result = await categoriesVoicesUpdate(props.category.id, voice.id, formData)
-    }
+    const formData = new FormData()
+    if (wasAdd) formData.append('language', voice.language)
+    formData.append('audio', file)
+    const result = wasAdd
+      ? await categoriesVoicesAdd(props.category.id, formData)
+      : await categoriesVoicesUpdate(props.category.id, voice.id, formData)
     showToast(`Voice for ${voice.name} (${voice.language.toUpperCase()}) ${pastTense(result.action)}.`, 'success')
     await refreshCategory()
     voiceVersions.value = { ...voiceVersions.value, [voice.id]: (voiceVersions.value[voice.id] ?? 0) + 1 }
-    emit('edit-voice', voice, wasAdd ? 'add' : 'update')
   } catch (err) {
     showToast(extractErrorMessage(err), 'error')
-  } finally {
-    input.value = ''
   }
 }
 
@@ -840,108 +609,6 @@ async function onFileSelected(e: Event): Promise<void> {
 }
 .btn-icon:disabled:hover {
   background: #d1d5db;
-}
-
-/* Voice cards: wrap to extra rows when the column is narrow (was fixed 4 columns). */
-.voice-cards-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
-  gap: 0.75rem;
-}
-.voice-card {
-  position: relative;
-  min-width: 0;
-  min-height: 14rem;
-  border: 1.5px solid #b8d4f0;
-  border-radius: 10px;
-  padding: 3rem 0.75rem 0.75rem;
-  text-align: center;
-  background: #f8fbff;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: space-between;
-}
-.voice-card-top-actions {
-  position: absolute;
-  top: 0.45rem;
-  right: 0.45rem;
-  display: flex;
-  gap: 0.3rem;
-}
-.voice-card-flag {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  background: #e8f0fe;
-  border: 2px solid #d1e3f6;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 0;
-}
-.voice-card-flag .flag-icon {
-  font-size: 1.6rem;
-}
-:deep(.voice-card-name) {
-  font-weight: 600;
-  font-size: 0.85rem;
-  color: #1e293b;
-  margin-bottom: 0;
-  line-height: 1.2;
-}
-.voice-card-type {
-  font-size: 0.75rem;
-  color: #6b7280;
-  margin-bottom: 0;
-}
-.voice-card-controls {
-  margin-bottom: 0;
-}
-.btn-play {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  background: none;
-  border: 1px solid #4f46e5;
-  border-radius: 4px;
-  color: #4f46e5;
-  cursor: pointer;
-  font-size: 0.78rem;
-  padding: 0.15rem 0.5rem;
-  transition: all 0.15s;
-}
-.btn-play i {
-  font-size: 1rem;
-}
-.btn-play:hover {
-  background: #4f46e5;
-  color: #fff;
-}
-.btn-play.playing {
-  border-color: #dc2626;
-  color: #dc2626;
-}
-.btn-play.playing:hover {
-  background: #dc2626;
-  color: #fff;
-}
-.btn-play.disabled,
-.btn-play:disabled {
-  border-color: #d1d5db;
-  color: #9ca3af;
-  cursor: not-allowed;
-  opacity: 0.7;
-}
-.btn-play.disabled:hover,
-.btn-play:disabled:hover {
-  background: transparent;
-  color: #9ca3af;
-}
-.voice-card-action {
-  width: 26px;
-  height: 26px;
-  font-size: 13px;
 }
 
 /* Modal styles — prefixed to avoid Star Admin .close conflicts */
