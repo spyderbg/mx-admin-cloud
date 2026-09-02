@@ -1,20 +1,74 @@
 <template>
-  <div class="card category-detail-panel">
-    <div class="card-body">
-      <!-- Row 1: name spans left; empty cell on md+ keeps column grid for row 2 -->
-      <div class="row">
-        <div class="col-lg-5 col-md-5 mb-2 mb-md-3">
-          <label class="text-muted small mb-1 d-block">{{ categoryIdLabel(contentLanguage) }}</label>
-          <ServerWord
-            :text="category.id"
-            :edit-title="renameCategoryLabel(contentLanguage)"
-            @edit="openRenameModal"
-          />
+  <section class="category-detail-panel id-panel id-summary-panel">
+    <div class="id-summary-copy">
+      <div>
+        <div class="id-field-label">{{ categoryIdLabel(contentLanguage) }}</div>
+        <div class="id-value-row">
+          <h3 class="id-item-id">{{ category.id }}</h3>
+          <button type="button" class="id-edit-btn" :title="renameCategoryLabel(contentLanguage)" :aria-label="renameCategoryLabel(contentLanguage)" @click="openRenameModal">
+            <i class="mdi mdi-pencil"></i>
+          </button>
         </div>
-        <div class="col-lg-7 col-md-7 d-flex justify-content-md-end align-items-start mb-2 mb-md-3">
+      </div>
+
+      <div>
+        <div class="id-field-label">{{ categoryIconLabel(contentLanguage) }}</div>
+        <div
+          class="id-summary-image-preview category-icon-preview-trigger"
+          role="button"
+          tabindex="0"
+          aria-label="Open category icon preview"
+          @click="openImagePreview"
+          @keydown.enter.prevent="openImagePreview"
+          @keydown.space.prevent="openImagePreview"
+        >
+          <img
+            :src="thumbnailSrc"
+            alt="Category icon"
+            class="id-summary-image"
+          />
+          <div class="category-icon-actions" @click.stop>
+            <button
+              type="button"
+              class="btn-icon btn-icon-regenerate"
+              title="Regenerate category image"
+              @click.stop="requestCategoryImageRegeneration"
+            >
+              <i class="mdi mdi-auto-fix"></i>
+            </button>
+            <button
+              type="button"
+              class="btn-icon btn-icon-edit"
+              title="Upload category icon"
+              @click.stop="openUploadModal"
+            >
+              <i class="mdi mdi-pencil"></i>
+            </button>
+            <button
+              type="button"
+              class="btn-icon btn-icon-delete"
+              :title="deleteCategoryImageLabel(contentLanguage)"
+              :disabled="!category.thumbnail_uri"
+              @click.stop="openDeleteModal"
+            >
+              <i class="mdi mdi-delete"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="id-field-label">{{ descriptionLabel(contentLanguage) }}</div>
+        <p class="id-description">{{ category.description.get(contentLanguage) }}</p>
+      </div>
+    </div>
+
+    <div class="id-summary-details">
+      <div class="id-summary-actions id-summary-actions-only">
+        <div class="id-release-group">
           <button
             type="button"
-            class="btn btn-outline-danger btn-sm"
+            class="btn btn-outline-danger btn-sm category-archive-btn"
             :disabled="archiving"
             @click="openArchiveModal"
           >
@@ -24,73 +78,22 @@
           </button>
         </div>
       </div>
-      <!-- Row 2: "Category Icon" and "Category Voices" labels share one baseline -->
-      <div class="row">
-        <div class="col-lg-5 col-md-5 mb-3 mb-md-0">
-          <div class="mb-3">
-            <label class="text-muted small mb-1 d-block">{{ categoryIconLabel(contentLanguage) }}</label>
-            <div
-              class="category-icon-wrap category-icon-preview-trigger"
-              role="button"
-              tabindex="0"
-              aria-label="Open category icon preview"
-              @click="openImagePreview"
-              @keydown.enter.prevent="openImagePreview"
-              @keydown.space.prevent="openImagePreview"
-            >
-              <img
-                :src="thumbnailSrc"
-                alt="Category icon"
-                class="rounded"
-              />
-              <div class="category-icon-actions" @click.stop>
-                <button
-                  type="button"
-                  class="btn-icon btn-icon-regenerate"
-                  title="Regenerate category image"
-                  @click.stop="requestCategoryImageRegeneration"
-                >
-                  <i class="mdi mdi-auto-fix"></i>
-                </button>
-                <button
-                  type="button"
-                  class="btn-icon btn-icon-edit"
-                  title="Upload category icon"
-                  @click.stop="openUploadModal"
-                >
-                  <i class="mdi mdi-pencil"></i>
-                </button>
-                <button
-                  type="button"
-                  class="btn-icon btn-icon-delete"
-                  :title="deleteCategoryImageLabel(contentLanguage)"
-                  :disabled="!category.thumbnail_uri"
-                  @click.stop="openDeleteModal"
-                >
-                  <i class="mdi mdi-delete"></i>
-                </button>
-              </div>
-            </div>
-          </div>
-          <p class="text-muted mb-0" style="font-size: 0.9rem;">{{ category.description.get(contentLanguage) }}</p>
-        </div>
 
-        <div class="col-lg-7 col-md-7">
-          <label class="text-muted small mb-1 d-block">{{ categoryVoicesLabel(contentLanguage) }}</label>
-          <VoiceCardsGrid
-            :voices="category.voices"
-            :playing-voice-id="playingVoiceId"
-            :has-audio="hasAudio"
-            :toggle-play="togglePlay"
-            :upload-voice="uploadVoice"
-            :delete-voice="deleteVoiceHandler"
-            :rename-voice="renameVoiceHandler"
-            :extra-action="regenerateAction"
-          />
-        </div>
+      <div class="id-summary-voices-panel">
+        <h4 class="id-section-kicker">{{ categoryVoicesLabel(contentLanguage) }}</h4>
+        <VoiceCardsGrid
+          :voices="category.voices"
+          :playing-voice-id="playingVoiceId"
+          :has-audio="hasAudio"
+          :toggle-play="togglePlay"
+          :upload-voice="uploadVoice"
+          :delete-voice="deleteVoiceHandler"
+          :rename-voice="renameVoiceHandler"
+          :extra-action="regenerateAction"
+        />
       </div>
     </div>
-  </div>
+  </section>
 
   <!-- Rename category modal -->
   <Teleport to="body">
@@ -246,7 +249,6 @@
 <script setup lang="ts">
 import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
 import type { AxiosError } from 'axios'
-import ServerWord from './ServerWord.vue'
 import VoiceCardsGrid, { type VoiceExtraAction } from './VoiceCardsGrid.vue'
 import type { CategoryFull, Voice } from '../types/viewModels'
 import {
@@ -262,6 +264,7 @@ import {
   deleteCategoryImageConfirmLabel,
   deleteCategoryImageLabel,
   deleteLabel,
+  descriptionLabel,
   enterCategoryIdLabel,
   imageFileLabel,
   localizedCategoryLabel,
@@ -528,25 +531,116 @@ async function onFileSelected(e: Event): Promise<void> {
 </script>
 
 <style scoped>
-.category-detail-panel {
+.id-panel {
   width: 100%;
   background: #fff;
   border: 1px solid #e6eaf4;
   border-radius: 8px;
   box-shadow: 0 4px 18px rgba(25, 38, 77, 0.04);
   margin-bottom: 1rem;
-}
-.category-detail-panel .card-body {
   padding: 1.25rem 1.5rem;
 }
-
-/* Category icon */
-.category-icon-wrap {
+.id-summary-panel {
   position: relative;
-  width: 100%;
-  max-width: 256px;
+  display: grid;
+  grid-template-columns: minmax(16rem, 0.7fr) minmax(0, 1.3fr);
+  gap: 1.5rem;
+}
+.id-summary-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  min-height: 100%;
+  padding-right: 1.25rem;
+}
+.id-summary-details {
+  padding-left: 1.5rem;
+  padding-top: 4.15rem;
+  display: grid;
+  align-content: start;
+  gap: 1.25rem;
+  min-width: 0;
+}
+.id-field-label,
+.id-section-kicker {
+  color: #6d7391;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.id-value-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.7rem;
+}
+.id-item-id {
+  color: #111a3d;
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 0;
+}
+.id-edit-btn {
+  border: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  padding: 0;
+  background: transparent;
+  color: #2563eb;
+  font-size: 1.25rem;
+}
+.id-description {
+  color: #111a3d;
+  font-size: 0.98rem;
+  line-height: 1.5;
+  margin: 0.6rem 0 0;
+}
+.id-summary-image-preview {
+  position: relative;
+  width: min(100%, 12rem);
   aspect-ratio: 1 / 1;
-  background: rgba(0, 0, 0, 0.04);
+  margin-top: 0.7rem;
+  overflow: hidden;
+  border: 1px solid #dfe5ef;
+  border-radius: 6px;
+  background: #f6f8fc;
+}
+.id-summary-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+}
+.id-summary-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.id-summary-actions-only {
+  position: absolute;
+  top: 1.25rem;
+  right: 1.5rem;
+  justify-content: flex-end;
+  width: auto;
+  max-width: 100%;
+  min-height: 0;
+}
+.id-release-group {
+  display: flex;
+  gap: 0.55rem;
+}
+.category-archive-btn {
+  width: 9.35rem;
+  max-width: 100%;
+}
+.id-summary-voices-panel {
+  align-self: start;
+  min-width: 0;
 }
 .category-icon-preview-trigger {
   cursor: zoom-in;
@@ -555,40 +649,33 @@ async function onFileSelected(e: Event): Promise<void> {
   outline: 3px solid rgba(49, 87, 255, 0.45);
   outline-offset: 3px;
 }
-.category-icon-wrap img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  object-position: center;
-  display: block;
-}
 .category-icon-actions {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: 0.35rem;
+  right: 0.35rem;
   display: flex;
-  gap: 4px;
+  gap: 0.35rem;
   z-index: 2;
   cursor: default;
 }
 .btn-icon {
-  width: 30px;
-  height: 30px;
+  width: 1.75rem;
+  height: 1.75rem;
   border: none;
   border-radius: 50%;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  font-size: 15px;
+  font-size: 0.9rem;
   color: #fff;
   padding: 0;
 }
 .btn-icon-edit {
-  background: #4f46e5;
+  background: #2563eb;
 }
 .btn-icon-edit:hover {
-  background: #4338ca;
+  background: #1d4ed8;
 }
 .btn-icon-regenerate {
   background: #0f766e;
@@ -609,6 +696,28 @@ async function onFileSelected(e: Event): Promise<void> {
 }
 .btn-icon:disabled:hover {
   background: #d1d5db;
+}
+@media (max-width: 991px) {
+  .id-summary-panel {
+    grid-template-columns: 1fr;
+  }
+  .id-summary-details {
+    border-top: 1px solid #e2e7f1;
+    padding-left: 0;
+    padding-top: 1.25rem;
+  }
+}
+@media (max-width: 575px) {
+  .id-panel {
+    padding: 1rem;
+  }
+  .id-summary-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .id-release-group {
+    flex-wrap: wrap;
+  }
 }
 
 /* Modal styles — prefixed to avoid Star Admin .close conflicts */
