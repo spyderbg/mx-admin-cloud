@@ -198,7 +198,7 @@ class StructLogProvider(LoggingServiceProvider):
         if msg.event in ("provider_request", "translator_request"):
             fields = self._filtered_request_log_fields(msg.event, fields)
         logger = self.get_logger(logger_name)
-        level_name = logging.getLevelName(msg.level).lower()
+        level_name = msg.level.value
         dispatch_level = self._ALIASED_LEVELS.get(level_name, level_name)
         if dispatch_level != level_name:
             fields = {**fields, "_original_level": level_name}
@@ -214,8 +214,9 @@ class StructLogProvider(LoggingServiceProvider):
             _structlog.contextvars.clear_contextvars()
 
     def log_to_all_active_loggers(self, msg: LogMessage) -> None:
+        level_number = logging.getLevelName(msg.level.value.upper())
         root_logger = logging.getLogger()
-        root_logger.log(msg.level, msg.event)
+        root_logger.log(level_number, msg.event)
 
         manager = logging.Logger.manager
         for obj in manager.loggerDict.values():
@@ -225,7 +226,7 @@ class StructLogProvider(LoggingServiceProvider):
                 continue
             if obj.disabled or obj.propagate or not obj.handlers:
                 continue
-            obj.log(msg.level, msg.event)
+            obj.log(level_number, msg.event)
 
     # ------------------------------------------------------------------
     # Request logging

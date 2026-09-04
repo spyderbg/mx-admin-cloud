@@ -23,6 +23,7 @@ from src.services.configuration.models import (
 )
 from src.services.configuration.providers.file_system import FileSystemConfigurationProvider
 from src.services.configuration.service import ConfigurationService
+from src.services.logging.models import LogLevel, LogMessage
 from src.services.models import ServiceProvider
 
 
@@ -105,6 +106,16 @@ class _StubProvider(ConfigurationProvider):
     ) -> list[ConfigurationMutationResult]:
         self._record("set_all_configurations_enabled", service_name, enabled)
         return [ConfigurationMutationResult(config_name="cfg", changed=True)]
+
+
+class _StubLoggingService:
+    """Capture messages sent through the internal logging service contract."""
+
+    def __init__(self) -> None:
+        self.messages: list[tuple[str, LogMessage]] = []
+
+    def log(self, logger_name: str, message: LogMessage) -> None:
+        self.messages.append((logger_name, message))
 
 
 def _make_service(tmp_path: Path, providers: list[Any] | None = None) -> ConfigurationService:
@@ -208,6 +219,38 @@ def test_list_configurations_delegates_to_provider(tmp_path: Path) -> None:
     assert len(results) == 1
     assert results[0].config_name == "test_cfg"
     assert stub.calls["list_configurations"] == [("text_to_speech",)]
+
+
+def test_operations_are_info_logged_through_logging_service(tmp_path: Path) -> None:
+    stub = _StubProvider(tmp_path)
+    logger = _StubLoggingService()
+    svc = _make_service(tmp_path, [stub])
+    svc.set_logging_service(logger)  # type: ignore[arg-type]
+
+    svc.get_configuration("logging", "default")
+
+    logger_name, message = logger.messages[0]
+    assert logger_name == "service"
+    assert message.level is LogLevel.INFO
+    assert message.event == "configuration_file_operation"
+    assert message.fields == {
+        "operation": "read",
+        "service_name": "logging",
+        "config_name": "default",
+    }
+
+
+def test_operation_errors_are_error_logged_and_reraised(tmp_path: Path) -> None:
+    svc = _make_service(tmp_path, [])
+    logger = _StubLoggingService()
+    svc.set_logging_service(logger)  # type: ignore[arg-type]
+
+    with pytest.raises(ConfigurationProviderUnavailableError):
+        svc.list_configurations("logging")
+
+    assert [message.level for _, message in logger.messages] == [LogLevel.INFO, LogLevel.ERROR]
+    assert logger.messages[-1][1].event == "configuration_operation_failed"
+    assert logger.messages[-1][1].fields["error_type"] == "ConfigurationProviderUnavailableError"
 
 
 def test_get_configuration_delegates(tmp_path: Path) -> None:

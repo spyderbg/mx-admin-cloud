@@ -8,7 +8,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from src.services.logging.models import LogMessage, LoggingServiceProvider
+from src.services.logging.models import LogLevel, LogMessage, LoggingServiceProvider
 from src.services.logging.service import LoggingService
 
 
@@ -75,7 +75,7 @@ def _make_service(providers: list[LoggingServiceProvider]) -> LoggingService:
     return service
 
 
-_MSG = LogMessage(event="test_event", level=logging.INFO)
+_MSG = LogMessage(event="test_event", level=LogLevel.INFO)
 
 
 def test_emit_ignores_providers_with_category() -> None:

@@ -2,20 +2,11 @@
 
 from __future__ import annotations
 
-from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, Field
 
-
-class LogLevel(str, Enum):
-    TRACE = "trace"  # 10
-    DEBUG = "debug"  # 20
-    INFO = "info"  # 30
-    WARNING = "warning"  # 40
-    ERROR = "error"  # 50
-    CRITICAL = "critical"  # 100
-    FATAL = "fatal"  # 200
+from src.services.logging.models import LogLevel
 
 
 class StatusResponse(BaseModel):
