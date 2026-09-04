@@ -7,7 +7,17 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status  # pylint: disable=import-error
+from fastapi import (  # pylint: disable=import-error
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
+from fastapi.routing import APIRoute
 
 from src.api.dependencies import get_registry, get_registry_builder, require_internal
 from src.api.service_resolver import get_typed_service
@@ -33,13 +43,64 @@ from src.services.configuration.schemas import (
     ConfigurationServicesResponse,
     PatchConfigurationRequest,
 )
+from src.services.logging.models import LogLevel, LogMessage
+from src.services.logging.service import LoggingService
 from src.services.service_registry import ServiceRegistry
 from src.services.service_registry import ServiceRegistryBuilder
+
+class ConfigurationLoggingRoute(APIRoute):
+    """Trace configuration requests and report endpoint failures internally."""
+
+    def get_route_handler(self):
+        original_handler = super().get_route_handler()
+
+        async def logged_handler(request: Request) -> Response:
+            logging_service = _get_request_logging_service(request)
+            fields = {"method": request.method, "path": request.url.path}
+            if logging_service is not None:
+                logging_service.log(
+                    "trace",
+                    LogMessage(
+                        event="configuration_endpoint_requested",
+                        level=LogLevel.TRACE,
+                        fields=fields,
+                    ),
+                )
+            try:
+                return await original_handler(request)
+            except Exception as exc:
+                if logging_service is not None:
+                    logging_service.log(
+                        "service",
+                        LogMessage(
+                            event="configuration_endpoint_failed",
+                            level=LogLevel.ERROR,
+                            fields={
+                                **fields,
+                                "error": str(exc),
+                                "error_type": type(exc).__name__,
+                            },
+                        ),
+                    )
+                raise
+
+        return logged_handler
+
+
+def _get_request_logging_service(request: Request) -> LoggingService | None:
+    """Resolve logging without making observability a route availability dependency."""
+    registry = getattr(request.app.state, "registry", None)
+    if registry is None:
+        return None
+    service = registry.get_service("logging")
+    return service if isinstance(service, LoggingService) else None
+
 
 router = APIRouter(
     prefix="/internal/configurations",
     tags=["internal-configurations"],
     dependencies=[Depends(require_internal)],
+    route_class=ConfigurationLoggingRoute,
 )
 
 CONFIG_SERVICES = ""
