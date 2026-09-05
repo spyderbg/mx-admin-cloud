@@ -32,6 +32,7 @@ from src.services.content.models import (
     CategoryNotFoundError,
     CategorySummary,
     CategoryVoice,
+    ContentError,
     ContentOperationError,
     ContentProvider,
     CreateCategory,
@@ -58,7 +59,6 @@ _DESCRIPTIONS_LANG_CSV = "descriptions_{}.csv"
 _ITEMS_IDS = "items_ids.csv"
 _ITEMS_LANG_CSV = "items_{}.csv"
 _CATEGORY_VOICE_MP3 = "{}_{}.mp3"
-_ITEM_VOICE_MP3 = "{}_{}_01.mp3"
 
 # Written into a category folder when it is archived, so restore_category() can rebuild
 # the root CSV registry rows that archive_category() deletes.
@@ -93,8 +93,15 @@ class FileSystemContentProvider(ContentProvider):
             target_lang_code: str | None = None,
             category: str | None = None,
             input_lang_code: str | None = None,
+            *,
+            require_success: bool = False,
     ) -> str:
-        """Translate text via the internal /internal/translators/translate endpoint."""
+        """Translate text via the internal /internal/translators/translate endpoint.
+
+        The endpoint answers 200 with ``success: false`` and the untranslated input when
+        no translator produced a result. With *require_success* that case raises instead
+        of silently returning the source text.
+        """
         if not text or not text.strip():
             return text.strip()
 
@@ -112,7 +119,10 @@ class FileSystemContentProvider(ContentProvider):
         )
         if response.is_error:
             raise RuntimeError(FileSystemContentProvider._extract_error_detail(response))
-        translated_text = response.json()["lang_text"]["text"]
+        payload = response.json()
+        if require_success and not payload.get("success", False):
+            raise RuntimeError(f"No active translator produced a translation for '{target_lang_code}'.")
+        translated_text = payload["lang_text"]["text"]
         return translated_text or text.strip()
 
     @staticmethod
@@ -152,9 +162,10 @@ class FileSystemContentProvider(ContentProvider):
 
         client = OpenAI(api_key=settings.OPENAI_API_KEY)
         response = client.images.generate(
-            model="gpt-image-1",
+            model="gpt-image-1-mini",
             prompt=prompt.strip(),
             size="1024x1024",
+            quality="low",
             n=1,
         )
         b64_data = response.data[0].b64_json
@@ -192,9 +203,17 @@ class FileSystemContentProvider(ContentProvider):
 
     @staticmethod
     def _append_csv_line(file_path: Path, line: str) -> None:
+        """Append one row to a single-column CSV file, creating the file if needed."""
         file_path.parent.mkdir(parents=True, exist_ok=True)
+        needs_newline = False
+        if file_path.exists() and file_path.stat().st_size > 0:
+            with open(file_path, "rb") as fh:
+                fh.seek(-1, 2)
+                needs_newline = fh.read(1) != b"\n"
         with open(file_path, "a", newline="", encoding="utf-8") as fh:
-            fh.write(line.strip() + "\n")
+            if needs_newline:
+                fh.write("\n")
+            csv.writer(fh, lineterminator="\n").writerow([line.strip()])
 
     @staticmethod
     def _read_csv_rows_aligned(file_path: Path) -> list[str]:
@@ -775,12 +794,61 @@ class FileSystemContentProvider(ContentProvider):
 
         return CreateCategory(category=category_name, message=f"Category '{category_name}' created.")
 
+    def _translate_item_word(self, english_word: str, category_name: str) -> dict[str, str]:
+        """Translate *english_word* into every non-English supported language.
+
+        Runs before any disk write so a failing translator leaves no trace. Raises
+        ContentOperationError on the first failure, including a translator that reports
+        no successful translation.
+        """
+        words_by_lang: dict[str, str] = {"en": english_word}
+        for lang in settings.SUPPORTED_LANGUAGES:
+            if lang == "en":
+                continue
+            try:
+                words_by_lang[lang] = self._translate_word(
+                    english_word, lang, category_name, require_success=True,
+                )
+            except (ValueError, RuntimeError, httpx.HTTPError, KeyError) as exc:
+                raise ContentOperationError(f"Translation failed for {lang}: {exc}") from exc
+        return words_by_lang
+
+    def _generate_item_voices(
+            self,
+            item_path: Path,
+            folder_name: str,
+            words_by_lang: dict[str, str],
+    ) -> tuple[list[str], list[str]]:
+        """Generate one voice file per supported language, best effort.
+
+        Returns (languages generated, warnings). Never raises: a failing language is
+        reported and the remaining languages are still attempted, except when the TTS
+        service reports that no provider is active, which would fail for every language.
+        """
+        generated: list[str] = []
+        warnings: list[str] = []
+        for lang in settings.SUPPORTED_LANGUAGES:
+            word = words_by_lang.get(lang) or words_by_lang["en"]
+            try:
+                audio_bytes = self._generate_audio(word, lang)
+                self._item_voice_path(item_path, folder_name, lang).write_bytes(audio_bytes)
+            except (ValueError, RuntimeError, httpx.HTTPError) as exc:
+                warnings.append(f"Voice generation failed for {lang}: {exc}")
+                if "no active text to speech" in str(exc).lower():
+                    break
+            except OSError as exc:
+                warnings.append(f"Voice file write failed for {lang}: {exc}")
+            else:
+                generated.append(lang)
+        return generated, warnings
+
     def create_item(  # pylint: disable=too-many-locals
             self,
             category_id: str,
             english_word: str,
-            image_data: bytes,
+            image_data: bytes | None = None,
             image_extension: str = ".png",
+            generate_voices: bool = True,
     ) -> CreateItem:
         category_name = self._folder_name_for_id(category_id)
         if not english_word or not english_word.strip():
@@ -788,59 +856,73 @@ class FileSystemContentProvider(ContentProvider):
         english_word = english_word.strip()
 
         folder_name = self._english_word_to_folder_name(english_word)
-        image_id = self._english_word_to_image_id(english_word)
+        item_id = self._english_word_to_image_id(english_word)
         if not folder_name:
             raise ContentOperationError("Could not derive folder name from item word")
 
-        root = self._content_root()
-        category_path = root / category_name
+        category_path = self._category_path(category_name)
+        if not category_path.is_dir():
+            raise CategoryNotFoundError(f"Category '{category_name}': directory is missing.")
         item_path = category_path / folder_name
-
         if item_path.exists():
             raise CategoryConflictError(f"Item folder already exists: {folder_name}")
+        if item_id in self._read_csv_column(category_path / _ITEMS_IDS):
+            raise CategoryConflictError(f"Item id already exists: {item_id}")
 
-        category_path.mkdir(parents=True, exist_ok=True)
-        item_path.mkdir(parents=True, exist_ok=True)
+        # Translate before touching the disk: a failing translator must not create the item.
+        words_by_lang = self._translate_item_word(english_word, category_name)
 
-        idx = self._first_available_image_index(item_path)
-        ext = image_extension if image_extension.startswith(".") else f".{image_extension}"
-        if ext.lower() not in _IMAGE_EXTENSIONS:
-            ext = ".png"
-        image_path = item_path / f"{idx:02d}{ext}"
-        with open(image_path, "wb") as fh:
-            fh.write(image_data)
+        # (path, index of the appended row, whether the file existed before the append)
+        appended: list[tuple[Path, int, bool]] = []
+        try:
+            item_path.mkdir(parents=True, exist_ok=False)
+            if image_data:
+                ext = image_extension if image_extension.startswith(".") else f".{image_extension}"
+                if ext.lower() not in _IMAGE_EXTENSIONS:
+                    ext = ".png"
+                idx = self._first_available_item_image_index(item_path, folder_name)
+                (item_path / f"{folder_name}_{idx:02d}{ext}").write_bytes(image_data)
 
-        self._append_csv_line(category_path / _ITEMS_LANG_CSV.format("en"), english_word)
-        self._append_csv_line(category_path / _ITEMS_IDS, image_id)
+            targets = [(category_path / _ITEMS_IDS, item_id)] + [
+                (category_path / _ITEMS_LANG_CSV.format(lang), words_by_lang[lang])
+                for lang in settings.SUPPORTED_LANGUAGES
+            ]
+            for path, value in targets:
+                existed = path.exists()
+                row_index = len(self._read_csv_column(path))
+                self._append_csv_line(path, value)
+                appended.append((path, row_index, existed))
+        except Exception as exc:
+            # Leave no trace: no orphaned folder and no partial registry rows, which would
+            # misalign the per-language CSV files for every item after this one.
+            shutil.rmtree(item_path, ignore_errors=True)
+            for path, row_index, existed in appended:
+                if existed:
+                    self._delete_csv_row_at_index(path, row_index)
+                else:
+                    path.unlink(missing_ok=True)
+            if isinstance(exc, ContentError):
+                raise
+            raise ContentOperationError(f"Failed to write item files: {exc}") from exc
 
-        words_by_lang: dict[str, str] = {"en": english_word}
-        for lang in settings.SUPPORTED_LANGUAGES:
-            if lang == "en":
-                continue
-            try:
-                translated = self._translate_word(english_word, lang, category_name)
-                words_by_lang[lang] = translated
-                self._append_csv_line(category_path / _ITEMS_LANG_CSV.format(lang), translated)
-            except (ValueError, RuntimeError, httpx.HTTPError, KeyError) as exc:
-                raise ContentOperationError(f"Translation failed for {lang}: {exc}") from exc
+        voices_generated: list[str] = []
+        voice_warnings: list[str] = []
+        if generate_voices:
+            voices_generated, voice_warnings = self._generate_item_voices(item_path, folder_name, words_by_lang)
 
-        for lang in settings.SUPPORTED_LANGUAGES:
-            word = words_by_lang.get(lang) or english_word
-            try:
-                audio_bytes = self._generate_audio(word, lang)
-                voice_path = item_path / _ITEM_VOICE_MP3.format(folder_name, lang)
-                with open(voice_path, "wb") as fh:
-                    fh.write(audio_bytes)
-            except (ValueError, RuntimeError, httpx.HTTPError) as exc:
-                raise ContentOperationError(f"TTS failed for {lang}: {exc}") from exc
-            except OSError as exc:
-                raise ContentOperationError(f"File write failed for {lang}: {exc}") from exc
+        message = f"Item '{english_word}' created."
+        if generate_voices and not voices_generated:
+            message += " Voices were not generated."
 
         return CreateItem(
             category=category_name,
             item=english_word,
             folder=folder_name,
-            image_id=image_id,
+            image_id=item_id,
+            item_id=item_id,
+            voices_generated=voices_generated,
+            voice_warnings=voice_warnings,
+            message=message,
         )
 
     def update_item_name(

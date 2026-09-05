@@ -1140,6 +1140,297 @@ def test_delete_archived_category_after_restore_cannot_find_snapshot(tmp_path: P
 
 
 # ---------------------------------------------------------------------------
+# create_item
+# ---------------------------------------------------------------------------
+
+def _prepare_category(tmp_path: Path) -> tuple[Path, Path]:
+    """Create a registered, empty 'foods' category and return (content_root, category_path)."""
+    content_root = tmp_path / "content"
+    _write_category_registry(content_root, [("C_Foods", "foods")])
+    category_path = content_root / "foods"
+    category_path.mkdir(parents=True, exist_ok=True)
+    return content_root, category_path
+
+
+def _fake_translate(text: str, target_lang_code: str | None = None, *_: object, **__: object) -> str:
+    return f"{text}-{target_lang_code}"
+
+
+def _csv_rows(path: Path) -> list[str]:
+    return FileSystemContentProvider._read_csv_column(path)
+
+
+def test_create_item_success_with_image(tmp_path: Path) -> None:
+    content_root, category_path = _prepare_category(tmp_path)
+    provider = _make_fs_provider()
+    with (
+        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch.object(FileSystemContentProvider, "_translate_word", side_effect=_fake_translate),
+        patch.object(FileSystemContentProvider, "_generate_audio", return_value=b"audio"),
+    ):
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
+        result = provider.create_item("C_Foods", "  apple ", b"\x89PNG", ".png")
+
+    assert result.item_id == "I_Apple"
+    assert result.image_id == "I_Apple"
+    assert result.folder == "apple"
+    assert result.voices_generated == ["en", "fr"]
+    assert result.voice_warnings == []
+    assert result.message == "Item 'apple' created."
+    item_path = category_path / "apple"
+    assert (item_path / "apple_01.png").read_bytes() == b"\x89PNG"
+    assert (item_path / "apple_en.mp3").exists()
+    assert (item_path / "apple_fr.mp3").exists()
+    assert _csv_rows(category_path / "items_ids.csv") == ["I_Apple"]
+    assert _csv_rows(category_path / "items_en.csv") == ["apple"]
+    assert _csv_rows(category_path / "items_fr.csv") == ["apple-fr"]
+
+
+def test_create_item_success_without_image(tmp_path: Path) -> None:
+    content_root, category_path = _prepare_category(tmp_path)
+    provider = _make_fs_provider()
+    with (
+        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch.object(FileSystemContentProvider, "_translate_word", side_effect=_fake_translate),
+        patch.object(FileSystemContentProvider, "_generate_audio", return_value=b"audio"),
+    ):
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
+        result = provider.create_item("C_Foods", "apple")
+        details = provider.category_details("C_Foods")
+
+    item_path = category_path / "apple"
+    assert item_path.is_dir()
+    assert not [f for f in item_path.iterdir() if f.suffix in (".png", ".jpg", ".jpeg")]
+    assert result.voices_generated == ["en", "fr"]
+    item = next(entry for entry in details.items if entry.id == "I_Apple")
+    assert item.images_count == 0
+    assert item.thumbnail_uri == ""
+    assert item.name.to_dict()["fr"] == "apple-fr"
+
+
+def test_create_item_translation_failure_leaves_no_trace(tmp_path: Path) -> None:
+    content_root, category_path = _prepare_category(tmp_path)
+    provider = _make_fs_provider()
+    with (
+        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch.object(FileSystemContentProvider, "_translate_word", side_effect=RuntimeError("translator down")),
+        patch.object(FileSystemContentProvider, "_generate_audio", return_value=b"audio") as audio_mock,
+    ):
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
+        with pytest.raises(ContentOperationError, match="Translation failed for fr: translator down"):
+            provider.create_item("C_Foods", "apple", b"\x89PNG")
+
+    assert not (category_path / "apple").exists()
+    assert not (category_path / "items_ids.csv").exists()
+    assert not (category_path / "items_en.csv").exists()
+    assert not (category_path / "items_fr.csv").exists()
+    assert audio_mock.call_count == 0
+
+
+def test_translate_word_strict_rejects_unsuccessful_response() -> None:
+    class _Response:
+        is_error = False
+
+        @staticmethod
+        def json() -> dict:
+            return {"success": False, "lang_text": {"lang_code": "en", "text": "apple"}}
+
+    with (
+        patch("src.services.content.providers.file_system.httpx.post", return_value=_Response()),
+        patch("src.services.content.providers.file_system.create_internal_token", return_value="token"),
+        patch("src.services.content.providers.file_system.settings") as mock_settings,
+    ):
+        mock_settings.API_BASE_URL = "http://test"
+        # Lenient mode (used by create_category) keeps echoing the source text.
+        assert FileSystemContentProvider._translate_word("apple", "fr") == "apple"
+        with pytest.raises(RuntimeError, match="No active translator"):
+            FileSystemContentProvider._translate_word("apple", "fr", require_success=True)
+
+
+def test_create_item_tts_failure_still_creates_item(tmp_path: Path) -> None:
+    content_root, category_path = _prepare_category(tmp_path)
+    provider = _make_fs_provider()
+    with (
+        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch.object(FileSystemContentProvider, "_translate_word", side_effect=_fake_translate),
+        patch.object(FileSystemContentProvider, "_generate_audio", side_effect=RuntimeError("boom")),
+    ):
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
+        result = provider.create_item("C_Foods", "apple", b"\x89PNG")
+
+    assert result.item_id == "I_Apple"
+    assert result.voices_generated == []
+    assert result.voice_warnings == [
+        "Voice generation failed for en: boom",
+        "Voice generation failed for fr: boom",
+    ]
+    assert "Voices were not generated" in result.message
+    assert (category_path / "apple" / "apple_01.png").exists()
+    assert not list((category_path / "apple").glob("*.mp3"))
+    assert _csv_rows(category_path / "items_ids.csv") == ["I_Apple"]
+
+
+def test_create_item_partial_tts_failure(tmp_path: Path) -> None:
+    content_root, category_path = _prepare_category(tmp_path)
+
+    def fake_audio(word: str, lang: str) -> bytes:
+        if lang == "fr":
+            raise RuntimeError("fr voice unavailable")
+        return b"audio"
+
+    provider = _make_fs_provider()
+    with (
+        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch.object(FileSystemContentProvider, "_translate_word", side_effect=_fake_translate),
+        patch.object(FileSystemContentProvider, "_generate_audio", side_effect=fake_audio),
+    ):
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
+        result = provider.create_item("C_Foods", "apple")
+
+    assert result.voices_generated == ["en"]
+    assert result.voice_warnings == ["Voice generation failed for fr: fr voice unavailable"]
+    assert (category_path / "apple" / "apple_en.mp3").exists()
+    assert not (category_path / "apple" / "apple_fr.mp3").exists()
+
+
+def test_create_item_stops_after_no_active_tts_providers(tmp_path: Path) -> None:
+    content_root, _ = _prepare_category(tmp_path)
+    provider = _make_fs_provider()
+    with (
+        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch.object(FileSystemContentProvider, "_translate_word", side_effect=_fake_translate),
+        patch.object(
+            FileSystemContentProvider,
+            "_generate_audio",
+            side_effect=RuntimeError("No active text to speech services configured."),
+        ) as audio_mock,
+    ):
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
+        result = provider.create_item("C_Foods", "apple")
+
+    assert audio_mock.call_count == 1
+    assert result.voices_generated == []
+    assert len(result.voice_warnings) == 1
+
+
+def test_create_item_generate_voices_false_skips_tts(tmp_path: Path) -> None:
+    content_root, category_path = _prepare_category(tmp_path)
+    provider = _make_fs_provider()
+    with (
+        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch.object(FileSystemContentProvider, "_translate_word", side_effect=_fake_translate),
+        patch.object(FileSystemContentProvider, "_generate_audio", return_value=b"audio") as audio_mock,
+    ):
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
+        result = provider.create_item("C_Foods", "apple", generate_voices=False)
+
+    assert audio_mock.call_count == 0
+    assert result.voices_generated == []
+    assert result.voice_warnings == []
+    assert result.message == "Item 'apple' created."
+    assert not list((category_path / "apple").glob("*.mp3"))
+
+
+def test_create_item_conflict_existing_folder(tmp_path: Path) -> None:
+    content_root, category_path = _prepare_category(tmp_path)
+    (category_path / "apple").mkdir()
+    provider = _make_fs_provider()
+    with (
+        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch.object(FileSystemContentProvider, "_translate_word", side_effect=_fake_translate) as translate_mock,
+    ):
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
+        with pytest.raises(CategoryConflictError):
+            provider.create_item("C_Foods", "apple")
+
+    assert translate_mock.call_count == 0
+    assert not (category_path / "items_ids.csv").exists()
+
+
+def test_create_item_conflict_existing_id_row(tmp_path: Path) -> None:
+    content_root, category_path = _prepare_category(tmp_path)
+    (category_path / "items_ids.csv").write_text("I_Apple\n", encoding="utf-8")
+    (category_path / "items_en.csv").write_text("apple\n", encoding="utf-8")
+    provider = _make_fs_provider()
+    with (
+        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch.object(FileSystemContentProvider, "_translate_word", side_effect=_fake_translate),
+    ):
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
+        with pytest.raises(CategoryConflictError):
+            provider.create_item("C_Foods", "Apple")
+
+    assert _csv_rows(category_path / "items_ids.csv") == ["I_Apple"]
+    assert not (category_path / "items_fr.csv").exists()
+
+
+def test_create_item_rolls_back_on_disk_failure(tmp_path: Path) -> None:
+    content_root, category_path = _prepare_category(tmp_path)
+    (category_path / "items_ids.csv").write_text("I_Pear\n", encoding="utf-8")
+    (category_path / "items_en.csv").write_text("pear\n", encoding="utf-8")
+    # A directory where items_fr.csv should be makes that append fail after ids/en were written.
+    (category_path / "items_fr.csv").mkdir()
+    provider = _make_fs_provider()
+    with (
+        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch.object(FileSystemContentProvider, "_translate_word", side_effect=_fake_translate),
+        patch.object(FileSystemContentProvider, "_generate_audio", return_value=b"audio") as audio_mock,
+    ):
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
+        with pytest.raises(ContentOperationError, match="Failed to write item files"):
+            provider.create_item("C_Foods", "apple", b"\x89PNG")
+
+    assert not (category_path / "apple").exists()
+    assert _csv_rows(category_path / "items_ids.csv") == ["I_Pear"]
+    assert _csv_rows(category_path / "items_en.csv") == ["pear"]
+    assert audio_mock.call_count == 0
+
+
+def test_create_item_unknown_category(tmp_path: Path) -> None:
+    content_root, _ = _prepare_category(tmp_path)
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
+        with pytest.raises(CategoryNotFoundError):
+            provider.create_item("C_Missing", "apple")
+
+
+def test_create_item_missing_category_folder(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    _write_category_registry(content_root, [("C_Foods", "foods")])  # registered, but no folder on disk
+    provider = _make_fs_provider()
+    with (
+        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch.object(FileSystemContentProvider, "_translate_word", side_effect=_fake_translate),
+    ):
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
+        with pytest.raises(CategoryNotFoundError):
+            provider.create_item("C_Foods", "apple")
+    assert not (content_root / "foods").exists()
+
+
+def test_append_csv_line_quotes_and_terminates_rows(tmp_path: Path) -> None:
+    path = tmp_path / "items_en.csv"
+    path.write_text("apple", encoding="utf-8")  # no trailing newline
+    FileSystemContentProvider._append_csv_line(path, "hot, chocolate")
+    FileSystemContentProvider._append_csv_line(path, "pear")
+    assert path.read_text(encoding="utf-8") == 'apple\n"hot, chocolate"\npear\n'
+    assert FileSystemContentProvider._read_csv_column(path) == ["apple", "hot, chocolate", "pear"]
+
+
+# ---------------------------------------------------------------------------
 # update_item_name
 # ---------------------------------------------------------------------------
 

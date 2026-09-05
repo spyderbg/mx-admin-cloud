@@ -69,12 +69,16 @@ export interface CreateCategoryResponse {
     message: string
 }
 
-/** Response for POST /content/items. */
+/** Response for POST /content/categories/{category_id}/items (and legacy POST /content/items). */
 export interface CreateItemResponse {
     category: string
     item: string
     folder: string
     image_id: string
+    item_id: string
+    voices_generated: string[]
+    voice_warnings: string[]
+    message: string
 }
 
 /** Response for DELETE /content/categories/archive/{name}. */

@@ -216,16 +216,35 @@ class ContentService(Service):
             self,
             category_name: str,
             english_word: str,
-            image_data: bytes,
+            image_data: bytes | None = None,
             image_extension: str = ".png",
+            generate_voices: bool = True,
     ) -> CreateItem:
-        """Create a content item via the active provider."""
+        """Create a content item via the active provider, looked up by category folder name."""
         provider = self._select_provider()
         return provider.create_item(
             provider.category_id_by_name(category_name),
             english_word,
             image_data,
             image_extension,
+            generate_voices=generate_voices,
+        )
+
+    def create_item_by_id(
+            self,
+            category_id: str,
+            english_word: str,
+            image_data: bytes | None = None,
+            image_extension: str = ".png",
+            generate_voices: bool = True,
+    ) -> CreateItem:
+        """Create a content item via the active provider, keyed by category id."""
+        return self._select_provider().create_item(
+            category_id,
+            english_word,
+            image_data,
+            image_extension,
+            generate_voices=generate_voices,
         )
 
     def update_item(self, category_id: str, item_id: str, item_name: LocalizedString) -> ItemDetail:

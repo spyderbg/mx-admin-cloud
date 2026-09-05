@@ -102,6 +102,21 @@ components:
       - category
       - item
       title: Body_create_item_endpoint_api_v1_content_items_post
+    Body_items_create_api_v1_content_categories__category_id__items_post:
+      properties:
+        item:
+          type: string
+          title: Item
+        image:
+          anyOf:
+          - type: string
+            contentMediaType: application/octet-stream
+          - type: 'null'
+          title: Image
+      type: object
+      required:
+      - item
+      title: Body_items_create_api_v1_content_categories__category_id__items_post
     Body_items_images_add_api_v1_content_categories__category_id__items__item_id__images_post:
       properties:
         image:
@@ -314,14 +329,35 @@ components:
         image_id:
           type: string
           title: Image Id
+        item_id:
+          type: string
+          title: Item Id
+        voices_generated:
+          items:
+            type: string
+          type: array
+          title: Voices Generated
+        voice_warnings:
+          items:
+            type: string
+          type: array
+          title: Voice Warnings
+        message:
+          type: string
+          title: Message
       type: object
       required:
       - category
       - item
       - folder
       - image_id
+      - item_id
+      - voices_generated
+      - voice_warnings
+      - message
       title: CreateItemResponse
-      description: Response for POST /content/items.
+      description: Response for POST /content/categories/{category_id}/items (and
+        legacy POST /content/items).
     DeleteArchivedCategoryResponse:
       properties:
         deleted:
@@ -1288,6 +1324,44 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - Items
+      summary: Create a new item in a category
+      description: Create a content item from its English name. The name is translated
+        into every supported language first; if translation fails the item is not created.
+        The image is optional. Voices are generated for every language when an active
+        text to speech provider exists; voice problems never block creation and are
+        reported in 'voice_warnings'. Requires authentication.
+      operationId: items_create_api_v1_content_categories__category_id__items_post
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_items_create_api_v1_content_categories__category_id__items_post'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateItemResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/content/categories/{category_id}/items/{item_id}:
     get:
       tags:
@@ -1744,10 +1818,11 @@ paths:
   /api/v1/content/items:
     post:
       summary: Create a new content item
-      description: Create a new content item with an image and associated voices. This
-        endpoint allows uploading an image file and creating a new item entry with the
-        specified category and English word. The image must be in PNG, JPG, or JPEG
-        format. Requires authentication.
+      description: Create a new content item with an image and associated voices, identified
+        by category folder name. Prefer 'POST /categories/{category_id}/items', which
+        makes the image optional. The image must be in PNG, JPG, or JPEG format. Voices
+        are generated when an active text to speech provider exists; voice problems
+        are reported in 'voice_warnings' and never block creation. Requires authentication.
       operationId: create_item_endpoint_api_v1_content_items_post
       requestBody:
         content:

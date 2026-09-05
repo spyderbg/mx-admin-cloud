@@ -949,3 +949,80 @@ export function archivedAgoLabel(lang: Language, archivedAt: number): string {
   const [unit, seconds] = units.find(([, size]) => elapsed >= size) ?? ['second', 1]
   return `${prefix[lang] ?? prefix.en} ${formatter.format(-Math.floor(elapsed / seconds), unit)}`
 }
+
+/** Label for an optional image-file input; unknown `lang` falls back to English. */
+export function imageFileOptionalLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Image file (optional)',
+    es: 'Archivo de imagen (opcional)',
+    fr: 'Fichier image (facultatif)',
+    bg: 'Файл с изображение (по избор)',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Button label that clears a selected image; unknown `lang` falls back to English. */
+export function removeImageLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Remove image',
+    es: 'Quitar imagen',
+    fr: "Retirer l'image",
+    bg: 'Премахни изображението',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Notice that item creation runs translation and, when a generator is active, TTS. */
+export function itemGenerationNoticeLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Translations for all languages will be generated, and voices when a voice generator is active. This can take a while.',
+    es: 'Se generarán traducciones para todos los idiomas y, si hay un generador de voz activo, también las voces. Puede tardar un poco.',
+    fr: 'Les traductions pour toutes les langues seront générées, ainsi que les voix si un générateur vocal est actif. Cela peut prendre un moment.',
+    bg: 'Ще бъдат генерирани преводи за всички езици, а при активен генератор на глас – и гласове. Това може да отнеме известно време.',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Validation message for a duplicate item name; unknown `lang` falls back to English. */
+export function itemAlreadyExistsLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'An item with this name already exists.',
+    es: 'Ya existe un elemento con este nombre.',
+    fr: 'Un élément portant ce nom existe déjà.',
+    bg: 'Вече съществува елемент с това име.',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Fallback error when item creation fails without a server message. */
+export function createItemFailedLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Could not create the item. Please try again.',
+    es: 'No se pudo crear el elemento. Inténtalo de nuevo.',
+    fr: "Impossible de créer l'élément. Veuillez réessayer.",
+    bg: 'Елементът не можа да бъде създаден. Моля, опитайте отново.',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Success toast after an item was created; unknown `lang` falls back to English. */
+export function itemCreatedLabel(lang: Language, word: string): string {
+  const labels: Record<Language, string> = {
+    en: `Item "${word}" created.`,
+    es: `Elemento "${word}" creado.`,
+    fr: `Élément « ${word} » créé.`,
+    bg: `Елементът „${word}“ е създаден.`,
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Warning toast prefix when an item was created but some voices are missing. */
+export function itemCreatedWithWarningsLabel(lang: Language, word: string): string {
+  const labels: Record<Language, string> = {
+    en: `Item "${word}" created, but some voices could not be generated:`,
+    es: `Elemento "${word}" creado, pero no se pudieron generar algunas voces:`,
+    fr: `Élément « ${word} » créé, mais certaines voix n'ont pas pu être générées :`,
+    bg: `Елементът „${word}“ е създаден, но някои гласове не можаха да бъдат генерирани:`,
+  }
+  return labels[lang] ?? labels.en
+}

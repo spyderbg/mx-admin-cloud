@@ -40,7 +40,7 @@ from src.services.content.models import (
     RenameCategory,
     RestoreCategory,
 )
-from src.services.content.routes import get_content_service
+from src.services.content.routes import get_content_service, get_voice_generation_available
 from src.services.content.service import ContentService
 
 
@@ -104,14 +104,18 @@ class _StubContentProvider(ContentProvider):
             self,
             category_id: str,
             english_word: str,
-            image_data: bytes,
+            image_data: bytes | None = None,
             image_extension: str = ".png",
+            generate_voices: bool = True,
     ) -> CreateItem:
         return self._call("create_item", CreateItem(
             category=category_id,
             item=english_word,
             folder=english_word.lower(),
             image_id=f"I_{english_word.title()}",
+            item_id=f"I_{english_word.title()}",
+            voices_generated=["en"] if generate_voices else [],
+            message="created",
         ))
 
     def update_item_name(self, category_id: str, item_id: str, item_name: Any) -> ItemDetail:
@@ -309,9 +313,12 @@ def _make_app(
         tmp_path: Path | None = None,
         *,
         auth: bool = True,
+        voice_generation_available: bool = True,
 ) -> FastAPI:
     app = FastAPI()
     app.include_router(content_routes.router)
+    # The real dependency reads app.state.registry, which this bare app never sets.
+    app.dependency_overrides[get_voice_generation_available] = lambda: voice_generation_available
     if auth:
         app.dependency_overrides[get_current_user] = lambda: {"username": "tester", "role": "admin"}
     if provider is not None and tmp_path is not None:
@@ -871,7 +878,7 @@ async def test_create_item_strips_whitespace(tmp_resolved: Path) -> None:
     seen: list[tuple[str, str]] = []
 
     class _TrackingProvider(_StubContentProvider):
-        def create_item(self, category_id, english_word, image_data, image_extension=".png"):
+        def create_item(self, category_id, english_word, image_data=None, image_extension=".png", generate_voices=True):
             seen.append((category_id, english_word))
             return CreateItem(
                 category=category_id,
@@ -895,7 +902,7 @@ async def test_create_item_picks_correct_extension(tmp_resolved: Path) -> None:
     seen_ext: list[str] = []
 
     class _ExtProvider(_StubContentProvider):
-        def create_item(self, category_id, english_word, image_data, image_extension=".png"):
+        def create_item(self, category_id, english_word, image_data=None, image_extension=".png", generate_voices=True):
             seen_ext.append(image_extension)
             return CreateItem(category=category_id, item=english_word, folder=english_word, image_id="X")
 
@@ -914,7 +921,7 @@ async def test_create_item_defaults_unknown_extension_to_png(tmp_resolved: Path)
     seen_ext: list[str] = []
 
     class _ExtProvider(_StubContentProvider):
-        def create_item(self, category_id, english_word, image_data, image_extension=".png"):
+        def create_item(self, category_id, english_word, image_data=None, image_extension=".png", generate_voices=True):
             seen_ext.append(image_extension)
             return CreateItem(category=category_id, item=english_word, folder=english_word, image_id="X")
 
@@ -963,6 +970,148 @@ async def test_create_item_requires_auth(client_no_auth: AsyncClient) -> None:
         files={"image": ("a.png", _PNG_BYTES, "image/png")},
         data={"category": "foods", "item": "apple"},
     )
+    assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/content/categories/{category_id}/items  (multipart form)
+# ---------------------------------------------------------------------------
+
+_ITEMS_URL = "/api/v1/content/categories/C_Foods/items"
+
+
+@pytest.mark.asyncio
+async def test_items_create_with_image_returns_201(client: AsyncClient) -> None:
+    response = await client.post(
+        _ITEMS_URL,
+        files={"image": ("apple.png", _PNG_BYTES, "image/png")},
+        data={"item": "apple"},
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["item_id"] == "I_Apple"
+    assert body["image_id"] == "I_Apple"
+    assert body["item"] == "apple"
+    assert body["voices_generated"] == ["en"]
+    assert body["voice_warnings"] == []
+    assert body["message"] == "created"
+
+
+@pytest.mark.asyncio
+async def test_items_create_without_image_returns_201(tmp_resolved: Path) -> None:
+    seen: list[tuple[str, str, bytes | None, str, bool]] = []
+
+    class _TrackingProvider(_StubContentProvider):
+        def create_item(self, category_id, english_word, image_data=None, image_extension=".png", generate_voices=True):
+            seen.append((category_id, english_word, image_data, image_extension, generate_voices))
+            return CreateItem(category="foods", item=english_word, folder="apple", image_id="I_Apple", item_id="I_Apple")
+
+    app = _make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.post(_ITEMS_URL, data={"item": "  apple  "})
+    assert response.status_code == 201
+    assert seen == [("C_Foods", "apple", None, ".png", True)]
+
+
+@pytest.mark.asyncio
+async def test_items_create_picks_image_extension(tmp_resolved: Path) -> None:
+    seen: list[tuple[bytes | None, str]] = []
+
+    class _TrackingProvider(_StubContentProvider):
+        def create_item(self, category_id, english_word, image_data=None, image_extension=".png", generate_voices=True):
+            seen.append((image_data, image_extension))
+            return CreateItem(category="foods", item=english_word, folder="apple", image_id="I_Apple", item_id="I_Apple")
+
+    app = _make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        await c.post(_ITEMS_URL, files={"image": ("photo.JPEG", b"data", "image/jpeg")}, data={"item": "apple"})
+    assert seen == [(b"data", ".jpeg")]
+
+
+@pytest.mark.asyncio
+async def test_items_create_skips_voices_when_no_active_generators(tmp_resolved: Path) -> None:
+    seen_flags: list[bool] = []
+
+    class _TrackingProvider(_StubContentProvider):
+        def create_item(self, category_id, english_word, image_data=None, image_extension=".png", generate_voices=True):
+            seen_flags.append(generate_voices)
+            return CreateItem(category="foods", item=english_word, folder="apple", image_id="I_Apple", item_id="I_Apple")
+
+    app = _make_app(_TrackingProvider(tmp_resolved), tmp_resolved, voice_generation_available=False)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.post(_ITEMS_URL, data={"item": "apple"})
+    assert response.status_code == 201
+    assert seen_flags == [False]
+    body = response.json()
+    assert body["voices_generated"] == []
+    assert any("No active voice generators" in warning for warning in body["voice_warnings"])
+
+
+@pytest.mark.asyncio
+async def test_items_create_reports_provider_voice_warnings(tmp_resolved: Path) -> None:
+    provider = _StubContentProvider(tmp_resolved).returns("create_item", CreateItem(
+        category="foods", item="apple", folder="apple", image_id="I_Apple", item_id="I_Apple",
+        voices_generated=["en"], voice_warnings=["Voice generation failed for fr: boom"], message="created",
+    ))
+    app = _make_app(provider, tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.post(_ITEMS_URL, data={"item": "apple"})
+    assert response.status_code == 201
+    assert response.json()["voice_warnings"] == ["Voice generation failed for fr: boom"]
+
+
+@pytest.mark.asyncio
+async def test_items_create_blank_name_returns_400(client: AsyncClient) -> None:
+    response = await client.post(_ITEMS_URL, data={"item": "   "})
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_items_create_empty_image_returns_400(client: AsyncClient) -> None:
+    response = await client.post(
+        _ITEMS_URL,
+        files={"image": ("apple.png", b"", "image/png")},
+        data={"item": "apple"},
+    )
+    assert response.status_code == 400
+    assert "empty" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_items_create_conflict_returns_409(tmp_resolved: Path) -> None:
+    provider = _StubContentProvider(tmp_resolved).raises(
+        "create_item", CategoryConflictError("Item folder already exists: apple")
+    )
+    app = _make_app(provider, tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.post(_ITEMS_URL, data={"item": "apple"})
+    assert response.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_items_create_unknown_category_returns_404(tmp_resolved: Path) -> None:
+    provider = _StubContentProvider(tmp_resolved).raises("create_item", CategoryNotFoundError("nope"))
+    app = _make_app(provider, tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.post(_ITEMS_URL, data={"item": "apple"})
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_items_create_translation_failure_returns_400(tmp_resolved: Path) -> None:
+    provider = _StubContentProvider(tmp_resolved).raises(
+        "create_item", ContentOperationError("Translation failed for fr: boom")
+    )
+    app = _make_app(provider, tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.post(_ITEMS_URL, data={"item": "apple"})
+    assert response.status_code == 400
+    assert "Translation failed" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_items_create_requires_auth(client_no_auth: AsyncClient) -> None:
+    response = await client_no_auth.post(_ITEMS_URL, data={"item": "apple"})
     assert response.status_code == 401
 
 

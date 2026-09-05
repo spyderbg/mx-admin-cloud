@@ -208,12 +208,16 @@ class UpdateItemBody(BaseModel):
 # region Items Response models
 
 class CreateItemResponse(BaseModel):
-    """Response for POST /content/items."""
+    """Response for POST /content/categories/{category_id}/items (and legacy POST /content/items)."""
 
     category: str
     item: str
     folder: str
-    image_id: str
+    image_id: str  # Legacy alias of item_id.
+    item_id: str
+    voices_generated: list[str]
+    voice_warnings: list[str]
+    message: str
 
 
 class ItemListResponse(BaseModel):

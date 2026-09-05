@@ -132,6 +132,12 @@ export const itemsList = async (categoryId: string): Promise<ItemListResponse> =
   return r.data
 }
 
+/** Create a new item in a category */
+export const itemsCreate = async (categoryId: string, formData: FormData): Promise<CreateItemResponse> => {
+  const r = await client.post<CreateItemResponse>(`/content/categories/${categoryId}/items`, formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+  return r.data
+}
+
 /** Get a single item by ID */
 export const itemsGet = async (categoryId: string, itemId: string): Promise<ItemSummary> => {
   const r = await client.get<ItemSummary>(`/content/categories/${categoryId}/items/${itemId}`)
