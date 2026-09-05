@@ -2,20 +2,32 @@
 
 from __future__ import annotations
 
-import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
 from src.services.models import ServiceProvider
 
 
+class LogLevel(str, Enum):
+    """Provider-independent levels accepted by the internal logging service."""
+
+    TRACE = "trace"
+    DEBUG = "debug"
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+    CRITICAL = "critical"
+    FATAL = "fatal"
+
+
 @dataclass
 class LogMessage:
     """Structured log message data model."""
     event: str
-    level: int = logging.INFO
+    level: LogLevel = LogLevel.INFO
     fields: dict[str, Any] = field(default_factory=dict)
 
 
