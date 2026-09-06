@@ -15,8 +15,8 @@
         <button
           class="btn-icon btn-icon-edit voice-card-action"
           type="button"
-          title="Upload voice"
-          aria-label="Upload voice"
+          :title="uploadVoiceFileLabel(contentLanguage)"
+          :aria-label="uploadVoiceFileLabel(contentLanguage)"
           @click="openUpload(voice)"
         >
           <i class="mdi mdi-pencil"></i>
@@ -24,8 +24,8 @@
         <button
           type="button"
           class="btn-icon btn-icon-delete voice-card-action"
-          :title="deleteOrResetVoiceLabel(voice.language)"
-          :aria-label="deleteOrResetVoiceLabel(voice.language)"
+          :title="deleteOrResetVoiceLabel(contentLanguage)"
+          :aria-label="deleteOrResetVoiceLabel(contentLanguage)"
           @click="openDeleteConfirm(voice)"
         >
           <i class="mdi mdi-delete"></i>
@@ -40,7 +40,7 @@
         text-tag="div"
         text-class="voice-card-name"
         root-class="justify-content-center"
-        :edit-title="editWordLabel(voice.language)"
+        :edit-title="editWordLabel(contentLanguage)"
         :icon-style="{ fontSize: '0.8rem' }"
         @edit="openRenameModal(voice)"
       />
@@ -67,23 +67,32 @@
     <div v-if="showUpload" class="cd-modal-overlay" @click.self="closeUpload">
       <div class="cd-modal-box">
         <div class="cd-modal-header">
-          <h5 class="cd-modal-title">{{ uploadVoiceFileLabel(uploadLanguage) }}</h5>
+          <h5 class="cd-modal-title">{{ uploadVoiceFileLabel(contentLanguage) }}</h5>
           <button type="button" class="cd-modal-close" @click="closeUpload">&times;</button>
         </div>
         <div class="cd-modal-body">
           <p v-if="uploadTarget" class="text-muted small mb-2">{{ uploadTarget.name }} ({{ uploadTarget.language }})</p>
           <div class="form-group mb-0">
-            <label class="col-form-label">{{ audioFileLabel(uploadLanguage) }}</label>
-            <input
-              type="file"
-              class="form-control-file"
-              accept="audio/*"
-              @change="onFileSelected"
-            />
+            <label class="col-form-label">{{ audioFileLabel(contentLanguage) }}</label>
+            <div class="localized-file-picker">
+              <input
+                ref="uploadFileInputRef"
+                type="file"
+                class="localized-file-input"
+                accept="audio/*"
+                aria-hidden="true"
+                tabindex="-1"
+                @change="onFileSelected"
+              />
+              <button type="button" class="btn btn-outline-primary btn-sm" @click="openFilePicker">
+                <i class="mdi mdi-paperclip mr-1"></i>{{ chooseFileLabel(contentLanguage) }}
+              </button>
+              <span class="localized-file-status">{{ noFileSelectedLabel(contentLanguage) }}</span>
+            </div>
           </div>
         </div>
         <div class="cd-modal-footer">
-          <button type="button" class="btn btn-secondary" @click="closeUpload">{{ cancelLabel(uploadLanguage) }}</button>
+          <button type="button" class="btn btn-secondary" @click="closeUpload">{{ cancelLabel(contentLanguage) }}</button>
         </div>
       </div>
     </div>
@@ -94,22 +103,22 @@
     <div v-if="showDeleteConfirm" class="cd-modal-overlay" @click.self="closeDeleteConfirm">
       <div class="cd-modal-box">
         <div class="cd-modal-header">
-          <h5 class="cd-modal-title">{{ deleteOrResetVoiceLabel(deleteLanguage) }}</h5>
+          <h5 class="cd-modal-title">{{ deleteOrResetVoiceLabel(contentLanguage) }}</h5>
           <button type="button" class="cd-modal-close" @click="closeDeleteConfirm">&times;</button>
         </div>
         <div class="cd-modal-body">
           <template v-if="deleteTarget">
             <p class="mb-2">
-              {{ deleteOrResetVoiceConfirmLabel(deleteLanguage, deleteTarget.name, deleteTarget.language) }}
+              {{ deleteOrResetVoiceConfirmLabel(contentLanguage, deleteTarget.name, deleteTarget.language) }}
             </p>
             <p class="text-muted small mb-0">
-              {{ deleteOrResetVoiceHelpLabel(deleteLanguage) }}
+              {{ deleteOrResetVoiceHelpLabel(contentLanguage) }}
             </p>
           </template>
         </div>
         <div class="cd-modal-footer">
-          <button type="button" class="btn btn-secondary" @click="closeDeleteConfirm">{{ cancelLabel(deleteLanguage) }}</button>
-          <button type="button" class="btn btn-danger" @click="confirmDelete">{{ deleteResetLabel(deleteLanguage) }}</button>
+          <button type="button" class="btn btn-secondary" @click="closeDeleteConfirm">{{ cancelLabel(contentLanguage) }}</button>
+          <button type="button" class="btn btn-danger" @click="confirmDelete">{{ deleteResetLabel(contentLanguage) }}</button>
         </div>
       </div>
     </div>
@@ -120,28 +129,28 @@
     <div v-if="showRenameEdit" class="cd-modal-overlay" @click.self="closeRenameModal">
       <div class="cd-modal-box">
         <div class="cd-modal-header">
-          <h5 class="cd-modal-title">{{ editWordLabel(renameLanguage) }}</h5>
+          <h5 class="cd-modal-title">{{ editWordLabel(contentLanguage) }}</h5>
           <button type="button" class="cd-modal-close" @click="closeRenameModal">&times;</button>
         </div>
         <div class="cd-modal-body">
           <p v-if="renameTarget" class="text-muted small mb-2">
-            <i :class="'flag-icon flag-icon-' + langFlag(renameLanguage)" class="mr-1"></i>
-            {{ renameLanguage.toUpperCase() }}
+            <i :class="'flag-icon flag-icon-' + langFlag(renameTarget.language)" class="mr-1"></i>
+            {{ renameTarget.language.toUpperCase() }}
           </p>
           <div class="form-group mb-0">
-            <label class="col-form-label">{{ wordColumnLabel(renameLanguage) }}</label>
+            <label class="col-form-label">{{ wordColumnLabel(contentLanguage) }}</label>
             <input
               v-model="renameValue"
               type="text"
               class="form-control"
-              :placeholder="enterWordLabel(renameLanguage)"
+              :placeholder="enterWordLabel(contentLanguage)"
               @keyup.enter="confirmRename"
             />
           </div>
         </div>
         <div class="cd-modal-footer">
-          <button type="button" class="btn btn-secondary" @click="closeRenameModal">{{ cancelLabel(renameLanguage) }}</button>
-          <button type="button" class="btn btn-primary" @click="confirmRename">{{ saveLabel(renameLanguage) }}</button>
+          <button type="button" class="btn btn-secondary" @click="closeRenameModal">{{ cancelLabel(contentLanguage) }}</button>
+          <button type="button" class="btn btn-primary" @click="confirmRename">{{ saveLabel(contentLanguage) }}</button>
         </div>
       </div>
     </div>
@@ -149,13 +158,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import ServerWord from './ServerWord.vue'
-import type { Language, Voice } from '../types/viewModels'
+import type { Voice } from '../types/viewModels'
 import { langFlag, langLabel, voiceTypeLabel } from '../utils/voiceLabels'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import {
   audioFileLabel,
+  chooseFileLabel,
   cancelLabel,
   deleteOrResetVoiceConfirmLabel,
   deleteOrResetVoiceHelpLabel,
@@ -166,6 +176,7 @@ import {
   playLabel,
   saveLabel,
   stopLabel,
+  noFileSelectedLabel,
   uploadVoiceFileLabel,
   voiceFileMissingLabel,
   wordColumnLabel,
@@ -194,7 +205,7 @@ const contentLanguage = useContentLanguage()
 
 const showUpload = ref(false)
 const uploadTarget = ref<Voice | null>(null)
-const uploadLanguage = computed<Language>(() => uploadTarget.value?.language ?? contentLanguage.value)
+const uploadFileInputRef = ref<HTMLInputElement | null>(null)
 
 function openUpload(voice: Voice): void {
   uploadTarget.value = voice
@@ -204,6 +215,11 @@ function openUpload(voice: Voice): void {
 function closeUpload(): void {
   showUpload.value = false
   uploadTarget.value = null
+  if (uploadFileInputRef.value) uploadFileInputRef.value.value = ''
+}
+
+function openFilePicker(): void {
+  uploadFileInputRef.value?.click()
 }
 
 function onFileSelected(e: Event): void {
@@ -218,7 +234,6 @@ function onFileSelected(e: Event): void {
 
 const showDeleteConfirm = ref(false)
 const deleteTarget = ref<Voice | null>(null)
-const deleteLanguage = computed<Language>(() => deleteTarget.value?.language ?? contentLanguage.value)
 
 function openDeleteConfirm(voice: Voice): void {
   deleteTarget.value = voice
@@ -240,7 +255,6 @@ function confirmDelete(): void {
 const showRenameEdit = ref(false)
 const renameTarget = ref<Voice | null>(null)
 const renameValue = ref('')
-const renameLanguage = computed<Language>(() => renameTarget.value?.language ?? contentLanguage.value)
 
 function openRenameModal(voice: Voice): void {
   renameTarget.value = voice
@@ -444,6 +458,24 @@ function confirmRename(): void {
 }
 .cd-modal-body {
   padding: 1.25rem;
+}
+.localized-file-picker {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.localized-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.localized-file-status {
+  color: #4b5563;
+  font-size: 0.9rem;
+  line-height: 1.2;
 }
 .cd-modal-footer {
   padding: 0.75rem 1.25rem;

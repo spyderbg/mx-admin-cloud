@@ -412,6 +412,28 @@ export function audioFileLabel(lang: Language): string {
   return labels[lang] ?? labels.en
 }
 
+/** Button label for opening the file picker; unknown `lang` falls back to English. */
+export function chooseFileLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Choose file',
+    es: 'Elegir archivo',
+    fr: 'Choisir un fichier',
+    bg: 'Избери файл',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Empty selected-file state; unknown `lang` falls back to English. */
+export function noFileSelectedLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'No file selected',
+    es: 'Ningún archivo seleccionado',
+    fr: 'Aucun fichier sélectionné',
+    bg: 'Няма избран файл',
+  }
+  return labels[lang] ?? labels.en
+}
+
 /** Label for the item files section; unknown `lang` falls back to English. */
 export function filesLabel(lang: Language): string {
   const labels: Record<Language, string> = {
