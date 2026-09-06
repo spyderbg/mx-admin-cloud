@@ -857,7 +857,6 @@ const releaseAction: VoiceExtraAction = {
   flex-direction: column;
   gap: 1.25rem;
   min-height: 100%;
-  padding-right: 1.25rem;
 }
 .id-summary-details {
   padding-left: 1.5rem;
@@ -912,7 +911,7 @@ const releaseAction: VoiceExtraAction = {
 }
 .id-summary-image-preview {
   position: relative;
-  width: min(100%, 12rem);
+  width: 100%;
   aspect-ratio: 1 / 1;
   margin-top: 0.7rem;
   overflow: hidden;
