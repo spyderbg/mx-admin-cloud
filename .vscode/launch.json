@@ -26,6 +26,20 @@
 			"request": "launch",
 			"command": "npm run dev",
 			"cwd": "${workspaceFolder}/frontend"
+		},
+		{
+			"name": "cli status",
+			"type": "debugpy",
+			"request": "launch",
+			"program": "${workspaceFolder}/cli/src/kiddo_cli/main.py",
+			"args": [
+				"common",
+				"status"
+			],
+			"cwd": "${workspaceFolder}/cli",
+			"env": {
+				"PYTHONPATH": "${workspaceFolder}/cli/src"
+			}
 		}
 	]
 }
