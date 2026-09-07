@@ -166,12 +166,30 @@
           </thead>
           <tbody>
             <template v-for="group in groupedVoices" :key="group.language">
-              <tr v-for="(voice, index) in group.voices" :key="voice.id">
+              <tr
+                v-for="(voice, index) in group.voices"
+                v-show="index === 0 || isLanguageExpanded(group.language)"
+                :key="voice.id"
+              >
                 <td>
-                  <div v-if="index === 0" class="id-voice-language">
-                    <i class="mdi mdi-chevron-right"></i>
+                  <div
+                    v-if="index === 0"
+                    class="id-voice-language"
+                    :class="{ 'id-voice-language-clickable': group.voices.length > 1 }"
+                    :title="langLabel(group.language)"
+                    :role="group.voices.length > 1 ? 'button' : undefined"
+                    :tabindex="group.voices.length > 1 ? 0 : undefined"
+                    :aria-expanded="group.voices.length > 1 ? isLanguageExpanded(group.language) : undefined"
+                    :aria-label="langLabel(group.language)"
+                    @click="group.voices.length > 1 && toggleLanguageGroup(group.language)"
+                    @keydown.enter.prevent="group.voices.length > 1 && toggleLanguageGroup(group.language)"
+                    @keydown.space.prevent="group.voices.length > 1 && toggleLanguageGroup(group.language)"
+                  >
+                    <i
+                      class="mdi id-voice-chevron"
+                      :class="isLanguageExpanded(group.language) ? 'mdi-chevron-down' : 'mdi-chevron-right'"
+                    ></i>
                     <i :class="'flag-icon flag-icon-' + langFlag(group.language)"></i>
-                    <span>{{ langLabel(group.language) }}</span>
                     <span class="id-count-pill">{{ group.voices.length }}</span>
                   </div>
                 </td>
@@ -329,7 +347,7 @@ import {
   itemsVoicesUpdate,
   itemsVoicesDelete,
 } from '../api/contentClient'
-import { SUPPORTED_LANGUAGES, type Voice } from '../types/viewModels'
+import { SUPPORTED_LANGUAGES, type Language, type Voice } from '../types/viewModels'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import { useAudioPlayer } from '../composables/useAudioPlayer'
 import ViewBreadcrumb from '../components/ViewBreadcrumb.vue'
@@ -502,6 +520,22 @@ const groupedVoices = computed(() =>
     }))
     .filter((group) => group.voices.length > 0),
 )
+
+const expandedVoiceLanguages = ref<Set<Language>>(new Set())
+
+function isLanguageExpanded(language: Language): boolean {
+  return expandedVoiceLanguages.value.has(language)
+}
+
+function toggleLanguageGroup(language: Language): void {
+  const next = new Set(expandedVoiceLanguages.value)
+  if (next.has(language)) {
+    next.delete(language)
+  } else {
+    next.add(language)
+  }
+  expandedVoiceLanguages.value = next
+}
 
 const itemVoiceCards = computed(() =>
   SUPPORTED_LANGUAGES.flatMap((language) =>
@@ -1118,7 +1152,7 @@ const releaseAction: VoiceExtraAction = {
 }
 .id-voices-table th:nth-child(1),
 .id-voices-table td:nth-child(1) {
-  width: 16%;
+  width: 11%;
 }
 .id-voices-table th:nth-child(2),
 .id-voices-table td:nth-child(2) {
@@ -1126,11 +1160,11 @@ const releaseAction: VoiceExtraAction = {
 }
 .id-voices-table th:nth-child(3),
 .id-voices-table td:nth-child(3) {
-  width: 28%;
+  width: 31%;
 }
 .id-voices-table th:nth-child(4),
 .id-voices-table td:nth-child(4) {
-  width: 31%;
+  width: 33%;
 }
 .id-voices-table th:nth-child(5),
 .id-voices-table td:nth-child(5) {
@@ -1143,13 +1177,20 @@ const releaseAction: VoiceExtraAction = {
   align-items: center;
 }
 .id-voice-language {
-  gap: 0.55rem;
+  gap: 0.4rem;
   font-weight: 600;
   min-width: 0;
 }
-.id-voice-language span:not(.id-count-pill) {
-  overflow: hidden;
-  text-overflow: ellipsis;
+.id-voice-language-clickable {
+  cursor: pointer;
+}
+.id-voice-chevron,
+.id-voice-language .flag-icon,
+.id-count-pill {
+  flex-shrink: 0;
+}
+.id-voice-chevron {
+  transition: transform 0.15s ease;
 }
 .id-count-pill {
   min-width: 1.25rem;
