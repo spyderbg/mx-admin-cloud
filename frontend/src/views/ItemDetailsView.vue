@@ -59,6 +59,7 @@
             :toggle-play="togglePlay"
             :upload-voice="uploadVoiceCard"
             :delete-voice="deleteVoiceCard"
+            :rename-voice="renameVoiceHandler"
             :extra-action="releaseAction"
           />
         </div>
@@ -343,11 +344,12 @@ import {
   itemsImagesAdd,
   itemsImagesUpdate,
   itemsImagesDelete,
+  itemsUpdate,
   itemsVoicesAdd,
   itemsVoicesUpdate,
   itemsVoicesDelete,
 } from '../api/contentClient'
-import { SUPPORTED_LANGUAGES, type Language, type Voice } from '../types/viewModels'
+import { LocalizedString, SUPPORTED_LANGUAGES, type Language, type Voice } from '../types/viewModels'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import { useAudioPlayer } from '../composables/useAudioPlayer'
 import ViewBreadcrumb from '../components/ViewBreadcrumb.vue'
@@ -853,6 +855,33 @@ async function deleteVoiceCard(voice: Voice): Promise<void> {
     await refreshItem()
     voiceVersions.value = { ...voiceVersions.value, [voice.id]: (voiceVersions.value[voice.id] ?? 0) + 1 }
     showToast(`Voice for ${voice.name} (${voice.language.toUpperCase()}) ${pastTense(result.action)}.`, 'success')
+  } catch (err) {
+    showToast(extractErrorMessage(err), 'error')
+  }
+}
+
+function localizedItemNameForPatch(update: { language: Language; value: string }): LocalizedString {
+  const currentItem = item.value
+  const values = Object.fromEntries(
+    SUPPORTED_LANGUAGES.map((language) => [
+      language,
+      update.language === language
+        ? update.value
+        : currentItem?.voices.find((v) => v.language === language)?.name ?? currentItem?.name ?? '',
+    ]),
+  )
+  return new LocalizedString(values)
+}
+
+async function renameVoiceHandler(voice: Voice, name: string): Promise<void> {
+  const cat = category.value
+  const currentItem = item.value
+  if (!cat || !currentItem) return
+  try {
+    const itemName = localizedItemNameForPatch({ language: voice.language, value: name })
+    await itemsUpdate(cat.id, currentItem.id, { item_name: itemName })
+    await refreshItem()
+    showToast(`Voice text for ${voice.language.toUpperCase()} updated.`, 'success')
   } catch (err) {
     showToast(extractErrorMessage(err), 'error')
   }
