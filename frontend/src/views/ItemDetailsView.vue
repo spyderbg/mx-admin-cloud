@@ -160,9 +160,7 @@
               <th>Language</th>
               <th>Generator</th>
               <th>File (Normal)</th>
-              <th>Preview</th>
               <th>File (Optimized)</th>
-              <th>Preview</th>
               <th class="text-right">Actions</th>
             </tr>
           </thead>
@@ -178,20 +176,20 @@
                   </div>
                 </td>
                 <td>{{ voice.type }}</td>
-                <td :title="voiceFileName(voice)">{{ voiceFileName(voice) }}</td>
                 <td>
                   <div class="id-audio-preview">
                     <button class="id-audio-play" :class="{ 'id-audio-play-active': playingVoiceId === voice.id }" :disabled="!hasAudio(voice)" :aria-label="!hasAudio(voice) ? voiceFileMissingLabel(contentLanguage) : (playingVoiceId === voice.id ? stopLabel(contentLanguage) : playLabel(contentLanguage))" :title="!hasAudio(voice) ? voiceFileMissingLabel(contentLanguage) : (playingVoiceId === voice.id ? stopLabel(contentLanguage) : playLabel(contentLanguage))" @click="togglePlay(voice)">
                       <i :class="playingVoiceId === voice.id ? 'mdi mdi-stop' : 'mdi mdi-play'"></i>
                     </button>
+                    <span :title="voiceFileName(voice)">{{ voiceFileName(voice) }}</span>
                   </div>
                 </td>
-                <td :title="optimizedVoiceFileName(voice)">{{ optimizedVoiceFileName(voice) }}</td>
                 <td>
                   <div class="id-audio-preview">
                     <button class="id-audio-play" :class="{ 'id-audio-play-active': playingVoiceId === voice.id }" :disabled="!hasAudio(voice)" :aria-label="!hasAudio(voice) ? voiceFileMissingLabel(contentLanguage) : (playingVoiceId === voice.id ? stopLabel(contentLanguage) : playLabel(contentLanguage))" :title="!hasAudio(voice) ? voiceFileMissingLabel(contentLanguage) : (playingVoiceId === voice.id ? stopLabel(contentLanguage) : playLabel(contentLanguage))" @click="togglePlay(voice)">
                       <i :class="playingVoiceId === voice.id ? 'mdi mdi-stop' : 'mdi mdi-play'"></i>
                     </button>
+                    <span :title="optimizedVoiceFileName(voice)">{{ optimizedVoiceFileName(voice) }}</span>
                   </div>
                 </td>
                 <td>
@@ -1128,21 +1126,14 @@ const releaseAction: VoiceExtraAction = {
 }
 .id-voices-table th:nth-child(3),
 .id-voices-table td:nth-child(3) {
-  width: 20%;
+  width: 28%;
 }
 .id-voices-table th:nth-child(4),
-.id-voices-table td:nth-child(4),
-.id-voices-table th:nth-child(6),
-.id-voices-table td:nth-child(6) {
-  width: 8%;
-  text-align: center;
+.id-voices-table td:nth-child(4) {
+  width: 31%;
 }
 .id-voices-table th:nth-child(5),
 .id-voices-table td:nth-child(5) {
-  width: 23%;
-}
-.id-voices-table th:nth-child(7),
-.id-voices-table td:nth-child(7) {
   width: 17%;
 }
 .id-voice-language,
@@ -1170,9 +1161,14 @@ const releaseAction: VoiceExtraAction = {
   text-align: center;
 }
 .id-audio-preview {
-  gap: 0.35rem;
+  gap: 0.5rem;
   color: #4b587d;
-  justify-content: center;
+  min-width: 0;
+}
+.id-audio-preview span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .id-audio-play {
   width: 1.6rem;
