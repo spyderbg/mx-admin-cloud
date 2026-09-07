@@ -12,13 +12,6 @@
         class="item-card-thumb"
       />
       <span class="file-count-badge">{{ item.imagesCount ?? item.images.length }}</span>
-      <button
-        class="edit-badge"
-        @click.stop="navigateToDetail(item.id)"
-        :title="'Edit ' + item.name"
-      >
-        <i class="mdi mdi-pencil"></i>
-      </button>
     </div>
   </div>
 </template>
@@ -89,26 +82,5 @@ const navigateToDetail = (itemId: string): void => {
   line-height: 22px;
   text-align: center;
   pointer-events: none;
-}
-.edit-badge {
-  position: absolute;
-  bottom: 8px;
-  right: 8px;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: #4f46e5;
-  color: #fff;
-  border: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  cursor: pointer;
-  opacity: 0.9;
-  transition: opacity 0.2s;
-}
-.edit-badge:hover {
-  opacity: 1;
 }
 </style>

@@ -190,11 +190,11 @@
 
   <!-- Upload icon modal -->
   <Teleport to="body">
-    <div v-if="showUpload" class="cd-modal-overlay" @click.self="showUpload = false">
+    <div v-if="showUpload" class="cd-modal-overlay" @click.self="closeUploadModal">
       <div class="cd-modal-box">
         <div class="cd-modal-header">
           <h5 class="cd-modal-title">{{ uploadCategoryIconLabel(contentLanguage) }}</h5>
-          <button type="button" class="cd-modal-close" @click="showUpload = false">&times;</button>
+          <button type="button" class="cd-modal-close" @click="closeUploadModal">&times;</button>
         </div>
         <div class="cd-modal-body">
           <div class="form-group mb-0">
@@ -208,7 +208,7 @@
           </div>
         </div>
         <div class="cd-modal-footer">
-          <button type="button" class="btn btn-secondary" @click="showUpload = false">{{ cancelLabel(contentLanguage) }}</button>
+          <button type="button" class="btn btn-secondary" @click="closeUploadModal">{{ cancelLabel(contentLanguage) }}</button>
         </div>
       </div>
     </div>
@@ -422,6 +422,10 @@ function openUploadModal(): void {
   showUpload.value = true
 }
 
+function closeUploadModal(): void {
+  showUpload.value = false
+}
+
 function openDeleteModal(): void {
   closeAllModals()
   showDelete.value = true
@@ -437,6 +441,10 @@ function closeImagePreview(): void {
 }
 
 function onDocumentKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape' && showUpload.value) {
+    closeUploadModal()
+    return
+  }
   if (event.key === 'Escape' && showImagePreview.value) {
     closeImagePreview()
   }
@@ -509,7 +517,7 @@ function confirmRename(): void {
 async function onFileSelected(e: Event): Promise<void> {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
-  showUpload.value = false
+  closeUploadModal()
   if (!file) return
 
   const formData = new FormData()

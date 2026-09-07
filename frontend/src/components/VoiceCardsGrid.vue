@@ -158,7 +158,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import ServerWord from './ServerWord.vue'
 import type { Voice } from '../types/viewModels'
 import { langFlag, langLabel, voiceTypeLabel } from '../utils/voiceLabels'
@@ -221,6 +221,20 @@ function closeUpload(): void {
 function openFilePicker(): void {
   uploadFileInputRef.value?.click()
 }
+
+function onDocumentKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape' && showUpload.value) {
+    closeUpload()
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('keydown', onDocumentKeydown)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', onDocumentKeydown)
+})
 
 function onFileSelected(e: Event): void {
   const input = e.target as HTMLInputElement
