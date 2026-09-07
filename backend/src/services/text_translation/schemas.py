@@ -69,6 +69,8 @@ class TranslateResponse(BaseModel):
 
     success: bool
     lang_text: LangCodeText
+    errors: list[str] = []
+    """Per-provider failure reasons when "success" is false, e.g. a missing API key."""
 
 
 class TranslateFileResponse(BaseModel):

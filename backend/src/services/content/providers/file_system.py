@@ -121,6 +121,9 @@ class FileSystemContentProvider(ContentProvider):
             raise RuntimeError(FileSystemContentProvider._extract_error_detail(response))
         payload = response.json()
         if require_success and not payload.get("success", False):
+            errors = payload.get("errors") or []
+            if errors:
+                raise RuntimeError("; ".join(errors))
             raise RuntimeError(f"No active translator produced a translation for '{target_lang_code}'.")
         translated_text = payload["lang_text"]["text"]
         return translated_text or text.strip()

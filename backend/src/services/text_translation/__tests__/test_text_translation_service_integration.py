@@ -66,6 +66,26 @@ class _StubTranslatorProvider(TextTranslationServiceProvider):
         return f"es::{request.text}"
 
 
+class _RaisingTranslatorProvider(TextTranslationServiceProvider):
+    """Translator that always fails, e.g. simulating a missing API key."""
+
+    def __init__(self, base: Path) -> None:
+        super().__init__(
+            name="raising",
+            service_name="text_translation",
+            provider_name="raising",
+            provider_category="",
+            enabled=True,
+            priority=1,
+            config={"input_language": "en", "output_language": "es"},
+            config_path=base / "raising.json",
+            base_dir=base,
+        )
+
+    async def translate_text(self, request: TranslateTextRequest) -> str | None:  # pylint: disable=unused-argument
+        raise RuntimeError("OPENAI_API_KEY is not set.")
+
+
 def _make_translation_service(
         tmp_path: Path,
         providers: list[TextTranslationServiceProvider],
@@ -129,6 +149,16 @@ async def client_no_active(tmp_path_resolved: Path) -> AsyncClient:
 
 
 @pytest.fixture
+async def client_raising_provider(tmp_path_resolved: Path) -> AsyncClient:
+    stub = _RaisingTranslatorProvider(tmp_path_resolved)
+    svc = _make_translation_service(tmp_path_resolved, [stub])
+    app = _make_app(_FakeRegistry(svc))
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
+
+
+@pytest.fixture
 async def client_bad_registry() -> AsyncClient:
     app = _make_app(_FakeRegistry(_NotATranslationService()))
     transport = ASGITransport(app=app)
@@ -183,6 +213,20 @@ async def test_translate_no_active_translators_returns_503(client_no_active: Asy
     )
     assert response.status_code == 503
     assert "No active translators" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_translate_provider_exception_surfaces_reason_in_errors(
+        client_raising_provider: AsyncClient,
+) -> None:
+    response = await client_raising_provider.post(
+        "/internal/translators/translate",
+        json={"text": "hello", "input_lang_code": "en", "target_lang_code": "es"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is False
+    assert body["errors"] == ["raising: OPENAI_API_KEY is not set."]
 
 
 @pytest.mark.asyncio

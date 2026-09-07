@@ -3,7 +3,7 @@
     "service": "text_to_speech",
     "provider": "openai",
     "enabled": false,
-    "priority": 2,
+    "priority": 4,
     "config": {
       "generate": {
         "model": "tts-1-hd",

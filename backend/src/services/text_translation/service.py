@@ -76,6 +76,7 @@ class TextTranslationService(Service):
         current = text
         current_lang_code = input_lang_code
         success = False
+        errors: list[str] = []
         for provider in self.get_active_providers():
             inp = input_lang_code or provider.default_input_language()
             tgt = target_lang_code or provider.default_output_language()
@@ -98,12 +99,14 @@ class TextTranslationService(Service):
                     current = result
                     current_lang_code = tgt
                     success = True
-            except Exception:  # pylint: disable=broad-exception-caught
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                errors.append(f"{provider.name}: {exc}")
                 continue
 
         if current_lang_code is None:
-            return TranslateResult(success=success, lang_text=None)
+            return TranslateResult(success=success, lang_text=None, errors=errors)
         return TranslateResult(
             success=success,
             lang_text=LangCodeText(lang_code=current_lang_code, text=current),
+            errors=errors,
         )
