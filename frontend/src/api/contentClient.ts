@@ -203,6 +203,12 @@ export const itemsVoicesDelete = async (categoryId: string, itemId: string, voic
   return r.data
 }
 
+/** Regenerate a voice for an item */
+export const itemsVoicesRegenerate = async (categoryId: string, itemId: string, voiceId: string): Promise<VoiceResponse> => {
+  const r = await client.post<VoiceResponse>(`/content/categories/${categoryId}/items/${itemId}/voices/${voiceId}/regenerate`)
+  return r.data
+}
+
 /** Create a new content item */
 export const createItemEndpoint = async (formData: FormData): Promise<CreateItemResponse> => {
   const r = await client.post<CreateItemResponse>('/content/items', formData, { headers: { 'Content-Type': 'multipart/form-data' } })

@@ -1627,6 +1627,56 @@ class FileSystemContentProvider(ContentProvider):
 
         return CategoryVoice(id=voice_id, language=language, type="tts", file_uri=file_uri)
 
+    def regenerate_item_voice(self, category_id: str, item_id: str, voice_id: str) -> CategoryVoice:
+        category_name = self._folder_name_for_id(category_id)
+        category_path = self._category_path(category_name)
+        item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
+
+        language = self._language_for_item_voice_id(item_folder_name, voice_id)
+        if language is None:
+            raise CategoryNotFoundError(
+                f"Voice '{voice_id}' not found for item '{item_id}' in category '{category_name}'.",
+            )
+
+        word = self._item_word_for_language(category_path, item_id, language)
+        if not word:
+            raise ContentOperationError(
+                f"Item '{item_id}' has no {language} text to synthesize; set the word first.",
+            )
+
+        try:
+            audio_bytes = self._generate_audio(word, language)
+        except (ValueError, RuntimeError, httpx.HTTPError) as exc:
+            raise ContentOperationError(f"Voice generation failed for {language}: {exc}") from exc
+
+        # Reuse the existing file (it may carry a numeric suffix) so the voice keeps its URI.
+        found = self._find_item_voice_file(item_path, item_folder_name, voice_id)
+        voice_path = found[1] if found else self._item_voice_path(item_path, item_folder_name, language)
+        try:
+            voice_path.write_bytes(audio_bytes)
+        except OSError as exc:
+            raise ContentOperationError(f"Failed to save item voice: {exc}") from exc
+
+        return CategoryVoice(
+            id=voice_id,
+            language=language,
+            type="tts",
+            file_uri=f"/content/{category_name}/{item_folder_name}/{voice_path.name}",
+        )
+
+    def _item_word_for_language(self, category_path: Path, item_id: str, language: str) -> str:
+        """Return the item's current word for *language*, falling back to English."""
+        item_ids, items_by_lang = self._read_item_csv_data(category_path)
+        try:
+            index = item_ids.index(item_id)
+        except ValueError:
+            return ""
+        for lang in (language, "en"):
+            words = items_by_lang.get(lang, [])
+            if index < len(words) and words[index].strip():
+                return words[index].strip()
+        return ""
+
     # ------------------------------------------------------------------
     # Factory registration
     # ------------------------------------------------------------------

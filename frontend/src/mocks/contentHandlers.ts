@@ -619,4 +619,7 @@ export const contentHandlers = [
       { status: 201 },
     )
   }),
+
+  // Regenerate a voice for an item
+  http.post('/api/v1/content/categories/:category_id/items/:item_id/voices/:voice_id/regenerate', () => HttpResponse.json({})),
 ]

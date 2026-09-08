@@ -283,6 +283,13 @@ class _StubProvider(ContentProvider):
             "file_uri": f"/content/{category_id}/{item_id}/{voice_id}.mp3",
         })
 
+    def regenerate_item_voice(self, category_id: str, item_id: str, voice_id: str) -> dict[str, Any]:
+        self._record("regenerate_item_voice", category_id, item_id, voice_id)
+        return self._returns.get("regenerate_item_voice", {
+            "id": voice_id, "language": "en", "type": "tts",
+            "file_uri": f"/content/{category_id}/{item_id}/{voice_id}.mp3",
+        })
+
     def add_category_voice(self, category_id: str, language: str, audio_data: bytes) -> dict[str, Any]:
         self._record("add_category_voice", category_id, language, audio_data)
         return self._returns.get("add_category_voice", {
@@ -410,6 +417,9 @@ class _ConcreteProvider(ContentProvider):
         return {}
 
     def delete_item_voice(self, category_id, item_id, voice_id):
+        return {}
+
+    def regenerate_item_voice(self, category_id, item_id, voice_id):
         return {}
 
     def add_category_voice(self, category_id, language, audio_data):

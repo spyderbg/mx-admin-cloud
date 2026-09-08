@@ -17,6 +17,7 @@ class FileAction(str, Enum):
     ADD = "add"
     UPDATE = "update"
     DELETE = "delete"
+    REGENERATE = "regenerate"
 
 
 class ItemSummary(BaseModel):

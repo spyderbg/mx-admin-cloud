@@ -367,6 +367,10 @@ class ContentProvider(ServiceProvider, ABC):
         """Delete the audio file for an existing item voice."""
 
     @abstractmethod
+    def regenerate_item_voice(self, category_id: str, item_id: str, voice_id: str) -> CategoryVoice:
+        """Re-synthesize an item voice from its current text via the text-to-speech service."""
+
+    @abstractmethod
     def category_id_by_name(self, category_name: str) -> str:
         """Return the category_id registered for the given category_name."""
 

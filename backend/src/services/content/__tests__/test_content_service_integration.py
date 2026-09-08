@@ -269,6 +269,14 @@ class _StubContentProvider(ContentProvider):
             file_uri=f"/content/{category_id}/{item_id}/{voice_id}.mp3",
         ))
 
+    def regenerate_item_voice(self, category_id: str, item_id: str, voice_id: str) -> CategoryVoice:
+        return self._call("regenerate_item_voice", CategoryVoice(
+            id=voice_id,
+            language="en",
+            type="tts",
+            file_uri=f"/content/{category_id}/{item_id}/{voice_id}.mp3",
+        ))
+
     def add_category_voice(self, category_id: str, language: str, audio_data: bytes) -> CategoryVoice:
         return self._call("add_category_voice", CategoryVoice(
             id=f"{category_id}-v-{language}",

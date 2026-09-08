@@ -3,7 +3,7 @@
     "service": "text_to_speech",
     "provider": "elevenlabs",
     "enabled": true,
-    "priority": 2,
+    "priority": 3,
     "config": {
       "generate": {
         "languages": {
@@ -12,7 +12,6 @@
             "voice_id": "M1ydWt7KnBCiuv4CnEDC",
             "language": "en",
             "model": "eleven_multilingual_v2",
-            "prompt": "",
             "use_space": "no",
             "speed": 1.0,
             "speaker_boost": true,
@@ -26,7 +25,6 @@
             "voice_id": "XB0fDUnXU5powFXDhCwa",
             "language": "fr",
             "model": "eleven_multilingual_v2",
-            "prompt": "",
             "use_space": "no",
             "speed": 1.0,
             "speaker_boost": true,
@@ -40,7 +38,6 @@
             "voice_id": "CQLNn2VcdhTOSAfK3xmF",
             "language": "es",
             "model": "eleven_multilingual_v2",
-            "prompt": "",
             "use_space": "no",
             "speed": 1.0,
             "speaker_boost": true,
@@ -54,13 +51,12 @@
             "voice_id": "M1ydWt7KnBCiuv4CnEDC",
             "language": "bg",
             "model": "eleven_multilingual_v2",
-            "prompt": "",
             "use_space": "yes",
             "speed": 0.7,
             "speaker_boost": true,
             "voice_settings": {
               "stability": 0.6,
-              "similarity_boost": 0.70
+              "similarity_boost": 0.7
             }
           }
         }
@@ -69,7 +65,6 @@
         "enabled": false,
         "stt_provider": "elevenlabs",
         "model": "scribe_v1",
-        "prompt": "",
         "language": "en"
       }
     }

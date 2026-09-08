@@ -89,7 +89,7 @@
           :upload-voice="uploadVoice"
           :delete-voice="deleteVoiceHandler"
           :rename-voice="renameVoiceHandler"
-          :extra-action="regenerateAction"
+          :extra-actions="voiceCardActions"
         />
       </div>
     </div>
@@ -462,11 +462,11 @@ function requestCategoryImageRegeneration(): void {
   showToast('Backend task pending: regenerate the category image from the saved category metadata.', 'error')
 }
 
-const regenerateAction: VoiceExtraAction = {
+const voiceCardActions: VoiceExtraAction[] = [{
   icon: 'mdi-auto-fix',
   title: 'Regenerate voice',
   onClick: (voice) => showToast(`Backend task pending: regenerate ${voice.language.toUpperCase()} audio for ${voice.name}.`, 'error'),
-}
+}]
 
 async function confirmImageDelete(): Promise<void> {
   showDelete.value = false

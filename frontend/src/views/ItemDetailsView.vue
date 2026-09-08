@@ -60,7 +60,7 @@
             :upload-voice="uploadVoiceCard"
             :delete-voice="deleteVoiceCard"
             :rename-voice="renameVoiceHandler"
-            :extra-action="releaseAction"
+            :extra-actions="voiceCardActions"
           />
         </div>
       </div>
@@ -213,6 +213,9 @@
                 </td>
                 <td>
                   <div class="item-voice-actions">
+                    <button class="id-action-square id-action-regenerate" type="button" :disabled="regeneratingVoiceId !== null" title="Regenerate voice" aria-label="Regenerate voice" @click="regenerateVoice(voice)">
+                      <i class="mdi" :class="regeneratingVoiceId === voice.id ? 'mdi-loading mdi-spin' : 'mdi-auto-fix'"></i>
+                    </button>
                     <button class="id-action-square id-action-release" type="button" title="Release voice" aria-label="Release voice" @click="onReleaseVoice(voice)">
                       <i class="mdi mdi-upload"></i>
                     </button>
@@ -348,6 +351,7 @@ import {
   itemsVoicesAdd,
   itemsVoicesUpdate,
   itemsVoicesDelete,
+  itemsVoicesRegenerate,
 } from '../api/contentClient'
 import { LocalizedString, SUPPORTED_LANGUAGES, type Language, type Voice } from '../types/viewModels'
 import { useContentLanguage } from '../composables/useContentLanguage'
@@ -873,6 +877,27 @@ function localizedItemNameForPatch(update: { language: Language; value: string }
   return new LocalizedString(values)
 }
 
+const regeneratingVoiceId = ref<string | null>(null)
+
+async function regenerateVoice(voice: Voice): Promise<void> {
+  const cat = category.value
+  const currentItem = item.value
+  if (!cat || !currentItem || regeneratingVoiceId.value) return
+  if (playingVoiceId.value === voice.id) stopAudio()
+
+  regeneratingVoiceId.value = voice.id
+  try {
+    await itemsVoicesRegenerate(cat.id, currentItem.id, voice.id)
+    await refreshItem()
+    voiceVersions.value = { ...voiceVersions.value, [voice.id]: (voiceVersions.value[voice.id] ?? 0) + 1 }
+    showToast(`Voice for ${voice.name} (${voice.language.toUpperCase()}) regenerated.`, 'success')
+  } catch (err) {
+    showToast(extractErrorMessage(err), 'error')
+  } finally {
+    regeneratingVoiceId.value = null
+  }
+}
+
 async function renameVoiceHandler(voice: Voice, name: string): Promise<void> {
   const cat = category.value
   const currentItem = item.value
@@ -887,11 +912,13 @@ async function renameVoiceHandler(voice: Voice, name: string): Promise<void> {
   }
 }
 
-const releaseAction: VoiceExtraAction = {
-  icon: 'mdi-upload',
-  title: 'Release voice',
-  onClick: (voice) => announceBackendPending(`release ${voice.language.toUpperCase()} voice ${voice.id} for item ${item.value?.id ?? 'unknown item'}`),
-}
+const voiceCardActions: VoiceExtraAction[] = [
+  {
+    icon: 'mdi-auto-fix',
+    title: 'Regenerate voice',
+    onClick: (voice) => { void regenerateVoice(voice) },
+  },
+]
 
 </script>
 
@@ -1273,6 +1300,14 @@ const releaseAction: VoiceExtraAction = {
 .id-action-release {
   background: #e9f8f1;
   color: #2f8f68;
+}
+.id-action-regenerate {
+  background: #e6f4f3;
+  color: #0f766e;
+}
+.id-action-square:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 .id-action-edit {
   background: #eef4ff;

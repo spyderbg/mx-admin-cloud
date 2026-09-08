@@ -3,14 +3,15 @@
     <div v-for="voice in voices" :key="voice.id" class="voice-card">
       <div class="voice-card-top-actions">
         <button
-          v-if="extraAction"
+          v-for="action in extraActions"
+          :key="action.title"
           class="btn-icon btn-icon-regenerate voice-card-action"
           type="button"
-          :title="extraAction.title"
-          :aria-label="extraAction.title"
-          @click="extraAction.onClick(voice)"
+          :title="action.title"
+          :aria-label="action.title"
+          @click="action.onClick(voice)"
         >
-          <i :class="'mdi ' + extraAction.icon"></i>
+          <i :class="'mdi ' + action.icon"></i>
         </button>
         <button
           class="btn-icon btn-icon-edit voice-card-action"
@@ -197,8 +198,8 @@ const props = defineProps<{
   deleteVoice: (voice: Voice) => void | Promise<void>
   /** Omit to render the voice name as plain text (no inline edit). */
   renameVoice?: (voice: Voice, name: string) => void
-  /** Omit to hide the top-left action icon entirely. */
-  extraAction?: VoiceExtraAction
+  /** Rendered before the built-in upload/delete icons; omit for none. */
+  extraActions?: VoiceExtraAction[]
 }>()
 
 const contentLanguage = useContentLanguage()
@@ -316,7 +317,10 @@ function confirmRename(): void {
   top: 0.45rem;
   right: 0.45rem;
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 0.3rem;
+  max-width: calc(100% - 0.9rem);
 }
 .voice-card-flag {
   width: 56px;

@@ -2,7 +2,7 @@
 import { LocalizedString } from './localization'
 
 /** Action performed on a category/item file (image or voice), echoed back in the response. */
-export type FileAction = 'add' | 'update' | 'delete'
+export type FileAction = 'add' | 'update' | 'delete' | 'regenerate'
 
 /** Response for archiving (or removing via archive) a category. */
 export interface ArchiveCategoryResponse {

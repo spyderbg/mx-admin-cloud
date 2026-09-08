@@ -74,6 +74,7 @@ CATEGORY_ITEM_IMAGES = "/categories/{category_id}/items/{item_id}/images"
 CATEGORY_ITEM_IMAGE = "/categories/{category_id}/items/{item_id}/images/{image_id}"
 CATEGORY_ITEM_VOICES = "/categories/{category_id}/items/{item_id}/voices"
 CATEGORY_ITEM_VOICE = "/categories/{category_id}/items/{item_id}/voices/{voice_id}"
+CATEGORY_ITEM_VOICE_REGENERATE = "/categories/{category_id}/items/{item_id}/voices/{voice_id}/regenerate"
 
 ITEMS = "/items"
 
@@ -1285,6 +1286,39 @@ def items_voices_delete(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return VoiceResponse(
         id=result.id, language=result.language, type=result.type, file_uri=result.file_uri, action="delete",
+    )
+
+
+@router.post(
+    CATEGORY_ITEM_VOICE_REGENERATE,
+    response_model=VoiceResponse,
+    status_code=status.HTTP_200_OK,
+    tags=[TAG_ITEMS_VOICES],
+    summary="Regenerate a voice for an item",
+    description=(
+            "Re-synthesize the audio for an item voice from the item's current text in that "
+            "language, using the active text-to-speech configuration. Overwrites any existing "
+            "audio file, and creates one when the voice has none yet. Requires authentication."
+    ),
+)
+def items_voices_regenerate(
+        category_id: str,
+        item_id: str,
+        voice_id: str,
+        service: ContentServiceDep,
+        _user: dict = Depends(get_current_user),
+) -> VoiceResponse:
+    """Regenerate an item voice from its current text."""
+    try:
+        result = service.regenerate_item_voice(category_id, item_id, voice_id)
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidCategoryNameError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return VoiceResponse(
+        id=result.id, language=result.language, type=result.type, file_uri=result.file_uri, action="regenerate",
     )
 
 

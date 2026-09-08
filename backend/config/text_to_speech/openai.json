@@ -2,7 +2,7 @@
   "service_provider": {
     "service": "text_to_speech",
     "provider": "openai",
-    "enabled": false,
+    "enabled": true,
     "priority": 4,
     "config": {
       "generate": {
@@ -10,22 +10,18 @@
         "languages": {
           "en": {
             "actor": "alloy",
-            "prompt": "",
             "use_space": "no"
           },
           "fr": {
             "actor": "nova",
-            "prompt": "",
             "use_space": "no"
           },
           "es": {
             "actor": "shimmer",
-            "prompt": "",
             "use_space": "no"
           },
           "bg": {
             "actor": "nova",
-            "prompt": "",
             "use_space": "yes"
           }
         }
@@ -34,7 +30,6 @@
         "enabled": false,
         "stt_provider": "openai",
         "model": "whisper-1",
-        "prompt": "",
         "language": "en"
       }
     }

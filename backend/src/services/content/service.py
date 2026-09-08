@@ -302,6 +302,10 @@ class ContentService(Service):
         """Delete audio for an existing item voice via the active provider."""
         return self._select_provider().delete_item_voice(category_id, item_id, voice_id)
 
+    def regenerate_item_voice(self, category_id: str, item_id: str, voice_id: str) -> CategoryVoice:
+        """Re-synthesize an item voice from its current text via the active provider."""
+        return self._select_provider().regenerate_item_voice(category_id, item_id, voice_id)
+
     # ------------------------------------------------------------------
 
     def _select_provider(self) -> ContentProvider:
