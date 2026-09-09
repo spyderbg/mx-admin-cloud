@@ -6,6 +6,8 @@ All endpoints require a JWT with the role "internal" or "admin".
 
 from __future__ import annotations
 
+import base64
+import json
 from pathlib import Path
 from typing import Any
 
@@ -202,4 +204,16 @@ async def generate_word(
         raise HTTPException(status_code=500, detail=result.error or "Text to speech generation failed.")
 
     audio_bytes = Path(result.raw_path).read_bytes()
-    return Response(content=audio_bytes, media_type="audio/mpeg")
+    generation_parameters = service.generation_parameters(result.provider, lang_code)
+    generation_parameters["output_format"] = tts_request.output_format
+    encoded_parameters = base64.urlsafe_b64encode(
+        json.dumps(generation_parameters, ensure_ascii=True, sort_keys=True).encode("utf-8"),
+    ).decode("ascii")
+    return Response(
+        content=audio_bytes,
+        media_type="audio/mpeg",
+        headers={
+            "X-TTS-Provider": result.provider,
+            "X-TTS-Parameters": encoded_parameters,
+        },
+    )
