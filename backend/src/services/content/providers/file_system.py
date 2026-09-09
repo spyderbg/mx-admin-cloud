@@ -12,6 +12,7 @@ import re
 import shutil
 import time
 from datetime import timedelta
+from enum import Enum
 from pathlib import Path
 
 import httpx
@@ -65,10 +66,31 @@ _DESCRIPTIONS_LANG_CSV = "descriptions_{}.csv"
 _ITEMS_IDS = "items_ids.csv"
 _ITEMS_LANG_CSV = "items_{}.csv"
 _CATEGORY_VOICE_MP3 = "{}_{}.mp3"
+_VOICE_METADATA_COLUMNS = ("creation_method", "provider", "parameters")
 
 # Written into a category folder when it is archived, so restore_category() can rebuild
 # the root CSV registry rows that archive_category() deletes.
 _ARCHIVE_MANIFEST = "_category.json"
+
+
+class VoiceCreationMethod(str, Enum):
+    """Supported voice provenance values stored in metadata sidecars."""
+
+    UPLOADED = "uploaded"
+    GENERATED = "generated"
+
+
+class _GeneratedAudioBytes(bytes):
+    """Audio payload carrying the provider reported by the internal TTS API."""
+
+    provider: str
+    parameters: dict[str, object]
+
+    def __new__(cls, content: bytes, provider: str, parameters: dict[str, object]):
+        instance = super().__new__(cls, content)
+        instance.provider = provider
+        instance.parameters = parameters
+        return instance
 
 
 class FileSystemContentProvider(ContentProvider):
@@ -158,7 +180,56 @@ class FileSystemContentProvider(ContentProvider):
         )
         if response.is_error:
             raise RuntimeError(FileSystemContentProvider._extract_error_detail(response))
-        return response.content
+        encoded_parameters = response.headers.get("X-TTS-Parameters", "")
+        try:
+            parameters = json.loads(base64.urlsafe_b64decode(encoded_parameters).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            parameters = {}
+        if not isinstance(parameters, dict):
+            parameters = {}
+        return _GeneratedAudioBytes(
+            response.content,
+            response.headers.get("X-TTS-Provider", "unknown"),
+            parameters,
+        )
+
+    @staticmethod
+    def _voice_metadata_path(voice_path: Path) -> Path:
+        """Return the CSV sidecar path belonging to an MP3 voice file."""
+        return voice_path.with_suffix(".csv")
+
+    @classmethod
+    def _write_voice_metadata(
+            cls,
+            voice_path: Path,
+            creation_method: VoiceCreationMethod,
+            provider: str = "",
+            parameters: dict[str, object] | None = None,
+    ) -> None:
+        """Persist how a voice was created in a one-row CSV next to its MP3."""
+        metadata_path = cls._voice_metadata_path(voice_path)
+        with metadata_path.open("w", encoding="utf-8", newline="") as file_handle:
+            writer = csv.DictWriter(file_handle, fieldnames=_VOICE_METADATA_COLUMNS)
+            writer.writeheader()
+            writer.writerow({
+                "creation_method": creation_method.value,
+                "provider": provider,
+                "parameters": json.dumps(parameters or {}, ensure_ascii=False, sort_keys=True),
+            })
+
+    @classmethod
+    def _write_generated_voice_metadata(cls, voice_path: Path, audio_bytes: bytes) -> None:
+        cls._write_voice_metadata(
+            voice_path,
+            VoiceCreationMethod.GENERATED,
+            getattr(audio_bytes, "provider", "unknown"),
+            getattr(audio_bytes, "parameters", {}),
+        )
+
+    @classmethod
+    def _delete_voice_with_metadata(cls, voice_path: Path) -> None:
+        voice_path.unlink()
+        cls._voice_metadata_path(voice_path).unlink(missing_ok=True)
 
     @staticmethod
     def _generate_image(prompt: str, filename_text: str | None = None) -> tuple[bytes, str]:
@@ -773,6 +844,7 @@ class FileSystemContentProvider(ContentProvider):
                     voice_path = category_path / _CATEGORY_VOICE_MP3.format(category_name, lang)
                     with open(voice_path, "wb") as fh:
                         fh.write(audio_bytes)
+                    self._write_generated_voice_metadata(voice_path, audio_bytes)
                 except (ValueError, RuntimeError, httpx.HTTPError) as exc:
                     raise ContentOperationError(f"TTS failed for {lang}: {exc}") from exc
                 except OSError as exc:
@@ -840,7 +912,9 @@ class FileSystemContentProvider(ContentProvider):
             word = words_by_lang.get(lang) or words_by_lang["en"]
             try:
                 audio_bytes = self._generate_audio(word, lang)
-                self._item_voice_path(item_path, folder_name, lang).write_bytes(audio_bytes)
+                voice_path = self._item_voice_path(item_path, folder_name, lang)
+                voice_path.write_bytes(audio_bytes)
+                self._write_generated_voice_metadata(voice_path, audio_bytes)
             except (ValueError, RuntimeError, httpx.HTTPError) as exc:
                 warnings.append(f"Voice generation failed for {lang}: {exc}")
                 if "no active text to speech" in str(exc).lower():
@@ -1099,6 +1173,7 @@ class FileSystemContentProvider(ContentProvider):
         try:
             with open(voice_path, "wb") as fh:
                 fh.write(audio_data)
+            self._write_voice_metadata(voice_path, VoiceCreationMethod.UPLOADED)
         except OSError as exc:
             raise ContentOperationError(f"Failed to save category voice: {exc}") from exc
 
@@ -1123,6 +1198,7 @@ class FileSystemContentProvider(ContentProvider):
         try:
             with open(voice_path, "wb") as fh:
                 fh.write(audio_data)
+            self._write_voice_metadata(voice_path, VoiceCreationMethod.UPLOADED)
         except OSError as exc:
             raise ContentOperationError(f"Failed to update category voice: {exc}") from exc
 
@@ -1146,7 +1222,7 @@ class FileSystemContentProvider(ContentProvider):
         file_uri = f"/content/{category_name}/{voice_path.name}"
 
         try:
-            voice_path.unlink()
+            self._delete_voice_with_metadata(voice_path)
         except OSError as exc:
             raise ContentOperationError(f"Failed to delete category voice: {exc}") from exc
 
@@ -1245,7 +1321,11 @@ class FileSystemContentProvider(ContentProvider):
         for lang in settings.SUPPORTED_LANGUAGES:
             old_voice = category_path / _CATEGORY_VOICE_MP3.format(old_name, lang)
             if old_voice.is_file():
-                old_voice.rename(category_path / _CATEGORY_VOICE_MP3.format(new_name, lang))
+                new_voice = category_path / _CATEGORY_VOICE_MP3.format(new_name, lang)
+                old_voice.rename(new_voice)
+                old_metadata = FileSystemContentProvider._voice_metadata_path(old_voice)
+                if old_metadata.is_file():
+                    old_metadata.rename(FileSystemContentProvider._voice_metadata_path(new_voice))
 
         image_pattern = re.compile(r"^" + re.escape(old_name) + r"(_\d+)?\.(png|jpg|jpeg)$", re.IGNORECASE)
         for f in list(category_path.iterdir()):
@@ -1578,6 +1658,7 @@ class FileSystemContentProvider(ContentProvider):
         try:
             with open(voice_path, "wb") as fh:
                 fh.write(audio_data)
+            self._write_voice_metadata(voice_path, VoiceCreationMethod.UPLOADED)
         except OSError as exc:
             raise ContentOperationError(f"Failed to save item voice: {exc}") from exc
 
@@ -1603,6 +1684,7 @@ class FileSystemContentProvider(ContentProvider):
         try:
             with open(voice_path, "wb") as fh:
                 fh.write(audio_data)
+            self._write_voice_metadata(voice_path, VoiceCreationMethod.UPLOADED)
         except OSError as exc:
             raise ContentOperationError(f"Failed to update item voice: {exc}") from exc
 
@@ -1627,7 +1709,7 @@ class FileSystemContentProvider(ContentProvider):
         file_uri = f"/content/{category_name}/{item_folder_name}/{voice_path.name}"
 
         try:
-            voice_path.unlink()
+            self._delete_voice_with_metadata(voice_path)
         except OSError as exc:
             raise ContentOperationError(f"Failed to delete item voice: {exc}") from exc
 
@@ -1660,6 +1742,7 @@ class FileSystemContentProvider(ContentProvider):
         voice_path = found[1] if found else self._item_voice_path(item_path, item_folder_name, language)
         try:
             voice_path.write_bytes(audio_bytes)
+            self._write_generated_voice_metadata(voice_path, audio_bytes)
         except OSError as exc:
             raise ContentOperationError(f"Failed to save item voice: {exc}") from exc
 

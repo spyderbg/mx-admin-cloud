@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import base64
+import json
 from pathlib import Path
 from typing import Any
 
@@ -334,6 +336,14 @@ async def test_generate_word_success(client_active: AsyncClient) -> None:
     )
     assert response.status_code == 200
     assert response.headers["content-type"] == "audio/mpeg"
+    assert response.headers["x-tts-provider"] == "stub"
+    parameters = json.loads(base64.urlsafe_b64decode(response.headers["x-tts-parameters"]))
+    assert parameters == {
+        "enabled": True,
+        "model": "stub-model",
+        "output_format": "mp3",
+        "voice": "stub-voice",
+    }
     assert response.content == b"FAKEAUDIO"
 
 

@@ -4,6 +4,9 @@
 
 from __future__ import annotations
 
+import base64
+import csv
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -1207,6 +1210,11 @@ def _csv_rows(path: Path) -> list[str]:
     return FileSystemContentProvider._read_csv_column(path)
 
 
+def _voice_metadata(path: Path) -> dict[str, str]:
+    with path.open(encoding="utf-8", newline="") as file_handle:
+        return next(csv.DictReader(file_handle))
+
+
 def test_create_item_success_with_image(tmp_path: Path) -> None:
     content_root, category_path = _prepare_category(tmp_path)
     provider = _make_fs_provider()
@@ -1229,6 +1237,11 @@ def test_create_item_success_with_image(tmp_path: Path) -> None:
     assert (item_path / "apple_01.png").read_bytes() == b"\x89PNG"
     assert (item_path / "apple_en.mp3").exists()
     assert (item_path / "apple_fr.mp3").exists()
+    assert _voice_metadata(item_path / "apple_en.csv") == {
+        "creation_method": "generated",
+        "provider": "unknown",
+        "parameters": "{}",
+    }
     assert _csv_rows(category_path / "items_ids.csv") == ["I_Apple"]
     assert _csv_rows(category_path / "items_en.csv") == ["apple"]
     assert _csv_rows(category_path / "items_fr.csv") == ["apple-fr"]
@@ -1594,6 +1607,53 @@ def test_regenerate_item_voice_wraps_tts_failure(tmp_path: Path) -> None:
         mock_settings.SUPPORTED_LANGUAGES = ["en"]
         with pytest.raises(ContentOperationError, match="Voice generation failed for en: boom"):
             provider.regenerate_item_voice("C_Foods", "I_Apple", "apple-v-en")
+
+
+def test_item_voice_sidecar_tracks_upload_generation_provider_and_deletion(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    category_path = content_root / "foods"
+    _write_category_registry(content_root, [("C_Foods", "Foods")])
+    _write_item_registry(category_path, [("I_Apple", "apple")])
+    provider = _make_fs_provider()
+
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        provider.add_item_voice("C_Foods", "I_Apple", "en", b"uploaded audio")
+
+        metadata_path = category_path / "apple" / "apple_en.csv"
+        assert _voice_metadata(metadata_path) == {
+            "creation_method": "uploaded",
+            "provider": "",
+            "parameters": "{}",
+        }
+
+        parameters = {"actor": "alloy", "model": "tts-1-hd", "output_format": "mp3"}
+        response = httpx.Response(
+            200,
+            content=b"generated audio",
+            headers={
+                "X-TTS-Provider": "openai",
+                "X-TTS-Parameters": base64.urlsafe_b64encode(
+                    json.dumps(parameters).encode("utf-8"),
+                ).decode("ascii"),
+            },
+            request=httpx.Request("POST", "http://test/internal/generators/generate-word"),
+        )
+        with (
+            patch("src.services.content.providers.file_system.httpx.post", return_value=response),
+            patch("src.services.content.providers.file_system.create_internal_token", return_value="token"),
+        ):
+            provider.regenerate_item_voice("C_Foods", "I_Apple", "apple-v-en")
+
+        assert _voice_metadata(metadata_path) == {
+            "creation_method": "generated",
+            "provider": "openai",
+            "parameters": json.dumps(parameters, sort_keys=True),
+        }
+        provider.delete_item_voice("C_Foods", "I_Apple", "apple-v-en")
+
+    assert not metadata_path.exists()
 
 
 # ---------------------------------------------------------------------------
