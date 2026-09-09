@@ -1,0 +1,45 @@
+{
+  "service_provider": {
+    "service": "text_to_image",
+    "provider": "openai",
+    "enabled": true,
+    "priority": 1,
+    "version": "1.0",
+    "config": {
+      "generate": {
+        "model": "gpt-image-1-mini",
+        "size": "1024x1024",
+        "quality": "low",
+        "prompt_prefix": "",
+        "prompt_suffix": ""
+      },
+      "traffic": {
+        "max_concurrency": 2,
+        "min_interval_seconds": 0.5,
+        "max_retries": 2,
+        "backoff_base_seconds": 2.0,
+        "backoff_max_seconds": 30.0,
+        "timeout_seconds": 120.0
+      },
+      "pricing": {
+        "gpt-image-1-mini": {
+          "1024x1024|low": 0.005,
+          "1024x1024|medium": 0.011,
+          "1024x1024|high": 0.036,
+          "default": 0.011
+        },
+        "gpt-image-1": {
+          "1024x1024|low": 0.011,
+          "1024x1024|medium": 0.042,
+          "1024x1024|high": 0.167,
+          "default": 0.042
+        },
+        "dall-e-3": {
+          "1024x1024|standard": 0.04,
+          "1024x1024|hd": 0.08,
+          "default": 0.04
+        }
+      }
+    }
+  }
+}

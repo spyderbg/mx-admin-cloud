@@ -27,6 +27,7 @@ from src.services.evaluation import routes as evaluators_routes
 from src.services.logging import routes as logging_routes
 from src.services.logging.service import LoggingService
 from src.services.service_registry import ServiceRegistry, ServiceRegistryBuilder
+from src.services.text_to_image import routes as text_to_image_routes
 from src.services.text_to_speech import routes as text_to_speech_routes
 from src.services.text_translation import routes as text_translation_routes
 from src.services.voice_optimization import routes as optimizers_routes
@@ -121,6 +122,7 @@ app.include_router(content_routes.router)
 app.include_router(configuration_routes.router)
 app.include_router(text_translation_routes.router)
 app.include_router(text_to_speech_routes.router)
+app.include_router(text_to_image_routes.router)
 app.include_router(optimizers_routes.router)
 app.include_router(evaluators_routes.router)
 

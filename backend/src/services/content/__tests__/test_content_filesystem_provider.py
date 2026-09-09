@@ -18,7 +18,10 @@ from src.services.content.models import (
     InvalidCategoryNameError,
 )
 from src.core.localization import LocalizedString
-from src.services.content.providers.file_system import FileSystemContentProvider
+from src.services.content.providers.file_system import (
+    FileSystemContentProvider,
+    _extension_for_content_type,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -429,7 +432,7 @@ def test_create_category_success(tmp_path: Path) -> None:
         patch("src.services.content.providers.file_system.settings") as mock_settings,
         patch.object(FileSystemContentProvider, "_translate_word", return_value="translated"),
         patch.object(FileSystemContentProvider, "_generate_audio", return_value=b"audio"),
-        patch.object(FileSystemContentProvider, "_generate_icon", return_value=b"icon"),
+        patch.object(FileSystemContentProvider, "_generate_image", return_value=(b"icon", ".png")),
     ):
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
@@ -442,6 +445,50 @@ def test_create_category_success(tmp_path: Path) -> None:
     assert (content_root / "animals" / "animals.png").exists()
 
 
+def test_create_category_icon_failure_rolls_back(tmp_path: Path) -> None:
+    """A failing image service must leave no partially created category behind."""
+    content_root = tmp_path / "content"
+    content_root.mkdir()
+
+    provider = _make_fs_provider()
+    with (
+        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch.object(FileSystemContentProvider, "_translate_word", return_value="translated"),
+        patch.object(FileSystemContentProvider, "_generate_audio", return_value=b"audio"),
+        patch.object(
+            FileSystemContentProvider,
+            "_generate_image",
+            side_effect=RuntimeError("No active text to image services configured."),
+        ),
+    ):
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        with pytest.raises(ContentOperationError, match="Icon generation failed"):
+            provider.create_category("animals")
+
+    assert not (content_root / "animals").exists()
+
+
+def test_create_category_writes_jpeg_icon_when_provider_returns_jpeg(tmp_path: Path) -> None:
+    """The icon extension follows the image service's response content type."""
+    content_root = tmp_path / "content"
+    content_root.mkdir()
+
+    provider = _make_fs_provider()
+    with (
+        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch.object(FileSystemContentProvider, "_translate_word", return_value="translated"),
+        patch.object(FileSystemContentProvider, "_generate_audio", return_value=b"audio"),
+        patch.object(FileSystemContentProvider, "_generate_image", return_value=(b"icon", ".jpg")),
+    ):
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        provider.create_category("animals")
+
+    assert (content_root / "animals" / "animals.jpg").exists()
+    assert not (content_root / "animals" / "animals.png").exists()
+
+
 def test_create_category_normalizes_name_to_snake_case(tmp_path: Path) -> None:
     """Folders must be lowercase snake_case or _folder_name_from_category_id() can't find them back."""
     content_root = tmp_path / "content"
@@ -452,7 +499,7 @@ def test_create_category_normalizes_name_to_snake_case(tmp_path: Path) -> None:
         patch("src.services.content.providers.file_system.settings") as mock_settings,
         patch.object(FileSystemContentProvider, "_translate_word", return_value="translated"),
         patch.object(FileSystemContentProvider, "_generate_audio", return_value=b"audio"),
-        patch.object(FileSystemContentProvider, "_generate_icon", return_value=b"icon"),
+        patch.object(FileSystemContentProvider, "_generate_image", return_value=(b"icon", ".png")),
     ):
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en"]
@@ -490,7 +537,7 @@ def test_create_category_translation_failure(tmp_path: Path) -> None:
             side_effect=httpx.HTTPError("conn failed"),
         ),
         patch.object(FileSystemContentProvider, "_generate_audio", return_value=b"audio"),
-        patch.object(FileSystemContentProvider, "_generate_icon", return_value=b"icon"),
+        patch.object(FileSystemContentProvider, "_generate_image", return_value=(b"icon", ".png")),
     ):
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
@@ -837,7 +884,7 @@ def test_remove_then_create_same_category_leaves_one_registry_row(tmp_path: Path
         patch("src.services.content.providers.file_system.settings") as mock_settings,
         patch.object(FileSystemContentProvider, "_translate_word", return_value="translated"),
         patch.object(FileSystemContentProvider, "_generate_audio", return_value=b"audio"),
-        patch.object(FileSystemContentProvider, "_generate_icon", return_value=b"icon"),
+        patch.object(FileSystemContentProvider, "_generate_image", return_value=(b"icon", ".png")),
     ):
         mock_settings.content_path = content_root
         mock_settings.ARCHIVE_DIR = ""
@@ -1587,3 +1634,12 @@ def test_remove_item_deletes_folder_and_csv_rows(tmp_path: Path) -> None:
     assert (category_path / "items_ids.csv").read_text(encoding="utf-8") == "I_Banana\n"
     assert (category_path / "items_en.csv").read_text(encoding="utf-8") == "banana\n"
     assert (category_path / "items_fr.csv").read_text(encoding="utf-8") == "banane\n"
+
+
+def test_extension_for_content_type_maps_supported_types() -> None:
+    """Only extensions the icon lookup understands may be produced."""
+    assert _extension_for_content_type("image/png") == ".png"
+    assert _extension_for_content_type("image/jpeg") == ".jpg"
+    assert _extension_for_content_type("image/jpeg; charset=binary") == ".jpg"
+    assert _extension_for_content_type("image/webp") == ".png"
+    assert _extension_for_content_type(None) == ".png"

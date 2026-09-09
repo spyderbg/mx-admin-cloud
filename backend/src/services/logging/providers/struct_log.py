@@ -48,6 +48,17 @@ _LEVEL_STYLES: dict[str, str] = {
     "FTL": "\033[1;35m",  # bold magenta
 }
 
+# Extra request-log fields emitted by image generation (see LogProviderRequest).
+_EXTRA_REQUEST_FIELDS: tuple[str, ...] = (
+    "request_kind",
+    "size",
+    "quality",
+    "cost_estimate",
+    "status",
+    "error",
+    "attempts",
+)
+
 _DEFAULT_REQUEST_FIELDS: dict[str, bool] = {
     "provider": True,
     "translator": True,
@@ -58,6 +69,7 @@ _DEFAULT_REQUEST_FIELDS: dict[str, bool] = {
     "input": True,
     "response_duration": True,
     "timestamp": True,
+    **{name: True for name in _EXTRA_REQUEST_FIELDS},
 }
 
 
@@ -254,7 +266,19 @@ class StructLogProvider(LoggingServiceProvider):
             input_data=raw.get("input_data"),
             response_duration=raw.get("response_duration"),
         )
+        self._apply_extra_fields(payload, raw)
         return payload
+
+    def _apply_extra_fields(self, payload: dict[str, Any], raw: dict[str, Any]) -> None:
+        """Copy the optional image-generation fields when present and enabled."""
+        for name in _EXTRA_REQUEST_FIELDS:
+            value = raw.get(name)
+            if value is None or not self._field_enabled(name):
+                continue
+            if name == "cost_estimate":
+                payload[name] = round(float(value), 6)
+            else:
+                payload[name] = value
 
     # ------------------------------------------------------------------
     # Internal helpers — request logging

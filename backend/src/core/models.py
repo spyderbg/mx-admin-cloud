@@ -45,6 +45,28 @@ class GeneratedAudio:
 
 
 @dataclass(slots=True)
+class GeneratedImage:  # pylint: disable=too-many-instance-attributes
+    """Result of a single image generation attempt by one provider."""
+
+    provider: str  # provider that produced this image
+    request_id: str  # matching ImageRequest.request_id
+    prompt: str  # prompt sent to the provider
+    filename_text: str  # sanitized text for the output filename
+    output_format: str  # requested image format, e.g. "png"
+    raw_path: Path  # path to the generated image file
+    raw_extension: str  # actual file extension written (png/jpg/webp)
+    latency_seconds: float  # wall-clock generation time
+    success: bool  # whether generation succeeded
+    model: str | None = None  # provider model identifier
+    width: int | None = None  # image width in pixels (when known)
+    height: int | None = None  # image height in pixels (when known)
+    cost_estimate: float | None = None  # estimated USD cost, None when unpriced
+    attempts: int = 1  # number of provider attempts made (retries included)
+    error: str | None = None  # error message on failure
+    language_code: str | None = None  # optional language context for logging
+
+
+@dataclass(slots=True)
 class EvaluationResult:
     """Scoring result from comparing generated audio against expected text."""
 

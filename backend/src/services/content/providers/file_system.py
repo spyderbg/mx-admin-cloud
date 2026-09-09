@@ -6,7 +6,6 @@ local filesystem, delegates translation and TTS to internal HTTP endpoints.
 
 from __future__ import annotations
 
-import base64
 import csv
 import json
 import re
@@ -16,7 +15,6 @@ from datetime import timedelta
 from pathlib import Path
 
 import httpx
-from openai import OpenAI, OpenAIError
 
 from src.core.config import settings
 from src.core.localization import LocalizedString
@@ -51,6 +49,14 @@ from src.services.content.service import ContentProviderFactory
 _IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg")
 
 _SAFE_NAME_RE = re.compile(r"^[a-zA-Z0-9_]+$")
+
+
+def _extension_for_content_type(content_type: str | None) -> str:
+    """Map an image response content type onto a supported file extension."""
+    if content_type and content_type.split(";", 1)[0].strip().lower() in ("image/jpeg", "image/jpg"):
+        return ".jpg"
+    return ".png"
+
 
 # --- File name constants ---
 _CATEGORIES_IDS = "categories_ids.csv"
@@ -155,26 +161,27 @@ class FileSystemContentProvider(ContentProvider):
         return response.content
 
     @staticmethod
-    def _generate_icon(prompt: str) -> bytes:
-        """Generate a child-friendly icon via the OpenAI Images API."""
+    def _generate_image(prompt: str, filename_text: str | None = None) -> tuple[bytes, str]:
+        """Generate an image via the internal /internal/image-generators/generate-image endpoint.
+
+        Returns the raw bytes plus the file extension implied by the response
+        content type, so whichever image provider is active (and however it
+        encodes the result) decides the format.
+        """
         if not prompt or not prompt.strip():
-            raise ValueError("Prompt must be non-empty for icon generation.")
+            raise ValueError("Prompt must be non-empty for image generation.")
 
-        if not settings.OPENAI_API_KEY:
-            raise ValueError("OPENAI_API_KEY is not set; cannot call Images API.")
-
-        client = OpenAI(api_key=settings.OPENAI_API_KEY)
-        response = client.images.generate(
-            model="gpt-image-1-mini",
-            prompt=prompt.strip(),
-            size="1024x1024",
-            quality="low",
-            n=1,
+        token = create_internal_token("image-service", timedelta(seconds=30))
+        response = httpx.post(
+            f"{settings.API_BASE_URL}/internal/image-generators/generate-image",
+            json={"prompt": prompt.strip(), "filename_text": filename_text},
+            headers={"Authorization": f"Bearer {token}"},
+            # Local render backends (e.g. ComfyUI) can legitimately take minutes.
+            timeout=httpx.Timeout(600.0, connect=10.0),
         )
-        b64_data = response.data[0].b64_json
-        if not b64_data:
-            raise ValueError("No image data returned from Images API.")
-        return base64.b64decode(b64_data)
+        if response.is_error:
+            raise RuntimeError(FileSystemContentProvider._extract_error_detail(response))
+        return response.content, _extension_for_content_type(response.headers.get("content-type"))
 
     # ------------------------------------------------------------------
     # Filesystem utilities
@@ -773,11 +780,10 @@ class FileSystemContentProvider(ContentProvider):
 
             try:
                 prompt = self._category_name_to_icon_prompt(category_name)
-                icon_bytes = self._generate_icon(prompt)
-                icon_path = category_path / f"{category_name}.png"
-                with open(icon_path, "wb") as fh:
+                icon_bytes, icon_extension = self._generate_image(prompt, category_name)
+                with open(category_path / f"{category_name}{icon_extension}", "wb") as fh:
                     fh.write(icon_bytes)
-            except (ValueError, RuntimeError, OpenAIError) as exc:
+            except (ValueError, RuntimeError, httpx.HTTPError) as exc:
                 raise ContentOperationError(f"Icon generation failed: {exc}") from exc
             except OSError as exc:
                 raise ContentOperationError(f"Icon file write failed: {exc}") from exc
