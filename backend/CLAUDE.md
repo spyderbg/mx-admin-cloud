@@ -56,8 +56,10 @@ docker compose -f docker/docker-compose.yml up -d --build
 - **`services/`** — Business logic implementations (providers, translators, optimizers, evaluation)
   - `service_registry.py` — Unified registry and builder for all runtime services
   - `configuration/` — Runtime configuration service (merges disk JSON with runtime updates)
-  - `content/` — Content management service (categories, items, filesystem, DALL-E icons)
+  - `content/` — Content management service (categories, items, filesystem, generated icons)
   - `text_to_speech/` — TTS provider implementations (OpenAI, ElevenLabs, Speaktor, Static)
+  - `text_to_image/` — Image provider implementations (OpenAI SDK/HTTP, Google GenAI SDK/HTTP,
+    ComfyUI) with a shared traffic governor (concurrency, spacing, retries) and cost estimates
   - `text_translation/` — Translator implementations (OpenAI, Static CSV)
   - `voice_optimization/` — Audio post-processing (FFmpeg, Pydub, Normalizer)
   - `evaluation/` — STT transcription and Levenshtein-based scoring
@@ -73,11 +75,15 @@ The pipeline is driven by JSON config files in `backend/config/` and managed by 
 |-----------|---------|
 | `content/` | Content management provider (file_system) |
 | `text_to_speech/` | TTS providers (OpenAI, ElevenLabs, Speaktor, Static) |
+| `text_to_image/` | Image providers (OpenAI, OpenAI HTTP, GenAI, GenAI HTTP, ComfyUI) |
 | `text_translation/` | Translation configs (static CSV or OpenAI) |
 | `voice_optimizers/` | Audio post-processing (ffmpeg/pydub) |
 | `logging/` | Logging service provider config |
 
 Pipeline flow: `Input file (TXT/CSV/XLSX) → Translate → Generate audio → Optimize → Evaluate (STT scoring) → Write results`
+
+Image generation is a separate config-driven service under `/internal/image-generators/*`; the content
+service calls it for category icons, so icons follow whichever image provider is active.
 
 All pipeline steps call internal HTTP endpoints (`/internal/generators/{provider}/generate`,
 `/internal/evaluators/evaluate`, `/internal/optimizers/{optimizer}/optimize`) so that `core/` never
@@ -117,6 +123,8 @@ Set in `backend/.env` or repository root `.env`:
 OPENAI_API_KEY=
 ELEVENLABS_API_KEY=
 SPEAKTOR_API_KEY=
+GEMINI_API_KEY=         # Google GenAI image providers
+COMFYUI_API_KEY=        # only if your ComfyUI server sits behind an authenticating proxy
 
 # Security
 SECRET_KEY=             # JWT secret

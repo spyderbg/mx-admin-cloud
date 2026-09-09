@@ -15,6 +15,7 @@ import re
 from pathlib import Path
 
 BACKEND_SERVICES_DIR = Path(__file__).resolve().parent.parent / "backend" / "src" / "services"
+BACKEND_SRC_DIR = BACKEND_SERVICES_DIR.parent
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "frontend" / "src" / "types"
 
 def snake_to_camel(name: str) -> str:
@@ -180,6 +181,49 @@ def _extract_enum_members(body: list[ast.stmt]) -> list[tuple[str, str]]:
     return members
 
 
+def _module_path(module: str) -> Path | None:
+    """Resolve a dotted ``src.*`` module name onto its file, when it exists."""
+    if not module.startswith("src."):
+        return None
+    candidate = BACKEND_SRC_DIR.joinpath(*module.split(".")[1:]).with_suffix(".py")
+    return candidate if candidate.is_file() else None
+
+
+def _imported_enums(tree: ast.AST) -> dict[str, dict]:
+    """Return enum definitions imported by a schemas module.
+
+    Enums are frequently declared in a service's ``models.py`` and merely
+    imported into ``schemas.py`` (e.g. ``LogLevel``). Without this, the emitted
+    TypeScript references a type it never declares.
+    """
+    wanted: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            for alias in node.names:
+                if alias.asname is None:
+                    wanted[alias.name] = node.module
+
+    found: dict[str, dict] = {}
+    for name, module in wanted.items():
+        path = _module_path(module)
+        if path is None:
+            continue
+        try:
+            module_tree = ast.parse(path.read_text(encoding="utf-8"))
+        except (OSError, SyntaxError):
+            continue
+        for node in ast.walk(module_tree):
+            if not isinstance(node, ast.ClassDef) or node.name != name:
+                continue
+            bases = {b.id for b in node.bases if isinstance(b, ast.Name)}
+            if "Enum" not in bases:
+                continue
+            members = _extract_enum_members(node.body)
+            if members:
+                found[name] = {"name": name, "members": members, "doc": _get_docstring(node.body)}
+    return found
+
+
 # ---------------------------------------------------------------------------
 # Service discovery
 # ---------------------------------------------------------------------------
@@ -255,6 +299,11 @@ def _parse_schemas(source: str) -> tuple[dict, dict]:
         members = _extract_enum_members(node.body)
         enums[name] = {"name": name, "members": members, "doc": doc}
 
+    # Enums declared elsewhere (typically the service's models.py) still need a
+    # TypeScript declaration when a schema field references them.
+    external_enums = _imported_enums(tree)
+    enum_names |= set(external_enums)
+
     # Build model info
     for name in model_names:
         node = class_defs[name]
@@ -280,6 +329,11 @@ def _parse_schemas(source: str) -> tuple[dict, dict]:
                 fields.append((ts_name, ts_type, is_optional))
 
         models[name] = {"name": name, "parent": parent, "fields": fields, "doc": doc}
+
+    referenced = {ts_type for model in models.values() for _, ts_type, _ in model["fields"]}
+    for name, info in external_enums.items():
+        if any(name == part.strip() for value in referenced for part in re.split(r"[|\[\]<>, ]", value)):
+            enums[name] = info
 
     return models, enums
 

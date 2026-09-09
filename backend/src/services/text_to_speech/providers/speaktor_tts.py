@@ -10,6 +10,7 @@ See: https://developer.transkriptor.com/docs/text-to-speech-1
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import time
 from typing import Any
@@ -22,6 +23,16 @@ from src.services.text_to_speech.models import TTSProvider, TTSRequest
 from src.services.text_to_speech.service import TextToSpeechProviderFactory
 
 logger = logging.getLogger(__name__)
+
+
+def _requires_api_key(*templates: Any) -> bool:
+    """Return whether any template substitutes the ``{api_key}`` placeholder.
+
+    Endpoint, headers, and body are all config-driven, so a Speaktor-compatible
+    endpoint may need no credentials at all. Only demand a key when the config
+    actually asks for one.
+    """
+    return any("{api_key}" in json.dumps(template, default=str) for template in templates)
 
 
 def _render_template(value: Any, context: dict[str, str]) -> Any:
@@ -42,6 +53,18 @@ class SpeaktorTTSProvider(TTSProvider):
     def register(cls) -> None:
         """Register this provider under the key ``"speaktor"`` in the ProviderFactory."""
         TextToSpeechProviderFactory.register("speaktor", cls)
+
+    def _resolve_credentials(self, *templates: Any) -> str:
+        """Return the API key, failing with the configuration cause when it is required but unset.
+
+        An empty key would otherwise render as a header like ``"Bearer "`` whose
+        trailing space the HTTP layer rejects as an illegal header value, hiding
+        the real cause behind a protocol error.
+        """
+        api_key = self.resolve_api_key()
+        if not api_key and _requires_api_key(*templates):
+            raise RuntimeError(f"{self.api_key_env_name()} is not set.")
+        return api_key
 
     async def generate(self, request: TTSRequest, client: Any) -> GeneratedAudio:
         """Call the Speaktor TTS endpoint, download the audio URL, and write it to disk."""
@@ -69,7 +92,6 @@ class SpeaktorTTSProvider(TTSProvider):
                 error=f"No voice_name configured for language '{request.language_code}'",
             )
 
-        api_key = self.resolve_api_key()
         endpoint = str(gen.get("endpoint", "")).strip()
         if not endpoint:
             raise RuntimeError("Speaktor config requires `endpoint` in the generate section.")
@@ -77,6 +99,8 @@ class SpeaktorTTSProvider(TTSProvider):
         method = str(gen.get("method", "POST")).upper()
         headers_template = gen.get("headers", {})
         payload_template = gen.get("payload_template", {})
+
+        api_key = self._resolve_credentials(endpoint, headers_template, payload_template)
         response_mode = str(gen.get("response_mode", "json_url")).lower()
         audio_field = str(gen.get("audio_field", "audioUrl"))
 

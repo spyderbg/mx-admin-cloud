@@ -69,6 +69,8 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str | None = None
     ELEVENLABS_API_KEY: str | None = None
     SPEAKTOR_API_KEY: str | None = None
+    GEMINI_API_KEY: str | None = None
+    COMFYUI_API_KEY: str | None = None
 
     # TTS pipeline settings
     TTS_MAX_CONCURRENCY: int = 5
@@ -120,6 +122,10 @@ class Settings(BaseSettings):
     def raw_output_dir(self, language_code: str, provider: str) -> Path:
         """Get the raw output directory."""
         return self.output_path / f"tts_audio_{language_code}" / provider
+
+    def images_output_dir(self, provider: str) -> Path:
+        """Get the generated-images output directory for *provider*."""
+        return self.output_path / "images" / provider
 
     def optimized_output_dir(self, optimizer_name: str, language_code: str, provider: str) -> Path:
         """Get the optimized output directory."""

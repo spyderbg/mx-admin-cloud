@@ -1,0 +1,38 @@
+{
+  "service_provider": {
+    "service": "text_to_image",
+    "provider": "comfyui",
+    "enabled": false,
+    "priority": 5,
+    "version": "1.0",
+    "config": {
+      "generate": {
+        "base_url": "http://127.0.0.1:8188",
+        "workflow_file": "workflows/default_txt2img.json",
+        "checkpoint": "v1-5-pruned-emaonly.safetensors",
+        "size": "1024x1024",
+        "width": 1024,
+        "height": 1024,
+        "steps": 20,
+        "cfg": 7.0,
+        "seed": null,
+        "negative_prompt": "text, watermark, blurry, deformed, low quality",
+        "filename_prefix": "kiddo",
+        "headers": {},
+        "poll_interval_seconds": 2,
+        "poll_max_attempts": 150,
+        "prompt_prefix": "",
+        "prompt_suffix": ""
+      },
+      "traffic": {
+        "max_concurrency": 1,
+        "min_interval_seconds": 0,
+        "max_retries": 1,
+        "backoff_base_seconds": 5.0,
+        "backoff_max_seconds": 30.0,
+        "timeout_seconds": 600.0
+      },
+      "cost_per_image": 0.0
+    }
+  }
+}
