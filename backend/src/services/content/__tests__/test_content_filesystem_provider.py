@@ -1240,7 +1240,7 @@ def test_create_item_success_with_image(tmp_path: Path) -> None:
     assert _voice_metadata(item_path / "apple_en.csv") == {
         "creation_method": "generated",
         "provider": "unknown",
-        "parameters": "{}",
+        "parameters": '{"text": "apple"}',
     }
     assert _csv_rows(category_path / "items_ids.csv") == ["I_Apple"]
     assert _csv_rows(category_path / "items_en.csv") == ["apple"]
@@ -1649,7 +1649,7 @@ def test_item_voice_sidecar_tracks_upload_generation_provider_and_deletion(tmp_p
         assert _voice_metadata(metadata_path) == {
             "creation_method": "generated",
             "provider": "openai",
-            "parameters": json.dumps(parameters, sort_keys=True),
+            "parameters": json.dumps({**parameters, "text": "apple"}, sort_keys=True),
         }
         provider.delete_item_voice("C_Foods", "I_Apple", "apple-v-en")
 

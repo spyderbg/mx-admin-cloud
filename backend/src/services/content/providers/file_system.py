@@ -6,6 +6,7 @@ local filesystem, delegates translation and TTS to internal HTTP endpoints.
 
 from __future__ import annotations
 
+import base64
 import csv
 import json
 import re
@@ -218,12 +219,20 @@ class FileSystemContentProvider(ContentProvider):
             })
 
     @classmethod
-    def _write_generated_voice_metadata(cls, voice_path: Path, audio_bytes: bytes) -> None:
+    def _write_generated_voice_metadata(
+            cls,
+            voice_path: Path,
+            audio_bytes: bytes,
+            text: str,
+    ) -> None:
+        """Persist generated-voice settings together with the synthesized text."""
+        parameters = dict(getattr(audio_bytes, "parameters", {}))
+        parameters["_text"] = text.strip()
         cls._write_voice_metadata(
             voice_path,
             VoiceCreationMethod.GENERATED,
             getattr(audio_bytes, "provider", "unknown"),
-            getattr(audio_bytes, "parameters", {}),
+            parameters,
         )
 
     @classmethod
@@ -844,7 +853,7 @@ class FileSystemContentProvider(ContentProvider):
                     voice_path = category_path / _CATEGORY_VOICE_MP3.format(category_name, lang)
                     with open(voice_path, "wb") as fh:
                         fh.write(audio_bytes)
-                    self._write_generated_voice_metadata(voice_path, audio_bytes)
+                    self._write_generated_voice_metadata(voice_path, audio_bytes, label)
                 except (ValueError, RuntimeError, httpx.HTTPError) as exc:
                     raise ContentOperationError(f"TTS failed for {lang}: {exc}") from exc
                 except OSError as exc:
@@ -914,7 +923,7 @@ class FileSystemContentProvider(ContentProvider):
                 audio_bytes = self._generate_audio(word, lang)
                 voice_path = self._item_voice_path(item_path, folder_name, lang)
                 voice_path.write_bytes(audio_bytes)
-                self._write_generated_voice_metadata(voice_path, audio_bytes)
+                self._write_generated_voice_metadata(voice_path, audio_bytes, word)
             except (ValueError, RuntimeError, httpx.HTTPError) as exc:
                 warnings.append(f"Voice generation failed for {lang}: {exc}")
                 if "no active text to speech" in str(exc).lower():
@@ -1742,7 +1751,7 @@ class FileSystemContentProvider(ContentProvider):
         voice_path = found[1] if found else self._item_voice_path(item_path, item_folder_name, language)
         try:
             voice_path.write_bytes(audio_bytes)
-            self._write_generated_voice_metadata(voice_path, audio_bytes)
+            self._write_generated_voice_metadata(voice_path, audio_bytes, word)
         except OSError as exc:
             raise ContentOperationError(f"Failed to save item voice: {exc}") from exc
 
