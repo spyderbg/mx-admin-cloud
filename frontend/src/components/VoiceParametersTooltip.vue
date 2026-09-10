@@ -38,8 +38,8 @@ const entries = computed<[string, string][]>(() =>
   bottom: calc(100% + 8px);
   left: 50%;
   transform: translateX(-50%);
-  min-width: 160px;
-  max-width: 280px;
+  min-width: 240px;
+  max-width: 420px;
   border: 1.5px solid #b8d4f0;
   border-radius: 10px;
   background: #f8fbff;
