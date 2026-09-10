@@ -1,6 +1,15 @@
 <template>
   <div class="voice-cards-grid">
-    <div v-for="voice in voices" :key="voice.id" class="voice-card">
+    <div
+      v-for="voice in voices"
+      :key="voice.id"
+      class="voice-card"
+      :class="{ 'voice-card-drop-active': dragOverVoiceId === voice.id }"
+      @dragenter.prevent="onVoiceDragEnter(voice)"
+      @dragover.prevent="onVoiceDragOver(voice)"
+      @dragleave.prevent="onVoiceDragLeave($event, voice)"
+      @drop.prevent="onVoiceDrop($event, voice)"
+    >
       <div class="voice-card-top-actions">
         <button
           v-for="action in extraActions"
@@ -253,6 +262,31 @@ function onFileSelected(e: Event): void {
   void props.uploadVoice(voice, file, !props.hasAudio(voice))
 }
 
+const dragOverVoiceId = ref<string | null>(null)
+
+function onVoiceDragEnter(voice: Voice): void {
+  dragOverVoiceId.value = voice.id
+}
+
+function onVoiceDragOver(voice: Voice): void {
+  dragOverVoiceId.value = voice.id
+}
+
+function onVoiceDragLeave(event: DragEvent, voice: Voice): void {
+  if (dragOverVoiceId.value !== voice.id) return
+  const dropTarget = event.currentTarget
+  if (!(dropTarget instanceof HTMLElement) || !dropTarget.contains(event.relatedTarget as Node | null)) {
+    dragOverVoiceId.value = null
+  }
+}
+
+function onVoiceDrop(event: DragEvent, voice: Voice): void {
+  dragOverVoiceId.value = null
+  const file = Array.from(event.dataTransfer?.files ?? []).find((entry) => entry.type.startsWith('audio/'))
+  if (!file) return
+  void props.uploadVoice(voice, file, !props.hasAudio(voice))
+}
+
 const showDeleteConfirm = ref(false)
 const deleteTarget = ref<Voice | null>(null)
 
@@ -317,6 +351,11 @@ function confirmRename(): void {
   flex-direction: column;
   align-items: center;
   justify-content: space-between;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+.voice-card-drop-active {
+  border-color: #2563eb;
+  background: #dbeafe;
 }
 .voice-card-top-actions {
   position: absolute;

@@ -7,6 +7,7 @@ from __future__ import annotations
 import base64
 import csv
 import json
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -1216,6 +1217,21 @@ def _voice_metadata(path: Path) -> dict[str, str]:
         return next(csv.DictReader(file_handle))
 
 
+def _without_date(parameters: dict[str, object]) -> dict[str, object]:
+    """Assert a 'date' stamp is present and ISO-formatted, then strip it for comparison."""
+    assert "date" in parameters
+    datetime.fromisoformat(str(parameters["date"]))
+    return {k: v for k, v in parameters.items() if k != "date"}
+
+
+def _voice_metadata_normalized(path: Path) -> dict[str, object]:
+    """Like _voice_metadata(), but with 'parameters' parsed and its 'date' stamp
+    replaced by a presence check, so callers can assert the rest exactly."""
+    row = _voice_metadata(path)
+    parameters = json.loads(row["parameters"])
+    return {**row, "parameters": _without_date(parameters)}
+
+
 def test_create_item_success_with_image(tmp_path: Path) -> None:
     content_root, category_path = _prepare_category(tmp_path)
     provider = _make_fs_provider()
@@ -1238,10 +1254,10 @@ def test_create_item_success_with_image(tmp_path: Path) -> None:
     assert (item_path / "apple_01.png").read_bytes() == b"\x89PNG"
     assert (item_path / "apple_en.mp3").exists()
     assert (item_path / "apple_fr.mp3").exists()
-    assert _voice_metadata(item_path / "apple_en.csv") == {
+    assert _voice_metadata_normalized(item_path / "apple_en.csv") == {
         "creation_method": "generated",
         "provider": "unknown",
-        "parameters": '{"text": "apple"}',
+        "parameters": {"_text": "apple"},
     }
     assert _csv_rows(category_path / "items_ids.csv") == ["I_Apple"]
     assert _csv_rows(category_path / "items_en.csv") == ["apple"]
@@ -1623,10 +1639,10 @@ def test_item_voice_sidecar_tracks_upload_generation_provider_and_deletion(tmp_p
         provider.add_item_voice("C_Foods", "I_Apple", "en", b"uploaded audio")
 
         metadata_path = category_path / "apple" / "apple_en.csv"
-        assert _voice_metadata(metadata_path) == {
+        assert _voice_metadata_normalized(metadata_path) == {
             "creation_method": "uploaded",
-            "provider": "",
-            "parameters": "{}",
+            "provider": "custom",
+            "parameters": {},
         }
 
         parameters = {"actor": "alloy", "model": "tts-1-hd", "output_format": "mp3"}
@@ -1647,10 +1663,10 @@ def test_item_voice_sidecar_tracks_upload_generation_provider_and_deletion(tmp_p
         ):
             provider.regenerate_item_voice("C_Foods", "I_Apple", "apple-v-en")
 
-        assert _voice_metadata(metadata_path) == {
+        assert _voice_metadata_normalized(metadata_path) == {
             "creation_method": "generated",
             "provider": "openai",
-            "parameters": json.dumps({**parameters, "text": "apple"}, sort_keys=True),
+            "parameters": {**parameters, "_text": "apple"},
         }
         provider.delete_item_voice("C_Foods", "I_Apple", "apple-v-en")
 
@@ -1699,7 +1715,7 @@ def test_regenerate_category_voice_uses_current_name_and_overwrites_file(tmp_pat
     assert (category_path / "foods_fr.mp3").read_bytes() == b"fresh"
     # _generate_audio is mocked to return plain bytes, so no provider/parameters attrs are carried.
     assert result.provider == "unknown"
-    assert result.parameters == {"_text": "Aliments"}
+    assert _without_date(result.parameters) == {"_text": "Aliments"}
 
 
 def test_regenerate_category_voice_creates_missing_file_and_falls_back_to_english(tmp_path: Path) -> None:
@@ -1768,7 +1784,9 @@ def test_read_voice_metadata_reads_provider_and_parameters(tmp_path: Path) -> No
     )
 
     provider = _make_fs_provider()
-    assert provider._read_voice_metadata(voice_path) == ("openai", {"actor": "alloy"})
+    read_provider, parameters = provider._read_voice_metadata(voice_path)
+    assert read_provider == "openai"
+    assert _without_date(parameters) == {"actor": "alloy"}
 
 
 def test_read_voice_metadata_blank_provider_and_invalid_json_fall_back_to_defaults(tmp_path: Path) -> None:
@@ -1798,13 +1816,13 @@ def test_collect_voices_surfaces_provider_and_parameters(tmp_path: Path) -> None
     en_voice = next(v for v in voices if v.language == "en")
     fr_voice = next(v for v in voices if v.language == "fr")
     assert en_voice.provider == "speaktor"
-    assert en_voice.parameters == {"voice": "en-US-1"}
+    assert _without_date(en_voice.parameters) == {"voice": "en-US-1"}
     # No file for 'fr' at all, let alone a metadata sidecar.
     assert fr_voice.provider == "unknown"
     assert fr_voice.parameters == {}
 
 
-def test_add_category_voice_uploaded_has_unknown_provider(tmp_path: Path) -> None:
+def test_add_category_voice_uploaded_has_custom_provider(tmp_path: Path) -> None:
     content_root, category_path = _prepare_category(tmp_path)
 
     provider = _make_fs_provider()
@@ -1813,8 +1831,8 @@ def test_add_category_voice_uploaded_has_unknown_provider(tmp_path: Path) -> Non
         mock_settings.SUPPORTED_LANGUAGES = ["en"]
         result = provider.add_category_voice("C_Foods", "en", b"uploaded audio")
 
-    assert result.provider == "unknown"
-    assert result.parameters == {}
+    assert result.provider == "custom"
+    assert _without_date(result.parameters) == {}
 
 
 # ---------------------------------------------------------------------------

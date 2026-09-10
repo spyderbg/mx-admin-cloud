@@ -12,7 +12,7 @@ import json
 import re
 import shutil
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 
@@ -207,15 +207,21 @@ class FileSystemContentProvider(ContentProvider):
             provider: str = "",
             parameters: dict[str, object] | None = None,
     ) -> None:
-        """Persist how a voice was created in a one-row CSV next to its MP3."""
+        """Persist how a voice was created in a one-row CSV next to its MP3.
+
+        Stamps a "date" parameter with the write time, alongside whatever
+        the caller passed (e.g. "_text" for generated voices).
+        """
         metadata_path = cls._voice_metadata_path(voice_path)
+        all_parameters = dict(parameters or {})
+        all_parameters["date"] = datetime.now(timezone.utc).isoformat()
         with metadata_path.open("w", encoding="utf-8", newline="") as file_handle:
             writer = csv.DictWriter(file_handle, fieldnames=_VOICE_METADATA_COLUMNS)
             writer.writeheader()
             writer.writerow({
                 "creation_method": creation_method.value,
                 "provider": provider,
-                "parameters": json.dumps(parameters or {}, ensure_ascii=False, sort_keys=True),
+                "parameters": json.dumps(all_parameters, ensure_ascii=False, sort_keys=True),
             })
 
     @classmethod
@@ -1226,7 +1232,7 @@ class FileSystemContentProvider(ContentProvider):
         try:
             with open(voice_path, "wb") as fh:
                 fh.write(audio_data)
-            self._write_voice_metadata(voice_path, VoiceCreationMethod.UPLOADED)
+            self._write_voice_metadata(voice_path, VoiceCreationMethod.UPLOADED, provider="custom")
         except OSError as exc:
             raise ContentOperationError(f"Failed to save category voice: {exc}") from exc
 
@@ -1254,7 +1260,7 @@ class FileSystemContentProvider(ContentProvider):
         try:
             with open(voice_path, "wb") as fh:
                 fh.write(audio_data)
-            self._write_voice_metadata(voice_path, VoiceCreationMethod.UPLOADED)
+            self._write_voice_metadata(voice_path, VoiceCreationMethod.UPLOADED, provider="custom")
         except OSError as exc:
             raise ContentOperationError(f"Failed to update category voice: {exc}") from exc
 
@@ -1763,7 +1769,7 @@ class FileSystemContentProvider(ContentProvider):
         try:
             with open(voice_path, "wb") as fh:
                 fh.write(audio_data)
-            self._write_voice_metadata(voice_path, VoiceCreationMethod.UPLOADED)
+            self._write_voice_metadata(voice_path, VoiceCreationMethod.UPLOADED, provider="custom")
         except OSError as exc:
             raise ContentOperationError(f"Failed to save item voice: {exc}") from exc
 
@@ -1792,7 +1798,7 @@ class FileSystemContentProvider(ContentProvider):
         try:
             with open(voice_path, "wb") as fh:
                 fh.write(audio_data)
-            self._write_voice_metadata(voice_path, VoiceCreationMethod.UPLOADED)
+            self._write_voice_metadata(voice_path, VoiceCreationMethod.UPLOADED, provider="custom")
         except OSError as exc:
             raise ContentOperationError(f"Failed to update item voice: {exc}") from exc
 
