@@ -19,6 +19,7 @@ from src.services.content.models import (
     ArchiveUnavailableError,
     CategoryConflictError,
     CategoryNotFoundError,
+    CategoryVoice,
     ContentError,
     CreateItem,
     InvalidCategoryNameError,
@@ -103,6 +104,19 @@ def _read_image_upload(image: UploadFile | None, *, required: bool) -> tuple[byt
     if ext not in (".png", ".jpg", ".jpeg"):
         ext = ".png"
     return image_data, ext
+
+
+def _voice_response(voice: CategoryVoice, action: str | None = None) -> VoiceResponse:
+    """Build a VoiceResponse from a provider-returned CategoryVoice, echoing generation metadata."""
+    return VoiceResponse(
+        id=voice.id,
+        language=voice.language,
+        type=voice.type,
+        file_uri=voice.file_uri,
+        action=action,
+        provider=voice.provider,
+        parameters=voice.parameters,
+    )
 
 
 def _create_item_response(result: CreateItem, voice_generation_available: bool) -> CreateItemResponse:
@@ -659,15 +673,7 @@ def categories_voices_list(
     return CategoryVoicesResponse(
         category_id=result.id,
         name=result.name,
-        voices=[
-            VoiceResponse(
-                id=v.id,
-                language=v.language,
-                type=v.type,
-                file_uri=v.file_uri,
-            )
-            for v in result.voices
-        ],
+        voices=[_voice_response(v) for v in result.voices],
     )
 
 
@@ -707,9 +713,7 @@ def categories_voices_add(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return VoiceResponse(
-        id=result.id, language=result.language, type=result.type, file_uri=result.file_uri, action="add",
-    )
+    return _voice_response(result, "add")
 
 
 @router.put(
@@ -745,9 +749,7 @@ def categories_voices_update(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return VoiceResponse(
-        id=result.id, language=result.language, type=result.type, file_uri=result.file_uri, action="update",
-    )
+    return _voice_response(result, "update")
 
 
 @router.delete(
@@ -777,9 +779,7 @@ def categories_voices_delete(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return VoiceResponse(
-        id=result.id, language=result.language, type=result.type, file_uri=result.file_uri, action="delete",
-    )
+    return _voice_response(result, "delete")
 
 
 @router.post(
@@ -809,9 +809,7 @@ def categories_voices_regenerate(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return VoiceResponse(
-        id=result.id, language=result.language, type=result.type, file_uri=result.file_uri, action="regenerate",
-    )
+    return _voice_response(result, "regenerate")
 
 
 # endregion
@@ -1202,10 +1200,7 @@ def items_voices_list(
     return ItemVoicesResponse(
         item_id=item_id,
         name=item_name,
-        voices=[
-            VoiceResponse(id=v.id, language=v.language, type=v.type, file_uri=v.file_uri)
-            for v in voices_result.voices
-        ],
+        voices=[_voice_response(v) for v in voices_result.voices],
     )
 
 
@@ -1245,9 +1240,7 @@ def items_voices_add(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return VoiceResponse(
-        id=result.id, language=result.language, type=result.type, file_uri=result.file_uri, action="add",
-    )
+    return _voice_response(result, "add")
 
 
 @router.put(
@@ -1284,9 +1277,7 @@ def items_voices_update(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return VoiceResponse(
-        id=result.id, language=result.language, type=result.type, file_uri=result.file_uri, action="update",
-    )
+    return _voice_response(result, "update")
 
 
 @router.delete(
@@ -1317,9 +1308,7 @@ def items_voices_delete(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return VoiceResponse(
-        id=result.id, language=result.language, type=result.type, file_uri=result.file_uri, action="delete",
-    )
+    return _voice_response(result, "delete")
 
 
 @router.post(
@@ -1350,9 +1339,7 @@ def items_voices_regenerate(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return VoiceResponse(
-        id=result.id, language=result.language, type=result.type, file_uri=result.file_uri, action="regenerate",
-    )
+    return _voice_response(result, "regenerate")
 
 
 # endregion

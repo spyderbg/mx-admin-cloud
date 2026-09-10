@@ -48,6 +48,15 @@ _LEVEL_STYLES: dict[str, str] = {
     "FTL": "\033[1;35m",  # bold magenta
 }
 
+def _timestamp_iso_without_fraction(
+        _logger: Any, _method: str, event_dict: dict[str, Any],
+) -> dict[str, Any]:
+    """Add a UTC ISO-8601 timestamp with no fractional seconds."""
+    event_dict["timestamp"] = (
+        datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    )
+    return event_dict
+
 # Extra request-log fields emitted by image generation (see LogProviderRequest).
 _EXTRA_REQUEST_FIELDS: tuple[str, ...] = (
     "request_kind",
@@ -207,7 +216,7 @@ class StructLogProvider(LoggingServiceProvider):
 
     def log(self, logger_name: str, msg: LogMessage) -> None:
         fields = dict(msg.fields)
-        if msg.event in ("provider_request", "translator_request"):
+        if "provider" in fields or "translator" in fields:
             fields = self._filtered_request_log_fields(msg.event, fields)
         logger = self.get_logger(logger_name)
         level_name = msg.level.value
@@ -245,11 +254,11 @@ class StructLogProvider(LoggingServiceProvider):
     # ------------------------------------------------------------------
 
     def _filtered_request_log_fields(
-        self, event: str, raw: dict[str, Any],
+        self, _event: str, raw: dict[str, Any],
     ) -> dict[str, Any]:
         """Apply "request_log.fields" toggles; used by emit() for request events."""
         payload: dict[str, Any] = {}
-        if event == "provider_request":
+        if "provider" in raw:
             provider = raw.get("provider")
             if provider is not None and self._field_enabled("provider"):
                 payload["provider"] = provider
@@ -625,7 +634,7 @@ class StructLogProvider(LoggingServiceProvider):
             renderer = _structlog.processors.JSONRenderer()
         else:
             renderer = _structlog.dev.ConsoleRenderer(
-                colors=True, level_styles=_LEVEL_STYLES,
+                colors=True, level_styles=_LEVEL_STYLES, pad_event_to=0,
             )
 
         _structlog.configure(
@@ -634,7 +643,7 @@ class StructLogProvider(LoggingServiceProvider):
                 _structlog.stdlib.filter_by_level,
                 _structlog.processors.add_log_level,
                 self._abbreviate_log_level,
-                _structlog.processors.TimeStamper(fmt="iso", utc=True),
+                _timestamp_iso_without_fraction,
                 _structlog.processors.StackInfoRenderer(),
                 _structlog.processors.format_exc_info,
                 renderer,

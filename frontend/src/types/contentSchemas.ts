@@ -177,4 +177,6 @@ export interface VoiceResponse {
     type: string
     file_uri?: string | null
     action?: FileAction | null
+    provider?: string
+    parameters?: Record<string, any>
 }

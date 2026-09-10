@@ -188,8 +188,9 @@ async def log_provider_request(
     """Log a provider request through the logging service."""
     logger_name = "requests"
     validate_logger_exists(service, logger_name)
+    event = body.provider or "provider_request"
     log_message = LogMessage(
-        event="provider_request",
+        event=event,
         level=LogLevel.INFO,
         fields=body.to_request_emit_fields(),
     )

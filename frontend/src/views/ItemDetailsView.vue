@@ -214,7 +214,7 @@
                     <span class="id-count-pill">{{ group.voices.length }}</span>
                   </div>
                 </td>
-                <td>{{ voice.type }}</td>
+                <td><VoiceParametersTooltip :provider="voice.provider" :parameters="voice.parameters" /></td>
                 <td>
                   <div class="id-audio-preview">
                     <button class="id-audio-play" :class="{ 'id-audio-play-active': playingVoiceId === voice.id }" :disabled="!hasAudio(voice)" :aria-label="!hasAudio(voice) ? voiceFileMissingLabel(contentLanguage) : (playingVoiceId === voice.id ? stopLabel(contentLanguage) : playLabel(contentLanguage))" :title="!hasAudio(voice) ? voiceFileMissingLabel(contentLanguage) : (playingVoiceId === voice.id ? stopLabel(contentLanguage) : playLabel(contentLanguage))" @click="togglePlay(voice)">
@@ -378,6 +378,7 @@ import { useContentLanguage } from '../composables/useContentLanguage'
 import { useAudioPlayer } from '../composables/useAudioPlayer'
 import ViewBreadcrumb from '../components/ViewBreadcrumb.vue'
 import VoiceCardsGrid, { type VoiceExtraAction } from '../components/VoiceCardsGrid.vue'
+import VoiceParametersTooltip from '../components/VoiceParametersTooltip.vue'
 import { resizeImageToMaxDimension } from '../utils/imageResize'
 import { imageIdFromUri } from '../utils/imageId'
 import { cacheBustedUri } from '../utils/cacheBustedUri'
@@ -1329,6 +1330,10 @@ const voiceCardActions: VoiceExtraAction[] = [
 .id-voices-table th:nth-child(2),
 .id-voices-table td:nth-child(2) {
   width: 8%;
+}
+.id-voices-table td:nth-child(2) {
+  /* Let the provider-name tooltip popover escape the cell instead of being clipped. */
+  overflow: visible;
 }
 .id-voices-table th:nth-child(3),
 .id-voices-table td:nth-child(3) {

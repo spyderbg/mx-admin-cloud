@@ -122,6 +122,11 @@ const normalizeVoices = (
       language,
       type: typeof voice.type === 'string' ? voice.type : 'male',
       fileUri: typeof voice.file_uri === 'string' ? voice.file_uri : '',
+      provider: typeof voice.provider === 'string' && voice.provider ? voice.provider : 'unknown',
+      parameters:
+        voice.parameters && typeof voice.parameters === 'object'
+          ? (voice.parameters as Record<string, unknown>)
+          : {},
     })
   })
   return parsed

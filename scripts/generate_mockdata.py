@@ -38,6 +38,23 @@ VOICE_CONFIG = {
     'bg': {'type': 'female', 'face': 4},
 }
 
+MOCK_PROVIDER = 'mockup'
+
+
+def mock_voice_parameters(lang: str) -> dict:
+    """Stand-in generation parameters, shaped like the real provider's metadata sidecar."""
+    return {'voice': f'{lang}-mock-voice', 'speed': 1.0}
+
+
+def ts_object_literal(d: dict) -> str:
+    parts = []
+    for key, value in d.items():
+        if isinstance(value, str):
+            parts.append(f"{key}: '{js_str(value)}'")
+        else:
+            parts.append(f'{key}: {value}')
+    return '{ ' + ', '.join(parts) + ' }'
+
 IMAGE_EXTS = {'.png', '.jpg', '.jpeg'}
 
 def read_csv(path: Path) -> list[str]:
@@ -126,6 +143,8 @@ def build_items(cat_dir: Path, content_root: Path, cat_key: str) -> tuple[list[d
                 'language': lang,
                 'type': vc['type'],
                 'fileUri': audio_uri,
+                'provider': MOCK_PROVIDER,
+                'parameters': mock_voice_parameters(lang),
             })
 
         items.append({
@@ -225,6 +244,8 @@ def generate(content_path: Path, script_path: Path | None = None, output_path: P
                 'language': lang,
                 'type': vc['type'],
                 'fileUri': audio_uri,
+                'provider': MOCK_PROVIDER,
+                'parameters': mock_voice_parameters(lang),
             })
 
         # Description
@@ -257,6 +278,8 @@ def generate(content_path: Path, script_path: Path | None = None, output_path: P
             lines.append(f"        language: '{v['language']}',")
             lines.append(f"        type: '{v['type']}',")
             lines.append(f"        fileUri: '{js_str(v['fileUri'])}',")
+            lines.append(f"        provider: '{js_str(v['provider'])}',")
+            lines.append(f"        parameters: {ts_object_literal(v['parameters'])},")
             lines.append('      },')
         lines.append('    ],')
         lines.append('    items: [')
@@ -275,6 +298,8 @@ def generate(content_path: Path, script_path: Path | None = None, output_path: P
                 lines.append(f"            language: '{v['language']}',")
                 lines.append(f"            type: '{v['type']}',")
                 lines.append(f"            fileUri: '{js_str(v['fileUri'])}',")
+                lines.append(f"            provider: '{js_str(v['provider'])}',")
+                lines.append(f"            parameters: {ts_object_literal(v['parameters'])},")
                 lines.append('          },')
             lines.append('        ],')
             lines.append('      },')

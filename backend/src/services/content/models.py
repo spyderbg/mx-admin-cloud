@@ -97,6 +97,8 @@ class CategoryVoice:
     language: str = ""
     type: str = ""
     file_uri: str | None = None
+    provider: str = "unknown"
+    parameters: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass

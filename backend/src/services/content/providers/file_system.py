@@ -236,6 +236,31 @@ class FileSystemContentProvider(ContentProvider):
         )
 
     @classmethod
+    def _read_voice_metadata(cls, voice_path: Path) -> tuple[str, dict[str, object]]:
+        """Return (provider, parameters) recorded for *voice_path*'s CSV sidecar.
+
+        Falls back to ("unknown", {}) when the sidecar is missing, unreadable, or the
+        provider/parameters columns are empty or not valid JSON.
+        """
+        metadata_path = cls._voice_metadata_path(voice_path)
+        try:
+            with metadata_path.open("r", encoding="utf-8", newline="") as file_handle:
+                row = next(csv.DictReader(file_handle), None)
+        except (OSError, csv.Error):
+            return "unknown", {}
+        if not row:
+            return "unknown", {}
+
+        provider = (row.get("provider") or "").strip() or "unknown"
+        try:
+            parameters = json.loads(row.get("parameters") or "{}")
+        except (TypeError, ValueError):
+            parameters = {}
+        if not isinstance(parameters, dict):
+            parameters = {}
+        return provider, parameters
+
+    @classmethod
     def _delete_voice_with_metadata(cls, voice_path: Path) -> None:
         voice_path.unlink()
         cls._voice_metadata_path(voice_path).unlink(missing_ok=True)
@@ -826,11 +851,14 @@ class FileSystemContentProvider(ContentProvider):
         for lang in settings.SUPPORTED_LANGUAGES:
             voice_file = category_path / _CATEGORY_VOICE_MP3.format(category_name, lang)
             has_file = voice_file.exists() and voice_file.is_file()
+            provider, parameters = self._read_voice_metadata(voice_file) if has_file else ("unknown", {})
             voices.append(CategoryVoice(
                 id=f"{category_name}-v-{lang}",
                 language=lang,
                 type="tts",
                 file_uri=f"/content/{category_name}/{voice_file.name}" if has_file else None,
+                provider=provider,
+                parameters=parameters,
             ))
         return voices
 
@@ -1202,11 +1230,14 @@ class FileSystemContentProvider(ContentProvider):
         except OSError as exc:
             raise ContentOperationError(f"Failed to save category voice: {exc}") from exc
 
+        provider, parameters = self._read_voice_metadata(voice_path)
         return CategoryVoice(
             id=f"{category_name}-v-{language}",
             language=language,
             type="tts",
             file_uri=f"/content/{category_name}/{voice_path.name}",
+            provider=provider,
+            parameters=parameters,
         )
 
     def update_category_voice(self, category_id: str, voice_id: str, audio_data: bytes) -> CategoryVoice:
@@ -1227,11 +1258,14 @@ class FileSystemContentProvider(ContentProvider):
         except OSError as exc:
             raise ContentOperationError(f"Failed to update category voice: {exc}") from exc
 
+        provider, parameters = self._read_voice_metadata(voice_path)
         return CategoryVoice(
             id=voice_id,
             language=language,
             type="tts",
             file_uri=f"/content/{category_name}/{voice_path.name}",
+            provider=provider,
+            parameters=parameters,
         )
 
     def delete_category_voice(self, category_id: str, voice_id: str) -> CategoryVoice:
@@ -1245,13 +1279,16 @@ class FileSystemContentProvider(ContentProvider):
             raise CategoryNotFoundError(f"Voice '{voice_id}' not found in category '{category_name}'.")
         language, voice_path = found
         file_uri = f"/content/{category_name}/{voice_path.name}"
+        provider, parameters = self._read_voice_metadata(voice_path)
 
         try:
             self._delete_voice_with_metadata(voice_path)
         except OSError as exc:
             raise ContentOperationError(f"Failed to delete category voice: {exc}") from exc
 
-        return CategoryVoice(id=voice_id, language=language, type="tts", file_uri=file_uri)
+        return CategoryVoice(
+            id=voice_id, language=language, type="tts", file_uri=file_uri, provider=provider, parameters=parameters,
+        )
 
     def regenerate_category_voice(self, category_id: str, voice_id: str) -> CategoryVoice:
         category_name = self._folder_name_for_id(category_id)
@@ -1283,11 +1320,14 @@ class FileSystemContentProvider(ContentProvider):
         except OSError as exc:
             raise ContentOperationError(f"Failed to save category voice: {exc}") from exc
 
+        provider, parameters = self._read_voice_metadata(voice_path)
         return CategoryVoice(
             id=voice_id,
             language=language,
             type="tts",
             file_uri=f"/content/{category_name}/{voice_path.name}",
+            provider=provider,
+            parameters=parameters,
         )
 
     def archive_category(self, category_id: str) -> ArchiveCategory:
@@ -1603,11 +1643,14 @@ class FileSystemContentProvider(ContentProvider):
                 re.IGNORECASE,
             )
             match = next((f for f in files if f.is_file() and pattern.match(f.name)), None)
+            provider, parameters = self._read_voice_metadata(match) if match else ("unknown", {})
             voices.append(CategoryVoice(
                 id=f"{item_folder_name}-v-{lang}",
                 language=lang,
                 type="tts",
                 file_uri=f"/content/{category_name}/{item_folder_name}/{match.name}" if match else None,
+                provider=provider,
+                parameters=parameters,
             ))
         return ItemVoices(item_id=item_id, voices=voices)
 
@@ -1724,11 +1767,14 @@ class FileSystemContentProvider(ContentProvider):
         except OSError as exc:
             raise ContentOperationError(f"Failed to save item voice: {exc}") from exc
 
+        provider, parameters = self._read_voice_metadata(voice_path)
         return CategoryVoice(
             id=voice_id,
             language=language,
             type="tts",
             file_uri=f"/content/{category_name}/{item_folder_name}/{voice_path.name}",
+            provider=provider,
+            parameters=parameters,
         )
 
     def update_item_voice(self, category_id: str, item_id: str, voice_id: str, audio_data: bytes) -> CategoryVoice:
@@ -1750,11 +1796,14 @@ class FileSystemContentProvider(ContentProvider):
         except OSError as exc:
             raise ContentOperationError(f"Failed to update item voice: {exc}") from exc
 
+        provider, parameters = self._read_voice_metadata(voice_path)
         return CategoryVoice(
             id=voice_id,
             language=language,
             type="tts",
             file_uri=f"/content/{category_name}/{item_folder_name}/{voice_path.name}",
+            provider=provider,
+            parameters=parameters,
         )
 
     def delete_item_voice(self, category_id: str, item_id: str, voice_id: str) -> CategoryVoice:
@@ -1769,13 +1818,16 @@ class FileSystemContentProvider(ContentProvider):
             )
         language, voice_path = found
         file_uri = f"/content/{category_name}/{item_folder_name}/{voice_path.name}"
+        provider, parameters = self._read_voice_metadata(voice_path)
 
         try:
             self._delete_voice_with_metadata(voice_path)
         except OSError as exc:
             raise ContentOperationError(f"Failed to delete item voice: {exc}") from exc
 
-        return CategoryVoice(id=voice_id, language=language, type="tts", file_uri=file_uri)
+        return CategoryVoice(
+            id=voice_id, language=language, type="tts", file_uri=file_uri, provider=provider, parameters=parameters,
+        )
 
     def regenerate_item_voice(self, category_id: str, item_id: str, voice_id: str) -> CategoryVoice:
         category_name = self._folder_name_for_id(category_id)
@@ -1808,11 +1860,14 @@ class FileSystemContentProvider(ContentProvider):
         except OSError as exc:
             raise ContentOperationError(f"Failed to save item voice: {exc}") from exc
 
+        provider, parameters = self._read_voice_metadata(voice_path)
         return CategoryVoice(
             id=voice_id,
             language=language,
             type="tts",
             file_uri=f"/content/{category_name}/{item_folder_name}/{voice_path.name}",
+            provider=provider,
+            parameters=parameters,
         )
 
     def _item_word_for_language(self, category_path: Path, item_id: str, language: str) -> str:

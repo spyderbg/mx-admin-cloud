@@ -76,6 +76,8 @@ const toVoiceResponse = (voice: Voice): Record<string, unknown> => ({
   language: voice.language,
   type: voice.type,
   file_uri: voice.fileUri ?? '',
+  provider: voice.provider,
+  parameters: voice.parameters,
 })
 
 const itemLocalizedName = (item: NonNullable<ReturnType<typeof findItem>>): Record<string, string> =>
@@ -351,6 +353,8 @@ export const contentHandlers = [
       language,
       type: language === 'en' || language === 'fr' ? 'male' : 'female',
       fileUri: `/content/${category.id}/${category.id}_${language}.mp3`,
+      provider: 'unknown',
+      parameters: {},
     }
     const existingIndex = category.voices.findIndex((entry) => entry.language === language)
     if (existingIndex >= 0) category.voices[existingIndex] = voice
@@ -560,6 +564,8 @@ export const contentHandlers = [
         language: lang,
         type: lang === 'en' || lang === 'fr' ? 'male' : 'female',
         fileUri: '',
+        provider: 'unknown',
+        parameters: {},
       })),
     })
     return HttpResponse.json(
@@ -602,6 +608,8 @@ export const contentHandlers = [
         language: lang,
         type: lang === 'en' || lang === 'fr' ? 'male' : 'female',
         fileUri: '',
+        provider: 'unknown',
+        parameters: {},
       })),
     })
     // Mock mode has no TTS service, so it reports the same warning the backend does.

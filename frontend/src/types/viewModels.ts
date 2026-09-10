@@ -22,6 +22,10 @@ export interface Voice {
     type: string
     /** When absent or empty, the voice is considered missing and play is disabled. */
     fileUri?: string
+    /** Generation provider name, e.g. "openai"; "unknown" when not recorded. */
+    provider: string
+    /** Generation parameters recorded alongside the voice file. */
+    parameters: Record<string, unknown>
 }
 
 export interface Item {

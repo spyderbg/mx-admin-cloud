@@ -23,6 +23,7 @@ from src.services.content.models import (
 from src.core.localization import LocalizedString
 from src.services.content.providers.file_system import (
     FileSystemContentProvider,
+    VoiceCreationMethod,
     _extension_for_content_type,
 )
 
@@ -1696,6 +1697,9 @@ def test_regenerate_category_voice_uses_current_name_and_overwrites_file(tmp_pat
     assert result.language == "fr"
     assert result.file_uri == "/content/foods/foods_fr.mp3"
     assert (category_path / "foods_fr.mp3").read_bytes() == b"fresh"
+    # _generate_audio is mocked to return plain bytes, so no provider/parameters attrs are carried.
+    assert result.provider == "unknown"
+    assert result.parameters == {"_text": "Aliments"}
 
 
 def test_regenerate_category_voice_creates_missing_file_and_falls_back_to_english(tmp_path: Path) -> None:
@@ -1745,6 +1749,72 @@ def test_regenerate_category_voice_missing_category_folder(tmp_path: Path) -> No
         mock_settings.SUPPORTED_LANGUAGES = ["en"]
         with pytest.raises(CategoryNotFoundError):
             provider.regenerate_category_voice("C_Foods", "foods-v-en")
+
+
+# ---------------------------------------------------------------------------
+# voice metadata (provider / parameters)
+# ---------------------------------------------------------------------------
+
+def test_read_voice_metadata_missing_sidecar_returns_unknown(tmp_path: Path) -> None:
+    provider = _make_fs_provider()
+    assert provider._read_voice_metadata(tmp_path / "foods_en.mp3") == ("unknown", {})
+
+
+def test_read_voice_metadata_reads_provider_and_parameters(tmp_path: Path) -> None:
+    voice_path = tmp_path / "foods_en.mp3"
+    voice_path.write_bytes(b"audio")
+    FileSystemContentProvider._write_voice_metadata(
+        voice_path, VoiceCreationMethod.GENERATED, "openai", {"actor": "alloy"},
+    )
+
+    provider = _make_fs_provider()
+    assert provider._read_voice_metadata(voice_path) == ("openai", {"actor": "alloy"})
+
+
+def test_read_voice_metadata_blank_provider_and_invalid_json_fall_back_to_defaults(tmp_path: Path) -> None:
+    voice_path = tmp_path / "foods_en.mp3"
+    voice_path.write_bytes(b"audio")
+    metadata_path = FileSystemContentProvider._voice_metadata_path(voice_path)
+    metadata_path.write_text("creation_method,provider,parameters\nuploaded,,not-json\n", encoding="utf-8")
+
+    provider = _make_fs_provider()
+    assert provider._read_voice_metadata(voice_path) == ("unknown", {})
+
+
+def test_collect_voices_surfaces_provider_and_parameters(tmp_path: Path) -> None:
+    content_root, category_path = _prepare_category(tmp_path)
+    voice_path = category_path / "foods_en.mp3"
+    voice_path.write_bytes(b"audio")
+    FileSystemContentProvider._write_voice_metadata(
+        voice_path, VoiceCreationMethod.GENERATED, "speaktor", {"voice": "en-US-1"},
+    )
+
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
+        voices = provider._collect_voices(category_path, "foods")
+
+    en_voice = next(v for v in voices if v.language == "en")
+    fr_voice = next(v for v in voices if v.language == "fr")
+    assert en_voice.provider == "speaktor"
+    assert en_voice.parameters == {"voice": "en-US-1"}
+    # No file for 'fr' at all, let alone a metadata sidecar.
+    assert fr_voice.provider == "unknown"
+    assert fr_voice.parameters == {}
+
+
+def test_add_category_voice_uploaded_has_unknown_provider(tmp_path: Path) -> None:
+    content_root, category_path = _prepare_category(tmp_path)
+
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        result = provider.add_category_voice("C_Foods", "en", b"uploaded audio")
+
+    assert result.provider == "unknown"
+    assert result.parameters == {}
 
 
 # ---------------------------------------------------------------------------

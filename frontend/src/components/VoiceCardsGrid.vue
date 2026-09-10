@@ -47,7 +47,7 @@
         @edit="openRenameModal(voice)"
       />
       <div v-else class="voice-card-name">{{ voice.name }}</div>
-      <div class="voice-card-type">{{ voiceTypeLabel(voice.type) }}</div>
+      <VoiceParametersTooltip class="voice-card-type" :provider="voice.provider" :parameters="voice.parameters" />
       <div class="voice-card-controls">
         <button
           class="btn-play"
@@ -162,8 +162,9 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import ServerWord from './ServerWord.vue'
+import VoiceParametersTooltip from './VoiceParametersTooltip.vue'
 import type { Voice } from '../types/viewModels'
-import { langFlag, langLabel, voiceTypeLabel } from '../utils/voiceLabels'
+import { langFlag, langLabel } from '../utils/voiceLabels'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import {
   audioFileLabel,
