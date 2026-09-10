@@ -95,14 +95,6 @@
             @keydown.space.prevent="openImagePreview(card.src, card.title)"
           >
             <img :src="card.src" :alt="card.title" class="id-image" />
-            <div class="file-actions" @click.stop>
-              <button type="button" class="btn-icon btn-icon-edit" title="Replace" aria-label="Replace image" @click.stop="onReplaceFile(card.index)">
-                <i class="mdi mdi-pencil"></i>
-              </button>
-              <button type="button" class="btn-icon btn-icon-delete" title="Delete" aria-label="Delete image" @click.stop="onDeleteFile(card.index)">
-                <i class="mdi mdi-delete"></i>
-              </button>
-            </div>
           </div>
           <div class="id-image-meta">
             <div class="id-meta-label">{{ generatorLabel(contentLanguage) }}</div>
@@ -112,6 +104,14 @@
             <button type="button" class="id-release-btn" :class="{ 'id-release-btn-active': card.isSelected }" :disabled="card.isSelected" @click="onSelectImage(card.index)">
               <i :class="card.isSelected ? 'mdi mdi-check' : 'mdi mdi-image'"></i>
               {{ card.isSelected ? selectedLabel(contentLanguage) : selectImageLabel(contentLanguage) }}
+            </button>
+          </div>
+          <div class="file-actions" @click.stop>
+            <button type="button" class="btn-icon btn-icon-edit" title="Replace" aria-label="Replace image" @click.stop="onReplaceFile(card.index)">
+              <i class="mdi mdi-pencil"></i>
+            </button>
+            <button type="button" class="btn-icon btn-icon-delete" title="Delete" aria-label="Delete image" @click.stop="onDeleteFile(card.index)">
+              <i class="mdi mdi-delete"></i>
             </button>
           </div>
         </div>
@@ -1126,6 +1126,7 @@ const voiceCardActions: VoiceExtraAction[] = [
   margin-top: 1rem;
 }
 .id-image-card {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(10rem, 43%) minmax(0, 1fr);
   gap: 1.25rem;
