@@ -301,6 +301,14 @@ class _StubContentProvider(ContentProvider):
             file_uri=f"/content/{category_id}/{voice_id}.mp3",
         ))
 
+    def regenerate_category_voice(self, category_id: str, voice_id: str) -> CategoryVoice:
+        return self._call("regenerate_category_voice", CategoryVoice(
+            id=voice_id,
+            language="en",
+            type="tts",
+            file_uri=f"/content/{category_id}/{voice_id}.mp3",
+        ))
+
 
 def _make_content_service(
         tmp_path: Path,

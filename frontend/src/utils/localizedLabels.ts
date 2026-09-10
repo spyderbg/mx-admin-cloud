@@ -247,6 +247,94 @@ export function addImageLabel(lang: Language): string {
   return labels[lang] ?? labels.en
 }
 
+/** Instructions for adding an image through the drag-and-drop card. */
+export function dropImageHereLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Drop an image here or click to browse.',
+    es: 'Suelta una imagen aquí o haz clic para seleccionarla.',
+    fr: 'Déposez une image ici ou cliquez pour la parcourir.',
+    bg: 'Пуснете изображение тук или щракнете, за да го изберете.',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Status shown while a newly selected image is being uploaded. */
+export function uploadingImageLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Uploading image…',
+    es: 'Subiendo imagen…',
+    fr: "Importation de l’image…",
+    bg: 'Качване на изображение…',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Validation message for a non-image dropped onto the image upload card. */
+export function dropImageFileRequiredLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Please drop an image file.',
+    es: 'Suelta un archivo de imagen.',
+    fr: 'Déposez un fichier image.',
+    bg: 'Пуснете файл с изображение.',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Label for the image generator metadata field. */
+export function generatorLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Generator',
+    es: 'Generador',
+    fr: 'Générateur',
+    bg: 'Генератор',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Label for the image-generation prompt metadata field. */
+export function promptLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Prompt',
+    es: 'Indicación',
+    fr: 'Invite',
+    bg: 'Подкана',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Description for the first image attached to an item. */
+export function mainItemImageLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Main Item Image',
+    es: 'Imagen principal del elemento',
+    fr: "Image principale de l’élément",
+    bg: 'Основно изображение на елемента',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Description for additional images attached to an item. */
+export function imageVariantLabel(lang: Language, index: number): string {
+  const labels: Record<Language, string> = {
+    en: 'Image Variant',
+    es: 'Variante de imagen',
+    fr: "Variante d’image",
+    bg: 'Вариант на изображението',
+  }
+  return `${labels[lang] ?? labels.en} ${index}`
+}
+
+/** Prefix for the file name displayed in image metadata. */
+export function sourceFileLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Source file',
+    es: 'Archivo de origen',
+    fr: 'Fichier source',
+    bg: 'Изходен файл',
+  }
+  return labels[lang] ?? labels.en
+}
+
 /** Button label for releasing all item images; unknown `lang` falls back to English. */
 export function releaseAllImagesLabel(lang: Language): string {
   const labels: Record<Language, string> = {
@@ -496,6 +584,28 @@ export function actionsColumnLabel(lang: Language): string {
     es: 'Acciones',
     fr: 'Actions',
     bg: 'Действия',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Label for a normal, unoptimized audio file column. */
+export function normalFileColumnLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'File (Normal)',
+    es: 'Archivo (normal)',
+    fr: 'Fichier (normal)',
+    bg: 'Файл (нормален)',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Label for an optimized audio file column. */
+export function optimizedFileColumnLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'File (Optimized)',
+    es: 'Archivo (optimizado)',
+    fr: 'Fichier (optimisé)',
+    bg: 'Файл (оптимизиран)',
   }
   return labels[lang] ?? labels.en
 }

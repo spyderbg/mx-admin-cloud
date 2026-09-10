@@ -404,19 +404,25 @@ class FileSystemContentProvider(ContentProvider):
         return category_path / _CATEGORY_VOICE_MP3.format(category_name, language)
 
     @staticmethod
+    def _language_for_category_voice_id(category_name: str, voice_id: str) -> str | None:
+        """Return the language encoded in *voice_id* for this category, or None if unrecognized."""
+        for lang in settings.SUPPORTED_LANGUAGES:
+            if voice_id == f"{category_name}-v-{lang}":
+                return lang
+        return None
+
+    @staticmethod
     def _find_category_voice_file(
             category_path: Path,
             category_name: str,
             voice_id: str,
     ) -> tuple[str, Path] | None:
         """Return the (language, path) for the existing voice file matching *voice_id*, if any."""
-        for lang in settings.SUPPORTED_LANGUAGES:
-            if voice_id != f"{category_name}-v-{lang}":
-                continue
-            voice_path = FileSystemContentProvider._category_voice_path(category_path, category_name, lang)
-            if voice_path.is_file():
-                return lang, voice_path
-        return None
+        lang = FileSystemContentProvider._language_for_category_voice_id(category_name, voice_id)
+        if lang is None:
+            return None
+        voice_path = FileSystemContentProvider._category_voice_path(category_path, category_name, lang)
+        return (lang, voice_path) if voice_path.is_file() else None
 
     @staticmethod
     def _item_voice_path(item_path: Path, item_folder_name: str, language: str) -> Path:
@@ -531,6 +537,16 @@ class FileSystemContentProvider(ContentProvider):
                 pass
 
         return ids_by_folder, names_by_folder
+
+    def _category_label_for_language(self, category_name: str, language: str) -> str:
+        """Return the category's current localized name for *language*, falling back to English."""
+        _, names_by_folder = self._load_category_localized_names()
+        names = names_by_folder.get(category_name.lower(), {})
+        for lang in (language, "en"):
+            label = names.get(lang, "").strip()
+            if label:
+                return label
+        return ""
 
     def _load_category_localized_descriptions(self, category_name: str) -> dict[str, str]:
         """Return per-language descriptions for *category_name* (a folder name) from descriptions_{lang}.csv.
@@ -1236,6 +1252,43 @@ class FileSystemContentProvider(ContentProvider):
             raise ContentOperationError(f"Failed to delete category voice: {exc}") from exc
 
         return CategoryVoice(id=voice_id, language=language, type="tts", file_uri=file_uri)
+
+    def regenerate_category_voice(self, category_id: str, voice_id: str) -> CategoryVoice:
+        category_name = self._folder_name_for_id(category_id)
+        category_path = self._category_path(category_name)
+        if not category_path.exists() or not category_path.is_dir():
+            raise CategoryNotFoundError(f"Category '{category_name}': directory is missing.")
+
+        language = self._language_for_category_voice_id(category_name, voice_id)
+        if language is None:
+            raise CategoryNotFoundError(f"Voice '{voice_id}' not found in category '{category_name}'.")
+
+        label = self._category_label_for_language(category_name, language)
+        if not label:
+            raise ContentOperationError(
+                f"Category '{category_name}' has no {language} name to synthesize; set the name first.",
+            )
+
+        try:
+            audio_bytes = self._generate_audio(label, language)
+        except (ValueError, RuntimeError, httpx.HTTPError) as exc:
+            raise ContentOperationError(f"Voice generation failed for {language}: {exc}") from exc
+
+        # Reuse the existing file (if any) so the voice keeps its URI.
+        found = self._find_category_voice_file(category_path, category_name, voice_id)
+        voice_path = found[1] if found else self._category_voice_path(category_path, category_name, language)
+        try:
+            voice_path.write_bytes(audio_bytes)
+            self._write_generated_voice_metadata(voice_path, audio_bytes, label)
+        except OSError as exc:
+            raise ContentOperationError(f"Failed to save category voice: {exc}") from exc
+
+        return CategoryVoice(
+            id=voice_id,
+            language=language,
+            type="tts",
+            file_uri=f"/content/{category_name}/{voice_path.name}",
+        )
 
     def archive_category(self, category_id: str) -> ArchiveCategory:
         category_name = self._folder_name_for_id(category_id)

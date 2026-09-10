@@ -280,6 +280,7 @@ import {
   categoriesIconUpdate,
   categoriesVoicesAdd,
   categoriesVoicesDelete,
+  categoriesVoicesRegenerate,
   categoriesVoicesUpdate,
 } from '../api/contentClient'
 import {
@@ -462,10 +463,31 @@ function requestCategoryImageRegeneration(): void {
   showToast('Backend task pending: regenerate the category image from the saved category metadata.', 'error')
 }
 
+const regeneratingVoiceId = ref<string | null>(null)
+
+async function regenerateVoiceHandler(voice: Voice): Promise<void> {
+  if (regeneratingVoiceId.value) return
+  if (playingVoiceId.value === voice.id) stopAudio()
+
+  regeneratingVoiceId.value = voice.id
+  try {
+    await categoriesVoicesRegenerate(props.category.id, voice.id)
+    await refreshCategory()
+    voiceVersions.value = { ...voiceVersions.value, [voice.id]: (voiceVersions.value[voice.id] ?? 0) + 1 }
+    showToast(`Voice for ${voice.name} (${voice.language.toUpperCase()}) regenerated.`, 'success')
+  } catch (err) {
+    showToast(extractErrorMessage(err), 'error')
+  } finally {
+    regeneratingVoiceId.value = null
+  }
+}
+
 const voiceCardActions: VoiceExtraAction[] = [{
   icon: 'mdi-auto-fix',
   title: 'Regenerate voice',
-  onClick: (voice) => showToast(`Backend task pending: regenerate ${voice.language.toUpperCase()} audio for ${voice.name}.`, 'error'),
+  onClick: (voice) => { void regenerateVoiceHandler(voice) },
+  isLoading: (voice) => regeneratingVoiceId.value === voice.id,
+  isDisabled: () => regeneratingVoiceId.value !== null,
 }]
 
 async function confirmImageDelete(): Promise<void> {

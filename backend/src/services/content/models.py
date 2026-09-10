@@ -254,6 +254,10 @@ class ContentProvider(ServiceProvider, ABC):
         """Delete an existing voice audio file from a category."""
 
     @abstractmethod
+    def regenerate_category_voice(self, category_id: str, voice_id: str) -> CategoryVoice:
+        """Re-synthesize a category voice from its current localized name via the text-to-speech service."""
+
+    @abstractmethod
     def archive_category(self, category_id: str) -> ArchiveCategory:
         """Move a category from the content directory to the archive.
 

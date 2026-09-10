@@ -1,0 +1,2 @@
+creation_method,provider,parameters
+generated,elevenlabs,"{""_text"": ""pencil"", ""actor"": ""Milena"", ""language"": ""en"", ""model"": ""eleven_multilingual_v2"", ""output_format"": ""mp3"", ""speaker_boost"": true, ""speed"": 1.0, ""use_space"": ""no"", ""voice_id"": ""M1ydWt7KnBCiuv4CnEDC"", ""voice_settings"": {""similarity_boost"": 0.75, ""stability"": 0.5}}"

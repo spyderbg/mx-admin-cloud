@@ -105,9 +105,9 @@
             </div>
           </div>
           <div class="id-image-meta">
-            <div class="id-meta-label">Generator</div>
+            <div class="id-meta-label">{{ generatorLabel(contentLanguage) }}</div>
             <strong>{{ card.generator }}</strong>
-            <div class="id-meta-label id-meta-spaced">Prompt</div>
+            <div class="id-meta-label id-meta-spaced">{{ promptLabel(contentLanguage) }}</div>
             <p>{{ card.prompt }}</p>
             <button type="button" class="id-release-btn" :class="{ 'id-release-btn-active': card.isSelected }" :disabled="card.isSelected" @click="onSelectImage(card.index)">
               <i :class="card.isSelected ? 'mdi mdi-check' : 'mdi mdi-image'"></i>
@@ -115,26 +115,46 @@
             </button>
           </div>
         </div>
+        <div
+          class="id-image-card id-add-image-card"
+          :class="{ 'id-add-image-card-dragging': isImageDropActive, 'id-add-image-card-uploading': isAddingImage }"
+          role="button"
+          tabindex="0"
+          :aria-label="addImageLabel(contentLanguage)"
+          @click="onAddFile"
+          @keydown.enter.prevent="onAddFile"
+          @keydown.space.prevent="onAddFile"
+          @dragenter.prevent="onImageDragEnter"
+          @dragover.prevent="onImageDragOver"
+          @dragleave.prevent="onImageDragLeave"
+          @drop.prevent="onImageDrop"
+        >
+          <div class="id-add-image-card-content">
+            <i class="mdi" :class="isAddingImage ? 'mdi-loading mdi-spin' : 'mdi-plus-circle-outline'"></i>
+            <strong>{{ addImageLabel(contentLanguage) }}</strong>
+            <span>{{ isAddingImage ? uploadingImageLabel(contentLanguage) : dropImageHereLabel(contentLanguage) }}</span>
+          </div>
+        </div>
       </div>
       <div v-else class="file-empty">
-        <div class="id-image-card id-image-card-empty">
-          <div class="id-image-preview">
-            <img :src="cameraPlaceholderUrl" alt="No image available" class="id-image" />
-            <div class="file-actions">
-              <button type="button" class="btn-icon btn-icon-edit" title="Upload" aria-label="Upload image" @click="onAddFile">
-                <i class="mdi mdi-pencil"></i>
-              </button>
-            </div>
-          </div>
-          <div class="id-image-meta">
-            <div class="id-meta-label">Generator</div>
-            <strong>No image</strong>
-            <div class="id-meta-label id-meta-spaced">Prompt</div>
-            <p>Add an image variant for this item.</p>
-            <button type="button" class="id-release-btn" @click="onAddFile">
-              <i class="mdi mdi-plus"></i>
-              {{ addImageLabel(contentLanguage) }}
-            </button>
+        <div
+          class="id-image-card id-add-image-card"
+          :class="{ 'id-add-image-card-dragging': isImageDropActive, 'id-add-image-card-uploading': isAddingImage }"
+          role="button"
+          tabindex="0"
+          :aria-label="addImageLabel(contentLanguage)"
+          @click="onAddFile"
+          @keydown.enter.prevent="onAddFile"
+          @keydown.space.prevent="onAddFile"
+          @dragenter.prevent="onImageDragEnter"
+          @dragover.prevent="onImageDragOver"
+          @dragleave.prevent="onImageDragLeave"
+          @drop.prevent="onImageDrop"
+        >
+          <div class="id-add-image-card-content">
+            <i class="mdi" :class="isAddingImage ? 'mdi-loading mdi-spin' : 'mdi-plus-circle-outline'"></i>
+            <strong>{{ addImageLabel(contentLanguage) }}</strong>
+            <span>{{ isAddingImage ? uploadingImageLabel(contentLanguage) : dropImageHereLabel(contentLanguage) }}</span>
           </div>
         </div>
       </div>
@@ -158,11 +178,11 @@
         <table class="table id-voices-table mb-0">
           <thead>
             <tr>
-              <th>Language</th>
-              <th>Generator</th>
-              <th>File (Normal)</th>
-              <th>File (Optimized)</th>
-              <th class="text-right">Actions</th>
+              <th>{{ languageColumnLabel(contentLanguage) }}</th>
+              <th>{{ generatorLabel(contentLanguage) }}</th>
+              <th>{{ normalFileColumnLabel(contentLanguage) }}</th>
+              <th>{{ optimizedFileColumnLabel(contentLanguage) }}</th>
+              <th class="text-right">{{ actionsColumnLabel(contentLanguage) }}</th>
             </tr>
           </thead>
           <tbody>
@@ -367,19 +387,29 @@ import {
   addImageLabel,
   addImagesLabel,
   addVoiceLabel,
+  actionsColumnLabel,
   breadcrumbCategoriesLabel,
   cancelLabel,
   changeItemIdLabel,
   currentImageLabel,
   descriptionLabel,
+  dropImageFileRequiredLabel,
+  dropImageHereLabel,
   enterItemIdLabel,
   imagesLabel,
+  generatorLabel,
+  imageVariantLabel,
   itemIdLabel,
   itemVoicesLabel,
+  languageColumnLabel,
   localizedCategoryLabel,
   localizedImageLabel,
+  mainItemImageLabel,
   newItemIdLabel,
+  normalFileColumnLabel,
+  optimizedFileColumnLabel,
   playLabel,
+  promptLabel,
   releaseAllImagesLabel,
   releaseAllVoicesLabel,
   releaseItemLabel,
@@ -387,6 +417,8 @@ import {
   selectImageLabel,
   selectedLabel,
   stopLabel,
+  sourceFileLabel,
+  uploadingImageLabel,
   voiceFileMissingLabel,
   voicesLabel,
 } from '../utils/localizedLabels'
@@ -510,8 +542,10 @@ const imageCards = computed(() =>
       index,
       isSelected: index === selectedImageIndex.value,
       title: `${breadcrumbItem.value} image ${index + 1}`,
-      generator: index === 0 ? 'Main Item Image' : `Image Variant ${index + 1}`,
-      prompt: `Source file: ${sourceFile}`,
+      generator: index === 0
+        ? mainItemImageLabel(contentLanguage.value)
+        : imageVariantLabel(contentLanguage.value, index + 1),
+      prompt: `${sourceFileLabel(contentLanguage.value)}: ${sourceFile}`,
     }
   }),
 )
@@ -620,21 +654,21 @@ const confirmItemIdEdit = (): void => {
 }
 
 const addFileInputRef = ref<HTMLInputElement | null>(null)
+const isImageDropActive = ref(false)
+const isAddingImage = ref(false)
 
 const onAddFile = (): void => {
+  if (isAddingImage.value) return
   addFileInputRef.value?.click()
 }
 
-const onAddFilePicked = async (e: Event): Promise<void> => {
-  const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
+const uploadNewImage = async (file: File): Promise<void> => {
+  if (isAddingImage.value) return
   const cat = category.value
   const currentItem = item.value
-  if (!file || !cat || !currentItem) {
-    input.value = ''
-    return
-  }
+  if (!cat || !currentItem) return
 
+  isAddingImage.value = true
   try {
     const resizedFile = await resizeImageToMaxDimension(file)
     const formData = new FormData()
@@ -645,8 +679,40 @@ const onAddFilePicked = async (e: Event): Promise<void> => {
   } catch (err) {
     showToast(extractErrorMessage(err), 'error')
   } finally {
-    input.value = ''
+    isAddingImage.value = false
   }
+}
+
+const onAddFilePicked = async (e: Event): Promise<void> => {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (file) await uploadNewImage(file)
+}
+
+const onImageDragEnter = (): void => {
+  if (!isAddingImage.value) isImageDropActive.value = true
+}
+
+const onImageDragOver = (): void => {
+  if (!isAddingImage.value) isImageDropActive.value = true
+}
+
+const onImageDragLeave = (event: DragEvent): void => {
+  const dropTarget = event.currentTarget
+  if (!(dropTarget instanceof HTMLElement) || !dropTarget.contains(event.relatedTarget as Node | null)) {
+    isImageDropActive.value = false
+  }
+}
+
+const onImageDrop = async (event: DragEvent): Promise<void> => {
+  isImageDropActive.value = false
+  const file = Array.from(event.dataTransfer?.files ?? []).find((entry) => entry.type.startsWith('image/'))
+  if (!file) {
+    showToast(dropImageFileRequiredLabel(contentLanguage.value), 'error')
+    return
+  }
+  await uploadNewImage(file)
 }
 const replaceFileInputRef = ref<HTMLInputElement | null>(null)
 const replaceFileIndex = ref<number>(-1)
@@ -917,6 +983,8 @@ const voiceCardActions: VoiceExtraAction[] = [
     icon: 'mdi-auto-fix',
     title: 'Regenerate voice',
     onClick: (voice) => { void regenerateVoice(voice) },
+    isLoading: (voice) => regeneratingVoiceId.value === voice.id,
+    isDisabled: () => regeneratingVoiceId.value !== null,
   },
 ]
 
@@ -1065,8 +1133,53 @@ const voiceCardActions: VoiceExtraAction[] = [
   border-radius: 6px;
   padding: 0.75rem;
 }
-.id-image-card-empty {
-  max-width: 34rem;
+.id-add-image-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 12.8rem;
+  border: 2px dashed #b8c7e8;
+  background: #f8faff;
+  color: #2855a6;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+.id-add-image-card:hover,
+.id-add-image-card:focus {
+  border-color: #2563eb;
+  background: #eef4ff;
+  color: #1d4ed8;
+  outline: none;
+}
+.id-add-image-card-dragging {
+  border-color: #2563eb;
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+.id-add-image-card-uploading {
+  cursor: progress;
+  opacity: 0.75;
+}
+.id-add-image-card-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 15rem;
+  padding: 1rem;
+  text-align: center;
+}
+.id-add-image-card-content > i {
+  margin-bottom: 0.55rem;
+  font-size: 2.25rem;
+}
+.id-add-image-card-content > strong {
+  font-size: 0.95rem;
+}
+.id-add-image-card-content > span {
+  margin-top: 0.35rem;
+  color: #64748b;
+  font-size: 0.8rem;
+  line-height: 1.35;
 }
 .id-image-preview {
   position: relative;
@@ -1100,6 +1213,9 @@ const voiceCardActions: VoiceExtraAction[] = [
 }
 .file-empty {
   margin-top: 1rem;
+}
+.file-empty .id-add-image-card {
+  max-width: 34rem;
 }
 .btn-icon {
   width: 1.75rem;

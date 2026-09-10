@@ -200,6 +200,10 @@ class ContentService(Service):
         """Delete an existing category voice via the active provider."""
         return self._select_provider().delete_category_voice(category_id, voice_id)
 
+    def regenerate_category_voice(self, category_id: str, voice_id: str) -> CategoryVoice:
+        """Re-synthesize a category voice from its current localized name via the active provider."""
+        return self._select_provider().regenerate_category_voice(category_id, voice_id)
+
     # ------------------------------------------------------------------
     # Item methods
     # ------------------------------------------------------------------

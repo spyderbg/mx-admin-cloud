@@ -1657,6 +1657,97 @@ def test_item_voice_sidecar_tracks_upload_generation_provider_and_deletion(tmp_p
 
 
 # ---------------------------------------------------------------------------
+# regenerate_category_voice
+# ---------------------------------------------------------------------------
+
+def test_regenerate_category_voice_unknown_voice_id(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    category_path = content_root / "foods"
+    _write_category_registry(content_root, [("C_Foods", "Foods")])
+    category_path.mkdir(parents=True)
+
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
+        with pytest.raises(CategoryNotFoundError):
+            provider.regenerate_category_voice("C_Foods", "foods-v-de")
+
+
+def test_regenerate_category_voice_uses_current_name_and_overwrites_file(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    category_path = content_root / "foods"
+    _write_category_registry(content_root, [("C_Foods", "Foods")])
+    (content_root / "categories_fr.csv").write_text("Aliments\n", encoding="utf-8")
+    category_path.mkdir(parents=True)
+    (category_path / "foods_fr.mp3").write_bytes(b"stale")
+
+    provider = _make_fs_provider()
+    with (
+        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch.object(FileSystemContentProvider, "_generate_audio", return_value=b"fresh") as audio_mock,
+    ):
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
+        result = provider.regenerate_category_voice("C_Foods", "foods-v-fr")
+
+    audio_mock.assert_called_once_with("Aliments", "fr")
+    assert result.id == "foods-v-fr"
+    assert result.language == "fr"
+    assert result.file_uri == "/content/foods/foods_fr.mp3"
+    assert (category_path / "foods_fr.mp3").read_bytes() == b"fresh"
+
+
+def test_regenerate_category_voice_creates_missing_file_and_falls_back_to_english(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    category_path = content_root / "foods"
+    _write_category_registry(content_root, [("C_Foods", "Foods")])
+    category_path.mkdir(parents=True)
+
+    provider = _make_fs_provider()
+    with (
+        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch.object(FileSystemContentProvider, "_generate_audio", return_value=b"fresh") as audio_mock,
+    ):
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
+        result = provider.regenerate_category_voice("C_Foods", "foods-v-fr")
+
+    audio_mock.assert_called_once_with("Foods", "fr")
+    assert result.file_uri == "/content/foods/foods_fr.mp3"
+    assert (category_path / "foods_fr.mp3").read_bytes() == b"fresh"
+
+
+def test_regenerate_category_voice_wraps_tts_failure(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    category_path = content_root / "foods"
+    _write_category_registry(content_root, [("C_Foods", "Foods")])
+    category_path.mkdir(parents=True)
+
+    provider = _make_fs_provider()
+    with (
+        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch.object(FileSystemContentProvider, "_generate_audio", side_effect=RuntimeError("boom")),
+    ):
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        with pytest.raises(ContentOperationError, match="Voice generation failed for en: boom"):
+            provider.regenerate_category_voice("C_Foods", "foods-v-en")
+
+
+def test_regenerate_category_voice_missing_category_folder(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    _write_category_registry(content_root, [("C_Foods", "foods")])  # registered, but no folder on disk
+
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        with pytest.raises(CategoryNotFoundError):
+            provider.regenerate_category_voice("C_Foods", "foods-v-en")
+
+
+# ---------------------------------------------------------------------------
 # remove_item
 # ---------------------------------------------------------------------------
 

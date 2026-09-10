@@ -1293,6 +1293,44 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/content/categories/{category_id}/voices/{voice_id}/regenerate:
+    post:
+      tags:
+      - Categories Voices
+      summary: Regenerate a voice for a category
+      description: Re-synthesize the audio for a category voice from the category's
+        current localized name in that language, using the active text-to-speech configuration.
+        Overwrites any existing audio file, and creates one when the voice has none
+        yet. Requires authentication.
+      operationId: categories_voices_regenerate_api_v1_content_categories__category_id__voices__voice_id__regenerate_post
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      - name: voice_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Voice Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoiceResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
 
   # ─── Items ──────────────────────────────────────────────────────────
   /api/v1/content/categories/{category_id}/items:

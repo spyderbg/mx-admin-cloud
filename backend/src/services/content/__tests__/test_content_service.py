@@ -311,6 +311,13 @@ class _StubProvider(ContentProvider):
             "file_uri": f"/content/{category_id}/{voice_id}.mp3",
         })
 
+    def regenerate_category_voice(self, category_id: str, voice_id: str) -> dict[str, Any]:
+        self._record("regenerate_category_voice", category_id, voice_id)
+        return self._returns.get("regenerate_category_voice", {
+            "id": voice_id, "language": "en", "type": "tts",
+            "file_uri": f"/content/{category_id}/{voice_id}.mp3",
+        })
+
 
 def _make_service(tmp_path: Path, providers: list[Any] | None = None) -> ContentService:
     svc = ContentService(
@@ -429,6 +436,9 @@ class _ConcreteProvider(ContentProvider):
         return {}
 
     def delete_category_voice(self, category_id, voice_id):
+        return {}
+
+    def regenerate_category_voice(self, category_id, voice_id):
         return {}
 
 

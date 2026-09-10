@@ -9,9 +9,10 @@
           type="button"
           :title="action.title"
           :aria-label="action.title"
+          :disabled="action.isDisabled?.(voice)"
           @click="action.onClick(voice)"
         >
-          <i :class="'mdi ' + action.icon"></i>
+          <i class="mdi" :class="action.isLoading?.(voice) ? 'mdi-loading mdi-spin' : action.icon"></i>
         </button>
         <button
           class="btn-icon btn-icon-edit voice-card-action"
@@ -187,6 +188,10 @@ export interface VoiceExtraAction {
   icon: string
   title: string
   onClick: (voice: Voice) => void
+  /** Show a spinner in place of the icon for this voice while true. */
+  isLoading?: (voice: Voice) => boolean
+  /** Disable the button (e.g. while any voice is mid-action) while true. */
+  isDisabled?: (voice: Voice) => boolean
 }
 
 const props = defineProps<{
@@ -410,6 +415,10 @@ function confirmRename(): void {
   font-size: 15px;
   color: #fff;
   padding: 0;
+}
+.btn-icon:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 .btn-icon-edit {
   background: #4f46e5;
