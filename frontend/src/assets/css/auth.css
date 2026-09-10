@@ -12,7 +12,13 @@
   min-height: 100vh;
 }
 
-.content-wrapper {
+/*
+ * This stylesheet is loaded when the lazy login route is first visited and
+ * remains in the SPA document after navigation.  Keep the auth layout rule
+ * tied to the login page so it cannot turn AppLayout's content wrapper into a
+ * vertically centered flex container after sign-in.
+ */
+.auth-page > .content-wrapper {
   width: 100%;
   flex-grow: 1;
   display: flex;
