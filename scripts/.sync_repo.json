@@ -1,0 +1,155 @@
+{
+  "default": "local",
+  "profiles": {
+    "local": {
+      "description": "Full mirror of this checkout onto the home-directory clone",
+      "src_repo_path": null,
+      "dst_repo_path": "~/_Projects/MarXman/mx-admin",
+      "prune": true,
+      "include_special": false,
+      "special_files": [
+        ".env",
+        ".env.local",
+        ".env.*.local",
+        "backend/.env",
+        "backend/.env.local",
+        "cli/.env",
+        "docker/.env",
+        "frontend/.env",
+        "frontend/.env.local",
+        "frontend/.env.*.local",
+        ".sync_repo.json"
+      ],
+      "only": [],
+      "exclude": [
+        ".idea"
+      ]
+    },
+    "code": {
+      "description": "Code only - skips the heavy content, archive and data trees",
+      "src_repo_path": null,
+      "dst_repo_path": "~/_Projects/MarXman/mx-admin",
+      "prune": true,
+      "include_special": true,
+      "special_files": [
+        ".env",
+        ".env.local",
+        ".env.*.local",
+        "backend/.env",
+        "cli/.env",
+        "docker/.env",
+        "frontend/.env",
+        "frontend/.env.local",
+        "frontend/.env.*.local"
+      ],
+      "only": [
+        "backend",
+        "frontend",
+        "cli",
+        "scripts",
+        "docker"
+      ],
+      "exclude": []
+    },
+    "backend": {
+      "description": "Backend only - the FastAPI app plus the root .env holding its provider API keys",
+      "src_repo_path": null,
+      "dst_repo_path": "~/_Projects/MarXman/mx-admin",
+      "prune": true,
+      "include_special": false,
+      "special_files": [
+        ".env",
+        ".env.local",
+        "backend/.env",
+        "backend/.env.local"
+      ],
+      "only": [
+        "backend",
+        ".env"
+      ],
+      "exclude": []
+    },
+    "cli": {
+      "description": "Typer CLI client only",
+      "src_repo_path": null,
+      "dst_repo_path": "~/_Projects/MarXman/mx-admin",
+      "prune": true,
+      "include_special": false,
+      "special_files": [
+        "cli/.env",
+        "cli/.env.local"
+      ],
+      "only": [
+        "cli"
+      ],
+      "exclude": []
+    },
+    "frontend": {
+      "description": "Vue 3 SPA only",
+      "src_repo_path": null,
+      "dst_repo_path": "~/_Projects/MarXman/mx-admin",
+      "prune": true,
+      "include_special": false,
+      "special_files": [
+        "frontend/.env",
+        "frontend/.env.local",
+        "frontend/.env.*.local"
+      ],
+      "only": [
+        "frontend"
+      ],
+      "exclude": []
+    },
+    "docker": {
+      "description": "Docker images and compose files only",
+      "src_repo_path": null,
+      "dst_repo_path": "~/_Projects/MarXman/mx-admin",
+      "prune": true,
+      "include_special": false,
+      "special_files": [
+        "docker/.env",
+        "docker/.env.local"
+      ],
+      "only": [
+        "docker"
+      ],
+      "exclude": []
+    },
+    "scripts": {
+      "description": "Helper scripts only - this tree has no special files",
+      "src_repo_path": null,
+      "dst_repo_path": "~/_Projects/MarXman/mx-admin",
+      "prune": true,
+      "include_special": false,
+      "special_files": [],
+      "only": [
+        "scripts"
+      ],
+      "exclude": []
+    },
+    "backup": {
+      "description": "Append-only copy on the backup volume - never prunes",
+      "src_repo_path": null,
+      "dst_repo_path": "/media/spyder/_Backup/mx-admin",
+      "prune": false,
+      "include_special": true,
+      "special_files": [
+        ".env",
+        ".env.local",
+        ".env.*.local",
+        "backend/.env",
+        "cli/.env",
+        "docker/.env",
+        "frontend/.env",
+        "frontend/.env.local",
+        "frontend/.env.*.local",
+        ".sync_repo.json"
+      ],
+      "only": [],
+      "exclude": [
+        "content",
+        "archive"
+      ]
+    }
+  }
+}
