@@ -1,11 +1,14 @@
 import { http, HttpResponse } from 'msw'
 import { mockCategories } from '../data/mockData'
 import type { Voice } from '../types/viewModels'
+import { itemIdFromEnglishWord } from '../utils/itemIds'
 
 interface ArchivedEntry {
   base_name: string
   archive_folder: string
   archived_at: number
+  items_count?: number
+  thumbnail_uri?: string | null
 }
 
 const archivedCategories: ArchivedEntry[] = []
@@ -73,6 +76,8 @@ const toVoiceResponse = (voice: Voice): Record<string, unknown> => ({
   language: voice.language,
   type: voice.type,
   file_uri: voice.fileUri ?? '',
+  provider: voice.provider,
+  parameters: voice.parameters,
 })
 
 const itemLocalizedName = (item: NonNullable<ReturnType<typeof findItem>>): Record<string, string> =>
@@ -251,6 +256,8 @@ export const contentHandlers = [
       base_name: baseName,
       archive_folder: archiveFolder,
       archived_at: archivedAt,
+      items_count: removed.items.length,
+      thumbnail_uri: removed.thumbnailUri ?? null,
     })
     archivedRecords.set(archiveFolder, removed)
     return HttpResponse.json({
@@ -346,6 +353,8 @@ export const contentHandlers = [
       language,
       type: language === 'en' || language === 'fr' ? 'male' : 'female',
       fileUri: `/content/${category.id}/${category.id}_${language}.mp3`,
+      provider: 'unknown',
+      parameters: {},
     }
     const existingIndex = category.voices.findIndex((entry) => entry.language === language)
     if (existingIndex >= 0) category.voices[existingIndex] = voice
@@ -542,28 +551,86 @@ export const contentHandlers = [
     if (!category || !itemName.trim()) return HttpResponse.json({ detail: 'Invalid category or item' }, { status: 422 })
 
     const catSlug = slugify(category.name['en'] ?? '')
-    const itemId = `${catSlug}-${slugify(itemName)}`
+    const folder = slugify(itemName)
+    const itemId = itemIdFromEnglishWord(itemName)
     category.items.push({
       id: itemId,
       name: itemName,
       images: [],
       thumbnailUri: '',
       voices: (['en', 'es', 'fr', 'bg'] as const).map((lang) => ({
-        id: `${itemId}-${lang}`,
+        id: `${folder}-v-${lang}`,
         name: itemName,
         language: lang,
         type: lang === 'en' || lang === 'fr' ? 'male' : 'female',
         fileUri: '',
+        provider: 'unknown',
+        parameters: {},
       })),
     })
     return HttpResponse.json(
       {
-        category: category.name['en'] ?? '',
+        category: catSlug,
         item: itemName,
-        folder: `/content/${catSlug}/${slugify(itemName)}`,
+        folder,
         image_id: itemId,
+        item_id: itemId,
+        voices_generated: [],
+        voice_warnings: [],
+        message: `Item '${itemName}' created.`,
       },
       { status: 201 },
     )
   }),
+
+  // Create a new item in a category (translations + optional image; voices are backend-decided)
+  http.post('/api/v1/content/categories/:category_id/items', async ({ params, request }) => {
+    const category = findCategoryById(String(params.category_id))
+    if (!category) return HttpResponse.json({ detail: 'Category not found' }, { status: 404 })
+    const form = await request.formData()
+    const word = String(form.get('item') ?? '').trim()
+    if (!word) return HttpResponse.json({ detail: 'Item name is required' }, { status: 400 })
+    const itemId = itemIdFromEnglishWord(word)
+    if (category.items.some((item) => item.id === itemId)) {
+      return HttpResponse.json({ detail: `Item id already exists: ${itemId}` }, { status: 409 })
+    }
+    const image = form.get('image')
+    const imageUrl = image instanceof File && image.size > 0 ? URL.createObjectURL(image) : ''
+    const folder = slugify(word)
+    category.items.push({
+      id: itemId,
+      name: word,
+      images: imageUrl ? [imageUrl] : [],
+      thumbnailUri: imageUrl,
+      voices: (['en', 'es', 'fr', 'bg'] as const).map((lang) => ({
+        id: `${folder}-v-${lang}`,
+        name: word,
+        language: lang,
+        type: lang === 'en' || lang === 'fr' ? 'male' : 'female',
+        fileUri: '',
+        provider: 'unknown',
+        parameters: {},
+      })),
+    })
+    // Mock mode has no TTS service, so it reports the same warning the backend does.
+    return HttpResponse.json(
+      {
+        category: slugify(category.name['en'] ?? ''),
+        item: word,
+        folder,
+        image_id: itemId,
+        item_id: itemId,
+        voices_generated: [],
+        voice_warnings: ['No active voice generators configured; voices were not generated.'],
+        message: `Item '${word}' created. Voices were not generated.`,
+      },
+      { status: 201 },
+    )
+  }),
+
+  // Regenerate a voice for an item
+  http.post('/api/v1/content/categories/:category_id/items/:item_id/voices/:voice_id/regenerate', () => HttpResponse.json({})),
+
+  // Regenerate a voice for a category
+  http.post('/api/v1/content/categories/:category_id/voices/:voice_id/regenerate', () => HttpResponse.json({})),
 ]

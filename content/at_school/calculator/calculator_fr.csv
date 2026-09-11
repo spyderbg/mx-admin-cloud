@@ -1,0 +1,2 @@
+creation_method,provider,parameters
+generated,openai,"{""_text"": ""calculatrice"", ""actor"": ""nova"", ""model"": ""tts-1-hd"", ""output_format"": ""mp3"", ""use_space"": ""no""}"

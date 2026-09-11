@@ -24,29 +24,21 @@
           "en": {
             "voice_name": "Sveta",
             "speed_rate": 1.0,
-            "emotion": "",
-            "prompt": "",
             "use_space": "no"
           },
           "fr": {
             "voice_name": "Marie",
             "speed_rate": 1.0,
-            "emotion": "",
-            "prompt": "",
             "use_space": "no"
           },
           "es": {
             "voice_name": "Carmen",
             "speed_rate": 1.0,
-            "emotion": "",
-            "prompt": "",
             "use_space": "no"
           },
           "bg": {
             "voice_name": "Ния",
             "speed_rate": 0.9,
-            "emotion": "",
-            "prompt": "",
             "use_space": "yes"
           }
         }

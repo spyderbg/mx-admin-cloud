@@ -159,6 +159,303 @@ export function itemNameLabel(lang: Language): string {
   return labels[lang] ?? labels.en
 }
 
+/** Label for the "Item id" field; unknown `lang` falls back to English. */
+export function itemIdLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Item Id',
+    es: 'Id del elemento',
+    fr: "Id de l'élément",
+    bg: 'Идентификатор на елемента',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Label for the current item image; unknown `lang` falls back to English. */
+export function currentImageLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Current Image',
+    es: 'Imagen actual',
+    fr: 'Image actuelle',
+    bg: 'Текущо изображение',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Generic description field label; unknown `lang` falls back to English. */
+export function descriptionLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Description',
+    es: 'Descripción',
+    fr: 'Description',
+    bg: 'Описание',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Label for an item voices card group; unknown `lang` falls back to English. */
+export function itemVoicesLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Item Voices',
+    es: 'Voces del elemento',
+    fr: "Voix de l'élément",
+    bg: 'Гласове на елемента',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Label for an images section heading; unknown `lang` falls back to English. */
+export function imagesLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Images',
+    es: 'Imágenes',
+    fr: 'Images',
+    bg: 'Изображения',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Button label for releasing one item; unknown `lang` falls back to English. */
+export function releaseItemLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Release Item',
+    es: 'Publicar elemento',
+    fr: "Publier l'élément",
+    bg: 'Публикувай елемент',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Button label for adding item images; unknown `lang` falls back to English. */
+export function addImagesLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Add Images',
+    es: 'Añadir imágenes',
+    fr: 'Ajouter des images',
+    bg: 'Добави изображения',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Button label for adding one item image; unknown `lang` falls back to English. */
+export function addImageLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Add Image',
+    es: 'Añadir imagen',
+    fr: 'Ajouter une image',
+    bg: 'Добави изображение',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Instructions for adding an image through the drag-and-drop card. */
+export function dropImageHereLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Drop an image here or click to browse.',
+    es: 'Suelta una imagen aquí o haz clic para seleccionarla.',
+    fr: 'Déposez une image ici ou cliquez pour la parcourir.',
+    bg: 'Пуснете изображение тук или щракнете, за да го изберете.',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Status shown while a newly selected image is being uploaded. */
+export function uploadingImageLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Uploading image…',
+    es: 'Subiendo imagen…',
+    fr: "Importation de l’image…",
+    bg: 'Качване на изображение…',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Validation message for a non-image dropped onto the image upload card. */
+export function dropImageFileRequiredLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Please drop an image file.',
+    es: 'Suelta un archivo de imagen.',
+    fr: 'Déposez un fichier image.',
+    bg: 'Пуснете файл с изображение.',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Label for the image generator metadata field. */
+export function generatorLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Generator',
+    es: 'Generador',
+    fr: 'Générateur',
+    bg: 'Генератор',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Label for the image-generation prompt metadata field. */
+export function promptLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Prompt',
+    es: 'Indicación',
+    fr: 'Invite',
+    bg: 'Подкана',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Description for the first image attached to an item. */
+export function mainItemImageLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Main Item Image',
+    es: 'Imagen principal del elemento',
+    fr: "Image principale de l’élément",
+    bg: 'Основно изображение на елемента',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Description for additional images attached to an item. */
+export function imageVariantLabel(lang: Language, index: number): string {
+  const labels: Record<Language, string> = {
+    en: 'Image Variant',
+    es: 'Variante de imagen',
+    fr: "Variante d’image",
+    bg: 'Вариант на изображението',
+  }
+  return `${labels[lang] ?? labels.en} ${index}`
+}
+
+/** Prefix for the file name displayed in image metadata. */
+export function sourceFileLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Source file',
+    es: 'Archivo de origen',
+    fr: 'Fichier source',
+    bg: 'Изходен файл',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Button label for releasing all item images; unknown `lang` falls back to English. */
+export function releaseAllImagesLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Release All Images',
+    es: 'Publicar todas las imágenes',
+    fr: 'Publier toutes les images',
+    bg: 'Публикувай всички изображения',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Button label for selecting an item image; unknown `lang` falls back to English. */
+export function selectImageLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Select Image',
+    es: 'Seleccionar imagen',
+    fr: "Sélectionner l'image",
+    bg: 'Избери изображение',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Label for the currently selected item image; unknown `lang` falls back to English. */
+export function selectedLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Selected',
+    es: 'Seleccionada',
+    fr: 'Sélectionnée',
+    bg: 'Избрано',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Button label for adding an item voice; unknown `lang` falls back to English. */
+export function addVoiceLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Add Voice',
+    es: 'Añadir voz',
+    fr: 'Ajouter une voix',
+    bg: 'Добави глас',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Button label for releasing all item voices; unknown `lang` falls back to English. */
+export function releaseAllVoicesLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Release All Voices',
+    es: 'Publicar todas las voces',
+    fr: 'Publier toutes les voix',
+    bg: 'Публикувай всички гласове',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Audio play button label; unknown `lang` falls back to English. */
+export function playLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Play',
+    es: 'Reproducir',
+    fr: 'Lire',
+    bg: 'Пусни',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Audio stop button label; unknown `lang` falls back to English. */
+export function stopLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Stop',
+    es: 'Detener',
+    fr: 'Arrêter',
+    bg: 'Спри',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Audio missing-state label; unknown `lang` falls back to English. */
+export function voiceFileMissingLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Voice file missing',
+    es: 'Falta el archivo de voz',
+    fr: 'Fichier vocal manquant',
+    bg: 'Липсва гласов файл',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Modal title for changing an item id; unknown `lang` falls back to English. */
+export function changeItemIdLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Change Item Id',
+    es: 'Cambiar id del elemento',
+    fr: "Modifier l'id de l'élément",
+    bg: 'Промяна на идентификатора',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Label for a new item id input; unknown `lang` falls back to English. */
+export function newItemIdLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'New Item Id',
+    es: 'Nuevo id del elemento',
+    fr: "Nouvel id de l'élément",
+    bg: 'Нов идентификатор',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Placeholder for an item id input; unknown `lang` falls back to English. */
+export function enterItemIdLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Enter item id',
+    es: 'Introduce el id del elemento',
+    fr: "Saisir l'id de l'élément",
+    bg: 'Въведете идентификатор',
+  }
+  return labels[lang] ?? labels.en
+}
+
 /** Label for an English item-name field; unknown `lang` falls back to English. */
 export function itemNameEnglishLabel(lang: Language): string {
   const labels: Record<Language, string> = {
@@ -199,6 +496,28 @@ export function audioFileLabel(lang: Language): string {
     es: 'Archivo de audio',
     fr: 'Fichier audio',
     bg: 'Аудио файл',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Button label for opening the file picker; unknown `lang` falls back to English. */
+export function chooseFileLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Choose file',
+    es: 'Elegir archivo',
+    fr: 'Choisir un fichier',
+    bg: 'Избери файл',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Empty selected-file state; unknown `lang` falls back to English. */
+export function noFileSelectedLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'No file selected',
+    es: 'Ningún archivo seleccionado',
+    fr: 'Aucun fichier sélectionné',
+    bg: 'Няма избран файл',
   }
   return labels[lang] ?? labels.en
 }
@@ -265,6 +584,28 @@ export function actionsColumnLabel(lang: Language): string {
     es: 'Acciones',
     fr: 'Actions',
     bg: 'Действия',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Label for a normal, unoptimized audio file column. */
+export function normalFileColumnLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'File (Normal)',
+    es: 'Archivo (normal)',
+    fr: 'Fichier (normal)',
+    bg: 'Файл (нормален)',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Label for an optimized audio file column. */
+export function optimizedFileColumnLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'File (Optimized)',
+    es: 'Archivo (optimizado)',
+    fr: 'Fichier (optimisé)',
+    bg: 'Файл (оптимизиран)',
   }
   return labels[lang] ?? labels.en
 }
@@ -640,6 +981,28 @@ export function archiveLabel(lang: Language): string {
   return labels[lang] ?? labels.en
 }
 
+/** Affirmative confirmation button label; unknown `lang` falls back to English. */
+export function yesLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Yes',
+    es: 'Sí',
+    fr: 'Oui',
+    bg: 'Да',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Negative confirmation button label; unknown `lang` falls back to English. */
+export function noLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'No',
+    es: 'No',
+    fr: 'Non',
+    bg: 'Не',
+  }
+  return labels[lang] ?? labels.en
+}
+
 /** Confirmation text for archiving a category; unknown `lang` falls back to English. */
 export function archiveCategoryConfirmLabel(lang: Language, category: string): string {
   const labels: Record<Language, string> = {
@@ -717,4 +1080,81 @@ export function archivedAgoLabel(lang: Language, archivedAt: number): string {
   const formatter = new Intl.RelativeTimeFormat(lang, { numeric: 'auto' })
   const [unit, seconds] = units.find(([, size]) => elapsed >= size) ?? ['second', 1]
   return `${prefix[lang] ?? prefix.en} ${formatter.format(-Math.floor(elapsed / seconds), unit)}`
+}
+
+/** Label for an optional image-file input; unknown `lang` falls back to English. */
+export function imageFileOptionalLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Image file (optional)',
+    es: 'Archivo de imagen (opcional)',
+    fr: 'Fichier image (facultatif)',
+    bg: 'Файл с изображение (по избор)',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Button label that clears a selected image; unknown `lang` falls back to English. */
+export function removeImageLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Remove image',
+    es: 'Quitar imagen',
+    fr: "Retirer l'image",
+    bg: 'Премахни изображението',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Notice that item creation runs translation and, when a generator is active, TTS. */
+export function itemGenerationNoticeLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Translations for all languages will be generated, and voices when a voice generator is active. This can take a while.',
+    es: 'Se generarán traducciones para todos los idiomas y, si hay un generador de voz activo, también las voces. Puede tardar un poco.',
+    fr: 'Les traductions pour toutes les langues seront générées, ainsi que les voix si un générateur vocal est actif. Cela peut prendre un moment.',
+    bg: 'Ще бъдат генерирани преводи за всички езици, а при активен генератор на глас – и гласове. Това може да отнеме известно време.',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Validation message for a duplicate item name; unknown `lang` falls back to English. */
+export function itemAlreadyExistsLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'An item with this name already exists.',
+    es: 'Ya existe un elemento con este nombre.',
+    fr: 'Un élément portant ce nom existe déjà.',
+    bg: 'Вече съществува елемент с това име.',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Fallback error when item creation fails without a server message. */
+export function createItemFailedLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Could not create the item. Please try again.',
+    es: 'No se pudo crear el elemento. Inténtalo de nuevo.',
+    fr: "Impossible de créer l'élément. Veuillez réessayer.",
+    bg: 'Елементът не можа да бъде създаден. Моля, опитайте отново.',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Success toast after an item was created; unknown `lang` falls back to English. */
+export function itemCreatedLabel(lang: Language, word: string): string {
+  const labels: Record<Language, string> = {
+    en: `Item "${word}" created.`,
+    es: `Elemento "${word}" creado.`,
+    fr: `Élément « ${word} » créé.`,
+    bg: `Елементът „${word}“ е създаден.`,
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Warning toast prefix when an item was created but some voices are missing. */
+export function itemCreatedWithWarningsLabel(lang: Language, word: string): string {
+  const labels: Record<Language, string> = {
+    en: `Item "${word}" created, but some voices could not be generated:`,
+    es: `Elemento "${word}" creado, pero no se pudieron generar algunas voces:`,
+    fr: `Élément « ${word} » créé, mais certaines voix n'ont pas pu être générées :`,
+    bg: `Елементът „${word}“ е създаден, но някои гласове не можаха да бъдат генерирани:`,
+  }
+  return labels[lang] ?? labels.en
 }

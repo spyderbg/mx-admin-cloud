@@ -273,10 +273,10 @@ code paths can silently break the alignment:
    description per language, item list with per-item names/voices). One file per category makes
    mutations atomic-by-rename, self-describing, and kills the row-alignment invariant entirely.
    The provider abstraction (`ContentProvider`) is the right seam for this migration.
-3. Icon generation (`_generate_icon`) calls OpenAI **directly** from the content provider with a
-   hardcoded `dall-e-2` — inconsistent with everything else being a configurable provider service.
-   Consider an `image_generation` service package like the others (config-driven model/size), which
-   also removes the hard OpenAI dependency from content.
+3. ~~Icon generation calls OpenAI **directly** from the content provider.~~ **Done** — the
+   `text_to_image` service package now owns image generation (OpenAI SDK/HTTP, Google GenAI
+   SDK/HTTP, ComfyUI), and `_generate_image` calls `/internal/image-generators/generate-image`
+   like `_generate_audio` does, so content no longer imports the OpenAI SDK.
 
 Also worth fixing in this area:
 - `item_voices` with an unknown item builds ids like `"None-v-en"` (`item_folder_name` is `None`,

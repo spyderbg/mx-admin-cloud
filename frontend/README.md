@@ -16,6 +16,8 @@ npm run preview     # serve production build locally
 
 **Verbose request logging:** If `VITE_VERBOSE_REQUESTS=true`, every axios request/response is logged to the browser console with method, URL, status, and JSON body. Useful during development to inspect payloads.
 
+**Archive confirmation:** `VITE_ARCHIVE_CONFIRMATION_MODE` controls the category archive popup. It defaults to `complex`, which shows the server warning and requires the category id to be typed. Set it to `simple` to show the confirmation message with only **Yes** and **No** actions. Like all Vite environment variables, this value is applied at build time.
+
 ## Mock Data Mode
 
 Use this mode when developing the UI with local fixtures.
@@ -92,7 +94,7 @@ src/
 │   └── voiceOptimizationSchemas.ts # [generated] Voice-optimization DTOs
 ├── views/            # Route-level page components
 │   ├── CategoriesView.vue
-│   ├── ItemDetailView.vue
+│   ├── ItemDetailsView.vue
 │   ├── LoginView.vue
 │   └── DashboardView.vue   # present but not registered in the router
 ├── App.vue           # Root component (bare router-view)
@@ -110,7 +112,7 @@ src/
 | `/`                                       | `[DashboardView](#dashboardview)`     | `[AppLayout](#applayout)` | Category cards, add + archived categories |
 | `/categories`                             | `[CategoriesView](#categoriesview)`   | `[AppLayout](#applayout)` | Shows first category by default           |
 | `/categories/:categoryId`                 | `[CategoriesView](#categoriesview)`   | `[AppLayout](#applayout)` | Selected category details + image grid    |
-| `/categories/:categoryId/items/:itemId` | `[ItemDetailView](#itemdetailview)` | `[AppLayout](#applayout)` | Item detail: files, voices, name editing |
+| `/categories/:categoryId/items/:itemId` | `[ItemDetailsView](#itemdetailsview)` | `[AppLayout](#applayout)` | Item details: images, voices, localized names |
 
 
 All `/categories` routes require authentication (token in localStorage). Unauthenticated users are redirected to `/login`.
@@ -128,7 +130,7 @@ The main authenticated shell, wrapping all `/categories` routes:
 │          │                                   │
 │AppSidebar│  <router-view />                  │
 │ (270px)  │  (CategoriesView or               │
-│          │   ItemDetailView)                 │
+│          │   ItemDetailsView)                │
 │          │                                   │
 │          ├───────────────────────────────────┤
 │          │  AppFooter                        │
@@ -162,25 +164,24 @@ category.
 
 Displayed when a category is selected (or defaults to first category):
 
-- **Breadcrumb** navigation: root + category segments follow the **navbar content language** (same as the sidebar and ItemDetailView). Root crumb is translated for en/es/fr/bg; category segment uses the matching `Voice.name`, then the **English** voice if that language is missing, then the stored `name`.
+- **Breadcrumb** navigation: root + category segments follow the **navbar content language** (same as the sidebar and ItemDetailsView). Root crumb is translated for en/es/fr/bg; category segment uses the matching `Voice.name`, then the **English** voice if that language is missing, then the stored `name`.
 - **Page header** -- `h3.page-title` with localized category label + `toPascalCaseWords` (navbar content language; no edit control on the title)
 - **CategoryDetail card** -- **Category Name** and each **voice-card** word use `ServerWord` (category row: localized + rename modal; voice row: `voice.name` as-is, pencil → **Edit word** modal, `rename-voice` emit). Two-row layout: **Category Icon** (`aspect-ratio: 1 / 1`, `object-fit: contain`) and **Category Voices** share a baseline; voice grid `repeat(auto-fit, minmax(7.5rem, 1fr))`; play + **Upload** (audio); corner **delete** icon opens **Delete or reset voice** confirmation, then `delete-voice` emit; modals mutually exclusive
-- **ItemGrid** -- responsive 4-column grid of item thumbnails, each with a pencil edit-icon badge. If an item has no `thumbnailUri` or file entries, a built-in camera placeholder is shown. Clicking navigates to ItemDetailView.
-- **Archive category** -- outlined red button at the top right of the `CategoryDetail` card. Its confirmation modal
+- **ItemGrid** -- responsive 4-column grid of item thumbnails, each with a pencil edit-icon badge. If an item has no `thumbnailUri` or file entries, a built-in camera placeholder is shown. Clicking navigates to ItemDetailsView.
+- **Archive category** -- outlined red button at the top right of the `CategoryDetail` card. By default, its confirmation modal
   requires the category id to be typed out before the action is enabled, because the backend deletes permanently when
-  `ARCHIVE_DIR` is unset and the frontend cannot tell which will happen. `CategoriesView` performs the request, then
+  `ARCHIVE_DIR` is unset and the frontend cannot tell which will happen. Set `VITE_ARCHIVE_CONFIRMATION_MODE=simple` at build time for a Yes/No confirmation instead. `CategoriesView` performs the request, then
   redirects to the first remaining category (or the dashboard) and reports the outcome: a green toast when the response
   says `archived`, an amber one when it says `removed`.
 
-### ItemDetailView
+### ItemDetailsView
 
 Displayed for a specific image within a category:
 
 - **Breadcrumb** navigation: root + category + image labels follow the **navbar content language** (same as the sidebar). Category and image segments use the matching `Voice.name`, then the **English** voice if that language is missing, then the stored `name`. The root crumb is translated for en/es/fr/bg (unknown codes fall back to English).
-- **Page title** (`h3.page-title`) uses the same localized image label as the last breadcrumb segment, formatted with **per-word Pascal-style casing** (first letter of each word uppercased, the rest lowercased via `toLocaleUpperCase` / `toLocaleLowerCase`).
-- **Image name** editable input
-- **Files section** -- grid of the image's file variants with replace/delete actions. Delete opens a confirmation modal and is available even when only one file is shown; selection/confirmation actions are currently logged until API wiring is completed. **Add File** opens the system file picker (`image/`*). If an image has no files, this section shows a camera placeholder card and only a single pencil **Edit** action.
-- **Voices table** -- one row per supported language (en, es, fr, bg) showing flag, voice name (text only), type badge, and replace/upload button.
+- **Summary panel** -- shows the item id with a copy action, the category description in the active content language, and a **Names by Language** editor for en/es/fr/bg. Name edits use the existing `itemsUpdate` request.
+- **Images section** -- card grid of the item's image variants, with a **Main** badge on the first image, MDI edit/delete action buttons, derived source-file metadata, and release-style controls. Upload/replace/delete use the existing item image endpoints; release controls are visual/pending placeholders.
+- **Voices table** -- grouped by language, with generator/type, normal and optimized file-name columns, play controls, waveform-style previews, and release/edit/delete action buttons. Upload/delete use the existing item voice endpoints; release/add-voice controls are visual/pending placeholders.
 
 ## Components
 

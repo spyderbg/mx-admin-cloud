@@ -7,8 +7,7 @@
       "Bash(source .venv/bin/activate)",
       "Bash(python3 -c \":*)",
       "Bash(python:*)",
-      "Bash(PYTHONPATH=. python scripts/export_openapi.py)",
-      "Bash(SCRATCH=/tmp/claude-1000/-media-spyder--Projects-MarXman-mx-admin/cfad8324-656f-46e7-87c3-c294ad1b071a/scratchpad/dest && mkdir -p \"$SCRATCH\" && python3 scripts/sync_repo.py --help && echo \"=== DRY RUN ===\" && python3 scripts/sync_repo.py \"$SCRATCH\" -n -q)"
+      "Bash(PYTHONPATH=. python scripts/export_openapi.py)"
     ]
   }
 }

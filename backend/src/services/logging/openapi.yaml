@@ -71,6 +71,7 @@ components:
       - critical
       - fatal
       title: LogLevel
+      description: Provider-independent levels accepted by the internal logging service.
     LogProviderRequest:
       properties:
         provider:
@@ -108,9 +109,58 @@ components:
           - type: number
           - type: 'null'
           title: Response Duration
+        request_kind:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Request Kind
+          description: Request family, e.g. 'tts' or 'image'
+        size:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Size
+          description: Requested output size, e.g. '1024x1024'
+        quality:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Quality
+          description: Requested output quality tier
+        cost_estimate:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Cost Estimate
+          description: Estimated cost in USD
+        status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
+          description: '''success'' or ''error'''
+        error:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error
+          description: Failure reason when status is 'error'
+        attempts:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Attempts
+          description: Provider attempts made, retries included
       type: object
       title: LogProviderRequest
-      description: Body for "POST /internal/loggers/log/provider".
+      description: 'Body for "POST /internal/loggers/log/provider".
+
+
+        The trailing fields are optional extras used by image generation
+
+        ("request_kind=''image''"); omitting them keeps TTS/translation records
+
+        byte-identical because "to_request_emit_fields()" excludes "None".'
     LogRequest:
       properties:
         level:

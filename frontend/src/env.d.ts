@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
+  readonly VITE_ARCHIVE_CONFIRMATION_MODE?: 'complex' | 'simple'
   readonly VITE_MOCK_DATA: string
   readonly VITE_VERBOSE_REQUESTS: string
 }

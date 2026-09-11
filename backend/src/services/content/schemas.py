@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -17,6 +18,7 @@ class FileAction(str, Enum):
     ADD = "add"
     UPDATE = "update"
     DELETE = "delete"
+    REGENERATE = "regenerate"
 
 
 class ItemSummary(BaseModel):
@@ -26,6 +28,26 @@ class ItemSummary(BaseModel):
     name: LocalizedString
     thumbnail_uri: str | None = None
     images_count: int = 0
+
+
+class ImageResponse(BaseModel):
+    """Response for a single item image entry."""
+
+    id: str
+    file_uri: str | None = None
+    action: FileAction | None = None
+
+
+class VoiceResponse(BaseModel):
+    """A single voice entry."""
+
+    id: str
+    language: str
+    type: str
+    file_uri: str | None = None
+    action: FileAction | None = None
+    provider: str = "unknown"
+    parameters: dict[str, Any] = Field(default_factory=dict)
 
 
 # endregion
@@ -154,14 +176,6 @@ class RemoveCategoryResponse(BaseModel):
 
 # region Category Images Response models
 
-class ImageResponse(BaseModel):
-    """Response for a single item image entry."""
-
-    id: str
-    file_uri: str | None = None
-    action: FileAction | None = None
-
-
 class CategoryImagesResponse(BaseModel):
     """Response for GET /categories/{name}/images."""
 
@@ -173,16 +187,6 @@ class CategoryImagesResponse(BaseModel):
 # endregion
 
 # region Category Voices Response models
-
-class VoiceResponse(BaseModel):
-    """A single voice entry."""
-
-    id: str
-    language: str
-    type: str
-    file_uri: str | None = None
-    action: FileAction | None = None
-
 
 class CategoryVoicesResponse(BaseModel):
     """Response for GET /categories/{name}/voices."""
@@ -208,12 +212,16 @@ class UpdateItemBody(BaseModel):
 # region Items Response models
 
 class CreateItemResponse(BaseModel):
-    """Response for POST /content/items."""
+    """Response for POST /content/categories/{category_id}/items (and legacy POST /content/items)."""
 
     category: str
     item: str
     folder: str
-    image_id: str
+    image_id: str  # Legacy alias of item_id.
+    item_id: str
+    voices_generated: list[str]
+    voice_warnings: list[str]
+    message: str
 
 
 class ItemListResponse(BaseModel):

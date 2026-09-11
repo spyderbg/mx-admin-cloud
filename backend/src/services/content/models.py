@@ -97,6 +97,8 @@ class CategoryVoice:
     language: str = ""
     type: str = ""
     file_uri: str | None = None
+    provider: str = "unknown"
+    parameters: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass
@@ -135,11 +137,15 @@ class CreateCategory:
 
 
 @dataclass
-class CreateItem:
+class CreateItem:  # pylint: disable=too-many-instance-attributes
     category: str = ""
     item: str = ""
     folder: str = ""
-    image_id: str = ""
+    image_id: str = ""  # Legacy alias of item_id, kept for CLI JSON compatibility.
+    item_id: str = ""
+    voices_generated: list[str] = field(default_factory=list)
+    voice_warnings: list[str] = field(default_factory=list)
+    message: str = ""
 
 
 @dataclass
@@ -250,6 +256,10 @@ class ContentProvider(ServiceProvider, ABC):
         """Delete an existing voice audio file from a category."""
 
     @abstractmethod
+    def regenerate_category_voice(self, category_id: str, voice_id: str) -> CategoryVoice:
+        """Re-synthesize a category voice from its current localized name via the text-to-speech service."""
+
+    @abstractmethod
     def archive_category(self, category_id: str) -> ArchiveCategory:
         """Move a category from the content directory to the archive.
 
@@ -293,10 +303,16 @@ class ContentProvider(ServiceProvider, ABC):
             self,
             category_id: str,
             english_word: str,
-            image_data: bytes,
+            image_data: bytes | None = None,
             image_extension: str = ".png",
+            generate_voices: bool = True,
     ) -> CreateItem:
-        """Create an item folder with image, translations, and voice files."""
+        """Create an item with translations, an optional image, and best-effort voices.
+
+        A translation failure must abort creation without leaving files or registry rows
+        behind. Voices are generated only when *generate_voices* is true and never fail
+        the operation; problems are reported in ``CreateItem.voice_warnings``.
+        """
 
     @abstractmethod
     def update_item_name(
@@ -355,6 +371,10 @@ class ContentProvider(ServiceProvider, ABC):
     @abstractmethod
     def delete_item_voice(self, category_id: str, item_id: str, voice_id: str) -> CategoryVoice:
         """Delete the audio file for an existing item voice."""
+
+    @abstractmethod
+    def regenerate_item_voice(self, category_id: str, item_id: str, voice_id: str) -> CategoryVoice:
+        """Re-synthesize an item voice from its current text via the text-to-speech service."""
 
     @abstractmethod
     def category_id_by_name(self, category_name: str) -> str:

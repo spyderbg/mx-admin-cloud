@@ -2,7 +2,7 @@ import { ref, onUnmounted } from 'vue'
 import type { Voice } from '../types/viewModels'
 
 /**
- * Single-voice-at-a-time audio playback, shared by CategoryDetail and ItemDetailView.
+ * Single-voice-at-a-time audio playback, shared by CategoryDetail and ItemDetailsView.
  * `resolveSrc` lets each caller apply its own cache-busting to the voice's file URI.
  */
 export function useAudioPlayer(resolveSrc: (voice: Voice) => string) {

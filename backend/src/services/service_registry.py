@@ -69,6 +69,11 @@ class ServiceRegistry:
             )
         inst._descriptors = {d.service_name: d for d in descriptors}
         inst._services = services
+        configuration_service = services.get("configuration")
+        logging_service = services.get("logging")
+        set_logging_service = getattr(configuration_service, "set_logging_service", None)
+        if callable(set_logging_service) and logging_service is not None:
+            set_logging_service(logging_service)
         return inst
 
     @classmethod

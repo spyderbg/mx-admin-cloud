@@ -142,6 +142,12 @@ components:
           title: Success
         lang_text:
           $ref: '#/components/schemas/LangCodeText'
+        errors:
+          items:
+            type: string
+          type: array
+          title: Errors
+          default: []
       type: object
       required:
       - success

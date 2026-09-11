@@ -2,20 +2,11 @@
 
 from __future__ import annotations
 
-from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, Field
 
-
-class LogLevel(str, Enum):
-    TRACE = "trace"  # 10
-    DEBUG = "debug"  # 20
-    INFO = "info"  # 30
-    WARNING = "warning"  # 40
-    ERROR = "error"  # 50
-    CRITICAL = "critical"  # 100
-    FATAL = "fatal"  # 200
+from src.services.logging.models import LogLevel
 
 
 class StatusResponse(BaseModel):
@@ -56,7 +47,12 @@ class LogServiceRequest(LogRequest):
 
 
 class LogProviderRequest(BaseModel):
-    """Body for "POST /internal/loggers/log/provider"."""
+    """Body for "POST /internal/loggers/log/provider".
+
+    The trailing fields are optional extras used by image generation
+    ("request_kind='image'"); omitting them keeps TTS/translation records
+    byte-identical because "to_request_emit_fields()" excludes "None".
+    """
     provider: str | None = None
     tts_model: str | None = Field(None, alias="model")
     actor: str | None = None
@@ -64,6 +60,13 @@ class LogProviderRequest(BaseModel):
     language: str | None = None
     input_data: Any | None = Field(None, alias="input")
     response_duration: float | None = None
+    request_kind: str | None = Field(None, description="Request family, e.g. 'tts' or 'image'")
+    size: str | None = Field(None, description="Requested output size, e.g. '1024x1024'")
+    quality: str | None = Field(None, description="Requested output quality tier")
+    cost_estimate: float | None = Field(None, description="Estimated cost in USD")
+    status: str | None = Field(None, description="'success' or 'error'")
+    error: str | None = Field(None, description="Failure reason when status is 'error'")
+    attempts: int | None = Field(None, description="Provider attempts made, retries included")
 
     model_config = {"populate_by_name": True}
 

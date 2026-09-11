@@ -2,7 +2,7 @@
 import { LocalizedString } from './localization'
 
 /** Action performed on a category/item file (image or voice), echoed back in the response. */
-export type FileAction = 'add' | 'update' | 'delete'
+export type FileAction = 'add' | 'update' | 'delete' | 'regenerate'
 
 /** Response for archiving (or removing via archive) a category. */
 export interface ArchiveCategoryResponse {
@@ -69,12 +69,16 @@ export interface CreateCategoryResponse {
     message: string
 }
 
-/** Response for POST /content/items. */
+/** Response for POST /content/categories/{category_id}/items (and legacy POST /content/items). */
 export interface CreateItemResponse {
     category: string
     item: string
     folder: string
     image_id: string
+    item_id: string
+    voices_generated: string[]
+    voice_warnings: string[]
+    message: string
 }
 
 /** Response for DELETE /content/categories/archive/{name}. */
@@ -173,4 +177,6 @@ export interface VoiceResponse {
     type: string
     file_uri?: string | null
     action?: FileAction | null
+    provider?: string
+    parameters?: Record<string, any>
 }

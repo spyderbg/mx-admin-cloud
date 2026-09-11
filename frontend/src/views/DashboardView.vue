@@ -54,66 +54,88 @@
       </div>
     </div>
 
-    <div v-if="archivedCategories.length" class="archived-section">
-      <hr class="mb-3" />
+    <section v-if="archivedCategories.length" class="archived-section">
       <button
         type="button"
         class="archived-toggle"
         :aria-expanded="archivedExpanded"
         @click="archivedExpanded = !archivedExpanded"
       >
-        <span class="d-flex align-items-center">
-          <span class="archived-toggle-marker mr-2">
-            <i class="mdi mdi-format-list-bulleted"></i>
+        <span class="archived-toggle-copy">
+          <span class="archived-toggle-title">
+            <span class="archived-toggle-marker">
+              <i class="mdi mdi-archive"></i>
+            </span>
+            <strong>{{ archivedCategoriesLabel(contentLanguage) }}</strong>
+            <span class="archived-count">{{ archivedCategories.length }}</span>
           </span>
-          <strong>{{ archivedCategoriesLabel(contentLanguage) }}</strong>
-          <span class="badge badge-pill badge-secondary ml-2">{{ archivedCategories.length }}</span>
+          <span class="archived-subtitle">{{ archivedDescriptionLabel() }}</span>
         </span>
-        <i class="mdi text-muted" :class="archivedExpanded ? 'mdi-chevron-up' : 'mdi-chevron-down'"></i>
+        <i class="mdi archived-toggle-chevron" :class="archivedExpanded ? 'mdi-chevron-up' : 'mdi-chevron-down'"></i>
       </button>
 
       <div v-if="archivedExpanded" class="archived-list">
         <div
           v-for="entry in archivedCategories"
           :key="entry.archiveFolder"
-          class="archived-row d-flex align-items-center justify-content-between"
+          class="archived-row"
         >
-          <div class="d-flex align-items-center">
-            <i class="mdi mdi-archive text-muted mr-3" style="font-size: 1.5rem;"></i>
-            <div>
-              <div class="font-weight-bold">{{ entry.baseName }}</div>
-              <small class="text-muted">{{ archivedAgoLabel(contentLanguage, entry.archivedAt) }}</small>
+          <div class="archived-row-main">
+            <img
+              :src="archivedThumbnail(entry)"
+              :alt="archivedDisplayName(entry)"
+              class="archived-thumbnail"
+            />
+            <div class="archived-row-copy">
+              <div class="archived-row-name">{{ archivedDisplayName(entry) }}</div>
+              <div class="archived-row-items">
+                <span>{{ itemCountLabel(contentLanguage, archivedItemCount(entry)) }}</span>
+              </div>
             </div>
+          </div>
+          <div class="archived-meta">
+            <span class="archived-meta-label">{{ archivedCreatedColumnLabel() }}</span>
+            <span class="archived-meta-value">{{ archivedCreatedDateLabel(entry) }}</span>
+          </div>
+          <div class="archived-meta">
+            <span class="archived-meta-label">{{ archivedDateColumnLabel() }}</span>
+            <span class="archived-meta-value">{{ archivedDateLabel(entry) }}</span>
           </div>
           <div class="archived-row-actions">
             <button
-              class="btn btn-outline-secondary btn-sm"
+              class="archived-action archived-action-restore"
               :disabled="restoringFolder !== '' || deletingFolder !== ''"
               @click="restoreCategory(entry)"
             >
               <span
                 v-if="restoringFolder === entry.archiveFolder"
-                class="spinner-border spinner-border-sm mr-1"
+                class="spinner-border spinner-border-sm"
                 role="status"
               ></span>
-              <i v-else class="mdi mdi-restore mr-1"></i>{{ restoreLabel(contentLanguage) }}
+              <template v-else>
+                <i class="mdi mdi-refresh"></i>
+                <span>{{ restoreLabel(contentLanguage) }}</span>
+              </template>
             </button>
             <button
-              class="btn btn-outline-danger btn-sm"
+              class="archived-action archived-action-delete"
               :disabled="restoringFolder !== '' || deletingFolder !== ''"
               @click="openDeleteArchivedCategory(entry)"
             >
               <span
                 v-if="deletingFolder === entry.archiveFolder"
-                class="spinner-border spinner-border-sm mr-1"
+                class="spinner-border spinner-border-sm"
                 role="status"
               ></span>
-              <i v-else class="mdi mdi-delete-outline mr-1"></i>{{ deleteLabel(contentLanguage) }}
+              <template v-else>
+                <i class="mdi mdi-delete-outline"></i>
+                <span>{{ deleteLabel(contentLanguage) }}</span>
+              </template>
             </button>
           </div>
         </div>
       </div>
-    </div>
+    </section>
   </div>
 
   <AddCategoryModal
@@ -208,7 +230,6 @@ import type { ArchivedCategory } from '../types/viewModels'
 import { categoryIdFromFolderName, folderNameFromCategoryId } from '../utils/categoryIds'
 import {
   addNewCategoryLabel,
-  archivedAgoLabel,
   archivedCategoriesLabel,
   archiveTypeToConfirmLabel,
   breadcrumbCategoriesLabel,
@@ -291,6 +312,65 @@ const deletingFolder = ref('')
 const deleteTarget = ref<ArchivedCategory | null>(null)
 const deleteConfirmText = ref('')
 
+function archivedDisplayName(entry: ArchivedCategory): string {
+  return entry.baseName.replace(/_/g, ' ')
+}
+
+function archivedThumbnail(entry: ArchivedCategory): string {
+  return entry.thumbnailUri || cameraPlaceholderUrl
+}
+
+function archivedItemCount(entry: ArchivedCategory): number {
+  return entry.itemsCount ?? 0
+}
+
+function archivedDescriptionLabel(): string {
+  const labels: Record<string, string> = {
+    en: 'Categories that are archived and hidden from the main list.',
+    es: 'Categorías archivadas y ocultas de la lista principal.',
+    fr: 'Catégories archivées et masquées de la liste principale.',
+    bg: 'Категории, които са архивирани и скрити от основния списък.',
+  }
+  return labels[contentLanguage.value] ?? labels.en
+}
+
+function archivedDateColumnLabel(): string {
+  const labels: Record<string, string> = {
+    en: 'Archived',
+    es: 'Archivada',
+    fr: 'Archivée',
+    bg: 'Архивирана',
+  }
+  return labels[contentLanguage.value] ?? labels.en
+}
+
+function archivedCreatedColumnLabel(): string {
+  const labels: Record<string, string> = {
+    en: 'Created',
+    es: 'Creada',
+    fr: 'Créée',
+    bg: 'Създадена',
+  }
+  return labels[contentLanguage.value] ?? labels.en
+}
+
+function archivedDateLabel(entry: ArchivedCategory): string {
+  return new Intl.DateTimeFormat(contentLanguage.value, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(new Date(entry.archivedAt * 1000))
+}
+
+function archivedCreatedDateLabel(entry: ArchivedCategory): string {
+  const timestamp = entry.createdAt ?? entry.archivedAt
+  return new Intl.DateTimeFormat(contentLanguage.value, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(new Date(timestamp * 1000))
+}
+
 const deleteTargetCategoryId = computed(() =>
   deleteTarget.value ? categoryIdFromFolderName(deleteTarget.value.baseName) : '',
 )
@@ -370,47 +450,226 @@ async function confirmDeleteArchivedCategory(): Promise<void> {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
 }
 .archived-section {
-  margin-top: 0.5rem;
+  margin-top: 1.25rem;
+  padding: 1.5rem;
+  background: #fff;
+  border: 1px solid #dfe5ef;
+  border-radius: 8px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
 }
 .archived-toggle {
   display: flex;
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding: 0.5rem 0;
+  padding: 0;
   background: none;
   border: none;
   text-align: left;
   cursor: pointer;
+  color: #111827;
+}
+.archived-toggle-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.archived-toggle-title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+  font-size: 1.125rem;
+  line-height: 1.2;
 }
 .archived-toggle-marker {
-  width: 1.5rem;
-  height: 1.5rem;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  border-radius: 4px;
+  width: 1.625rem;
+  height: 1.625rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #64748b;
-  background: #fff;
-  font-size: 1rem;
+  color: #3157ff;
+  font-size: 1.45rem;
+  flex-shrink: 0;
+}
+.archived-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.55rem;
+  height: 1.55rem;
+  padding: 0 0.45rem;
+  border-radius: 999px;
+  background: #eef1f6;
+  color: #111827;
+  font-size: 0.8rem;
+  font-weight: 700;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+.archived-subtitle {
+  margin-left: 2.375rem;
+  color: #475569;
+  font-size: 0.875rem;
+  line-height: 1.35;
+}
+.archived-toggle-chevron {
+  color: #475569;
+  font-size: 1.45rem;
+  flex-shrink: 0;
 }
 .archived-list {
-  background: #fff;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  border-radius: 12px;
-  overflow: hidden;
+  margin-top: 1.55rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
 .archived-row {
-  padding: 1rem 1.25rem;
+  display: grid;
+  grid-template-columns: minmax(16rem, 1fr) 11rem 11rem auto;
+  align-items: center;
+  gap: 1.5rem;
+  min-height: 7.5rem;
+  padding: 1.25rem 1.35rem;
+  border: 1px solid #dfe5ef;
+  border-radius: 6px;
+  background: #fff;
+}
+.archived-row-main {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 1.25rem;
+}
+.archived-thumbnail {
+  width: 5rem;
+  height: 5rem;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: #f1f5f9;
+}
+.archived-row-copy {
+  min-width: 0;
+}
+.archived-row-name {
+  margin-bottom: 0.75rem;
+  color: #111827;
+  font-size: 1.08rem;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.archived-row-items {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #475569;
+  font-size: 0.875rem;
+  line-height: 1.2;
+}
+.archived-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.65rem;
+  min-width: 0;
+}
+.archived-meta-label {
+  color: #475569;
+  font-size: 0.85rem;
+  line-height: 1.2;
+}
+.archived-meta-value {
+  color: #111827;
+  font-size: 0.98rem;
+  line-height: 1.25;
+  white-space: nowrap;
 }
 .archived-row-actions {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
 }
-.archived-row + .archived-row {
-  border-top: 1px solid rgba(0, 0, 0, 0.08);
+.archived-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  box-sizing: border-box;
+  inline-size: 8.75rem;
+  min-height: 2.75rem;
+  padding: 0.55rem 1rem;
+  border: 1px solid;
+  border-radius: 6px;
+  background: #fff;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+.archived-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+.archived-action i {
+  font-size: 1.1rem;
+}
+.archived-action-restore {
+  border-color: #cfd8e7;
+  color: #3157ff;
+}
+.archived-action-restore:hover:not(:disabled) {
+  border-color: #3157ff;
+  background: #f4f7ff;
+}
+.archived-action-delete {
+  border-color: #ffb7bd;
+  color: #ff303d;
+}
+.archived-action-delete:hover:not(:disabled) {
+  border-color: #ff303d;
+  background: #fff5f6;
+}
+@media (max-width: 991px) {
+  .archived-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .archived-row-main,
+  .archived-row-actions {
+    grid-column: 1 / -1;
+  }
+  .archived-row-actions {
+    justify-content: flex-start;
+  }
+}
+@media (max-width: 767px) {
+  .archived-section {
+    padding: 1rem;
+  }
+  .archived-subtitle {
+    margin-left: 0;
+  }
+  .archived-row {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+    padding: 1rem;
+  }
+  .archived-row-actions,
+  .archived-meta {
+    grid-column: auto;
+    grid-row: auto;
+  }
+  .archived-row-actions {
+    justify-content: flex-start;
+  }
+  .archived-action {
+    flex: 1 1 8.75rem;
+  }
 }
 .cd-modal-overlay {
   position: fixed;

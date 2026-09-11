@@ -6,7 +6,6 @@ All endpoints require a JWT with the role "internal" or "admin".
 
 from __future__ import annotations
 
-import logging as _logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -14,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from src.api.dependencies import get_registry, require_internal
 from src.api.service_resolver import get_typed_service
 from src.services import logging
-from src.services.logging.models import LogMessage
+from src.services.logging.models import LogLevel, LogMessage
 from src.services.logging.schemas import (
     LogRequest,
     StatusResponse,
@@ -189,9 +188,10 @@ async def log_provider_request(
     """Log a provider request through the logging service."""
     logger_name = "requests"
     validate_logger_exists(service, logger_name)
+    event = body.provider or "provider_request"
     log_message = LogMessage(
-        event="provider_request",
-        level=_logging.INFO,
+        event=event,
+        level=LogLevel.INFO,
         fields=body.to_request_emit_fields(),
     )
     service.log(logger_name, log_message)
@@ -241,10 +241,10 @@ def validate_logger_exists(service: LoggingService, logger_name: str) -> None:
 
 
 def log_message_from_request(body: LogRequest) -> LogMessage:
-    """Build a LogMessage from the request body, normalising the level name."""
+    """Build an internal log message from the validated request body."""
     return LogMessage(
         event=body.event,
-        level=_logging.getLevelName(body.level.value.upper()),
+        level=body.level,
         fields=body.fields,
     )
 

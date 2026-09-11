@@ -12,11 +12,11 @@ import json
 import re
 import shutil
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
+from enum import Enum
 from pathlib import Path
 
 import httpx
-from openai import OpenAI, OpenAIError
 
 from src.core.config import settings
 from src.core.localization import LocalizedString
@@ -32,6 +32,7 @@ from src.services.content.models import (
     CategoryNotFoundError,
     CategorySummary,
     CategoryVoice,
+    ContentError,
     ContentOperationError,
     ContentProvider,
     CreateCategory,
@@ -51,6 +52,14 @@ _IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg")
 
 _SAFE_NAME_RE = re.compile(r"^[a-zA-Z0-9_]+$")
 
+
+def _extension_for_content_type(content_type: str | None) -> str:
+    """Map an image response content type onto a supported file extension."""
+    if content_type and content_type.split(";", 1)[0].strip().lower() in ("image/jpeg", "image/jpg"):
+        return ".jpg"
+    return ".png"
+
+
 # --- File name constants ---
 _CATEGORIES_IDS = "categories_ids.csv"
 _CATEGORIES_LANG_CSV = "categories_{}.csv"
@@ -58,11 +67,31 @@ _DESCRIPTIONS_LANG_CSV = "descriptions_{}.csv"
 _ITEMS_IDS = "items_ids.csv"
 _ITEMS_LANG_CSV = "items_{}.csv"
 _CATEGORY_VOICE_MP3 = "{}_{}.mp3"
-_ITEM_VOICE_MP3 = "{}_{}_01.mp3"
+_VOICE_METADATA_COLUMNS = ("creation_method", "provider", "parameters")
 
 # Written into a category folder when it is archived, so restore_category() can rebuild
 # the root CSV registry rows that archive_category() deletes.
 _ARCHIVE_MANIFEST = "_category.json"
+
+
+class VoiceCreationMethod(str, Enum):
+    """Supported voice provenance values stored in metadata sidecars."""
+
+    UPLOADED = "uploaded"
+    GENERATED = "generated"
+
+
+class _GeneratedAudioBytes(bytes):
+    """Audio payload carrying the provider reported by the internal TTS API."""
+
+    provider: str
+    parameters: dict[str, object]
+
+    def __new__(cls, content: bytes, provider: str, parameters: dict[str, object]):
+        instance = super().__new__(cls, content)
+        instance.provider = provider
+        instance.parameters = parameters
+        return instance
 
 
 class FileSystemContentProvider(ContentProvider):
@@ -93,8 +122,15 @@ class FileSystemContentProvider(ContentProvider):
             target_lang_code: str | None = None,
             category: str | None = None,
             input_lang_code: str | None = None,
+            *,
+            require_success: bool = False,
     ) -> str:
-        """Translate text via the internal /internal/translators/translate endpoint."""
+        """Translate text via the internal /internal/translators/translate endpoint.
+
+        The endpoint answers 200 with ``success: false`` and the untranslated input when
+        no translator produced a result. With *require_success* that case raises instead
+        of silently returning the source text.
+        """
         if not text or not text.strip():
             return text.strip()
 
@@ -112,7 +148,13 @@ class FileSystemContentProvider(ContentProvider):
         )
         if response.is_error:
             raise RuntimeError(FileSystemContentProvider._extract_error_detail(response))
-        translated_text = response.json()["lang_text"]["text"]
+        payload = response.json()
+        if require_success and not payload.get("success", False):
+            errors = payload.get("errors") or []
+            if errors:
+                raise RuntimeError("; ".join(errors))
+            raise RuntimeError(f"No active translator produced a translation for '{target_lang_code}'.")
+        translated_text = payload["lang_text"]["text"]
         return translated_text or text.strip()
 
     @staticmethod
@@ -139,28 +181,118 @@ class FileSystemContentProvider(ContentProvider):
         )
         if response.is_error:
             raise RuntimeError(FileSystemContentProvider._extract_error_detail(response))
-        return response.content
+        encoded_parameters = response.headers.get("X-TTS-Parameters", "")
+        try:
+            parameters = json.loads(base64.urlsafe_b64decode(encoded_parameters).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            parameters = {}
+        if not isinstance(parameters, dict):
+            parameters = {}
+        return _GeneratedAudioBytes(
+            response.content,
+            response.headers.get("X-TTS-Provider", "unknown"),
+            parameters,
+        )
 
     @staticmethod
-    def _generate_icon(prompt: str) -> bytes:
-        """Generate a child-friendly icon via the OpenAI Images API."""
-        if not prompt or not prompt.strip():
-            raise ValueError("Prompt must be non-empty for icon generation.")
+    def _voice_metadata_path(voice_path: Path) -> Path:
+        """Return the CSV sidecar path belonging to an MP3 voice file."""
+        return voice_path.with_suffix(".csv")
 
-        if not settings.OPENAI_API_KEY:
-            raise ValueError("OPENAI_API_KEY is not set; cannot call Images API.")
+    @classmethod
+    def _write_voice_metadata(
+            cls,
+            voice_path: Path,
+            creation_method: VoiceCreationMethod,
+            provider: str = "",
+            parameters: dict[str, object] | None = None,
+    ) -> None:
+        """Persist how a voice was created in a one-row CSV next to its MP3.
 
-        client = OpenAI(api_key=settings.OPENAI_API_KEY)
-        response = client.images.generate(
-            model="gpt-image-1",
-            prompt=prompt.strip(),
-            size="1024x1024",
-            n=1,
+        Stamps a "date" parameter with the write time, alongside whatever
+        the caller passed (e.g. "_text" for generated voices).
+        """
+        metadata_path = cls._voice_metadata_path(voice_path)
+        all_parameters = dict(parameters or {})
+        all_parameters["date"] = datetime.now(timezone.utc).isoformat()
+        with metadata_path.open("w", encoding="utf-8", newline="") as file_handle:
+            writer = csv.DictWriter(file_handle, fieldnames=_VOICE_METADATA_COLUMNS)
+            writer.writeheader()
+            writer.writerow({
+                "creation_method": creation_method.value,
+                "provider": provider,
+                "parameters": json.dumps(all_parameters, ensure_ascii=False, sort_keys=True),
+            })
+
+    @classmethod
+    def _write_generated_voice_metadata(
+            cls,
+            voice_path: Path,
+            audio_bytes: bytes,
+            text: str,
+    ) -> None:
+        """Persist generated-voice settings together with the synthesized text."""
+        parameters = dict(getattr(audio_bytes, "parameters", {}))
+        parameters["_text"] = text.strip()
+        cls._write_voice_metadata(
+            voice_path,
+            VoiceCreationMethod.GENERATED,
+            getattr(audio_bytes, "provider", "unknown"),
+            parameters,
         )
-        b64_data = response.data[0].b64_json
-        if not b64_data:
-            raise ValueError("No image data returned from Images API.")
-        return base64.b64decode(b64_data)
+
+    @classmethod
+    def _read_voice_metadata(cls, voice_path: Path) -> tuple[str, dict[str, object]]:
+        """Return (provider, parameters) recorded for *voice_path*'s CSV sidecar.
+
+        Falls back to ("unknown", {}) when the sidecar is missing, unreadable, or the
+        provider/parameters columns are empty or not valid JSON.
+        """
+        metadata_path = cls._voice_metadata_path(voice_path)
+        try:
+            with metadata_path.open("r", encoding="utf-8", newline="") as file_handle:
+                row = next(csv.DictReader(file_handle), None)
+        except (OSError, csv.Error):
+            return "unknown", {}
+        if not row:
+            return "unknown", {}
+
+        provider = (row.get("provider") or "").strip() or "unknown"
+        try:
+            parameters = json.loads(row.get("parameters") or "{}")
+        except (TypeError, ValueError):
+            parameters = {}
+        if not isinstance(parameters, dict):
+            parameters = {}
+        return provider, parameters
+
+    @classmethod
+    def _delete_voice_with_metadata(cls, voice_path: Path) -> None:
+        voice_path.unlink()
+        cls._voice_metadata_path(voice_path).unlink(missing_ok=True)
+
+    @staticmethod
+    def _generate_image(prompt: str, filename_text: str | None = None) -> tuple[bytes, str]:
+        """Generate an image via the internal /internal/image-generators/generate-image endpoint.
+
+        Returns the raw bytes plus the file extension implied by the response
+        content type, so whichever image provider is active (and however it
+        encodes the result) decides the format.
+        """
+        if not prompt or not prompt.strip():
+            raise ValueError("Prompt must be non-empty for image generation.")
+
+        token = create_internal_token("image-service", timedelta(seconds=30))
+        response = httpx.post(
+            f"{settings.API_BASE_URL}/internal/image-generators/generate-image",
+            json={"prompt": prompt.strip(), "filename_text": filename_text},
+            headers={"Authorization": f"Bearer {token}"},
+            # Local render backends (e.g. ComfyUI) can legitimately take minutes.
+            timeout=httpx.Timeout(600.0, connect=10.0),
+        )
+        if response.is_error:
+            raise RuntimeError(FileSystemContentProvider._extract_error_detail(response))
+        return response.content, _extension_for_content_type(response.headers.get("content-type"))
 
     # ------------------------------------------------------------------
     # Filesystem utilities
@@ -192,9 +324,17 @@ class FileSystemContentProvider(ContentProvider):
 
     @staticmethod
     def _append_csv_line(file_path: Path, line: str) -> None:
+        """Append one row to a single-column CSV file, creating the file if needed."""
         file_path.parent.mkdir(parents=True, exist_ok=True)
+        needs_newline = False
+        if file_path.exists() and file_path.stat().st_size > 0:
+            with open(file_path, "rb") as fh:
+                fh.seek(-1, 2)
+                needs_newline = fh.read(1) != b"\n"
         with open(file_path, "a", newline="", encoding="utf-8") as fh:
-            fh.write(line.strip() + "\n")
+            if needs_newline:
+                fh.write("\n")
+            csv.writer(fh, lineterminator="\n").writerow([line.strip()])
 
     @staticmethod
     def _read_csv_rows_aligned(file_path: Path) -> list[str]:
@@ -295,19 +435,25 @@ class FileSystemContentProvider(ContentProvider):
         return category_path / _CATEGORY_VOICE_MP3.format(category_name, language)
 
     @staticmethod
+    def _language_for_category_voice_id(category_name: str, voice_id: str) -> str | None:
+        """Return the language encoded in *voice_id* for this category, or None if unrecognized."""
+        for lang in settings.SUPPORTED_LANGUAGES:
+            if voice_id == f"{category_name}-v-{lang}":
+                return lang
+        return None
+
+    @staticmethod
     def _find_category_voice_file(
             category_path: Path,
             category_name: str,
             voice_id: str,
     ) -> tuple[str, Path] | None:
         """Return the (language, path) for the existing voice file matching *voice_id*, if any."""
-        for lang in settings.SUPPORTED_LANGUAGES:
-            if voice_id != f"{category_name}-v-{lang}":
-                continue
-            voice_path = FileSystemContentProvider._category_voice_path(category_path, category_name, lang)
-            if voice_path.is_file():
-                return lang, voice_path
-        return None
+        lang = FileSystemContentProvider._language_for_category_voice_id(category_name, voice_id)
+        if lang is None:
+            return None
+        voice_path = FileSystemContentProvider._category_voice_path(category_path, category_name, lang)
+        return (lang, voice_path) if voice_path.is_file() else None
 
     @staticmethod
     def _item_voice_path(item_path: Path, item_folder_name: str, language: str) -> Path:
@@ -422,6 +568,16 @@ class FileSystemContentProvider(ContentProvider):
                 pass
 
         return ids_by_folder, names_by_folder
+
+    def _category_label_for_language(self, category_name: str, language: str) -> str:
+        """Return the category's current localized name for *language*, falling back to English."""
+        _, names_by_folder = self._load_category_localized_names()
+        names = names_by_folder.get(category_name.lower(), {})
+        for lang in (language, "en"):
+            label = names.get(lang, "").strip()
+            if label:
+                return label
+        return ""
 
     def _load_category_localized_descriptions(self, category_name: str) -> dict[str, str]:
         """Return per-language descriptions for *category_name* (a folder name) from descriptions_{lang}.csv.
@@ -701,11 +857,14 @@ class FileSystemContentProvider(ContentProvider):
         for lang in settings.SUPPORTED_LANGUAGES:
             voice_file = category_path / _CATEGORY_VOICE_MP3.format(category_name, lang)
             has_file = voice_file.exists() and voice_file.is_file()
+            provider, parameters = self._read_voice_metadata(voice_file) if has_file else ("unknown", {})
             voices.append(CategoryVoice(
                 id=f"{category_name}-v-{lang}",
                 language=lang,
                 type="tts",
                 file_uri=f"/content/{category_name}/{voice_file.name}" if has_file else None,
+                provider=provider,
+                parameters=parameters,
             ))
         return voices
 
@@ -724,7 +883,9 @@ class FileSystemContentProvider(ContentProvider):
         category_id = f"C_{self._to_pascal(category_name)}"
 
         try:
+            description_en = f"Explore fun items about {category_name.replace('_', ' ').strip() or category_name}."
             labels_by_lang: dict[str, str] = {}
+            descriptions_by_lang: dict[str, str] = {"en": description_en}
             for lang in settings.SUPPORTED_LANGUAGES:
                 if lang == "en":
                     label = category_name.replace("_", " ").strip() or category_name
@@ -733,6 +894,7 @@ class FileSystemContentProvider(ContentProvider):
                         label = self._translate_word(
                             category_name.replace("_", " ").strip() or category_name, lang, category_name,
                         )
+                        descriptions_by_lang[lang] = self._translate_word(description_en, lang, category_name)
                     except (ValueError, RuntimeError, httpx.HTTPError, KeyError) as exc:
                         raise ContentOperationError(f"Translation failed for {lang}: {exc}") from exc
                 labels_by_lang[lang] = label
@@ -741,6 +903,7 @@ class FileSystemContentProvider(ContentProvider):
                     voice_path = category_path / _CATEGORY_VOICE_MP3.format(category_name, lang)
                     with open(voice_path, "wb") as fh:
                         fh.write(audio_bytes)
+                    self._write_generated_voice_metadata(voice_path, audio_bytes, label)
                 except (ValueError, RuntimeError, httpx.HTTPError) as exc:
                     raise ContentOperationError(f"TTS failed for {lang}: {exc}") from exc
                 except OSError as exc:
@@ -748,11 +911,10 @@ class FileSystemContentProvider(ContentProvider):
 
             try:
                 prompt = self._category_name_to_icon_prompt(category_name)
-                icon_bytes = self._generate_icon(prompt)
-                icon_path = category_path / f"{category_name}.png"
-                with open(icon_path, "wb") as fh:
+                icon_bytes, icon_extension = self._generate_image(prompt, category_name)
+                with open(category_path / f"{category_name}{icon_extension}", "wb") as fh:
                     fh.write(icon_bytes)
-            except (ValueError, RuntimeError, OpenAIError) as exc:
+            except (ValueError, RuntimeError, httpx.HTTPError) as exc:
                 raise ContentOperationError(f"Icon generation failed: {exc}") from exc
             except OSError as exc:
                 raise ContentOperationError(f"Icon file write failed: {exc}") from exc
@@ -761,6 +923,7 @@ class FileSystemContentProvider(ContentProvider):
             self._register_category_rows(
                 category_id,
                 {lang: labels_by_lang.get(lang) or fallback_label for lang in settings.SUPPORTED_LANGUAGES},
+                {lang: descriptions_by_lang.get(lang) or description_en for lang in settings.SUPPORTED_LANGUAGES},
             )
         except Exception:
             # Creation failed partway through: leave no trace (no orphaned folder, no
@@ -771,12 +934,63 @@ class FileSystemContentProvider(ContentProvider):
 
         return CreateCategory(category=category_name, message=f"Category '{category_name}' created.")
 
+    def _translate_item_word(self, english_word: str, category_name: str) -> dict[str, str]:
+        """Translate *english_word* into every non-English supported language.
+
+        Runs before any disk write so a failing translator leaves no trace. Raises
+        ContentOperationError on the first failure, including a translator that reports
+        no successful translation.
+        """
+        words_by_lang: dict[str, str] = {"en": english_word}
+        for lang in settings.SUPPORTED_LANGUAGES:
+            if lang == "en":
+                continue
+            try:
+                words_by_lang[lang] = self._translate_word(
+                    english_word, lang, category_name, require_success=True,
+                )
+            except (ValueError, RuntimeError, httpx.HTTPError, KeyError) as exc:
+                raise ContentOperationError(f"Translation failed for {lang}: {exc}") from exc
+        return words_by_lang
+
+    def _generate_item_voices(
+            self,
+            item_path: Path,
+            folder_name: str,
+            words_by_lang: dict[str, str],
+    ) -> tuple[list[str], list[str]]:
+        """Generate one voice file per supported language, best effort.
+
+        Returns (languages generated, warnings). Never raises: a failing language is
+        reported and the remaining languages are still attempted, except when the TTS
+        service reports that no provider is active, which would fail for every language.
+        """
+        generated: list[str] = []
+        warnings: list[str] = []
+        for lang in settings.SUPPORTED_LANGUAGES:
+            word = words_by_lang.get(lang) or words_by_lang["en"]
+            try:
+                audio_bytes = self._generate_audio(word, lang)
+                voice_path = self._item_voice_path(item_path, folder_name, lang)
+                voice_path.write_bytes(audio_bytes)
+                self._write_generated_voice_metadata(voice_path, audio_bytes, word)
+            except (ValueError, RuntimeError, httpx.HTTPError) as exc:
+                warnings.append(f"Voice generation failed for {lang}: {exc}")
+                if "no active text to speech" in str(exc).lower():
+                    break
+            except OSError as exc:
+                warnings.append(f"Voice file write failed for {lang}: {exc}")
+            else:
+                generated.append(lang)
+        return generated, warnings
+
     def create_item(  # pylint: disable=too-many-locals
             self,
             category_id: str,
             english_word: str,
-            image_data: bytes,
+            image_data: bytes | None = None,
             image_extension: str = ".png",
+            generate_voices: bool = True,
     ) -> CreateItem:
         category_name = self._folder_name_for_id(category_id)
         if not english_word or not english_word.strip():
@@ -784,59 +998,73 @@ class FileSystemContentProvider(ContentProvider):
         english_word = english_word.strip()
 
         folder_name = self._english_word_to_folder_name(english_word)
-        image_id = self._english_word_to_image_id(english_word)
+        item_id = self._english_word_to_image_id(english_word)
         if not folder_name:
             raise ContentOperationError("Could not derive folder name from item word")
 
-        root = self._content_root()
-        category_path = root / category_name
+        category_path = self._category_path(category_name)
+        if not category_path.is_dir():
+            raise CategoryNotFoundError(f"Category '{category_name}': directory is missing.")
         item_path = category_path / folder_name
-
         if item_path.exists():
             raise CategoryConflictError(f"Item folder already exists: {folder_name}")
+        if item_id in self._read_csv_column(category_path / _ITEMS_IDS):
+            raise CategoryConflictError(f"Item id already exists: {item_id}")
 
-        category_path.mkdir(parents=True, exist_ok=True)
-        item_path.mkdir(parents=True, exist_ok=True)
+        # Translate before touching the disk: a failing translator must not create the item.
+        words_by_lang = self._translate_item_word(english_word, category_name)
 
-        idx = self._first_available_image_index(item_path)
-        ext = image_extension if image_extension.startswith(".") else f".{image_extension}"
-        if ext.lower() not in _IMAGE_EXTENSIONS:
-            ext = ".png"
-        image_path = item_path / f"{idx:02d}{ext}"
-        with open(image_path, "wb") as fh:
-            fh.write(image_data)
+        # (path, index of the appended row, whether the file existed before the append)
+        appended: list[tuple[Path, int, bool]] = []
+        try:
+            item_path.mkdir(parents=True, exist_ok=False)
+            if image_data:
+                ext = image_extension if image_extension.startswith(".") else f".{image_extension}"
+                if ext.lower() not in _IMAGE_EXTENSIONS:
+                    ext = ".png"
+                idx = self._first_available_item_image_index(item_path, folder_name)
+                (item_path / f"{folder_name}_{idx:02d}{ext}").write_bytes(image_data)
 
-        self._append_csv_line(category_path / _ITEMS_LANG_CSV.format("en"), english_word)
-        self._append_csv_line(category_path / _ITEMS_IDS, image_id)
+            targets = [(category_path / _ITEMS_IDS, item_id)] + [
+                (category_path / _ITEMS_LANG_CSV.format(lang), words_by_lang[lang])
+                for lang in settings.SUPPORTED_LANGUAGES
+            ]
+            for path, value in targets:
+                existed = path.exists()
+                row_index = len(self._read_csv_column(path))
+                self._append_csv_line(path, value)
+                appended.append((path, row_index, existed))
+        except Exception as exc:
+            # Leave no trace: no orphaned folder and no partial registry rows, which would
+            # misalign the per-language CSV files for every item after this one.
+            shutil.rmtree(item_path, ignore_errors=True)
+            for path, row_index, existed in appended:
+                if existed:
+                    self._delete_csv_row_at_index(path, row_index)
+                else:
+                    path.unlink(missing_ok=True)
+            if isinstance(exc, ContentError):
+                raise
+            raise ContentOperationError(f"Failed to write item files: {exc}") from exc
 
-        words_by_lang: dict[str, str] = {"en": english_word}
-        for lang in settings.SUPPORTED_LANGUAGES:
-            if lang == "en":
-                continue
-            try:
-                translated = self._translate_word(english_word, lang, category_name)
-                words_by_lang[lang] = translated
-                self._append_csv_line(category_path / _ITEMS_LANG_CSV.format(lang), translated)
-            except (ValueError, RuntimeError, httpx.HTTPError, KeyError) as exc:
-                raise ContentOperationError(f"Translation failed for {lang}: {exc}") from exc
+        voices_generated: list[str] = []
+        voice_warnings: list[str] = []
+        if generate_voices:
+            voices_generated, voice_warnings = self._generate_item_voices(item_path, folder_name, words_by_lang)
 
-        for lang in settings.SUPPORTED_LANGUAGES:
-            word = words_by_lang.get(lang) or english_word
-            try:
-                audio_bytes = self._generate_audio(word, lang)
-                voice_path = item_path / _ITEM_VOICE_MP3.format(folder_name, lang)
-                with open(voice_path, "wb") as fh:
-                    fh.write(audio_bytes)
-            except (ValueError, RuntimeError, httpx.HTTPError) as exc:
-                raise ContentOperationError(f"TTS failed for {lang}: {exc}") from exc
-            except OSError as exc:
-                raise ContentOperationError(f"File write failed for {lang}: {exc}") from exc
+        message = f"Item '{english_word}' created."
+        if generate_voices and not voices_generated:
+            message += " Voices were not generated."
 
         return CreateItem(
             category=category_name,
             item=english_word,
             folder=folder_name,
-            image_id=image_id,
+            image_id=item_id,
+            item_id=item_id,
+            voices_generated=voices_generated,
+            voice_warnings=voice_warnings,
+            message=message,
         )
 
     def update_item_name(
@@ -1004,14 +1232,18 @@ class FileSystemContentProvider(ContentProvider):
         try:
             with open(voice_path, "wb") as fh:
                 fh.write(audio_data)
+            self._write_voice_metadata(voice_path, VoiceCreationMethod.UPLOADED, provider="custom")
         except OSError as exc:
             raise ContentOperationError(f"Failed to save category voice: {exc}") from exc
 
+        provider, parameters = self._read_voice_metadata(voice_path)
         return CategoryVoice(
             id=f"{category_name}-v-{language}",
             language=language,
             type="tts",
             file_uri=f"/content/{category_name}/{voice_path.name}",
+            provider=provider,
+            parameters=parameters,
         )
 
     def update_category_voice(self, category_id: str, voice_id: str, audio_data: bytes) -> CategoryVoice:
@@ -1028,14 +1260,18 @@ class FileSystemContentProvider(ContentProvider):
         try:
             with open(voice_path, "wb") as fh:
                 fh.write(audio_data)
+            self._write_voice_metadata(voice_path, VoiceCreationMethod.UPLOADED, provider="custom")
         except OSError as exc:
             raise ContentOperationError(f"Failed to update category voice: {exc}") from exc
 
+        provider, parameters = self._read_voice_metadata(voice_path)
         return CategoryVoice(
             id=voice_id,
             language=language,
             type="tts",
             file_uri=f"/content/{category_name}/{voice_path.name}",
+            provider=provider,
+            parameters=parameters,
         )
 
     def delete_category_voice(self, category_id: str, voice_id: str) -> CategoryVoice:
@@ -1049,13 +1285,56 @@ class FileSystemContentProvider(ContentProvider):
             raise CategoryNotFoundError(f"Voice '{voice_id}' not found in category '{category_name}'.")
         language, voice_path = found
         file_uri = f"/content/{category_name}/{voice_path.name}"
+        provider, parameters = self._read_voice_metadata(voice_path)
 
         try:
-            voice_path.unlink()
+            self._delete_voice_with_metadata(voice_path)
         except OSError as exc:
             raise ContentOperationError(f"Failed to delete category voice: {exc}") from exc
 
-        return CategoryVoice(id=voice_id, language=language, type="tts", file_uri=file_uri)
+        return CategoryVoice(
+            id=voice_id, language=language, type="tts", file_uri=file_uri, provider=provider, parameters=parameters,
+        )
+
+    def regenerate_category_voice(self, category_id: str, voice_id: str) -> CategoryVoice:
+        category_name = self._folder_name_for_id(category_id)
+        category_path = self._category_path(category_name)
+        if not category_path.exists() or not category_path.is_dir():
+            raise CategoryNotFoundError(f"Category '{category_name}': directory is missing.")
+
+        language = self._language_for_category_voice_id(category_name, voice_id)
+        if language is None:
+            raise CategoryNotFoundError(f"Voice '{voice_id}' not found in category '{category_name}'.")
+
+        label = self._category_label_for_language(category_name, language)
+        if not label:
+            raise ContentOperationError(
+                f"Category '{category_name}' has no {language} name to synthesize; set the name first.",
+            )
+
+        try:
+            audio_bytes = self._generate_audio(label, language)
+        except (ValueError, RuntimeError, httpx.HTTPError) as exc:
+            raise ContentOperationError(f"Voice generation failed for {language}: {exc}") from exc
+
+        # Reuse the existing file (if any) so the voice keeps its URI.
+        found = self._find_category_voice_file(category_path, category_name, voice_id)
+        voice_path = found[1] if found else self._category_voice_path(category_path, category_name, language)
+        try:
+            voice_path.write_bytes(audio_bytes)
+            self._write_generated_voice_metadata(voice_path, audio_bytes, label)
+        except OSError as exc:
+            raise ContentOperationError(f"Failed to save category voice: {exc}") from exc
+
+        provider, parameters = self._read_voice_metadata(voice_path)
+        return CategoryVoice(
+            id=voice_id,
+            language=language,
+            type="tts",
+            file_uri=f"/content/{category_name}/{voice_path.name}",
+            provider=provider,
+            parameters=parameters,
+        )
 
     def archive_category(self, category_id: str) -> ArchiveCategory:
         category_name = self._folder_name_for_id(category_id)
@@ -1150,7 +1429,11 @@ class FileSystemContentProvider(ContentProvider):
         for lang in settings.SUPPORTED_LANGUAGES:
             old_voice = category_path / _CATEGORY_VOICE_MP3.format(old_name, lang)
             if old_voice.is_file():
-                old_voice.rename(category_path / _CATEGORY_VOICE_MP3.format(new_name, lang))
+                new_voice = category_path / _CATEGORY_VOICE_MP3.format(new_name, lang)
+                old_voice.rename(new_voice)
+                old_metadata = FileSystemContentProvider._voice_metadata_path(old_voice)
+                if old_metadata.is_file():
+                    old_metadata.rename(FileSystemContentProvider._voice_metadata_path(new_voice))
 
         image_pattern = re.compile(r"^" + re.escape(old_name) + r"(_\d+)?\.(png|jpg|jpeg)$", re.IGNORECASE)
         for f in list(category_path.iterdir()):
@@ -1366,11 +1649,14 @@ class FileSystemContentProvider(ContentProvider):
                 re.IGNORECASE,
             )
             match = next((f for f in files if f.is_file() and pattern.match(f.name)), None)
+            provider, parameters = self._read_voice_metadata(match) if match else ("unknown", {})
             voices.append(CategoryVoice(
                 id=f"{item_folder_name}-v-{lang}",
                 language=lang,
                 type="tts",
                 file_uri=f"/content/{category_name}/{item_folder_name}/{match.name}" if match else None,
+                provider=provider,
+                parameters=parameters,
             ))
         return ItemVoices(item_id=item_id, voices=voices)
 
@@ -1483,14 +1769,18 @@ class FileSystemContentProvider(ContentProvider):
         try:
             with open(voice_path, "wb") as fh:
                 fh.write(audio_data)
+            self._write_voice_metadata(voice_path, VoiceCreationMethod.UPLOADED, provider="custom")
         except OSError as exc:
             raise ContentOperationError(f"Failed to save item voice: {exc}") from exc
 
+        provider, parameters = self._read_voice_metadata(voice_path)
         return CategoryVoice(
             id=voice_id,
             language=language,
             type="tts",
             file_uri=f"/content/{category_name}/{item_folder_name}/{voice_path.name}",
+            provider=provider,
+            parameters=parameters,
         )
 
     def update_item_voice(self, category_id: str, item_id: str, voice_id: str, audio_data: bytes) -> CategoryVoice:
@@ -1508,14 +1798,18 @@ class FileSystemContentProvider(ContentProvider):
         try:
             with open(voice_path, "wb") as fh:
                 fh.write(audio_data)
+            self._write_voice_metadata(voice_path, VoiceCreationMethod.UPLOADED, provider="custom")
         except OSError as exc:
             raise ContentOperationError(f"Failed to update item voice: {exc}") from exc
 
+        provider, parameters = self._read_voice_metadata(voice_path)
         return CategoryVoice(
             id=voice_id,
             language=language,
             type="tts",
             file_uri=f"/content/{category_name}/{item_folder_name}/{voice_path.name}",
+            provider=provider,
+            parameters=parameters,
         )
 
     def delete_item_voice(self, category_id: str, item_id: str, voice_id: str) -> CategoryVoice:
@@ -1530,13 +1824,70 @@ class FileSystemContentProvider(ContentProvider):
             )
         language, voice_path = found
         file_uri = f"/content/{category_name}/{item_folder_name}/{voice_path.name}"
+        provider, parameters = self._read_voice_metadata(voice_path)
 
         try:
-            voice_path.unlink()
+            self._delete_voice_with_metadata(voice_path)
         except OSError as exc:
             raise ContentOperationError(f"Failed to delete item voice: {exc}") from exc
 
-        return CategoryVoice(id=voice_id, language=language, type="tts", file_uri=file_uri)
+        return CategoryVoice(
+            id=voice_id, language=language, type="tts", file_uri=file_uri, provider=provider, parameters=parameters,
+        )
+
+    def regenerate_item_voice(self, category_id: str, item_id: str, voice_id: str) -> CategoryVoice:
+        category_name = self._folder_name_for_id(category_id)
+        category_path = self._category_path(category_name)
+        item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
+
+        language = self._language_for_item_voice_id(item_folder_name, voice_id)
+        if language is None:
+            raise CategoryNotFoundError(
+                f"Voice '{voice_id}' not found for item '{item_id}' in category '{category_name}'.",
+            )
+
+        word = self._item_word_for_language(category_path, item_id, language)
+        if not word:
+            raise ContentOperationError(
+                f"Item '{item_id}' has no {language} text to synthesize; set the word first.",
+            )
+
+        try:
+            audio_bytes = self._generate_audio(word, language)
+        except (ValueError, RuntimeError, httpx.HTTPError) as exc:
+            raise ContentOperationError(f"Voice generation failed for {language}: {exc}") from exc
+
+        # Reuse the existing file (it may carry a numeric suffix) so the voice keeps its URI.
+        found = self._find_item_voice_file(item_path, item_folder_name, voice_id)
+        voice_path = found[1] if found else self._item_voice_path(item_path, item_folder_name, language)
+        try:
+            voice_path.write_bytes(audio_bytes)
+            self._write_generated_voice_metadata(voice_path, audio_bytes, word)
+        except OSError as exc:
+            raise ContentOperationError(f"Failed to save item voice: {exc}") from exc
+
+        provider, parameters = self._read_voice_metadata(voice_path)
+        return CategoryVoice(
+            id=voice_id,
+            language=language,
+            type="tts",
+            file_uri=f"/content/{category_name}/{item_folder_name}/{voice_path.name}",
+            provider=provider,
+            parameters=parameters,
+        )
+
+    def _item_word_for_language(self, category_path: Path, item_id: str, language: str) -> str:
+        """Return the item's current word for *language*, falling back to English."""
+        item_ids, items_by_lang = self._read_item_csv_data(category_path)
+        try:
+            index = item_ids.index(item_id)
+        except ValueError:
+            return ""
+        for lang in (language, "en"):
+            words = items_by_lang.get(lang, [])
+            if index < len(words) and words[index].strip():
+                return words[index].strip()
+        return ""
 
     # ------------------------------------------------------------------
     # Factory registration

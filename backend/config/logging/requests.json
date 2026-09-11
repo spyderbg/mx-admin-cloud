@@ -31,7 +31,14 @@
           "language": true,
           "input": true,
           "response_duration": true,
-          "timestamp": true
+          "timestamp": true,
+          "request_kind": true,
+          "size": true,
+          "quality": true,
+          "cost_estimate": true,
+          "status": true,
+          "error": true,
+          "attempts": true
         }
       }
     }

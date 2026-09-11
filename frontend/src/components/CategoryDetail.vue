@@ -1,20 +1,74 @@
 <template>
-  <div class="card mb-2" style="width: 100%;">
-    <div class="card-body">
-      <!-- Row 1: name spans left; empty cell on md+ keeps column grid for row 2 -->
-      <div class="row">
-        <div class="col-lg-5 col-md-5 mb-2 mb-md-3">
-          <label class="text-muted small mb-1 d-block">{{ categoryIdLabel(contentLanguage) }}</label>
-          <ServerWord
-            :text="category.id"
-            :edit-title="renameCategoryLabel(contentLanguage)"
-            @edit="openRenameModal"
-          />
+  <section class="category-detail-panel id-panel id-summary-panel">
+    <div class="id-summary-copy">
+      <div>
+        <div class="id-field-label">{{ categoryIdLabel(contentLanguage) }}</div>
+        <div class="id-value-row">
+          <h3 class="id-item-id">{{ category.id }}</h3>
+          <button type="button" class="id-edit-btn" :title="renameCategoryLabel(contentLanguage)" :aria-label="renameCategoryLabel(contentLanguage)" @click="openRenameModal">
+            <i class="mdi mdi-pencil"></i>
+          </button>
         </div>
-        <div class="col-lg-7 col-md-7 d-flex justify-content-md-end align-items-start mb-2 mb-md-3">
+      </div>
+
+      <div>
+        <div class="id-field-label">{{ categoryIconLabel(contentLanguage) }}</div>
+        <div
+          class="id-summary-image-preview category-icon-preview-trigger"
+          role="button"
+          tabindex="0"
+          aria-label="Open category icon preview"
+          @click="openImagePreview"
+          @keydown.enter.prevent="openImagePreview"
+          @keydown.space.prevent="openImagePreview"
+        >
+          <img
+            :src="thumbnailSrc"
+            alt="Category icon"
+            class="id-summary-image"
+          />
+          <div class="category-icon-actions" @click.stop>
+            <button
+              type="button"
+              class="btn-icon btn-icon-regenerate"
+              title="Regenerate category image"
+              @click.stop="requestCategoryImageRegeneration"
+            >
+              <i class="mdi mdi-auto-fix"></i>
+            </button>
+            <button
+              type="button"
+              class="btn-icon btn-icon-edit"
+              title="Upload category icon"
+              @click.stop="openUploadModal"
+            >
+              <i class="mdi mdi-pencil"></i>
+            </button>
+            <button
+              type="button"
+              class="btn-icon btn-icon-delete"
+              :title="deleteCategoryImageLabel(contentLanguage)"
+              :disabled="!category.thumbnail_uri"
+              @click.stop="openDeleteModal"
+            >
+              <i class="mdi mdi-delete"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="id-field-label">{{ descriptionLabel(contentLanguage) }}</div>
+        <p class="id-description">{{ category.description.get(contentLanguage) }}</p>
+      </div>
+    </div>
+
+    <div class="id-summary-details">
+      <div class="id-summary-actions id-summary-actions-only">
+        <div class="id-release-group">
           <button
             type="button"
-            class="btn btn-outline-danger btn-sm"
+            class="btn btn-outline-danger btn-sm category-archive-btn"
             :disabled="archiving"
             @click="openArchiveModal"
           >
@@ -24,116 +78,22 @@
           </button>
         </div>
       </div>
-      <!-- Row 2: "Category Icon" and "Category Voices" labels share one baseline -->
-      <div class="row">
-        <div class="col-lg-5 col-md-5 mb-3 mb-md-0">
-          <div class="mb-3">
-            <label class="text-muted small mb-1 d-block">{{ categoryIconLabel(contentLanguage) }}</label>
-            <div class="category-icon-wrap">
-              <img
-                :src="thumbnailSrc"
-                alt="Category icon"
-                class="rounded"
-              />
-              <div class="category-icon-actions">
-                <button
-                  type="button"
-                  class="btn-icon btn-icon-regenerate"
-                  title="Regenerate category image"
-                  @click="requestCategoryImageRegeneration"
-                >
-                  <i class="mdi mdi-auto-fix"></i>
-                </button>
-                <button
-                  type="button"
-                  class="btn-icon btn-icon-edit"
-                  title="Upload category icon"
-                  @click="openUploadModal"
-                >
-                  <i class="mdi mdi-pencil"></i>
-                </button>
-                <button
-                  type="button"
-                  class="btn-icon btn-icon-delete"
-                  :title="deleteCategoryImageLabel(contentLanguage)"
-                  :disabled="!category.thumbnail_uri"
-                  @click="openDeleteModal"
-                >
-                  <i class="mdi mdi-delete"></i>
-                </button>
-              </div>
-            </div>
-          </div>
-          <p class="text-muted mb-0" style="font-size: 0.9rem;">{{ category.description.get(contentLanguage) }}</p>
-        </div>
 
-        <div class="col-lg-7 col-md-7">
-          <label class="text-muted small mb-1 d-block">{{ categoryVoicesLabel(contentLanguage) }}</label>
-          <div class="voice-cards-grid">
-            <div v-for="voice in category.voices" :key="voice.id" class="voice-card">
-              <div class="voice-card-top-actions">
-                <button
-                  class="btn-icon btn-icon-regenerate voice-card-action"
-                  type="button"
-                  title="Regenerate voice"
-                  aria-label="Regenerate voice"
-                  @click="requestCategoryVoiceRegeneration(voice)"
-                >
-                  <i class="mdi mdi-auto-fix"></i>
-                </button>
-                <button
-                  class="btn-icon btn-icon-edit voice-card-action"
-                  type="button"
-                  title="Upload voice"
-                  aria-label="Upload voice"
-                  @click="openVoiceUpload(voice)"
-                >
-                  <i class="mdi mdi-pencil"></i>
-                </button>
-                <button
-                  type="button"
-                  class="btn-icon btn-icon-delete voice-card-action"
-                  :title="deleteOrResetVoiceLabel(voice.language)"
-                  :aria-label="deleteOrResetVoiceLabel(voice.language)"
-                  @click="openVoiceDeleteModal(voice)"
-                >
-                  <i class="mdi mdi-delete"></i>
-                </button>
-              </div>
-              <div class="voice-card-flag">
-                <i
-                  :class="'flag-icon flag-icon-' + langFlag(voice.language)"
-                ></i>
-              </div>
-              <ServerWord
-                :text="voice.name"
-                text-tag="div"
-                text-class="voice-card-name"
-                root-class="justify-content-center"
-                :edit-title="editWordLabel(voice.language)"
-                :icon-style="{ fontSize: '0.8rem' }"
-                @edit="openVoiceWordModal(voice)"
-              />
-              <div class="voice-card-type">{{ voiceTypeLabel(voice.type) }}</div>
-              <div class="voice-card-controls">
-                <button
-                  class="btn-play"
-                  :class="{ playing: playingVoiceId === voice.id, disabled: !hasAudio(voice) }"
-                  type="button"
-                  :disabled="!hasAudio(voice)"
-                  @click="togglePlay(voice)"
-                  :title="!hasAudio(voice) ? 'Voice file missing' : (playingVoiceId === voice.id ? 'Stop' : 'Play')"
-                >
-                  <i :class="playingVoiceId === voice.id ? 'mdi mdi-stop-circle' : 'mdi mdi-play-circle'"></i>
-                  <span>{{ playingVoiceId === voice.id ? 'Stop' : 'Play' }}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+      <div class="id-summary-voices-panel">
+        <h4 class="id-section-kicker">{{ categoryVoicesLabel(contentLanguage) }}</h4>
+        <VoiceCardsGrid
+          :voices="category.voices"
+          :playing-voice-id="playingVoiceId"
+          :has-audio="hasAudio"
+          :toggle-play="togglePlay"
+          :upload-voice="uploadVoice"
+          :delete-voice="deleteVoiceHandler"
+          :rename-voice="renameVoiceHandler"
+          :extra-actions="voiceCardActions"
+        />
       </div>
     </div>
-  </div>
+  </section>
 
   <!-- Rename category modal -->
   <Teleport to="body">
@@ -173,13 +133,13 @@
         </div>
         <div class="cd-modal-body">
           <p class="mb-3">{{ archiveCategoryConfirmLabel(contentLanguage, categoryLabel) }}</p>
-          <div class="alert alert-warning py-2">
+          <div v-if="usesComplexArchiveConfirmation" class="alert alert-warning py-2">
             <small>
               <i class="mdi mdi-alert mr-1"></i>
               {{ archiveCategoryWarningLabel(contentLanguage, category.items_count ?? category.items.length) }}
             </small>
           </div>
-          <div class="form-group mb-0">
+          <div v-if="usesComplexArchiveConfirmation" class="form-group mb-0">
             <label class="col-form-label">
               {{ archiveTypeToConfirmLabel(contentLanguage, category.id) }}
             </label>
@@ -193,14 +153,16 @@
           </div>
         </div>
         <div class="cd-modal-footer">
-          <button type="button" class="btn btn-secondary" @click="closeArchiveModal">{{ cancelLabel(contentLanguage) }}</button>
+          <button type="button" class="btn btn-secondary" @click="closeArchiveModal">
+            {{ usesComplexArchiveConfirmation ? cancelLabel(contentLanguage) : noLabel(contentLanguage) }}
+          </button>
           <button
             type="button"
             class="btn btn-danger"
             :disabled="!canArchive"
             @click="confirmArchive"
           >
-            {{ archiveLabel(contentLanguage) }}
+            {{ usesComplexArchiveConfirmation ? archiveLabel(contentLanguage) : yesLabel(contentLanguage) }}
           </button>
         </div>
       </div>
@@ -228,11 +190,11 @@
 
   <!-- Upload icon modal -->
   <Teleport to="body">
-    <div v-if="showUpload" class="cd-modal-overlay" @click.self="showUpload = false">
+    <div v-if="showUpload" class="cd-modal-overlay" @click.self="closeUploadModal">
       <div class="cd-modal-box">
         <div class="cd-modal-header">
           <h5 class="cd-modal-title">{{ uploadCategoryIconLabel(contentLanguage) }}</h5>
-          <button type="button" class="cd-modal-close" @click="showUpload = false">&times;</button>
+          <button type="button" class="cd-modal-close" @click="closeUploadModal">&times;</button>
         </div>
         <div class="cd-modal-body">
           <div class="form-group mb-0">
@@ -246,94 +208,28 @@
           </div>
         </div>
         <div class="cd-modal-footer">
-          <button type="button" class="btn btn-secondary" @click="showUpload = false">{{ cancelLabel(contentLanguage) }}</button>
+          <button type="button" class="btn btn-secondary" @click="closeUploadModal">{{ cancelLabel(contentLanguage) }}</button>
         </div>
       </div>
     </div>
   </Teleport>
 
-  <!-- Edit voice word (label) modal -->
+  <!-- Full-screen category icon preview -->
   <Teleport to="body">
-    <div v-if="showVoiceWordEdit" class="cd-modal-overlay" @click.self="closeVoiceWordEdit">
-      <div class="cd-modal-box">
-        <div class="cd-modal-header">
-          <h5 class="cd-modal-title">{{ editWordLabel(voiceWordEditLanguage) }}</h5>
-          <button type="button" class="cd-modal-close" @click="closeVoiceWordEdit">&times;</button>
-        </div>
-        <div class="cd-modal-body">
-          <p v-if="voiceWordEditTarget" class="text-muted small mb-2">
-            <i :class="'flag-icon flag-icon-' + langFlag(voiceWordEditLanguage)" class="mr-1"></i>
-            {{ voiceWordEditLanguage.toUpperCase() }}
-          </p>
-          <div class="form-group mb-0">
-            <label class="col-form-label">{{ wordColumnLabel(voiceWordEditLanguage) }}</label>
-            <input
-              v-model="voiceWordValue"
-              type="text"
-              class="form-control"
-              :placeholder="enterWordLabel(voiceWordEditLanguage)"
-              @keyup.enter="confirmVoiceWordEdit"
-            />
-          </div>
-        </div>
-        <div class="cd-modal-footer">
-          <button type="button" class="btn btn-secondary" @click="closeVoiceWordEdit">{{ cancelLabel(voiceWordEditLanguage) }}</button>
-          <button type="button" class="btn btn-primary" @click="confirmVoiceWordEdit">{{ saveLabel(voiceWordEditLanguage) }}</button>
-        </div>
-      </div>
-    </div>
-  </Teleport>
-
-  <!-- Delete / reset voice confirmation -->
-  <Teleport to="body">
-    <div v-if="showVoiceDeleteConfirm" class="cd-modal-overlay" @click.self="closeVoiceDeleteModal">
-      <div class="cd-modal-box">
-        <div class="cd-modal-header">
-          <h5 class="cd-modal-title">{{ deleteOrResetVoiceLabel(voiceDeleteLanguage) }}</h5>
-          <button type="button" class="cd-modal-close" @click="closeVoiceDeleteModal">&times;</button>
-        </div>
-        <div class="cd-modal-body">
-          <template v-if="voiceDeleteTarget">
-            <p class="mb-2">
-              {{ deleteOrResetVoiceConfirmLabel(voiceDeleteLanguage, voiceDeleteTarget.name, voiceDeleteTarget.language) }}
-            </p>
-            <p class="text-muted small mb-0">
-              {{ deleteOrResetVoiceHelpLabel(voiceDeleteLanguage) }}
-            </p>
-          </template>
-        </div>
-        <div class="cd-modal-footer">
-          <button type="button" class="btn btn-secondary" @click="closeVoiceDeleteModal">{{ cancelLabel(voiceDeleteLanguage) }}</button>
-          <button type="button" class="btn btn-danger" @click="confirmVoiceDelete">{{ deleteResetLabel(voiceDeleteLanguage) }}</button>
-        </div>
-      </div>
-    </div>
-  </Teleport>
-
-  <!-- Upload voice file modal -->
-  <Teleport to="body">
-    <div v-if="showVoiceUpload" class="cd-modal-overlay" @click.self="closeVoiceUpload">
-      <div class="cd-modal-box">
-        <div class="cd-modal-header">
-          <h5 class="cd-modal-title">{{ uploadVoiceFileLabel(uploadVoiceLanguage) }}</h5>
-          <button type="button" class="cd-modal-close" @click="closeVoiceUpload">&times;</button>
-        </div>
-        <div class="cd-modal-body">
-          <p v-if="editingVoice" class="text-muted small mb-2">{{ editingVoice.name }} ({{ editingVoice.language }})</p>
-          <div class="form-group mb-0">
-            <label class="col-form-label">{{ audioFileLabel(uploadVoiceLanguage) }}</label>
-            <input
-              type="file"
-              class="form-control-file"
-              accept="audio/*"
-              @change="onVoiceFileSelected"
-            />
-          </div>
-        </div>
-        <div class="cd-modal-footer">
-          <button type="button" class="btn btn-secondary" @click="closeVoiceUpload">{{ cancelLabel(uploadVoiceLanguage) }}</button>
-        </div>
-      </div>
+    <div v-if="showImagePreview" class="image-preview-overlay" @click.self="closeImagePreview">
+      <button
+        type="button"
+        class="image-preview-close"
+        aria-label="Close image preview"
+        @click="closeImagePreview"
+      >
+        &times;
+      </button>
+      <img
+        :src="thumbnailSrc"
+        :alt="categoryLabel"
+        class="image-preview-image"
+      />
     </div>
   </Teleport>
 
@@ -351,17 +247,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
 import type { AxiosError } from 'axios'
-import ServerWord from './ServerWord.vue'
-import type { CategoryFull, Language, Voice } from '../types/viewModels'
+import VoiceCardsGrid, { type VoiceExtraAction } from './VoiceCardsGrid.vue'
+import type { CategoryFull, Voice } from '../types/viewModels'
 import {
   archiveCategoryConfirmLabel,
   archiveCategoryLabel,
   archiveCategoryWarningLabel,
   archiveLabel,
   archiveTypeToConfirmLabel,
-  audioFileLabel,
   cancelLabel,
   categoryIdLabel,
   categoryIconLabel,
@@ -369,20 +264,15 @@ import {
   deleteCategoryImageConfirmLabel,
   deleteCategoryImageLabel,
   deleteLabel,
-  deleteOrResetVoiceConfirmLabel,
-  deleteOrResetVoiceHelpLabel,
-  deleteOrResetVoiceLabel,
-  deleteResetLabel,
-  editWordLabel,
+  descriptionLabel,
   enterCategoryIdLabel,
-  enterWordLabel,
   imageFileLabel,
   localizedCategoryLabel,
+  noLabel,
   renameCategoryLabel,
   saveLabel,
   uploadCategoryIconLabel,
-  uploadVoiceFileLabel,
-  wordColumnLabel,
+  yesLabel,
 } from '../utils/localizedLabels'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import {
@@ -390,6 +280,7 @@ import {
   categoriesIconUpdate,
   categoriesVoicesAdd,
   categoriesVoicesDelete,
+  categoriesVoicesRegenerate,
   categoriesVoicesUpdate,
 } from '../api/contentClient'
 import {
@@ -417,37 +308,17 @@ const emit = defineEmits<{
   rename: [name: string]
   /** The parent owns the route being archived, so it performs the call and redirects. */
   archive: []
-  'edit-voice': [voice: Voice, action: 'add' | 'update']
-  'delete-voice': [voice: Voice]
   'rename-voice': [voice: Voice, name: string]
 }>()
-
-const langFlagMap: Record<Language, string> = { en: 'us', es: 'es', fr: 'fr', bg: 'bg' }
-const langFlag = (lang: Language): string => langFlagMap[lang] || lang
-
-const voiceTypeLabelMap: Record<string, string> = {
-  male: 'Narrator',
-  female: 'Voiceover Artist',
-  ambient: 'Ambient',
-}
-const voiceTypeLabel = (type: string): string => voiceTypeLabelMap[type] || type
 
 const showDelete = ref(false)
 const showUpload = ref(false)
 const showRename = ref(false)
-const showVoiceUpload = ref(false)
-const showVoiceWordEdit = ref(false)
-const voiceWordEditTarget = ref<Voice | null>(null)
-const voiceWordValue = ref('')
-const voiceWordEditLanguage = computed<Language>(() => voiceWordEditTarget.value?.language ?? contentLanguage.value)
 const showArchive = ref(false)
 const archiveConfirmText = ref('')
-const showVoiceDeleteConfirm = ref(false)
-const voiceDeleteTarget = ref<Voice | null>(null)
-const voiceDeleteLanguage = computed<Language>(() => voiceDeleteTarget.value?.language ?? contentLanguage.value)
-const editingVoice = ref<Voice | null>(null)
-const uploadVoiceLanguage = computed<Language>(() => editingVoice.value?.language ?? contentLanguage.value)
+const usesComplexArchiveConfirmation = import.meta.env.VITE_ARCHIVE_CONFIRMATION_MODE !== 'simple'
 const renameValue = ref('')
+const showImagePreview = ref(false)
 
 type ToastVariant = 'success' | 'error'
 const toast = ref<{ message: string; variant: ToastVariant } | null>(null)
@@ -501,19 +372,18 @@ function closeAllModals(): void {
   showUpload.value = false
   showRename.value = false
   showArchive.value = false
-  showVoiceUpload.value = false
-  showVoiceWordEdit.value = false
-  showVoiceDeleteConfirm.value = false
-  editingVoice.value = null
-  voiceWordEditTarget.value = null
-  voiceDeleteTarget.value = null
+  showImagePreview.value = false
 }
 
 /**
  * Archiving is only recoverable when ARCHIVE_DIR is configured on the server, which the
- * frontend cannot detect, so the id must be typed out before the action is enabled.
+ * frontend cannot detect. Complex confirmation therefore requires the id to be typed
+ * out, while installations explicitly configured for the simple dialog can proceed
+ * from its Yes button.
  */
-const canArchive = computed(() => archiveConfirmText.value.trim() === props.category.id)
+const canArchive = computed(() =>
+  !usesComplexArchiveConfirmation || archiveConfirmText.value.trim() === props.category.id,
+)
 
 function openArchiveModal(): void {
   closeAllModals()
@@ -532,55 +402,20 @@ function confirmArchive(): void {
   emit('archive')
 }
 
-function openVoiceDeleteModal(voice: Voice): void {
-  closeAllModals()
-  voiceDeleteTarget.value = voice
-  showVoiceDeleteConfirm.value = true
-}
-
-function closeVoiceDeleteModal(): void {
-  showVoiceDeleteConfirm.value = false
-  voiceDeleteTarget.value = null
-}
-
-async function confirmVoiceDelete(): Promise<void> {
-  const voice = voiceDeleteTarget.value
-  showVoiceDeleteConfirm.value = false
-  voiceDeleteTarget.value = null
-  if (!voice) return
+async function deleteVoiceHandler(voice: Voice): Promise<void> {
   if (playingVoiceId.value === voice.id) stopAudio()
-
   try {
     const result = await categoriesVoicesDelete(props.category.id, voice.id)
     showToast(`Voice for ${voice.name} (${voice.language.toUpperCase()}) ${pastTense(result.action)}.`, 'success')
     await refreshCategory()
     voiceVersions.value = { ...voiceVersions.value, [voice.id]: (voiceVersions.value[voice.id] ?? 0) + 1 }
-    emit('delete-voice', voice)
   } catch (err) {
     showToast(extractErrorMessage(err), 'error')
   }
 }
 
-function openVoiceWordModal(voice: Voice): void {
-  closeAllModals()
-  voiceWordEditTarget.value = voice
-  voiceWordValue.value = voice.name
-  showVoiceWordEdit.value = true
-}
-
-function closeVoiceWordEdit(): void {
-  showVoiceWordEdit.value = false
-  voiceWordEditTarget.value = null
-}
-
-function confirmVoiceWordEdit(): void {
-  const voice = voiceWordEditTarget.value
-  const trimmed = voiceWordValue.value.trim()
-  showVoiceWordEdit.value = false
-  voiceWordEditTarget.value = null
-  if (voice && trimmed && trimmed !== voice.name) {
-    emit('rename-voice', voice, trimmed)
-  }
+function renameVoiceHandler(voice: Voice, name: string): void {
+  emit('rename-voice', voice, name)
 }
 
 function openUploadModal(): void {
@@ -588,18 +423,72 @@ function openUploadModal(): void {
   showUpload.value = true
 }
 
+function closeUploadModal(): void {
+  showUpload.value = false
+}
+
 function openDeleteModal(): void {
   closeAllModals()
   showDelete.value = true
 }
 
+function openImagePreview(): void {
+  closeAllModals()
+  showImagePreview.value = true
+}
+
+function closeImagePreview(): void {
+  showImagePreview.value = false
+}
+
+function onDocumentKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape' && showUpload.value) {
+    closeUploadModal()
+    return
+  }
+  if (event.key === 'Escape' && showImagePreview.value) {
+    closeImagePreview()
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('keydown', onDocumentKeydown)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', onDocumentKeydown)
+})
+
 function requestCategoryImageRegeneration(): void {
   showToast('Backend task pending: regenerate the category image from the saved category metadata.', 'error')
 }
 
-function requestCategoryVoiceRegeneration(voice: Voice): void {
-  showToast(`Backend task pending: regenerate ${voice.language.toUpperCase()} audio for ${voice.name}.`, 'error')
+const regeneratingVoiceId = ref<string | null>(null)
+
+async function regenerateVoiceHandler(voice: Voice): Promise<void> {
+  if (regeneratingVoiceId.value) return
+  if (playingVoiceId.value === voice.id) stopAudio()
+
+  regeneratingVoiceId.value = voice.id
+  try {
+    await categoriesVoicesRegenerate(props.category.id, voice.id)
+    await refreshCategory()
+    voiceVersions.value = { ...voiceVersions.value, [voice.id]: (voiceVersions.value[voice.id] ?? 0) + 1 }
+    showToast(`Voice for ${voice.name} (${voice.language.toUpperCase()}) regenerated.`, 'success')
+  } catch (err) {
+    showToast(extractErrorMessage(err), 'error')
+  } finally {
+    regeneratingVoiceId.value = null
+  }
 }
+
+const voiceCardActions: VoiceExtraAction[] = [{
+  icon: 'mdi-auto-fix',
+  title: 'Regenerate voice',
+  onClick: (voice) => { void regenerateVoiceHandler(voice) },
+  isLoading: (voice) => regeneratingVoiceId.value === voice.id,
+  isDisabled: () => regeneratingVoiceId.value !== null,
+}]
 
 async function confirmImageDelete(): Promise<void> {
   showDelete.value = false
@@ -617,45 +506,19 @@ async function confirmImageDelete(): Promise<void> {
   }
 }
 
-function openVoiceUpload(voice: Voice): void {
-  closeAllModals()
-  editingVoice.value = voice
-  showVoiceUpload.value = true
-}
-
-function closeVoiceUpload(): void {
-  showVoiceUpload.value = false
-  editingVoice.value = null
-}
-
-async function onVoiceFileSelected(e: Event): Promise<void> {
-  const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  const voice = editingVoice.value
-  closeVoiceUpload()
-  if (!file || !voice) return
-
-  const wasAdd = !hasAudio(voice)
+async function uploadVoice(voice: Voice, file: File, wasAdd: boolean): Promise<void> {
   try {
-    let result
-    if (wasAdd) {
-      const formData = new FormData()
-      formData.append('language', voice.language)
-      formData.append('audio', file)
-      result = await categoriesVoicesAdd(props.category.id, formData)
-    } else {
-      const formData = new FormData()
-      formData.append('audio', file)
-      result = await categoriesVoicesUpdate(props.category.id, voice.id, formData)
-    }
+    const formData = new FormData()
+    if (wasAdd) formData.append('language', voice.language)
+    formData.append('audio', file)
+    const result = wasAdd
+      ? await categoriesVoicesAdd(props.category.id, formData)
+      : await categoriesVoicesUpdate(props.category.id, voice.id, formData)
     showToast(`Voice for ${voice.name} (${voice.language.toUpperCase()}) ${pastTense(result.action)}.`, 'success')
     await refreshCategory()
     voiceVersions.value = { ...voiceVersions.value, [voice.id]: (voiceVersions.value[voice.id] ?? 0) + 1 }
-    emit('edit-voice', voice, wasAdd ? 'add' : 'update')
   } catch (err) {
     showToast(extractErrorMessage(err), 'error')
-  } finally {
-    input.value = ''
   }
 }
 
@@ -676,7 +539,7 @@ function confirmRename(): void {
 async function onFileSelected(e: Event): Promise<void> {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
-  showUpload.value = false
+  closeUploadModal()
   if (!file) return
 
   const formData = new FormData()
@@ -698,47 +561,150 @@ async function onFileSelected(e: Event): Promise<void> {
 </script>
 
 <style scoped>
-/* Category icon */
-.category-icon-wrap {
+.id-panel {
+  width: 100%;
+  background: #fff;
+  border: 1px solid #e6eaf4;
+  border-radius: 8px;
+  box-shadow: 0 4px 18px rgba(25, 38, 77, 0.04);
+  margin-bottom: 1rem;
+  padding: 1.25rem 1.5rem;
+}
+.id-summary-panel {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(16rem, 0.7fr) minmax(0, 1.3fr);
+  gap: 1.5rem;
+}
+.id-summary-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  min-height: 100%;
+}
+.id-summary-details {
+  padding-left: 1.5rem;
+  padding-top: 4.15rem;
+  display: grid;
+  align-content: start;
+  gap: 1.25rem;
+  min-width: 0;
+}
+.id-field-label,
+.id-section-kicker {
+  color: #6d7391;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.id-value-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.7rem;
+}
+.id-item-id {
+  color: #111a3d;
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 0;
+}
+.id-edit-btn {
+  border: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  padding: 0;
+  background: transparent;
+  color: #2563eb;
+  font-size: 1.25rem;
+}
+.id-description {
+  color: #111a3d;
+  font-size: 0.98rem;
+  line-height: 1.5;
+  margin: 0.6rem 0 0;
+}
+.id-summary-image-preview {
   position: relative;
   width: 100%;
-  max-width: 256px;
   aspect-ratio: 1 / 1;
-  background: rgba(0, 0, 0, 0.04);
+  margin-top: 0.7rem;
+  overflow: hidden;
+  border: 1px solid #dfe5ef;
+  border-radius: 6px;
+  background: #f6f8fc;
 }
-.category-icon-wrap img {
+.id-summary-image {
+  display: block;
   width: 100%;
   height: 100%;
   object-fit: contain;
   object-position: center;
-  display: block;
+}
+.id-summary-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.id-summary-actions-only {
+  position: absolute;
+  top: 1.25rem;
+  right: 1.5rem;
+  justify-content: flex-end;
+  width: auto;
+  max-width: 100%;
+  min-height: 0;
+}
+.id-release-group {
+  display: flex;
+  gap: 0.55rem;
+}
+.category-archive-btn {
+  width: 9.35rem;
+  max-width: 100%;
+}
+.id-summary-voices-panel {
+  align-self: start;
+  min-width: 0;
+}
+.category-icon-preview-trigger {
+  cursor: zoom-in;
+}
+.category-icon-preview-trigger:focus-visible {
+  outline: 3px solid rgba(49, 87, 255, 0.45);
+  outline-offset: 3px;
 }
 .category-icon-actions {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: 0.35rem;
+  right: 0.35rem;
   display: flex;
-  gap: 4px;
+  gap: 0.35rem;
   z-index: 2;
+  cursor: default;
 }
 .btn-icon {
-  width: 30px;
-  height: 30px;
+  width: 1.75rem;
+  height: 1.75rem;
   border: none;
   border-radius: 50%;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  font-size: 15px;
+  font-size: 0.9rem;
   color: #fff;
   padding: 0;
 }
 .btn-icon-edit {
-  background: #4f46e5;
+  background: #2563eb;
 }
 .btn-icon-edit:hover {
-  background: #4338ca;
+  background: #1d4ed8;
 }
 .btn-icon-regenerate {
   background: #0f766e;
@@ -760,107 +726,27 @@ async function onFileSelected(e: Event): Promise<void> {
 .btn-icon:disabled:hover {
   background: #d1d5db;
 }
-
-/* Voice cards: wrap to extra rows when the column is narrow (was fixed 4 columns). */
-.voice-cards-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
-  gap: 0.75rem;
+@media (max-width: 991px) {
+  .id-summary-panel {
+    grid-template-columns: 1fr;
+  }
+  .id-summary-details {
+    border-top: 1px solid #e2e7f1;
+    padding-left: 0;
+    padding-top: 1.25rem;
+  }
 }
-.voice-card {
-  position: relative;
-  min-width: 0;
-  min-height: 14rem;
-  border: 1.5px solid #b8d4f0;
-  border-radius: 10px;
-  padding: 3rem 0.75rem 0.75rem;
-  text-align: center;
-  background: #f8fbff;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: space-between;
-}
-.voice-card-top-actions {
-  position: absolute;
-  top: 0.45rem;
-  right: 0.45rem;
-  display: flex;
-  gap: 0.3rem;
-}
-.voice-card-flag {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  background: #e8f0fe;
-  border: 2px solid #d1e3f6;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 0;
-}
-.voice-card-flag .flag-icon {
-  font-size: 1.6rem;
-}
-:deep(.voice-card-name) {
-  font-weight: 600;
-  font-size: 0.85rem;
-  color: #1e293b;
-  margin-bottom: 0;
-  line-height: 1.2;
-}
-.voice-card-type {
-  font-size: 0.75rem;
-  color: #6b7280;
-  margin-bottom: 0;
-}
-.voice-card-controls {
-  margin-bottom: 0;
-}
-.btn-play {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  background: none;
-  border: 1px solid #4f46e5;
-  border-radius: 4px;
-  color: #4f46e5;
-  cursor: pointer;
-  font-size: 0.78rem;
-  padding: 0.15rem 0.5rem;
-  transition: all 0.15s;
-}
-.btn-play i {
-  font-size: 1rem;
-}
-.btn-play:hover {
-  background: #4f46e5;
-  color: #fff;
-}
-.btn-play.playing {
-  border-color: #dc2626;
-  color: #dc2626;
-}
-.btn-play.playing:hover {
-  background: #dc2626;
-  color: #fff;
-}
-.btn-play.disabled,
-.btn-play:disabled {
-  border-color: #d1d5db;
-  color: #9ca3af;
-  cursor: not-allowed;
-  opacity: 0.7;
-}
-.btn-play.disabled:hover,
-.btn-play:disabled:hover {
-  background: transparent;
-  color: #9ca3af;
-}
-.voice-card-action {
-  width: 26px;
-  height: 26px;
-  font-size: 13px;
+@media (max-width: 575px) {
+  .id-panel {
+    padding: 1rem;
+  }
+  .id-summary-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .id-release-group {
+    flex-wrap: wrap;
+  }
 }
 
 /* Modal styles — prefixed to avoid Star Admin .close conflicts */
@@ -916,6 +802,40 @@ async function onFileSelected(e: Event): Promise<void> {
   display: flex;
   justify-content: flex-end;
   gap: 0.5rem;
+}
+
+.image-preview-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1060;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: rgba(0, 0, 0, 0.92);
+}
+.image-preview-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.image-preview-close {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 1;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.6);
+  color: #fff;
+  cursor: pointer;
+  font-size: 2rem;
+  line-height: 1;
+}
+.image-preview-close:hover {
+  background: rgba(15, 23, 42, 0.85);
 }
 
 /* Result toast */

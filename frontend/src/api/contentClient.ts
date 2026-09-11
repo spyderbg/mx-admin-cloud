@@ -126,9 +126,21 @@ export const categoriesVoicesDelete = async (categoryId: string, voiceId: string
   return r.data
 }
 
+/** Regenerate a voice for a category */
+export const categoriesVoicesRegenerate = async (categoryId: string, voiceId: string): Promise<VoiceResponse> => {
+  const r = await client.post<VoiceResponse>(`/content/categories/${categoryId}/voices/${voiceId}/regenerate`)
+  return r.data
+}
+
 /** List all items in a category */
 export const itemsList = async (categoryId: string): Promise<ItemListResponse> => {
   const r = await client.get<ItemListResponse>(`/content/categories/${categoryId}/items`)
+  return r.data
+}
+
+/** Create a new item in a category */
+export const itemsCreate = async (categoryId: string, formData: FormData): Promise<CreateItemResponse> => {
+  const r = await client.post<CreateItemResponse>(`/content/categories/${categoryId}/items`, formData, { headers: { 'Content-Type': 'multipart/form-data' } })
   return r.data
 }
 
@@ -194,6 +206,12 @@ export const itemsVoicesUpdate = async (categoryId: string, itemId: string, voic
 /** Delete a voice from an item */
 export const itemsVoicesDelete = async (categoryId: string, itemId: string, voiceId: string): Promise<VoiceResponse> => {
   const r = await client.delete<VoiceResponse>(`/content/categories/${categoryId}/items/${itemId}/voices/${voiceId}`)
+  return r.data
+}
+
+/** Regenerate a voice for an item */
+export const itemsVoicesRegenerate = async (categoryId: string, itemId: string, voiceId: string): Promise<VoiceResponse> => {
+  const r = await client.post<VoiceResponse>(`/content/categories/${categoryId}/items/${itemId}/voices/${voiceId}/regenerate`)
   return r.data
 }
 

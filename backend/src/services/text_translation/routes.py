@@ -131,6 +131,7 @@ async def translate_text(
     return TranslateResponse(
         success=result.success,
         lang_text=lang_text,
+        errors=result.errors,
     )
 
 

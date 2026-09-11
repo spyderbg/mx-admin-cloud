@@ -22,6 +22,7 @@ export interface TranslateRequest {
 export interface TranslateResponse {
     success: boolean
     lang_text: LangCodeText
+    errors?: string[]
 }
 
 /** One text unit loaded for "/internal/translate-file" (HTTP contract for the translation flow). */

@@ -119,6 +119,7 @@ def register(app: typer.Typer) -> None:
                 "logging": "loggers",
                 "text_translation": "translators",
                 "text_to_speech": "generators",
+                "text_to_image": "image_generators",
                 "voice_optimization": "optimizers",
                 "evaluation": "evaluators",
             }
@@ -128,6 +129,8 @@ def register(app: typer.Typer) -> None:
                 "logging": "loggers",
                 "translator": "translators",
                 "generator": "generators",
+                "image_generator": "image_generators",
+                "images": "image_generators",
                 "optimizer": "optimizers",
                 "evaluator": "evaluators",
             }
@@ -193,6 +196,7 @@ def register(app: typer.Typer) -> None:
                 "loggers": "grey50",
                 "translators": "magenta",
                 "generators": "cyan",
+                "image_generators": "bright_cyan",
                 "optimizers": "blue",
                 "evaluators": "yellow",
             }

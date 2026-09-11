@@ -78,6 +78,10 @@ class TextToSpeechService(Service):
                 return provider
         raise TTSProviderNotFoundError(f"Provider '{provider_name}' not found or not active.")
 
+    def generation_parameters(self, provider_name: str, language_code: str) -> dict[str, Any]:
+        """Return the effective configured generation parameters for a provider and language."""
+        return self._resolve_active_provider(provider_name).resolve_language_generate(language_code)
+
     async def generate(
             self,
             request: TTSRequest,

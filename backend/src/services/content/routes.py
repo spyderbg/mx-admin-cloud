@@ -14,12 +14,14 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from src.api.dependencies import get_current_user, get_registry
 from src.api.service_resolver import get_typed_service
 from src.core.config import settings
-from src.services import content
+from src.services import content, text_to_speech
 from src.services.content.models import (
     ArchiveUnavailableError,
     CategoryConflictError,
     CategoryNotFoundError,
+    CategoryVoice,
     ContentError,
+    CreateItem,
     InvalidCategoryNameError,
 )
 from src.core.localization import LocalizedString
@@ -49,6 +51,7 @@ from src.services.content.schemas import (
 )
 from src.services.content.service import ContentService
 from src.services.service_registry import ServiceRegistry
+from src.services.text_to_speech.service import TextToSpeechService
 
 TAG_CATEGORIES = "Categories"
 TAG_CATEGORIES_IMAGES = "Categories Images"
@@ -66,16 +69,71 @@ CATEGORY_IMAGE = "/categories/{category_id}/images/{image_id}"
 CATEGORY_ICON = "/categories/{category_id}/icon"
 CATEGORY_VOICES = "/categories/{category_id}/voices"
 CATEGORY_VOICE = "/categories/{category_id}/voices/{voice_id}"
+CATEGORY_VOICE_REGENERATE = "/categories/{category_id}/voices/{voice_id}/regenerate"
 CATEGORY_ITEMS = "/categories/{category_id}/items"
 CATEGORY_ITEM = "/categories/{category_id}/items/{item_id}"
 CATEGORY_ITEM_IMAGES = "/categories/{category_id}/items/{item_id}/images"
 CATEGORY_ITEM_IMAGE = "/categories/{category_id}/items/{item_id}/images/{image_id}"
 CATEGORY_ITEM_VOICES = "/categories/{category_id}/items/{item_id}/voices"
 CATEGORY_ITEM_VOICE = "/categories/{category_id}/items/{item_id}/voices/{voice_id}"
+CATEGORY_ITEM_VOICE_REGENERATE = "/categories/{category_id}/items/{item_id}/voices/{voice_id}/regenerate"
 
 ITEMS = "/items"
 
 router = APIRouter(prefix=f"{settings.API_V1_STR}/content")
+
+NO_VOICE_GENERATORS_WARNING = "No active voice generators configured; voices were not generated."
+
+
+def _read_image_upload(image: UploadFile | None, *, required: bool) -> tuple[bytes | None, str]:
+    """Return (bytes, extension) for an uploaded image, or (None, ".png") when none was sent.
+
+    An absent file may arrive as None or as an UploadFile with an empty filename, depending
+    on the client. Raises 400 when the file is required but missing, or when it is empty.
+    """
+    if image is None or not image.filename:
+        if required:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Image file is required")
+        return None, ".png"
+    image_data = image.file.read()
+    if not image_data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Image file is empty")
+    ext = ""
+    if "." in image.filename:
+        ext = "." + image.filename.rsplit(".", 1)[-1].lower()
+    if ext not in (".png", ".jpg", ".jpeg"):
+        ext = ".png"
+    return image_data, ext
+
+
+def _voice_response(voice: CategoryVoice, action: str | None = None) -> VoiceResponse:
+    """Build a VoiceResponse from a provider-returned CategoryVoice, echoing generation metadata."""
+    return VoiceResponse(
+        id=voice.id,
+        language=voice.language,
+        type=voice.type,
+        file_uri=voice.file_uri,
+        action=action,
+        provider=voice.provider,
+        parameters=voice.parameters,
+    )
+
+
+def _create_item_response(result: CreateItem, voice_generation_available: bool) -> CreateItemResponse:
+    """Build the create-item response, reporting skipped voice generation as a warning."""
+    warnings = list(result.voice_warnings)
+    if not voice_generation_available:
+        warnings.append(NO_VOICE_GENERATORS_WARNING)
+    return CreateItemResponse(
+        category=result.category,
+        item=result.item,
+        folder=result.folder,
+        image_id=result.image_id,
+        item_id=result.item_id,
+        voices_generated=list(result.voices_generated),
+        voice_warnings=warnings,
+        message=result.message,
+    )
 
 
 # region Categories
@@ -615,15 +673,7 @@ def categories_voices_list(
     return CategoryVoicesResponse(
         category_id=result.id,
         name=result.name,
-        voices=[
-            VoiceResponse(
-                id=v.id,
-                language=v.language,
-                type=v.type,
-                file_uri=v.file_uri,
-            )
-            for v in result.voices
-        ],
+        voices=[_voice_response(v) for v in result.voices],
     )
 
 
@@ -663,9 +713,7 @@ def categories_voices_add(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return VoiceResponse(
-        id=result.id, language=result.language, type=result.type, file_uri=result.file_uri, action="add",
-    )
+    return _voice_response(result, "add")
 
 
 @router.put(
@@ -701,9 +749,7 @@ def categories_voices_update(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return VoiceResponse(
-        id=result.id, language=result.language, type=result.type, file_uri=result.file_uri, action="update",
-    )
+    return _voice_response(result, "update")
 
 
 @router.delete(
@@ -733,9 +779,37 @@ def categories_voices_delete(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return VoiceResponse(
-        id=result.id, language=result.language, type=result.type, file_uri=result.file_uri, action="delete",
-    )
+    return _voice_response(result, "delete")
+
+
+@router.post(
+    CATEGORY_VOICE_REGENERATE,
+    response_model=VoiceResponse,
+    status_code=status.HTTP_200_OK,
+    tags=[TAG_CATEGORIES_VOICES],
+    summary="Regenerate a voice for a category",
+    description=(
+            "Re-synthesize the audio for a category voice from the category's current localized "
+            "name in that language, using the active text-to-speech configuration. Overwrites any "
+            "existing audio file, and creates one when the voice has none yet. Requires authentication."
+    ),
+)
+def categories_voices_regenerate(
+        category_id: str,
+        voice_id: str,
+        service: ContentServiceDep,
+        _user: dict = Depends(get_current_user),
+) -> VoiceResponse:
+    """Regenerate a category voice from its current localized name."""
+    try:
+        result = service.regenerate_category_voice(category_id, voice_id)
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidCategoryNameError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return _voice_response(result, "regenerate")
 
 
 # endregion
@@ -774,6 +848,52 @@ def items_list(
             for item in result.items
         ]
     )
+
+
+@router.post(
+    CATEGORY_ITEMS,
+    response_model=CreateItemResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=[TAG_ITEMS],
+    summary="Create a new item in a category",
+    description=(
+            "Create a content item from its English name. "
+            "The name is translated into every supported language first; if translation fails "
+            "the item is not created. "
+            "The image is optional. "
+            "Voices are generated for every language when an active text to speech provider "
+            "exists; voice problems never block creation and are reported in 'voice_warnings'. "
+            "Requires authentication."
+    ),
+)
+def items_create(
+        category_id: str,
+        service: ContentServiceDep,
+        voice_generation_available: VoiceGenerationAvailableDep,
+        item: str = Form(...),
+        image: UploadFile | None = File(None),
+        _user: dict = Depends(get_current_user),
+) -> CreateItemResponse:
+    """Create an item with translations, an optional image, and best-effort voices."""
+    word = item.strip()
+    if not word:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Item name is required")
+    image_data, ext = _read_image_upload(image, required=False)
+    try:
+        result = service.create_item_by_id(
+            category_id,
+            word,
+            image_data,
+            ext,
+            generate_voices=voice_generation_available,
+        )
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except CategoryConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return _create_item_response(result, voice_generation_available)
 
 
 @router.get(
@@ -1080,10 +1200,7 @@ def items_voices_list(
     return ItemVoicesResponse(
         item_id=item_id,
         name=item_name,
-        voices=[
-            VoiceResponse(id=v.id, language=v.language, type=v.type, file_uri=v.file_uri)
-            for v in voices_result.voices
-        ],
+        voices=[_voice_response(v) for v in voices_result.voices],
     )
 
 
@@ -1123,9 +1240,7 @@ def items_voices_add(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return VoiceResponse(
-        id=result.id, language=result.language, type=result.type, file_uri=result.file_uri, action="add",
-    )
+    return _voice_response(result, "add")
 
 
 @router.put(
@@ -1162,9 +1277,7 @@ def items_voices_update(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return VoiceResponse(
-        id=result.id, language=result.language, type=result.type, file_uri=result.file_uri, action="update",
-    )
+    return _voice_response(result, "update")
 
 
 @router.delete(
@@ -1195,9 +1308,38 @@ def items_voices_delete(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return VoiceResponse(
-        id=result.id, language=result.language, type=result.type, file_uri=result.file_uri, action="delete",
-    )
+    return _voice_response(result, "delete")
+
+
+@router.post(
+    CATEGORY_ITEM_VOICE_REGENERATE,
+    response_model=VoiceResponse,
+    status_code=status.HTTP_200_OK,
+    tags=[TAG_ITEMS_VOICES],
+    summary="Regenerate a voice for an item",
+    description=(
+            "Re-synthesize the audio for an item voice from the item's current text in that "
+            "language, using the active text-to-speech configuration. Overwrites any existing "
+            "audio file, and creates one when the voice has none yet. Requires authentication."
+    ),
+)
+def items_voices_regenerate(
+        category_id: str,
+        item_id: str,
+        voice_id: str,
+        service: ContentServiceDep,
+        _user: dict = Depends(get_current_user),
+) -> VoiceResponse:
+    """Regenerate an item voice from its current text."""
+    try:
+        result = service.regenerate_item_voice(category_id, item_id, voice_id)
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidCategoryNameError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return _voice_response(result, "regenerate")
 
 
 # endregion
@@ -1210,46 +1352,36 @@ def items_voices_delete(
     status_code=status.HTTP_201_CREATED,
     summary="Create a new content item",
     description=(
-            "Create a new content item with an image and associated voices. "
-            "This endpoint allows uploading an image file and creating a new item entry "
-            "with the specified category and English word. "
+            "Create a new content item with an image and associated voices, identified by "
+            "category folder name. Prefer 'POST /categories/{category_id}/items', which makes "
+            "the image optional. "
             "The image must be in PNG, JPG, or JPEG format. "
+            "Voices are generated when an active text to speech provider exists; voice problems "
+            "are reported in 'voice_warnings' and never block creation. "
             "Requires authentication."
     ),
 )
 def create_item_endpoint(
         service: ContentServiceDep,
+        voice_generation_available: VoiceGenerationAvailableDep,
         image: UploadFile = File(...),  # pylint: disable=invalid-name
         category: str = Form(...),
         item: str = Form(...),
         _user: dict = Depends(get_current_user),
 ) -> CreateItemResponse:
     """Create a new content item (image + voices)."""
-    if not image.filename:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Image file is required")
-    image_data = image.file.read()
-    if not image_data:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Image file is empty")
-    ext = ""
-    if "." in image.filename:
-        ext = "." + image.filename.rsplit(".", 1)[-1].lower()
-    if ext not in (".png", ".jpg", ".jpeg"):
-        ext = ".png"
+    image_data, ext = _read_image_upload(image, required=True)
     try:
         result = service.create_item(
             category_name=category.strip(),
             english_word=item.strip(),
             image_data=image_data,
             image_extension=ext,
+            generate_voices=voice_generation_available,
         )
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return CreateItemResponse(
-        category=result.category,
-        item=result.item,
-        folder=result.folder,
-        image_id=result.image_id,
-    )
+    return _create_item_response(result, voice_generation_available)
 
 
 # endregion
@@ -1268,6 +1400,28 @@ def get_content_service(
 
 
 ContentServiceDep = Annotated[ContentService, Depends(get_content_service)]
+
+
+def get_voice_generation_available(
+        registry: ServiceRegistry = Depends(get_registry),
+) -> bool:
+    """Return whether at least one text to speech provider is active.
+
+    Item creation generates voices only when this is true. A missing or unconfigured
+    text to speech service simply means no voices, never a failed request.
+    """
+    try:
+        service = get_typed_service(
+            registry=registry,
+            service_name=text_to_speech.SERVICE_NAME,
+            expected_type=TextToSpeechService,
+        )
+    except HTTPException:
+        return False
+    return bool(service.get_active_providers())
+
+
+VoiceGenerationAvailableDep = Annotated[bool, Depends(get_voice_generation_available)]
 
 # service: ContentService = Depends(_content_service),
 

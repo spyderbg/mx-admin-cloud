@@ -17,6 +17,13 @@ const mockConfigs: Record<string, ConfigurationFileSummaryResponse[]> = {
     { config_name: 'speaktor', filename: 'speaktor.json', provider: 'speaktor', enabled: false, priority: 3, valid_json: true, error: null, version: null },
     { config_name: 'static', filename: 'static.json', provider: 'static', enabled: false, priority: 1, valid_json: true, error: null, version: null },
   ],
+  text_to_image: [
+    { config_name: 'openai', filename: 'openai.json', provider: 'openai', enabled: true, priority: 1, valid_json: true, error: null, version: '1.0' },
+    { config_name: 'openai_http', filename: 'openai_http.json', provider: 'openai_http', enabled: false, priority: 2, valid_json: true, error: null, version: '1.0' },
+    { config_name: 'genai', filename: 'genai.json', provider: 'genai', enabled: false, priority: 3, valid_json: true, error: null, version: '1.0' },
+    { config_name: 'genai_http', filename: 'genai_http.json', provider: 'genai_http', enabled: false, priority: 4, valid_json: true, error: null, version: '1.0' },
+    { config_name: 'comfyui', filename: 'comfyui.json', provider: 'comfyui', enabled: false, priority: 5, valid_json: true, error: null, version: '1.0' },
+  ],
   text_translation: [
     { config_name: 'static', filename: 'static.json', provider: 'static_translate', enabled: true, priority: 1, valid_json: true, error: null, version: null },
     { config_name: 'openai_en_bg', filename: 'openai_en_bg.json', provider: 'openai_translate', enabled: false, priority: 2, valid_json: true, error: null, version: null },

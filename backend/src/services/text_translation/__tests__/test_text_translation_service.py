@@ -51,7 +51,11 @@ def test_translate_response_serializes_lang_text() -> None:
         lang_text=LangCodeText(lang_code="ES", text="hola"),
     )
     dumped = resp.model_dump()
-    assert dumped == {"success": True, "lang_text": {"lang_code": "es", "text": "hola"}}
+    assert dumped == {
+        "success": True,
+        "lang_text": {"lang_code": "es", "text": "hola"},
+        "errors": [],
+    }
 
 
 def test_translate_file_response_accepts_result_rows() -> None:

@@ -40,7 +40,7 @@ No state management library (no Pinia/Vuex) — data flows via props.
 
 - `/login` — unauthenticated, renders `LoginView`
 - `/` — requires auth (`meta: { requiresAuth: true }`), uses `AppLayout` as shell; children are `DashboardView`
-  (`''`), `CategoriesView` (`categories`, `categories/:categoryId`), and `ItemDetailView`
+  (`''`), `CategoriesView` (`categories`, `categories/:categoryId`), and `ItemDetailsView`
   (`categories/:categoryId/items/:itemId`)
 
 Auth guard checks `localStorage.getItem('token')`. Token is written by `src/api/auth.ts` on successful login (POST
@@ -67,14 +67,14 @@ Layering for content/categories:
 Mutation routes (category rename/icon/voices, item create, item images/voices) are implemented on the backend and
 exposed in `contentClient.ts`. Components call them directly and then refresh via `cache.ts`'s
 `invalidate…` + `ensure…` pair — see `CategoryDetail.vue` (icon/voice mutations), `CategoriesView.vue` ("Add New
-Item" → `createItemEndpoint`), and `ItemDetailView.vue` (item file/voice mutations) for the pattern to follow for
+Item" → `createItemEndpoint`), and `ItemDetailsView.vue` (item file/voice mutations) for the pattern to follow for
 any new mutation. `src/data/mockData.ts` is only consumed by `src/mocks/contentHandlers.ts` (MSW fixtures) — `cache.ts`
 has no mock fallback at runtime.
 
 ### Component Structure
 
 - `src/layouts/` — `AppLayout` (shell), `AppNavbar`, `AppSidebar`, `AppFooter`
-- `src/views/` — page-level components (`CategoriesView`, `ItemDetailView`, `LoginView`, `DashboardView`)
+- `src/views/` — page-level components (`CategoriesView`, `ItemDetailsView`, `LoginView`, `DashboardView`)
 - `src/components/` — reusable components (`CategoryDetail`, `ItemGrid`, `LoginForm`)
 - `src/types/viewModels.ts` — hand-written UI view-model types: `CategoryFull`, `Image`, `Voice`, `Item`, `Language`,
   `SUPPORTED_LANGUAGES`. `src/types/index.ts` holds only `User` (built from the JWT payload by

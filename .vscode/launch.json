@@ -1,0 +1,45 @@
+{
+	// Use IntelliSense to learn about possible attributes.
+	// Hover to view descriptions of existing attributes.
+	// For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+	"version": "0.2.0",
+	"configurations": [
+		{
+			"name": "backend",
+			"type": "debugpy",
+			"request": "launch",
+			"module": "uvicorn",
+			"cwd": "${workspaceFolder}/backend",
+			"args": [
+				"src.main:app",
+				"--reload",
+				"--host",
+				"0.0.0.0",
+				"--port",
+				"8000"
+			],
+			"jinja": true
+		},
+		{
+			"name": "frontend",
+			"type": "node-terminal",
+			"request": "launch",
+			"command": "npm run dev",
+			"cwd": "${workspaceFolder}/frontend"
+		},
+		{
+			"name": "cli status",
+			"type": "debugpy",
+			"request": "launch",
+			"program": "${workspaceFolder}/cli/src/kiddo_cli/main.py",
+			"args": [
+				"common",
+				"status"
+			],
+			"cwd": "${workspaceFolder}/cli",
+			"env": {
+				"PYTHONPATH": "${workspaceFolder}/cli/src"
+			}
+		}
+	]
+}

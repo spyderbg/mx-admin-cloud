@@ -122,6 +122,11 @@ const normalizeVoices = (
       language,
       type: typeof voice.type === 'string' ? voice.type : 'male',
       fileUri: typeof voice.file_uri === 'string' ? voice.file_uri : '',
+      provider: typeof voice.provider === 'string' && voice.provider ? voice.provider : 'unknown',
+      parameters:
+        voice.parameters && typeof voice.parameters === 'object'
+          ? (voice.parameters as Record<string, unknown>)
+          : {},
     })
   })
   return parsed
@@ -137,11 +142,21 @@ async function _loadCategoriesBasic(): Promise<CategoryFull[]> {
     const list = await categoriesList({ includeArchived: true })
     // Assigned before the empty-list guard below, so an installation whose every
     // category is archived still shows its archive.
-    sharedArchivedCategories.value = (list.archived ?? []).map((entry) => ({
-      baseName: entry.base_name,
-      archiveFolder: entry.archive_folder,
-      archivedAt: entry.archived_at,
-    }))
+    sharedArchivedCategories.value = (list.archived ?? []).map((entry) => {
+      const archiveEntry = entry as typeof entry & {
+        items_count?: number | null
+        thumbnail_uri?: string | null
+        created_at?: number | null
+      }
+      return {
+        baseName: entry.base_name,
+        archiveFolder: entry.archive_folder,
+        archivedAt: entry.archived_at,
+        itemsCount: archiveEntry.items_count ?? undefined,
+        thumbnailUri: archiveEntry.thumbnail_uri ?? undefined,
+        createdAt: archiveEntry.created_at ?? undefined,
+      }
+    })
 
     if (!list.categories.length) {
       sharedCategories.value = []
@@ -295,13 +310,13 @@ export const invalidateCategoryDetail = (categoryName: string): void => {
 }
 
 // ---------------------------------------------------------------------------
-// Item detail loader — for ItemDetailView
+// Item detail loader — for ItemDetailsView
 // 2 requests: GET …/items/{id}/images + GET …/items/{id}/voices
 // ---------------------------------------------------------------------------
 
 /**
  * Load images and voices for a single item.
- * Skips if already loaded. Used by ItemDetailView.
+ * Skips if already loaded. Used by ItemDetailsView.
  */
 export const ensureItemDetail = async (
   categoryId: string,

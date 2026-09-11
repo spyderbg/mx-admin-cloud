@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from src.core.languages import LANG_MAP
 from src.services.models import LangCodeText, ServiceProvider
@@ -15,6 +15,11 @@ class TranslateResult:
 
     success: bool
     lang_text: LangCodeText | None = None
+    errors: list[str] = field(default_factory=list)
+    """Failure reason per attempted provider, e.g. "openai_en_fr: OPENAI_API_KEY is not set.".
+
+    Empty when no provider's "supports()" matched the requested language pair at all.
+    """
 
 
 @dataclass

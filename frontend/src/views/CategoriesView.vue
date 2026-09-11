@@ -5,17 +5,7 @@
   </div>
   <p v-else-if="sharedError && sharedCategories.length === 0" class="text-danger text-center py-5">{{ failedToLoadCategoriesLabel(contentLanguage) }}</p>
   <div v-else-if="category" style="width: 100%;">
-    <nav aria-label="breadcrumb">
-      <ol class="breadcrumb bg-transparent p-0 mb-3">
-        <li class="breadcrumb-item">
-          <a href="#" @click.prevent="goToDashboard">{{ breadcrumbRoot }}</a>
-        </li>
-        <li class="breadcrumb-item active" aria-current="page">{{ breadcrumbCategory }}</li>
-      </ol>
-    </nav>
-    <div class="page-header" style="margin-bottom: 0.5rem;">
-      <h3 class="page-title">{{ pageTitle }}</h3>
-    </div>
+    <ViewBreadcrumb :items="breadcrumbItems" />
     <CategoryDetail
       :category="category"
       :archiving="archiving"
@@ -23,80 +13,44 @@
       @delete="onDeleteCategory"
       @rename="onRenameCategory"
       @archive="onArchiveCategory"
-      @edit-voice="onEditVoice"
       @rename-voice="onRenameVoice"
-      @delete-voice="onDeleteVoice"
     />
-    <div class="d-flex justify-content-between align-items-center mt-4 mb-3">
-      <h4 class="mb-0">{{ itemsLabel(contentLanguage) }}</h4>
-      <div class="d-flex align-items-center" style="gap: 1rem;">
-        <div class="d-flex align-items-center" style="gap: 0.5rem;">
-          <i class="mdi mdi-view-grid-outline text-muted" style="font-size: 1.1rem;"></i>
-          <input
-            type="range"
-            min="1"
-            max="7"
-            step="1"
-            v-model.number="gridColumns"
-            style="width: 100px; cursor: pointer;"
-            :title="`${gridColumns} column${gridColumns > 1 ? 's' : ''}`"
-          />
-          <i class="mdi mdi-view-grid text-muted" style="font-size: 1.4rem;"></i>
+    <section class="category-items-panel">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="mb-0">{{ itemsLabel(contentLanguage) }}</h4>
+        <div class="d-flex align-items-center" style="gap: 1rem;">
+          <div class="d-flex align-items-center" style="gap: 0.5rem;">
+            <i class="mdi mdi-view-grid-outline text-muted" style="font-size: 1.1rem;"></i>
+            <input
+              type="range"
+              min="1"
+              max="7"
+              step="1"
+              v-model.number="gridColumns"
+              style="width: 100px; cursor: pointer;"
+              :title="`${gridColumns} column${gridColumns > 1 ? 's' : ''}`"
+            />
+            <i class="mdi mdi-view-grid text-muted" style="font-size: 1.4rem;"></i>
+          </div>
+          <button class="btn btn-primary btn-sm" @click="openAddItemModal">
+            <i class="mdi mdi-plus mr-1"></i>{{ addNewItemLabel(contentLanguage) }}
+          </button>
         </div>
-        <button class="btn btn-primary btn-sm" @click="openAddItemModal">
-          <i class="mdi mdi-plus mr-1"></i>{{ addNewItemLabel(contentLanguage) }}
-        </button>
       </div>
-    </div>
-    <ItemGrid :items="category.items" :category-id="category.id" :columns="gridColumns" />
+      <ItemGrid :items="category.items" :category-id="category.id" :columns="gridColumns" />
+    </section>
   </div>
   <div v-else class="text-center py-5">
     <h4 class="text-muted">Select a category from the sidebar</h4>
   </div>
 
-  <!-- Add new item modal -->
-  <Teleport to="body">
-    <div v-if="showAddItem" class="cd-modal-overlay" @click.self="closeAddItemModal">
-      <div class="cd-modal-box">
-        <div class="cd-modal-header">
-          <h5 class="cd-modal-title">{{ addNewItemTitleLabel(contentLanguage) }}</h5>
-          <button type="button" class="cd-modal-close" @click="closeAddItemModal">&times;</button>
-        </div>
-        <div class="cd-modal-body">
-          <div class="form-group">
-            <label class="col-form-label">{{ itemNameEnglishLabel(contentLanguage) }}</label>
-            <input
-              v-model="newItemWord"
-              type="text"
-              class="form-control"
-              :placeholder="enterItemNameLabel(contentLanguage)"
-              @keyup.enter="confirmAddItem"
-            />
-          </div>
-          <div class="form-group mb-0">
-            <label class="col-form-label">{{ imageFileLabel(contentLanguage) }}</label>
-            <input
-              type="file"
-              class="form-control-file"
-              accept="image/*"
-              @change="onAddItemFileSelected"
-            />
-          </div>
-        </div>
-        <div class="cd-modal-footer">
-          <button type="button" class="btn btn-secondary" @click="closeAddItemModal">{{ cancelLabel(contentLanguage) }}</button>
-          <button
-            type="button"
-            class="btn btn-primary"
-            :disabled="!newItemWord.trim() || !newItemFile"
-            @click="confirmAddItem"
-          >
-            {{ createLabel(contentLanguage) }}
-          </button>
-        </div>
-      </div>
-    </div>
-  </Teleport>
+  <AddItemModal
+    :show="showAddItem"
+    :category-id="category?.id ?? ''"
+    :existing-item-ids="existingItemIds"
+    @close="showAddItem = false"
+    @created="onItemCreated"
+  />
 
   <!-- Result toast -->
   <Teleport to="body">
@@ -126,19 +80,18 @@ import {
 } from '../api/cache'
 import { readUiConfiguration, writeUiConfiguration } from '../api/uiConfigurationDb'
 import { LocalizedString, SUPPORTED_LANGUAGES, type Language, type Voice } from '../types/viewModels'
-import { categoriesRemove, categoriesRename, createItemEndpoint } from '../api/contentClient'
+import { categoriesRemove, categoriesRename } from '../api/contentClient'
+import type { CreateItemResponse } from '../types/contentSchemas'
+import AddItemModal from '../components/AddItemModal.vue'
 import CategoryDetail from '../components/CategoryDetail.vue'
 import ItemGrid from '../components/ItemGrid.vue'
+import ViewBreadcrumb from '../components/ViewBreadcrumb.vue'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import {
   addNewItemLabel,
-  addNewItemTitleLabel,
-  cancelLabel,
-  createLabel,
-  enterItemNameLabel,
   failedToLoadCategoriesLabel,
-  imageFileLabel,
-  itemNameEnglishLabel,
+  itemCreatedLabel,
+  itemCreatedWithWarningsLabel,
   localizedCategoryLabel,
   breadcrumbCategoriesLabel,
   itemsLabel,
@@ -148,10 +101,6 @@ import { toPascalCaseWords } from '../utils/pascalCaseWords'
 
 const route = useRoute()
 const router = useRouter()
-
-const goToDashboard = (): void => {
-  router.push({ name: 'dashboard' })
-}
 
 const contentLanguage = useContentLanguage()
 
@@ -199,17 +148,16 @@ const category = computed(() => {
   return sharedCategories.value[0] ?? null
 })
 
-const pageTitle = computed(() => {
-  const cat = category.value
-  if (!cat) return ''
-  return toPascalCaseWords(localizedCategoryLabel(cat, contentLanguage.value))
-})
-
 const breadcrumbRoot = computed(() => breadcrumbCategoriesLabel(contentLanguage.value))
 
 const breadcrumbCategory = computed(() =>
   category.value ? toPascalCaseWords(localizedCategoryLabel(category.value, contentLanguage.value)) : '',
 )
+
+const breadcrumbItems = computed(() => [
+  { label: breadcrumbRoot.value, to: { name: 'dashboard' } },
+  { label: breadcrumbCategory.value },
+])
 
 // Auto-redirect from /categories to /categories/:id when a category is selected
 watch(category, (cat) => {
@@ -299,20 +247,18 @@ const onArchiveCategory = async (): Promise<void> => {
   }
 }
 
-const onEditVoice = (): void => {}
 const onRenameVoice = async (voice: Voice, name: string): Promise<void> => {
   await onRenameCategory(name, voice.language)
 }
-const onDeleteVoice = (): void => {}
 
 type ToastVariant = 'success' | 'error' | 'warning'
 const toast = ref<{ message: string; variant: ToastVariant } | null>(null)
 let toastTimer: ReturnType<typeof setTimeout> | null = null
 
-function showToast(message: string, variant: ToastVariant): void {
+function showToast(message: string, variant: ToastVariant, durationMs = 4000): void {
   if (toastTimer) clearTimeout(toastTimer)
   toast.value = { message, variant }
-  toastTimer = setTimeout(() => { toast.value = null }, 4000)
+  toastTimer = setTimeout(() => { toast.value = null }, durationMs)
 }
 
 function extractErrorMessage(err: unknown): string {
@@ -321,107 +267,52 @@ function extractErrorMessage(err: unknown): string {
 }
 
 const showAddItem = ref(false)
-const newItemWord = ref('')
-const newItemFile = ref<File | null>(null)
+const existingItemIds = computed(() => category.value?.items.map((item) => item.id) ?? [])
 
 function openAddItemModal(): void {
-  newItemWord.value = ''
-  newItemFile.value = null
   showAddItem.value = true
 }
 
-function closeAddItemModal(): void {
+// AddItemModal.vue performs the request and reports errors inline; this only refreshes
+// the cache and reports the outcome. Voice problems never block creation, so they arrive
+// as warnings on a successful response.
+async function onItemCreated(result: CreateItemResponse, word: string): Promise<void> {
   showAddItem.value = false
-}
+  const categoryId = category.value?.id
+  const hasVoiceWarnings = result.voice_warnings.length > 0
 
-function onAddItemFileSelected(e: Event): void {
-  const input = e.target as HTMLInputElement
-  newItemFile.value = input.files?.[0] ?? null
-}
+  invalidateCategoriesCache()
+  await ensureCategoriesLoaded()
 
-async function confirmAddItem(): Promise<void> {
-  const currentCategory = category.value
-  const word = newItemWord.value.trim()
-  const file = newItemFile.value
-  if (!currentCategory || !word || !file) return
+  if (hasVoiceWarnings) {
+    // Stay on the category page: the toast lives in this view and would vanish on navigation,
+    // and the warning is the only place the user learns that voices are missing.
+    showToast(
+      `${itemCreatedWithWarningsLabel(contentLanguage.value, word)} ${result.voice_warnings.join(' ')}`,
+      'warning',
+      8000,
+    )
+    return
+  }
 
-  try {
-    const formData = new FormData()
-    formData.append('category', currentCategory.name.en)
-    formData.append('item', word)
-    formData.append('image', file)
-    const result = await createItemEndpoint(formData)
-
-    showAddItem.value = false
-    invalidateCategoriesCache()
-    const categories = await ensureCategoriesLoaded()
-    const created = categories.find((entry) => entry.id === currentCategory.id)
-    const createdItem = created?.items.find((entry) => entry.id === result.item)
-
-    showToast(`Item "${word}" created.`, 'success')
-    if (created && createdItem) {
-      await router.push(`/categories/${created.id}/items/${createdItem.id}`)
-    }
-  } catch (err) {
-    showToast(extractErrorMessage(err), 'error')
+  showToast(itemCreatedLabel(contentLanguage.value, word), 'success')
+  if (categoryId) {
+    await router.push(`/categories/${categoryId}/items/${result.item_id}`)
   }
 }
 </script>
 
 <style scoped>
-.cd-modal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 1050;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.cd-modal-box {
-  background: #fff;
-  border-radius: 6px;
-  box-shadow: 0 5px 30px rgba(0, 0, 0, 0.3);
+.category-items-panel {
   width: 100%;
-  max-width: 480px;
-  margin: 1rem;
-  overflow: hidden;
+  background: #fff;
+  border: 1px solid #e6eaf4;
+  border-radius: 8px;
+  box-shadow: 0 4px 18px rgba(25, 38, 77, 0.04);
+  margin: 1rem 0;
+  padding: 1.25rem 1.5rem;
 }
-.cd-modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1rem 1.25rem;
-  border-bottom: 1px solid #dee2e6;
-}
-.cd-modal-title {
-  margin: 0;
-  font-size: 1.1rem;
-  font-weight: 600;
-}
-.cd-modal-close {
-  background: none;
-  border: none;
-  font-size: 1.4rem;
-  cursor: pointer;
-  padding: 0;
-  line-height: 1;
-  color: #6b7280;
-  flex-shrink: 0;
-}
-.cd-modal-close:hover {
-  color: #111;
-}
-.cd-modal-body {
-  padding: 1.25rem;
-}
-.cd-modal-footer {
-  padding: 0.75rem 1.25rem;
-  border-top: 1px solid #dee2e6;
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
-}
+
 .cd-toast {
   position: fixed;
   bottom: 1.5rem;

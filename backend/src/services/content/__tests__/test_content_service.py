@@ -98,10 +98,11 @@ class _StubProvider(ContentProvider):
             self,
             category_id: str,
             english_word: str,
-            image_data: bytes,
+            image_data: bytes | None = None,
             image_extension: str = ".png",
+            generate_voices: bool = True,
     ) -> CreateItem:
-        self._record("create_item", category_id, english_word, image_data, image_extension)
+        self._record("create_item", category_id, english_word, image_data, image_extension, generate_voices)
         return self._returns.get("create_item", CreateItem(
             category=category_id,
             item=english_word,
@@ -282,6 +283,13 @@ class _StubProvider(ContentProvider):
             "file_uri": f"/content/{category_id}/{item_id}/{voice_id}.mp3",
         })
 
+    def regenerate_item_voice(self, category_id: str, item_id: str, voice_id: str) -> dict[str, Any]:
+        self._record("regenerate_item_voice", category_id, item_id, voice_id)
+        return self._returns.get("regenerate_item_voice", {
+            "id": voice_id, "language": "en", "type": "tts",
+            "file_uri": f"/content/{category_id}/{item_id}/{voice_id}.mp3",
+        })
+
     def add_category_voice(self, category_id: str, language: str, audio_data: bytes) -> dict[str, Any]:
         self._record("add_category_voice", category_id, language, audio_data)
         return self._returns.get("add_category_voice", {
@@ -299,6 +307,13 @@ class _StubProvider(ContentProvider):
     def delete_category_voice(self, category_id: str, voice_id: str) -> dict[str, Any]:
         self._record("delete_category_voice", category_id, voice_id)
         return self._returns.get("delete_category_voice", {
+            "id": voice_id, "language": "en", "type": "tts",
+            "file_uri": f"/content/{category_id}/{voice_id}.mp3",
+        })
+
+    def regenerate_category_voice(self, category_id: str, voice_id: str) -> dict[str, Any]:
+        self._record("regenerate_category_voice", category_id, voice_id)
+        return self._returns.get("regenerate_category_voice", {
             "id": voice_id, "language": "en", "type": "tts",
             "file_uri": f"/content/{category_id}/{voice_id}.mp3",
         })
@@ -348,7 +363,7 @@ class _ConcreteProvider(ContentProvider):
     def create_category(self, category_name):
         return {}
 
-    def create_item(self, category_id, english_word, image_data, image_extension=".png"):
+    def create_item(self, category_id, english_word, image_data=None, image_extension=".png", generate_voices=True):
         return {}
 
     def update_item_name(self, category_id, item_id, item_name):
@@ -411,6 +426,9 @@ class _ConcreteProvider(ContentProvider):
     def delete_item_voice(self, category_id, item_id, voice_id):
         return {}
 
+    def regenerate_item_voice(self, category_id, item_id, voice_id):
+        return {}
+
     def add_category_voice(self, category_id, language, audio_data):
         return {}
 
@@ -418,6 +436,9 @@ class _ConcreteProvider(ContentProvider):
         return {}
 
     def delete_category_voice(self, category_id, voice_id):
+        return {}
+
+    def regenerate_category_voice(self, category_id, voice_id):
         return {}
 
 
@@ -607,7 +628,23 @@ def test_create_item_delegates(tmp_path: Path) -> None:
     svc = _make_service(tmp_path, [stub])
     result = svc.create_item("foods", "apple", b"\x89PNG", ".png")
     assert result.item == "apple"
-    assert stub.calls["create_item"] == [("foods", "apple", b"\x89PNG", ".png")]
+    assert stub.calls["create_item"] == [("foods", "apple", b"\x89PNG", ".png", True)]
+
+
+def test_create_item_passes_generate_voices_flag(tmp_path: Path) -> None:
+    stub = _StubProvider(tmp_path)
+    svc = _make_service(tmp_path, [stub])
+    svc.create_item("foods", "apple", None, ".png", generate_voices=False)
+    assert stub.calls["create_item"] == [("foods", "apple", None, ".png", False)]
+
+
+def test_create_item_by_id_delegates_without_name_lookup(tmp_path: Path) -> None:
+    stub = _StubProvider(tmp_path)
+    svc = _make_service(tmp_path, [stub])
+    result = svc.create_item_by_id("C_Foods", "apple", b"\x89PNG", ".png", generate_voices=False)
+    assert result.item == "apple"
+    assert stub.calls["create_item"] == [("C_Foods", "apple", b"\x89PNG", ".png", False)]
+    assert "category_id_by_name" not in stub.calls
 
 
 def test_archive_category_delegates(tmp_path: Path) -> None:
@@ -746,7 +783,10 @@ def test_create_category_response() -> None:
 
 
 def test_create_item_response() -> None:
-    resp = CreateItemResponse(category="foods", item="apple", folder="apple", image_id="I_Apple")
+    resp = CreateItemResponse(
+        category="foods", item="apple", folder="apple", image_id="I_Apple", item_id="I_Apple",
+        voices_generated=["en"], voice_warnings=[], message="created",
+    )
     assert resp.image_id == "I_Apple"
 
 

@@ -39,6 +39,6 @@ Implement these operations in the FastAPI backend:
 ## Frontend Follow-Up After Backend Merge
 
 - Run the project API sync command from the repository root so `src/api/contentClient.ts` includes the new operations.
-- Replace the pending toast handlers in `src/components/CategoryDetail.vue` and `src/views/ItemDetailView.vue` with real API calls.
+- Replace the pending toast handlers in `src/components/CategoryDetail.vue` and `src/views/ItemDetailsView.vue` with real API calls.
 - After each successful regeneration, invalidate the relevant frontend cache and refresh the detail data.
 - Preserve the existing success/error toast copy pattern and cache-busting version increments.

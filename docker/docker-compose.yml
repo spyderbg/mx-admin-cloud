@@ -32,6 +32,7 @@ services:
       args:
         VITE_DEBUG_MODE: "true"
         VITE_MOCK_DATA: "false"
+        VITE_ARCHIVE_CONFIRMATION_MODE: "complex"
     ports:
       - "9001:80"
     volumes:
@@ -64,6 +65,21 @@ services:
     command: ["uvicorn", "src.main:app", "--uds", "/tmp/kiddo-backend.sock"]
     profiles:
       - cli
+
+  cli:
+    container_name: kiddo-cli
+    build:
+      context: ..
+      dockerfile: docker/cli.Dockerfile
+    environment:
+      - KIDDO_API_BASE_URL=http://backend:8000
+      - KIDDO_USER=${KIDDO_USER:-admin}
+      - KIDDO_PASSWORD=${KIDDO_PASSWORD:-MarXman2025}
+      - KIDDO_TOKEN=${KIDDO_TOKEN:-}
+    depends_on:
+      - backend
+    profiles:
+      - cli-tool
 
 volumes:
   backend-data:

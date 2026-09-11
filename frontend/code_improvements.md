@@ -71,7 +71,7 @@ searching only after details arrive per category. At minimum, cap the concurrenc
   endpoint; today it's a modal that ends in a console.log.
 - 
 - **Duplicated per-view lang maps** — `langFlagMap`/`langLabelMap` are declared in both
-  `CategoryDetail.vue` and `ItemDetailView.vue`; move next to `SUPPORTED_LANGUAGES` in
+  `CategoryDetail.vue` and `ItemDetailsView.vue`; move next to `SUPPORTED_LANGUAGES` in
   `types/viewModels.ts` (single source for language metadata: code → flag, label, display name).
 - 
 - **`DashboardView` double-render state** — `v-if="loading"` / `v-else-if="error"` then a separate
@@ -109,7 +109,7 @@ conversely the README's route table still documents `/categories/:id/images/:ima
 `items/:itemId`) and an `src/api/` layout (`categories.ts`, `categoryVoices.ts`, `items.ts`,
 `itemImages.ts`, `itemVoices.ts`, `content.ts`) that does not exist — the real modules are
 `client.ts`, `auth.ts`, `cache.ts`, `contentClient.ts`. CLAUDE.md likewise references
-`ImageDetailView`/`ImageGrid` (now `ItemDetailView`/`ItemGrid`). Sync both docs with the tree —
+`ImageDetailView`/`ImageGrid` (now `ItemDetailsView`/`ItemGrid`). Sync both docs with the tree —
 for this project the READMEs are load-bearing (they are the stated source of truth).
 
 ---
