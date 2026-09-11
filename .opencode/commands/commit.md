@@ -15,6 +15,7 @@ Review the staged changes and generate a concise commit message following the Co
 - Use a body to explain what and why, not how
 - Group related changes logically
 - Always format the body as a Markdown bullet list (e.g. `- **group:** description`)
+- Remove the leading indentation
 
 Then run:
 
