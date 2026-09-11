@@ -14,7 +14,7 @@ Review the staged changes and generate a concise commit message following the Co
 - Use a short subject line (imperative mood, no period, no prefix like `feat:` or `docs:`)
 - Use a body to explain what and why, not how
 - Group related changes logically
-- Always format the body as a Markdown bullet list (e.g. `- **group:** description`)
+- Always format the body as a bullet list (e.g. `- Group: description`)   
 
 Then run:
 
