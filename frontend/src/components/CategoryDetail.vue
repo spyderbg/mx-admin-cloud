@@ -386,16 +386,20 @@ import {
 } from '../utils/localizedLabels'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import {
-  categoriesImagesAdd,
-  categoriesImagesDelete,
-  categoriesImagesUpdate,
+  categoriesIconDelete,
+  categoriesIconUpdate,
   categoriesVoicesAdd,
   categoriesVoicesDelete,
   categoriesVoicesUpdate,
 } from '../api/contentClient'
-import { ensureCategoryDetail, invalidateCategoryDetail } from '../api/cache'
+import {
+  bumpCategoryIconVersion,
+  categoryIconVersions,
+  ensureCategoryDetail,
+  invalidateCategoryDetail,
+} from '../api/cache'
 import { resizeImageToMaxDimension } from '../utils/imageResize'
-import { imageIdFromUri } from '../utils/imageId'
+import { cacheBustedUri } from '../utils/cacheBustedUri'
 import { useAudioPlayer } from '../composables/useAudioPlayer'
 
 const props = defineProps<{
@@ -450,18 +454,14 @@ const toast = ref<{ message: string; variant: ToastVariant } | null>(null)
 let toastTimer: ReturnType<typeof setTimeout> | null = null
 
 // Cache-busting: file URIs are stable across re-uploads (same filename), so the
-// browser keeps serving the old cached file unless we force a fresh request.
-const thumbnailVersion = ref(0)
+// browser keeps serving the old cached file unless we force a fresh request. The icon
+// version lives in the shared cache (keyed by category id) so it also busts the cache
+// for the dashboard's category cards after navigating away and back.
 const voiceVersions = ref<Record<string, number>>({})
 
-function cacheBustedUri(uri: string | null | undefined, version: number): string {
-  if (!uri) return ''
-  if (!version) return uri
-  const sep = uri.includes('?') ? '&' : '?'
-  return `${uri}${sep}v=${version}`
-}
-
-const thumbnailSrc = computed(() => cacheBustedUri(props.category.thumbnail_uri, thumbnailVersion.value))
+const thumbnailSrc = computed(() =>
+  cacheBustedUri(props.category.thumbnail_uri, categoryIconVersions.value.get(props.category.id) ?? 0),
+)
 
 function voiceSrc(voice: Voice): string {
   return cacheBustedUri(voice.fileUri, voiceVersions.value[voice.id] ?? 0)
@@ -607,10 +607,10 @@ async function confirmImageDelete(): Promise<void> {
   if (!uri || !uri.trim()) return
 
   try {
-    const result = await categoriesImagesDelete(props.category.id, imageIdFromUri(uri))
+    const result = await categoriesIconDelete(props.category.id)
     showToast(`Category icon ${pastTense(result.action)}.`, 'success')
     await refreshCategory()
-    thumbnailVersion.value += 1
+    bumpCategoryIconVersion(props.category.id)
     emit('delete')
   } catch (err) {
     showToast(extractErrorMessage(err), 'error')
@@ -683,13 +683,10 @@ async function onFileSelected(e: Event): Promise<void> {
   try {
     const resizedFile = await resizeImageToMaxDimension(file)
     formData.append('image', resizedFile)
-    const existingUri = props.category.thumbnail_uri
-    const result = existingUri && existingUri.trim()
-      ? await categoriesImagesUpdate(props.category.id, imageIdFromUri(existingUri), formData)
-      : await categoriesImagesAdd(props.category.id, formData)
+    const result = await categoriesIconUpdate(props.category.id, formData)
     showToast(`Category icon ${pastTense(result.action)}.`, 'success')
     await refreshCategory()
-    thumbnailVersion.value += 1
+    bumpCategoryIconVersion(props.category.id)
     emit('edit')
   } catch (err) {
     showToast(extractErrorMessage(err), 'error')
@@ -705,7 +702,7 @@ async function onFileSelected(e: Event): Promise<void> {
 .category-icon-wrap {
   position: relative;
   width: 100%;
-  max-width: 512px;
+  max-width: 256px;
   aspect-ratio: 1 / 1;
   background: rgba(0, 0, 0, 0.04);
 }
@@ -773,19 +770,21 @@ async function onFileSelected(e: Event): Promise<void> {
 .voice-card {
   position: relative;
   min-width: 0;
+  min-height: 14rem;
   border: 1.5px solid #b8d4f0;
   border-radius: 10px;
-  padding: 2.15rem 0.75rem 0.75rem;
+  padding: 3rem 0.75rem 0.75rem;
   text-align: center;
   background: #f8fbff;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: space-between;
 }
 .voice-card-top-actions {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: 0.45rem;
+  right: 0.45rem;
   display: flex;
   gap: 0.3rem;
 }
@@ -798,7 +797,7 @@ async function onFileSelected(e: Event): Promise<void> {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0;
 }
 .voice-card-flag .flag-icon {
   font-size: 1.6rem;
@@ -807,16 +806,16 @@ async function onFileSelected(e: Event): Promise<void> {
   font-weight: 600;
   font-size: 0.85rem;
   color: #1e293b;
-  margin-bottom: 2px;
+  margin-bottom: 0;
   line-height: 1.2;
 }
 .voice-card-type {
   font-size: 0.75rem;
   color: #6b7280;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0;
 }
 .voice-card-controls {
-  margin-bottom: 0.5rem;
+  margin-bottom: 0;
 }
 .btn-play {
   display: inline-flex;

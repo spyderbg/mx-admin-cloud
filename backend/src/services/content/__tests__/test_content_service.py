@@ -32,6 +32,7 @@ from src.services.content.schemas import (
     CreateCategoryBody,
     CreateCategoryResponse,
     CreateItemResponse,
+    DeleteArchivedCategoryResponse,
     ItemSummary,
     RemoveCategoryResponse,
     RenameCategoryBody,
@@ -209,6 +210,15 @@ class _StubProvider(ContentProvider):
             "message": "restored",
         })
 
+    def delete_archived_category(self, name: str) -> dict[str, Any]:
+        self._record("delete_archived_category", name)
+        return self._returns.get("delete_archived_category", {
+            "deleted": True,
+            "name": name,
+            "archive_folder": f"{name}_1000",
+            "message": "deleted",
+        })
+
     def item_images(self, category_id: str, item_id: str) -> dict[str, Any]:
         self._record("item_images", category_id, item_id)
         return self._returns.get("item_images", {"item_id": item_id, "images": [], "thumbnail_uri": None})
@@ -372,6 +382,9 @@ class _ConcreteProvider(ContentProvider):
         return {}
 
     def restore_category(self, category_id):
+        return {}
+
+    def delete_archived_category(self, name):
         return {}
 
     def item_images(self, category_id, item_id):
@@ -656,6 +669,14 @@ def test_restore_category_delegates(tmp_path: Path) -> None:
     assert stub.calls["restore_category"] == [("foods",)]
 
 
+def test_delete_archived_category_delegates(tmp_path: Path) -> None:
+    stub = _StubProvider(tmp_path)
+    svc = _make_service(tmp_path, [stub])
+    result = svc.delete_archived_category("foods_1000")
+    assert result["deleted"] is True
+    assert stub.calls["delete_archived_category"] == [("foods_1000",)]
+
+
 # ---------------------------------------------------------------------------
 # Schemas — Pydantic validation
 # ---------------------------------------------------------------------------
@@ -746,6 +767,17 @@ def test_remove_category_response_optional_fields() -> None:
 def test_restore_category_response() -> None:
     resp = RestoreCategoryResponse(restored=True, name="foods", from_archive="foods_1000", message="ok")
     assert resp.restored is True
+
+
+def test_delete_archived_category_response() -> None:
+    resp = DeleteArchivedCategoryResponse(
+        deleted=True,
+        name="foods",
+        archive_folder="foods_1000",
+        message="deleted",
+    )
+    assert resp.deleted is True
+    assert resp.archive_folder == "foods_1000"
 
 
 # ---------------------------------------------------------------------------

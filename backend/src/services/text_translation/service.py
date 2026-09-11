@@ -81,6 +81,8 @@ class TextTranslationService(Service):
             tgt = target_lang_code or provider.default_output_language()
             if not inp or not tgt:
                 continue
+            if not provider.supports(inp, tgt):
+                continue
             if current_lang_code is None:
                 current_lang_code = inp
             try:

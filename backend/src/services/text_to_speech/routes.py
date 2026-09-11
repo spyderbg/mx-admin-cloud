@@ -195,6 +195,8 @@ async def generate_word(
             result = await service.generate(tts_request, client)
         except NoActiveTTSProvidersError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error or "Text to speech generation failed.")

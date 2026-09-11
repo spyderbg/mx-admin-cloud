@@ -18,6 +18,7 @@ from src.services.content.models import (
     ContentProviderUnavailableError,
     CreateCategory,
     CreateItem,
+    DeleteArchivedCategory,
     ItemDetail,
     ItemImages,
     ItemVoices,
@@ -134,6 +135,10 @@ class ContentService(Service):
         because archiving removes the category's rows from the root CSV registry.
         """
         return self._select_provider().restore_category(category_name)
+
+    def delete_archived_category(self, archive_name: str) -> DeleteArchivedCategory:
+        """Permanently delete an archived category snapshot via the active provider."""
+        return self._select_provider().delete_archived_category(archive_name)
 
     @staticmethod
     def _resolve_category_id(provider: ContentProvider, value: str) -> str:

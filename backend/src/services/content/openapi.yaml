@@ -322,6 +322,30 @@ components:
       - image_id
       title: CreateItemResponse
       description: Response for POST /content/items.
+    DeleteArchivedCategoryResponse:
+      properties:
+        deleted:
+          type: boolean
+          title: Deleted
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        archive_folder:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Archive Folder
+        message:
+          type: string
+          title: Message
+      type: object
+      required:
+      - deleted
+      - message
+      title: DeleteArchivedCategoryResponse
+      description: Response for DELETE /content/categories/archive/{name}.
     FileAction:
       type: string
       enum:
@@ -707,6 +731,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CreateCategoryResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/content/categories/archive/{archive_name}:
+    delete:
+      tags:
+      - Categories
+      summary: Delete a category from archive
+      description: Permanently delete an archived category snapshot. Accepts either
+        a base folder name ('foods') or a full archive folder name ('foods_1738456789')
+        to delete a specific snapshot. Requires authentication.
+      operationId: categories_archive_delete_api_v1_content_categories_archive__archive_name__delete
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: archive_name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Archive Name
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteArchivedCategoryResponse'
         '422':
           description: Validation Error
           content:

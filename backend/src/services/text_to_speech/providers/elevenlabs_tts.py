@@ -149,7 +149,8 @@ class ElevenLabsTTSProvider(TTSProvider):
             json=payload,
         )
         latency = time.perf_counter() - started_at
-        response.raise_for_status()
+        if response.is_error:
+            raise RuntimeError(f"ElevenLabs API {response.status_code}: {response.text}")
         await log_provider_request(
             LogProviderRequest(
                 provider=self.name,

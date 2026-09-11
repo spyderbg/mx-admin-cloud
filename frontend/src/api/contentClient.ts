@@ -9,6 +9,7 @@ import type {
   CreateCategoryBody,
   CreateCategoryResponse,
   CreateItemResponse,
+  DeleteArchivedCategoryResponse,
   ImageResponse,
   ItemImagesResponse,
   ItemListResponse,
@@ -38,6 +39,12 @@ export const categoriesCreate = async (body: CreateCategoryBody): Promise<Create
 /** Restore a category from archive */
 export const categoriesRestore = async (body: RestoreCategoryBody): Promise<RestoreCategoryResponse> => {
   const r = await client.post<RestoreCategoryResponse>('/content/categories/restore', body)
+  return r.data
+}
+
+/** Delete a category from archive */
+export const categoriesArchiveDelete = async (archiveName: string): Promise<DeleteArchivedCategoryResponse> => {
+  const r = await client.delete<DeleteArchivedCategoryResponse>(`/content/categories/archive/${archiveName}`)
   return r.data
 }
 

@@ -56,9 +56,16 @@
 
     <div v-if="archivedCategories.length" class="archived-section">
       <hr class="mb-3" />
-      <button type="button" class="archived-toggle" @click="archivedExpanded = !archivedExpanded">
+      <button
+        type="button"
+        class="archived-toggle"
+        :aria-expanded="archivedExpanded"
+        @click="archivedExpanded = !archivedExpanded"
+      >
         <span class="d-flex align-items-center">
-          <i class="mdi mdi-archive-outline mr-2 text-muted"></i>
+          <span class="archived-toggle-marker mr-2">
+            <i class="mdi mdi-format-list-bulleted"></i>
+          </span>
           <strong>{{ archivedCategoriesLabel(contentLanguage) }}</strong>
           <span class="badge badge-pill badge-secondary ml-2">{{ archivedCategories.length }}</span>
         </span>
@@ -78,18 +85,32 @@
               <small class="text-muted">{{ archivedAgoLabel(contentLanguage, entry.archivedAt) }}</small>
             </div>
           </div>
-          <button
-            class="btn btn-outline-secondary btn-sm"
-            :disabled="restoringFolder !== ''"
-            @click="restoreCategory(entry)"
-          >
-            <span
-              v-if="restoringFolder === entry.archiveFolder"
-              class="spinner-border spinner-border-sm mr-1"
-              role="status"
-            ></span>
-            <i v-else class="mdi mdi-restore mr-1"></i>{{ restoreLabel(contentLanguage) }}
-          </button>
+          <div class="archived-row-actions">
+            <button
+              class="btn btn-outline-secondary btn-sm"
+              :disabled="restoringFolder !== '' || deletingFolder !== ''"
+              @click="restoreCategory(entry)"
+            >
+              <span
+                v-if="restoringFolder === entry.archiveFolder"
+                class="spinner-border spinner-border-sm mr-1"
+                role="status"
+              ></span>
+              <i v-else class="mdi mdi-restore mr-1"></i>{{ restoreLabel(contentLanguage) }}
+            </button>
+            <button
+              class="btn btn-outline-danger btn-sm"
+              :disabled="restoringFolder !== '' || deletingFolder !== ''"
+              @click="openDeleteArchivedCategory(entry)"
+            >
+              <span
+                v-if="deletingFolder === entry.archiveFolder"
+                class="spinner-border spinner-border-sm mr-1"
+                role="status"
+              ></span>
+              <i v-else class="mdi mdi-delete-outline mr-1"></i>{{ deleteLabel(contentLanguage) }}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -101,6 +122,57 @@
     @close="showAddCategory = false"
     @created="onCategoryCreated"
   />
+
+  <!-- Delete archived category confirmation modal -->
+  <Teleport to="body">
+    <div v-if="deleteTarget" class="cd-modal-overlay" @click.self="closeDeleteArchivedCategory">
+      <div class="cd-modal-box">
+        <div class="cd-modal-header">
+          <h5 class="cd-modal-title">{{ deleteLabel(contentLanguage) }} archived category</h5>
+          <button type="button" class="cd-modal-close" @click="closeDeleteArchivedCategory">&times;</button>
+        </div>
+        <div class="cd-modal-body">
+          <p class="mb-3">
+            This will permanently delete the archived category "{{ deleteTarget.baseName }}".
+          </p>
+          <div class="alert alert-warning py-2">
+            <small>
+              <i class="mdi mdi-alert mr-1"></i>
+              This cannot be undone and the category will no longer be restorable.
+            </small>
+          </div>
+          <div class="form-group mb-0">
+            <label class="col-form-label">
+              {{ archiveTypeToConfirmLabel(contentLanguage, deleteTargetCategoryId) }}
+            </label>
+            <input
+              v-model="deleteConfirmText"
+              type="text"
+              class="form-control"
+              :placeholder="deleteTargetCategoryId"
+              @keyup.enter="confirmDeleteArchivedCategory"
+            />
+          </div>
+        </div>
+        <div class="cd-modal-footer">
+          <button type="button" class="btn btn-secondary" @click="closeDeleteArchivedCategory">{{ cancelLabel(contentLanguage) }}</button>
+          <button
+            type="button"
+            class="btn btn-danger"
+            :disabled="!canDeleteArchivedCategory || deletingFolder !== ''"
+            @click="confirmDeleteArchivedCategory"
+          >
+            <span
+              v-if="deletingFolder === deleteTarget.archiveFolder"
+              class="spinner-border spinner-border-sm mr-1"
+              role="status"
+            ></span>
+            {{ deleteLabel(contentLanguage) }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 
   <!-- Result toast -->
   <Teleport to="body">
@@ -121,6 +193,7 @@ import { useRouter } from 'vue-router'
 import type { AxiosError } from 'axios'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import {
+  categoryIconVersions,
   ensureCategoriesLoaded,
   invalidateCategoriesCache,
   sharedArchivedCategories,
@@ -128,7 +201,8 @@ import {
   sharedLoading,
   sharedError,
 } from '../api/cache'
-import { categoriesRestore } from '../api/contentClient'
+import { categoriesArchiveDelete, categoriesRestore } from '../api/contentClient'
+import { cacheBustedUri } from '../utils/cacheBustedUri'
 import AddCategoryModal from '../components/AddCategoryModal.vue'
 import type { ArchivedCategory } from '../types/viewModels'
 import { categoryIdFromFolderName, folderNameFromCategoryId } from '../utils/categoryIds'
@@ -136,7 +210,10 @@ import {
   addNewCategoryLabel,
   archivedAgoLabel,
   archivedCategoriesLabel,
+  archiveTypeToConfirmLabel,
   breadcrumbCategoriesLabel,
+  cancelLabel,
+  deleteLabel,
   failedToLoadCategoriesLabel,
   itemCountLabel,
   loadingCategoriesLabel,
@@ -171,7 +248,9 @@ const cards = computed(() => {
   return sharedCategories.value.map((c) => ({
     id: c.id,
     name: localizedCategoryLabel(c, lang),
-    iconUri: c.thumbnail_uri ?? cameraPlaceholderUrl,
+    iconUri: c.thumbnail_uri
+      ? cacheBustedUri(c.thumbnail_uri, categoryIconVersions.value.get(c.id) ?? 0)
+      : cameraPlaceholderUrl,
     itemCount: c.items_count ?? 0,
   }))
 })
@@ -208,9 +287,20 @@ async function onCategoryCreated(folderName: string, message: string): Promise<v
 const archivedCategories = computed(() => sharedArchivedCategories.value)
 const archivedExpanded = ref(false)
 const restoringFolder = ref('')
+const deletingFolder = ref('')
+const deleteTarget = ref<ArchivedCategory | null>(null)
+const deleteConfirmText = ref('')
+
+const deleteTargetCategoryId = computed(() =>
+  deleteTarget.value ? categoryIdFromFolderName(deleteTarget.value.baseName) : '',
+)
+
+const canDeleteArchivedCategory = computed(() =>
+  Boolean(deleteTarget.value && deleteConfirmText.value.trim() === deleteTargetCategoryId.value),
+)
 
 async function restoreCategory(entry: ArchivedCategory): Promise<void> {
-  if (restoringFolder.value) return
+  if (restoringFolder.value || deletingFolder.value) return
   restoringFolder.value = entry.archiveFolder
   try {
     // The full archive folder targets this exact snapshot rather than the newest one.
@@ -230,6 +320,42 @@ async function restoreCategory(entry: ArchivedCategory): Promise<void> {
     )
   } finally {
     restoringFolder.value = ''
+  }
+}
+
+function openDeleteArchivedCategory(entry: ArchivedCategory): void {
+  if (restoringFolder.value || deletingFolder.value) return
+  deleteTarget.value = entry
+  deleteConfirmText.value = ''
+}
+
+function closeDeleteArchivedCategory(): void {
+  if (deletingFolder.value) return
+  deleteTarget.value = null
+  deleteConfirmText.value = ''
+}
+
+async function confirmDeleteArchivedCategory(): Promise<void> {
+  const entry = deleteTarget.value
+  if (!entry || !canDeleteArchivedCategory.value) return
+  if (restoringFolder.value || deletingFolder.value) return
+
+  deletingFolder.value = entry.archiveFolder
+  try {
+    const result = await categoriesArchiveDelete(entry.archiveFolder)
+    showToast(result.message, 'success')
+    deleteTarget.value = null
+    deleteConfirmText.value = ''
+    invalidateCategoriesCache()
+    await ensureCategoriesLoaded()
+  } catch (err) {
+    const axiosErr = err as AxiosError<{ detail?: string }>
+    showToast(
+      axiosErr.response?.data?.detail || 'Could not delete the archived category. Please try again.',
+      'error',
+    )
+  } finally {
+    deletingFolder.value = ''
   }
 }
 </script>
@@ -257,6 +383,18 @@ async function restoreCategory(entry: ArchivedCategory): Promise<void> {
   text-align: left;
   cursor: pointer;
 }
+.archived-toggle-marker {
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+  background: #fff;
+  font-size: 1rem;
+}
 .archived-list {
   background: #fff;
   border: 1px solid rgba(0, 0, 0, 0.12);
@@ -266,8 +404,60 @@ async function restoreCategory(entry: ArchivedCategory): Promise<void> {
 .archived-row {
   padding: 1rem 1.25rem;
 }
+.archived-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
 .archived-row + .archived-row {
   border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+.cd-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1050;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cd-modal-box {
+  width: 100%;
+  max-width: 480px;
+  background: #fff;
+  border-radius: 4px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+.cd-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+}
+.cd-modal-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+.cd-modal-close {
+  border: none;
+  background: transparent;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  color: #6b7280;
+}
+.cd-modal-body {
+  padding: 1.25rem;
+}
+.cd-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.12);
 }
 .cd-toast {
   position: fixed;

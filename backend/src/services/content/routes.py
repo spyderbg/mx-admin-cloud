@@ -33,6 +33,7 @@ from src.services.content.schemas import (
     CreateCategoryBody,
     CreateCategoryResponse,
     CreateItemResponse,
+    DeleteArchivedCategoryResponse,
     ImageResponse,
     ItemImagesResponse,
     ItemListResponse,
@@ -58,6 +59,7 @@ TAG_ITEMS_VOICES = "Items Voices"
 
 CATEGORIES = "/categories"
 CATEGORIES_RESTORE = "/categories/restore"
+CATEGORIES_ARCHIVE = "/categories/archive/{archive_name}"
 CATEGORY_DETAILS = "/categories/{category_id}"
 CATEGORY_IMAGES = "/categories/{category_id}/images"
 CATEGORY_IMAGE = "/categories/{category_id}/images/{image_id}"
@@ -185,6 +187,41 @@ def categories_restore(
         restored=result.restored,
         name=result.name,
         from_archive=result.from_archive,
+        message=result.message,
+    )
+
+
+@router.delete(
+    CATEGORIES_ARCHIVE,
+    response_model=DeleteArchivedCategoryResponse,
+    status_code=status.HTTP_200_OK,
+    tags=[TAG_CATEGORIES],
+    summary="Delete a category from archive",
+    description=(
+            "Permanently delete an archived category snapshot. "
+            "Accepts either a base folder name ('foods') or a full archive folder name "
+            "('foods_1738456789') to delete a specific snapshot. "
+            "Requires authentication."
+    ),
+)
+def categories_archive_delete(
+        archive_name: str,
+        service: ContentServiceDep,
+        _user: dict = Depends(get_current_user),
+) -> DeleteArchivedCategoryResponse:
+    """Permanently delete an archived category snapshot."""
+    try:
+        result = service.delete_archived_category(archive_name.strip())
+    except ArchiveUnavailableError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return DeleteArchivedCategoryResponse(
+        deleted=result.deleted,
+        name=result.name,
+        archive_folder=result.archive_folder,
         message=result.message,
     )
 

@@ -407,11 +407,11 @@ const { playingVoiceId, hasAudio, togglePlay, stopAudio } = useAudioPlayer(voice
 const breadcrumbRoot = computed(() => breadcrumbCategoriesLabel(contentLanguage.value))
 
 const breadcrumbCategory = computed(() =>
-  category.value ? localizedCategoryLabel(category.value, contentLanguage.value) : '',
+  category.value ? toPascalCaseWords(localizedCategoryLabel(category.value, contentLanguage.value)) : '',
 )
 
 const breadcrumbItem = computed(() =>
-  item.value ? localizedImageLabel(item.value, contentLanguage.value) : '',
+  item.value ? toPascalCaseWords(localizedImageLabel(item.value, contentLanguage.value)) : '',
 )
 
 const itemPageTitle = computed(() => {

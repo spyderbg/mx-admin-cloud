@@ -35,7 +35,7 @@
           <input
             type="range"
             min="1"
-            max="6"
+            max="7"
             step="1"
             v-model.number="gridColumns"
             style="width: 100px; cursor: pointer;"
@@ -157,7 +157,7 @@ const contentLanguage = useContentLanguage()
 
 const GRID_COLUMNS_CONFIG_KEY = 'categories.itemsGrid.columns'
 const MIN_GRID_COLUMNS = 1
-const MAX_GRID_COLUMNS = 6
+const MAX_GRID_COLUMNS = 7
 
 const gridColumns = ref(3)
 
@@ -208,7 +208,7 @@ const pageTitle = computed(() => {
 const breadcrumbRoot = computed(() => breadcrumbCategoriesLabel(contentLanguage.value))
 
 const breadcrumbCategory = computed(() =>
-  category.value ? localizedCategoryLabel(category.value, contentLanguage.value) : '',
+  category.value ? toPascalCaseWords(localizedCategoryLabel(category.value, contentLanguage.value)) : '',
 )
 
 // Auto-redirect from /categories to /categories/:id when a category is selected

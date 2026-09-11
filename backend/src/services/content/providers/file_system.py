@@ -16,7 +16,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import httpx
-from openai import OpenAI
+from openai import OpenAI, OpenAIError
 
 from src.core.config import settings
 from src.core.localization import LocalizedString
@@ -36,6 +36,7 @@ from src.services.content.models import (
     ContentProvider,
     CreateCategory,
     CreateItem,
+    DeleteArchivedCategory,
     InvalidCategoryNameError,
     ItemDetail,
     ItemImages,
@@ -93,13 +94,13 @@ class FileSystemContentProvider(ContentProvider):
             category: str | None = None,
             input_lang_code: str | None = None,
     ) -> str:
-        """Translate text via the internal /internal/translate endpoint."""
+        """Translate text via the internal /internal/translators/translate endpoint."""
         if not text or not text.strip():
             return text.strip()
 
         token = create_internal_token("translation-service", timedelta(seconds=30))
         response = httpx.post(
-            f"{settings.API_BASE_URL}/internal/translate",
+            f"{settings.API_BASE_URL}/internal/translators/translate",
             json={
                 "text": text.strip(),
                 "target_lang_code": target_lang_code,
@@ -109,8 +110,19 @@ class FileSystemContentProvider(ContentProvider):
             headers={"Authorization": f"Bearer {token}"},
             timeout=30.0,
         )
-        response.raise_for_status()
-        return response.json()["translated_text"] or text.strip()
+        if response.is_error:
+            raise RuntimeError(FileSystemContentProvider._extract_error_detail(response))
+        translated_text = response.json()["lang_text"]["text"]
+        return translated_text or text.strip()
+
+    @staticmethod
+    def _extract_error_detail(response: httpx.Response) -> str:
+        """Return the internal endpoint's JSON 'detail' field, falling back to raw response text."""
+        try:
+            detail = response.json().get("detail")
+        except ValueError:
+            detail = None
+        return str(detail) if detail else response.text
 
     @staticmethod
     def _generate_audio(word: str, lang: str) -> bytes:
@@ -125,7 +137,8 @@ class FileSystemContentProvider(ContentProvider):
             headers={"Authorization": f"Bearer {token}"},
             timeout=60.0,
         )
-        response.raise_for_status()
+        if response.is_error:
+            raise RuntimeError(FileSystemContentProvider._extract_error_detail(response))
         return response.content
 
     @staticmethod
@@ -139,10 +152,9 @@ class FileSystemContentProvider(ContentProvider):
 
         client = OpenAI(api_key=settings.OPENAI_API_KEY)
         response = client.images.generate(
-            model="dall-e-2",
+            model="gpt-image-1",
             prompt=prompt.strip(),
-            size="256x256",
-            response_format="b64_json",
+            size="1024x1024",
             n=1,
         )
         b64_data = response.data[0].b64_json
@@ -706,48 +718,56 @@ class FileSystemContentProvider(ContentProvider):
             raise CategoryConflictError(f"Category already exists: {category_name}")
 
         category_path.mkdir(parents=True, exist_ok=True)
-
-        labels_by_lang: dict[str, str] = {}
-        for lang in settings.SUPPORTED_LANGUAGES:
-            if lang == "en":
-                label = category_name.replace("_", " ").strip() or category_name
-            else:
-                try:
-                    label = self._translate_word(
-                        category_name.replace("_", " ").strip() or category_name, lang, category_name,
-                    )
-                except (ValueError, RuntimeError, httpx.HTTPError, KeyError) as exc:
-                    raise ContentOperationError(f"Translation failed for {lang}: {exc}") from exc
-            labels_by_lang[lang] = label
-            try:
-                audio_bytes = self._generate_audio(label, lang)
-                voice_path = category_path / _CATEGORY_VOICE_MP3.format(category_name, lang)
-                with open(voice_path, "wb") as fh:
-                    fh.write(audio_bytes)
-            except (ValueError, RuntimeError, httpx.HTTPError) as exc:
-                raise ContentOperationError(f"TTS failed for {lang}: {exc}") from exc
-            except OSError as exc:
-                raise ContentOperationError(f"File write failed for {lang}: {exc}") from exc
-
-        try:
-            prompt = self._category_name_to_icon_prompt(category_name)
-            icon_bytes = self._generate_icon(prompt)
-            icon_path = category_path / f"{category_name}.png"
-            with open(icon_path, "wb") as fh:
-                fh.write(icon_bytes)
-        except (ValueError, RuntimeError) as exc:
-            raise ContentOperationError(f"Icon generation failed: {exc}") from exc
-        except OSError as exc:
-            raise ContentOperationError(f"Icon file write failed: {exc}") from exc
-
-        fallback_label = category_name.replace("_", " ").strip()
         # PascalCase to match the registry convention ('at_school' -> 'C_AtSchool'), so the id
         # round-trips through _folder_name_from_category_id() and cannot collide with an
         # existing row for the same folder under different casing.
-        self._register_category_rows(
-            f"C_{self._to_pascal(category_name)}",
-            {lang: labels_by_lang.get(lang) or fallback_label for lang in settings.SUPPORTED_LANGUAGES},
-        )
+        category_id = f"C_{self._to_pascal(category_name)}"
+
+        try:
+            labels_by_lang: dict[str, str] = {}
+            for lang in settings.SUPPORTED_LANGUAGES:
+                if lang == "en":
+                    label = category_name.replace("_", " ").strip() or category_name
+                else:
+                    try:
+                        label = self._translate_word(
+                            category_name.replace("_", " ").strip() or category_name, lang, category_name,
+                        )
+                    except (ValueError, RuntimeError, httpx.HTTPError, KeyError) as exc:
+                        raise ContentOperationError(f"Translation failed for {lang}: {exc}") from exc
+                labels_by_lang[lang] = label
+                try:
+                    audio_bytes = self._generate_audio(label, lang)
+                    voice_path = category_path / _CATEGORY_VOICE_MP3.format(category_name, lang)
+                    with open(voice_path, "wb") as fh:
+                        fh.write(audio_bytes)
+                except (ValueError, RuntimeError, httpx.HTTPError) as exc:
+                    raise ContentOperationError(f"TTS failed for {lang}: {exc}") from exc
+                except OSError as exc:
+                    raise ContentOperationError(f"File write failed for {lang}: {exc}") from exc
+
+            try:
+                prompt = self._category_name_to_icon_prompt(category_name)
+                icon_bytes = self._generate_icon(prompt)
+                icon_path = category_path / f"{category_name}.png"
+                with open(icon_path, "wb") as fh:
+                    fh.write(icon_bytes)
+            except (ValueError, RuntimeError, OpenAIError) as exc:
+                raise ContentOperationError(f"Icon generation failed: {exc}") from exc
+            except OSError as exc:
+                raise ContentOperationError(f"Icon file write failed: {exc}") from exc
+
+            fallback_label = category_name.replace("_", " ").strip()
+            self._register_category_rows(
+                category_id,
+                {lang: labels_by_lang.get(lang) or fallback_label for lang in settings.SUPPORTED_LANGUAGES},
+            )
+        except Exception:
+            # Creation failed partway through: leave no trace (no orphaned folder, no
+            # partial/registry row) rather than a half-created category.
+            shutil.rmtree(category_path, ignore_errors=True)
+            self._unregister_category_rows(category_id)
+            raise
 
         return CreateCategory(category=category_name, message=f"Category '{category_name}' created.")
 
@@ -1238,6 +1258,31 @@ class FileSystemContentProvider(ContentProvider):
             name=base_name,
             from_archive=archive_folder,
             message=f"Restored category '{base_name}' from archive '{archive_folder}'.",
+        )
+
+    def delete_archived_category(self, name: str) -> DeleteArchivedCategory:
+        requested = (name or "").strip()
+        if not requested:
+            raise InvalidCategoryNameError("No archive name provided")
+
+        archive_root = self._archive_root()
+        if not archive_root.exists() or not archive_root.is_dir():
+            raise ArchiveUnavailableError("Archive directory does not exist")
+
+        base_name, archive_folder = self._resolve_archive_folder(archive_root, requested)
+        archive_path = archive_root / archive_folder
+        if not archive_path.is_dir():
+            raise CategoryNotFoundError(f"Archive folder not found: {archive_folder}")
+
+        try:
+            shutil.rmtree(archive_path)
+        except (OSError, shutil.Error) as exc:
+            raise ContentOperationError(f"Failed to delete archived category: {exc}") from exc
+
+        return DeleteArchivedCategory(
+            name=base_name,
+            archive_folder=archive_folder,
+            message=f"Deleted archived category '{archive_folder}'.",
         )
 
     def _resolve_archive_folder(self, archive_root: Path, requested: str) -> tuple[str, str]:
