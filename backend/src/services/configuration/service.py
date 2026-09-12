@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, TypeVar
+from typing import Any, Callable, TypeVar
 
 from typing_extensions import override
 
+from src.core.log_client import emit_event_nowait
 from src.services.configuration.models import (
     ConfigurationFileResult,
     ConfigurationMutationResult,
@@ -14,15 +15,15 @@ from src.services.configuration.models import (
     ConfigurationProviderUnavailableError,
     ConfigurationSummary,
 )
-from src.services.logging.models import LogLevel, LogMessage
+from src.services.logging.models import LogLevel
 from src.services.models import Service, ServiceProvider
 from src.services.provider_factory import ServiceProviderFactory
 
-if TYPE_CHECKING:
-    from src.services.logging.service import LoggingService
-
-
 ResultT = TypeVar("ResultT")
+
+# Identifies this service in records collected by the logging service, which
+# runs in its own process and possibly on its own host.
+LOG_SOURCE = "configuration"
 
 
 class ConfigurationProviderFactory(ServiceProviderFactory[ConfigurationProvider]):
@@ -43,11 +44,6 @@ class ConfigurationService(Service):
     ) -> None:
         super().__init__(service_name, package_name, service_dir, base_dir)
         self._providers: list[ConfigurationProvider] = []
-        self._logging_service: LoggingService | None = None
-
-    def set_logging_service(self, logging_service: LoggingService) -> None:
-        """Use the shared internal logging service for operation telemetry."""
-        self._logging_service = logging_service
 
     @override
     def replace_providers(self, providers: list[ServiceProvider]) -> None:
@@ -202,12 +198,15 @@ class ConfigurationService(Service):
                     error=str(error),
                 )
 
-    def _log(self, event: str, level: LogLevel, **fields: Any) -> None:
-        if self._logging_service is not None:
-            self._logging_service.log(
-                "service",
-                LogMessage(event=event, level=level, fields=fields),
-            )
+    @staticmethod
+    def _log(event: str, level: LogLevel, **fields: Any) -> None:
+        """Report operation telemetry over the internal logging API.
+
+        These methods run synchronously in FastAPI's threadpool and cannot
+        await, so the post is scheduled fire-and-forget: a slow or unreachable
+        logging host must never stall a configuration operation.
+        """
+        emit_event_nowait(LOG_SOURCE, event, level, **fields)
 
     def _select_provider(self) -> ConfigurationProvider:
         provider = self.get_provider("file_system")

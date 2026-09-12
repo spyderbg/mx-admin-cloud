@@ -11,11 +11,20 @@ from typing import Any
 from uuid import uuid4
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status  # pylint: disable=import-error
+from fastapi import (  # pylint: disable=import-error
+    APIRouter,
+    Depends,
+    HTTPException,
+    Response,
+    status,
+)
 
 from src.api.dependencies import get_registry, require_internal
 from src.api.service_resolver import get_typed_service, require_active_providers
+from src.core.log_client import emit_event
+from src.core.logging_route import LoggingAPIRoute
 from src.services import text_to_image
+from src.services.logging.models import LogLevel
 from src.services.service_registry import ServiceRegistry
 from src.services.text_to_image.models import ImageRequest, media_type_for_extension
 from src.services.text_to_image.schemas import (
@@ -30,7 +39,60 @@ from src.services.text_to_image.service import (
     TextToImageService,
 )
 
-router = APIRouter(prefix="/internal/image-generators", tags=["internal-image-generators"])
+# Identifies this service in records collected by the logging service, which
+# runs in its own process and possibly on its own host.
+LOG_SOURCE = "text_to_image"
+
+# Prompts are free-form and can be very long; keep log records readable.
+_PROMPT_LOG_LIMIT = 200
+
+
+def _prompt_preview(prompt: str) -> str:
+    """Trim long prompt text down to a loggable excerpt."""
+    text = prompt.strip()
+    return text if len(text) <= _PROMPT_LOG_LIMIT else f"{text[:_PROMPT_LOG_LIMIT]}…"
+
+
+async def _log_generation_result(*, endpoint: str, generated: Any) -> None:
+    """Record a generation outcome.
+
+    Provider failures are reported in-band on a 200 response, so they never
+    reach the route-level failure hook and need their own record here.
+    """
+    fields: dict[str, Any] = {
+        "endpoint": endpoint,
+        "provider": generated.provider,
+        "request_id": generated.request_id,
+        "model": generated.model,
+        "latency_seconds": generated.latency_seconds,
+        "attempts": generated.attempts,
+        "cost_estimate": generated.cost_estimate,
+        "width": generated.width,
+        "height": generated.height,
+    }
+    if generated.success:
+        await emit_event(
+            LOG_SOURCE,
+            "image_generation_completed",
+            LogLevel.INFO,
+            **fields,
+            raw_path=str(generated.raw_path),
+        )
+        return
+    await emit_event(
+        LOG_SOURCE,
+        "image_generation_failed",
+        LogLevel.ERROR,
+        **fields,
+        error=generated.error,
+    )
+
+
+router = APIRouter(
+    prefix="/internal/image-generators",
+    tags=["internal-image-generators"],
+    route_class=LoggingAPIRoute.for_source(LOG_SOURCE, event_prefix="image_generator"),
+)
 
 IMAGE_GENERATORS_LIST = "/"
 IMAGE_GENERATOR_SINGLE_GENERATE = "/{provider}/generate"
@@ -80,6 +142,13 @@ async def list_image_generators(
     """Return configured image generators with activation states."""
     service = get_typed_service(registry, text_to_image.SERVICE_NAME, TextToImageService)
     configs = service.providers_snapshot()
+    await emit_event(
+        LOG_SOURCE,
+        "image_generators_listed",
+        LogLevel.DEBUG,
+        total=len(configs),
+        active=sum(1 for c in configs if c.is_active()),
+    )
     return [
         {
             "name": c.name,
@@ -122,6 +191,19 @@ async def generate_single(
         raise HTTPException(status_code=400, detail="Prompt must be non-empty.")
 
     request_id = body.request_id or f"img-{uuid4().hex[:12]}"
+    await emit_event(
+        LOG_SOURCE,
+        "image_generation_started",
+        LogLevel.INFO,
+        endpoint="generate_single",
+        provider=provider,
+        request_id=request_id,
+        size=body.size,
+        quality=body.quality,
+        output_format=body.output_format,
+        language_code=body.language_code,
+        prompt=_prompt_preview(body.prompt),
+    )
     image_request = ImageRequest(
         request_id=request_id,
         prompt=body.prompt,
@@ -147,6 +229,7 @@ async def generate_single(
         except ImageProviderNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    await _log_generation_result(endpoint="generate_single", generated=generated)
     return _to_result(generated)
 
 
@@ -176,8 +259,6 @@ async def generate_image(
         registry: ServiceRegistry = Depends(get_registry),
 ):
     """Generate an image for a prompt and return the raw image bytes."""
-    from fastapi.responses import Response  # pylint: disable=import-outside-toplevel
-
     if not body.prompt or not body.prompt.strip():
         raise HTTPException(status_code=400, detail="Prompt must be non-empty.")
 
@@ -189,8 +270,18 @@ async def generate_image(
     )
 
     prompt = body.prompt.strip()
+    request_id = f"image-{uuid4().hex[:12]}"
+    await emit_event(
+        LOG_SOURCE,
+        "image_generation_started",
+        LogLevel.INFO,
+        endpoint="generate_image",
+        provider=None,
+        request_id=request_id,
+        prompt=_prompt_preview(prompt),
+    )
     image_request = ImageRequest(
-        request_id=f"image-{uuid4().hex[:12]}",
+        request_id=request_id,
         prompt=prompt,
         filename_text=(body.filename_text or prompt).strip(),
     )
@@ -203,6 +294,7 @@ async def generate_image(
         except Exception as exc:  # pylint: disable=broad-exception-caught
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
+    await _log_generation_result(endpoint="generate_image", generated=result)
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error or "Image generation failed.")
 
