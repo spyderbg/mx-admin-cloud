@@ -811,7 +811,9 @@ class FileSystemContentProvider(ContentProvider):
                 if item_folder.is_dir():
                     image_files = sorted(
                         f for f in item_folder.iterdir()
-                        if f.is_file() and f.suffix.lower() in _IMAGE_EXTENSIONS
+                        if f.is_file()
+                        and f.suffix.lower() in _IMAGE_EXTENSIONS
+                        and self._is_safe_category_name(f.stem)
                     )
                     images_count = len(image_files)
                     if image_files:
@@ -1620,7 +1622,11 @@ class FileSystemContentProvider(ContentProvider):
             item_folder = category_path / item_folder_name
             if item_folder.is_dir():
                 for f in sorted(item_folder.iterdir()):
-                    if f.is_file() and f.suffix.lower() in _IMAGE_EXTENSIONS:
+                    if (
+                            f.is_file()
+                            and f.suffix.lower() in _IMAGE_EXTENSIONS
+                            and self._is_safe_category_name(f.stem)
+                    ):
                         images.append(CategoryImage(
                             id=f.stem,
                             file_uri=f"/content/{category_name}/{item_folder_name}/{f.name}",
@@ -1752,6 +1758,38 @@ class FileSystemContentProvider(ContentProvider):
             raise ContentOperationError(f"Failed to delete item image: {exc}") from exc
 
         return CategoryImage(id=image_id, file_uri=file_uri)
+
+    def set_main_item_image(self, category_id: str, item_id: str, image_id: str) -> ItemImages:
+        category_name = self._folder_name_for_id(category_id)
+        category_path = self._category_path(category_name)
+        item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
+
+        target = self._find_item_image_by_id(item_path, image_id)
+        if target is None:
+            raise CategoryNotFoundError(
+                f"Image '{image_id}' not found for item '{item_id}' in category '{category_name}'.",
+            )
+
+        current = self.item_images(category_id, item_id)
+        if not current.images or current.images[0].id == image_id:
+            return current  # Already the main image.
+
+        main_id = current.images[0].id
+        main_path = self._find_item_image_by_id(item_path, main_id)
+        if main_path is None:
+            raise ContentOperationError(f"Main image '{main_id}' not found for item '{item_id}'.")
+
+        target_ext = target.suffix
+        main_ext = main_path.suffix
+        try:
+            temp_path = item_path / f"{target.stem}.swap.tmp"
+            target.rename(temp_path)
+            main_path.rename(item_path / f"{image_id}{main_ext}")
+            temp_path.rename(item_path / f"{main_id}{target_ext}")
+        except OSError as exc:
+            raise ContentOperationError(f"Failed to set main image for item '{item_id}': {exc}") from exc
+
+        return self.item_images(category_id, item_id)
 
     def add_item_voice(self, category_id: str, item_id: str, language: str, audio_data: bytes) -> CategoryVoice:
         category_name = self._folder_name_for_id(category_id)

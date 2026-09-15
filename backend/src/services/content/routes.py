@@ -74,6 +74,7 @@ CATEGORY_ITEMS = "/categories/{category_id}/items"
 CATEGORY_ITEM = "/categories/{category_id}/items/{item_id}"
 CATEGORY_ITEM_IMAGES = "/categories/{category_id}/items/{item_id}/images"
 CATEGORY_ITEM_IMAGE = "/categories/{category_id}/items/{item_id}/images/{image_id}"
+CATEGORY_ITEM_IMAGE_MAIN = "/categories/{category_id}/items/{item_id}/images/{image_id}/main"
 CATEGORY_ITEM_VOICES = "/categories/{category_id}/items/{item_id}/voices"
 CATEGORY_ITEM_VOICE = "/categories/{category_id}/items/{item_id}/voices/{voice_id}"
 CATEGORY_ITEM_VOICE_REGENERATE = "/categories/{category_id}/items/{item_id}/voices/{voice_id}/regenerate"
@@ -1156,6 +1157,56 @@ def items_images_delete(
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return ImageResponse(id=result.id, file_uri=result.file_uri, action="delete")
+
+
+@router.put(
+    CATEGORY_ITEM_IMAGE_MAIN,
+    response_model=ItemImagesResponse,
+    status_code=status.HTTP_200_OK,
+    tags=[TAG_ITEMS_IMAGES],
+    summary="Set an image file variant as the item's main image",
+    description=(
+            "Make the image file variant identified by image_id the item's main image — the one "
+            "returned first by the images list and used as the item's thumbnail. Requires authentication."
+    ),
+)
+def items_images_set_main(
+        category_id: str,
+        item_id: str,
+        image_id: str,
+        service: ContentServiceDep,
+        _user: dict = Depends(get_current_user),
+) -> ItemImagesResponse:
+    """Make the given image variant the item's main image."""
+    try:
+        result = service.category_details_by_id(category_id)
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidCategoryNameError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+    if item_id not in [item.id for item in result.items]:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Item '{item_id}' not found in category '{category_id}'",
+        )
+    item = next((i for i in result.items if i.id == item_id), None)
+    item_name = item.name if item else LocalizedString({})
+    try:
+        images_result = service.set_main_item_image(category_id, item_id, image_id)
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidCategoryNameError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return ItemImagesResponse(
+        item_id=item_id,
+        name=item_name,
+        images=[ImageResponse(id=img.id, file_uri=img.file_uri) for img in images_result.images],
+        thumbnail_uri=images_result.thumbnail_uri,
+    )
 
 
 # endregion

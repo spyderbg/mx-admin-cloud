@@ -290,6 +290,10 @@ class ContentService(Service):
         """Delete an item's image file variant via the active provider."""
         return self._select_provider().delete_item_image(category_id, item_id, image_id)
 
+    def set_main_item_image(self, category_id: str, item_id: str, image_id: str) -> ItemImages:
+        """Make an item's image file variant the main image via the active provider."""
+        return self._select_provider().set_main_item_image(category_id, item_id, image_id)
+
     # ------------------------------------------------------------------
     # Item voices methods
     # ------------------------------------------------------------------
