@@ -245,6 +245,9 @@ class _StubContentProvider(ContentProvider):
             file_uri=f"/content/{category_id}/{item_id}/{image_id}.png",
         ))
 
+    def set_main_item_image(self, category_id: str, item_id: str, image_id: str) -> ItemImages:
+        return self._call("set_main_item_image", ItemImages(item_id=item_id))
+
     def add_item_voice(self, category_id: str, item_id: str, language: str, audio_data: bytes) -> CategoryVoice:
         return self._call("add_item_voice", CategoryVoice(
             id=f"{item_id}-v-{language}",

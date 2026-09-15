@@ -53,6 +53,8 @@ docker compose -f docker/docker-compose.yml up -d --build
   - `result_writer.py` — Write per-run JSON and CSV reports
   - `pipeline.py` — Async TTS pipeline orchestration (calls internal HTTP endpoints)
   - `job_store.py` — In-memory store for async pipeline jobs
+  - `logging_route.py` — `LoggingAPIRoute`, the shared router route class that traces
+    requests and reports endpoint failures
 - **`services/`** — Business logic implementations (providers, translators, optimizers, evaluation)
   - `service_registry.py` — Unified registry and builder for all runtime services
   - `configuration/` — Runtime configuration service (merges disk JSON with runtime updates)
@@ -90,6 +92,51 @@ All pipeline steps call internal HTTP endpoints (`/internal/generators/{provider
 imports `services/` directly.
 
 Output lands in `output/tts_audio_<lang>/<provider>/` and `output/optimized_<optimizer>/`.
+
+### Logging — always out-of-process (HTTP emit)
+
+Services are **not** guaranteed to share a host. `text_to_image`, for example, can be deployed on
+a GPU box while the logging service runs elsewhere, so an in-process `LoggingService` may simply
+not exist in the process that wants to log.
+
+**Rule: emit every structured record over the internal logging API through
+`src/core/log_client.py`.** Outside `src/services/logging/`, never import
+`src.services.logging.service`, never resolve `LoggingService` from the registry
+(`registry.get_service("logging")`), and never accept one by injection.
+
+Each module declares `LOG_SOURCE = "<service name>"`; the wrappers put it in `fields["service"]`
+so a record stays attributable once it reaches a collector that runs none of the emitting code.
+
+| Need | Call |
+|------|------|
+| Record from async code | `await log_client.emit_event(LOG_SOURCE, "event", LogLevel.INFO, **fields)` |
+| Record from sync code (threadpool) | `log_client.emit_event_nowait(LOG_SOURCE, "event", LogLevel.INFO, **fields)` |
+| A named logger (`trace`, `requests`, `default`) | `await log_client.log_event(LOG_SOURCE, "<logger>", "event", LogLevel.TRACE, **fields)` |
+| Provider call ledger (model, latency, cost, attempts) | `await log_client.log_provider_request(LogProviderRequest(...))` |
+| API request record | `await log_client.log_api_request(LogApiRequest(...))` |
+| Trace every endpoint on a router | `route_class=LoggingAPIRoute.for_source(LOG_SOURCE)` |
+
+- `log_client.configure(base_url=API_BASE_URL, internal_token=...)` runs once at startup in
+  `src/main.py`. Point `API_BASE_URL` at the host running the logging service.
+- **Sync service methods cannot await.** FastAPI runs `def` handlers (and the service methods they
+  call) in its threadpool, where there is no event loop. Use `emit_event_nowait`: it hands the post
+  to the loop captured by `configure()` and returns immediately. A record can be dropped if that
+  loop is gone — the accepted trade for never stalling an operation on a remote logging host.
+- `emit_event`, `log_event` and `emit_event_nowait` swallow every failure themselves (unconfigured
+  client, unreachable collector, bad payload), so call sites need no `try/except`. The lower-level
+  `emit`, `log`, `log_provider_request` and `log_api_request` only swallow `httpx.RequestError` —
+  guard those yourself with `try/except Exception` plus a stdlib `logger.debug`.
+- A named logger resolves to a config-file stem (`config/logging/<name>.json`) and 404s when that
+  config is missing or disabled, dropping the record by design — `trace` ships disabled, so trace
+  records go nowhere until you enable it. `emit_event` cannot 404; prefer it when a record must land.
+- Importing `src.services.logging.schemas` / `.models` (`LogRequest`, `LogLevel`) is fine — those are
+  the wire contract, not the implementation.
+- Plain `logging.getLogger(__name__)` stays fine for local diagnostics, but those lines stay on the
+  local host and are never collected centrally.
+- Only exceptions: `src/services/logging/` itself, and `src/main.py`, which calls
+  `LoggingService.configure()` on the host that owns the logging providers.
+
+Every service emits over HTTP today. Coverage lives in `src/core/__tests__/test_log_client.py`.
 
 ### Content Filesystem Layout (relative to project root)
 

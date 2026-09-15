@@ -185,6 +185,12 @@ export const itemsImagesDelete = async (categoryId: string, itemId: string, imag
   return r.data
 }
 
+/** Set an image file variant as the item's main image */
+export const itemsImagesSetMain = async (categoryId: string, itemId: string, imageId: string): Promise<ItemImagesResponse> => {
+  const r = await client.put<ItemImagesResponse>(`/content/categories/${categoryId}/items/${itemId}/images/${imageId}/main`)
+  return r.data
+}
+
 /** List voices for an item */
 export const itemsVoicesList = async (categoryId: string, itemId: string): Promise<ItemVoicesResponse> => {
   const r = await client.get<ItemVoicesResponse>(`/content/categories/${categoryId}/items/${itemId}/voices`)

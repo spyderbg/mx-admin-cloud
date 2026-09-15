@@ -262,6 +262,10 @@ class _StubProvider(ContentProvider):
             "file_uri": f"/content/{category_id}/{item_id}/{image_id}.png",
         })
 
+    def set_main_item_image(self, category_id: str, item_id: str, image_id: str) -> dict[str, Any]:
+        self._record("set_main_item_image", category_id, item_id, image_id)
+        return self._returns.get("set_main_item_image", {"item_id": item_id, "images": [], "thumbnail_uri": None})
+
     def add_item_voice(self, category_id: str, item_id: str, language: str, audio_data: bytes) -> dict[str, Any]:
         self._record("add_item_voice", category_id, item_id, language, audio_data)
         return self._returns.get("add_item_voice", {
@@ -415,6 +419,9 @@ class _ConcreteProvider(ContentProvider):
         return {}
 
     def delete_item_image(self, category_id, item_id, image_id):
+        return {}
+
+    def set_main_item_image(self, category_id, item_id, image_id):
         return {}
 
     def add_item_voice(self, category_id, item_id, language, audio_data):

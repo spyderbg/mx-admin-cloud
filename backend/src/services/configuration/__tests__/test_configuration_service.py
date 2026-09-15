@@ -22,8 +22,9 @@ from src.services.configuration.models import (
     InvalidConfigurationNameError,
 )
 from src.services.configuration.providers.file_system import FileSystemConfigurationProvider
-from src.services.configuration.service import ConfigurationService
-from src.services.logging.models import LogLevel, LogMessage
+from src.services.configuration import service as configuration_service
+from src.services.configuration.service import LOG_SOURCE, ConfigurationService
+from src.services.logging.models import LogLevel
 from src.services.models import ServiceProvider
 
 
@@ -108,14 +109,22 @@ class _StubProvider(ConfigurationProvider):
         return [ConfigurationMutationResult(config_name="cfg", changed=True)]
 
 
-class _StubLoggingService:
-    """Capture messages sent through the internal logging service contract."""
+class _CapturedRecords:
+    """Capture the records the service posts to the logging API."""
 
     def __init__(self) -> None:
-        self.messages: list[tuple[str, LogMessage]] = []
+        self.records: list[tuple[str, str, LogLevel, dict[str, Any]]] = []
 
-    def log(self, logger_name: str, message: LogMessage) -> None:
-        self.messages.append((logger_name, message))
+    def __call__(self, service: str, event: str, level: LogLevel, **fields: Any) -> None:
+        self.records.append((service, event, level, fields))
+
+
+@pytest.fixture
+def captured_logs(monkeypatch: pytest.MonkeyPatch) -> _CapturedRecords:
+    """Intercept "emit_event_nowait" at the seam the service imports it through."""
+    recorder = _CapturedRecords()
+    monkeypatch.setattr(configuration_service, "emit_event_nowait", recorder)
+    return recorder
 
 
 def _make_service(tmp_path: Path, providers: list[Any] | None = None) -> ConfigurationService:
@@ -221,36 +230,37 @@ def test_list_configurations_delegates_to_provider(tmp_path: Path) -> None:
     assert stub.calls["list_configurations"] == [("text_to_speech",)]
 
 
-def test_operations_are_info_logged_through_logging_service(tmp_path: Path) -> None:
+def test_operations_are_info_logged_through_logging_api(
+        tmp_path: Path, captured_logs: _CapturedRecords,
+) -> None:
     stub = _StubProvider(tmp_path)
-    logger = _StubLoggingService()
     svc = _make_service(tmp_path, [stub])
-    svc.set_logging_service(logger)  # type: ignore[arg-type]
 
     svc.get_configuration("logging", "default")
 
-    logger_name, message = logger.messages[0]
-    assert logger_name == "service"
-    assert message.level is LogLevel.INFO
-    assert message.event == "configuration_file_operation"
-    assert message.fields == {
+    source, event, level, fields = captured_logs.records[0]
+    assert source == LOG_SOURCE
+    assert level is LogLevel.INFO
+    assert event == "configuration_file_operation"
+    assert fields == {
         "operation": "read",
         "service_name": "logging",
         "config_name": "default",
     }
 
 
-def test_operation_errors_are_error_logged_and_reraised(tmp_path: Path) -> None:
+def test_operation_errors_are_error_logged_and_reraised(
+        tmp_path: Path, captured_logs: _CapturedRecords,
+) -> None:
     svc = _make_service(tmp_path, [])
-    logger = _StubLoggingService()
-    svc.set_logging_service(logger)  # type: ignore[arg-type]
 
     with pytest.raises(ConfigurationProviderUnavailableError):
         svc.list_configurations("logging")
 
-    assert [message.level for _, message in logger.messages] == [LogLevel.INFO, LogLevel.ERROR]
-    assert logger.messages[-1][1].event == "configuration_operation_failed"
-    assert logger.messages[-1][1].fields["error_type"] == "ConfigurationProviderUnavailableError"
+    assert [level for _, _, level, _ in captured_logs.records] == [LogLevel.INFO, LogLevel.ERROR]
+    assert captured_logs.records[-1][1] == "configuration_operation_failed"
+    assert captured_logs.records[-1][3]["error_type"] == "ConfigurationProviderUnavailableError"
+
 
 
 def test_get_configuration_delegates(tmp_path: Path) -> None:

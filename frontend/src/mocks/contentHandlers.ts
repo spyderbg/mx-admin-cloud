@@ -633,4 +633,7 @@ export const contentHandlers = [
 
   // Regenerate a voice for a category
   http.post('/api/v1/content/categories/:category_id/voices/:voice_id/regenerate', () => HttpResponse.json({})),
+
+  // Set an image file variant as the item's main image
+  http.put('/api/v1/content/categories/:category_id/items/:item_id/images/:image_id/main', () => HttpResponse.json({})),
 ]
