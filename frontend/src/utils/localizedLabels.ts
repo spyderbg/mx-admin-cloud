@@ -24,6 +24,8 @@ export function localizedImageLabel(item: Item, lang: Language): string {
   if (voiceLabel) return voiceLabel
   const enLabel = labelFromVoices(item.voices, 'en')
   if (enLabel) return enLabel
+  const localizedName = item.localizedName?.get(lang, item.name).trim()
+  if (localizedName) return localizedName
   return item.name
 }
 

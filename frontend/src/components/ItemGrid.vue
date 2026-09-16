@@ -8,9 +8,10 @@
     >
       <img
         :src="resolveItemSrc(item)"
-        :alt="item.name"
+        :alt="itemLabel(item)"
         class="item-card-thumb"
       />
+      <span v-if="!hasItemImage(item)" class="item-card-name">{{ itemLabel(item) }}</span>
       <span class="file-count-badge">{{ item.imagesCount ?? item.images.length }}</span>
     </div>
   </div>
@@ -20,6 +21,8 @@
 import { useRouter } from 'vue-router'
 import type { Item } from '../types/viewModels'
 import cameraPlaceholderUrl from '../assets/images/samples/camera-placeholder.svg'
+import { useContentLanguage } from '../composables/useContentLanguage'
+import { localizedImageLabel } from '../utils/localizedLabels'
 
 const props = defineProps<{
   items: Item[]
@@ -28,6 +31,13 @@ const props = defineProps<{
 }>()
 
 const router = useRouter()
+const contentLanguage = useContentLanguage()
+
+const hasItemImage = (item: Item): boolean =>
+  item.thumbnailUri.trim().length > 0 || item.images.some((image) => image.trim().length > 0)
+
+const itemLabel = (item: Item): string =>
+  localizedImageLabel(item, contentLanguage.value)
 
 const resolveItemSrc = (item: Item): string => {
   if (item.thumbnailUri.trim().length > 0) {
@@ -66,6 +76,23 @@ const navigateToDetail = (itemId: string): void => {
   aspect-ratio: 1/1;
   object-fit: cover;
   display: block;
+}
+.item-card-name {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: 0.45rem 0.6rem;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.86);
+  color: #1e3a5f;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
 }
 .file-count-badge {
   position: absolute;

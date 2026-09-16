@@ -77,7 +77,7 @@
         </h4>
         <div class="id-toolbar">
           <button type="button" class="btn btn-outline-primary btn-sm" @click="onAddFile">
-            <i class="mdi mdi-plus mr-1"></i>{{ addImagesLabel(contentLanguage) }}
+            <i class="mdi mdi-plus mr-1"></i>{{ addImageLabel(contentLanguage) }}
           </button>
           <button v-if="hasFiles" type="button" class="btn btn-primary btn-sm" @click="onReleaseAllItemImages">{{ releaseAllImagesLabel(contentLanguage) }}</button>
         </div>
@@ -101,7 +101,7 @@
             <strong>{{ card.generator }}</strong>
             <div class="id-meta-label id-meta-spaced">{{ promptLabel(contentLanguage) }}</div>
             <p>{{ card.prompt }}</p>
-            <button type="button" class="id-release-btn" :class="{ 'id-release-btn-active': card.isSelected }" :disabled="card.isSelected" @click="onSelectImage(card.index)">
+            <button type="button" class="id-release-btn" :class="{ 'id-release-btn-active': card.isSelected }" :disabled="card.isSelected || isSettingMainImage" @click="onSelectImage(card.index)">
               <i :class="card.isSelected ? 'mdi mdi-check' : 'mdi mdi-image'"></i>
               {{ card.isSelected ? selectedLabel(contentLanguage) : selectImageLabel(contentLanguage) }}
             </button>
@@ -367,6 +367,7 @@ import {
   itemsImagesAdd,
   itemsImagesUpdate,
   itemsImagesDelete,
+  itemsImagesSetMain,
   itemsUpdate,
   itemsVoicesAdd,
   itemsVoicesUpdate,
@@ -386,7 +387,6 @@ import { langFlag, langLabel } from '../utils/voiceLabels'
 import cameraPlaceholderUrl from '../assets/images/samples/camera-placeholder.svg'
 import {
   addImageLabel,
-  addImagesLabel,
   addVoiceLabel,
   actionsColumnLabel,
   breadcrumbCategoriesLabel,
@@ -727,8 +727,33 @@ const onReleaseItem = (): void => {
   announceBackendPending(`release item ${item.value?.id ?? 'unknown item'}`)
 }
 
-const onSelectImage = (index: number): void => {
-  selectedImageIndex.value = index
+const isSettingMainImage = ref(false)
+
+const onSelectImage = async (index: number): Promise<void> => {
+  const cat = category.value
+  const currentItem = item.value
+  const rawUri = rawItemImages.value[index]
+  const rawMainUri = rawItemImages.value[0]
+  if (!cat || !currentItem || !rawUri || isSettingMainImage.value || index === 0) return
+
+  isSettingMainImage.value = true
+  try {
+    const imageId = imageIdFromUri(rawUri)
+    const mainImageId = imageIdFromUri(rawMainUri)
+    await itemsImagesSetMain(cat.id, currentItem.id, imageId)
+    await refreshItem()
+    imageVersions.value = {
+      ...imageVersions.value,
+      [imageId]: (imageVersions.value[imageId] ?? 0) + 1,
+      [mainImageId]: (imageVersions.value[mainImageId] ?? 0) + 1,
+    }
+    selectedImageIndex.value = 0
+    showToast('Main image updated.', 'success')
+  } catch (err) {
+    showToast(extractErrorMessage(err), 'error')
+  } finally {
+    isSettingMainImage.value = false
+  }
 }
 
 const onReleaseAllItemImages = (): void => {

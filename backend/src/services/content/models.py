@@ -361,6 +361,10 @@ class ContentProvider(ServiceProvider, ABC):
         """Delete the image file variant with the given image_id from an item (at least one must remain)."""
 
     @abstractmethod
+    def set_main_item_image(self, category_id: str, item_id: str, image_id: str) -> ItemImages:
+        """Make the image file variant with the given image_id the item's main image."""
+
+    @abstractmethod
     def add_item_voice(self, category_id: str, item_id: str, language: str, audio_data: bytes) -> CategoryVoice:
         """Add the audio file for an item voice in the given language, if it doesn't have one yet."""
 

@@ -9,7 +9,7 @@ services:
     ports:
       - "9000:8000"
     volumes:
-      - /home/spyder/Nextcloud/_Projects/KiddoWords/Content:/app/content
+      - ${CONTENT_HOST_DIR:-../content}:/app/content
       - ../archive:/app/archive
       - backend-data:/app/data
       - ../backend/config:/app/config
@@ -23,7 +23,6 @@ services:
       - SPEAKTOR_API_KEY=${SPEAKTOR_API_KEY}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - COMFYUI_API_KEY=${COMFYUI_API_KEY}
-      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN}
       - SECRET_KEY=${SECRET_KEY}
       - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD}
       - CONFIG_DIR=/app/config
@@ -42,7 +41,7 @@ services:
     ports:
       - "9001:80"
     volumes:
-      - /home/spyder/Nextcloud/_Projects/KiddoWords/Content:/app/content:ro
+      - ${CONTENT_HOST_DIR:-../content}:/app/content:ro
     depends_on:
       - backend
 
@@ -53,7 +52,7 @@ services:
       context: ..
       dockerfile: docker/backend.Dockerfile
     volumes:
-      - /home/spyder/Nextcloud/_Projects/KiddoWords/Content:/app/content
+      - ${CONTENT_HOST_DIR:-../content}:/app/content
       - ../archive:/app/archive
       - backend-data:/app/data
       - ../backend/config:/app/config
@@ -68,7 +67,6 @@ services:
       - SPEAKTOR_API_KEY=${SPEAKTOR_API_KEY}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - COMFYUI_API_KEY=${COMFYUI_API_KEY}
-      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN}
       - SECRET_KEY=${SECRET_KEY}
       - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD}
       - CONFIG_DIR=/app/config

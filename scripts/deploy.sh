@@ -44,7 +44,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 COMPOSE_FILE="$REPO_ROOT/docker/docker-compose.yml"
 BACKEND_PORT="9000"
 FRONTEND_PORT="9001"
-START_BACKEND_CLI="$(echo "$START_BACKEND_CLI" | tr '[:upper:]' '[:lower:]' | tr -d ' ')"
+START_BACKEND_CLI="$(echo "${START_BACKEND_CLI:-}" | tr '[:upper:]' '[:lower:]' | tr -d ' ')"
 SERVICE_HOST="localhost"
 MAX_RETRIES=30
 RETRY_INTERVAL=2
@@ -66,6 +66,36 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
+
+# ── Load .env variables (only for keys not already present in the environment) ─
+load_env_file() {
+  local env_file="$1"
+  local key val line
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    key="${line%%=*}"
+    val="${line#*=}"
+    [[ -z "$key" ]] && continue
+    val="${val%\'}"
+    val="${val#\'}"
+    val="${val%\"}"
+    val="${val#\"}"
+    if [[ -z "${!key:-}" ]]; then
+      export "$key=$val"
+    fi
+  done < "$env_file"
+}
+
+ENV_FILE="$REPO_ROOT/.env"
+if [[ ! -f "$ENV_FILE" && -f "$REPO_ROOT/docker/.env" ]]; then
+  ENV_FILE="$REPO_ROOT/docker/.env"
+fi
+if [[ -f "$ENV_FILE" ]]; then
+  load_env_file "$ENV_FILE"
+fi
 
 # ── Step 1: Build Docker images ──────────────────────────────────────────────
 build() {

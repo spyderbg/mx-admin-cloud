@@ -1691,6 +1691,49 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/content/categories/{category_id}/items/{item_id}/images/{image_id}/main:
+    put:
+      tags:
+      - Items Images
+      summary: Set an image file variant as the item's main image
+      description: Make the image file variant identified by image_id the item's main
+        image — the one returned first by the images list and used as the item's thumbnail.
+        Requires authentication.
+      operationId: items_images_set_main_api_v1_content_categories__category_id__items__item_id__images__image_id__main_put
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Item Id
+      - name: image_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Image Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemImagesResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
 
   # ─── Items Voices ───────────────────────────────────────────────────
   /api/v1/content/categories/{category_id}/items/{item_id}/voices:
