@@ -2,6 +2,7 @@ services:
 
   backend:
     container_name: kiddo-backend
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: docker/backend.Dockerfile
@@ -20,12 +21,17 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
       - SPEAKTOR_API_KEY=${SPEAKTOR_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - COMFYUI_API_KEY=${COMFYUI_API_KEY}
       - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN}
+      - SECRET_KEY=${SECRET_KEY}
+      - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD}
       - CONFIG_DIR=/app/config
       - OUTPUT_DIR=/app/tts-output
 
   frontend:
     container_name: kiddo-frontend
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: docker/frontend.Dockerfile
@@ -42,6 +48,7 @@ services:
 
   backend-cli:
     container_name: kiddo-backend-cli
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: docker/backend.Dockerfile
@@ -59,7 +66,11 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
       - SPEAKTOR_API_KEY=${SPEAKTOR_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - COMFYUI_API_KEY=${COMFYUI_API_KEY}
       - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN}
+      - SECRET_KEY=${SECRET_KEY}
+      - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD}
       - CONFIG_DIR=/app/config
       - OUTPUT_DIR=/app/tts-output
     command: ["uvicorn", "src.main:app", "--uds", "/tmp/kiddo-backend.sock"]
