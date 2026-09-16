@@ -20,8 +20,11 @@ jobs:
       - name: Mirror repository to GitLab
         env:
           GH_TOKEN: ${{ github.token }}
+
           GITLAB_TOKEN: ${{ secrets.GITLAB_MIRROR_TOKEN }}
-          GITLAB_REPOSITORY: http://82.103.77.45/marxman/mx-admin.git
+          GITLAB_HOST: ${{ vars.GITLAB_HOST }}
+          GITLAB_PROJECT_PATH: ${{ vars.GITLAB_PROJECT_PATH }}
+
         run: |
           git clone --mirror \
             "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
@@ -30,9 +33,9 @@ jobs:
           cd repo.git
 
           git push --prune \
-            "https://oauth2:${GITLAB_TOKEN}@${GITLAB_REPOSITORY}" \
+            "http://oauth2:${GITLAB_TOKEN}@${GITLAB_HOST}/${GITLAB_PROJECT_PATH}" \
             "+refs/heads/*:refs/heads/*"
 
           git push --prune \
-            "https://oauth2:${GITLAB_TOKEN}@${GITLAB_REPOSITORY}" \
+            "http://oauth2:${GITLAB_TOKEN}@${GITLAB_HOST}/${GITLAB_PROJECT_PATH}" \
             "+refs/tags/*:refs/tags/*"
