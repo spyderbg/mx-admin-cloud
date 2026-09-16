@@ -148,6 +148,89 @@ def test_first_available_image_index_skips_jpg_too(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# _write_image_bytes
+# ---------------------------------------------------------------------------
+
+def test_write_image_bytes_success(tmp_path: Path) -> None:
+    target = tmp_path / "foods_01.png"
+    FileSystemContentProvider._write_image_bytes(target, b"fake-png")
+    assert target.read_bytes() == b"fake-png"
+
+
+def test_write_image_bytes_missing_parent_directory_names_the_cause(tmp_path: Path) -> None:
+    """A vanished parent dir (e.g. an unmounted Docker volume) must not read as a generic OSError."""
+    target = tmp_path / "not_mounted" / "foods_01.png"
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.CONTENT_DIR = "/app/content"
+        with pytest.raises(ContentOperationError, match="does not exist"):
+            FileSystemContentProvider._write_image_bytes(target, b"fake-png")
+
+
+def test_write_image_bytes_permission_denied_names_the_cause(tmp_path: Path) -> None:
+    """A UID mismatch between host and container surfaces as PermissionError — call it out by name."""
+    target = tmp_path / "foods_01.png"
+    with patch(
+            "src.services.content.providers.file_system.open",
+            side_effect=PermissionError(13, "Permission denied"),
+            create=True,
+    ):
+        with pytest.raises(ContentOperationError, match="Permission denied"):
+            FileSystemContentProvider._write_image_bytes(target, b"fake-png")
+
+
+# ---------------------------------------------------------------------------
+# _ensure_content_root_exists / _require_category_dir
+# ---------------------------------------------------------------------------
+
+def test_ensure_content_root_exists_raises_when_root_missing(tmp_path: Path) -> None:
+    """A missing content root (unmounted volume, misconfigured CONTENT_DIR) must not look like a 404."""
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = tmp_path / "does_not_exist"
+        mock_settings.CONTENT_DIR = "/app/content"
+        with pytest.raises(ContentOperationError, match="mounted"):
+            provider._ensure_content_root_exists()
+
+
+def test_require_category_dir_returns_path_when_category_exists(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    (content_root / "foods").mkdir(parents=True)
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        assert provider._require_category_dir("foods") == content_root / "foods"
+
+
+def test_require_category_dir_category_not_found_when_root_exists(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    content_root.mkdir()
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        with pytest.raises(CategoryNotFoundError):
+            provider._require_category_dir("foods")
+
+
+def test_require_category_dir_reports_missing_root_instead_of_missing_category(tmp_path: Path) -> None:
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = tmp_path / "does_not_exist"
+        mock_settings.CONTENT_DIR = "/app/content"
+        with pytest.raises(ContentOperationError, match="mounted"):
+            provider._require_category_dir("foods")
+
+
+def test_folder_name_for_id_reports_missing_root_instead_of_missing_id(tmp_path: Path) -> None:
+    """Same failure, reached through the registry lookup every category-scoped call goes through."""
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = tmp_path / "does_not_exist"
+        mock_settings.CONTENT_DIR = "/app/content"
+        with pytest.raises(ContentOperationError, match="mounted"):
+            provider._folder_name_for_id("C_Foods")
+
+
+# ---------------------------------------------------------------------------
 # _list_archived_entries
 # ---------------------------------------------------------------------------
 
@@ -623,6 +706,81 @@ def test_delete_category_image_removes_file(tmp_path: Path) -> None:
         provider.delete_category_image("C_Foods", "foods_01")
 
     assert not image_path.exists()
+
+
+# ---------------------------------------------------------------------------
+# add_category_image
+# ---------------------------------------------------------------------------
+
+def test_add_category_image_category_not_found(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    content_root.mkdir()
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        with pytest.raises(CategoryNotFoundError):
+            provider.add_category_image("C_Nonexistent", b"fake-png", ".png")
+
+
+def test_add_category_image_root_missing_names_the_cause(tmp_path: Path) -> None:
+    """The Docker corner case this error path exists for: an unmounted content volume."""
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = tmp_path / "does_not_exist"
+        mock_settings.CONTENT_DIR = "/app/content"
+        with pytest.raises(ContentOperationError, match="mounted"):
+            provider.add_category_image("C_Foods", b"fake-png", ".png")
+
+
+def test_add_category_image_writes_file(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    (content_root / "foods").mkdir(parents=True)
+    _write_category_registry(content_root, [("C_Foods", "Foods")])
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        result = provider.add_category_image("C_Foods", b"fake-png", ".png")
+
+    assert result.id == "foods_01"
+    assert (content_root / "foods" / "foods_01.png").read_bytes() == b"fake-png"
+
+
+# ---------------------------------------------------------------------------
+# add_item_image
+# ---------------------------------------------------------------------------
+
+def test_add_item_image_item_not_found(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    (content_root / "foods").mkdir(parents=True)
+    _write_category_registry(content_root, [("C_Foods", "Foods")])
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        with pytest.raises(CategoryNotFoundError):
+            provider.add_item_image("C_Foods", "I_Apple", b"fake-png", ".png")
+
+
+def test_add_item_image_root_missing_names_the_cause(tmp_path: Path) -> None:
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = tmp_path / "does_not_exist"
+        mock_settings.CONTENT_DIR = "/app/content"
+        with pytest.raises(ContentOperationError, match="mounted"):
+            provider.add_item_image("C_Foods", "I_Apple", b"fake-png", ".png")
+
+
+def test_add_item_image_writes_file(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    category_path = content_root / "foods"
+    _write_category_registry(content_root, [("C_Foods", "Foods")])
+    _write_item_registry(category_path, [("I_Apple", "Apple")])
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        result = provider.add_item_image("C_Foods", "I_Apple", b"fake-png-2", ".png")
+
+    assert result.id == "apple_01"
+    assert (category_path / "apple" / "apple_01.png").read_bytes() == b"fake-png-2"
 
 
 # ---------------------------------------------------------------------------

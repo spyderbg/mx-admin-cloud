@@ -200,6 +200,7 @@ async function _loadCategoriesBasic(): Promise<CategoryFull[]> {
         return {
           id: itemSummary.id,
           name: itemNameDict['en'] ?? Object.values(itemNameDict)[0] ?? itemSummary.id,
+          localizedName: new LocalizedString(itemNameDict),
           images: [],
           voices: [],
           thumbnailUri: itemSummary.thumbnail_uri ?? '',
@@ -350,6 +351,9 @@ export const ensureItemDetail = async (
         const items = [...cat.items]
         items[itemIdx] = {
           ...items[itemIdx],
+          localizedName: Object.keys(itemNamesDict).length > 0
+            ? new LocalizedString(itemNamesDict)
+            : items[itemIdx].localizedName,
           images,
           voices,
           thumbnailUri: images[0] ?? items[itemIdx].thumbnailUri,

@@ -210,11 +210,6 @@ default secret. Flip the defaults (`AUTH_DISABLED=False`, `DEBUG_MODE=False`), g
 `SECRET_KEY` (fail startup in non-debug when it is the placeholder), and set explicit values in
 compose. Insecure modes should be an explicit opt-in, never the default.
 
-Related compose issue: the content volume is hardcoded to one machine's path
-(`/home/spyder/Nextcloud/_Projects/KiddoWords/Content`) in all three services. Since the content
-folder is explicitly allowed to live anywhere on the host, parameterize it
-(`${CONTENT_HOST_DIR:?set in .env}:/app/content`) so the compose file is portable. The unused
-`INTERNAL_SERVICE_TOKEN` env var should be removed (the README itself notes `Settings` ignores it).
 
 ### 4.2 `/api/v1/status` leaks the admin password
 `core/tasks.py:_env_from_settings` masks `*_API_KEY` and `SECRET_KEY` but returns everything else
