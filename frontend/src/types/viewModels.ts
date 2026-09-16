@@ -31,6 +31,8 @@ export interface Voice {
 export interface Item {
     id: string
     name: string
+    /** Localized item names returned in the category summary. */
+    localizedName?: LocalizedString
     images: string[]
     voices: Voice[]
     thumbnailUri: string

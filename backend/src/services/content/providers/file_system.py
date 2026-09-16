@@ -108,6 +108,40 @@ class FileSystemContentProvider(ContentProvider):
     def _category_path(self, category: str) -> Path:
         return self._content_root() / category
 
+    def _ensure_content_root_exists(self) -> Path:
+        """Return the content root, or raise a diagnosable error when it's missing.
+
+        A missing root is almost always an environment problem, not a per-category one, so
+        it's checked before any per-category lookup: CONTENT_DIR misconfigured for this
+        process, or (in Docker) a volume that never mounted. Every category/item lookup
+        ultimately routes through here so the error names the actual cause instead of
+        surfacing as an unrelated "category/id not found".
+        """
+        root = self._content_root()
+        if not root.exists() or not root.is_dir():
+            raise ContentOperationError(
+                f"Content root '{root}' does not exist (CONTENT_DIR='{settings.CONTENT_DIR}'). "
+                "If this is running in a container, verify the content directory is mounted as "
+                "a volume (not baked into a read-only image layer) and that CONTENT_DIR resolves "
+                "to that mount point inside the container."
+            )
+        return root
+
+    def _require_category_dir(self, category_name: str) -> Path:
+        """Return the category's directory, or raise with a diagnosable reason when missing.
+
+        A missing category folder can mean the category was never created, but under Docker
+        it's far more often a symptom of the content root itself being absent. Checking the
+        root first (via _ensure_content_root_exists) turns an opaque 404 into a message that
+        names the actual environment problem instead of making it look like the category
+        doesn't exist.
+        """
+        category_path = self._category_path(category_name)
+        if category_path.exists() and category_path.is_dir():
+            return category_path
+        self._ensure_content_root_exists()
+        raise CategoryNotFoundError(f"Category '{category_name}': directory is missing.")
+
     @staticmethod
     def _archive_root() -> Path:
         return settings.archive_path
@@ -376,6 +410,36 @@ class FileSystemContentProvider(ContentProvider):
                 writer.writerow([row])
 
     @staticmethod
+    def _write_image_bytes(path: Path, data: bytes) -> None:
+        """Write image bytes to *path*, translating common Docker deployment failures.
+
+        A UID/GID mismatch between the host and the container leaves an otherwise correctly
+        mounted content directory unwritable by the container's user and surfaces as
+        PermissionError; a missing parent directory usually means the volume never mounted at
+        all. Both are far more actionable than the generic OSError message they'd otherwise
+        produce, so they're reported separately from other I/O failures.
+        """
+        try:
+            with open(path, "wb") as fh:
+                fh.write(data)
+        except PermissionError as exc:
+            raise ContentOperationError(
+                f"Permission denied writing '{path.name}' to '{path.parent}'. The content "
+                "directory must be writable by the process — check the volume mount permissions "
+                "and that the host and container users/UIDs match. "
+                f"Original error: {exc}"
+            ) from exc
+        except FileNotFoundError as exc:
+            raise ContentOperationError(
+                f"Cannot write '{path.name}': the directory '{path.parent}' does not exist. If "
+                f"running in a container, verify CONTENT_DIR ('{settings.CONTENT_DIR}') is set "
+                "correctly and that the content directory is mounted into the container. "
+                f"Original error: {exc}"
+            ) from exc
+        except OSError as exc:
+            raise ContentOperationError(f"Failed to write '{path.name}': {exc}") from exc
+
+    @staticmethod
     def _first_available_image_index(object_folder: Path) -> int:
         """First 1-based index where no image file exists yet."""
         for i in range(1, 1000):
@@ -498,6 +562,7 @@ class FileSystemContentProvider(ContentProvider):
         check whether the folder currently exists under the content root, so it
         also resolves categories that have been moved to the archive.
         """
+        self._ensure_content_root_exists()
         ids_by_folder, _ = self._load_category_localized_names()
         for folder, cid in ids_by_folder.items():
             if cid == category_id:
@@ -1004,9 +1069,7 @@ class FileSystemContentProvider(ContentProvider):
         if not folder_name:
             raise ContentOperationError("Could not derive folder name from item word")
 
-        category_path = self._category_path(category_name)
-        if not category_path.is_dir():
-            raise CategoryNotFoundError(f"Category '{category_name}': directory is missing.")
+        category_path = self._require_category_dir(category_name)
         item_path = category_path / folder_name
         if item_path.exists():
             raise CategoryConflictError(f"Item folder already exists: {folder_name}")
@@ -1025,7 +1088,7 @@ class FileSystemContentProvider(ContentProvider):
                 if ext.lower() not in _IMAGE_EXTENSIONS:
                     ext = ".png"
                 idx = self._first_available_item_image_index(item_path, folder_name)
-                (item_path / f"{folder_name}_{idx:02d}{ext}").write_bytes(image_data)
+                self._write_image_bytes(item_path / f"{folder_name}_{idx:02d}{ext}", image_data)
 
             targets = [(category_path / _ITEMS_IDS, item_id)] + [
                 (category_path / _ITEMS_LANG_CSV.format(lang), words_by_lang[lang])
@@ -1120,9 +1183,7 @@ class FileSystemContentProvider(ContentProvider):
             image_extension: str = ".png",
     ) -> CategoryImage:
         category_name = self._folder_name_for_id(category_id)
-        category_path = self._category_path(category_name)
-        if not category_path.exists() or not category_path.is_dir():
-            raise CategoryNotFoundError(f"Category '{category_name}': directory is missing.")
+        category_path = self._require_category_dir(category_name)
 
         ext = image_extension if image_extension.startswith(".") else f".{image_extension}"
         if ext.lower() not in _IMAGE_EXTENSIONS:
@@ -1131,11 +1192,7 @@ class FileSystemContentProvider(ContentProvider):
         idx = self._first_available_category_image_index(category_path, category_name)
         file_name = f"{category_name}_{idx:02d}{ext}"
         image_path = category_path / file_name
-        try:
-            with open(image_path, "wb") as fh:
-                fh.write(image_data)
-        except OSError as exc:
-            raise ContentOperationError(f"Failed to save category image: {exc}") from exc
+        self._write_image_bytes(image_path, image_data)
 
         return CategoryImage(id=image_path.stem, file_uri=f"/content/{category_name}/{file_name}")
 
@@ -1147,9 +1204,7 @@ class FileSystemContentProvider(ContentProvider):
             image_extension: str = ".png",
     ) -> CategoryImage:
         category_name = self._folder_name_for_id(category_id)
-        category_path = self._category_path(category_name)
-        if not category_path.exists() or not category_path.is_dir():
-            raise CategoryNotFoundError(f"Category '{category_name}': directory is missing.")
+        category_path = self._require_category_dir(category_name)
 
         existing = self._find_category_image_file(category_path, image_id)
         if existing is None:
@@ -1160,13 +1215,14 @@ class FileSystemContentProvider(ContentProvider):
             ext = ".png"
 
         new_path = category_path / f"{image_id}{ext}"
-        try:
-            if existing != new_path:
+        if existing != new_path:
+            try:
                 existing.unlink()
-            with open(new_path, "wb") as fh:
-                fh.write(image_data)
-        except OSError as exc:
-            raise ContentOperationError(f"Failed to update category image: {exc}") from exc
+            except OSError as exc:
+                raise ContentOperationError(
+                    f"Failed to remove previous category image '{existing}': {exc}",
+                ) from exc
+        self._write_image_bytes(new_path, image_data)
 
         return CategoryImage(id=new_path.stem, file_uri=f"/content/{category_name}/{new_path.name}")
 
@@ -1196,9 +1252,7 @@ class FileSystemContentProvider(ContentProvider):
     ) -> CategoryImage:
         """Create or replace the category's icon file, regardless of whether one already exists."""
         category_name = self._folder_name_for_id(category_id)
-        category_path = self._category_path(category_name)
-        if not category_path.exists() or not category_path.is_dir():
-            raise CategoryNotFoundError(f"Category '{category_name}': directory is missing.")
+        category_path = self._require_category_dir(category_name)
 
         ext = image_extension if image_extension.startswith(".") else f".{image_extension}"
         if ext.lower() not in _IMAGE_EXTENSIONS:
@@ -1206,13 +1260,14 @@ class FileSystemContentProvider(ContentProvider):
 
         existing = self._find_category_image_file(category_path, category_name)
         new_path = category_path / f"{category_name}{ext}"
-        try:
-            if existing is not None and existing != new_path:
+        if existing is not None and existing != new_path:
+            try:
                 existing.unlink()
-            with open(new_path, "wb") as fh:
-                fh.write(image_data)
-        except OSError as exc:
-            raise ContentOperationError(f"Failed to save category icon: {exc}") from exc
+            except OSError as exc:
+                raise ContentOperationError(
+                    f"Failed to remove previous category icon '{existing}': {exc}",
+                ) from exc
+        self._write_image_bytes(new_path, image_data)
 
         return CategoryImage(id=new_path.stem, file_uri=f"/content/{category_name}/{new_path.name}")
 
@@ -1674,7 +1729,7 @@ class FileSystemContentProvider(ContentProvider):
             image_extension: str = ".png",
     ) -> CategoryImage:
         category_name = self._folder_name_for_id(category_id)
-        category_path = self._category_path(category_name)
+        category_path = self._require_category_dir(category_name)
         item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
 
         ext = image_extension if image_extension.startswith(".") else f".{image_extension}"
@@ -1684,11 +1739,7 @@ class FileSystemContentProvider(ContentProvider):
         idx = self._first_available_item_image_index(item_path, item_folder_name)
         file_name = f"{item_folder_name}_{idx:02d}{ext}"
         image_path = item_path / file_name
-        try:
-            with open(image_path, "wb") as fh:
-                fh.write(image_data)
-        except OSError as exc:
-            raise ContentOperationError(f"Failed to save item image: {exc}") from exc
+        self._write_image_bytes(image_path, image_data)
 
         return CategoryImage(
             id=image_path.stem,
@@ -1704,7 +1755,7 @@ class FileSystemContentProvider(ContentProvider):
             image_extension: str = ".png",
     ) -> CategoryImage:
         category_name = self._folder_name_for_id(category_id)
-        category_path = self._category_path(category_name)
+        category_path = self._require_category_dir(category_name)
         item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
 
         existing = self._find_item_image_by_id(item_path, image_id)
@@ -1718,13 +1769,14 @@ class FileSystemContentProvider(ContentProvider):
             ext = ".png"
 
         new_path = item_path / f"{image_id}{ext}"
-        try:
-            if existing != new_path:
+        if existing != new_path:
+            try:
                 existing.unlink()
-            with open(new_path, "wb") as fh:
-                fh.write(image_data)
-        except OSError as exc:
-            raise ContentOperationError(f"Failed to update item image: {exc}") from exc
+            except OSError as exc:
+                raise ContentOperationError(
+                    f"Failed to remove previous item image '{existing}': {exc}",
+                ) from exc
+        self._write_image_bytes(new_path, image_data)
 
         return CategoryImage(
             id=new_path.stem,

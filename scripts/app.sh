@@ -12,6 +12,35 @@ COMPOSE_FILE="$REPO_ROOT/docker/docker-compose.yml"
 
 cd "$REPO_ROOT"
 
+load_env_file() {
+  local env_file="$1"
+  local key val line
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    key="${line%%=*}"
+    val="${line#*=}"
+    [[ -z "$key" ]] && continue
+    val="${val%\'}"
+    val="${val#\'}"
+    val="${val%\"}"
+    val="${val#\"}"
+    if [[ -z "${!key:-}" ]]; then
+      export "$key=$val"
+    fi
+  done < "$env_file"
+}
+
+ENV_FILE="$REPO_ROOT/.env"
+if [[ ! -f "$ENV_FILE" && -f "$REPO_ROOT/docker/.env" ]]; then
+  ENV_FILE="$REPO_ROOT/docker/.env"
+fi
+if [[ -f "$ENV_FILE" ]]; then
+  load_env_file "$ENV_FILE"
+fi
+
 run_compose() {
   docker compose -f "$COMPOSE_FILE" "$@"
 }

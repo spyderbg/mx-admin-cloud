@@ -59,6 +59,7 @@ mx-admin/
 - **CLI profile:** `docker compose --profile cli` starts `backend-cli` with a Unix socket at `/tmp/kiddo-backend.sock` (requires host `/tmp` mount as in compose).
 - **CLI-tool profile:** `docker compose --profile cli-tool run --rm cli <command>` runs `kiddo-cli` itself in a container, talking to the `backend` service over HTTP (`KIDDO_API_BASE_URL=http://backend:8000`). Commands that strictly require the Unix socket (`users`, `list users`) are not available this way -- use the host-installed CLI for those.
 - **Compose:** `docker compose -f docker/docker-compose.yml up` from repo root, or `./scripts/app.sh start` / `./scripts/app.sh stop`.
+- **Docs:** See [docker/README.md](docker/README.md) for services, env vars, volumes, profiles, and troubleshooting.
 
 ### Docs (`docs/`)
 
@@ -147,8 +148,6 @@ Key settings (see `backend/src/core/config.py`). Use `backend/.env` or the proce
 | `DEFAULT_ADMIN_PASSWORD` | Initial `admin` password on first DB init |
 | `DEBUG_MODE` | Relaxes some admin/UDS checks when true (local dev only) |
 | `AUTH_DISABLED` | If true, skip auth checks |
-
-Compose may set `INTERNAL_SERVICE_TOKEN` in containers. `Settings` uses `extra="ignore"`, so that variable is unused unless you extend the model to read it.
 
 ---
 
