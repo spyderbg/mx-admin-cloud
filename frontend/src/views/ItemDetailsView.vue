@@ -77,7 +77,7 @@
         </h4>
         <div class="id-toolbar">
           <button type="button" class="btn btn-outline-primary btn-sm" @click="onAddFile">
-            <i class="mdi mdi-plus mr-1"></i>{{ addImagesLabel(contentLanguage) }}
+            <i class="mdi mdi-plus mr-1"></i>{{ addImageLabel(contentLanguage) }}
           </button>
           <button v-if="hasFiles" type="button" class="btn btn-primary btn-sm" @click="onReleaseAllItemImages">{{ releaseAllImagesLabel(contentLanguage) }}</button>
         </div>
@@ -387,7 +387,6 @@ import { langFlag, langLabel } from '../utils/voiceLabels'
 import cameraPlaceholderUrl from '../assets/images/samples/camera-placeholder.svg'
 import {
   addImageLabel,
-  addImagesLabel,
   addVoiceLabel,
   actionsColumnLabel,
   breadcrumbCategoriesLabel,
