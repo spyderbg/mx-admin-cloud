@@ -3,7 +3,7 @@ name: Mirror to GitLab
 on:
   push:
     branches:
-      - "**"
+      - main
     tags:
       - "**"
 
@@ -15,15 +15,34 @@ permissions:
 jobs:
   mirror:
     runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
 
     steps:
+      - name: Configure SSH for GitLab
+        env:
+          GITLAB_SSH_PRIVATE_KEY: ${{ secrets.GITLAB_SSH_PRIVATE_KEY }}
+          GITLAB_KNOWN_HOSTS: ${{ vars.GITLAB_KNOWN_HOSTS }}
+        run: |
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+
+          printf '%s\n' "$GITLAB_SSH_PRIVATE_KEY" > "$HOME/.ssh/gitlab_mirror_key"
+          chmod 600 "$HOME/.ssh/gitlab_mirror_key"
+
+          printf '%s\n' "$GITLAB_KNOWN_HOSTS" > "$HOME/.ssh/gitlab_known_hosts"
+          chmod 600 "$HOME/.ssh/gitlab_known_hosts"
+
       - name: Mirror repository to GitLab
         env:
           GH_TOKEN: ${{ github.token }}
 
-          GITLAB_TOKEN: ${{ secrets.GITLAB_MIRROR_TOKEN }}
           GITLAB_HOST: ${{ vars.GITLAB_HOST }}
           GITLAB_PROJECT_PATH: ${{ vars.GITLAB_PROJECT_PATH }}
+          GIT_SSH_COMMAND: >-
+            ssh -i $HOME/.ssh/gitlab_mirror_key
+            -o UserKnownHostsFile=$HOME/.ssh/gitlab_known_hosts
+            -o StrictHostKeyChecking=yes
+            -o IdentitiesOnly=yes
 
         run: |
           git clone --mirror \
@@ -33,9 +52,9 @@ jobs:
           cd repo.git
 
           git push --prune \
-            "http://oauth2:${GITLAB_TOKEN}@${GITLAB_HOST}/${GITLAB_PROJECT_PATH}" \
+            "git@${GITLAB_HOST}:${GITLAB_PROJECT_PATH}.git" \
             "+refs/heads/*:refs/heads/*"
 
           git push --prune \
-            "http://oauth2:${GITLAB_TOKEN}@${GITLAB_HOST}/${GITLAB_PROJECT_PATH}" \
+            "git@${GITLAB_HOST}:${GITLAB_PROJECT_PATH}.git" \
             "+refs/tags/*:refs/tags/*"
