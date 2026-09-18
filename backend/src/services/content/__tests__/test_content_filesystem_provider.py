@@ -783,6 +783,192 @@ def test_add_item_image_writes_file(tmp_path: Path) -> None:
     assert (category_path / "apple" / "apple_01.png").read_bytes() == b"fake-png-2"
 
 
+def test_add_item_image_first_image_is_duplicated_into_main_and_01(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    category_path = content_root / "foods"
+    _write_category_registry(content_root, [("C_Foods", "Foods")])
+    _write_item_registry(category_path, [("I_Apple", "Apple")])
+    (category_path / "apple" / "01.png").unlink()  # start from an item with no images yet
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        result = provider.add_item_image("C_Foods", "I_Apple", b"fake-png", ".png")
+
+    assert result.id == "apple"
+    assert (category_path / "apple" / "apple.png").read_bytes() == b"fake-png"
+    assert (category_path / "apple" / "apple_01.png").read_bytes() == b"fake-png"
+
+
+def test_add_item_image_after_main_exists_gets_index(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    category_path = content_root / "foods"
+    _write_category_registry(content_root, [("C_Foods", "Foods")])
+    _write_item_registry(category_path, [("I_Apple", "Apple")])
+    (category_path / "apple" / "01.png").unlink()
+    (category_path / "apple" / "apple.png").write_bytes(b"main-image")
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        result = provider.add_item_image("C_Foods", "I_Apple", b"fake-png-2", ".png")
+
+    assert result.id == "apple_01"
+    assert (category_path / "apple" / "apple_01.png").read_bytes() == b"fake-png-2"
+    assert (category_path / "apple" / "apple.png").read_bytes() == b"main-image"
+
+
+# ---------------------------------------------------------------------------
+# item_images / set_main_item_image / delete_item_image — main image convention
+# ---------------------------------------------------------------------------
+
+def _prepare_item_with_images(tmp_path: Path, images: dict[str, bytes]) -> tuple[Path, Path]:
+    """Write a Foods/Apple registry and *images* ({stem: bytes}) into the item folder."""
+    content_root = tmp_path / "content"
+    category_path = content_root / "foods"
+    _write_category_registry(content_root, [("C_Foods", "Foods")])
+    _write_item_registry(category_path, [("I_Apple", "Apple")])
+    item_path = category_path / "apple"
+    (item_path / "01.png").unlink()
+    for stem, data in images.items():
+        (item_path / f"{stem}.png").write_bytes(data)
+    return content_root, item_path
+
+
+def test_item_images_excludes_main_image_from_the_list(tmp_path: Path) -> None:
+    content_root, _ = _prepare_item_with_images(tmp_path, {
+        "apple": b"main-content",
+        "apple_01": b"first-variant",
+        "apple_02": b"second-variant",
+    })
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        result = provider.item_images("C_Foods", "I_Apple")
+
+    assert {image.id for image in result.images} == {"apple_01", "apple_02"}
+    assert result.thumbnail_uri == "/content/foods/apple/apple.png"
+
+
+def test_item_images_with_only_main_image_has_empty_list(tmp_path: Path) -> None:
+    content_root, _ = _prepare_item_with_images(tmp_path, {"apple": b"main-content"})
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        result = provider.item_images("C_Foods", "I_Apple")
+
+    assert result.images == []
+    assert result.thumbnail_uri == "/content/foods/apple/apple.png"
+
+
+def test_item_images_without_main_falls_back_to_first_variant(tmp_path: Path) -> None:
+    """Legacy items with no dedicated main file keep the old first-sorted-is-thumbnail behavior."""
+    content_root, _ = _prepare_item_with_images(tmp_path, {
+        "apple_01": b"first-variant",
+        "apple_02": b"second-variant",
+    })
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        result = provider.item_images("C_Foods", "I_Apple")
+
+    assert {image.id for image in result.images} == {"apple_01", "apple_02"}
+    assert result.thumbnail_uri == "/content/foods/apple/apple_01.png"
+
+
+def test_set_main_item_image_promotes_target_and_demotes_previous_main(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_images(tmp_path, {
+        "apple": b"main-content",
+        "apple_01": b"variant-content",
+    })
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        result = provider.set_main_item_image("C_Foods", "I_Apple", "apple_01")
+
+    assert (item_path / "apple.png").read_bytes() == b"variant-content"
+    assert (item_path / "apple_01.png").read_bytes() == b"main-content"
+    assert {image.id for image in result.images} == {"apple_01"}
+    assert result.thumbnail_uri == "/content/foods/apple/apple.png"
+
+
+def test_set_main_item_image_already_main_is_noop(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_images(tmp_path, {
+        "apple": b"main-content",
+        "apple_01": b"variant-content",
+    })
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        provider.set_main_item_image("C_Foods", "I_Apple", "apple")
+
+    assert (item_path / "apple.png").read_bytes() == b"main-content"
+    assert (item_path / "apple_01.png").read_bytes() == b"variant-content"
+
+
+def test_set_main_item_image_with_no_existing_main_renames_target(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_images(tmp_path, {
+        "apple_01": b"first-content",
+        "apple_02": b"second-content",
+    })
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        provider.set_main_item_image("C_Foods", "I_Apple", "apple_02")
+
+    assert (item_path / "apple.png").read_bytes() == b"second-content"
+    assert (item_path / "apple_01.png").read_bytes() == b"first-content"
+    assert not (item_path / "apple_02.png").exists()
+
+
+def test_set_main_item_image_not_found(tmp_path: Path) -> None:
+    content_root, _ = _prepare_item_with_images(tmp_path, {"apple": b"main-content"})
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        with pytest.raises(CategoryNotFoundError):
+            provider.set_main_item_image("C_Foods", "I_Apple", "apple_99")
+
+
+def test_delete_item_image_promotes_lowest_index_when_main_deleted(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_images(tmp_path, {
+        "apple": b"main-content",
+        "apple_01": b"first-content",
+        "apple_02": b"second-content",
+    })
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        provider.delete_item_image("C_Foods", "I_Apple", "apple")
+
+    assert (item_path / "apple.png").read_bytes() == b"first-content"
+    assert (item_path / "apple_02.png").read_bytes() == b"second-content"
+    assert not (item_path / "apple_01.png").exists()
+
+
+def test_delete_item_image_non_main_leaves_main_untouched(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_images(tmp_path, {
+        "apple": b"main-content",
+        "apple_01": b"first-content",
+    })
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        provider.delete_item_image("C_Foods", "I_Apple", "apple_01")
+
+    assert (item_path / "apple.png").read_bytes() == b"main-content"
+    assert not (item_path / "apple_01.png").exists()
+
+
+def test_delete_item_image_last_remaining_is_allowed(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_images(tmp_path, {"apple": b"main-content"})
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        provider.delete_item_image("C_Foods", "I_Apple", "apple")
+
+    assert list(item_path.glob("*.png")) == []
+    assert provider.item_images("C_Foods", "I_Apple").images == []
+
+
 # ---------------------------------------------------------------------------
 # update_category_details
 # ---------------------------------------------------------------------------
@@ -1409,6 +1595,7 @@ def test_create_item_success_with_image(tmp_path: Path) -> None:
     assert result.voice_warnings == []
     assert result.message == "Item 'apple' created."
     item_path = category_path / "apple"
+    assert (item_path / "apple.png").read_bytes() == b"\x89PNG"
     assert (item_path / "apple_01.png").read_bytes() == b"\x89PNG"
     assert (item_path / "apple_en.mp3").exists()
     assert (item_path / "apple_fr.mp3").exists()
@@ -1504,6 +1691,7 @@ def test_create_item_tts_failure_still_creates_item(tmp_path: Path) -> None:
         "Voice generation failed for fr: boom",
     ]
     assert "Voices were not generated" in result.message
+    assert (category_path / "apple" / "apple.png").exists()
     assert (category_path / "apple" / "apple_01.png").exists()
     assert not list((category_path / "apple").glob("*.mp3"))
     assert _csv_rows(category_path / "items_ids.csv") == ["I_Apple"]

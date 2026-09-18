@@ -66,7 +66,7 @@ const toCategoryDetailResponse = (category: ReturnType<typeof findCategory>): Re
         }),
       ),
       thumbnail_uri: item.thumbnailUri ?? null,
-      images_count: item.images.length,
+      images_count: itemImagesCount(item),
     })),
   }
 }
@@ -93,11 +93,20 @@ const itemLocalizedName = (item: NonNullable<ReturnType<typeof findItem>>): Reco
 const categoryImageId = (category: CategoryRecord, index: number): string =>
   `${category.id}-img-${String(index + 1).padStart(2, '0')}`
 
+// The item's main image lives only in `thumbnailUri` (matches the backend's unindexed
+// "{item_id}.png" main file) — `item.images` holds just the indexed variants.
 const itemImageId = (item: ItemRecord, index: number): string =>
   `${item.id}_${String(index + 1).padStart(2, '0')}`
 
 const itemImageIndex = (item: ItemRecord, imageId: string): number =>
   item.images.findIndex((_, index) => itemImageId(item, index) === imageId)
+
+const itemHasAnyImage = (item: ItemRecord): boolean =>
+  Boolean(item.thumbnailUri) || item.images.length > 0
+
+/** Total image file count (main + variants), matching the backend's images_count. */
+const itemImagesCount = (item: ItemRecord): number =>
+  item.images.length + (item.thumbnailUri ? 1 : 0)
 
 const findCategoryAndItem = (categoryId: string, itemId: string): [CategoryRecord, ItemRecord] | null => {
   const category = findCategoryById(categoryId)
@@ -392,7 +401,7 @@ export const contentHandlers = [
         id: item.id,
         name: itemLocalizedName(item),
         thumbnail_uri: item.thumbnailUri ?? null,
-        images_count: item.images.length,
+        images_count: itemImagesCount(item),
       })),
     })
   }),
@@ -406,7 +415,7 @@ export const contentHandlers = [
       id: item.id,
       name: itemLocalizedName(item),
       thumbnail_uri: item.thumbnailUri ?? null,
-      images_count: item.images.length,
+      images_count: itemImagesCount(item),
     })
   }),
 
@@ -427,7 +436,7 @@ export const contentHandlers = [
       id: item.id,
       name: itemLocalizedName(item),
       thumbnail_uri: item.thumbnailUri ?? null,
-      images_count: item.images.length,
+      images_count: itemImagesCount(item),
     })
   }),
 
@@ -460,10 +469,16 @@ export const contentHandlers = [
     if (!found) return new HttpResponse(null, { status: 404 })
     const [category, item] = found
     await request.formData()
+    if (!itemHasAnyImage(item)) {
+      // No image yet: this one becomes the main image, duplicated into the first variant.
+      const uri = `/content/${category.id}/${item.id}/${item.id}.png`
+      item.thumbnailUri = uri
+      item.images = [uri]
+      return HttpResponse.json({ id: item.id, file_uri: uri, action: 'add' }, { status: 201 })
+    }
     const id = itemImageId(item, item.images.length)
     const uri = `/content/${category.id}/${item.id}/${id}.png`
     item.images.push(uri)
-    item.thumbnailUri = item.images[0] ?? ''
     return HttpResponse.json({ id, file_uri: uri, action: 'add' }, { status: 201 })
   }),
 
@@ -477,11 +492,11 @@ export const contentHandlers = [
     await request.formData()
     const uri = `/content/${category.id}/${item.id}/${String(params.image_id)}.png`
     item.images[index] = uri
-    item.thumbnailUri = item.images[0] ?? ''
     return HttpResponse.json({ id: String(params.image_id), file_uri: uri, action: 'update' })
   }),
 
-  // Delete a file variant from an item
+  // Delete a file variant from an item (the main image isn't part of this list, so it's
+  // never a delete target here — mirrors the backend excluding it from GET .../images)
   http.delete('/api/v1/content/categories/:category_id/items/:item_id/images/:image_id', ({ params }) => {
     const found = findCategoryAndItem(String(params.category_id), String(params.item_id))
     if (!found) return new HttpResponse(null, { status: 404 })
@@ -489,8 +504,7 @@ export const contentHandlers = [
     const index = itemImageIndex(item, String(params.image_id))
     if (index < 0) return new HttpResponse(null, { status: 404 })
     const removedUri = item.images[index]
-    if (item.images.length > 1) item.images.splice(index, 1)
-    item.thumbnailUri = item.images[0] ?? ''
+    item.images.splice(index, 1)
     return HttpResponse.json({ id: String(params.image_id), file_uri: removedUri, action: 'delete' })
   }),
 
@@ -635,5 +649,24 @@ export const contentHandlers = [
   http.post('/api/v1/content/categories/:category_id/voices/:voice_id/regenerate', () => HttpResponse.json({})),
 
   // Set an image file variant as the item's main image
-  http.put('/api/v1/content/categories/:category_id/items/:item_id/images/:image_id/main', () => HttpResponse.json({})),
+  http.put('/api/v1/content/categories/:category_id/items/:item_id/images/:image_id/main', ({ params }) => {
+    const found = findCategoryAndItem(String(params.category_id), String(params.item_id))
+    if (!found) return new HttpResponse(null, { status: 404 })
+    const [, item] = found
+    const imageIndex = itemImageIndex(item, String(params.image_id))
+    if (imageIndex < 0) return new HttpResponse(null, { status: 404 })
+
+    // Promote the target variant to main; the demoted former main rejoins the
+    // variants list (matches the backend's rename-based swap).
+    const [newMain] = item.images.splice(imageIndex, 1)
+    if (item.thumbnailUri) item.images.push(item.thumbnailUri)
+    item.thumbnailUri = newMain
+
+    return HttpResponse.json({
+      item_id: item.id,
+      name: itemLocalizedName(item),
+      images: item.images.map((uri, index) => ({ id: itemImageId(item, index), file_uri: uri })),
+      thumbnail_uri: item.thumbnailUri,
+    })
+  }),
 ]

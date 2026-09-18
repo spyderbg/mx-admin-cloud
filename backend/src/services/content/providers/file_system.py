@@ -1087,8 +1087,11 @@ class FileSystemContentProvider(ContentProvider):
                 ext = image_extension if image_extension.startswith(".") else f".{image_extension}"
                 if ext.lower() not in _IMAGE_EXTENSIONS:
                     ext = ".png"
-                idx = self._first_available_item_image_index(item_path, folder_name)
-                self._write_image_bytes(item_path / f"{folder_name}_{idx:02d}{ext}", image_data)
+                # The item's first image is its main image, stored with no index suffix
+                # (e.g. "apple.png"), duplicated into "_01" so the item starts with a
+                # variant to edit/replace without touching the main image (see add_item_image).
+                self._write_image_bytes(item_path / f"{folder_name}{ext}", image_data)
+                self._write_image_bytes(item_path / f"{folder_name}_01{ext}", image_data)
 
             targets = [(category_path / _ITEMS_IDS, item_id)] + [
                 (category_path / _ITEMS_LANG_CSV.format(lang), words_by_lang[lang])
@@ -1669,10 +1672,18 @@ class FileSystemContentProvider(ContentProvider):
         raise CategoryNotFoundError(f"Item '{item_id}' not found in category '{category_name}'.")
 
     def item_images(self, category_id: str, item_id: str) -> ItemImages:
+        """Return the item's image variants and its main image's URI.
+
+        The main image (stored with no index suffix, e.g. "apple.png") is a distinct
+        concept from the indexed variants and is deliberately excluded from *images* —
+        it is only exposed via *thumbnail_uri*. If no dedicated main image exists yet
+        (legacy data), the first variant is used as the thumbnail and stays listed.
+        """
         category_name = self._folder_name_for_id(category_id)
         category_path = self._category_path(category_name)
         item_folder_name = self._item_folder_for_id(category_path, item_id)
         images: list[CategoryImage] = []
+        main_uri: str | None = None
         if item_folder_name:
             item_folder = category_path / item_folder_name
             if item_folder.is_dir():
@@ -1682,14 +1693,15 @@ class FileSystemContentProvider(ContentProvider):
                             and f.suffix.lower() in _IMAGE_EXTENSIONS
                             and self._is_safe_category_name(f.stem)
                     ):
-                        images.append(CategoryImage(
-                            id=f.stem,
-                            file_uri=f"/content/{category_name}/{item_folder_name}/{f.name}",
-                        ))
+                        file_uri = f"/content/{category_name}/{item_folder_name}/{f.name}"
+                        if f.stem == item_folder_name:
+                            main_uri = file_uri
+                            continue
+                        images.append(CategoryImage(id=f.stem, file_uri=file_uri))
         return ItemImages(
             item_id=item_id,
             images=images,
-            thumbnail_uri=images[0].file_uri if images else None,
+            thumbnail_uri=main_uri if main_uri is not None else (images[0].file_uri if images else None),
         )
 
     def item_voices(self, category_id: str, item_id: str) -> ItemVoices:
@@ -1736,10 +1748,23 @@ class FileSystemContentProvider(ContentProvider):
         if ext.lower() not in _IMAGE_EXTENSIONS:
             ext = ".png"
 
-        idx = self._first_available_item_image_index(item_path, item_folder_name)
-        file_name = f"{item_folder_name}_{idx:02d}{ext}"
-        image_path = item_path / file_name
-        self._write_image_bytes(image_path, image_data)
+        has_existing_image = any(
+            f.is_file() and f.suffix.lower() in _IMAGE_EXTENSIONS
+            for f in item_path.iterdir()
+        )
+        if has_existing_image:
+            idx = self._first_available_item_image_index(item_path, item_folder_name)
+            file_name = f"{item_folder_name}_{idx:02d}{ext}"
+            image_path = item_path / file_name
+            self._write_image_bytes(image_path, image_data)
+        else:
+            # No image yet: this one becomes the main image, stored with no index suffix,
+            # duplicated into "_01" so the item starts with a variant to edit/replace
+            # without touching the main image.
+            file_name = f"{item_folder_name}{ext}"
+            image_path = item_path / file_name
+            self._write_image_bytes(image_path, image_data)
+            self._write_image_bytes(item_path / f"{item_folder_name}_01{ext}", image_data)
 
         return CategoryImage(
             id=image_path.stem,
@@ -1796,16 +1821,19 @@ class FileSystemContentProvider(ContentProvider):
 
         remaining = [
             f for f in item_path.iterdir()
-            if f.is_file() and f.suffix.lower() in _IMAGE_EXTENSIONS
+            if f.is_file() and f.suffix.lower() in _IMAGE_EXTENSIONS and f != existing
         ]
-        if len(remaining) <= 1:
-            raise ContentOperationError(
-                f"Cannot delete the last remaining image variant for item '{item_id}'.",
-            )
 
         file_uri = f"/content/{category_name}/{item_folder_name}/{existing.name}"
+        was_main = existing.stem == item_folder_name
         try:
             existing.unlink()
+            if was_main and remaining:
+                # The main image (no index suffix) was removed and other variants remain:
+                # promote the lowest-indexed one to take over as the main image. If nothing
+                # remains, the item is simply left with no images.
+                promoted = min(remaining, key=lambda f: f.name)
+                promoted.rename(item_path / f"{item_folder_name}{promoted.suffix}")
         except OSError as exc:
             raise ContentOperationError(f"Failed to delete item image: {exc}") from exc
 
@@ -1822,22 +1850,24 @@ class FileSystemContentProvider(ContentProvider):
                 f"Image '{image_id}' not found for item '{item_id}' in category '{category_name}'.",
             )
 
-        current = self.item_images(category_id, item_id)
-        if not current.images or current.images[0].id == image_id:
-            return current  # Already the main image.
+        if target.stem == item_folder_name:
+            return self.item_images(category_id, item_id)  # Already the main image.
 
-        main_id = current.images[0].id
-        main_path = self._find_item_image_by_id(item_path, main_id)
-        if main_path is None:
-            raise ContentOperationError(f"Main image '{main_id}' not found for item '{item_id}'.")
-
+        # The main image is the one stored with no index suffix (e.g. "apple.png"), while
+        # every other variant is indexed ("apple_01.png", "apple_02.png", ...). Making
+        # *target* the main image means renaming it to drop its index, and — if a main
+        # image already exists — giving the demoted former main the next free index.
+        main_path = self._find_item_image_by_id(item_path, item_folder_name)
         target_ext = target.suffix
-        main_ext = main_path.suffix
         try:
-            temp_path = item_path / f"{target.stem}.swap.tmp"
-            target.rename(temp_path)
-            main_path.rename(item_path / f"{image_id}{main_ext}")
-            temp_path.rename(item_path / f"{main_id}{target_ext}")
+            if main_path is not None:
+                temp_path = item_path / f"{target.stem}.swap.tmp"
+                target.rename(temp_path)
+                new_index = self._first_available_item_image_index(item_path, item_folder_name)
+                main_path.rename(item_path / f"{item_folder_name}_{new_index:02d}{main_path.suffix}")
+                temp_path.rename(item_path / f"{item_folder_name}{target_ext}")
+            else:
+                target.rename(item_path / f"{item_folder_name}{target_ext}")
         except OSError as exc:
             raise ContentOperationError(f"Failed to set main image for item '{item_id}': {exc}") from exc
 

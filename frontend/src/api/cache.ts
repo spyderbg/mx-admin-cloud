@@ -9,7 +9,7 @@ import {
   itemsImagesList,
   itemsVoicesList,
 } from './contentClient'
-import type { ItemSummary } from '../types/contentSchemas'
+import type { ItemImagesResponse, ItemSummary } from '../types/contentSchemas'
 
 // ---------------------------------------------------------------------------
 // In-flight promise deduplication
@@ -58,6 +58,23 @@ export const bumpCategoryIconVersion = (categoryId: string): void => {
   const next = new Map(categoryIconVersions.value)
   next.set(categoryId, (next.get(categoryId) ?? 0) + 1)
   categoryIconVersions.value = next
+}
+
+/**
+ * Per-item cache-busting counter for the thumbnail shown in category item grids.
+ * Selecting a different main image can retain the same thumbnail filename, so only
+ * the changed item's card needs a fresh browser request.
+ */
+export const itemThumbnailVersions = ref(new Map<string, number>())
+
+const itemThumbnailVersionKey = (categoryId: string, itemId: string): string =>
+  `${categoryId}:${itemId}`
+
+export const bumpItemThumbnailVersion = (categoryId: string, itemId: string): void => {
+  const key = itemThumbnailVersionKey(categoryId, itemId)
+  const next = new Map(itemThumbnailVersions.value)
+  next.set(key, (next.get(key) ?? 0) + 1)
+  itemThumbnailVersions.value = next
 }
 
 /** Whether the basic category list is currently loading. */
@@ -356,8 +373,8 @@ export const ensureItemDetail = async (
             : items[itemIdx].localizedName,
           images,
           voices,
-          thumbnailUri: images[0] ?? items[itemIdx].thumbnailUri,
-          imagesCount: images.length,
+          thumbnailUri: imagesResponse.thumbnail_uri ?? images[0] ?? items[itemIdx].thumbnailUri,
+          imagesCount: images.length + (imagesResponse.thumbnail_uri ? 1 : 0),
         }
         cat.items = items
         arr[catIdx] = cat
@@ -384,4 +401,39 @@ export const ensureItemDetail = async (
 /** Clear the detail cache for a single item so the next ensureItemDetail re-fetches. */
 export const invalidateItemDetail = (categoryId: string, itemId: string): void => {
   loadedItemIds.get(categoryId)?.delete(itemId)
+}
+
+/** Apply an item-images response to just the matching item in the shared cache. */
+export const updateCachedItemImages = (
+  categoryId: string,
+  itemId: string,
+  response: ItemImagesResponse,
+): void => {
+  const categoryIndex = sharedCategories.value.findIndex((category) => category.id === categoryId)
+  if (categoryIndex === -1) return
+
+  const category = sharedCategories.value[categoryIndex]
+  const itemIndex = category.items.findIndex((item) => item.id === itemId)
+  if (itemIndex === -1) return
+
+  const images = normalizeImages(
+    (response.images ?? []).map((image) => image.file_uri ?? ''),
+    [],
+  )
+  const nameDict = response.name as unknown as Record<string, string>
+  const items = [...category.items]
+  const cachedItem = items[itemIndex]
+  items[itemIndex] = {
+    ...cachedItem,
+    localizedName: Object.keys(nameDict).length > 0
+      ? new LocalizedString(nameDict)
+      : cachedItem.localizedName,
+    images,
+    thumbnailUri: response.thumbnail_uri ?? images[0] ?? cachedItem.thumbnailUri,
+    imagesCount: images.length + (response.thumbnail_uri ? 1 : 0),
+  }
+
+  const categories = [...sharedCategories.value]
+  categories[categoryIndex] = { ...category, items }
+  sharedCategories.value = categories
 }

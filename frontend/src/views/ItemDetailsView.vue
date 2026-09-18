@@ -45,6 +45,16 @@
             <button type="button" class="btn btn-primary btn-sm id-release-item-btn" @click="onReleaseItem">
               {{ releaseItemLabel(contentLanguage) }}
             </button>
+            <button
+              type="button"
+              class="btn btn-outline-danger btn-sm id-delete-item-btn"
+              :disabled="deletingItem"
+              @click="openDeleteItemModal"
+            >
+              <span v-if="deletingItem" class="spinner-border spinner-border-sm mr-1" role="status"></span>
+              <i v-else class="mdi mdi-delete mr-1"></i>
+              {{ deleteLabel(contentLanguage) }}
+            </button>
           </div>
         </div>
 
@@ -101,9 +111,9 @@
             <strong>{{ card.generator }}</strong>
             <div class="id-meta-label id-meta-spaced">{{ promptLabel(contentLanguage) }}</div>
             <p>{{ card.prompt }}</p>
-            <button type="button" class="id-release-btn" :class="{ 'id-release-btn-active': card.isSelected }" :disabled="card.isSelected || isSettingMainImage" @click="onSelectImage(card.index)">
-              <i :class="card.isSelected ? 'mdi mdi-check' : 'mdi mdi-image'"></i>
-              {{ card.isSelected ? selectedLabel(contentLanguage) : selectImageLabel(contentLanguage) }}
+            <button type="button" class="id-release-btn" :disabled="isSettingMainImage" @click="onSelectImage(card.index)">
+              <i class="mdi mdi-image"></i>
+              {{ selectImageLabel(contentLanguage) }}
             </button>
           </div>
           <div class="file-actions" @click.stop>
@@ -324,6 +334,48 @@
   </Teleport>
 
   <Teleport to="body">
+    <div v-if="showDeleteItem" class="cd-modal-overlay" @click.self="closeDeleteItemModal">
+      <div class="cd-modal-box">
+        <div class="cd-modal-header">
+          <h5 class="cd-modal-title">{{ deleteLabel(contentLanguage) }} Item</h5>
+          <button type="button" class="cd-modal-close" @click="closeDeleteItemModal">&times;</button>
+        </div>
+        <div class="cd-modal-body">
+          <p class="mb-3">
+            This will permanently delete the item <strong>{{ item?.id }}</strong> and all of its images and voices.
+          </p>
+          <div class="alert alert-warning py-2">
+            <small>
+              <i class="mdi mdi-alert mr-1"></i>
+              This action cannot be undone.
+            </small>
+          </div>
+          <div class="form-group mb-0">
+            <label class="col-form-label">
+              {{ archiveTypeToConfirmLabel(contentLanguage, item?.id ?? '') }}
+            </label>
+            <input
+              v-model="deleteItemConfirmText"
+              type="text"
+              class="form-control"
+              :placeholder="item?.id"
+              @keyup.enter="confirmDeleteItem"
+            />
+          </div>
+        </div>
+        <div class="cd-modal-footer">
+          <button type="button" class="btn btn-secondary" @click="closeDeleteItemModal">
+            {{ cancelLabel(contentLanguage) }}
+          </button>
+          <button type="button" class="btn btn-danger" :disabled="!canDeleteItem || deletingItem" @click="confirmDeleteItem">
+            {{ deleteLabel(contentLanguage) }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
+
+  <Teleport to="body">
     <div v-if="voiceDeleteTarget" class="cd-modal-overlay" @click.self="cancelVoiceDelete">
       <div class="cd-modal-box">
         <div class="cd-modal-header">
@@ -360,14 +412,23 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import type { AxiosError } from 'axios'
-import { ensureCategoriesLoaded, ensureCategoryDetail, ensureItemDetail, invalidateItemDetail, sharedCategories } from '../api/cache'
+import {
+  bumpItemThumbnailVersion,
+  ensureCategoriesLoaded,
+  ensureCategoryDetail,
+  ensureItemDetail,
+  invalidateItemDetail,
+  sharedCategories,
+  updateCachedItemImages,
+} from '../api/cache'
 import {
   itemsImagesAdd,
   itemsImagesUpdate,
   itemsImagesDelete,
   itemsImagesSetMain,
+  itemsDelete,
   itemsUpdate,
   itemsVoicesAdd,
   itemsVoicesUpdate,
@@ -390,10 +451,12 @@ import {
   addVoiceLabel,
   actionsColumnLabel,
   breadcrumbCategoriesLabel,
+  archiveTypeToConfirmLabel,
   cancelLabel,
   changeItemIdLabel,
   currentImageLabel,
   descriptionLabel,
+  deleteLabel,
   dropImageFileRequiredLabel,
   dropImageHereLabel,
   enterItemIdLabel,
@@ -416,7 +479,6 @@ import {
   releaseItemLabel,
   saveLabel,
   selectImageLabel,
-  selectedLabel,
   stopLabel,
   sourceFileLabel,
   uploadingImageLabel,
@@ -426,6 +488,7 @@ import {
 import { toPascalCaseWords } from '../utils/pascalCaseWords'
 
 const route = useRoute()
+const router = useRouter()
 
 const contentLanguage = useContentLanguage()
 
@@ -484,15 +547,6 @@ const itemImages = computed(() =>
   rawItemImages.value.map((uri) => cacheBustedUri(uri, imageVersions.value[imageIdFromUri(uri)] ?? 0)),
 )
 const hasFiles = computed(() => itemImages.value.length > 0)
-const selectedImageIndex = ref(0)
-
-watch(() => item.value?.id, () => {
-  selectedImageIndex.value = 0
-})
-
-watch(() => itemImages.value.length, (length) => {
-  if (selectedImageIndex.value >= length) selectedImageIndex.value = 0
-})
 
 function voiceSrc(voice: Voice): string {
   return cacheBustedUri(voice.fileUri ?? '', voiceVersions.value[voice.id] ?? 0)
@@ -541,17 +595,26 @@ const imageCards = computed(() =>
     return {
       src,
       index,
-      isSelected: index === selectedImageIndex.value,
       title: `${breadcrumbItem.value} image ${index + 1}`,
-      generator: index === 0
-        ? mainItemImageLabel(contentLanguage.value)
-        : imageVariantLabel(contentLanguage.value, index + 1),
+      generator: imageVariantLabel(contentLanguage.value, index + 1),
       prompt: `${sourceFileLabel(contentLanguage.value)}: ${sourceFile}`,
     }
   }),
 )
 
-const currentImageCard = computed(() => imageCards.value[selectedImageIndex.value] ?? imageCards.value[0] ?? null)
+// The main image is a separate concept from the variants gallery above — it's
+// never part of `item.images`, only exposed via `item.thumbnailUri`.
+const mainImageUri = computed(() => item.value?.thumbnailUri?.trim() || '')
+const currentImageCard = computed(() => {
+  const rawUri = mainImageUri.value
+  if (!rawUri) return null
+  return {
+    src: cacheBustedUri(rawUri, imageVersions.value[imageIdFromUri(rawUri)] ?? 0),
+    title: `${breadcrumbItem.value} main image`,
+    generator: mainItemImageLabel(contentLanguage.value),
+    prompt: `${sourceFileLabel(contentLanguage.value)}: ${fileNameFromUri(rawUri)}`,
+  }
+})
 
 const groupedVoices = computed(() =>
   SUPPORTED_LANGUAGES
@@ -727,27 +790,75 @@ const onReleaseItem = (): void => {
   announceBackendPending(`release item ${item.value?.id ?? 'unknown item'}`)
 }
 
+const showDeleteItem = ref(false)
+const deleteItemConfirmText = ref('')
+const deletingItem = ref(false)
+
+const canDeleteItem = computed(() =>
+  deleteItemConfirmText.value.trim() === item.value?.id,
+)
+
+function openDeleteItemModal(): void {
+  deleteItemConfirmText.value = ''
+  showDeleteItem.value = true
+}
+
+function closeDeleteItemModal(): void {
+  if (deletingItem.value) return
+  showDeleteItem.value = false
+  deleteItemConfirmText.value = ''
+}
+
+async function confirmDeleteItem(): Promise<void> {
+  const cat = category.value
+  const currentItem = item.value
+  if (!cat || !currentItem || !canDeleteItem.value || deletingItem.value) return
+
+  deletingItem.value = true
+  try {
+    await itemsDelete(cat.id, currentItem.id)
+    if (playingVoiceId.value) stopAudio()
+    invalidateItemDetail(cat.id, currentItem.id)
+    const categoryIndex = sharedCategories.value.findIndex((entry) => entry.id === cat.id)
+    if (categoryIndex !== -1) {
+      const categories = [...sharedCategories.value]
+      const cachedCategory = categories[categoryIndex]
+      categories[categoryIndex] = {
+        ...cachedCategory,
+        items: cachedCategory.items.filter((entry) => entry.id !== currentItem.id),
+        items_count: Math.max(0, (cachedCategory.items_count ?? cachedCategory.items.length) - 1),
+      }
+      sharedCategories.value = categories
+    }
+    await router.replace({ name: 'category', params: { categoryId: cat.id } })
+  } catch (err) {
+    showToast(extractErrorMessage(err), 'error')
+  } finally {
+    deletingItem.value = false
+  }
+}
+
 const isSettingMainImage = ref(false)
 
 const onSelectImage = async (index: number): Promise<void> => {
   const cat = category.value
   const currentItem = item.value
   const rawUri = rawItemImages.value[index]
-  const rawMainUri = rawItemImages.value[0]
-  if (!cat || !currentItem || !rawUri || isSettingMainImage.value || index === 0) return
+  const rawMainUri = mainImageUri.value
+  if (!cat || !currentItem || !rawUri || isSettingMainImage.value) return
 
   isSettingMainImage.value = true
   try {
     const imageId = imageIdFromUri(rawUri)
     const mainImageId = imageIdFromUri(rawMainUri)
-    await itemsImagesSetMain(cat.id, currentItem.id, imageId)
-    await refreshItem()
+    const updatedImages = await itemsImagesSetMain(cat.id, currentItem.id, imageId)
+    updateCachedItemImages(cat.id, currentItem.id, updatedImages)
+    bumpItemThumbnailVersion(cat.id, currentItem.id)
     imageVersions.value = {
       ...imageVersions.value,
       [imageId]: (imageVersions.value[imageId] ?? 0) + 1,
       [mainImageId]: (imageVersions.value[mainImageId] ?? 0) + 1,
     }
-    selectedImageIndex.value = 0
     showToast('Main image updated.', 'success')
   } catch (err) {
     showToast(extractErrorMessage(err), 'error')
@@ -1129,6 +1240,7 @@ const voiceCardActions: VoiceExtraAction[] = [
 }
 .id-release-group,
 .id-toolbar {
+  display: flex;
   gap: 0.55rem;
 }
 .id-release-item-btn {

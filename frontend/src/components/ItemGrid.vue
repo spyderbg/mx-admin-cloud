@@ -21,8 +21,10 @@
 import { useRouter } from 'vue-router'
 import type { Item } from '../types/viewModels'
 import cameraPlaceholderUrl from '../assets/images/samples/camera-placeholder.svg'
+import { itemThumbnailVersions } from '../api/cache'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import { localizedImageLabel } from '../utils/localizedLabels'
+import { cacheBustedUri } from '../utils/cacheBustedUri'
 
 const props = defineProps<{
   items: Item[]
@@ -40,12 +42,13 @@ const itemLabel = (item: Item): string =>
   localizedImageLabel(item, contentLanguage.value)
 
 const resolveItemSrc = (item: Item): string => {
+  const thumbnailVersion = itemThumbnailVersions.value.get(`${props.categoryId}:${item.id}`) ?? 0
   if (item.thumbnailUri.trim().length > 0) {
-    return item.thumbnailUri
+    return cacheBustedUri(item.thumbnailUri, thumbnailVersion)
   }
 
   const firstFile = item.images.find((image) => image.trim().length > 0)
-  return firstFile ?? cameraPlaceholderUrl
+  return firstFile ? cacheBustedUri(firstFile, thumbnailVersion) : cameraPlaceholderUrl
 }
 
 const navigateToDetail = (itemId: string): void => {
