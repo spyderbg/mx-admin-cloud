@@ -344,13 +344,13 @@
           <p class="mb-3">
             This will permanently delete the item <strong>{{ item?.id }}</strong> and all of its images and voices.
           </p>
-          <div class="alert alert-warning py-2">
+          <div v-if="usesComplexDeleteItemConfirmation" class="alert alert-warning py-2">
             <small>
               <i class="mdi mdi-alert mr-1"></i>
               This action cannot be undone.
             </small>
           </div>
-          <div class="form-group mb-0">
+          <div v-if="usesComplexDeleteItemConfirmation" class="form-group mb-0">
             <label class="col-form-label">
               {{ archiveTypeToConfirmLabel(contentLanguage, item?.id ?? '') }}
             </label>
@@ -365,10 +365,10 @@
         </div>
         <div class="cd-modal-footer">
           <button type="button" class="btn btn-secondary" @click="closeDeleteItemModal">
-            {{ cancelLabel(contentLanguage) }}
+            {{ usesComplexDeleteItemConfirmation ? cancelLabel(contentLanguage) : noLabel(contentLanguage) }}
           </button>
           <button type="button" class="btn btn-danger" :disabled="!canDeleteItem || deletingItem" @click="confirmDeleteItem">
-            {{ deleteLabel(contentLanguage) }}
+            {{ usesComplexDeleteItemConfirmation ? deleteLabel(contentLanguage) : yesLabel(contentLanguage) }}
           </button>
         </div>
       </div>
@@ -470,6 +470,7 @@ import {
   localizedImageLabel,
   mainItemImageLabel,
   newItemIdLabel,
+  noLabel,
   normalFileColumnLabel,
   optimizedFileColumnLabel,
   playLabel,
@@ -484,6 +485,7 @@ import {
   uploadingImageLabel,
   voiceFileMissingLabel,
   voicesLabel,
+  yesLabel,
 } from '../utils/localizedLabels'
 import { toPascalCaseWords } from '../utils/pascalCaseWords'
 
@@ -793,9 +795,10 @@ const onReleaseItem = (): void => {
 const showDeleteItem = ref(false)
 const deleteItemConfirmText = ref('')
 const deletingItem = ref(false)
+const usesComplexDeleteItemConfirmation = import.meta.env.VITE_DELETE_ITEM_CONFIRMATION_MODE !== 'simple'
 
 const canDeleteItem = computed(() =>
-  deleteItemConfirmText.value.trim() === item.value?.id,
+  !usesComplexDeleteItemConfirmation || deleteItemConfirmText.value.trim() === item.value?.id,
 )
 
 function openDeleteItemModal(): void {

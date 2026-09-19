@@ -18,6 +18,8 @@ npm run preview     # serve production build locally
 
 **Archive confirmation:** `VITE_ARCHIVE_CONFIRMATION_MODE` controls the category archive popup. It defaults to `complex`, which shows the server warning and requires the category id to be typed. Set it to `simple` to show the confirmation message with only **Yes** and **No** actions. Like all Vite environment variables, this value is applied at build time.
 
+**Delete item confirmation:** `VITE_DELETE_ITEM_CONFIRMATION_MODE` controls the item delete popup in `ItemDetailsView` the same way. It defaults to `complex`, which shows the "cannot be undone" warning and requires the item id to be typed. Set it to `simple` to show the confirmation message with only **Yes** and **No** actions. Applied at build time.
+
 ## Mock Data Mode
 
 Use this mode when developing the UI with local fixtures.
@@ -182,6 +184,10 @@ Displayed for a specific image within a category:
 - **Summary panel** -- shows the item id with a copy action, the category description in the active content language, and a **Names by Language** editor for en/es/fr/bg. Name edits use the existing `itemsUpdate` request.
 - **Images section** -- card grid of the item's image variants, with a **Main** badge on the first image, MDI edit/delete action buttons, derived source-file metadata, and release-style controls. Upload/replace/delete use the existing item image endpoints; release controls are visual/pending placeholders.
 - **Voices table** -- grouped by language, with generator/type, normal and optimized file-name columns, play controls, waveform-style previews, and release/edit/delete action buttons. Upload/delete use the existing item voice endpoints; release/add-voice controls are visual/pending placeholders.
+- **Delete item** -- outlined red button next to **Release item** in the summary panel. By default its confirmation modal
+  shows the "cannot be undone" warning and requires the item id to be typed before the action is enabled. Set
+  `VITE_DELETE_ITEM_CONFIRMATION_MODE=simple` at build time for a Yes/No confirmation instead. On success the view drops the
+  item from the cached category and redirects back to the category.
 
 ## Components
 

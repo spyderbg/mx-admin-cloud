@@ -38,6 +38,7 @@ services:
         VITE_DEBUG_MODE: "true"
         VITE_MOCK_DATA: "false"
         VITE_ARCHIVE_CONFIRMATION_MODE: "complex"
+        VITE_DELETE_ITEM_CONFIRMATION_MODE: "complex"
     ports:
       - "9001:80"
     volumes:
