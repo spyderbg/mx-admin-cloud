@@ -2,7 +2,7 @@
   "service_provider": {
     "service": "text_to_speech",
     "provider": "speaktor",
-    "enabled": false,
+    "enabled": true,
     "priority": 2,
     "config": {
       "generate": {
@@ -37,8 +37,8 @@
             "use_space": "no"
           },
           "bg": {
-            "voice_name": "Ния",
-            "speed_rate": 0.9,
+            "voice_name": "Света",
+            "speed_rate": 1.0,
             "use_space": "yes"
           }
         }
