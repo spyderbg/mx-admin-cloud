@@ -179,7 +179,7 @@ def test_write_image_bytes_permission_denied_names_the_cause(tmp_path: Path) -> 
 
 
 # ---------------------------------------------------------------------------
-# _ensure_content_root_exists / _require_category_dir
+# _ensure_content_root_exists / _validate_category_path
 # ---------------------------------------------------------------------------
 
 def test_ensure_content_root_exists_raises_when_root_missing(tmp_path: Path) -> None:
@@ -192,32 +192,43 @@ def test_ensure_content_root_exists_raises_when_root_missing(tmp_path: Path) -> 
             provider._ensure_content_root_exists()
 
 
-def test_require_category_dir_returns_path_when_category_exists(tmp_path: Path) -> None:
+def test_validate_category_path_returns_name_and_path_when_category_exists(tmp_path: Path) -> None:
     content_root = tmp_path / "content"
+    _write_category_registry(content_root, [("C_Foods", "Foods")])
     (content_root / "foods").mkdir(parents=True)
     provider = _make_fs_provider()
     with patch("src.services.content.providers.file_system.settings") as mock_settings:
         mock_settings.content_path = content_root
-        assert provider._require_category_dir("foods") == content_root / "foods"
+        assert provider._validate_category_path("C_Foods") == ("foods", content_root / "foods")
 
 
-def test_require_category_dir_category_not_found_when_root_exists(tmp_path: Path) -> None:
+def test_validate_category_path_category_not_found_when_folder_missing(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    _write_category_registry(content_root, [("C_Foods", "Foods")])  # registered, but no folder on disk
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        with pytest.raises(CategoryNotFoundError):
+            provider._validate_category_path("C_Foods")
+
+
+def test_validate_category_path_category_not_found_when_id_unregistered(tmp_path: Path) -> None:
     content_root = tmp_path / "content"
     content_root.mkdir()
     provider = _make_fs_provider()
     with patch("src.services.content.providers.file_system.settings") as mock_settings:
         mock_settings.content_path = content_root
         with pytest.raises(CategoryNotFoundError):
-            provider._require_category_dir("foods")
+            provider._validate_category_path("C_Foods")
 
 
-def test_require_category_dir_reports_missing_root_instead_of_missing_category(tmp_path: Path) -> None:
+def test_validate_category_path_reports_missing_root_instead_of_missing_category(tmp_path: Path) -> None:
     provider = _make_fs_provider()
     with patch("src.services.content.providers.file_system.settings") as mock_settings:
         mock_settings.content_path = tmp_path / "does_not_exist"
         mock_settings.CONTENT_DIR = "/app/content"
         with pytest.raises(ContentOperationError, match="mounted"):
-            provider._require_category_dir("foods")
+            provider._validate_category_path("C_Foods")
 
 
 def test_folder_name_for_id_reports_missing_root_instead_of_missing_id(tmp_path: Path) -> None:
@@ -783,7 +794,7 @@ def test_add_item_image_writes_file(tmp_path: Path) -> None:
     assert (category_path / "apple" / "apple_01.png").read_bytes() == b"fake-png-2"
 
 
-def test_add_item_image_first_image_is_duplicated_into_main_and_01(tmp_path: Path) -> None:
+def test_add_item_image_first_image_is_copied_into_main_and_01(tmp_path: Path) -> None:
     content_root = tmp_path / "content"
     category_path = content_root / "foods"
     _write_category_registry(content_root, [("C_Foods", "Foods")])
@@ -835,7 +846,7 @@ def _prepare_item_with_images(tmp_path: Path, images: dict[str, bytes]) -> tuple
 
 def test_item_images_excludes_main_image_from_the_list(tmp_path: Path) -> None:
     content_root, _ = _prepare_item_with_images(tmp_path, {
-        "apple": b"main-content",
+        "apple": b"first-variant",  # the main image is a copy of apple_01
         "apple_01": b"first-variant",
         "apple_02": b"second-variant",
     })
@@ -846,6 +857,24 @@ def test_item_images_excludes_main_image_from_the_list(tmp_path: Path) -> None:
 
     assert {image.id for image in result.images} == {"apple_01", "apple_02"}
     assert result.thumbnail_uri == "/content/foods/apple/apple.png"
+    # The main image is a copy of apple_01, so that variant is the selected one.
+    assert result.main_image_id == "apple_01"
+
+
+def test_item_images_main_image_matching_no_variant_selects_none(tmp_path: Path) -> None:
+    """A main image whose bytes match no variant leaves the selection unresolved."""
+    content_root, _ = _prepare_item_with_images(tmp_path, {
+        "apple": b"stale-content",
+        "apple_01": b"first-variant",
+    })
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        result = provider.item_images("C_Foods", "I_Apple")
+
+    assert [image.id for image in result.images] == ["apple_01"]
+    assert result.thumbnail_uri == "/content/foods/apple/apple.png"
+    assert result.main_image_id is None
 
 
 def test_item_images_with_only_main_image_has_empty_list(tmp_path: Path) -> None:
@@ -857,6 +886,7 @@ def test_item_images_with_only_main_image_has_empty_list(tmp_path: Path) -> None
 
     assert result.images == []
     assert result.thumbnail_uri == "/content/foods/apple/apple.png"
+    assert result.main_image_id is None
 
 
 def test_item_images_without_main_falls_back_to_first_variant(tmp_path: Path) -> None:
@@ -872,9 +902,10 @@ def test_item_images_without_main_falls_back_to_first_variant(tmp_path: Path) ->
 
     assert {image.id for image in result.images} == {"apple_01", "apple_02"}
     assert result.thumbnail_uri == "/content/foods/apple/apple_01.png"
+    assert result.main_image_id == "apple_01"
 
 
-def test_set_main_item_image_promotes_target_and_demotes_previous_main(tmp_path: Path) -> None:
+def test_set_main_item_image_copies_the_variant_over_the_main_image(tmp_path: Path) -> None:
     content_root, item_path = _prepare_item_with_images(tmp_path, {
         "apple": b"main-content",
         "apple_01": b"variant-content",
@@ -885,9 +916,11 @@ def test_set_main_item_image_promotes_target_and_demotes_previous_main(tmp_path:
         result = provider.set_main_item_image("C_Foods", "I_Apple", "apple_01")
 
     assert (item_path / "apple.png").read_bytes() == b"variant-content"
-    assert (item_path / "apple_01.png").read_bytes() == b"main-content"
+    # The variant is copied, never moved: it stays exactly where it was.
+    assert (item_path / "apple_01.png").read_bytes() == b"variant-content"
     assert {image.id for image in result.images} == {"apple_01"}
     assert result.thumbnail_uri == "/content/foods/apple/apple.png"
+    assert result.main_image_id == "apple_01"
 
 
 def test_set_main_item_image_already_main_is_noop(tmp_path: Path) -> None:
@@ -904,7 +937,7 @@ def test_set_main_item_image_already_main_is_noop(tmp_path: Path) -> None:
     assert (item_path / "apple_01.png").read_bytes() == b"variant-content"
 
 
-def test_set_main_item_image_with_no_existing_main_renames_target(tmp_path: Path) -> None:
+def test_set_main_item_image_with_no_existing_main_copies_target(tmp_path: Path) -> None:
     content_root, item_path = _prepare_item_with_images(tmp_path, {
         "apple_01": b"first-content",
         "apple_02": b"second-content",
@@ -916,7 +949,63 @@ def test_set_main_item_image_with_no_existing_main_renames_target(tmp_path: Path
 
     assert (item_path / "apple.png").read_bytes() == b"second-content"
     assert (item_path / "apple_01.png").read_bytes() == b"first-content"
-    assert not (item_path / "apple_02.png").exists()
+    assert (item_path / "apple_02.png").read_bytes() == b"second-content"
+
+
+def test_set_main_item_image_keeps_every_variant_listed(tmp_path: Path) -> None:
+    """Choosing a main image must never make a variant disappear from the item."""
+    content_root, item_path = _prepare_item_with_images(tmp_path, {
+        "apple_01": b"first-content",
+        "apple_02": b"second-content",
+        "apple_03": b"third-content",
+    })
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        before = provider.item_images("C_Foods", "I_Apple")
+        after = provider.set_main_item_image("C_Foods", "I_Apple", "apple_03")
+
+    assert [i.id for i in before.images] == [i.id for i in after.images] == ["apple_01", "apple_02", "apple_03"]
+    assert after.main_image_id == "apple_03"
+    assert (item_path / "apple.png").read_bytes() == b"third-content"
+
+
+def test_set_main_item_image_repeated_selection_keeps_every_variant(tmp_path: Path) -> None:
+    """Re-selecting leaves the variants untouched — only the main copy is rewritten."""
+    content_root, item_path = _prepare_item_with_images(tmp_path, {
+        "apple": b"first-content",
+        "apple_01": b"first-content",
+        "apple_02": b"second-content",
+        "apple_03": b"third-content",
+    })
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        for target, expected in [("apple_02", b"second-content"), ("apple_03", b"third-content"),
+                                 ("apple_01", b"first-content")]:
+            result = provider.set_main_item_image("C_Foods", "I_Apple", target)
+            assert [i.id for i in result.images] == ["apple_01", "apple_02", "apple_03"]
+            assert result.main_image_id == target
+            assert (item_path / "apple.png").read_bytes() == expected
+
+    assert (item_path / "apple_01.png").read_bytes() == b"first-content"
+    assert (item_path / "apple_02.png").read_bytes() == b"second-content"
+    assert (item_path / "apple_03.png").read_bytes() == b"third-content"
+
+
+def test_set_main_item_image_replaces_main_stored_under_another_extension(tmp_path: Path) -> None:
+    """Copying a .jpg variant must not leave the old .png main file behind."""
+    content_root, item_path = _prepare_item_with_images(tmp_path, {"apple": b"main-content"})
+    (item_path / "apple_01.jpg").write_bytes(b"jpg-content")
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        result = provider.set_main_item_image("C_Foods", "I_Apple", "apple_01")
+
+    assert not (item_path / "apple.png").exists()
+    assert (item_path / "apple.jpg").read_bytes() == b"jpg-content"
+    assert (item_path / "apple_01.jpg").read_bytes() == b"jpg-content"
+    assert result.main_image_id == "apple_01"
 
 
 def test_set_main_item_image_not_found(tmp_path: Path) -> None:
@@ -937,11 +1026,16 @@ def test_delete_item_image_promotes_lowest_index_when_main_deleted(tmp_path: Pat
     provider = _make_fs_provider()
     with patch("src.services.content.providers.file_system.settings") as mock_settings:
         mock_settings.content_path = content_root
+        result = provider.item_images("C_Foods", "I_Apple")
         provider.delete_item_image("C_Foods", "I_Apple", "apple")
+        after = provider.item_images("C_Foods", "I_Apple")
 
     assert (item_path / "apple.png").read_bytes() == b"first-content"
     assert (item_path / "apple_02.png").read_bytes() == b"second-content"
-    assert not (item_path / "apple_01.png").exists()
+    # The promoted variant is copied, not moved, so the item keeps both variants.
+    assert (item_path / "apple_01.png").read_bytes() == b"first-content"
+    assert [i.id for i in result.images] == [i.id for i in after.images] == ["apple_01", "apple_02"]
+    assert after.main_image_id == "apple_01"
 
 
 def test_delete_item_image_non_main_leaves_main_untouched(tmp_path: Path) -> None:

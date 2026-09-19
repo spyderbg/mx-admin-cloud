@@ -36,6 +36,11 @@ export interface Item {
     images: string[]
     voices: Voice[]
     thumbnailUri: string
+    /**
+     * Id of the entry in `images` the main image was copied from — the one currently
+     * selected as main. Absent when the main image matches none of them.
+     */
+    mainImageId?: string
     imagesCount?: number
 }
 

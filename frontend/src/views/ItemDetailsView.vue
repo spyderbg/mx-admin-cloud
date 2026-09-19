@@ -94,7 +94,12 @@
       </div>
 
       <div v-if="hasFiles" class="id-image-grid">
-        <div v-for="card in imageCards" :key="card.index" class="id-image-card">
+        <div
+          v-for="card in imageCards"
+          :key="card.index"
+          class="id-image-card"
+          :class="{ 'id-image-card-main': card.isMain }"
+        >
           <div
             class="id-image-preview id-image-preview-trigger"
             role="button"
@@ -111,9 +116,15 @@
             <strong>{{ card.generator }}</strong>
             <div class="id-meta-label id-meta-spaced">{{ promptLabel(contentLanguage) }}</div>
             <p>{{ card.prompt }}</p>
-            <button type="button" class="id-release-btn" :disabled="isSettingMainImage" @click="onSelectImage(card.index)">
-              <i class="mdi mdi-image"></i>
-              {{ selectImageLabel(contentLanguage) }}
+            <button
+              type="button"
+              class="id-release-btn"
+              :class="{ 'id-release-btn-active': card.isMain }"
+              :disabled="card.isMain || isSettingMainImage"
+              @click="onSelectImage(card.index)"
+            >
+              <i class="mdi" :class="card.isMain ? 'mdi-check' : 'mdi-image'"></i>
+              {{ card.isMain ? selectedLabel(contentLanguage) : selectImageLabel(contentLanguage) }}
             </button>
           </div>
           <div class="file-actions" @click.stop>
@@ -479,6 +490,7 @@ import {
   releaseAllVoicesLabel,
   releaseItemLabel,
   saveLabel,
+  selectedLabel,
   selectImageLabel,
   stopLabel,
   sourceFileLabel,
@@ -591,21 +603,30 @@ function fileNameFromUri(uri?: string | null): string {
   return fileName ? decodeURIComponent(fileName) : 'No file'
 }
 
+// The main image is a copy of one of the variants below; this is the variant it was
+// copied from, i.e. the card to mark as selected and keep out of re-selection.
+const mainImageId = computed(() => item.value?.mainImageId ?? '')
+
 const imageCards = computed(() =>
   itemImages.value.map((src, index) => {
-    const sourceFile = fileNameFromUri(rawItemImages.value[index])
+    const rawUri = rawItemImages.value[index]
+    const isMain = mainImageId.value !== '' && imageIdFromUri(rawUri) === mainImageId.value
     return {
       src,
       index,
+      isMain,
       title: `${breadcrumbItem.value} image ${index + 1}`,
-      generator: imageVariantLabel(contentLanguage.value, index + 1),
-      prompt: `${sourceFileLabel(contentLanguage.value)}: ${sourceFile}`,
+      generator: isMain
+        ? mainItemImageLabel(contentLanguage.value)
+        : imageVariantLabel(contentLanguage.value, index + 1),
+      prompt: `${sourceFileLabel(contentLanguage.value)}: ${fileNameFromUri(rawUri)}`,
     }
   }),
 )
 
-// The main image is a separate concept from the variants gallery above — it's
-// never part of `item.images`, only exposed via `item.thumbnailUri`.
+// The main image is a separate file from the variants gallery above — never part of
+// `item.images`, only exposed via `item.thumbnailUri` — and holds a copy of the variant
+// named by `item.mainImageId`.
 const mainImageUri = computed(() => item.value?.thumbnailUri?.trim() || '')
 const currentImageCard = computed(() => {
   const rawUri = mainImageUri.value
@@ -849,18 +870,20 @@ const onSelectImage = async (index: number): Promise<void> => {
   const rawUri = rawItemImages.value[index]
   const rawMainUri = mainImageUri.value
   if (!cat || !currentItem || !rawUri || isSettingMainImage.value) return
+  const imageId = imageIdFromUri(rawUri)
+  if (imageId === mainImageId.value) return // Already the main image.
 
   isSettingMainImage.value = true
   try {
-    const imageId = imageIdFromUri(rawUri)
-    const mainImageId = imageIdFromUri(rawMainUri)
+    // Only the main image file is rewritten (with a copy of the chosen variant), so it
+    // is the one whose cached copy has to be busted; the variants are left untouched.
+    const mainImageFileId = imageIdFromUri(rawMainUri)
     const updatedImages = await itemsImagesSetMain(cat.id, currentItem.id, imageId)
     updateCachedItemImages(cat.id, currentItem.id, updatedImages)
     bumpItemThumbnailVersion(cat.id, currentItem.id)
     imageVersions.value = {
       ...imageVersions.value,
-      [imageId]: (imageVersions.value[imageId] ?? 0) + 1,
-      [mainImageId]: (imageVersions.value[mainImageId] ?? 0) + 1,
+      [mainImageFileId]: (imageVersions.value[mainImageFileId] ?? 0) + 1,
     }
     showToast('Main image updated.', 'success')
   } catch (err) {
@@ -1274,6 +1297,10 @@ const voiceCardActions: VoiceExtraAction[] = [
   border: 1px solid #dfe5ef;
   border-radius: 6px;
   padding: 0.75rem;
+}
+.id-image-card-main {
+  border-color: #2f8f68;
+  box-shadow: inset 0 0 0 1px #2f8f68;
 }
 .id-add-image-card {
   display: flex;

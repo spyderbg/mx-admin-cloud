@@ -102,6 +102,7 @@ export interface ItemImagesResponse {
     name: LocalizedString
     images?: ImageResponse[]
     thumbnail_uri?: string | null
+    main_image_id?: string | null
 }
 
 /** Response for GET /categories/{category_name}/items. */

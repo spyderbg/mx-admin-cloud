@@ -237,6 +237,9 @@ class ItemImagesResponse(BaseModel):
     name: LocalizedString
     images: list[ImageResponse] = []
     thumbnail_uri: str | None = None
+    # Id of the image in images the main image was copied from, i.e. the one currently
+    # selected as main. None when the main image matches no image in the list.
+    main_image_id: str | None = None
 
 
 class ItemVoicesResponse(BaseModel):

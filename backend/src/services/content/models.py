@@ -122,6 +122,9 @@ class ItemImages:
     item_id: str = ""
     images: list[CategoryImage] = field(default_factory=list)
     thumbnail_uri: str | None = None
+    #: Id of the entry in *images* the main image was copied from, i.e. the one
+    #: currently selected as main. None when it matches no entry in the list.
+    main_image_id: str | None = None
 
 
 @dataclass

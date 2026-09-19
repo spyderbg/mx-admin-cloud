@@ -182,7 +182,11 @@ Displayed for a specific image within a category:
 
 - **Breadcrumb** navigation: root + category + image labels follow the **navbar content language** (same as the sidebar). Category and image segments use the matching `Voice.name`, then the **English** voice if that language is missing, then the stored `name`. The root crumb is translated for en/es/fr/bg (unknown codes fall back to English).
 - **Summary panel** -- shows the item id with a copy action, the category description in the active content language, and a **Names by Language** editor for en/es/fr/bg. Name edits use the existing `itemsUpdate` request.
-- **Images section** -- card grid of the item's image variants, with a **Main** badge on the first image, MDI edit/delete action buttons, derived source-file metadata, and release-style controls. Upload/replace/delete use the existing item image endpoints; release controls are visual/pending placeholders.
+- **Images section** -- card grid of the item's image variants, with MDI edit/delete action buttons, derived source-file
+  metadata, and a **Select Image** button per card. The item's main image is a separate file, shown in the summary panel
+  rather than in this grid, holding a *copy* of one of the variants: selecting a card copies it over the main image and
+  leaves every variant in place. The card named by the response's `main_image_id` -- the variant the main image was copied
+  from -- is highlighted, labelled **Selected**, and has its select button disabled. Upload/replace/delete use the existing item image endpoints; release controls are visual/pending placeholders.
 - **Voices table** -- grouped by language, with generator/type, normal and optimized file-name columns, play controls, waveform-style previews, and release/edit/delete action buttons. Upload/delete use the existing item voice endpoints; release/add-voice controls are visual/pending placeholders.
 - **Delete item** -- outlined red button next to **Release item** in the summary panel. By default its confirmation modal
   shows the "cannot be undone" warning and requires the item id to be typed before the action is enabled. Set

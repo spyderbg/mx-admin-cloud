@@ -374,6 +374,7 @@ export const ensureItemDetail = async (
           images,
           voices,
           thumbnailUri: imagesResponse.thumbnail_uri ?? images[0] ?? items[itemIdx].thumbnailUri,
+          mainImageId: imagesResponse.main_image_id ?? undefined,
           imagesCount: images.length + (imagesResponse.thumbnail_uri ? 1 : 0),
         }
         cat.items = items
@@ -430,6 +431,7 @@ export const updateCachedItemImages = (
       : cachedItem.localizedName,
     images,
     thumbnailUri: response.thumbnail_uri ?? images[0] ?? cachedItem.thumbnailUri,
+    mainImageId: response.main_image_id ?? undefined,
     imagesCount: images.length + (response.thumbnail_uri ? 1 : 0),
   }
 

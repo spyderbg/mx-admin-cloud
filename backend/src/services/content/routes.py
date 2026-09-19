@@ -1042,6 +1042,7 @@ def items_images_list(
         name=item_name,
         images=[ImageResponse(id=img.id, file_uri=img.file_uri) for img in images_result.images],
         thumbnail_uri=images_result.thumbnail_uri,
+        main_image_id=images_result.main_image_id,
     )
 
 
@@ -1206,6 +1207,7 @@ def items_images_set_main(
         name=item_name,
         images=[ImageResponse(id=img.id, file_uri=img.file_uri) for img in images_result.images],
         thumbnail_uri=images_result.thumbnail_uri,
+        main_image_id=images_result.main_image_id,
     )
 
 

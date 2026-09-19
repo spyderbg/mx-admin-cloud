@@ -443,6 +443,11 @@ components:
           - type: string
           - type: 'null'
           title: Thumbnail Uri
+        main_image_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Main Image Id
       type: object
       required:
       - item_id

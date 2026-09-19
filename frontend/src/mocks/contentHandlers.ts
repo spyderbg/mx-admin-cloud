@@ -94,15 +94,26 @@ const categoryImageId = (category: CategoryRecord, index: number): string =>
   `${category.id}-img-${String(index + 1).padStart(2, '0')}`
 
 // The item's main image lives only in `thumbnailUri` (matches the backend's unindexed
-// "{item_id}.png" main file) — `item.images` holds just the indexed variants.
+// "{item_id}.png" main file) — `item.images` holds just the indexed variants. The main
+// image is a copy of one of them, tracked here by `mainImageSource`.
 const itemImageId = (item: ItemRecord, index: number): string =>
   `${item.id}_${String(index + 1).padStart(2, '0')}`
 
 const itemImageIndex = (item: ItemRecord, imageId: string): number =>
   item.images.findIndex((_, index) => itemImageId(item, index) === imageId)
 
-const itemHasAnyImage = (item: ItemRecord): boolean =>
-  Boolean(item.thumbnailUri) || item.images.length > 0
+// Which variant the mock's main image was copied from. The backend recovers this by
+// comparing file contents; the mock just remembers it, keyed by item id.
+const mainImageSource = new Map<string, string>()
+
+/** Id of the variant the main image was copied from; null when it matches none. */
+const itemMainImageId = (item: ItemRecord): string | null => {
+  const selected = mainImageSource.get(item.id)
+  if (selected && itemImageIndex(item, selected) >= 0) return selected
+  if (!item.thumbnailUri || item.images.length === 0) return null
+  // Not selected yet: as on the backend, a fresh item's main image is a copy of "_01".
+  return itemImageId(item, 0)
+}
 
 /** Total image file count (main + variants), matching the backend's images_count. */
 const itemImagesCount = (item: ItemRecord): number =>
@@ -460,6 +471,7 @@ export const contentHandlers = [
       name: itemLocalizedName(item),
       images: item.images.map((uri, index) => ({ id: itemImageId(item, index), file_uri: uri })),
       thumbnail_uri: item.thumbnailUri ?? null,
+      main_image_id: itemMainImageId(item),
     })
   }),
 
@@ -469,12 +481,12 @@ export const contentHandlers = [
     if (!found) return new HttpResponse(null, { status: 404 })
     const [category, item] = found
     await request.formData()
-    if (!itemHasAnyImage(item)) {
-      // No image yet: this one becomes the main image, duplicated into the first variant.
-      const uri = `/content/${category.id}/${item.id}/${item.id}.png`
-      item.thumbnailUri = uri
-      item.images = [uri]
-      return HttpResponse.json({ id: item.id, file_uri: uri, action: 'add' }, { status: 201 })
+    if (!item.thumbnailUri && item.images.length === 0) {
+      // No image yet: this one becomes the main image, copied into the first variant.
+      item.thumbnailUri = `/content/${category.id}/${item.id}/${item.id}.png`
+      const firstVariant = `/content/${category.id}/${item.id}/${itemImageId(item, 0)}.png`
+      item.images = [firstVariant]
+      return HttpResponse.json({ id: item.id, file_uri: item.thumbnailUri, action: 'add' }, { status: 201 })
     }
     const id = itemImageId(item, item.images.length)
     const uri = `/content/${category.id}/${item.id}/${id}.png`
@@ -495,17 +507,19 @@ export const contentHandlers = [
     return HttpResponse.json({ id: String(params.image_id), file_uri: uri, action: 'update' })
   }),
 
-  // Delete a file variant from an item (the main image isn't part of this list, so it's
+  // Delete a variant from an item (the main image isn't part of this list, so it's
   // never a delete target here — mirrors the backend excluding it from GET .../images)
   http.delete('/api/v1/content/categories/:category_id/items/:item_id/images/:image_id', ({ params }) => {
     const found = findCategoryAndItem(String(params.category_id), String(params.item_id))
     if (!found) return new HttpResponse(null, { status: 404 })
     const [, item] = found
-    const index = itemImageIndex(item, String(params.image_id))
+    const imageId = String(params.image_id)
+    const index = itemImageIndex(item, imageId)
     if (index < 0) return new HttpResponse(null, { status: 404 })
     const removedUri = item.images[index]
     item.images.splice(index, 1)
-    return HttpResponse.json({ id: String(params.image_id), file_uri: removedUri, action: 'delete' })
+    if (mainImageSource.get(item.id) === imageId) mainImageSource.delete(item.id)
+    return HttpResponse.json({ id: imageId, file_uri: removedUri, action: 'delete' })
   }),
 
   // List voices for an item
@@ -652,21 +666,21 @@ export const contentHandlers = [
   http.put('/api/v1/content/categories/:category_id/items/:item_id/images/:image_id/main', ({ params }) => {
     const found = findCategoryAndItem(String(params.category_id), String(params.item_id))
     if (!found) return new HttpResponse(null, { status: 404 })
-    const [, item] = found
+    const [category, item] = found
     const imageIndex = itemImageIndex(item, String(params.image_id))
     if (imageIndex < 0) return new HttpResponse(null, { status: 404 })
 
-    // Promote the target variant to main; the demoted former main rejoins the
-    // variants list (matches the backend's rename-based swap).
-    const [newMain] = item.images.splice(imageIndex, 1)
-    if (item.thumbnailUri) item.images.push(item.thumbnailUri)
-    item.thumbnailUri = newMain
+    // The chosen variant is COPIED over the main image: it stays in the variants list
+    // and the item keeps every image it had (matches the backend).
+    mainImageSource.set(item.id, String(params.image_id))
+    item.thumbnailUri = item.thumbnailUri || `/content/${category.id}/${item.id}/${item.id}.png`
 
     return HttpResponse.json({
       item_id: item.id,
       name: itemLocalizedName(item),
       images: item.images.map((uri, index) => ({ id: itemImageId(item, index), file_uri: uri })),
       thumbnail_uri: item.thumbnailUri,
+      main_image_id: itemMainImageId(item),
     })
   }),
 ]

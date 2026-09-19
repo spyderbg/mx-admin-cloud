@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import csv
+import hashlib
 import json
 import re
 import shutil
@@ -49,6 +50,9 @@ from src.services.content.models import (
 from src.services.content.service import ContentProviderFactory
 
 _IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg")
+
+# Read size for content hashing (identifying which variant the main image was copied from).
+_DIGEST_CHUNK_SIZE = 64 * 1024
 
 _SAFE_NAME_RE = re.compile(r"^[a-zA-Z0-9_]+$")
 
@@ -127,20 +131,13 @@ class FileSystemContentProvider(ContentProvider):
             )
         return root
 
-    def _require_category_dir(self, category_name: str) -> Path:
-        """Return the category's directory, or raise with a diagnosable reason when missing.
-
-        A missing category folder can mean the category was never created, but under Docker
-        it's far more often a symptom of the content root itself being absent. Checking the
-        root first (via _ensure_content_root_exists) turns an opaque 404 into a message that
-        names the actual environment problem instead of making it look like the category
-        doesn't exist.
-        """
+    def _validate_category_path(self, category_id: str) -> tuple[str, Path]:
+        """Resolve *category_id* to its folder name and directory, raising if either is missing."""
+        category_name = self._folder_name_for_id(category_id)
         category_path = self._category_path(category_name)
-        if category_path.exists() and category_path.is_dir():
-            return category_path
-        self._ensure_content_root_exists()
-        raise CategoryNotFoundError(f"Category '{category_name}': directory is missing.")
+        if not category_path.exists() or not category_path.is_dir():
+            raise CategoryNotFoundError(f"Category '{category_name}': directory is missing.")
+        return category_name, category_path
 
     @staticmethod
     def _archive_root() -> Path:
@@ -484,6 +481,38 @@ class FileSystemContentProvider(ContentProvider):
         return None
 
     @staticmethod
+    def _file_digest(path: Path) -> str:
+        """SHA-256 of *path*, read in chunks so large images don't land in memory whole."""
+        digest = hashlib.sha256()
+        with open(path, "rb") as fh:
+            for chunk in iter(lambda: fh.read(_DIGEST_CHUNK_SIZE), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    @classmethod
+    def _item_main_image_source_id(cls, main_path: Path, variant_paths: list[Path]) -> str | None:
+        """Return the id of the variant *main_path* was copied from, or None if it matches none.
+
+        The main image is a byte-for-byte copy of one variant (see set_main_item_image
+        and add_item_image), so which one is selected is recoverable from the files
+        themselves — no sidecar to write, and existing content works unchanged. Sizes are
+        compared first, so normally only the single same-sized candidate is ever read.
+        """
+        try:
+            main_size = main_path.stat().st_size
+            candidates = [v for v in variant_paths if v.stat().st_size == main_size]
+            if not candidates:
+                return None
+            main_digest = cls._file_digest(main_path)
+            for candidate in candidates:
+                if cls._file_digest(candidate) == main_digest:
+                    return candidate.stem
+        except OSError:
+            # A file-vanishing mid-scan only costs the selection highlight, not the listing.
+            return None
+        return None
+
+    @staticmethod
     def _first_available_item_image_index(item_path: Path, item_folder_name: str) -> int:
         """First 1-based index where no ``{item_folder_name}_{index:02d}.{ext}`` file exists yet."""
         for i in range(1, 1000):
@@ -811,10 +840,7 @@ class FileSystemContentProvider(ContentProvider):
         raise CategoryNotFoundError(f"Category '{category_name}': ID is not found in categories_ids.csv.")
 
     def category_details(self, category_id: str) -> CategoryDetails:
-        category_name = self._folder_name_for_id(category_id)
-        category_path = self._category_path(category_name)
-        if not category_path.exists() or not category_path.is_dir():
-            raise CategoryNotFoundError(f"Category '{category_name}': directory is missing.")
+        category_name, category_path = self._validate_category_path(category_id)
 
         _, names_by_folder = self._load_category_localized_names()
         category_localized_name = LocalizedString(names_by_folder.get(category_name.lower(), {}))
@@ -1059,7 +1085,6 @@ class FileSystemContentProvider(ContentProvider):
             image_extension: str = ".png",
             generate_voices: bool = True,
     ) -> CreateItem:
-        category_name = self._folder_name_for_id(category_id)
         if not english_word or not english_word.strip():
             raise ContentOperationError("Item word is required")
         english_word = english_word.strip()
@@ -1069,7 +1094,7 @@ class FileSystemContentProvider(ContentProvider):
         if not folder_name:
             raise ContentOperationError("Could not derive folder name from item word")
 
-        category_path = self._require_category_dir(category_name)
+        category_name, category_path = self._validate_category_path(category_id)
         item_path = category_path / folder_name
         if item_path.exists():
             raise CategoryConflictError(f"Item folder already exists: {folder_name}")
@@ -1088,7 +1113,7 @@ class FileSystemContentProvider(ContentProvider):
                 if ext.lower() not in _IMAGE_EXTENSIONS:
                     ext = ".png"
                 # The item's first image is its main image, stored with no index suffix
-                # (e.g. "apple.png"), duplicated into "_01" so the item starts with a
+                # (e.g. "apple.png"), copied into "_01" so the item starts with a
                 # variant to edit/replace without touching the main image (see add_item_image).
                 self._write_image_bytes(item_path / f"{folder_name}{ext}", image_data)
                 self._write_image_bytes(item_path / f"{folder_name}_01{ext}", image_data)
@@ -1185,8 +1210,7 @@ class FileSystemContentProvider(ContentProvider):
             image_data: bytes,
             image_extension: str = ".png",
     ) -> CategoryImage:
-        category_name = self._folder_name_for_id(category_id)
-        category_path = self._require_category_dir(category_name)
+        category_name, category_path = self._validate_category_path(category_id)
 
         ext = image_extension if image_extension.startswith(".") else f".{image_extension}"
         if ext.lower() not in _IMAGE_EXTENSIONS:
@@ -1206,8 +1230,7 @@ class FileSystemContentProvider(ContentProvider):
             image_data: bytes,
             image_extension: str = ".png",
     ) -> CategoryImage:
-        category_name = self._folder_name_for_id(category_id)
-        category_path = self._require_category_dir(category_name)
+        category_name, category_path = self._validate_category_path(category_id)
 
         existing = self._find_category_image_file(category_path, image_id)
         if existing is None:
@@ -1230,10 +1253,7 @@ class FileSystemContentProvider(ContentProvider):
         return CategoryImage(id=new_path.stem, file_uri=f"/content/{category_name}/{new_path.name}")
 
     def delete_category_image(self, category_id: str, image_id: str) -> CategoryImage:
-        category_name = self._folder_name_for_id(category_id)
-        category_path = self._category_path(category_name)
-        if not category_path.exists() or not category_path.is_dir():
-            raise CategoryNotFoundError(f"Category '{category_name}': directory is missing.")
+        category_name, category_path = self._validate_category_path(category_id)
 
         existing = self._find_category_image_file(category_path, image_id)
         if existing is None:
@@ -1254,8 +1274,7 @@ class FileSystemContentProvider(ContentProvider):
             image_extension: str = ".png",
     ) -> CategoryImage:
         """Create or replace the category's icon file, regardless of whether one already exists."""
-        category_name = self._folder_name_for_id(category_id)
-        category_path = self._require_category_dir(category_name)
+        category_name, category_path = self._validate_category_path(category_id)
 
         ext = image_extension if image_extension.startswith(".") else f".{image_extension}"
         if ext.lower() not in _IMAGE_EXTENSIONS:
@@ -1275,10 +1294,7 @@ class FileSystemContentProvider(ContentProvider):
         return CategoryImage(id=new_path.stem, file_uri=f"/content/{category_name}/{new_path.name}")
 
     def add_category_voice(self, category_id: str, language: str, audio_data: bytes) -> CategoryVoice:
-        category_name = self._folder_name_for_id(category_id)
-        category_path = self._category_path(category_name)
-        if not category_path.exists() or not category_path.is_dir():
-            raise CategoryNotFoundError(f"Category '{category_name}': directory is missing.")
+        category_name, category_path = self._validate_category_path(category_id)
 
         if language not in settings.SUPPORTED_LANGUAGES:
             raise ContentOperationError(f"Unsupported language: {language}")
@@ -1307,10 +1323,7 @@ class FileSystemContentProvider(ContentProvider):
         )
 
     def update_category_voice(self, category_id: str, voice_id: str, audio_data: bytes) -> CategoryVoice:
-        category_name = self._folder_name_for_id(category_id)
-        category_path = self._category_path(category_name)
-        if not category_path.exists() or not category_path.is_dir():
-            raise CategoryNotFoundError(f"Category '{category_name}': directory is missing.")
+        category_name, category_path = self._validate_category_path(category_id)
 
         found = self._find_category_voice_file(category_path, category_name, voice_id)
         if found is None:
@@ -1335,10 +1348,7 @@ class FileSystemContentProvider(ContentProvider):
         )
 
     def delete_category_voice(self, category_id: str, voice_id: str) -> CategoryVoice:
-        category_name = self._folder_name_for_id(category_id)
-        category_path = self._category_path(category_name)
-        if not category_path.exists() or not category_path.is_dir():
-            raise CategoryNotFoundError(f"Category '{category_name}': directory is missing.")
+        category_name, category_path = self._validate_category_path(category_id)
 
         found = self._find_category_voice_file(category_path, category_name, voice_id)
         if found is None:
@@ -1357,10 +1367,7 @@ class FileSystemContentProvider(ContentProvider):
         )
 
     def regenerate_category_voice(self, category_id: str, voice_id: str) -> CategoryVoice:
-        category_name = self._folder_name_for_id(category_id)
-        category_path = self._category_path(category_name)
-        if not category_path.exists() or not category_path.is_dir():
-            raise CategoryNotFoundError(f"Category '{category_name}': directory is missing.")
+        category_name, category_path = self._validate_category_path(category_id)
 
         language = self._language_for_category_voice_id(category_name, voice_id)
         if language is None:
@@ -1453,26 +1460,23 @@ class FileSystemContentProvider(ContentProvider):
             raise InvalidCategoryNameError(new_category_id)
 
         index = self._category_row_index(category_id)
-        old_folder_name = self._folder_name_from_category_id(category_id)
-        old_category_path = self._category_path(old_folder_name)
-        if not old_category_path.exists() or not old_category_path.is_dir():
-            raise CategoryNotFoundError(f"Category '{old_folder_name}': directory is missing.")
+        folder_name, category_path = self._validate_category_path(category_id)
 
         new_folder_name = self._folder_name_from_category_id(new_category_id)
 
         if new_category_id == category_id:
             return RenameCategory(
-                category=old_folder_name,
+                category=folder_name,
                 message=f"Category id '{category_id}' unchanged.",
             )
 
         new_category_path = self._category_path(new_folder_name)
-        if new_folder_name != old_folder_name:
+        if new_folder_name != folder_name:
             if new_category_path.exists():
                 raise CategoryConflictError(f"Category already exists: {new_folder_name}")
             try:
-                shutil.move(str(old_category_path), str(new_category_path))
-                self._rename_category_content_files(new_category_path, old_folder_name, new_folder_name)
+                shutil.move(str(category_path), str(new_category_path))
+                self._rename_category_content_files(new_category_path, folder_name, new_folder_name)
             except (OSError, shutil.Error) as exc:
                 raise ContentOperationError(f"Failed to rename category folder: {exc}") from exc
 
@@ -1672,17 +1676,22 @@ class FileSystemContentProvider(ContentProvider):
         raise CategoryNotFoundError(f"Item '{item_id}' not found in category '{category_name}'.")
 
     def item_images(self, category_id: str, item_id: str) -> ItemImages:
-        """Return the item's image variants and its main image's URI.
+        """Return the item's image variants, its main image's URI, and the variant it came from.
 
         The main image (stored with no index suffix, e.g. "apple.png") is a distinct
         concept from the indexed variants and is deliberately excluded from *images* —
-        it is only exposed via *thumbnail_uri*. If no dedicated main image exists yet
-        (legacy data), the first variant is used as the thumbnail and stays listed.
+        it is only exposed via *thumbnail_uri*. Because it is a copy of one of the
+        variants (see set_main_item_image), *main_image_id* names the variant it was
+        copied from, so callers can show which one is currently selected. If no dedicated
+        main image exists yet (legacy data), the first variant is used as the thumbnail
+        and stays listed.
         """
         category_name = self._folder_name_for_id(category_id)
         category_path = self._category_path(category_name)
         item_folder_name = self._item_folder_for_id(category_path, item_id)
         images: list[CategoryImage] = []
+        variant_paths: list[Path] = []
+        main_path: Path | None = None
         main_uri: str | None = None
         if item_folder_name:
             item_folder = category_path / item_folder_name
@@ -1695,13 +1704,23 @@ class FileSystemContentProvider(ContentProvider):
                     ):
                         file_uri = f"/content/{category_name}/{item_folder_name}/{f.name}"
                         if f.stem == item_folder_name:
+                            main_path = f
                             main_uri = file_uri
                             continue
                         images.append(CategoryImage(id=f.stem, file_uri=file_uri))
+                        variant_paths.append(f)
+        if main_path is None:
+            return ItemImages(
+                item_id=item_id,
+                images=images,
+                thumbnail_uri=images[0].file_uri if images else None,
+                main_image_id=images[0].id if images else None,
+            )
         return ItemImages(
             item_id=item_id,
             images=images,
-            thumbnail_uri=main_uri if main_uri is not None else (images[0].file_uri if images else None),
+            thumbnail_uri=main_uri,
+            main_image_id=self._item_main_image_source_id(main_path, variant_paths),
         )
 
     def item_voices(self, category_id: str, item_id: str) -> ItemVoices:
@@ -1740,8 +1759,7 @@ class FileSystemContentProvider(ContentProvider):
             image_data: bytes,
             image_extension: str = ".png",
     ) -> CategoryImage:
-        category_name = self._folder_name_for_id(category_id)
-        category_path = self._require_category_dir(category_name)
+        category_name, category_path = self._validate_category_path(category_id)
         item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
 
         ext = image_extension if image_extension.startswith(".") else f".{image_extension}"
@@ -1759,7 +1777,7 @@ class FileSystemContentProvider(ContentProvider):
             self._write_image_bytes(image_path, image_data)
         else:
             # No image yet: this one becomes the main image, stored with no index suffix,
-            # duplicated into "_01" so the item starts with a variant to edit/replace
+            # copied into "_01" so the item starts with a variant to edit/replace
             # without touching the main image.
             file_name = f"{item_folder_name}{ext}"
             image_path = item_path / file_name
@@ -1779,8 +1797,7 @@ class FileSystemContentProvider(ContentProvider):
             image_data: bytes,
             image_extension: str = ".png",
     ) -> CategoryImage:
-        category_name = self._folder_name_for_id(category_id)
-        category_path = self._require_category_dir(category_name)
+        category_name, category_path = self._validate_category_path(category_id)
         item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
 
         existing = self._find_item_image_by_id(item_path, image_id)
@@ -1830,10 +1847,11 @@ class FileSystemContentProvider(ContentProvider):
             existing.unlink()
             if was_main and remaining:
                 # The main image (no index suffix) was removed and other variants remain:
-                # promote the lowest-indexed one to take over as the main image. If nothing
+                # re-point it at the lowest-indexed one by copying it, the same way
+                # set_main_item_image does, so that variant stays in the item. If nothing
                 # remains, the item is simply left with no images.
                 promoted = min(remaining, key=lambda f: f.name)
-                promoted.rename(item_path / f"{item_folder_name}{promoted.suffix}")
+                shutil.copyfile(promoted, item_path / f"{item_folder_name}{promoted.suffix}")
         except OSError as exc:
             raise ContentOperationError(f"Failed to delete item image: {exc}") from exc
 
@@ -1855,19 +1873,16 @@ class FileSystemContentProvider(ContentProvider):
 
         # The main image is the one stored with no index suffix (e.g. "apple.png"), while
         # every other variant is indexed ("apple_01.png", "apple_02.png", ...). Making
-        # *target* the main image means renaming it to drop its index, and — if a main
-        # image already exists — giving the demoted former main the next free index.
+        # *target* the main image COPIES it over the main file: the variant itself stays
+        # exactly where it is, so the item keeps every image it had.
         main_path = self._find_item_image_by_id(item_path, item_folder_name)
-        target_ext = target.suffix
         try:
-            if main_path is not None:
-                temp_path = item_path / f"{target.stem}.swap.tmp"
-                target.rename(temp_path)
-                new_index = self._first_available_item_image_index(item_path, item_folder_name)
-                main_path.rename(item_path / f"{item_folder_name}_{new_index:02d}{main_path.suffix}")
-                temp_path.rename(item_path / f"{item_folder_name}{target_ext}")
-            else:
-                target.rename(item_path / f"{item_folder_name}{target_ext}")
+            # The copy carries the source's extension, so a main image stored under a
+            # different one (apple.png ← apple_01.jpg) must not be left behind as a second
+            # unindexed file — item_images would then pick whichever sorted first.
+            if main_path is not None and main_path.suffix != target.suffix:
+                main_path.unlink()
+            shutil.copyfile(target, item_path / f"{item_folder_name}{target.suffix}")
         except OSError as exc:
             raise ContentOperationError(f"Failed to set main image for item '{item_id}': {exc}") from exc
 
