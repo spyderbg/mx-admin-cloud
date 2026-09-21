@@ -33,6 +33,7 @@ from mxfix.fixer import Fixer, FixTask
 from mxissues import client as mxclient
 from mxissues import state as mxstate
 from mxissues.config import GitLabConfig
+from mxissues.sync import SyncReport
 
 from . import common
 
@@ -55,6 +56,7 @@ class IssueOutcome:
 @dataclass
 class HealOutcome:
     initial_check: common.CheckRun
+    sync_report: SyncReport
     issues_attempted: list[IssueOutcome] = field(default_factory=list)
 
 
@@ -157,7 +159,7 @@ def run(
 ) -> HealOutcome:
     workdir = repo_root / ".mxfix" / "report"
     initial_check = common.run_all_checks(repo_root, mode=mode, workdir=workdir, reset_stack=False)
-    common.sync_findings(project, initial_check, max_new_issues=config.limits.max_new_issues, apply=not dry_run)
+    sync_report = common.sync_findings(project, initial_check, max_new_issues=config.limits.max_new_issues, apply=not dry_run)
 
     # heal has no natural batch size (it's always exactly one issue at a time by
     # design) — --max-issues is the only thing that caps how many it works through in
@@ -166,7 +168,7 @@ def run(
     issues = common.select_issues(project, severity_threshold=config.limits.severity_threshold, limit=limit)
     if not issues:
         print(f"{DIM}No status::open issue at/above severity::{config.limits.severity_threshold} — nothing for heal to do.{RESET}")
-        return HealOutcome(initial_check=initial_check)
+        return HealOutcome(initial_check=initial_check, sync_report=sync_report)
 
     if not dry_run:
         worktree.fetch_base_branch(config.git.base_branch)
@@ -178,4 +180,4 @@ def run(
         )
         for issue in issues
     ]
-    return HealOutcome(initial_check=initial_check, issues_attempted=outcomes)
+    return HealOutcome(initial_check=initial_check, sync_report=sync_report, issues_attempted=outcomes)

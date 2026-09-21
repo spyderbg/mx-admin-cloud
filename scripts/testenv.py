@@ -563,6 +563,15 @@ def cmd_run(args: argparse.Namespace) -> int:
     )
     outcome = heal_strategy.run(**strategy_kwargs) if config.strategy == "heal" else batch_strategy.run(**strategy_kwargs)
 
+    initial_status = GREEN + "green" + RESET if outcome.initial_check.green else RED + "red" + RESET
+    print(
+        f"\n{BOLD}{config.strategy}: initial check suite: {initial_status}{RESET} "
+        f"(backend={'ok' if outcome.initial_check.backend_ok else 'FAIL'}, "
+        f"tests={'ok' if outcome.initial_check.tests_ok else 'FAIL'}, "
+        f"frontend={'ok' if outcome.initial_check.frontend_ok else 'FAIL'}, "
+        f"e2e={'ok' if outcome.initial_check.e2e_ok else 'FAIL'})",
+    )
+    print(f"{BOLD}{config.strategy}: sync: {outcome.sync_report.summary()}{RESET}")
     print(f"\n{BOLD}{config.strategy}: done.{RESET}")
     for issue_outcome in getattr(outcome, "issues_attempted", []):
         marker = {"fixed": GREEN, "needs-human": RED, "dry-run": DIM}[issue_outcome.status]

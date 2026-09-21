@@ -35,6 +35,7 @@ from mxfix.fixer import Fixer, FixTask
 from mxissues import client as mxclient
 from mxissues import state as mxstate
 from mxissues.config import GitLabConfig
+from mxissues.sync import SyncReport
 
 from . import common
 
@@ -58,6 +59,7 @@ class Candidate:
 @dataclass
 class BatchOutcome:
     initial_check: common.CheckRun
+    sync_report: SyncReport
     landed: list[int] = field(default_factory=list)
     returned: list[tuple[int, str]] = field(default_factory=list)
     merge_conflicts: list[int] = field(default_factory=list)
@@ -199,13 +201,13 @@ def run(
 ) -> BatchOutcome:
     workdir = repo_root / ".mxfix" / "report"
     initial_check = common.run_all_checks(repo_root, mode=mode, workdir=workdir, reset_stack=False)
-    common.sync_findings(project, initial_check, max_new_issues=config.limits.max_new_issues, apply=not dry_run)
+    sync_report = common.sync_findings(project, initial_check, max_new_issues=config.limits.max_new_issues, apply=not dry_run)
 
     limit = min(config.limits.concurrency, max_issues) if max_issues is not None else config.limits.concurrency
     issues = common.select_issues(project, severity_threshold=config.limits.severity_threshold, limit=limit)
     if not issues:
         print(f"{DIM}No status::open issue at/above severity::{config.limits.severity_threshold} — nothing for batch to do.{RESET}")
-        return BatchOutcome(initial_check=initial_check)
+        return BatchOutcome(initial_check=initial_check, sync_report=sync_report)
 
     round_id = time.strftime("%Y%m%d-%H%M%S")
     print(f"\n{BOLD}=== batch {round_id}: {len(issues)} issue(s) ({', '.join(f'#{i.iid}' for i in issues)}) ==={RESET}")
@@ -218,13 +220,13 @@ def run(
             f"candidate onto a {config.git.branch_prefix}batch-{round_id} integration "
             f"branch, reset+verify once, and on green push+PR each issue individually.{RESET}",
         )
-        return BatchOutcome(initial_check=initial_check)
+        return BatchOutcome(initial_check=initial_check, sync_report=sync_report)
 
     worktree.fetch_base_branch(config.git.base_branch)
     for issue in issues:
         mxstate.set_status_by_iid(project, issue.iid, "status::in-progress")
 
-    outcome = BatchOutcome(initial_check=initial_check)
+    outcome = BatchOutcome(initial_check=initial_check, sync_report=sync_report)
 
     print(f"{DIM}  running {len(issues)} fixer(s) in parallel (concurrency={config.limits.concurrency})...{RESET}")
     with ThreadPoolExecutor(max_workers=config.limits.concurrency) as pool:
