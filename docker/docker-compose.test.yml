@@ -1,0 +1,100 @@
+# Test-stack override, layered on top of the untouched docker/docker-compose.yml.
+# NEVER edit docker-compose.yml for test purposes — this file only adds isolation.
+#
+# Invocation (see scripts/testenv.py / docs/test_environment/implementation_plan.md §1b):
+#
+#   docker compose \
+#     -f docker/docker-compose.yml \
+#     -f docker/docker-compose.test.yml \
+#     --project-directory docker \
+#     --env-file .testenv/test.env \
+#     -p mxadmin-test up -d
+#
+# Requires Compose >= 2.24 for the `!override` tag on `ports:` below — without it,
+# ports concatenate rather than replace, and the stack silently double-publishes on
+# the dev stack's 9000/9001 as well as its own.
+#
+# All paths here are absolute, sourced from .testenv/test.env (TEST_CONTENT_DIR etc,
+# written by scripts/testenv_seed.py) — never relative. --project-directory pins the
+# *base* file's own relative paths (../content, ../backend/config) to docker/
+# regardless of caller cwd; this file avoids relative paths entirely so that pin
+# cannot matter either way.
+#
+# Values intentionally NOT overridden here (see implementation plan §1b): CONTENT_DIR,
+# ARCHIVE_DIR, DB_PATH, CONFIG_DIR, OUTPUT_DIR inside the containers — the base file's
+# container-side paths (/app/content, /app/archive, /app/data, /app/config,
+# /app/tts-output) are already correct; only the host-side bind-mount *sources* move.
+# The named volumes (backend-data, tts-output) are left alone — the `-p mxadmin-test`
+# project name already isolates them from the dev stack's volumes for free.
+
+services:
+  backend:
+    container_name: mxtest-backend
+    restart: "no"
+    volumes:
+      - ${TEST_CONTENT_DIR}:/app/content
+      - ${TEST_ARCHIVE_DIR}:/app/archive
+      - ${TEST_CONFIG_DIR}:/app/config
+    ports: !override
+      - "${TEST_BACKEND_PORT}:8000"
+    environment:
+      # New keys only — CONTENT_DIR/ARCHIVE_DIR/CONFIG_DIR/etc. stay as the base file's
+      # container-side paths. OPENAI_API_KEY/ELEVENLABS_API_KEY/etc. already resolve to
+      # .testenv/test.env's dummy values via ${...} substitution in the base file; this
+      # override never repeats them, so there is nothing here that could re-introduce a
+      # real key even if it were present in the invoking shell.
+      - OPENAI_BASE_URL=http://stub:8080/v1
+      - API_BASE_URL=http://127.0.0.1:8000
+    healthcheck:
+      # No curl in python:3.11-slim, and there is no /health route — a 200 from
+      # /openapi.json proves lifespan finished (DB seeded, registry loaded, content
+      # mounted), which is the earliest point the backend accepts real traffic.
+      test: ["CMD", "python3", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/openapi.json', timeout=3)"]
+      interval: 2s
+      timeout: 5s
+      retries: 40
+      start_period: 3s
+    depends_on:
+      - stub
+
+  frontend:
+    container_name: mxtest-frontend
+    restart: "no"
+    build:
+      args:
+        VITE_ARCHIVE_CONFIRMATION_MODE: "${TEST_CONFIRM_MODE:-complex}"
+        VITE_DELETE_ITEM_CONFIRMATION_MODE: "${TEST_CONFIRM_MODE:-complex}"
+    volumes:
+      - ${TEST_CONTENT_DIR}:/app/content:ro
+    ports: !override
+      - "${TEST_FRONTEND_PORT}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:80/"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 2s
+    depends_on:
+      - backend
+
+  # No Dockerfile, no image build — a stock interpreter image plus a read-only bind
+  # mount of the (stdlib-only) stub script.
+  stub:
+    container_name: mxtest-stub
+    image: python:3.11-slim
+    restart: "no"
+    volumes:
+      - ${TEST_STUB_DIR}:/srv:ro
+    working_dir: /srv
+    command: ["python", "-u", "/srv/stub_server.py", "--host", "0.0.0.0", "--port", "8080"]
+    ports:
+      - "${TEST_STUB_PORT}:8080"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8080/__health', timeout=3)"]
+      interval: 1s
+      timeout: 3s
+      retries: 20
+      start_period: 1s
+
+  # Test stack has no use for the UDS CLI backend or the CLI container; they stay
+  # profile-gated in the base file and are simply never started here.
