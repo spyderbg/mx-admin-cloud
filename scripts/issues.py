@@ -341,10 +341,10 @@ def cmd_sync(args: argparse.Namespace) -> int:
     if not args.apply:
         print(f"{YELLOW}Dry run (pass --apply to write to GitLab). Plan for {len(findings)} finding(s):{RESET}\n")
 
-    report = sync.run_sync(project, findings, apply=args.apply)
+    report = sync.run_sync(project, findings, apply=args.apply, max_new_issues=args.max_new_issues)
 
     for item in report.items:
-        marker = {"create": GREEN, "update": YELLOW, "reopen": RED, "skip-not-owned": DIM}[item.action]
+        marker = {"create": GREEN, "update": YELLOW, "reopen": RED, "skip-not-owned": DIM, "skip-limit": YELLOW}[item.action]
         iid_str = f"#{item.iid}" if item.iid is not None else "(new)"
         print(f"  {marker}{item.action:<16}{RESET} {iid_str:<6} {item.finding.title}")
         if item.detail:
@@ -444,6 +444,11 @@ def main() -> int:
     p_sync.add_argument("--e2e", type=Path, default=None, metavar="JSON", help="Playwright JSON reporter output")
     p_sync.add_argument("--detector", type=Path, default=None, metavar="JSON", help="detector findings (initial_spec.md §1 schema)")
     p_sync.add_argument("--apply", action="store_true", help="actually write to GitLab (default: dry run)")
+    p_sync.add_argument(
+        "--max-new-issues", type=int, default=None, metavar="N",
+        help="cap how many NEW issues this call files (existing-issue updates/reopens are never capped); default: unlimited "
+             "(the testenv.toml-driven strategy runner always passes [limits] max_new_issues)",
+    )
     p_sync.set_defaults(func=cmd_sync)
 
     sub.add_parser("reconcile", help="fix labels on issues the GitHub->GitLab mirror auto-closed").set_defaults(func=cmd_reconcile)

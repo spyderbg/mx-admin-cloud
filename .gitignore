@@ -46,3 +46,9 @@ test_environment/e2e/playwright-report/
 # always the source of truth; safe to delete any time.
 .mxissues/
 
+# Execution strategies (scripts/testenv.py run / scripts/mxfix/) — check-suite output
+# and fixer raw logs. Matches both the top-level .mxfix/ scratch dir AND the per-attempt
+# .mxfix-check/ / .mxfix-codex*.json* / .mxfix-claude.json files git_target.py's
+# `git add -A` would otherwise stage straight into a fix commit inside a worktree.
+.mxfix*
+

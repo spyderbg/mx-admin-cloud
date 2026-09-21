@@ -13,6 +13,10 @@ docs/test_environment/implementation_plan.md §1 for the full mode comparison.
     testenv.py reset     down + rm -rf .testenv + seed + up   (the workhorse)
     testenv.py logs | status | shell <service>
     testenv.py e2e [--base-url URL] [-- <playwright args>]
+    testenv.py run [--strategy report|heal|batch] [--max-issues N] [--dry-run] [--print-config]
+                    Workstream 3 — check -> sync -> select -> (heal/batch) fix, driven
+                    by testenv.toml. See test_environment/README.md's "Execution
+                    strategies" section.
 
 A global --mode docker|native flag (default: autodetect) applies to every subcommand —
 it must come BEFORE the subcommand name: `testenv.py --mode docker up`, not
@@ -458,19 +462,132 @@ def cmd_e2e(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# run (Workstream 3 — selectable execution strategies)
+# ---------------------------------------------------------------------------
+
+def cmd_run(args: argparse.Namespace) -> int:
+    # Imported lazily, here only: python-gitlab/httpx are Workstream 2/3 dependencies
+    # (scripts/requirements.txt, NOT backend/requirements.txt) — every other testenv.py
+    # subcommand must keep working in an environment that only ever installed
+    # Workstream 1's deps.
+    from gitlab.exceptions import GitlabAuthenticationError, GitlabGetError  # noqa: PLC0415
+
+    from mxfix import git_target, worktree  # noqa: PLC0415
+    from mxfix.claude_fixer import ClaudeFixer  # noqa: PLC0415
+    from mxfix.codex_fixer import CodexFixer  # noqa: PLC0415
+    from mxfix.config import ConfigError, load_config, render_config  # noqa: PLC0415
+    from mxfix.fixer import FixerError  # noqa: PLC0415
+    from mxfix.strategy import batch as batch_strategy  # noqa: PLC0415
+    from mxfix.strategy import heal as heal_strategy  # noqa: PLC0415
+    from mxfix.strategy import report as report_strategy  # noqa: PLC0415
+    from mxissues import client as mxclient  # noqa: PLC0415
+    from mxissues.config import ConfigError as GitLabConfigError  # noqa: PLC0415
+    from mxissues.config import load_config as load_gitlab_config  # noqa: PLC0415
+    from testenvlib.envfile import load_env_file  # noqa: PLC0415
+
+    try:
+        config = load_config(strategy_override=args.strategy)
+    except ConfigError as exc:
+        print(f"{RED}{exc}{RESET}", file=sys.stderr)
+        return 1
+
+    if args.print_config:
+        print(render_config(config))
+        return 0
+
+    clean, dirty_detail = worktree.repo_is_clean()
+    if not clean:
+        print(f"{RED}Refusing to start — the main working tree has uncommitted changes:{RESET}\n{dirty_detail}", file=sys.stderr)
+        print(f"{DIM}`report`'s checks would run against a mix of committed and uncommitted code, and heal/batch verify "
+              f"fixes inside fresh worktrees branched off [git] base_branch — uncommitted local changes here would never "
+              f"be reflected there either way. Commit or stash first.{RESET}", file=sys.stderr)
+        return 1
+
+    try:
+        gitlab_config = load_gitlab_config()
+        gl = mxclient.connect(gitlab_config)
+        project = mxclient.get_project(gl, gitlab_config)
+    except GitLabConfigError as exc:
+        print(f"{RED}{exc}{RESET}", file=sys.stderr)
+        return 1
+    except GitlabAuthenticationError as exc:
+        print(f"{RED}GitLab authentication failed against {gitlab_config.host}: {exc}{RESET}", file=sys.stderr)
+        return 1
+    except GitlabGetError as exc:
+        print(f"{RED}GitLab project {gitlab_config.project!r} not reachable: {exc}{RESET}", file=sys.stderr)
+        return 1
+
+    if config.strategy == "report":
+        outcome = report_strategy.run(config, project, repo_root=paths.REPO_ROOT, mode=args.mode, apply=not args.dry_run)
+        status = GREEN + "green" + RESET if outcome.check_run.green else RED + "red" + RESET
+        print(f"\n{BOLD}report: {outcome.sync_report.summary()}{RESET}")
+        print(
+            f"check suite: {status} (backend={'ok' if outcome.check_run.backend_ok else 'FAIL'}, "
+            f"tests={'ok' if outcome.check_run.tests_ok else 'FAIL'}, frontend={'ok' if outcome.check_run.frontend_ok else 'FAIL'}, "
+            f"e2e={'ok' if outcome.check_run.e2e_ok else 'FAIL'})",
+        )
+        return 0
+
+    # heal / batch write code, push branches, and open PRs — materially higher blast
+    # radius than report, hence the extra preflight beyond report's.
+    fixer = CodexFixer(timeout_seconds=config.fixer.timeout_seconds) if config.fixer.adapter == "codex" else ClaudeFixer(timeout_seconds=config.fixer.timeout_seconds)
+
+    try:
+        fixer.preflight()  # cheap and side-effect-free — run even in --dry-run so a dry
+                            # run is a genuine preview of whether the real thing would work
+    except FixerError as exc:
+        print(f"{RED}Refusing to start {config.strategy} — fixer '{fixer.name}' preflight failed: {exc}{RESET}", file=sys.stderr)
+        return 1
+
+    owner_repo = ""
+    github_token = ""
+    if config.git.push and config.git.open_pr:
+        try:
+            owner_repo = git_target.github_owner_repo(cwd=paths.REPO_ROOT)
+        except git_target.GitTargetError as exc:
+            print(f"{RED}Refusing to start {config.strategy} — [git] open_pr is true but {exc}{RESET}", file=sys.stderr)
+            return 1
+        github_token = load_env_file(paths.REPO_ROOT / ".env").get("GITHUB_PAT", "")
+        if not github_token and not args.dry_run:
+            print(
+                f"{RED}Refusing to start {config.strategy} for real — [git] open_pr is true but GITHUB_PAT is not "
+                f"set in .env. Add it, or set open_pr = false / push = false in testenv.toml, or pass --dry-run.{RESET}",
+                file=sys.stderr,
+            )
+            return 1
+
+    strategy_kwargs = dict(
+        config=config, project=project, fixer=fixer, gitlab_config=gitlab_config,
+        owner_repo=owner_repo, github_token=github_token, repo_root=paths.REPO_ROOT,
+        mode=args.mode, max_issues=args.max_issues, dry_run=args.dry_run,
+    )
+    outcome = heal_strategy.run(**strategy_kwargs) if config.strategy == "heal" else batch_strategy.run(**strategy_kwargs)
+
+    print(f"\n{BOLD}{config.strategy}: done.{RESET}")
+    for issue_outcome in getattr(outcome, "issues_attempted", []):
+        marker = {"fixed": GREEN, "needs-human": RED, "dry-run": DIM}[issue_outcome.status]
+        print(f"  {marker}#{issue_outcome.iid:<5} {issue_outcome.status:<12}{RESET} {issue_outcome.detail}")
+    for iid in getattr(outcome, "landed", []):
+        print(f"  {GREEN}#{iid:<5} landed{RESET}")
+    for iid, reason in getattr(outcome, "returned", []):
+        print(f"  {YELLOW}#{iid:<5} returned to open{RESET}  {reason}")
+    for iid in getattr(outcome, "merge_conflicts", []):
+        print(f"  {YELLOW}#{iid:<5} merge conflict{RESET}")
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # argparse wiring
 # ---------------------------------------------------------------------------
 
 def main() -> int:
-    # --mode is accepted both before AND after the subcommand (`testenv.py --mode
-    # docker up` and `testenv.py up --mode docker` both work) via this shared parent —
-    # argparse otherwise only recognises a top-level option ahead of the subcommand
-    # name, which is an easy, non-obvious trap for a flag documented as "global".
     # --mode must come BEFORE the subcommand (`testenv.py --mode docker up`, not
-    # `testenv.py up --mode docker`) — putting it on every subparser via a shared
-    # parent looks like the fix, but argparse applies each subparser's own default
-    # after the top-level parser runs, silently clobbering a value already parsed
-    # there back to None. Simpler and correct: one definition, top-level only.
+    # `testenv.py up --mode docker`) — it is defined ONLY on the top-level parser.
+    # Giving every subparser its own --mode via a shared parent looks like it would
+    # let the flag work in both positions, but argparse applies each subparser's own
+    # (unset) default after the top-level parser runs, silently clobbering a value
+    # already parsed there back to None. Simpler and correct: one definition, top-level
+    # only — the reverse order fails with a clean argument-parsing error instead.
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--mode", choices=["docker", "native"], default=None, help="default: autodetect (docker if the daemon answers); must precede the subcommand")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -517,6 +634,13 @@ def main() -> int:
     p_e2e.add_argument("--stub-url", default=None, help="default: the resolved mode's standard stub URL")
     p_e2e.add_argument("pw_args", nargs=argparse.REMAINDER, help="passed through to `playwright test` after --")
     p_e2e.set_defaults(func=cmd_e2e)
+
+    p_run = sub.add_parser("run", help="Workstream 3: check -> sync -> select -> (heal/batch) fix, driven by testenv.toml")
+    p_run.add_argument("--strategy", choices=["report", "heal", "batch"], default=None, help="default: testenv.toml [strategy] (report unless overridden there)")
+    p_run.add_argument("--max-issues", type=int, default=None, metavar="N", help="cap how many issues this invocation works on; default: unlimited for heal, [limits] concurrency for batch")
+    p_run.add_argument("--dry-run", action="store_true", help="checks still run and sync still previews, but no fixer, worktree, or GitLab/GitHub write happens")
+    p_run.add_argument("--print-config", action="store_true", help="print the fully-merged testenv.toml + testenv.local.toml + CLI config and exit; runs nothing")
+    p_run.set_defaults(func=cmd_run)
 
     args = parser.parse_args()
     if getattr(args, "pw_args", None) and args.pw_args and args.pw_args[0] == "--":

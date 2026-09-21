@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FixResult",
+  "description": "Final structured response for a Codex fix attempt (docs/test_environment/initial_spec.md §3's example, passed via `codex exec --output-schema`). Mapped onto scripts/mxfix/fixer.py's FixResult dataclass by CodexFixer.run().",
+  "type": "object",
+  "required": ["status", "files_changed", "summary"],
+  "additionalProperties": false,
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["fixed", "failed", "no_change"],
+      "description": "'fixed': the issue is resolved and all acceptance criteria are met. 'failed': attempted but could not resolve it. 'no_change': determined no code change was needed (e.g. the issue no longer reproduces)."
+    },
+    "files_changed": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Repo-relative paths of every file modified, added, or deleted."
+    },
+    "tests_added": {"type": "integer", "minimum": 0},
+    "tests_passed": {"type": "integer", "minimum": 0},
+    "tests_failed": {"type": "integer", "minimum": 0},
+    "summary": {
+      "type": "string",
+      "description": "A few sentences: what was wrong, what changed, why it's believed correct."
+    }
+  }
+}

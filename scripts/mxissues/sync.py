@@ -17,7 +17,7 @@ from . import cache as cache_module
 from . import client, fingerprint, state
 from .models import Finding
 
-Action = str  # "create" | "update" | "reopen" | "skip-not-owned"
+Action = str  # "create" | "update" | "reopen" | "skip-not-owned" | "skip-limit"
 
 
 @dataclass
@@ -37,10 +37,14 @@ class SyncReport:
         return sum(1 for item in self.items if item.action == action)
 
     def summary(self) -> str:
-        return (
+        summary = (
             f"{self.count('create')} created, {self.count('update')} updated, "
             f"{self.count('reopen')} reopened, {self.count('skip-not-owned')} skipped (not owned)"
         )
+        capped = self.count("skip-limit")
+        if capped:
+            summary += f", {capped} skipped (max_new_issues limit reached)"
+        return summary
 
 
 def _find_existing(project: Project, fp: str, local_cache: dict[str, int]) -> ProjectIssue | None:
@@ -96,16 +100,34 @@ def _apply_recurrence(project: Project, issue: ProjectIssue, finding: Finding, f
     return refreshed, was_done
 
 
-def run_sync(project: Project, findings: list[Finding], *, apply: bool) -> SyncReport:
+def run_sync(project: Project, findings: list[Finding], *, apply: bool, max_new_issues: int | None = None) -> SyncReport:
+    """Sync *findings* to GitLab issues.
+
+    `max_new_issues` caps how many NEW issues this call will create, regardless of how
+    many findings have no existing match — a safety rail against one broken build
+    flooding a shared tracker (testenv.toml [limits] max_new_issues; see its comment
+    there for the full reasoning). It never caps updates/reopens on issues that already
+    exist: only issue *creation* is limited. None means unlimited, honoring the counted
+    limit in both --apply and dry-run mode so the printed plan matches what --apply
+    would actually do.
+    """
     report = SyncReport()
     local_cache = cache_module.load()
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    created_count = 0
 
     for finding in findings:
         fp = fingerprint.compute(finding.source, finding.fingerprint_key)
         existing = _find_existing(project, fp, local_cache)
 
         if existing is None:
+            if max_new_issues is not None and created_count >= max_new_issues:
+                report.items.append(SyncItem(
+                    finding, fp, "skip-limit", None,
+                    f"(max_new_issues={max_new_issues} reached — not filed this run; still deduplicated next time)",
+                ))
+                continue
+            created_count += 1
             if apply:
                 issue = _apply_create(project, finding, fp, now)
                 local_cache[fp] = issue.iid

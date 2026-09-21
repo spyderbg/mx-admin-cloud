@@ -69,3 +69,13 @@ def status_label_of(issue: ProjectIssue) -> str | None:
     """
     found = [label for label in (issue.labels or []) if label.startswith("status::")]
     return found[0] if len(found) == 1 else None
+
+
+def source_of(issue: ProjectIssue) -> str | None:
+    """Return the bare source name (e.g. "pytest") from *issue*'s source::* label, or
+    None if it has none/multiple. Used by strategy/common.py's review_diff() — a
+    source::pytest or source::e2e issue "fixed" by a test-only diff is exactly the
+    check-weakening shape implementation_plan.md risk #15 warns about.
+    """
+    found = [label.removeprefix("source::") for label in (issue.labels or []) if label.startswith("source::")]
+    return found[0] if len(found) == 1 else None
