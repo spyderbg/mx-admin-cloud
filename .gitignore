@@ -42,3 +42,7 @@ test_environment/e2e/node_modules/
 test_environment/e2e/test-results/
 test_environment/e2e/playwright-report/
 
+# GitLab issue tracking (scripts/issues.py) — local fast-path cache only, the API is
+# always the source of truth; safe to delete any time.
+.mxissues/
+

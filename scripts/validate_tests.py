@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import re
@@ -136,14 +137,19 @@ def _parse_pytest_summary(output: str) -> TestResult:
     return result
 
 
-def _run_backend_tests(backend_dir: Path, venv_python: Path) -> TestResult:
+def _run_backend_tests(backend_dir: Path, venv_python: Path, *, junit_xml: Path | None = None) -> TestResult:
     print(f"\n{BOLD}── Backend Tests ──{RESET}\n")
 
     env = os.environ.copy()
     env["PYTHONPATH"] = str(backend_dir / "src")
 
+    command = [str(venv_python), "-m", "pytest"]
+    if junit_xml is not None:
+        junit_xml.parent.mkdir(parents=True, exist_ok=True)
+        command.append(f"--junit-xml={junit_xml}")
+
     stdout, stderr, rc = _run_capture(
-        [str(venv_python), "-m", "pytest"],
+        command,
         cwd=backend_dir,
         env=env,
     )
@@ -262,6 +268,13 @@ def _print_summary_table(backend_result: TestResult | None, frontend_result: Tes
 # ── main ───────────────────────────────────────────────────────────────────────
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--junit-xml", type=Path, default=None,
+        help="also write a JUnit XML report here (for scripts/issues.py sync --pytest) — the human table is unaffected",
+    )
+    args = parser.parse_args()
+
     _, backend_dir, frontend_dir, venv_dir = _resolve_paths()
     exit_code = 0
 
@@ -271,7 +284,7 @@ def main() -> int:
         print("Installing backend dependencies...")
         _run([str(venv_python), "-m", "pip", "install", "-r", "requirements.txt", "-q"], cwd=backend_dir)
 
-        backend_result = _run_backend_tests(backend_dir, venv_python)
+        backend_result = _run_backend_tests(backend_dir, venv_python, junit_xml=args.junit_xml)
         if _has_failures(backend_result):
             exit_code = 1
 

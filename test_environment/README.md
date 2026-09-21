@@ -10,6 +10,9 @@ This is Workstream 1 of [docs/test_environment/implementation_plan.md](../docs/t
 why two run modes, the Docker Compose merge semantics, and so on). This file is the
 day-to-day operational reference: commands, configuration, and layout.
 
+Looking for GitLab issue tracking (`scripts/issues.py`, Workstream 2) instead? That's a
+separate piece — see [docs/test_environment/gitlab_issues.md](../docs/test_environment/gitlab_issues.md).
+
 ```
 test_environment/
   e2e/                  Playwright suite — its own npm package, deliberately outside frontend/

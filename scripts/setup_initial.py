@@ -18,6 +18,7 @@ REPO_ROOT = SCRIPT_DIR.parent
 VENV_DIR = REPO_ROOT / '.venv'
 BACKEND_REQS = REPO_ROOT / 'backend' / 'requirements.txt'
 CLI_REQS = REPO_ROOT / 'cli' / 'requirements.txt'
+SCRIPTS_REQS = REPO_ROOT / 'scripts' / 'requirements.txt'
 FRONTEND_DIR = REPO_ROOT / 'frontend'
 
 
@@ -51,6 +52,15 @@ def install_cli_requirements(pip: Path) -> None:
     run([str(pip), 'install', '-r', str(CLI_REQS)], cwd=REPO_ROOT)
 
 
+def install_scripts_requirements(pip: Path) -> None:
+    # python-gitlab (scripts/issues.py) — deliberately not in backend/requirements.txt,
+    # which docker/backend.Dockerfile ships into the production image.
+    if not SCRIPTS_REQS.exists():
+        print(f"Warning: {SCRIPTS_REQS} not found, skipping.")
+        return
+    run([str(pip), 'install', '-r', str(SCRIPTS_REQS)], cwd=REPO_ROOT)
+
+
 def install_frontend_modules() -> None:
     if (FRONTEND_DIR / 'package.json').exists():
         run(['npm', 'install'], cwd=FRONTEND_DIR)
@@ -64,6 +74,7 @@ def main() -> None:
     upgrade_pip(pip)
     install_backend_requirements(pip)
     install_cli_requirements(pip)
+    install_scripts_requirements(pip)
     install_frontend_modules()
     print('\nSetup complete.')
 

@@ -1,0 +1,4 @@
+# Dependencies for scripts/issues.py (Workstream 2) only — deliberately NOT
+# backend/requirements.txt, which docker/backend.Dockerfile COPYs into the production
+# image. Installed by scripts/setup_initial.py alongside backend/cli's own requirements.
+python-gitlab>=5.0.0
