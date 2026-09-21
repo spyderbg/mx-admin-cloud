@@ -61,11 +61,29 @@ export const bumpCategoryIconVersion = (categoryId: string): void => {
 }
 
 /**
- * Per-item cache-busting counter for the thumbnail shown in category item grids.
- * Selecting a different main image can retain the same thumbnail filename, so only
- * the changed item's card needs a fresh browser request.
+ * Per-item cache key for the main image shown in both item details and item grids.
+ * Selecting a different variant rewrites the main image under the same filename.
  */
-export const itemThumbnailVersions = ref(new Map<string, number>())
+const ITEM_THUMBNAIL_VERSIONS_KEY = 'mx-admin:item-thumbnail-versions'
+
+const readItemThumbnailVersions = (): Map<string, number> => {
+  try {
+    const stored = localStorage.getItem(ITEM_THUMBNAIL_VERSIONS_KEY)
+    if (!stored) return new Map()
+    const entries: unknown = JSON.parse(stored)
+    if (!Array.isArray(entries)) return new Map()
+    return new Map(entries.filter((entry): entry is [string, number] =>
+      Array.isArray(entry)
+      && typeof entry[0] === 'string'
+      && typeof entry[1] === 'number'
+      && Number.isFinite(entry[1]),
+    ))
+  } catch {
+    return new Map()
+  }
+}
+
+export const itemThumbnailVersions = ref(readItemThumbnailVersions())
 
 const itemThumbnailVersionKey = (categoryId: string, itemId: string): string =>
   `${categoryId}:${itemId}`
@@ -73,8 +91,14 @@ const itemThumbnailVersionKey = (categoryId: string, itemId: string): string =>
 export const bumpItemThumbnailVersion = (categoryId: string, itemId: string): void => {
   const key = itemThumbnailVersionKey(categoryId, itemId)
   const next = new Map(itemThumbnailVersions.value)
-  next.set(key, (next.get(key) ?? 0) + 1)
+  // A fresh timestamp also avoids reusing a cached ?v=1 URL after a page reload.
+  next.set(key, Math.max(Date.now(), (next.get(key) ?? 0) + 1))
   itemThumbnailVersions.value = next
+  try {
+    localStorage.setItem(ITEM_THUMBNAIL_VERSIONS_KEY, JSON.stringify([...next]))
+  } catch {
+    // The in-memory version still refreshes both views when storage is unavailable.
+  }
 }
 
 /** Whether the basic category list is currently loading. */
@@ -106,6 +130,17 @@ const normalizeImages = (raw: unknown, fallback: string[]): string[] => {
     if (images.length > 0) return images
   }
   return fallback
+}
+
+/** Preserve an explicitly returned null thumbnail; only use a fallback when the
+ * response predates the thumbnail field entirely. */
+const itemThumbnailUri = (
+  thumbnailUri: string | null | undefined,
+  images: string[],
+  fallback: string,
+): string => {
+  if (thumbnailUri !== undefined) return thumbnailUri ?? ''
+  return images[0] ?? fallback
 }
 
 const normalizeVoices = (
@@ -366,6 +401,11 @@ export const ensureItemDetail = async (
       const itemIdx = cat.items.findIndex((i) => i.id === itemId)
       if (itemIdx !== -1) {
         const items = [...cat.items]
+        const thumbnailUri = itemThumbnailUri(
+          imagesResponse.thumbnail_uri,
+          images,
+          items[itemIdx].thumbnailUri,
+        )
         items[itemIdx] = {
           ...items[itemIdx],
           localizedName: Object.keys(itemNamesDict).length > 0
@@ -373,9 +413,11 @@ export const ensureItemDetail = async (
             : items[itemIdx].localizedName,
           images,
           voices,
-          thumbnailUri: imagesResponse.thumbnail_uri ?? images[0] ?? items[itemIdx].thumbnailUri,
+          thumbnailUri,
           mainImageId: imagesResponse.main_image_id ?? undefined,
-          imagesCount: images.length + (imagesResponse.thumbnail_uri ? 1 : 0),
+          // Item tags and the image gallery both represent variants. The dedicated
+          // main-image copy is exposed only by `thumbnailUri` and is not counted.
+          imagesCount: images.length,
         }
         cat.items = items
         arr[catIdx] = cat
@@ -424,15 +466,18 @@ export const updateCachedItemImages = (
   const nameDict = response.name as unknown as Record<string, string>
   const items = [...category.items]
   const cachedItem = items[itemIndex]
+  const thumbnailUri = itemThumbnailUri(response.thumbnail_uri, images, cachedItem.thumbnailUri)
   items[itemIndex] = {
     ...cachedItem,
     localizedName: Object.keys(nameDict).length > 0
       ? new LocalizedString(nameDict)
       : cachedItem.localizedName,
     images,
-    thumbnailUri: response.thumbnail_uri ?? images[0] ?? cachedItem.thumbnailUri,
+    thumbnailUri,
     mainImageId: response.main_image_id ?? undefined,
-    imagesCount: images.length + (response.thumbnail_uri ? 1 : 0),
+    // `itemsImagesSetMain` returns variants plus a separate main thumbnail; retain
+    // the same count shown by the category summary after navigating back.
+    imagesCount: images.length,
   }
 
   const categories = [...sharedCategories.value]

@@ -906,9 +906,18 @@ class FileSystemContentProvider(ContentProvider):
                         and f.suffix.lower() in _IMAGE_EXTENSIONS
                         and self._is_safe_category_name(f.stem)
                     )
-                    images_count = len(image_files)
-                    if image_files:
-                        thumbnail_uri = f"/content/{category_name}/{folder_name}/{image_files[0].name}"
+                    # The unindexed file (for example, ``calculator.png``) is the
+                    # dedicated main-image copy.  It is not an image variant and is
+                    # deliberately excluded from ``item_images().images`` as well,
+                    # so the category summary must exclude it from the displayed
+                    # count.  Older item folders have no dedicated main file; their
+                    # first variant remains both the thumbnail and part of the count.
+                    main_image = next((f for f in image_files if f.stem == folder_name), None)
+                    variant_files = [f for f in image_files if f != main_image]
+                    images_count = len(variant_files)
+                    thumbnail = main_image or (variant_files[0] if variant_files else None)
+                    if thumbnail:
+                        thumbnail_uri = f"/content/{category_name}/{folder_name}/{thumbnail.name}"
             items.append(ItemDetail(
                 id=iid,
                 name=LocalizedString({lang: names[i] for lang, names in items_by_lang.items() if i < len(names)}),

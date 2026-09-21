@@ -861,6 +861,37 @@ def test_item_images_excludes_main_image_from_the_list(tmp_path: Path) -> None:
     assert result.main_image_id == "apple_01"
 
 
+def test_category_summary_excludes_dedicated_main_image_from_count(tmp_path: Path) -> None:
+    """The item tag reports variants, not the unindexed main-image copy."""
+    content_root, _ = _prepare_item_with_images(tmp_path, {
+        "apple": b"first-variant",
+        "apple_01": b"first-variant",
+        "apple_02": b"second-variant",
+    })
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        item = provider.category_details("C_Foods").items[0]
+
+    assert item.images_count == 2
+    assert item.thumbnail_uri == "/content/foods/apple/apple.png"
+
+
+def test_category_summary_counts_all_legacy_variants(tmp_path: Path) -> None:
+    """Without a dedicated main file, the first variant is still a real variant."""
+    content_root, _ = _prepare_item_with_images(tmp_path, {
+        "apple_01": b"first-variant",
+        "apple_02": b"second-variant",
+    })
+    provider = _make_fs_provider()
+    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+        mock_settings.content_path = content_root
+        item = provider.category_details("C_Foods").items[0]
+
+    assert item.images_count == 2
+    assert item.thumbnail_uri == "/content/foods/apple/apple_01.png"
+
+
 def test_item_images_main_image_matching_no_variant_selects_none(tmp_path: Path) -> None:
     """A main image whose bytes match no variant leaves the selection unresolved."""
     content_root, _ = _prepare_item_with_images(tmp_path, {

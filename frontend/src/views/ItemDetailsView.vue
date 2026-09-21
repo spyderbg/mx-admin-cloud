@@ -427,6 +427,7 @@ import { useRoute, useRouter } from 'vue-router'
 import type { AxiosError } from 'axios'
 import {
   bumpItemThumbnailVersion,
+  itemThumbnailVersions,
   ensureCategoriesLoaded,
   ensureCategoryDetail,
   ensureItemDetail,
@@ -628,11 +629,15 @@ const imageCards = computed(() =>
 // `item.images`, only exposed via `item.thumbnailUri` — and holds a copy of the variant
 // named by `item.mainImageId`.
 const mainImageUri = computed(() => item.value?.thumbnailUri?.trim() || '')
+const mainImageVersion = computed(() => {
+  if (!category.value || !item.value) return 0
+  return itemThumbnailVersions.value.get(`${category.value.id}:${item.value.id}`) ?? 0
+})
 const currentImageCard = computed(() => {
   const rawUri = mainImageUri.value
   if (!rawUri) return null
   return {
-    src: cacheBustedUri(rawUri, imageVersions.value[imageIdFromUri(rawUri)] ?? 0),
+    src: cacheBustedUri(rawUri, mainImageVersion.value),
     title: `${breadcrumbItem.value} main image`,
     generator: mainItemImageLabel(contentLanguage.value),
     prompt: `${sourceFileLabel(contentLanguage.value)}: ${fileNameFromUri(rawUri)}`,
@@ -868,23 +873,17 @@ const onSelectImage = async (index: number): Promise<void> => {
   const cat = category.value
   const currentItem = item.value
   const rawUri = rawItemImages.value[index]
-  const rawMainUri = mainImageUri.value
   if (!cat || !currentItem || !rawUri || isSettingMainImage.value) return
   const imageId = imageIdFromUri(rawUri)
   if (imageId === mainImageId.value) return // Already the main image.
 
   isSettingMainImage.value = true
   try {
-    // Only the main image file is rewritten (with a copy of the chosen variant), so it
-    // is the one whose cached copy has to be busted; the variants are left untouched.
-    const mainImageFileId = imageIdFromUri(rawMainUri)
+    // Only the main image file is rewritten; the variants are left untouched.
+    // The shared version refreshes this preview and the item grid across navigation.
     const updatedImages = await itemsImagesSetMain(cat.id, currentItem.id, imageId)
     updateCachedItemImages(cat.id, currentItem.id, updatedImages)
     bumpItemThumbnailVersion(cat.id, currentItem.id)
-    imageVersions.value = {
-      ...imageVersions.value,
-      [mainImageFileId]: (imageVersions.value[mainImageFileId] ?? 0) + 1,
-    }
     showToast('Main image updated.', 'success')
   } catch (err) {
     showToast(extractErrorMessage(err), 'error')

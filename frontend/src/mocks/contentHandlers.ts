@@ -102,6 +102,9 @@ const itemImageId = (item: ItemRecord, index: number): string =>
 const itemImageIndex = (item: ItemRecord, imageId: string): number =>
   item.images.findIndex((_, index) => itemImageId(item, index) === imageId)
 
+const itemHasDedicatedMain = (item: ItemRecord): boolean =>
+  Boolean(item.thumbnailUri) && !item.images.includes(item.thumbnailUri)
+
 // Which variant the mock's main image was copied from. The backend recovers this by
 // comparing file contents; the mock just remembers it, keyed by item id.
 const mainImageSource = new Map<string, string>()
@@ -115,9 +118,8 @@ const itemMainImageId = (item: ItemRecord): string | null => {
   return itemImageId(item, 0)
 }
 
-/** Total image file count (main + variants), matching the backend's images_count. */
-const itemImagesCount = (item: ItemRecord): number =>
-  item.images.length + (item.thumbnailUri ? 1 : 0)
+/** Image-variant count, matching the backend's category-summary images_count. */
+const itemImagesCount = (item: ItemRecord): number => item.images.length
 
 const findCategoryAndItem = (categoryId: string, itemId: string): [CategoryRecord, ItemRecord] | null => {
   const category = findCategoryById(categoryId)
@@ -516,9 +518,11 @@ export const contentHandlers = [
     const imageId = String(params.image_id)
     const index = itemImageIndex(item, imageId)
     if (index < 0) return new HttpResponse(null, { status: 404 })
+    const hadDedicatedMain = itemHasDedicatedMain(item)
     const removedUri = item.images[index]
     item.images.splice(index, 1)
     if (mainImageSource.get(item.id) === imageId) mainImageSource.delete(item.id)
+    if (!hadDedicatedMain) item.thumbnailUri = item.images[0] ?? ''
     return HttpResponse.json({ id: imageId, file_uri: removedUri, action: 'delete' })
   }),
 
@@ -671,9 +675,13 @@ export const contentHandlers = [
     if (imageIndex < 0) return new HttpResponse(null, { status: 404 })
 
     // The chosen variant is COPIED over the main image: it stays in the variants list
-    // and the item keeps every image it had (matches the backend).
+    // and the item keeps every image it had (matches the backend). Legacy items may
+    // have their thumbnail pointing at a variant, so selecting one must create the
+    // dedicated unindexed main URI before updating the selection.
     mainImageSource.set(item.id, String(params.image_id))
-    item.thumbnailUri = item.thumbnailUri || `/content/${category.id}/${item.id}/${item.id}.png`
+    if (!itemHasDedicatedMain(item)) {
+      item.thumbnailUri = `/content/${category.id}/${item.id}/${item.id}.png`
+    }
 
     return HttpResponse.json({
       item_id: item.id,
