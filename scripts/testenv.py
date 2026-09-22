@@ -13,10 +13,11 @@ docs/test_environment/implementation_plan.md §1 for the full mode comparison.
     testenv.py reset     down + rm -rf .testenv + seed + up   (the workhorse)
     testenv.py logs | status | shell <service>
     testenv.py e2e [--base-url URL] [-- <playwright args>]
-    testenv.py run [--strategy report|heal|batch] [--max-issues N] [--dry-run] [--print-config]
-                    Workstream 3 — check -> sync -> select -> (heal/batch) fix, driven
-                    by testenv.toml. See test_environment/README.md's "Execution
-                    strategies" section.
+    testenv.py run [--strategy report|heal|batch|work] [--max-issues N] [--dry-run] [--print-config]
+                    Workstream 3 — report checks+files issues; heal/batch also check
+                    first then fix; work skips straight to fixing GitLab's existing
+                    backlog. Driven by testenv.toml. See test_environment/README.md's
+                    "Execution strategies" section.
 
 A global --mode docker|native flag (default: autodetect) applies to every subcommand —
 it must come BEFORE the subcommand name: `testenv.py --mode docker up`, not
@@ -480,6 +481,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     from mxfix.strategy import batch as batch_strategy  # noqa: PLC0415
     from mxfix.strategy import heal as heal_strategy  # noqa: PLC0415
     from mxfix.strategy import report as report_strategy  # noqa: PLC0415
+    from mxfix.strategy import work as work_strategy  # noqa: PLC0415
     from mxissues import client as mxclient  # noqa: PLC0415
     from mxissues.config import ConfigError as GitLabConfigError  # noqa: PLC0415
     from mxissues.config import load_config as load_gitlab_config  # noqa: PLC0415
@@ -498,9 +500,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     clean, dirty_detail = worktree.repo_is_clean()
     if not clean:
         print(f"{RED}Refusing to start — the main working tree has uncommitted changes:{RESET}\n{dirty_detail}", file=sys.stderr)
-        print(f"{DIM}`report`'s checks would run against a mix of committed and uncommitted code, and heal/batch verify "
-              f"fixes inside fresh worktrees branched off [git] base_branch — uncommitted local changes here would never "
-              f"be reflected there either way. Commit or stash first.{RESET}", file=sys.stderr)
+        print(f"{DIM}`report`'s checks would run against a mix of committed and uncommitted code, and heal/batch/work "
+              f"verify fixes inside fresh worktrees branched off [git] base_branch — uncommitted local changes here "
+              f"would never be reflected there either way. Commit or stash first.{RESET}", file=sys.stderr)
         return 1
 
     try:
@@ -528,8 +530,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         )
         return 0
 
-    # heal / batch write code, push branches, and open PRs — materially higher blast
-    # radius than report, hence the extra preflight beyond report's.
+    # heal / batch / work write code, push branches, and open PRs — materially higher
+    # blast radius than report, hence the extra preflight beyond report's.
     fixer = CodexFixer(timeout_seconds=config.fixer.timeout_seconds) if config.fixer.adapter == "codex" else ClaudeFixer(timeout_seconds=config.fixer.timeout_seconds)
 
     try:
@@ -561,17 +563,24 @@ def cmd_run(args: argparse.Namespace) -> int:
         owner_repo=owner_repo, github_token=github_token, repo_root=paths.REPO_ROOT,
         mode=args.mode, max_issues=args.max_issues, dry_run=args.dry_run,
     )
-    outcome = heal_strategy.run(**strategy_kwargs) if config.strategy == "heal" else batch_strategy.run(**strategy_kwargs)
+    strategy_runners = {"heal": heal_strategy, "batch": batch_strategy, "work": work_strategy}
+    outcome = strategy_runners[config.strategy].run(**strategy_kwargs)
 
-    initial_status = GREEN + "green" + RESET if outcome.initial_check.green else RED + "red" + RESET
-    print(
-        f"\n{BOLD}{config.strategy}: initial check suite: {initial_status}{RESET} "
-        f"(backend={'ok' if outcome.initial_check.backend_ok else 'FAIL'}, "
-        f"tests={'ok' if outcome.initial_check.tests_ok else 'FAIL'}, "
-        f"frontend={'ok' if outcome.initial_check.frontend_ok else 'FAIL'}, "
-        f"e2e={'ok' if outcome.initial_check.e2e_ok else 'FAIL'})",
-    )
-    print(f"{BOLD}{config.strategy}: sync: {outcome.sync_report.summary()}{RESET}")
+    # work has no initial_check/sync_report — it deliberately skips that step (see
+    # strategy/work.py); heal/batch always have both.
+    initial_check = getattr(outcome, "initial_check", None)
+    if initial_check is not None:
+        initial_status = GREEN + "green" + RESET if initial_check.green else RED + "red" + RESET
+        print(
+            f"\n{BOLD}{config.strategy}: initial check suite: {initial_status}{RESET} "
+            f"(backend={'ok' if initial_check.backend_ok else 'FAIL'}, "
+            f"tests={'ok' if initial_check.tests_ok else 'FAIL'}, "
+            f"frontend={'ok' if initial_check.frontend_ok else 'FAIL'}, "
+            f"e2e={'ok' if initial_check.e2e_ok else 'FAIL'})",
+        )
+    sync_report = getattr(outcome, "sync_report", None)
+    if sync_report is not None:
+        print(f"{BOLD}{config.strategy}: sync: {sync_report.summary()}{RESET}")
     print(f"\n{BOLD}{config.strategy}: done.{RESET}")
     for issue_outcome in getattr(outcome, "issues_attempted", []):
         marker = {"fixed": GREEN, "needs-human": RED, "dry-run": DIM}[issue_outcome.status]
@@ -644,9 +653,9 @@ def main() -> int:
     p_e2e.add_argument("pw_args", nargs=argparse.REMAINDER, help="passed through to `playwright test` after --")
     p_e2e.set_defaults(func=cmd_e2e)
 
-    p_run = sub.add_parser("run", help="Workstream 3: check -> sync -> select -> (heal/batch) fix, driven by testenv.toml")
-    p_run.add_argument("--strategy", choices=["report", "heal", "batch"], default=None, help="default: testenv.toml [strategy] (report unless overridden there)")
-    p_run.add_argument("--max-issues", type=int, default=None, metavar="N", help="cap how many issues this invocation works on; default: unlimited for heal, [limits] concurrency for batch")
+    p_run = sub.add_parser("run", help="Workstream 3: report|heal|batch|work, driven by testenv.toml — see test_environment/README.md")
+    p_run.add_argument("--strategy", choices=["report", "heal", "batch", "work"], default=None, help="default: testenv.toml [strategy] (report unless overridden there)")
+    p_run.add_argument("--max-issues", type=int, default=None, metavar="N", help="cap how many issues this invocation works on; default: unlimited for heal/work, [limits] concurrency for batch")
     p_run.add_argument("--dry-run", action="store_true", help="checks still run and sync still previews, but no fixer, worktree, or GitLab/GitHub write happens")
     p_run.add_argument("--print-config", action="store_true", help="print the fully-merged testenv.toml + testenv.local.toml + CLI config and exit; runs nothing")
     p_run.set_defaults(func=cmd_run)

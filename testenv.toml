@@ -8,21 +8,31 @@
 # and the Fixer/worktree/git-landing mechanics. This file only documents the *settings*.
 
 # -----------------------------------------------------------------------------------
-# strategy — which of the three execution modes `run` uses when none is given via
-# --strategy on the command line. One runner, three blast radii:
+# strategy — which of the four execution modes `run` uses when none is given via
+# --strategy on the command line. One runner, four blast radii:
 #
 #   "report"  Check the repo (pylint, pytest, the frontend build, the Playwright suite),
 #             file anything newly broken as GitLab issues via `issues.py sync --apply`,
 #             and stop. Modifies NO code, anywhere. This is the only strategy safe to
-#             run unattended / on a schedule, and is why it is the default.
+#             run unattended / on a schedule.
 #
-#   "heal"    Take the single highest-severity status::open issue, hand it to an AI
-#             fixer (see [fixer] below) in its own throwaway git worktree, run the full
-#             check suite against the fix, and on success commit + push + open a PR —
-#             all for ONE issue, then repeat for the next. Slow (fully sequential,
-#             resets the sandbox fixture between every attempt) but each fix is
-#             verified against a clean, byte-identical starting point, and a failed fix
-#             cannot contaminate the next issue's attempt.
+#   "heal"    Check the repo first (like "report"), THEN take the single
+#             highest-severity status::open issue, hand it to an AI fixer (see [fixer]
+#             below) in its own throwaway git worktree, run the full check suite against
+#             the fix, and on success commit + push + open a PR — all for ONE issue,
+#             then repeat for the next. Slow (fully sequential, resets the sandbox
+#             fixture between every attempt) but each fix is verified against a clean,
+#             byte-identical starting point, and a failed fix cannot contaminate the
+#             next issue's attempt.
+#
+#   "work"    Exactly "heal"'s per-issue loop, minus the check-the-repo-first step —
+#             goes straight to whatever is already status::open in GitLab and starts
+#             fixing it. For working down a backlog "report"/"heal"/"batch" already
+#             filed: repeating the full check suite (several minutes — pytest/pylint/
+#             frontend build/e2e) before every single invocation buys nothing once you
+#             already know what's broken. Files nothing new itself — if GitLab has no
+#             status::open issue yet, run "report"/"heal"/"batch" (or `issues.py open`
+#             by hand) at least once first, or "work" just reports nothing to do.
 #
 #   "batch"   Like "heal", but up to [limits] concurrency issues at once, in parallel
 #             worktrees, merged onto one integration branch and verified with a SINGLE
@@ -30,13 +40,14 @@
 #             which candidate broke it on its own — see the bisect fallback in
 #             test_environment/README.md's "Execution strategies" section, which costs
 #             attribution log2(N) extra verify runs on failure. Highest blast radius of
-#             the three: several branches pushed and several PRs opened in one
+#             the four: several branches pushed and several PRs opened in one
 #             invocation if everything goes well.
 #
-# "heal" and "batch" write code, push branches to GitHub, and open real PRs — run each
-# with `--dry-run` first (always, no exceptions) before ever letting either run for
-# real. `run` also refuses to start either one at all unless the fixer's preflight()
-# passes and the GitLab token is valid, and refuses to start on a dirty working tree.
+# "heal", "work" and "batch" write code, push branches to GitHub, and open real PRs —
+# run each with `--dry-run` first (always, no exceptions) before ever letting any of
+# them run for real. `run` also refuses to start any of the three at all unless the
+# fixer's preflight() passes and the GitLab token is valid, and refuses to start on a
+# dirty working tree.
 strategy = "heal"
 
 [limits]

@@ -79,7 +79,7 @@ the rest of `scripts/*.sh`.)
 | `logs [backend\|frontend\|stub] [--follow]` | Prints (or tails) that service's log. No argument prints all three. |
 | `status` | Shows what's currently running (pid + port in native mode, `docker compose ps` in Docker mode). |
 | `shell <backend\|frontend\|stub>` | Docker mode: opens a shell in that container. Native mode: there's no container — it tells you which directory the process runs from and how to tail its log instead. |
-| `run [--strategy report\|heal\|batch] [--max-issues N] [--dry-run] [--print-config]` | Workstream 3: check → sync → select → (heal/batch) fix, driven by repo-root `testenv.toml`. `report` (the default) only files GitLab issues; `heal`/`batch` write code in `.mxworktrees/`, push branches, and open PRs. Full reference: [Execution strategies](#execution-strategies) below — read it, and run `--dry-run` first, before ever using `heal`/`batch` for real. |
+| `run [--strategy report\|heal\|batch\|work] [--max-issues N] [--dry-run] [--print-config]` | Workstream 3: check → sync → select → (heal/work/batch) fix, driven by repo-root `testenv.toml`. `report` only files GitLab issues; `heal`/`work`/`batch` write code in `.mxworktrees/`, push branches, and open PRs — `work` skips the check/file step and goes straight to whatever's already filed. Full reference: [Execution strategies](#execution-strategies) below — read it, and run `--dry-run` first, before ever using `heal`/`work`/`batch` for real. |
 
 Every command accepts `--mode docker|native`, **placed before the command**
 (`testenv.py --mode docker up`, not `testenv.py up --mode docker`) — a subparser-defaults
@@ -254,9 +254,10 @@ behaves identically either way.
 | `mx-auto` | ownership marker — see [Ownership rule](#ownership-rule) |
 
 `status::needs-human` is the origin document's `MAX_FIX_ATTEMPTS` escape valve — without
-it a stuck task has nowhere to go but silently back to `open`. `heal` (see
-[Execution strategies](#execution-strategies)) sets it automatically once a fixer gives
-up after its retry budget; `issues.py needs-human <iid>` sets it by hand.
+it a stuck task has nowhere to go but silently back to `open`. `heal`/`work` (see
+[Execution strategies](#execution-strategies) — both share the same retry loop) set it
+automatically once a fixer gives up after its retry budget; `issues.py needs-human <iid>`
+sets it by hand.
 
 ### State machine
 
@@ -425,40 +426,57 @@ takes whatever `scripts/issues.py` has filed in GitLab
 a throwaway git worktree. See
 [implementation_plan.md](../docs/test_environment/implementation_plan.md) §14–18 for the
 full design and findings kept there for implementation history; this section is the
-operational reference — the three strategies, the `Fixer` interface, `testenv.toml`,
-landing a fix, and the safety rails around all of it.
+operational reference — the four strategies, the `Fixer` interface, `testenv.toml`,
+landing a fix, and the safety rails around all of it. `work` is a later addition beyond
+what the plan itself specifies (§16 draws three) — see its own entry below for why it
+exists and how it differs from `heal`.
 
 **Status: built, reviewed, not yet run for real.** Every piece below has been exercised
 up to the point that would invoke a real AI fixer, push a real branch, or open a real
 PR — `--print-config`, the dirty-tree gate, config loading/validation, and all the
-git/worktree/GitLab machinery `heal`/`batch` share with the already-validated
-Workstream 2 pieces. Nothing has actually run `heal` or `batch` against the live GitLab
-project yet. Do that deliberately, starting with `--dry-run` — see
+git/worktree/GitLab machinery `heal`/`work`/`batch` share with the already-validated
+Workstream 2 pieces. Nothing has actually run `heal`, `work`, or `batch` against the live
+GitLab project yet. Do that deliberately, starting with `--dry-run` — see
 [Trying it for the first time](#trying-it-for-the-first-time) at the bottom.
 
-### The three strategies
+### The four strategies
 
-All three share one pipeline — **check → sync → select** — and diverge only after
-selection:
+All four share the machinery in `strategy/common.py`, but not all of the same pipeline:
+`report`/`heal`/`batch` open with **check → sync → select**; `work` skips straight to
+**select** — see its entry below for why.
 
-| | `report` | `heal` | `batch` |
-|---|---|---|---|
-| Modifies code | never | yes, in `.mxworktrees/` | yes, in `.mxworktrees/` |
-| Pushes branches / opens PRs | never | yes | yes |
-| Issues per invocation | all of them (files/updates issues, no cap on *how many checks* run) | 1 at a time, sequential, up to `--max-issues` | up to `[limits] concurrency` at once, in parallel |
-| Verification | the one check run all three start with | full check suite, reset fresh, **per attempt** | full check suite, reset fresh, **once**, bisected on red |
-| Safe unattended | yes — the only one | no | no |
+| | `report` | `heal` | `work` | `batch` |
+|---|---|---|---|---|
+| Runs check → sync first | yes | yes | **no** | yes |
+| Modifies code | never | yes, in `.mxworktrees/` | yes, in `.mxworktrees/` | yes, in `.mxworktrees/` |
+| Pushes branches / opens PRs | never | yes | yes | yes |
+| Issues per invocation | all of them (files/updates issues, no cap on *how many checks* run) | 1 at a time, sequential, up to `--max-issues` | 1 at a time, sequential, up to `--max-issues` | up to `[limits] concurrency` at once, in parallel |
+| Verification | the one check run report/heal/batch start with | full check suite, reset fresh, **per attempt** | full check suite, reset fresh, **per attempt** | full check suite, reset fresh, **once**, bisected on red |
+| Safe unattended | yes — the only one | no | no | no |
 
 **`report`** — run every check, `sync --apply`, stop. Nothing is modified anywhere.
-This is `testenv.toml`'s default and the only strategy safe to run on a schedule.
+The only strategy safe to run on a schedule.
 
-**`heal`** — select the single highest-severity `status::open` issue, work on it alone
-in `.mxworktrees/<iid>`, verify with a full reset + check run, and either land it or
-retry with the failure fed back as feedback, up to `[limits] max_fix_attempts`. Then the
-next issue. Slow (every attempt fully resets the sandbox fixture and, in Docker mode,
-rebuilds images — see [Landing the fix](#landing-the-fix)'s note on risk #13) but each
-fix is verified against a byte-identical starting point, and a failed attempt can't
-contaminate the next issue's.
+**`heal`** — check → sync first (same as `report`), then select the single
+highest-severity `status::open` issue, work on it alone in `.mxworktrees/<iid>`, verify
+with a full reset + check run, and either land it or retry with the failure fed back as
+feedback, up to `[limits] max_fix_attempts`. Then the next issue. Slow (every attempt
+fully resets the sandbox fixture and, in Docker mode, rebuilds images — see
+[Landing the fix](#landing-the-fix)'s note on risk #13) but each fix is verified against
+a byte-identical starting point, and a failed attempt can't contaminate the next issue's.
+
+**`work`** — exactly `heal`'s per-issue loop (same worktree/fixer/review_diff/verify/land
+machinery, `strategy/common.py`'s `work_one_issue()` — both strategies call the same
+function), but **skips the check → sync step entirely** and goes straight to selecting
+whatever is already `status::open` in GitLab. It exists for working down a backlog
+`report`/`heal`/`batch` already filed across several separate `run` invocations: `heal`
+repeats the *entire* check suite (pytest/pylint/frontend build/e2e — several minutes, see
+[Verifying a fix](#verifying-a-fix-reset-not-just-up)) before it ever looks at an issue,
+every single time, even when nothing about the underlying findings has changed since the
+last invocation. `work` trusts GitLab's current `status::open` state as-is and skips
+straight to the part that actually does something new. It never files anything itself —
+run `report`/`heal`/`batch` (or `issues.py open` by hand) at least once first, or `work`
+just reports nothing to do and exits.
 
 **`batch`** — select up to `concurrency` issues, fix all of them in parallel worktrees
 (one fixer call each, no per-candidate retry — batch's retry granularity is a whole
@@ -479,7 +497,7 @@ testenv.toml  ->  testenv.local.toml  ->  --strategy / --max-issues CLI flags
 
 `testenv.py run --print-config` prints the fully-merged result and exits — a strategy
 that writes code should never execute against settings you haven't actually seen. The
-file's own comments document every setting in depth (especially the three strategy
+file's own comments document every setting in depth (especially the four strategy
 modes and why `max_new_issues` exists); this section doesn't repeat them.
 
 Unknown keys anywhere in the file are a hard error (`scripts/mxfix/config.py`'s
@@ -488,9 +506,10 @@ ignored.
 
 ### The `Fixer` interface
 
-`scripts/mxfix/fixer.py` defines `FixTask`/`FixResult`/the `Fixer` Protocol so neither
-`strategy/heal.py` nor `strategy/batch.py` hardcodes which CLI actually writes the fix —
-`[fixer] adapter` in `testenv.toml` picks `CodexFixer` or `ClaudeFixer`, and both
+`scripts/mxfix/fixer.py` defines `FixTask`/`FixResult`/the `Fixer` Protocol so none of
+`strategy/heal.py`, `strategy/work.py`, or `strategy/batch.py` hardcodes which CLI
+actually writes the fix — `[fixer] adapter` in `testenv.toml` picks `CodexFixer` or
+`ClaudeFixer`, and both
 implement the identical interface:
 
 ```python
@@ -538,16 +557,17 @@ operation is removing the one specific path this tool itself created). Verified 
 created a real worktree, confirmed the safety guard refuses to touch
 `.kilo/worktrees/*`, removed the probe cleanly.
 
-`run` refuses to start any strategy at all — including `report` — while the **main**
-working tree has uncommitted changes (`worktree.repo_is_clean()`): `report`'s checks
-would otherwise run against a mix of committed and uncommitted code, and heal/batch's
-worktrees are always branched fresh off `base_branch`, so local edits sitting uncommitted
-in the main tree would silently never be reflected in what's actually verified.
+`run` refuses to start any strategy at all — including `report` and `work` — while the
+**main** working tree has uncommitted changes (`worktree.repo_is_clean()`): `report`'s
+checks would otherwise run against a mix of committed and uncommitted code, and
+heal/work/batch's worktrees are always branched fresh off `base_branch`, so local edits
+sitting uncommitted in the main tree would silently never be reflected in what's
+actually verified.
 
 ### Verifying a fix: reset, not just up
 
-Every heal attempt and every batch round's single verify runs `testenv.py reset` (not
-`up`) **inside the candidate's own worktree** — `scripts/mxfix/strategy/common.py`'s
+Every heal/work attempt and every batch round's single verify runs `testenv.py reset`
+(not `up`) **inside the candidate's own worktree** — `scripts/mxfix/strategy/common.py`'s
 `run_all_checks(..., reset_stack=True)`. Two reasons, both load-bearing, not just one:
 
 1. **The fixture must be byte-identical every time.** Earlier E2E specs delete items and
@@ -565,7 +585,7 @@ The stack is torn down (`down --purge`) again immediately after every reset-back
 verify, success or failure, so an attempt never leaks a running process or held port
 into the next one.
 
-This is also the single biggest cost of `heal`/`batch`: since a worktree shares nothing
+This is also the single biggest cost of `heal`/`work`/`batch`: since a worktree shares nothing
 with the main tree but `.git`'s object store (not `.venv`, not `node_modules`, not
 Playwright's browser install — all gitignored, so a fresh worktree starts without any of
 them), every attempt's first check run pays for a from-scratch `python -m venv` + `pip
@@ -580,9 +600,9 @@ absolute paths) is a real possible follow-up, not attempted here.
 Prompts are not enforcement (risk #15) — a fixer can make a check pass by weakening it
 instead of fixing the underlying problem: deleting an assertion, disabling a test,
 relaxing a pylint rule. `strategy/common.py`'s `review_diff()` runs on every "fixed"
-result, **before** the expensive reset+full-check-suite verify (heal) or before the diff
-is even committed (batch — which has no per-candidate check run to catch it later), and
-rejects two shapes outright:
+result, **before** the expensive reset+full-check-suite verify (heal/work) or before the
+diff is even committed (batch — which has no per-candidate check run to catch it later),
+and rejects two shapes outright:
 
 - Every changed file looks like a test file (`test_*.py`, `*_test.py`, `*.spec.ts`, or
   anything under a `tests`/`specs` directory), but the issue's `source::` label is
@@ -592,8 +612,9 @@ rejects two shapes outright:
   flagged, regardless of the issue's source, since loosening one of these can silence
   unrelated future failures too, not just this issue's.
 
-A rejection in `heal` becomes feedback for the next attempt (the fixer gets told
-*why*, which is often enough to redirect it to a real fix); in `batch` it's a dead end
+A rejection in `heal`/`work` becomes feedback for the next attempt (the fixer gets told
+*why*, which is often enough to redirect it to a real fix — both share the exact same
+retry loop, `strategy/common.py`'s `work_one_issue()`); in `batch` it's a dead end
 for that round — the candidate returns to `status::open` with the reason as a comment,
 same as any other failed candidate (see [batch's scope boundary](#batch-has-no-cross-invocation-retry-counter)
 below).
@@ -601,7 +622,7 @@ below).
 This is deliberately narrow — exactly the two shapes implementation_plan.md risk #15
 names, not a general "is this diff reasonable" reviewer. Subtler check-weakening is
 still only defended against by the prompt constraints and by the full check suite
-(heal) / bisect (batch) actually running.
+(heal/work) / bisect (batch) actually running.
 
 ### Landing the fix
 
@@ -642,12 +663,13 @@ tags) — so the GitLab issue ends up linking to a GitHub PR across that one-way
 Inherent to the current topology, not something `run` can fix on its own; see
 implementation_plan.md's "Out of scope" section on native GitLab MRs.
 
-`run` refuses to start `heal`/`batch` for real (not under `--dry-run`) when
-`[git] open_pr = true` but `GITHUB_PAT` is empty or unset in `.env` — there is currently
-no PAT configured, so the PR-opening path has been reviewed but not exercised
-end-to-end. `git push` itself doesn't need `GITHUB_PAT` at all (it uses whatever git
-credential you already push with); the PAT is only for the REST API call that opens the
-PR.
+`run` refuses to start `heal`/`work`/`batch` for real (not under `--dry-run`) when
+`[git] open_pr = true` but `GITHUB_PAT` is empty or unset in `.env`. `GITHUB_PAT` is
+configured and verified working (a live, read-only `GET /repos/{owner_repo}` call
+confirmed the token authenticates with `push`/`admin` permissions on the repo) — but the
+PR-opening path itself still hasn't been exercised end-to-end by an actual fixer run.
+`git push` itself doesn't need `GITHUB_PAT` at all (it uses whatever git credential you
+already push with); the PAT is only for the REST API call that opens the PR.
 
 ### The bisect fallback for batch
 
@@ -673,30 +695,30 @@ comment, for a later run to retry alone.
 
 #### batch has no cross-invocation retry counter
 
-`heal`'s retry loop (`attempt` up to `[limits] max_fix_attempts`, feedback fed back each
-time) lives entirely within one `run` call. `batch` gives each selected issue exactly one
-fixer attempt per invocation — there's no per-round retry before the merge+verify step,
-matching the plan's own pseudocode, which draws no inner retry loop for batch. A
-candidate `batch` isolates as the culprit (via bisection), or whose fixer attempt fails
-outright, or whose diff is rejected, or that won't merge cleanly, always goes back to
-plain `status::open` with the failure recorded as a GitLab comment — **never**
-`status::needs-human`; only `heal`'s counted retry loop sets that. The next `run`
-(another `batch` round, or a `heal` run for a focused, attempt-counted retry) picks it up
-from there. Persisting a retry count for `batch` specifically across separate process
+`heal`/`work`'s retry loop (`attempt` up to `[limits] max_fix_attempts`, feedback fed
+back each time) lives entirely within one `run` call. `batch` gives each selected issue
+exactly one fixer attempt per invocation — there's no per-round retry before the
+merge+verify step, matching the plan's own pseudocode, which draws no inner retry loop
+for batch. A candidate `batch` isolates as the culprit (via bisection), or whose fixer
+attempt fails outright, or whose diff is rejected, or that won't merge cleanly, always
+goes back to plain `status::open` with the failure recorded as a GitLab comment —
+**never** `status::needs-human`; only `heal`/`work`'s counted retry loop sets that. The
+next `run` (another `batch` round, or a `heal`/`work` run for a focused, attempt-counted
+retry) picks it up from there. Persisting a retry count for `batch` specifically across separate process
 invocations would need a new mechanism (there's nowhere in the current label/fingerprint
 schema to put it) — a known, named gap, not a silent one.
 
 ### `testenv.py run` CLI reference
 
 ```
-testenv.py run [--strategy report|heal|batch] [--max-issues N] [--dry-run] [--print-config]
+testenv.py run [--strategy report|heal|batch|work] [--max-issues N] [--dry-run] [--print-config]
 ```
 
 | Flag | Effect |
 |---|---|
 | `--strategy` | Overrides `testenv.toml`'s `[strategy]` for this invocation only. |
-| `--max-issues N` | Caps how many issues this invocation works on. `heal`: default unlimited (works through every eligible issue). `batch`: default `[limits] concurrency`; passing a smaller N shrinks that round's selection. |
-| `--dry-run` | Checks still run and `sync` still previews (same as omitting `--apply` on `issues.py sync`), but no fixer runs, no worktree is created, and nothing is written to GitLab or GitHub. Prints the plan instead: which issue(s), which worktree/branch names, which fixer, and whether it would push/open a PR. |
+| `--max-issues N` | Caps how many issues this invocation works on. `heal`/`work`: default unlimited (works through every eligible issue). `batch`: default `[limits] concurrency`; passing a smaller N shrinks that round's selection. |
+| `--dry-run` | Checks still run and `sync` still previews for `report`/`heal`/`batch` (same as omitting `--apply` on `issues.py sync` — `work` has no check/sync step to preview), but no fixer runs, no worktree is created, and nothing is written to GitLab or GitHub. Prints the plan instead: which issue(s), which worktree/branch names, which fixer, and whether it would push/open a PR. |
 | `--print-config` | Prints the fully-merged config and exits. Runs nothing — no GitLab connection, no check suite, no dirty-tree check. |
 
 Preflight `run` always does before touching anything (beyond `--print-config`, which
@@ -706,9 +728,9 @@ skips all of it):
 2. Refuse if the **main** working tree has uncommitted changes.
 3. Connect to GitLab (`.env`'s `GITLAB_HOST`/`GITLAB_PROJECT`/`GITLAB_TOKEN`) — the same
    connection [GitLab issue tracking](#gitlab-issue-tracking) already validates live.
-4. `report` stops here (after its own check→sync). `heal`/`batch` additionally: run the
-   selected fixer's `preflight()`, and — only if `[git] open_pr = true` — confirm
-   `GITHUB_PAT` is set and the `origin` remote looks like a `github.com` remote.
+4. `report` stops here (after its own check→sync). `heal`/`work`/`batch` additionally:
+   run the selected fixer's `preflight()`, and — only if `[git] open_pr = true` —
+   confirm `GITHUB_PAT` is set and the `origin` remote looks like a `github.com` remote.
 
 ### Trying it for the first time
 
@@ -719,14 +741,18 @@ In order, each step strictly safer than the next:
 2. `testenv.py run --strategy report` (commit or stash first) — runs the full check
    suite and `sync --apply`s real findings into GitLab. No code is touched. This is the
    strategy meant to run unattended, so this is also the safe way to see current signal
-   before ever selecting `heal`/`batch`.
-3. `testenv.py run --strategy heal --dry-run` and
-   `testenv.py run --strategy batch --dry-run` — exercises fixer `preflight()` for real
-   and prints exactly what each would do, still without touching a worktree or GitLab.
+   before ever selecting `heal`/`work`/`batch`.
+3. `testenv.py run --strategy heal --dry-run`,
+   `testenv.py run --strategy batch --dry-run`, and — once step 2 has actually filed
+   something — `testenv.py run --strategy work --dry-run` — exercises fixer
+   `preflight()` for real and prints exactly what each would do, still without touching
+   a worktree or GitLab.
 4. Only once 1–3 look right: `testenv.py run --strategy heal --max-issues 1` against a
    single, low-severity issue, with `[git] push = false` in `testenv.local.toml` first
    (land locally, inspect the commit and worktree by hand, decide about pushing
-   separately) before ever trusting `push`/`open_pr = true` unattended.
+   separately) before ever trusting `push`/`open_pr = true` unattended. `work
+   --max-issues 1` behaves identically once GitLab already has something `status::open`
+   — the only difference from `heal` is skipping the check/file step first.
 
 Nothing in this repository has run step 4 yet.
 

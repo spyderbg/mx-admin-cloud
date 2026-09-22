@@ -17,7 +17,7 @@ from testenvlib.paths import REPO_ROOT
 TESTENV_TOML = REPO_ROOT / "testenv.toml"
 TESTENV_LOCAL_TOML = REPO_ROOT / "testenv.local.toml"
 
-STRATEGIES = ("report", "heal", "batch")
+STRATEGIES = ("report", "heal", "batch", "work")
 FIXER_ADAPTERS = ("codex", "claude")
 SEVERITIES = ("high", "medium", "low")
 

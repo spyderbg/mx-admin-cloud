@@ -30,3 +30,5 @@ min-similarity-lines = 25
 
 [tool.pylint.design]
 max-args = 10
+max-attributes = 12
+max-positional-arguments = 10
