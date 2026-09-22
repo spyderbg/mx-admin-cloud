@@ -37,7 +37,7 @@
 # with `--dry-run` first (always, no exceptions) before ever letting either run for
 # real. `run` also refuses to start either one at all unless the fixer's preflight()
 # passes and the GitLab token is valid, and refuses to start on a dirty working tree.
-strategy = "report"
+strategy = "heal"
 
 [limits]
 # The origin document's MAX_FIX_ATTEMPTS: how many times "heal"/"batch" will retry a
