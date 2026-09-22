@@ -492,8 +492,14 @@ per-developer overrides (lower concurrency on a laptop, `push = false` while tru
 new fixer adapter, ...), then CLI flags, which always win:
 
 ```
-testenv.toml  ->  testenv.local.toml  ->  --strategy / --max-issues CLI flags
+testenv.toml  ->  testenv.local.toml  ->  --<setting> CLI flags on `testenv.py run`
 ```
+
+Every setting has its own `--<setting>` flag (`--max-fix-attempts`, `--concurrency`,
+`--adapter`, `--push`/`--no-push`, ...) — see
+[`testenv.py run` CLI reference](#testenvpy-run-cli-reference) below for the full list,
+or `testenv.toml`'s own comments, which note each one right next to the setting it
+overrides.
 
 `testenv.py run --print-config` prints the fully-merged result and exits — a strategy
 that writes code should never execute against settings you haven't actually seen. The
@@ -711,15 +717,29 @@ schema to put it) — a known, named gap, not a silent one.
 ### `testenv.py run` CLI reference
 
 ```
-testenv.py run [--strategy report|heal|batch|work] [--max-issues N] [--dry-run] [--print-config]
+testenv.py run [--strategy report|heal|batch|work] [--max-issues N]
+                [--max-fix-attempts N] [--concurrency N] [--severity-threshold high|medium|low]
+                [--max-new-issues N] [--adapter codex|claude] [--timeout-seconds N]
+                [--base-branch NAME] [--branch-prefix PREFIX] [--push | --no-push]
+                [--open-pr | --no-open-pr] [--dry-run] [--print-config]
 ```
+
+Every `testenv.toml` setting has a matching `--<setting>` flag — `testenv.py run --help`
+is the exact, always-current list; `testenv.toml`'s own comments note each one right next
+to the setting it overrides. Only the flags you actually pass take effect (an unset flag
+never clobbers `testenv.toml`/`testenv.local.toml` with some CLI-side default), and a
+flag always wins over both files for that one invocation — see `testenv.toml`'s
+"Resolution order" comment at the bottom of the file.
 
 | Flag | Effect |
 |---|---|
-| `--strategy` | Overrides `testenv.toml`'s `[strategy]` for this invocation only. |
-| `--max-issues N` | Caps how many issues this invocation works on. `heal`/`work`: default unlimited (works through every eligible issue). `batch`: default `[limits] concurrency`; passing a smaller N shrinks that round's selection. |
+| `--strategy` | Overrides `testenv.toml`'s top-level `[strategy]` for this invocation only. |
+| `--max-issues N` | Caps how many issues this invocation works on. `heal`/`work`: default unlimited (works through every eligible issue) — no `testenv.toml` key of its own. `batch`: default `[limits] concurrency`; passing a smaller N shrinks that round's selection below `--concurrency`, never raises it above. |
+| `--max-fix-attempts` / `--concurrency` / `--severity-threshold` / `--max-new-issues` | Override the matching `[limits]` key. |
+| `--adapter` / `--timeout-seconds` | Override the matching `[fixer]` key. |
+| `--base-branch` / `--branch-prefix` / `--push`/`--no-push` / `--open-pr`/`--no-open-pr` | Override the matching `[git]` key. The push/open-pr pairs are the tri-state pattern (unset = whatever `testenv.toml` says; the flag always wins either direction). |
 | `--dry-run` | Checks still run and `sync` still previews for `report`/`heal`/`batch` (same as omitting `--apply` on `issues.py sync` — `work` has no check/sync step to preview), but no fixer runs, no worktree is created, and nothing is written to GitLab or GitHub. Prints the plan instead: which issue(s), which worktree/branch names, which fixer, and whether it would push/open a PR. |
-| `--print-config` | Prints the fully-merged config and exits. Runs nothing — no GitLab connection, no check suite, no dirty-tree check. |
+| `--print-config` | Prints the fully-merged config — including any other flags passed alongside it — and exits. Runs nothing else: no GitLab connection, no check suite, no dirty-tree check. |
 
 Preflight `run` always does before touching anything (beyond `--print-config`, which
 skips all of it):

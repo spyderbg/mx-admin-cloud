@@ -6,6 +6,13 @@
 #
 # See test_environment/README.md's "Execution strategies" section for the full design
 # and the Fixer/worktree/git-landing mechanics. This file only documents the *settings*.
+#
+# Every setting below has a matching `--<setting>` flag on `testenv.py run`, noted right
+# above it as "CLI override: ..." — a flag always wins over both this file and
+# testenv.local.toml for that one invocation, and only the flags you actually pass take
+# effect (an unset flag never clobbers what's here with some CLI-side default). The one
+# exception is `run --max-issues N`, which has no key here at all — see [limits]
+# concurrency's own comment for how it relates instead.
 
 # -----------------------------------------------------------------------------------
 # strategy — which of the four execution modes `run` uses when none is given via
@@ -48,6 +55,8 @@
 # them run for real. `run` also refuses to start any of the three at all unless the
 # fixer's preflight() passes and the GitLab token is valid, and refuses to start on a
 # dirty working tree.
+#
+# CLI override: --strategy report|heal|batch|work
 strategy = "work"
 
 [limits]
@@ -55,19 +64,27 @@ strategy = "work"
 # single issue (feeding the previous attempt's check failures back to the fixer as
 # feedback) before giving up and marking it status::needs-human instead of looping
 # forever on something the AI fixer cannot actually resolve.
+#
+# CLI override: --max-fix-attempts N
 max_fix_attempts = 3
 
 # "batch" only: how many issues it works on in one invocation (one worktree + one
 # branch each, fixed in parallel). Higher = faster wall-clock time per run, but also a
 # wider blast radius per run (more branches/PRs on success) and more bisect steps on a
 # red verify (log2(concurrency) extra check runs — see [strategy] "batch" above).
-# "heal" ignores this; it is always exactly one issue at a time by design.
+# "heal"/"work" ignore this; they are always exactly one issue at a time by design.
+#
+# CLI override: --concurrency N. Related but distinct: `run --max-issues N` (no
+# testenv.toml key of its own) can additionally shrink a single invocation's selection
+# below this — see test_environment/README.md's "testenv.py run CLI reference".
 concurrency = 3
 
-# Issues labeled severity::low are ignored by "heal"/"batch" issue selection —
+# Issues labeled severity::low are ignored by "heal"/"work"/"batch" issue selection —
 # severity::medium and severity::high are eligible. "report" is unaffected: it files
 # findings at whatever severity the source (pytest/pylint/e2e/detector) assigned them;
 # this threshold only controls which *existing* issues a fixer will pick up and attempt.
+#
+# CLI override: --severity-threshold high|medium|low
 severity_threshold = "medium"
 
 # Safety rail on `issues.py sync --apply` (whether invoked directly or by "report" as
@@ -79,6 +96,11 @@ severity_threshold = "medium"
 # capped — only *new* issue creation is; anything past the limit is reported as skipped,
 # never silently dropped, and picked up again (still deduplicated, same fingerprint) on
 # the next sync once the count under the cap has been triaged down.
+#
+# CLI override: `testenv.py run --max-new-issues N`. Distinct from (but the same idea
+# as) `issues.py sync --max-new-issues N` on the separate issues.py CLI — that one only
+# ever applies when you invoke sync directly by hand; this file's value is what every
+# `run` strategy's own internal sync step actually uses.
 max_new_issues = 1
 
 [fixer]
@@ -87,29 +109,40 @@ max_new_issues = 1
 # here. See test_environment/README.md's "Execution strategies" section for exactly how
 # each is invoked (sandbox/permission flags, JSON output parsing) and what "preflight"
 # checks before either ever touches an issue.
+#
+# CLI override: --adapter codex|claude
 adapter = "codex"
 
 # Hard wall-clock cap per fixer invocation (one attempt, one issue), in seconds. A fixer
 # that hangs (waiting on a network call, stuck in a retry loop, whatever) must not stall
-# "heal"/"batch" indefinitely — it gets terminated and treated as a failed attempt,
-# consuming one of [limits] max_fix_attempts the same as an ordinary failure would.
+# "heal"/"work"/"batch" indefinitely — it gets terminated and treated as a failed
+# attempt, consuming one of [limits] max_fix_attempts the same as an ordinary failure
+# would.
+#
+# CLI override: --timeout-seconds N
 timeout_seconds = 1800
 
 [git]
 # Branch new worktrees off this branch — NOT necessarily the checked-out branch `run`
 # happens to be invoked from. Fetched fresh from origin before every worktree is
-# created, so "heal"/"batch" always start from the latest, not a stale local copy.
+# created, so "heal"/"work"/"batch" always start from the latest, not a stale local copy.
+#
+# CLI override: --base-branch NAME
 base_branch = "dev"
 
 # Prefix for every branch this tool creates, e.g. "ai/42" for issue #42 or
 # "ai/batch-<timestamp>" for a batch integration branch — keeps AI-authored branches
 # visually distinct from human ones and easy to bulk-filter/clean up.
+#
+# CLI override: --branch-prefix PREFIX
 branch_prefix = "ai/"
 
 # Push the fix branch to GitHub (the "origin" remote) once its checks pass. If false,
-# "heal"/"batch" still commit locally and still mark the issue's progress, but leave the
-# branch to be pushed by hand — a lower-blast-radius way to try the fixer without yet
-# trusting it to publish anything.
+# "heal"/"work"/"batch" still commit locally and still mark the issue's progress, but
+# leave the branch to be pushed by hand — a lower-blast-radius way to try the fixer
+# without yet trusting it to publish anything.
+#
+# CLI override: --push / --no-push
 push = true
 
 # Open a GitHub PR (via the REST API + GITHUB_PAT — no `gh` CLI dependency) once the
@@ -117,12 +150,16 @@ push = true
 # cross-linked from the PR body and stays status::in-progress (never auto-closed by PR
 # creation) until the PR actually merges — see test_environment/README.md's "Landing the
 # fix" section.
+#
+# CLI override: --open-pr / --no-open-pr
 open_pr = true
 
 # -----------------------------------------------------------------------------------
 # Resolution order: this file -> testenv.local.toml (gitignored, same shape, for
 # per-developer overrides you don't want to commit — e.g. a lower concurrency on a
-# laptop, or push = false while you're still trusting a new fixer adapter) -> CLI flags
-# on `testenv.py run`, which always win. `testenv.py run --print-config` prints the
-# fully merged result before anything runs — a strategy that writes code should never
-# execute against settings you haven't actually seen.
+# laptop, or push = false while you're still trusting a new fixer adapter) -> the
+# `--<setting>` CLI flags on `testenv.py run` noted next to each setting above, which
+# always win. `testenv.py run --print-config` prints the fully merged result — including
+# whatever CLI flags you passed alongside --print-config itself — before anything runs;
+# a strategy that writes code should never execute against settings you haven't
+# actually seen.

@@ -487,8 +487,42 @@ def cmd_run(args: argparse.Namespace) -> int:
     from mxissues.config import load_config as load_gitlab_config  # noqa: PLC0415
     from testenvlib.envfile import load_env_file  # noqa: PLC0415
 
+    # Every testenv.toml setting has a --<setting> CLI flag (argparse leaves each at its
+    # own default=None when not passed) — only the ones actually given end up in
+    # overrides, so an unset flag never clobbers testenv.toml/testenv.local.toml with a
+    # spurious default. This dict's shape mirrors testenv.toml's own [section] nesting;
+    # see mxfix.config.load_config()'s docstring for how it gets merged in.
+    limits_overrides = {
+        k: v for k, v in {
+            "max_fix_attempts": args.max_fix_attempts,
+            "concurrency": args.concurrency,
+            "severity_threshold": args.severity_threshold,
+            "max_new_issues": args.max_new_issues,
+        }.items() if v is not None
+    }
+    fixer_overrides = {
+        k: v for k, v in {"adapter": args.adapter, "timeout_seconds": args.timeout_seconds}.items() if v is not None
+    }
+    git_overrides = {
+        k: v for k, v in {
+            "base_branch": args.base_branch,
+            "branch_prefix": args.branch_prefix,
+            "push": args.push,
+            "open_pr": args.open_pr,
+        }.items() if v is not None
+    }
+    overrides: dict = {}
+    if args.strategy is not None:
+        overrides["strategy"] = args.strategy
+    if limits_overrides:
+        overrides["limits"] = limits_overrides
+    if fixer_overrides:
+        overrides["fixer"] = fixer_overrides
+    if git_overrides:
+        overrides["git"] = git_overrides
+
     try:
-        config = load_config(strategy_override=args.strategy)
+        config = load_config(overrides=overrides)
     except ConfigError as exc:
         print(f"{RED}{exc}{RESET}", file=sys.stderr)
         return 1
@@ -654,8 +688,23 @@ def main() -> int:
     p_e2e.set_defaults(func=cmd_e2e)
 
     p_run = sub.add_parser("run", help="Workstream 3: report|heal|batch|work, driven by testenv.toml — see test_environment/README.md")
-    p_run.add_argument("--strategy", choices=["report", "heal", "batch", "work"], default=None, help="default: testenv.toml [strategy] (report unless overridden there)")
-    p_run.add_argument("--max-issues", type=int, default=None, metavar="N", help="cap how many issues this invocation works on; default: unlimited for heal/work, [limits] concurrency for batch")
+    p_run.add_argument("--strategy", choices=["report", "heal", "batch", "work"], default=None, help="overrides testenv.toml's top-level [strategy] for this invocation only")
+    p_run.add_argument("--max-issues", type=int, default=None, metavar="N", help="cap how many issues this invocation works on; default: unlimited for heal/work, [limits] concurrency for batch (no testenv.toml equivalent — CLI-only)")
+    # One --<setting> per testenv.toml key below, every one default=None so an unset
+    # flag never overrides testenv.toml/testenv.local.toml with a spurious value — see
+    # cmd_run()'s overrides dict for exactly how each maps back to its [section] key.
+    p_run.add_argument("--max-fix-attempts", type=int, default=None, metavar="N", help="overrides [limits] max_fix_attempts")
+    p_run.add_argument("--concurrency", type=int, default=None, metavar="N", help="overrides [limits] concurrency")
+    p_run.add_argument("--severity-threshold", choices=["high", "medium", "low"], default=None, help="overrides [limits] severity_threshold")
+    p_run.add_argument("--max-new-issues", type=int, default=None, metavar="N", help="overrides [limits] max_new_issues")
+    p_run.add_argument("--adapter", choices=["codex", "claude"], default=None, help="overrides [fixer] adapter")
+    p_run.add_argument("--timeout-seconds", type=int, default=None, metavar="N", help="overrides [fixer] timeout_seconds")
+    p_run.add_argument("--base-branch", default=None, metavar="NAME", help="overrides [git] base_branch")
+    p_run.add_argument("--branch-prefix", default=None, metavar="PREFIX", help="overrides [git] branch_prefix")
+    p_run.add_argument("--push", dest="push", action="store_true", default=None, help="overrides [git] push = true")
+    p_run.add_argument("--no-push", dest="push", action="store_false", help="overrides [git] push = false")
+    p_run.add_argument("--open-pr", dest="open_pr", action="store_true", default=None, help="overrides [git] open_pr = true")
+    p_run.add_argument("--no-open-pr", dest="open_pr", action="store_false", help="overrides [git] open_pr = false")
     p_run.add_argument("--dry-run", action="store_true", help="checks still run and sync still previews, but no fixer, worktree, or GitLab/GitHub write happens")
     p_run.add_argument("--print-config", action="store_true", help="print the fully-merged testenv.toml + testenv.local.toml + CLI config and exit; runs nothing")
     p_run.set_defaults(func=cmd_run)

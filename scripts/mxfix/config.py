@@ -124,11 +124,19 @@ def build_config(raw: dict[str, Any]) -> RunConfig:
     return config
 
 
-def load_config(*, strategy_override: str | None = None) -> RunConfig:
-    """The one entry point the rest of scripts/mxfix/ and testenv.py should use."""
+def load_config(*, overrides: dict[str, Any] | None = None) -> RunConfig:
+    """The one entry point the rest of scripts/mxfix/ and testenv.py should use.
+
+    *overrides* is a raw dict in the same nested shape as testenv.toml itself (e.g.
+    `{"strategy": "heal", "limits": {"concurrency": 1}}`), deep-merged on top of
+    testenv.toml + testenv.local.toml — the third and final step of the "Resolution
+    order" testenv.toml's own comments describe. testenv.py's `run` subcommand builds
+    this from whichever `--<setting>` CLI flags were actually passed; every setting has
+    one, so every setting is CLI-overridable, matching that promise exactly.
+    """
     raw = load_raw()
-    if strategy_override is not None:
-        raw = {**raw, "strategy": strategy_override}
+    if overrides:
+        raw = _deep_merge(raw, overrides)
     return build_config(raw)
 
 
