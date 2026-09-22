@@ -68,7 +68,7 @@ severity_threshold = "medium"
 # capped — only *new* issue creation is; anything past the limit is reported as skipped,
 # never silently dropped, and picked up again (still deduplicated, same fingerprint) on
 # the next sync once the count under the cap has been triaged down.
-max_new_issues = 20
+max_new_issues = 1
 
 [fixer]
 # "codex" or "claude" — which CLI actually writes the fix. Both implement the same
