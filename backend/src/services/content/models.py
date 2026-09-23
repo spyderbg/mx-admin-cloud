@@ -195,7 +195,7 @@ class DeleteArchivedCategory:
 # ---------------------------------------------------------------------------
 
 
-class ContentProvider(ServiceProvider, ABC):
+class ContentProvider(ServiceProvider, ABC):  # pylint: disable=too-many-public-methods
     """Provider contract for content CRUD operations."""
 
     @abstractmethod

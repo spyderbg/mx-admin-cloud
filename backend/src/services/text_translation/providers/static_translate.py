@@ -95,6 +95,15 @@ class StaticTextTranslate(TextTranslationServiceProvider):
                     if idx < len(tgt_words):
                         target_map[tgt_lang] = tgt_words[idx]
 
+    def supports(self, input_lang_code: str, target_lang_code: str) -> bool:
+        """Return whether both languages were discovered from "items_<lang>.csv" files.
+
+        The lookup only knows the language codes present in the loaded content
+        directory; requesting an unloaded language can never produce a match, so the
+        provider chain can skip this provider for it instead of always trying it.
+        """
+        return input_lang_code.lower() in self._lookup and target_lang_code.lower() in self._lookup
+
     async def translate_text(self, request: TranslateTextRequest) -> str | None:
         src = request.input_lang_code.lower()
         tgt = request.target_lang_code.lower()

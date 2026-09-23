@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import os
 import re
 import shutil
@@ -229,6 +230,14 @@ def _print_issues(
 # ── main ───────────────────────────────────────────────────────────────────────
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--json", type=Path, default=None,
+        help="also write pylint's raw JSON report here (for scripts/issues.py sync --pylint) — "
+             "runs pylint a second time with --output-format=json; the human table is unaffected",
+    )
+    args = parser.parse_args()
+
     _, backend_dir, venv_dir = _resolve_paths()
 
     compile_issues: list[Issue] = []
@@ -270,6 +279,14 @@ def main() -> int:
         pylint_issues = _parse_pylint_issues(stdout)
         if rc != 0:
             exit_code = exit_code or rc
+
+        if args.json is not None:
+            json_stdout, _json_stderr, json_rc = _run_capture(
+                [str(venv_python), "-m", "pylint", "--output-format=json", "src/"], cwd=backend_dir, env=env,
+            )
+            if json_rc != _PYLINT_USAGE_ERROR:
+                args.json.parent.mkdir(parents=True, exist_ok=True)
+                args.json.write_text(json_stdout, encoding="utf-8")
 
         _print_issues(compile_issues, pylint_issues)
         _print_summary(compile_issues, pylint_issues)

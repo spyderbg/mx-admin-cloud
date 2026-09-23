@@ -55,20 +55,21 @@ class TextTranslationServiceProvider(ServiceProvider, ABC):
             return None
         return raw_lang.strip() or None
 
-    def supports(self, input_lang_code: str, target_lang_code: str) -> bool:
-        """Return whether this provider is willing to handle this language pair.
-
-        Base implementation accepts any pair, matching general-purpose providers
-        (e.g. a lookup table spanning many languages). Providers pinned to a single
-        language pair (one config file per pair) must override this, or the service's
-        provider chain will invoke every language's provider on every request.
-        """
-        return True
-
     @staticmethod
     def language_name(lang_code: str) -> str:
         """Return the display name for a BCP-47 language code."""
         return LANG_MAP.get(lang_code.lower(), lang_code)
+
+    @abstractmethod
+    def supports(self, input_lang_code: str, target_lang_code: str) -> bool:
+        """Return whether this provider is willing to handle this language pair.
+
+        General-purpose providers (e.g. a lookup table spanning many languages)
+        should accept any pair they have data for. Providers pinned to a single
+        language pair (one config file per pair) must reject every other pair,
+        or the service's provider chain will invoke every language's provider
+        on every request.
+        """
 
     @abstractmethod
     async def translate_text(self, request: TranslateTextRequest) -> str | None:

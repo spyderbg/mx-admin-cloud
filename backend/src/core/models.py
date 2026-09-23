@@ -25,7 +25,7 @@ class TranslationSourceWord:  # pylint: disable=too-many-instance-attributes
 
 
 @dataclass(slots=True)
-class GeneratedAudio:
+class GeneratedAudio:  # pylint: disable=too-many-instance-attributes
     """Result of a single TTS generation attempt by one provider."""
 
     provider: str  # provider produced this audio
@@ -67,7 +67,7 @@ class GeneratedImage:  # pylint: disable=too-many-instance-attributes
 
 
 @dataclass(slots=True)
-class EvaluationResult:
+class EvaluationResult:  # pylint: disable=too-many-instance-attributes
     """Scoring result from comparing generated audio against expected text."""
 
     provider: str  # provider that produced the audio
@@ -85,7 +85,7 @@ class EvaluationResult:
 
 
 @dataclass(slots=True)
-class ProviderAggregate:
+class ProviderAggregate:  # pylint: disable=too-many-instance-attributes
     """Cumulative score statistics for a single provider."""
 
     provider: str  # provider identifier
@@ -95,7 +95,24 @@ class ProviderAggregate:
 
 
 @dataclass(slots=True)
-class ProviderRunRecord:
+class ScoreRecord:  # pylint: disable=too-many-instance-attributes
+    """One persisted evaluation entry, as returned by ScoreStore lookups."""
+
+    provider: str  # provider that produced the audio
+    request_id: str  # matching TTSRequest.request_id
+    language_code: str  # ISO language code
+    expected_text: str  # ground-truth reference text
+    transcription: str  # text transcribed from the generated audio
+    pronunciation_accuracy: float  # composite pronunciation score (0.0 - 1.0)
+    evaluation_latency_seconds: float  # wall-clock evaluation time
+    raw_path: str  # path to the raw generated audio file
+    normalized_path: str | None  # path after normalization (if any)
+    success: bool  # whether evaluation succeeded
+    error: str | None = None  # error message on failure
+
+
+@dataclass(slots=True)
+class ProviderRunRecord:  # pylint: disable=too-many-instance-attributes
     """Flat record combining generation, evaluation, and optimization results."""
 
     request_id: str  # unique request identifier

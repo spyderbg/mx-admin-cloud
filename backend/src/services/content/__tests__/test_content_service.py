@@ -4,7 +4,7 @@
 FileSystemContentProvider tests live in test_content_filesystem_provider.py.
 """
 
-# pylint: disable=missing-function-docstring,too-few-public-methods,redefined-outer-name,protected-access
+# pylint: disable=missing-function-docstring,too-few-public-methods,too-many-public-methods,redefined-outer-name,protected-access
 
 from __future__ import annotations
 

@@ -7,6 +7,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BACKEND_DIR="$REPO_ROOT/backend"
+
+# Search order: project root .venv first, then backend/.venv
 if [ -d "$REPO_ROOT/.venv" ]; then
   VENV_DIR="$REPO_ROOT/.venv"
 elif [ -d "$BACKEND_DIR/.venv" ]; then

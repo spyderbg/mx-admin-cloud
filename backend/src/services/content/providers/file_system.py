@@ -98,7 +98,7 @@ class _GeneratedAudioBytes(bytes):
         return instance
 
 
-class FileSystemContentProvider(ContentProvider):
+class FileSystemContentProvider(ContentProvider):  # pylint: disable=too-many-public-methods
     """Manage content categories and items under the local content directory."""
 
     # ------------------------------------------------------------------

@@ -7,11 +7,27 @@ from pathlib import Path
 from typing import Any
 
 from src.core.utils import JsonObjectReadError, read_json_object
-from src.core.models import EvaluationResult, GeneratedAudio, ProviderAggregate
+from src.core.models import EvaluationResult, GeneratedAudio, ProviderAggregate, ScoreRecord
 from .score_store import ScoreStore
 
 
-class JsonScoreStore(ScoreStore):  # pylint: disable=too-few-public-methods
+def _entry_to_record(entry: dict[str, Any]) -> ScoreRecord:
+    return ScoreRecord(
+        provider=entry["provider"],
+        request_id=entry["request_id"],
+        language_code=entry["language_code"],
+        expected_text=entry["expected_text"],
+        transcription=entry["transcription"],
+        pronunciation_accuracy=float(entry["pronunciation_accuracy"]),
+        evaluation_latency_seconds=float(entry["evaluation_latency_seconds"]),
+        raw_path=entry["raw_path"],
+        normalized_path=entry["normalized_path"],
+        success=bool(entry["success"]),
+        error=entry["error"],
+    )
+
+
+class JsonScoreStore(ScoreStore):
     """Persist evaluation history and provider aggregates as JSON files."""
     def __init__(self, storage_dir: Path) -> None:
         self.storage_dir = storage_dir
@@ -63,6 +79,46 @@ class JsonScoreStore(ScoreStore):  # pylint: disable=too-few-public-methods
             total_score=provider_bucket["total_score"],
             average_score=provider_bucket["average_score"],
         )
+
+    async def get_best_score(
+            self,
+            provider: str | None = None,
+            language_code: str | None = None,
+            request_id: str | None = None,
+    ) -> ScoreRecord | None:
+        candidates = self._filter_history(provider=provider, language_code=language_code, request_id=request_id)
+        if not candidates:
+            return None
+        best = max(candidates, key=lambda entry: entry["pronunciation_accuracy"])
+        return _entry_to_record(best)
+
+    async def get_scores_by_request(self, request_id: str) -> list[ScoreRecord]:
+        return [_entry_to_record(entry) for entry in self._filter_history(request_id=request_id)]
+
+    async def get_scores_by_provider(self, provider: str) -> list[ScoreRecord]:
+        return [_entry_to_record(entry) for entry in self._filter_history(provider=provider)]
+
+    async def get_scores_by_language(self, language_code: str) -> list[ScoreRecord]:
+        return [_entry_to_record(entry) for entry in self._filter_history(language_code=language_code)]
+
+    async def clear(self) -> None:
+        self.history_path.write_text(json.dumps([], indent=2, ensure_ascii=False), encoding="utf-8")
+        self.aggregate_path.write_text(json.dumps({}, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    def _filter_history(
+            self,
+            provider: str | None = None,
+            language_code: str | None = None,
+            request_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        history = self._load_json(self.history_path, [])
+        return [
+            entry
+            for entry in history
+            if (provider is None or entry["provider"] == provider)
+            and (language_code is None or entry["language_code"] == language_code)
+            and (request_id is None or entry["request_id"] == request_id)
+        ]
 
     @staticmethod
     def _load_json(path: Path, default: Any) -> Any:

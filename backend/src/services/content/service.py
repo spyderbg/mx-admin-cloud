@@ -36,7 +36,7 @@ class ContentProviderFactory(ServiceProviderFactory[ContentProvider]):
     unsupported_label = "content provider"
 
 
-class ContentService(Service):
+class ContentService(Service):  # pylint: disable=too-many-public-methods
     """Orchestrator for content provider operations.
 
     Delegates every content operation to the first active ContentProvider.

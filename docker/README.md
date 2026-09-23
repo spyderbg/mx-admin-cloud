@@ -112,3 +112,46 @@ This is almost always the content mount, not the request:
 
 **Rebuild after Python/JS dependency changes** — `docker compose up` alone won't pick up a
 changed `requirements.txt`/`package.json`; use `--build` (as in the Quick start commands above).
+
+## Test stack (`docker-compose.test.yml`)
+
+A second, fully isolated stack for the sandbox test environment (Playwright E2E, the
+provider stub) — see `docs/test_environment/implementation_plan.md` for the design and
+`test_environment/README.md` for day-to-day commands. Everything below is driven
+through `python scripts/testenv.py` (or its `scripts/testenv.sh` wrapper); you should
+not normally invoke `docker compose` directly, but the underlying invocation is:
+
+```bash
+docker compose \
+  -f docker/docker-compose.yml \
+  -f docker/docker-compose.test.yml \
+  --project-directory docker \
+  --env-file .testenv/test.env \
+  -p mxadmin-test up -d
+```
+
+**Never edit `docker-compose.yml` to support the test stack.** `docker-compose.test.yml`
+is a pure override — it renames containers (`mxtest-backend`/`mxtest-frontend`/
+`mxtest-stub`, vs. the dev stack's `kiddo-*`), replaces the published ports (needs
+**Compose ≥ 2.24** for the `ports: !override` tag — without it, ports *concatenate*
+instead of replacing, and the test stack silently double-publishes on the dev stack's
+9000/9001 too), and repoints the content/archive/config bind mounts at `.testenv/`. The
+dev and test stacks can run side by side without colliding.
+
+**Two run modes, same `.testenv/` tree.** Docker is not required — `python
+scripts/testenv.py` auto-detects whether a Docker daemon answers and falls back to
+**native mode** (`scripts/app.py`: stub + `uvicorn` + a built `frontend/dist/` served by
+a small stdlib proxy) when it doesn't. Both modes share the identical seeded fixture,
+neutralised config, and stub — only how backend/frontend/stub run differs. Native mode's
+one hard rule: it never runs `npm run dev`, because `frontend/vite.config.ts` serves
+`/content` from a **hardcoded `../content`** via `sirv` and would silently expose the
+real content directory regardless of `CONTENT_DIR`; `app.py` always builds
+`frontend/dist/` once and serves that instead.
+
+**Never symlink anything under `.testenv/`.** Every file there is a real copy
+(`scripts/testenv_seed.py`, `scripts/testenv_config.py`), asserted after every seed —
+the suite includes destructive specs (archive, delete item, delete image) that would
+follow a symlink straight into tracked, real content or `backend/config/`.
+
+Stub container: stock `python:3.11-slim` with `test_environment/stub-provider/`
+bind-mounted read-only — no Dockerfile, no image to rebuild.

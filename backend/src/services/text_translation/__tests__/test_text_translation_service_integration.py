@@ -60,6 +60,9 @@ class _StubTranslatorProvider(TextTranslationServiceProvider):
         self._skip_text = text
         return self
 
+    def supports(self, input_lang_code: str, target_lang_code: str) -> bool:  # pylint: disable=unused-argument
+        return True
+
     async def translate_text(self, request: TranslateTextRequest) -> str | None:  # pylint: disable=unused-argument
         if self._skip_text is not None and request.text == self._skip_text:
             return None
@@ -81,6 +84,9 @@ class _RaisingTranslatorProvider(TextTranslationServiceProvider):
             config_path=base / "raising.json",
             base_dir=base,
         )
+
+    def supports(self, input_lang_code: str, target_lang_code: str) -> bool:  # pylint: disable=unused-argument
+        return True
 
     async def translate_text(self, request: TranslateTextRequest) -> str | None:  # pylint: disable=unused-argument
         raise RuntimeError("OPENAI_API_KEY is not set.")

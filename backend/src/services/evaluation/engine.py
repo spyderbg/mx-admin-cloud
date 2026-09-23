@@ -83,8 +83,7 @@ class EvaluationEngine:
                 generated_audio.normalization_error or "Normalized audio file was not created.",
             )
 
-        eval_cfg = evaluate_config
-        stt_provider = str(eval_cfg.get("stt_provider", provider_name or generated_audio.provider)).lower()
+        stt_provider = str(evaluate_config.get("stt_provider", provider_name or generated_audio.provider)).lower()
         api_key = _resolve_stt_api_key(stt_provider)
         if not api_key:
             return self._fail(
@@ -93,30 +92,47 @@ class EvaluationEngine:
             )
 
         started_at = time.perf_counter()
-        if stt_provider == "openai":
-            transcription = await self._transcribe_openai(normalized_path, eval_cfg, api_key, generated_audio, client)
-        elif stt_provider == "elevenlabs":
-            transcription = await self._transcribe_elevenlabs(normalized_path, eval_cfg, api_key, generated_audio,
-                                                              client)
-        elif stt_provider == "speaktor":
-            transcription = await self._transcribe_speaktor(normalized_path, eval_cfg, api_key, generated_audio, client)
-        else:
+        transcription = await self._transcribe(
+            stt_provider, normalized_path, evaluate_config, api_key, generated_audio, client
+        )
+        if transcription is None:
             return self._fail(generated_audio, f"Unsupported stt_provider: {stt_provider}")
         latency = time.perf_counter() - started_at
 
+        return self._score(generated_audio, transcription, latency)
+
+    async def _transcribe(
+            self,
+            stt_provider: str,
+            audio_path: Path,
+            eval_cfg: dict[str, Any],
+            api_key: str,
+            generated_audio: GeneratedAudio,
+            client: Any,
+    ) -> str | None:
+        """Dispatch to the STT backend for *stt_provider*, or None if unsupported."""
+        if stt_provider == "openai":
+            return await self._transcribe_openai(audio_path, eval_cfg, api_key, generated_audio, client)
+        if stt_provider == "elevenlabs":
+            return await self._transcribe_elevenlabs(audio_path, eval_cfg, api_key, generated_audio, client)
+        if stt_provider == "speaktor":
+            return await self._transcribe_speaktor(audio_path, eval_cfg, api_key, generated_audio, client)
+        return None
+
+    @staticmethod
+    def _score(generated_audio: GeneratedAudio, transcription: str, latency: float) -> EvaluationResult:
+        """Score a transcription against the expected text and build the EvaluationResult."""
         expected_text = generated_audio.expected_text.strip()
         actual_text = transcription.strip()
-        char_distance = levenshtein_distance(expected_text.casefold(), actual_text.casefold())
-        word_distance = levenshtein_distance(
-            " ".join(expected_text.casefold().split()),
-            " ".join(actual_text.casefold().split()),
-        )
-        char_accuracy = normalized_accuracy(expected_text.casefold(), actual_text.casefold())
-        word_accuracy = normalized_accuracy(
-            " ".join(expected_text.casefold().split()),
-            " ".join(actual_text.casefold().split()),
-        )
-        pronunciation_accuracy = round((char_accuracy + word_accuracy) / 2.0, 2)
+        expected_folded = expected_text.casefold()
+        actual_folded = actual_text.casefold()
+        expected_words = " ".join(expected_folded.split())
+        actual_words = " ".join(actual_folded.split())
+
+        char_distance = levenshtein_distance(expected_folded, actual_folded)
+        word_distance = levenshtein_distance(expected_words, actual_words)
+        char_accuracy = normalized_accuracy(expected_folded, actual_folded)
+        word_accuracy = normalized_accuracy(expected_words, actual_words)
 
         return EvaluationResult(
             provider=generated_audio.provider,
@@ -126,7 +142,7 @@ class EvaluationEngine:
             levenshtein_distance=max(char_distance, word_distance),
             char_accuracy=round(char_accuracy, 2),
             word_accuracy=round(word_accuracy, 2),
-            pronunciation_accuracy=pronunciation_accuracy,
+            pronunciation_accuracy=round((char_accuracy + word_accuracy) / 2.0, 2),
             latency_seconds=latency,
             success=True,
         )
@@ -239,70 +255,14 @@ class EvaluationEngine:
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
-        poll_interval = float(eval_cfg.get("poll_interval_seconds", 3))
-        poll_max = int(eval_cfg.get("poll_max_attempts", 40))
 
         started_at = time.perf_counter()
-
-        # Step 1 -- get a pre-signed upload URL
-        upload_meta_resp = await client.post(
-            f"{base_url}/transcription/local_file/get_upload_url",
-            headers=headers,
-            json={"file_name": audio_path.name},
-            timeout=self.timeout_seconds,
-        )
-        upload_meta_resp.raise_for_status()
-        upload_meta = upload_meta_resp.json()
-        upload_url = upload_meta["upload_url"]
-        public_url = upload_meta["public_url"]
-
-        # Step 2 -- upload the audio file
-        audio_bytes = audio_path.read_bytes()
-        upload_resp = await client.put(upload_url, content=audio_bytes, timeout=self.timeout_seconds)
-        upload_resp.raise_for_status()
-
-        # Step 3 -- initiate transcription
-        initiate_resp = await client.post(
-            f"{base_url}/transcription/local_file/initiate_transcription",
-            headers=headers,
-            json={
-                "url": public_url,
-                "language": language,
-                "service": "Standard",
-            },
-            timeout=self.timeout_seconds,
-        )
-        initiate_resp.raise_for_status()
-        order_id = initiate_resp.json()["order_id"]
-
-        # Step 4 -- poll until the transcription completes
-        transcription_text = ""
-        for _ in range(poll_max):
-            await asyncio.sleep(poll_interval)
-            content_resp = await client.get(
-                f"{base_url}/files/{order_id}/content",
-                headers=headers,
-                timeout=self.timeout_seconds,
-            )
-            content_resp.raise_for_status()
-            content_data = content_resp.json()
-            body = content_data.get("body", content_data)
-            status = str(body.get("status", "")).strip()
-            if status == "Completed":
-                segments = body.get("content", [])
-                transcription_text = " ".join(
-                    str(seg.get("text", "")).strip()
-                    for seg in segments
-                    if str(seg.get("text", "")).strip()
-                )
-                break
-        else:
-            raise RuntimeError(
-                f"Transkriptor transcription did not complete within "
-                f"{poll_max * poll_interval:.0f}s (order_id={order_id})."
-            )
-
+        upload_url, public_url = await self._speaktor_get_upload_url(client, base_url, headers, audio_path)
+        await self._speaktor_upload_audio(client, upload_url, audio_path)
+        order_id = await self._speaktor_initiate_transcription(client, base_url, headers, public_url, language)
+        transcription_text = await self._speaktor_poll_transcription(client, base_url, headers, eval_cfg, order_id)
         response_duration = time.perf_counter() - started_at
+
         await self._log_request(
             provider="speaktor",
             model="transkriptor-stt",
@@ -313,6 +273,70 @@ class EvaluationEngine:
             response_duration=response_duration,
         )
         return transcription_text
+
+    async def _speaktor_get_upload_url(
+            self, client: Any, base_url: str, headers: dict[str, str], audio_path: Path
+    ) -> tuple[str, str]:
+        """Step 1 -- get a pre-signed upload URL. Returns (upload_url, public_url)."""
+        response = await client.post(
+            f"{base_url}/transcription/local_file/get_upload_url",
+            headers=headers,
+            json={"file_name": audio_path.name},
+            timeout=self.timeout_seconds,
+        )
+        response.raise_for_status()
+        upload_meta = response.json()
+        return upload_meta["upload_url"], upload_meta["public_url"]
+
+    async def _speaktor_upload_audio(self, client: Any, upload_url: str, audio_path: Path) -> None:
+        """Step 2 -- upload the audio file."""
+        response = await client.put(upload_url, content=audio_path.read_bytes(), timeout=self.timeout_seconds)
+        response.raise_for_status()
+
+    async def _speaktor_initiate_transcription(
+            self, client: Any, base_url: str, headers: dict[str, str], public_url: str, language: str
+    ) -> str:
+        """Step 3 -- initiate transcription. Returns the order_id."""
+        response = await client.post(
+            f"{base_url}/transcription/local_file/initiate_transcription",
+            headers=headers,
+            json={
+                "url": public_url,
+                "language": language,
+                "service": "Standard",
+            },
+            timeout=self.timeout_seconds,
+        )
+        response.raise_for_status()
+        return response.json()["order_id"]
+
+    async def _speaktor_poll_transcription(
+            self, client: Any, base_url: str, headers: dict[str, str], eval_cfg: dict[str, Any], order_id: str
+    ) -> str:
+        """Step 4 -- poll until the transcription completes."""
+        poll_interval = float(eval_cfg.get("poll_interval_seconds", 3))
+        poll_max = int(eval_cfg.get("poll_max_attempts", 40))
+        for _ in range(poll_max):
+            await asyncio.sleep(poll_interval)
+            response = await client.get(
+                f"{base_url}/files/{order_id}/content",
+                headers=headers,
+                timeout=self.timeout_seconds,
+            )
+            response.raise_for_status()
+            content_data = response.json()
+            body = content_data.get("body", content_data)
+            if str(body.get("status", "")).strip() == "Completed":
+                segments = body.get("content", [])
+                return " ".join(
+                    str(seg.get("text", "")).strip()
+                    for seg in segments
+                    if str(seg.get("text", "")).strip()
+                )
+        raise RuntimeError(
+            f"Transkriptor transcription did not complete within "
+            f"{poll_max * poll_interval:.0f}s (order_id={order_id})."
+        )
 
     @staticmethod
     def _fail(generated_audio: GeneratedAudio, error: str) -> EvaluationResult:
