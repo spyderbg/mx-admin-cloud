@@ -14,34 +14,36 @@
           </div>
         </div>
 
-        <div>
-          <div class="id-field-label">{{ currentImageLabel(contentLanguage) }}</div>
-          <div
-            v-if="currentImageCard"
-            class="id-summary-image-preview id-image-preview-trigger"
-            role="button"
-            tabindex="0"
-            :aria-label="`Open ${currentImageCard.title} preview`"
-            @click="openImagePreview(currentImageCard.src, currentImageCard.title)"
-            @keydown.enter.prevent="openImagePreview(currentImageCard.src, currentImageCard.title)"
-            @keydown.space.prevent="openImagePreview(currentImageCard.src, currentImageCard.title)"
-          >
-            <img :src="currentImageCard.src" :alt="currentImageCard.title" class="id-summary-image" />
+        <div class="id-summary-main-info">
+          <div>
+            <div class="id-field-label">{{ currentImageLabel(contentLanguage) }}</div>
+            <div
+              v-if="currentImageCard"
+              class="id-summary-image-preview id-image-preview-trigger"
+              role="button"
+              tabindex="0"
+              :aria-label="`Open ${currentImageCard.title} preview`"
+              @click="openImagePreview(currentImageCard.src, currentImageCard.title)"
+              @keydown.enter.prevent="openImagePreview(currentImageCard.src, currentImageCard.title)"
+              @keydown.space.prevent="openImagePreview(currentImageCard.src, currentImageCard.title)"
+            >
+              <img :src="currentImageCard.src" :alt="currentImageCard.title" class="id-summary-image" />
+            </div>
+            <div v-else class="id-summary-image-preview">
+              <img :src="cameraPlaceholderUrl" alt="No image available" class="id-summary-image" />
+            </div>
           </div>
-          <div v-else class="id-summary-image-preview">
-            <img :src="cameraPlaceholderUrl" alt="No image available" class="id-summary-image" />
-          </div>
-        </div>
 
-        <div>
-          <div class="id-field-label">{{ descriptionLabel(contentLanguage) }}</div>
-          <p class="id-description">{{ categoryDescriptionText }}</p>
+          <div>
+            <div class="id-field-label">{{ descriptionLabel(contentLanguage) }}</div>
+            <p class="id-description">{{ categoryDescriptionText }}</p>
+          </div>
         </div>
       </div>
 
       <div class="id-summary-details">
         <div class="id-summary-actions id-summary-actions-only">
-          <div class="id-release-group">
+          <div class="id-release-group id-desktop-actions">
             <button type="button" class="btn btn-primary btn-sm id-release-item-btn" @click="onReleaseItem">
               {{ releaseItemLabel(contentLanguage) }}
             </button>
@@ -56,12 +58,11 @@
               {{ deleteLabel(contentLanguage) }}
             </button>
           </div>
+          <MobileActionsMenu class="id-mobile-actions" label="Item actions" :actions="itemMobileActions" />
         </div>
 
         <div class="id-summary-voices-panel">
-          <h4 class="id-section-kicker">
-            {{ itemVoicesLabel(contentLanguage) }}
-          </h4>
+          <h4 class="id-section-kicker">{{ itemVoicesLabel(contentLanguage) }}</h4>
           <VoiceCardsGrid
             :voices="itemVoiceCards"
             :playing-voice-id="playingVoiceId"
@@ -86,10 +87,11 @@
           <span>({{ itemImages.length }})</span>
         </h4>
         <div class="id-toolbar">
-          <button type="button" class="btn btn-outline-primary btn-sm" @click="onAddFile">
+          <button type="button" class="btn btn-outline-primary btn-sm id-desktop-actions" @click="onAddFile">
             <i class="mdi mdi-plus mr-1"></i>{{ addImageLabel(contentLanguage) }}
           </button>
-          <button v-if="hasFiles" type="button" class="btn btn-primary btn-sm" @click="onReleaseAllItemImages">{{ releaseAllImagesLabel(contentLanguage) }}</button>
+          <button v-if="hasFiles" type="button" class="btn btn-primary btn-sm id-desktop-actions" @click="onReleaseAllItemImages">{{ releaseAllImagesLabel(contentLanguage) }}</button>
+          <MobileActionsMenu class="id-mobile-actions" label="Image actions" :actions="imageMobileActions" />
         </div>
       </div>
 
@@ -116,6 +118,7 @@
             <strong>{{ card.generator }}</strong>
             <div class="id-meta-label id-meta-spaced">{{ promptLabel(contentLanguage) }}</div>
             <p>{{ card.prompt }}</p>
+            <span class="id-mobile-image-file">{{ fileNameFromUri(rawItemImages[card.index]) }}</span>
             <button
               type="button"
               class="id-release-btn"
@@ -188,10 +191,11 @@
           <span>({{ item.voices.length }})</span>
         </h4>
         <div class="id-toolbar">
-          <button type="button" class="btn btn-outline-primary btn-sm" @click="onAddVoice">
+          <button type="button" class="btn btn-outline-primary btn-sm id-desktop-actions" @click="onAddVoice">
             <i class="mdi mdi-plus mr-1"></i>{{ addVoiceLabel(contentLanguage) }}
           </button>
-          <button type="button" class="btn btn-primary btn-sm" @click="onReleaseAllItemVoices">{{ releaseAllVoicesLabel(contentLanguage) }}</button>
+          <button type="button" class="btn btn-primary btn-sm id-desktop-actions" @click="onReleaseAllItemVoices">{{ releaseAllVoicesLabel(contentLanguage) }}</button>
+          <MobileActionsMenu class="id-mobile-actions" label="Voice actions" :actions="voiceMobileActions" />
         </div>
       </div>
       <input ref="voiceFileInputRef" type="file" accept="audio/*" class="d-none" aria-hidden="true" tabindex="-1" @change="onVoiceFilePicked" />
@@ -451,6 +455,7 @@ import { LocalizedString, SUPPORTED_LANGUAGES, type Language, type Voice } from 
 import { useContentLanguage } from '../composables/useContentLanguage'
 import { useAudioPlayer } from '../composables/useAudioPlayer'
 import ViewBreadcrumb from '../components/ViewBreadcrumb.vue'
+import MobileActionsMenu, { type MobileAction } from '../components/MobileActionsMenu.vue'
 import VoiceCardsGrid, { type VoiceExtraAction } from '../components/VoiceCardsGrid.vue'
 import VoiceParametersTooltip from '../components/VoiceParametersTooltip.vue'
 import { resizeImageToMaxDimension } from '../utils/imageResize'
@@ -1150,6 +1155,29 @@ const voiceCardActions: VoiceExtraAction[] = [
   },
 ]
 
+const itemMobileActions = computed<MobileAction[]>(() => [
+  { label: releaseItemLabel(contentLanguage.value), icon: 'mdi-upload', onClick: onReleaseItem },
+  {
+    label: deleteLabel(contentLanguage.value),
+    icon: 'mdi-delete',
+    onClick: openDeleteItemModal,
+    danger: true,
+    disabled: deletingItem.value,
+  },
+])
+
+const imageMobileActions = computed<MobileAction[]>(() => [
+  { label: addImageLabel(contentLanguage.value), icon: 'mdi-plus', onClick: onAddFile },
+  ...(hasFiles.value
+    ? [{ label: releaseAllImagesLabel(contentLanguage.value), icon: 'mdi-upload', onClick: onReleaseAllItemImages }]
+    : []),
+])
+
+const voiceMobileActions = computed<MobileAction[]>(() => [
+  { label: addVoiceLabel(contentLanguage.value), icon: 'mdi-plus', onClick: onAddVoice },
+  { label: releaseAllVoicesLabel(contentLanguage.value), icon: 'mdi-upload', onClick: onReleaseAllItemVoices },
+])
+
 </script>
 
 <style scoped>
@@ -1175,6 +1203,11 @@ const voiceCardActions: VoiceExtraAction[] = [
   flex-direction: column;
   gap: 1.25rem;
   min-height: 100%;
+}
+.id-summary-main-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
 }
 .id-summary-details {
   padding-left: 1.5rem;
@@ -1280,6 +1313,10 @@ const voiceCardActions: VoiceExtraAction[] = [
 }
 .id-section-title span {
   margin-left: 0.35rem;
+}
+.id-mobile-actions,
+.id-mobile-image-file {
+  display: none;
 }
 .id-image-grid {
   display: grid;
@@ -1624,20 +1661,116 @@ const voiceCardActions: VoiceExtraAction[] = [
   }
 }
 @media (max-width: 575px) {
+  .id-summary-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1rem;
+  }
+  .id-summary-copy {
+    gap: 1rem;
+  }
+  .id-summary-copy > div:first-child {
+    padding-right: 3.75rem;
+  }
+  .id-summary-main-info {
+    gap: 1rem;
+  }
+  .id-summary-image-preview {
+    aspect-ratio: 4 / 3;
+  }
+  .id-summary-details {
+    display: block;
+    padding: 1rem 0 0;
+    border-top: 1px solid #e2e7f1;
+  }
+  .id-summary-actions-only {
+    top: 0.75rem;
+    right: 0.75rem;
+    width: auto;
+    flex-direction: row;
+  }
+  .id-desktop-actions {
+    display: none !important;
+  }
+  .id-mobile-actions {
+    display: block;
+  }
   .id-panel {
     padding: 1rem;
   }
-  .id-section-header,
-  .id-summary-actions {
-    align-items: flex-start;
-    flex-direction: column;
+  .id-section-header {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
   }
-  .id-toolbar,
-  .id-release-group {
-    flex-wrap: wrap;
+  .id-toolbar {
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .id-toolbar > .btn {
+    white-space: nowrap;
+  }
+  .id-image-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem;
   }
   .id-image-card {
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    min-height: 0;
+    padding: 0.5rem;
+  }
+  .id-image-card-main::before {
+    position: absolute;
+    top: 0.4rem;
+    left: 0.4rem;
+    z-index: 2;
+    display: grid;
+    place-items: center;
+    width: 1.65rem;
+    height: 1.65rem;
+    border-radius: 50%;
+    background: #2f8f68;
+    color: #fff;
+    content: '✓';
+    font-weight: 700;
+  }
+  .id-image-meta {
+    flex: 1;
+    padding: 0;
+  }
+  .id-image-meta .id-meta-label,
+  .id-image-meta p {
+    display: none;
+  }
+  .id-image-meta strong {
+    margin: 0 0 0.2rem;
+    font-size: 0.82rem;
+  }
+  .id-mobile-image-file {
+    display: block;
+    overflow: hidden;
+    color: #64748b;
+    font-size: 0.75rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .id-release-btn {
+    max-width: none;
+    min-height: 2.35rem;
+    margin-top: 0.65rem;
+  }
+  .id-image-grid > .id-add-image-card {
+    display: none;
+  }
+  .id-voices-table-wrap {
+    overflow-x: auto;
+  }
+  .id-voices-table {
+    min-width: 42rem;
   }
 }
 .cd-modal-overlay {
