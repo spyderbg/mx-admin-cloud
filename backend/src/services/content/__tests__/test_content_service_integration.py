@@ -5,7 +5,7 @@ ContentProvider, covering status codes, response bodies, auth enforcement,
 and all implemented error branches.
 """
 
-# pylint: disable=missing-function-docstring,redefined-outer-name,too-few-public-methods
+# pylint: disable=missing-function-docstring,redefined-outer-name,too-few-public-methods,too-many-public-methods
 
 from __future__ import annotations
 

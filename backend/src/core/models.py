@@ -95,6 +95,23 @@ class ProviderAggregate:  # pylint: disable=too-many-instance-attributes
 
 
 @dataclass(slots=True)
+class ScoreRecord:  # pylint: disable=too-many-instance-attributes
+    """One persisted evaluation entry, as returned by ScoreStore lookups."""
+
+    provider: str  # provider that produced the audio
+    request_id: str  # matching TTSRequest.request_id
+    language_code: str  # ISO language code
+    expected_text: str  # ground-truth reference text
+    transcription: str  # text transcribed from the generated audio
+    pronunciation_accuracy: float  # composite pronunciation score (0.0 - 1.0)
+    evaluation_latency_seconds: float  # wall-clock evaluation time
+    raw_path: str  # path to the raw generated audio file
+    normalized_path: str | None  # path after normalization (if any)
+    success: bool  # whether evaluation succeeded
+    error: str | None = None  # error message on failure
+
+
+@dataclass(slots=True)
 class ProviderRunRecord:  # pylint: disable=too-many-instance-attributes
     """Flat record combining generation, evaluation, and optimization results."""
 
