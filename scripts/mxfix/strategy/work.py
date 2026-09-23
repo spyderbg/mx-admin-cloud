@@ -22,6 +22,14 @@ test_environment/README.md's "Verifying a fix" section on why worktrees can't sh
 you're actively working down an already-filed backlog across several `run` calls in a
 row, that repeated up-front cost buys nothing you don't already know — "work" skips
 straight to the part that matters.
+
+"work" ALSO picks status::needs-human back up, but only the ones a human has actually
+commented on since the last attempt gave up (common.fresh_human_feedback()) — never
+blindly, since status::needs-human exists precisely so a stuck issue doesn't loop
+forever on its own. That comment becomes the retry's starting feedback (a fresh
+[limits] max_fix_attempts budget, same as any other issue this selects — nothing here
+persists an attempt count across separate `run` invocations). A status::needs-human
+issue with no new comment is left exactly alone.
 """
 
 from __future__ import annotations
@@ -54,16 +62,32 @@ def run(
 ) -> WorkOutcome:
     # "work" has no natural batch size either (same one-issue-at-a-time design as
     # heal) — --max-issues is the only cap; unset means "keep going until nothing
-    # eligible is left".
+    # eligible is left". Open issues fill the cap first; whatever's left over goes to
+    # commented needs-human issues, so a backlog of fresh open issues is never crowded
+    # out by needs-human retries, or vice versa when there's room for both.
     limit = max_issues if max_issues is not None else 10_000
-    issues = common.select_issues(project, severity_threshold=config.limits.severity_threshold, limit=limit)
-    if not issues:
+    open_issues = common.select_issues(project, severity_threshold=config.limits.severity_threshold, limit=limit)
+    remaining = max(limit - len(open_issues), 0)
+    needs_human = (
+        common.select_needs_human_with_feedback(project, severity_threshold=config.limits.severity_threshold, limit=remaining)
+        if remaining
+        else []
+    )
+
+    if not open_issues and not needs_human:
         print(
-            f"{DIM}No status::open issue at/above severity::{config.limits.severity_threshold} — nothing for "
-            f"work to do. work never files issues itself; run report/heal/batch at least once first, or "
-            f"`issues.py open` one by hand, if GitLab has nothing status::open yet.{RESET}",
+            f"{DIM}No status::open issue, and no status::needs-human issue with a new comment since its last "
+            f"attempt, at/above severity::{config.limits.severity_threshold} — nothing for work to do. work "
+            f"never files issues itself; run report/heal/batch at least once first, or `issues.py open` one by "
+            f"hand, if GitLab has nothing status::open yet.{RESET}",
         )
         return WorkOutcome()
+
+    if needs_human:
+        print(
+            f"{DIM}Also picking up {len(needs_human)} status::needs-human issue(s) with a new comment "
+            f"since the last attempt: {', '.join(f'#{issue.iid}' for issue, _feedback in needs_human)}.{RESET}",
+        )
 
     if not dry_run:
         worktree.fetch_base_branch(config.git.base_branch)
@@ -73,6 +97,13 @@ def run(
             issue, config=config, project=project, fixer=fixer, gitlab_config=gitlab_config,
             owner_repo=owner_repo, github_token=github_token, mode=mode, dry_run=dry_run, label="work",
         )
-        for issue in issues
+        for issue in open_issues
+    ] + [
+        common.work_one_issue(
+            issue, config=config, project=project, fixer=fixer, gitlab_config=gitlab_config,
+            owner_repo=owner_repo, github_token=github_token, mode=mode, dry_run=dry_run, label="work",
+            initial_feedback=feedback,
+        )
+        for issue, feedback in needs_human
     ]
     return WorkOutcome(issues_attempted=outcomes)

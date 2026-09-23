@@ -215,26 +215,84 @@ def review_diff(worktree: Path, *, issue_source: str) -> str | None:
     return None
 
 
+def _severity_rank(issue: ProjectIssue) -> int:
+    ranks = [
+        _SEVERITY_RANK[label.removeprefix("severity::")]
+        for label in (issue.labels or [])
+        if label.startswith("severity::") and label.removeprefix("severity::") in _SEVERITY_RANK
+    ]
+    return min(ranks, default=99)
+
+
+def _eligible_sorted(candidates: list[ProjectIssue], *, severity_threshold: str) -> list[ProjectIssue]:
+    min_rank = _SEVERITY_RANK[severity_threshold]
+    eligible = [issue for issue in candidates if _severity_rank(issue) <= min_rank]
+    eligible.sort(key=lambda issue: (_severity_rank(issue), issue.iid))
+    return eligible
+
+
 def select_issues(project: Project, *, severity_threshold: str, limit: int) -> list[ProjectIssue]:
     """status::open, tool-owned issues at/above *severity_threshold*, highest severity
     and (within a severity) oldest iid first. "the single highest-severity status::open
     issue" (heal, limit=1) / "up to concurrency issues above severity_threshold" (batch,
     limit=concurrency) — implementation_plan.md §16.
     """
-    min_rank = _SEVERITY_RANK[severity_threshold]
     candidates = project.issues.list(labels=[mxclient.OWNERSHIP_LABEL, "status::open"], all=True)
+    return _eligible_sorted(candidates, severity_threshold=severity_threshold)[:limit]
 
-    def severity_rank(issue: ProjectIssue) -> int:
-        ranks = [
-            _SEVERITY_RANK[label.removeprefix("severity::")]
-            for label in (issue.labels or [])
-            if label.startswith("severity::") and label.removeprefix("severity::") in _SEVERITY_RANK
-        ]
-        return min(ranks, default=99)
 
-    eligible = [issue for issue in candidates if severity_rank(issue) <= min_rank]
-    eligible.sort(key=lambda issue: (severity_rank(issue), issue.iid))
-    return eligible[:limit]
+_AI_COMMENT_PREFIXES = ("heal:", "work:", "batch:")
+
+
+def _is_ai_comment(body: str) -> bool:
+    return body.strip().startswith(_AI_COMMENT_PREFIXES)
+
+
+def fresh_human_feedback(issue: ProjectIssue) -> str | None:
+    """Every human (non-system, non-AI-authored) comment on *issue* posted after the
+    last AI-authored one, oldest first, joined into one block — or None if there isn't
+    one yet (still genuinely needs a human; not retried blindly just because it's
+    status::needs-human).
+
+    "AI-authored" is detected by the `"heal:"`/`"work:"`/`"batch:"` prefix every comment
+    work_one_issue()/batch.py already leaves — not by GitLab author identity, which
+    isn't reliably distinguishable from a human's own account without assuming a
+    specific token identity this module has no other reason to know. GitLab's own
+    system notes (label changes, state transitions) are excluded via each note's own
+    `system` flag; they're not comments either way.
+    """
+    notes = sorted(
+        (note for note in issue.notes.list(all=True) if not getattr(note, "system", False)),
+        key=lambda note: note.created_at,
+    )
+    last_ai_at = next((note.created_at for note in reversed(notes) if _is_ai_comment(note.body)), None)
+    human_notes = [
+        note for note in notes
+        if not _is_ai_comment(note.body) and (last_ai_at is None or note.created_at > last_ai_at)
+    ]
+    if not human_notes:
+        return None
+    return "\n\n---\n\n".join(note.body.strip() for note in human_notes)
+
+
+def select_needs_human_with_feedback(project: Project, *, severity_threshold: str, limit: int) -> list[tuple[ProjectIssue, str]]:
+    """status::needs-human, tool-owned issues that have a fresh human comment since the
+    last AI attempt — "for status::needs-human tasks, check for a comment and try to use
+    it to resolve them." Same ownership guard and severity filter as select_issues(); a
+    needs-human issue with no NEW comment is left alone (still genuinely needs a human).
+    Returns (issue, feedback_text) pairs, sorted the same way select_issues() sorts.
+    """
+    candidates = project.issues.list(labels=[mxclient.OWNERSHIP_LABEL, "status::needs-human"], all=True)
+    eligible = _eligible_sorted(candidates, severity_threshold=severity_threshold)
+
+    result: list[tuple[ProjectIssue, str]] = []
+    for issue in eligible:
+        if len(result) >= limit:
+            break
+        feedback = fresh_human_feedback(issue)
+        if feedback is not None:
+            result.append((issue, feedback))
+    return result
 
 
 @dataclass
@@ -248,7 +306,7 @@ class IssueOutcome:
 def work_one_issue(
         issue: ProjectIssue, *, config: RunConfig, project: Project, fixer: Fixer,
         gitlab_config: GitLabConfig, owner_repo: str, github_token: str,
-        mode: str | None, dry_run: bool, label: str,
+        mode: str | None, dry_run: bool, label: str, initial_feedback: str | None = None,
 ) -> IssueOutcome:
     """One issue, start to finish: worktree -> fixer.run() -> review_diff() -> reset +
     full check suite -> land on green / retry-or-needs-human on red
@@ -258,6 +316,14 @@ def work_one_issue(
     is already status::open in GitLab — see strategy/work.py). *label* tags the prints
     and GitLab comments this leaves ("heal" or "work") so it's clear afterward which
     strategy actually did the work.
+
+    *initial_feedback*, when given, seeds attempt 1's FixTask.feedback instead of
+    starting empty — this is how a status::needs-human issue with a fresh human comment
+    (common.fresh_human_feedback()/select_needs_human_with_feedback()) gets retried: the
+    human's own words go to the fixer exactly like a failed check's feedback would on a
+    normal retry, with a fresh [limits] max_fix_attempts budget (nothing persists an
+    attempt count across separate `run` invocations for ANY strategy — see
+    strategy/batch.py's docstring on the same point).
     """
     iid = issue.iid
     title = issue.title
@@ -265,12 +331,17 @@ def work_one_issue(
     branch = f"{config.git.branch_prefix}{iid}"
 
     print(f"\n{BOLD}=== issue #{iid}: {title} ==={RESET}")
+    if initial_feedback is not None:
+        print(f"{DIM}  picking this up again — status::needs-human, but a human left a new comment since the last attempt:{RESET}")
+        print(f"{DIM}  {initial_feedback.strip()[:300]}{'...' if len(initial_feedback.strip()) > 300 else ''}{RESET}")
 
     if dry_run:
         print(
             f"{DIM}  dry-run: would create .mxworktrees/{iid} on branch {branch} off "
             f"{config.git.base_branch}, hand it to fixer '{fixer.name}' for up to "
-            f"{config.limits.max_fix_attempts} attempt(s), and on a green check run "
+            f"{config.limits.max_fix_attempts} attempt(s)"
+            + (", starting from that comment as feedback," if initial_feedback is not None else "")
+            + ", and on a green check run "
             f"commit" + (", push" if config.git.push else "") +
             (", open a PR" if config.git.push and config.git.open_pr else "") + f".{RESET}",
         )
@@ -279,7 +350,7 @@ def work_one_issue(
     mxstate.set_status_by_iid(project, iid, "status::in-progress")
     wt_path = worktree.create(str(iid), branch, base_branch=config.git.base_branch)
 
-    feedback: str | None = None
+    feedback: str | None = initial_feedback
     for attempt in range(1, config.limits.max_fix_attempts + 1):
         task = FixTask(issue_iid=iid, title=title, body=body, worktree=wt_path, attempt=attempt, feedback=feedback)
         print(f"{DIM}  attempt {attempt}/{config.limits.max_fix_attempts}: running fixer '{fixer.name}'...{RESET}")

@@ -31,7 +31,10 @@ class FixTask:
     body: str  # the issue's evidence, affected files, acceptance criteria — as filed by sync
     worktree: Path
     attempt: int  # 1-based; compared against [limits] max_fix_attempts by strategy/heal.py
-    feedback: str | None  # the previous attempt's check failures, fed back verbatim on retry
+    feedback: str | None  # previous-attempt check failures, a diff rejection, the fixer's own
+    # reported failure, OR — on a status::needs-human issue picked back up because a human
+    # commented (strategy/common.py's fresh_human_feedback()) — that comment, verbatim.
+    # Whichever it is, fed back to the fixer exactly as-is; see build_prompt() below.
 
 
 @dataclass(frozen=True)
@@ -81,8 +84,9 @@ def build_prompt(task: FixTask) -> str:
     if task.feedback:
         lines += [
             "",
-            f"This is attempt {task.attempt} — the previous attempt did not pass the checks. "
-            "Previous attempt's check failures (fix these, don't just retry the same change):",
+            f"Attempt {task.attempt}. Feedback from the previous attempt (a failed check, a "
+            "rejected change, or a human reviewer's comment — whichever it is, address it; "
+            "don't just retry the same change unchanged):",
             task.feedback.strip(),
         ]
     return "\n".join(lines)
