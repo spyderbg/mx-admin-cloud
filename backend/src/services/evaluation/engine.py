@@ -101,6 +101,64 @@ class EvaluationEngine:
 
         return self._score(generated_audio, transcription, latency)
 
+    async def compare(
+            self,
+            generated_audio_a: GeneratedAudio,
+            generated_audio_b: GeneratedAudio,
+            evaluate_config: dict[str, Any],
+            client: Any,
+            provider_name: str = "",
+    ) -> EvaluationResult:
+        """Compare two generated audio clips against each other.
+
+        Transcribes *generated_audio_a* and *generated_audio_b* with the same STT
+        backend, then scores *generated_audio_b*'s transcription against
+        *generated_audio_a*'s transcription (used as the reference text), with the
+        same Levenshtein-based metrics as evaluate().
+
+        Args:
+            generated_audio_a: The audio providing the reference transcription.
+            generated_audio_b: The audio scored against generated_audio_a's transcription.
+            evaluate_config: The "evaluate" sub-dict from the provider config.
+            client: An async HTTP client.
+            provider_name: Fallback STT provider name when not set in *evaluate_config*.
+        """
+        for generated_audio in (generated_audio_a, generated_audio_b):
+            if not generated_audio.normalized_path:
+                return self._fail(
+                    generated_audio_b,
+                    generated_audio.normalization_error or "Normalized audio file was not created.",
+                )
+
+        stt_provider = str(
+            evaluate_config.get("stt_provider", provider_name or generated_audio_a.provider)
+        ).lower()
+        api_key = _resolve_stt_api_key(stt_provider)
+        if not api_key:
+            return self._fail(
+                generated_audio_b,
+                f"Evaluation skipped: {stt_provider.upper()}_API_KEY is not set.",
+            )
+
+        started_at = time.perf_counter()
+        transcription_a = await self._transcribe(
+            stt_provider, generated_audio_a.normalized_path, evaluate_config, api_key, generated_audio_a, client
+        )
+        transcription_b = await self._transcribe(
+            stt_provider, generated_audio_b.normalized_path, evaluate_config, api_key, generated_audio_b, client
+        )
+        if transcription_a is None or transcription_b is None:
+            return self._fail(generated_audio_b, f"Unsupported stt_provider: {stt_provider}")
+        latency = time.perf_counter() - started_at
+
+        return self._score_transcriptions(
+            provider=generated_audio_b.provider,
+            request_id=generated_audio_b.request_id,
+            expected_text=transcription_a,
+            transcription=transcription_b,
+            latency=latency,
+        )
+
     async def _transcribe(
             self,
             stt_provider: str,
@@ -122,7 +180,25 @@ class EvaluationEngine:
     @staticmethod
     def _score(generated_audio: GeneratedAudio, transcription: str, latency: float) -> EvaluationResult:
         """Score a transcription against the expected text and build the EvaluationResult."""
-        expected_text = generated_audio.expected_text.strip()
+        return EvaluationEngine._score_transcriptions(
+            provider=generated_audio.provider,
+            request_id=generated_audio.request_id,
+            expected_text=generated_audio.expected_text,
+            transcription=transcription,
+            latency=latency,
+        )
+
+    @staticmethod
+    def _score_transcriptions(
+            *,
+            provider: str,
+            request_id: str,
+            expected_text: str,
+            transcription: str,
+            latency: float,
+    ) -> EvaluationResult:
+        """Score *transcription* against *expected_text* and build the EvaluationResult."""
+        expected_text = expected_text.strip()
         actual_text = transcription.strip()
         expected_folded = expected_text.casefold()
         actual_folded = actual_text.casefold()
@@ -135,8 +211,8 @@ class EvaluationEngine:
         word_accuracy = normalized_accuracy(expected_words, actual_words)
 
         return EvaluationResult(
-            provider=generated_audio.provider,
-            request_id=generated_audio.request_id,
+            provider=provider,
+            request_id=request_id,
             expected_text=expected_text,
             transcription=actual_text,
             levenshtein_distance=max(char_distance, word_distance),

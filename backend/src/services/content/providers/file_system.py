@@ -883,6 +883,36 @@ class FileSystemContentProvider(ContentProvider):  # pylint: disable=too-many-pu
 
         return item_ids, items_by_lang
 
+    def _item_thumbnail_and_count(
+            self,
+            category_path: Path,
+            category_name: str,
+            english_word: str,
+    ) -> tuple[str, int]:
+        """Return (thumbnail_uri, images_count) for one item, scanning its image folder."""
+        folder_name = self._english_word_to_folder_name(english_word)
+        item_folder = category_path / folder_name
+        if not item_folder.is_dir():
+            return "", 0
+
+        image_files = sorted(
+            f for f in item_folder.iterdir()
+            if f.is_file()
+            and f.suffix.lower() in _IMAGE_EXTENSIONS
+            and self._is_safe_category_name(f.stem)
+        )
+        # The unindexed file (for example, ``calculator.png``) is the
+        # dedicated main-image copy.  It is not an image variant and is
+        # deliberately excluded from ``item_images().images`` as well,
+        # so the category summary must exclude it from the displayed
+        # count.  Older item folders have no dedicated main file; their
+        # first variant remains both the thumbnail and part of the count.
+        main_image = next((f for f in image_files if f.stem == folder_name), None)
+        variant_files = [f for f in image_files if f != main_image]
+        thumbnail = main_image or (variant_files[0] if variant_files else None)
+        thumbnail_uri = f"/content/{category_name}/{folder_name}/{thumbnail.name}" if thumbnail else ""
+        return thumbnail_uri, len(variant_files)
+
     def _collect_items(
             self,
             category_path: Path,
@@ -894,30 +924,11 @@ class FileSystemContentProvider(ContentProvider):  # pylint: disable=too-many-pu
         en_words = items_by_lang.get("en", [])
         items = []
         for i, iid in enumerate(item_ids):
-            thumbnail_uri = ""
-            images_count = 0
+            thumbnail_uri, images_count = "", 0
             if i < len(en_words):
-                folder_name = self._english_word_to_folder_name(en_words[i])
-                item_folder = category_path / folder_name
-                if item_folder.is_dir():
-                    image_files = sorted(
-                        f for f in item_folder.iterdir()
-                        if f.is_file()
-                        and f.suffix.lower() in _IMAGE_EXTENSIONS
-                        and self._is_safe_category_name(f.stem)
-                    )
-                    # The unindexed file (for example, ``calculator.png``) is the
-                    # dedicated main-image copy.  It is not an image variant and is
-                    # deliberately excluded from ``item_images().images`` as well,
-                    # so the category summary must exclude it from the displayed
-                    # count.  Older item folders have no dedicated main file; their
-                    # first variant remains both the thumbnail and part of the count.
-                    main_image = next((f for f in image_files if f.stem == folder_name), None)
-                    variant_files = [f for f in image_files if f != main_image]
-                    images_count = len(variant_files)
-                    thumbnail = main_image or (variant_files[0] if variant_files else None)
-                    if thumbnail:
-                        thumbnail_uri = f"/content/{category_name}/{folder_name}/{thumbnail.name}"
+                thumbnail_uri, images_count = self._item_thumbnail_and_count(
+                    category_path, category_name, en_words[i]
+                )
             items.append(ItemDetail(
                 id=iid,
                 name=LocalizedString({lang: names[i] for lang, names in items_by_lang.items() if i < len(names)}),

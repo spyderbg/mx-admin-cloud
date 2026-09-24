@@ -66,48 +66,43 @@ class SpeaktorTTSProvider(TTSProvider):
             raise RuntimeError(f"{self.api_key_env_name()} is not set.")
         return api_key
 
-    async def generate(self, request: TTSRequest, client: Any) -> GeneratedAudio:
-        """Call the Speaktor TTS endpoint, download the audio URL, and write it to disk."""
-        output_format = request.output_format
-        gen = self.resolve_language_generate(request.language_code)
+    def _missing_voice_result(self, request: TTSRequest, output_format: str) -> GeneratedAudio:
+        """Build a failed result when no voice_name is configured for this language."""
+        logger.warning(
+            "No voice_name configured for provider=%s language=%s -- skipping API request.",
+            self.name, request.language_code,
+        )
+        return GeneratedAudio(
+            provider=self.name,
+            request_id=request.request_id,
+            language_code=request.language_code,
+            language_name=request.language_name,
+            expected_text=request.expected_text,
+            filename_text=request.filename_text,
+            output_format=output_format,
+            raw_path=self.build_output_path(request, output_format),
+            raw_extension=output_format,
+            latency_seconds=0.0,
+            success=False,
+            error=f"No voice_name configured for language '{request.language_code}'",
+        )
 
-        voice_name = str(gen.get("voice_name") or gen.get("actor") or "").strip()
-        if not voice_name:
-            logger.warning(
-                "No voice_name configured for provider=%s language=%s -- skipping API request.",
-                self.name, request.language_code,
-            )
-            return GeneratedAudio(
-                provider=self.name,
-                request_id=request.request_id,
-                language_code=request.language_code,
-                language_name=request.language_name,
-                expected_text=request.expected_text,
-                filename_text=request.filename_text,
-                output_format=output_format,
-                raw_path=self.build_output_path(request, output_format),
-                raw_extension=output_format,
-                latency_seconds=0.0,
-                success=False,
-                error=f"No voice_name configured for language '{request.language_code}'",
-            )
-
-        endpoint = str(gen.get("endpoint", "")).strip()
-        if not endpoint:
-            raise RuntimeError("Speaktor config requires `endpoint` in the generate section.")
-
-        method = str(gen.get("method", "POST")).upper()
+    def _build_headers_and_payload(
+            self,
+            gen: dict[str, Any],
+            request: TTSRequest,
+            voice_name: str,
+            output_format: str,
+            endpoint: str,
+            prompt_text: str,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Render the configured header/payload templates and layer in the optional generation params."""
         headers_template = gen.get("headers", {})
         payload_template = gen.get("payload_template", {})
-
         api_key = self._resolve_credentials(endpoint, headers_template, payload_template)
-        response_mode = str(gen.get("response_mode", "json_url")).lower()
-        audio_field = str(gen.get("audio_field", "audioUrl"))
 
         lang_override = gen.get("language")
         resolved_language = lang_override if lang_override else to_bcp47(request.language_code)
-
-        prompt_text = self.build_prompt_text(request)
         context = {
             "text": prompt_text,
             "raw_text": request.text,
@@ -120,11 +115,14 @@ class SpeaktorTTSProvider(TTSProvider):
         }
         headers = _render_template(headers_template, context)
         payload = _render_template(payload_template, context)
-        output_path = self.build_output_path(request, output_format)
-        model_name = str(gen.get("model") or voice_name or "default")
-
         payload["voice_name"] = voice_name
+        self._apply_optional_params(payload, gen)
 
+        return headers, payload
+
+    @staticmethod
+    def _apply_optional_params(payload: dict[str, Any], gen: dict[str, Any]) -> None:
+        """Layer the optional speed_rate/emotion overrides into *payload*, if configured."""
         speed_rate = gen.get("speed_rate")
         if speed_rate is not None and str(speed_rate).strip() != "":
             payload["speed_rate"] = float(speed_rate)
@@ -132,18 +130,51 @@ class SpeaktorTTSProvider(TTSProvider):
         if emotion is not None and str(emotion).strip() != "":
             payload["emotion"] = str(emotion).strip()
 
+    @staticmethod
+    async def _extract_audio_bytes(gen: dict[str, Any], response: Any, client: Any) -> bytes:
+        """Pull the generated audio bytes out of the Speaktor response per response_mode."""
+        response_mode = str(gen.get("response_mode", "json_url")).lower()
+        audio_field = str(gen.get("audio_field", "audioUrl"))
+
+        if response_mode == "json_url":
+            data = response.json()
+            audio_response = await client.get(data[audio_field])
+            audio_response.raise_for_status()
+            return audio_response.content
+        if response_mode == "json_base64":
+            data = response.json()
+            return base64.b64decode(str(data[audio_field]))
+        return response.content
+
+    async def generate(self, request: TTSRequest, client: Any) -> GeneratedAudio:
+        """Call the Speaktor TTS endpoint, download the audio URL, and write it to disk."""
+        output_format = request.output_format
+        gen = self.resolve_language_generate(request.language_code)
+
+        voice_name = str(gen.get("voice_name") or gen.get("actor") or "").strip()
+        if not voice_name:
+            return self._missing_voice_result(request, output_format)
+
+        endpoint = str(gen.get("endpoint", "")).strip()
+        if not endpoint:
+            raise RuntimeError("Speaktor config requires `endpoint` in the generate section.")
+
+        prompt_text = self.build_prompt_text(request)
+        headers, payload = self._build_headers_and_payload(
+            gen, request, voice_name, output_format, endpoint, prompt_text
+        )
+
+        method = str(gen.get("method", "POST")).upper()
         started_at = time.perf_counter()
         response = await client.request(method, endpoint, headers=headers, json=payload)
         latency = time.perf_counter() - started_at
         if response.is_error:
-            body = response.text
-            raise RuntimeError(
-                f"Speaktor API {response.status_code}: {body}"
-            )
+            raise RuntimeError(f"Speaktor API {response.status_code}: {response.text}")
+
         await log_provider_request(
             LogProviderRequest(
                 provider=self.name,
-                tts_model=model_name,
+                tts_model=str(gen.get("model") or voice_name or "default"),
                 actor=voice_name,
                 voice_id=str(gen.get("voice_id", "")),
                 language=str(request.language_code),
@@ -152,18 +183,8 @@ class SpeaktorTTSProvider(TTSProvider):
             )
         )
 
-        if response_mode == "json_url":
-            data = response.json()
-            audio_url = data[audio_field]
-            audio_response = await client.get(audio_url)
-            audio_response.raise_for_status()
-            output_path.write_bytes(audio_response.content)
-        elif response_mode == "json_base64":
-            data = response.json()
-            encoded_audio = str(data[audio_field])
-            output_path.write_bytes(base64.b64decode(encoded_audio))
-        else:
-            output_path.write_bytes(response.content)
+        output_path = self.build_output_path(request, output_format)
+        output_path.write_bytes(await self._extract_audio_bytes(gen, response, client))
 
         return GeneratedAudio(
             provider=self.name,

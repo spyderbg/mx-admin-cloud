@@ -1785,7 +1785,7 @@ def test_create_item_translation_failure_leaves_no_trace(tmp_path: Path) -> None
 
 
 def test_translate_word_strict_rejects_unsuccessful_response() -> None:
-    class _Response:
+    class _Response:  # pylint: disable=too-few-public-methods
         is_error = False
 
         @staticmethod
