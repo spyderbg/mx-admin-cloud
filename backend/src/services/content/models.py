@@ -50,6 +50,8 @@ class ContentOperationError(ContentError):
 
 @dataclass
 class ArchivedEntry:
+    """A single archived category snapshot within an archive listing."""
+
     base_name: str
     archive_folder: str
     archived_at: int
@@ -57,6 +59,8 @@ class ArchivedEntry:
 
 @dataclass
 class CategorySummary:
+    """Lightweight category listing entry."""
+
     id: str = ""
     name: LocalizedString = field(default_factory=lambda: LocalizedString({}))
     items_count: int = 0
@@ -69,12 +73,16 @@ class CategorySummary:
 
 @dataclass
 class CategoryList:
+    """Result of listing categories, optionally alongside archived ones."""
+
     categories: list[CategorySummary] = field(default_factory=list)
     archived: list[ArchivedEntry] = field(default_factory=list)
 
 
 @dataclass
 class ItemDetail:
+    """Summary of an item within a category's details."""
+
     id: str = ""
     name: LocalizedString = field(default_factory=lambda: LocalizedString({}))
     thumbnail_uri: str = ""
@@ -87,12 +95,16 @@ class ItemDetail:
 
 @dataclass
 class CategoryImage:
+    """A single image file belonging to a category or item."""
+
     id: str = ""
     file_uri: str | None = None
 
 
 @dataclass
 class CategoryVoice:
+    """A single voice audio file belonging to a category or item."""
+
     id: str = ""
     language: str = ""
     type: str = ""
@@ -103,6 +115,8 @@ class CategoryVoice:
 
 @dataclass
 class CategoryDetails:
+    """Full category record: metadata plus its images, voices, and items."""
+
     id: str = ""
     name: LocalizedString = field(default_factory=lambda: LocalizedString({}))
     description: LocalizedString = field(default_factory=lambda: LocalizedString({}))
@@ -119,6 +133,8 @@ class CategoryDetails:
 
 @dataclass
 class ItemImages:
+    """Image files for a specific item, with the selected main image."""
+
     item_id: str = ""
     images: list[CategoryImage] = field(default_factory=list)
     thumbnail_uri: str | None = None
@@ -129,18 +145,24 @@ class ItemImages:
 
 @dataclass
 class ItemVoices:
+    """Voice audio files for a specific item."""
+
     item_id: str = ""
     voices: list[CategoryVoice] = field(default_factory=list)
 
 
 @dataclass
 class CreateCategory:
+    """Result of creating a new category."""
+
     category: str = ""
     message: str = ""
 
 
 @dataclass
 class CreateItem:  # pylint: disable=too-many-instance-attributes
+    """Result of creating a new item, including any voice generation warnings."""
+
     category: str = ""
     item: str = ""
     folder: str = ""
@@ -153,6 +175,8 @@ class CreateItem:  # pylint: disable=too-many-instance-attributes
 
 @dataclass
 class RemoveItem:
+    """Result of permanently deleting an item from a category."""
+
     category: str = ""
     item: str = ""
 
@@ -170,12 +194,16 @@ class ArchiveCategory:
 
 @dataclass
 class RenameCategory:
+    """Result of updating a category's id or its localized details."""
+
     category: str = ""
     message: str = ""
 
 
 @dataclass
 class RestoreCategory:
+    """Result of restoring a category from the archive."""
+
     restored: bool = True
     name: str | None = None
     from_archive: str | None = None
@@ -184,6 +212,8 @@ class RestoreCategory:
 
 @dataclass
 class DeleteArchivedCategory:
+    """Result of permanently deleting a category snapshot from the archive."""
+
     deleted: bool = True
     name: str | None = None
     archive_folder: str | None = None
