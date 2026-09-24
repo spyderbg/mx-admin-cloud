@@ -1673,7 +1673,14 @@ def _prepare_category(tmp_path: Path) -> tuple[Path, Path]:
     return content_root, category_path
 
 
-def _fake_translate(text: str, target_lang_code: str | None = None, *_: object, **__: object) -> str:
+def _fake_translate(
+        text: str,
+        target_lang_code: str | None = None,
+        _category: str | None = None,
+        _input_lang_code: str | None = None,
+        *,
+        require_success: bool = False,  # pylint: disable=unused-argument
+) -> str:
     return f"{text}-{target_lang_code}"
 
 
@@ -1825,7 +1832,7 @@ def test_create_item_tts_failure_still_creates_item(tmp_path: Path) -> None:
 def test_create_item_partial_tts_failure(tmp_path: Path) -> None:
     content_root, category_path = _prepare_category(tmp_path)
 
-    def fake_audio(word: str, lang: str) -> bytes:
+    def fake_audio(lang: str) -> bytes:
         if lang == "fr":
             raise RuntimeError("fr voice unavailable")
         return b"audio"
@@ -2294,7 +2301,7 @@ def test_collect_voices_surfaces_provider_and_parameters(tmp_path: Path) -> None
 
 
 def test_add_category_voice_uploaded_has_custom_provider(tmp_path: Path) -> None:
-    content_root, category_path = _prepare_category(tmp_path)
+    content_root, _ = _prepare_category(tmp_path)
 
     provider = _make_fs_provider()
     with patch("src.services.content.providers.file_system.settings") as mock_settings:

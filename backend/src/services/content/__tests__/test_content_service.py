@@ -202,12 +202,12 @@ class _StubProvider(ContentProvider):
             "message": "removed",
         })
 
-    def restore_category(self, category_id: str) -> dict[str, Any]:
-        self._record("restore_category", category_id)
+    def restore_category(self, name: str) -> dict[str, Any]:
+        self._record("restore_category", name)
         return self._returns.get("restore_category", {
             "restored": True,
-            "name": category_id,
-            "from_archive": f"{category_id}_1000",
+            "name": name,
+            "from_archive": f"{name}_1000",
             "message": "restored",
         })
 
@@ -400,7 +400,7 @@ class _ConcreteProvider(ContentProvider):
     def remove_category(self, category_id):
         return {}
 
-    def restore_category(self, category_id):
+    def restore_category(self, name):
         return {}
 
     def delete_archived_category(self, name):

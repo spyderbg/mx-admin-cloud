@@ -192,11 +192,11 @@ class _StubContentProvider(ContentProvider):
             message="removed",
         ))
 
-    def restore_category(self, category_id: str) -> RestoreCategory:
+    def restore_category(self, name: str) -> RestoreCategory:
         return self._call("restore_category", RestoreCategory(
             restored=True,
-            name=category_id,
-            from_archive=f"{category_id}_1000",
+            name=name,
+            from_archive=f"{name}_1000",
             message="restored",
         ))
 
@@ -1312,7 +1312,7 @@ async def test_update_category_image_forwards_bytes_and_extension(tmp_resolved: 
 
 
 @pytest.mark.asyncio
-async def test_update_category_image_not_found_returns_404(client: AsyncClient, tmp_resolved: Path) -> None:
+async def test_update_category_image_not_found_returns_404(tmp_resolved: Path) -> None:
     provider = _StubContentProvider(tmp_resolved).raises(
         "update_category_image", CategoryNotFoundError("Image 'I_Missing' not found in category 'foods'."),
     )
@@ -1350,7 +1350,7 @@ async def test_delete_category_image_forwards_ids(tmp_resolved: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_delete_category_image_not_found_returns_404(client: AsyncClient, tmp_resolved: Path) -> None:
+async def test_delete_category_image_not_found_returns_404(tmp_resolved: Path) -> None:
     provider = _StubContentProvider(tmp_resolved).raises(
         "delete_category_image", CategoryNotFoundError("Image 'I_Missing' not found in category 'foods'."),
     )
