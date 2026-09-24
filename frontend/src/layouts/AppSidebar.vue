@@ -85,11 +85,6 @@
             >
               <i class="menu-icon mdi mdi-folder-image"></i>
               <span class="menu-title">{{ cat.name }}</span>
-              <i
-                v-if="cat.id === activeCategoryId"
-                class="mdi mdi-check-circle cd-sidebar-selected-marker"
-                aria-hidden="true"
-              ></i>
               <i class="menu-arrow"></i>
             </a>
             <div class="collapse" :class="{ show: expandedIds.has(cat.id) }">
@@ -106,11 +101,6 @@
                     @click="requestCloseSidebar"
                   >
                     <span class="text-truncate">{{ item.name }}</span>
-                    <i
-                      v-if="cat.id === activeCategoryId && item.id === activeItemId"
-                      class="mdi mdi-check-circle cd-sidebar-selected-marker"
-                      aria-hidden="true"
-                    ></i>
                   </router-link>
                 </li>
                 <li v-if="cat.filteredItems.length === 0" class="nav-item">
@@ -265,16 +255,31 @@ nav.sidebar.sidebar-offcanvas > .nav {
   flex-direction: column;
 }
 
-.cd-sidebar-tree-list .nav-item .nav-link .cd-sidebar-selected-marker {
-  color: #ffe08a;
-  flex: 0 0 auto;
-  font-size: 16px;
-  line-height: 1;
-  margin-left: auto;
+.cd-sidebar-tree-list > .nav-item.active > .nav-link {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 7px;
+  margin: 0 24px;
+  padding-left: 30px;
+  padding-right: 18px;
+  width: calc(100% - 48px);
 }
 
-.cd-sidebar-tree-list .nav-item .nav-link .cd-sidebar-selected-marker + .menu-arrow {
-  margin-left: 0.5rem;
+nav.sidebar.sidebar-offcanvas > .nav .cd-sidebar-tree-list .collapse .sub-menu .nav-item .nav-link {
+  transition: none;
+}
+
+nav.sidebar.sidebar-offcanvas > .nav .cd-sidebar-tree-list .collapse .sub-menu .nav-item .nav-link.active {
+  background: rgba(255, 255, 255, 0.29);
+  border-radius: 6px;
+  color: #fff;
+  font-weight: 600;
+  margin-left: 54px;
+  margin-right: 24px;
+  padding: 8px 15px;
+}
+
+nav.sidebar.sidebar-offcanvas > .nav .cd-sidebar-tree-list .collapse .sub-menu .nav-item .nav-link.active::before {
+  left: -19px;
 }
 
 .cd-sidebar-tree-list .sub-menu .nav-link .text-truncate {
