@@ -251,6 +251,7 @@ nav.sidebar.sidebar-offcanvas > .nav {
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
+  padding-bottom: 3.5rem;
   flex-wrap: nowrap;
   flex-direction: column;
 }

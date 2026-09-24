@@ -2,7 +2,7 @@
   "service_provider": {
     "service": "text_to_speech",
     "provider": "elevenlabs",
-    "enabled": false,
+    "enabled": true,
     "priority": 3,
     "config": {
       "generate": {

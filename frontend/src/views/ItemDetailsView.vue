@@ -87,12 +87,22 @@
           {{ imagesLabel(contentLanguage) }}
           <span>({{ itemImages.length }})</span>
         </h4>
-        <div class="id-toolbar">
-          <button type="button" class="btn btn-outline-primary btn-sm id-desktop-actions" @click="onAddFile">
-            <i class="mdi mdi-plus mr-1"></i>{{ addImageLabel(contentLanguage) }}
-          </button>
-          <button v-if="hasFiles" type="button" class="btn btn-primary btn-sm id-desktop-actions" @click="onReleaseAllItemImages">{{ releaseAllImagesLabel(contentLanguage) }}</button>
-          <MobileActionsMenu class="id-mobile-actions" label="Image actions" :actions="imageMobileActions" />
+        <div class="id-summary-actions">
+          <div class="id-summary-buttons">
+            <button
+              v-for="action in imageActions"
+              :key="action.label"
+              type="button"
+              class="btn btn-sm"
+              :class="`id-summary-action-${action.tone}`"
+              :disabled="action.disabled"
+              @click="action.onClick"
+            >
+              <i class="mdi mr-1" :class="action.icon" aria-hidden="true"></i>
+              {{ action.label }}
+            </button>
+          </div>
+          <MobileActionsMenu class="id-summary-menu" label="Image actions" :actions="imageActions" />
         </div>
       </div>
 
@@ -191,12 +201,22 @@
           {{ voicesLabel(contentLanguage) }}
           <span>({{ item.voices.length }})</span>
         </h4>
-        <div class="id-toolbar">
-          <button type="button" class="btn btn-outline-primary btn-sm id-desktop-actions" @click="onAddVoice">
-            <i class="mdi mdi-plus mr-1"></i>{{ addVoiceLabel(contentLanguage) }}
-          </button>
-          <button type="button" class="btn btn-primary btn-sm id-desktop-actions" @click="onReleaseAllItemVoices">{{ releaseAllVoicesLabel(contentLanguage) }}</button>
-          <MobileActionsMenu class="id-mobile-actions" label="Voice actions" :actions="voiceMobileActions" />
+        <div class="id-summary-actions">
+          <div class="id-summary-buttons">
+            <button
+              v-for="action in voiceActions"
+              :key="action.label"
+              type="button"
+              class="btn btn-sm"
+              :class="`id-summary-action-${action.tone}`"
+              :disabled="action.disabled"
+              @click="action.onClick"
+            >
+              <i class="mdi mr-1" :class="action.icon" aria-hidden="true"></i>
+              {{ action.label }}
+            </button>
+          </div>
+          <MobileActionsMenu class="id-summary-menu" label="Voice actions" :actions="voiceActions" />
         </div>
       </div>
       <input ref="voiceFileInputRef" type="file" accept="audio/*" class="d-none" aria-hidden="true" tabindex="-1" @change="onVoiceFilePicked" />
@@ -299,8 +319,7 @@
           <button type="button" class="cd-modal-close" aria-label="Close" @click="closeRegenerateAllVoicesModal">&times;</button>
         </div>
         <div class="cd-modal-body">
-          <p id="regenerate-all-description">{{ regenerateAllVoicesConfirmLabel(contentLanguage) }}</p>
-          <strong>{{ item?.id }}</strong>
+          <p id="regenerate-all-description">{{ regenerateAllVoicesConfirmation.beforeItemId }}<strong>{{ item?.id }}</strong>{{ regenerateAllVoicesConfirmation.afterItemId }}</p>
         </div>
         <div class="cd-modal-footer">
           <button ref="regenerateAllNoButton" type="button" class="btn btn-secondary" @click="closeRegenerateAllVoicesModal">{{ noLabel(contentLanguage) }}</button>
@@ -516,7 +535,7 @@ import {
   playLabel,
   promptLabel,
   regenerateAllVoicesLabel,
-  regenerateAllVoicesConfirmLabel,
+  regenerateAllVoicesConfirmParts,
   releaseAllImagesLabel,
   releaseAllVoicesLabel,
   releaseItemLabel,
@@ -1138,6 +1157,7 @@ function localizedItemNameForPatch(update: { language: Language; value: string }
 const regeneratingVoiceId = ref<string | null>(null)
 const regeneratingAllVoices = ref(false)
 const isRegeneratingVoices = computed(() => regeneratingAllVoices.value || regeneratingVoiceId.value !== null)
+const regenerateAllVoicesConfirmation = computed(() => regenerateAllVoicesConfirmParts(contentLanguage.value))
 const showRegenerateAllVoices = ref(false)
 const regenerateAllNoButton = ref<HTMLButtonElement | null>(null)
 let regenerateAllTrigger: HTMLElement | null = null
@@ -1268,14 +1288,14 @@ const itemActions = computed<MobileAction[]>(() => [
   },
 ])
 
-const imageMobileActions = computed<MobileAction[]>(() => [
+const imageActions = computed<MobileAction[]>(() => [
   { label: addImageLabel(contentLanguage.value), icon: 'mdi-plus', tone: 'primary', onClick: onAddFile },
   ...(hasFiles.value
     ? [{ label: releaseAllImagesLabel(contentLanguage.value), icon: 'mdi-upload', tone: 'success' as const, onClick: onReleaseAllItemImages }]
     : []),
 ])
 
-const voiceMobileActions = computed<MobileAction[]>(() => [
+const voiceActions = computed<MobileAction[]>(() => [
   { label: addVoiceLabel(contentLanguage.value), icon: 'mdi-plus', tone: 'primary', onClick: onAddVoice },
   { label: releaseAllVoicesLabel(contentLanguage.value), icon: 'mdi-upload', tone: 'success' as const, onClick: onReleaseAllItemVoices },
 ])
@@ -1322,6 +1342,11 @@ const voiceMobileActions = computed<MobileAction[]>(() => [
 .id-summary-actions {
   flex: none;
 }
+.id-summary-action-primary {
+  background: #eef4ff;
+  color: #2563eb;
+  border: 1px solid #2563eb;
+}
 .id-summary-action-success {
   background: #e9f8f1;
   color: #24704f;
@@ -1332,6 +1357,7 @@ const voiceMobileActions = computed<MobileAction[]>(() => [
   color: #0f766e;
   border: 1px solid #0f766e;
 }
+.id-summary-action-primary:hover,
 .id-summary-action-success:hover,
 .id-summary-action-regenerate:hover {
   filter: brightness(0.95);
@@ -1423,8 +1449,7 @@ const voiceMobileActions = computed<MobileAction[]>(() => [
   object-fit: contain;
 }
 .id-summary-actions,
-.id-section-header,
-.id-toolbar {
+.id-section-header {
   display: flex;
   align-items: center;
 }
@@ -1432,10 +1457,6 @@ const voiceMobileActions = computed<MobileAction[]>(() => [
 .id-section-header {
   justify-content: space-between;
   gap: 1rem;
-}
-.id-toolbar {
-  display: flex;
-  gap: 0.55rem;
 }
 .id-section-title {
   color: #111a3d;
@@ -1446,7 +1467,6 @@ const voiceMobileActions = computed<MobileAction[]>(() => [
 .id-section-title span {
   margin-left: 0.35rem;
 }
-.id-mobile-actions,
 .id-mobile-image-file {
   display: none;
 }
@@ -1813,12 +1833,6 @@ const voiceMobileActions = computed<MobileAction[]>(() => [
     padding: 1rem 0 0;
     border-top: 1px solid #e2e7f1;
   }
-  .id-desktop-actions {
-    display: none !important;
-  }
-  .id-mobile-actions {
-    display: block;
-  }
   .id-panel {
     padding: 1rem;
   }
@@ -1826,14 +1840,6 @@ const voiceMobileActions = computed<MobileAction[]>(() => [
     flex-direction: row;
     align-items: center;
     gap: 0.5rem;
-  }
-  .id-toolbar {
-    flex-wrap: nowrap;
-    align-items: center;
-    gap: 0.4rem;
-  }
-  .id-toolbar > .btn {
-    white-space: nowrap;
   }
   .id-image-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

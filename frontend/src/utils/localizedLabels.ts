@@ -403,12 +403,12 @@ export function regenerateAllVoicesLabel(lang: Language): string {
   return labels[lang] ?? labels.en
 }
 
-export function regenerateAllVoicesConfirmLabel(lang: Language): string {
-  const labels: Record<Language, string> = {
-    en: 'Regenerate all voices for this item? Existing audio will be replaced.',
-    es: '¿Regenerar todas las voces de este elemento? Se reemplazará el audio existente.',
-    fr: 'Régénérer toutes les voix de cet élément ? Les fichiers audio existants seront remplacés.',
-    bg: 'Да се генерират ли отново всички гласове за този елемент? Съществуващите аудиофайлове ще бъдат заменени.',
+export function regenerateAllVoicesConfirmParts(lang: Language): { beforeItemId: string; afterItemId: string } {
+  const labels: Record<Language, { beforeItemId: string; afterItemId: string }> = {
+    en: { beforeItemId: 'Regenerate all voices for item ', afterItemId: '? Existing audio will be replaced.' },
+    es: { beforeItemId: '¿Regenerar todas las voces del elemento ', afterItemId: '? Se reemplazará el audio existente.' },
+    fr: { beforeItemId: 'Régénérer toutes les voix de l’élément ', afterItemId: ' ? Les fichiers audio existants seront remplacés.' },
+    bg: { beforeItemId: 'Да се генерират ли отново всички гласове за елемент ', afterItemId: '? Съществуващите аудиофайлове ще бъдат заменени.' },
   }
   return labels[lang] ?? labels.en
 }
