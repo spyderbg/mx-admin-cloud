@@ -139,6 +139,15 @@ class FileSystemContentProvider(ContentProvider):  # pylint: disable=too-many-pu
             raise CategoryNotFoundError(f"Category '{category_name}': directory is missing.")
         return category_name, category_path
 
+    def _validate_item_path(self, category_path: Path, folder_name: str, item_id: str) -> Path:
+        """Resolve *folder_name* to the new item's directory, raising if it or its id already exists."""
+        item_path = category_path / folder_name
+        if item_path.exists():
+            raise CategoryConflictError(f"Item folder already exists: {folder_name}")
+        if item_id in self._read_csv_column(category_path / _ITEMS_IDS):
+            raise CategoryConflictError(f"Item id already exists: {item_id}")
+        return item_path
+
     @staticmethod
     def _archive_root() -> Path:
         return settings.archive_path
@@ -405,6 +414,14 @@ class FileSystemContentProvider(ContentProvider):  # pylint: disable=too-many-pu
             writer = csv.writer(fh, lineterminator="\n")
             for row in rows:
                 writer.writerow([row])
+
+    @staticmethod
+    def _normalize_image_extension(image_extension: str) -> str:
+        """Ensure a leading dot and fall back to ".png" for an unsupported extension."""
+        ext = image_extension if image_extension.startswith(".") else f".{image_extension}"
+        if ext.lower() not in _IMAGE_EXTENSIONS:
+            ext = ".png"
+        return ext
 
     @staticmethod
     def _write_image_bytes(path: Path, data: bytes) -> None:
@@ -1115,11 +1132,7 @@ class FileSystemContentProvider(ContentProvider):  # pylint: disable=too-many-pu
             raise ContentOperationError("Could not derive folder name from item word")
 
         category_name, category_path = self._validate_category_path(category_id)
-        item_path = category_path / folder_name
-        if item_path.exists():
-            raise CategoryConflictError(f"Item folder already exists: {folder_name}")
-        if item_id in self._read_csv_column(category_path / _ITEMS_IDS):
-            raise CategoryConflictError(f"Item id already exists: {item_id}")
+        item_path = self._validate_item_path(category_path, folder_name, item_id)
 
         # Translate before touching the disk: a failing translator must not create the item.
         words_by_lang = self._translate_item_word(english_word, category_name)
@@ -1129,9 +1142,7 @@ class FileSystemContentProvider(ContentProvider):  # pylint: disable=too-many-pu
         try:
             item_path.mkdir(parents=True, exist_ok=False)
             if image_data:
-                ext = image_extension if image_extension.startswith(".") else f".{image_extension}"
-                if ext.lower() not in _IMAGE_EXTENSIONS:
-                    ext = ".png"
+                ext = self._normalize_image_extension(image_extension)
                 # The item's first image is its main image, stored with no index suffix
                 # (e.g. "apple.png"), copied into "_01" so the item starts with a
                 # variant to edit/replace without touching the main image (see add_item_image).
@@ -1232,9 +1243,7 @@ class FileSystemContentProvider(ContentProvider):  # pylint: disable=too-many-pu
     ) -> CategoryImage:
         category_name, category_path = self._validate_category_path(category_id)
 
-        ext = image_extension if image_extension.startswith(".") else f".{image_extension}"
-        if ext.lower() not in _IMAGE_EXTENSIONS:
-            ext = ".png"
+        ext = self._normalize_image_extension(image_extension)
 
         idx = self._first_available_category_image_index(category_path, category_name)
         file_name = f"{category_name}_{idx:02d}{ext}"
@@ -1256,9 +1265,7 @@ class FileSystemContentProvider(ContentProvider):  # pylint: disable=too-many-pu
         if existing is None:
             raise CategoryNotFoundError(f"Image '{image_id}' not found in category '{category_name}'.")
 
-        ext = image_extension if image_extension.startswith(".") else f".{image_extension}"
-        if ext.lower() not in _IMAGE_EXTENSIONS:
-            ext = ".png"
+        ext = self._normalize_image_extension(image_extension)
 
         new_path = category_path / f"{image_id}{ext}"
         if existing != new_path:
@@ -1296,9 +1303,7 @@ class FileSystemContentProvider(ContentProvider):  # pylint: disable=too-many-pu
         """Create or replace the category's icon file, regardless of whether one already exists."""
         category_name, category_path = self._validate_category_path(category_id)
 
-        ext = image_extension if image_extension.startswith(".") else f".{image_extension}"
-        if ext.lower() not in _IMAGE_EXTENSIONS:
-            ext = ".png"
+        ext = self._normalize_image_extension(image_extension)
 
         existing = self._find_category_image_file(category_path, category_name)
         new_path = category_path / f"{category_name}{ext}"
@@ -1782,9 +1787,7 @@ class FileSystemContentProvider(ContentProvider):  # pylint: disable=too-many-pu
         category_name, category_path = self._validate_category_path(category_id)
         item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
 
-        ext = image_extension if image_extension.startswith(".") else f".{image_extension}"
-        if ext.lower() not in _IMAGE_EXTENSIONS:
-            ext = ".png"
+        ext = self._normalize_image_extension(image_extension)
 
         has_existing_image = any(
             f.is_file() and f.suffix.lower() in _IMAGE_EXTENSIONS
@@ -1826,9 +1829,7 @@ class FileSystemContentProvider(ContentProvider):  # pylint: disable=too-many-pu
                 f"Image '{image_id}' not found for item '{item_id}' in category '{category_name}'.",
             )
 
-        ext = image_extension if image_extension.startswith(".") else f".{image_extension}"
-        if ext.lower() not in _IMAGE_EXTENSIONS:
-            ext = ".png"
+        ext = self._normalize_image_extension(image_extension)
 
         new_path = item_path / f"{image_id}{ext}"
         if existing != new_path:
