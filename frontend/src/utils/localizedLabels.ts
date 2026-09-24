@@ -392,6 +392,27 @@ export function releaseAllVoicesLabel(lang: Language): string {
   return labels[lang] ?? labels.en
 }
 
+/** Button label for regenerating every voice of an item. */
+export function regenerateAllVoicesLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Regenerate Voices',
+    es: 'Regenerar voces',
+    fr: 'Régénérer les voix',
+    bg: 'Генерирай гласовете отново',
+  }
+  return labels[lang] ?? labels.en
+}
+
+export function regenerateAllVoicesConfirmLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Regenerate all voices for this item? Existing audio will be replaced.',
+    es: '¿Regenerar todas las voces de este elemento? Se reemplazará el audio existente.',
+    fr: 'Régénérer toutes les voix de cet élément ? Les fichiers audio existants seront remplacés.',
+    bg: 'Да се генерират ли отново всички гласове за този елемент? Съществуващите аудиофайлове ще бъдат заменени.',
+  }
+  return labels[lang] ?? labels.en
+}
+
 /** Audio play button label; unknown `lang` falls back to English. */
 export function playLabel(lang: Language): string {
   const labels: Record<Language, string> = {

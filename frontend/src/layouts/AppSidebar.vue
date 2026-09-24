@@ -81,9 +81,15 @@
               href="#"
               @click.prevent="toggleCategory(cat.id)"
               :aria-expanded="expandedIds.has(cat.id) ? 'true' : 'false'"
+              :aria-current="cat.id === activeCategoryId ? 'true' : undefined"
             >
               <i class="menu-icon mdi mdi-folder-image"></i>
               <span class="menu-title">{{ cat.name }}</span>
+              <i
+                v-if="cat.id === activeCategoryId"
+                class="mdi mdi-check-circle cd-sidebar-selected-marker"
+                aria-hidden="true"
+              ></i>
               <i class="menu-arrow"></i>
             </a>
             <div class="collapse" :class="{ show: expandedIds.has(cat.id) }">
@@ -96,10 +102,15 @@
                   <router-link
                     class="nav-link"
                     :to="`/categories/${cat.id}/items/${item.id}`"
-                    :class="{ active: item.id === activeItemId }"
+                    :class="{ active: cat.id === activeCategoryId && item.id === activeItemId }"
                     @click="requestCloseSidebar"
                   >
-                    {{ item.name }}
+                    <span class="text-truncate">{{ item.name }}</span>
+                    <i
+                      v-if="cat.id === activeCategoryId && item.id === activeItemId"
+                      class="mdi mdi-check-circle cd-sidebar-selected-marker"
+                      aria-hidden="true"
+                    ></i>
                   </router-link>
                 </li>
                 <li v-if="cat.filteredItems.length === 0" class="nav-item">
@@ -252,6 +263,28 @@ nav.sidebar.sidebar-offcanvas > .nav {
   overflow-y: auto;
   flex-wrap: nowrap;
   flex-direction: column;
+}
+
+.cd-sidebar-tree-list .nav-item .nav-link .cd-sidebar-selected-marker {
+  color: #ffe08a;
+  flex: 0 0 auto;
+  font-size: 16px;
+  line-height: 1;
+  margin-left: auto;
+}
+
+.cd-sidebar-tree-list .nav-item .nav-link .cd-sidebar-selected-marker + .menu-arrow {
+  margin-left: 0.5rem;
+}
+
+.cd-sidebar-tree-list .sub-menu .nav-link .text-truncate {
+  min-width: 0;
+}
+
+.cd-sidebar-tree-list > .nav-item > .nav-link .menu-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Placeholder defaults are dim; sidebar field needs high contrast on blue. */

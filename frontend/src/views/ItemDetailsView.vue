@@ -3,8 +3,8 @@
     <ViewBreadcrumb :items="breadcrumbItems" />
 
     <section class="id-panel id-summary-panel">
-      <div class="id-summary-copy">
-        <div>
+      <div class="id-summary-header">
+        <div class="id-summary-identity">
           <div class="id-field-label">{{ itemIdLabel(contentLanguage) }}</div>
           <div class="id-value-row">
             <h3 class="id-item-id">{{ item.id }}</h3>
@@ -14,6 +14,26 @@
           </div>
         </div>
 
+        <div class="id-summary-actions">
+          <div class="id-summary-buttons">
+            <button
+              v-for="action in itemActions"
+              :key="action.label"
+              type="button"
+              class="btn btn-sm"
+              :class="action.danger ? 'btn-outline-danger' : `id-summary-action-${action.tone}`"
+              :disabled="action.disabled"
+              @click="action.onClick"
+            >
+              <i class="mdi mr-1" :class="action.icon" aria-hidden="true"></i>
+              {{ action.label }}
+            </button>
+          </div>
+          <MobileActionsMenu class="id-summary-menu" label="Item actions" :actions="itemActions" />
+        </div>
+      </div>
+
+      <div class="id-summary-copy">
         <div class="id-summary-main-info">
           <div>
             <div class="id-field-label">{{ currentImageLabel(contentLanguage) }}</div>
@@ -42,25 +62,6 @@
       </div>
 
       <div class="id-summary-details">
-        <div class="id-summary-actions id-summary-actions-only">
-          <div class="id-release-group id-desktop-actions">
-            <button type="button" class="btn btn-primary btn-sm id-release-item-btn" @click="onReleaseItem">
-              {{ releaseItemLabel(contentLanguage) }}
-            </button>
-            <button
-              type="button"
-              class="btn btn-outline-danger btn-sm id-delete-item-btn"
-              :disabled="deletingItem"
-              @click="openDeleteItemModal"
-            >
-              <span v-if="deletingItem" class="spinner-border spinner-border-sm mr-1" role="status"></span>
-              <i v-else class="mdi mdi-delete mr-1"></i>
-              {{ deleteLabel(contentLanguage) }}
-            </button>
-          </div>
-          <MobileActionsMenu class="id-mobile-actions" label="Item actions" :actions="itemMobileActions" />
-        </div>
-
         <div class="id-summary-voices-panel">
           <h4 class="id-section-kicker">{{ itemVoicesLabel(contentLanguage) }}</h4>
           <VoiceCardsGrid
@@ -258,7 +259,7 @@
                 </td>
                 <td>
                   <div class="item-voice-actions">
-                    <button class="id-action-square id-action-regenerate" type="button" :disabled="regeneratingVoiceId !== null" title="Regenerate voice" aria-label="Regenerate voice" @click="regenerateVoice(voice)">
+                    <button class="id-action-square id-action-regenerate" type="button" :disabled="isRegeneratingVoices" title="Regenerate voice" aria-label="Regenerate voice" @click="regenerateVoice(voice)">
                       <i class="mdi" :class="regeneratingVoiceId === voice.id ? 'mdi-loading mdi-spin' : 'mdi-auto-fix'"></i>
                     </button>
                     <button class="id-action-square id-action-release" type="button" title="Release voice" aria-label="Release voice" @click="onReleaseVoice(voice)">
@@ -286,6 +287,28 @@
   </div>
 
   <Teleport to="body">
+    <div
+      v-if="showRegenerateAllVoices"
+      class="cd-modal-overlay"
+      @click.self="closeRegenerateAllVoicesModal"
+      @keydown.esc.stop="closeRegenerateAllVoicesModal"
+    >
+      <div class="cd-modal-box" role="dialog" aria-modal="true" aria-labelledby="regenerate-all-title" aria-describedby="regenerate-all-description" @keydown.tab="trapRegenerateConfirmationFocus">
+        <div class="cd-modal-header">
+          <h5 id="regenerate-all-title" class="cd-modal-title">{{ regenerateAllVoicesLabel(contentLanguage) }}</h5>
+          <button type="button" class="cd-modal-close" aria-label="Close" @click="closeRegenerateAllVoicesModal">&times;</button>
+        </div>
+        <div class="cd-modal-body">
+          <p id="regenerate-all-description">{{ regenerateAllVoicesConfirmLabel(contentLanguage) }}</p>
+          <strong>{{ item?.id }}</strong>
+        </div>
+        <div class="cd-modal-footer">
+          <button ref="regenerateAllNoButton" type="button" class="btn btn-secondary" @click="closeRegenerateAllVoicesModal">{{ noLabel(contentLanguage) }}</button>
+          <button type="button" class="btn id-summary-action-regenerate" :disabled="isRegeneratingVoices" @click="regenerateAllVoices">{{ yesLabel(contentLanguage) }}</button>
+        </div>
+      </div>
+    </div>
+
     <div v-if="deleteConfirmVisible" class="cd-modal-overlay" @click.self="cancelDelete">
       <div class="cd-modal-box">
         <div class="cd-modal-header">
@@ -426,7 +449,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onBeforeUnmount, onMounted } from 'vue'
+import { ref, computed, watch, nextTick, onBeforeUnmount, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { AxiosError } from 'axios'
 import {
@@ -492,6 +515,8 @@ import {
   optimizedFileColumnLabel,
   playLabel,
   promptLabel,
+  regenerateAllVoicesLabel,
+  regenerateAllVoicesConfirmLabel,
   releaseAllImagesLabel,
   releaseAllVoicesLabel,
   releaseItemLabel,
@@ -1111,11 +1136,81 @@ function localizedItemNameForPatch(update: { language: Language; value: string }
 }
 
 const regeneratingVoiceId = ref<string | null>(null)
+const regeneratingAllVoices = ref(false)
+const isRegeneratingVoices = computed(() => regeneratingAllVoices.value || regeneratingVoiceId.value !== null)
+const showRegenerateAllVoices = ref(false)
+const regenerateAllNoButton = ref<HTMLButtonElement | null>(null)
+let regenerateAllTrigger: HTMLElement | null = null
+
+async function openRegenerateAllVoicesModal(): Promise<void> {
+  if (!item.value?.voices.length || isRegeneratingVoices.value) return
+  regenerateAllTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  showRegenerateAllVoices.value = true
+  await nextTick()
+  regenerateAllNoButton.value?.focus()
+}
+
+function closeRegenerateAllVoicesModal(): void {
+  showRegenerateAllVoices.value = false
+  regenerateAllTrigger?.focus()
+}
+
+function trapRegenerateConfirmationFocus(event: KeyboardEvent): void {
+  const dialog = event.currentTarget as HTMLElement
+  const buttons = dialog.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')
+  const first = buttons[0]
+  const last = buttons[buttons.length - 1]
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last?.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first?.focus()
+  }
+}
+
+watch(() => route.fullPath, () => { showRegenerateAllVoices.value = false })
+
+async function regenerateAllVoices(): Promise<void> {
+  const cat = category.value
+  const currentItem = item.value
+  if (!showRegenerateAllVoices.value || !cat || !currentItem?.voices.length || isRegeneratingVoices.value) return
+
+  const voices = [...currentItem.voices]
+  closeRegenerateAllVoicesModal()
+  regeneratingAllVoices.value = true
+  stopAudio()
+  const failures: string[] = []
+  try {
+    for (const voice of voices) {
+      regeneratingVoiceId.value = voice.id
+      try {
+        await itemsVoicesRegenerate(cat.id, currentItem.id, voice.id)
+        voiceVersions.value = { ...voiceVersions.value, [voice.id]: (voiceVersions.value[voice.id] ?? 0) + 1 }
+      } catch (err) {
+        failures.push(`${voice.language.toUpperCase()} (${voice.id}): ${extractErrorMessage(err)}`)
+      }
+    }
+    invalidateItemDetail(cat.id, currentItem.id)
+    await ensureItemDetail(cat.id, currentItem.id)
+    showToast(
+      failures.length
+        ? `Regenerated ${voices.length - failures.length} of ${voices.length} voices. Failed: ${failures.join('; ')}`
+        : `All ${voices.length} voices regenerated.`,
+      failures.length ? 'error' : 'success',
+    )
+  } catch (err) {
+    showToast(`Voice regeneration finished, but refreshing the item failed. ${extractErrorMessage(err)}`, 'error')
+  } finally {
+    regeneratingVoiceId.value = null
+    regeneratingAllVoices.value = false
+  }
+}
 
 async function regenerateVoice(voice: Voice): Promise<void> {
   const cat = category.value
   const currentItem = item.value
-  if (!cat || !currentItem || regeneratingVoiceId.value) return
+  if (!cat || !currentItem || isRegeneratingVoices.value) return
   if (playingVoiceId.value === voice.id) stopAudio()
 
   regeneratingVoiceId.value = voice.id
@@ -1151,37 +1246,46 @@ const voiceCardActions: VoiceExtraAction[] = [
     title: 'Regenerate voice',
     onClick: (voice) => { void regenerateVoice(voice) },
     isLoading: (voice) => regeneratingVoiceId.value === voice.id,
-    isDisabled: () => regeneratingVoiceId.value !== null,
+    isDisabled: () => isRegeneratingVoices.value,
   },
 ]
 
-const itemMobileActions = computed<MobileAction[]>(() => [
-  { label: releaseItemLabel(contentLanguage.value), icon: 'mdi-upload', onClick: onReleaseItem },
+const itemActions = computed<MobileAction[]>(() => [
+  {
+    label: regenerateAllVoicesLabel(contentLanguage.value),
+    icon: regeneratingAllVoices.value ? 'mdi-loading mdi-spin' : 'mdi-auto-fix',
+    tone: 'regenerate',
+    onClick: openRegenerateAllVoicesModal,
+    disabled: isRegeneratingVoices.value || deletingItem.value || !item.value?.voices.length,
+  },
+  { label: releaseItemLabel(contentLanguage.value), icon: 'mdi-upload', tone: 'success', onClick: onReleaseItem },
   {
     label: deleteLabel(contentLanguage.value),
     icon: 'mdi-delete',
     onClick: openDeleteItemModal,
     danger: true,
-    disabled: deletingItem.value,
+    disabled: deletingItem.value || isRegeneratingVoices.value,
   },
 ])
 
 const imageMobileActions = computed<MobileAction[]>(() => [
-  { label: addImageLabel(contentLanguage.value), icon: 'mdi-plus', onClick: onAddFile },
+  { label: addImageLabel(contentLanguage.value), icon: 'mdi-plus', tone: 'primary', onClick: onAddFile },
   ...(hasFiles.value
-    ? [{ label: releaseAllImagesLabel(contentLanguage.value), icon: 'mdi-upload', onClick: onReleaseAllItemImages }]
+    ? [{ label: releaseAllImagesLabel(contentLanguage.value), icon: 'mdi-upload', tone: 'success' as const, onClick: onReleaseAllItemImages }]
     : []),
 ])
 
 const voiceMobileActions = computed<MobileAction[]>(() => [
-  { label: addVoiceLabel(contentLanguage.value), icon: 'mdi-plus', onClick: onAddVoice },
-  { label: releaseAllVoicesLabel(contentLanguage.value), icon: 'mdi-upload', onClick: onReleaseAllItemVoices },
+  { label: addVoiceLabel(contentLanguage.value), icon: 'mdi-plus', tone: 'primary', onClick: onAddVoice },
+  { label: releaseAllVoicesLabel(contentLanguage.value), icon: 'mdi-upload', tone: 'success' as const, onClick: onReleaseAllItemVoices },
 ])
 
 </script>
 
 <style scoped>
 .item-detail-page {
+  container-type: inline-size;
+  container-name: item-details;
   color: #111a3d;
 }
 .id-panel {
@@ -1198,7 +1302,46 @@ const voiceMobileActions = computed<MobileAction[]>(() => [
   grid-template-columns: minmax(16rem, 0.7fr) minmax(0, 1.3fr);
   gap: 1.5rem;
 }
+.id-summary-header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.id-summary-identity {
+  min-width: 0;
+}
+.id-summary-buttons {
+  display: none;
+  gap: 0.55rem;
+}
+.id-summary-buttons .btn {
+  white-space: nowrap;
+}
+.id-summary-actions {
+  flex: none;
+}
+.id-summary-action-success {
+  background: #e9f8f1;
+  color: #24704f;
+  border: 1px solid #24704f;
+}
+.id-summary-action-regenerate {
+  background: #e6f4f3;
+  color: #0f766e;
+  border: 1px solid #0f766e;
+}
+.id-summary-action-success:hover,
+.id-summary-action-regenerate:hover {
+  filter: brightness(0.95);
+}
+@container item-details (min-width: 64rem) {
+  .id-summary-buttons { display: flex; }
+  .id-summary-menu { display: none; }
+}
 .id-summary-copy {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
@@ -1211,7 +1354,7 @@ const voiceMobileActions = computed<MobileAction[]>(() => [
 }
 .id-summary-details {
   padding-left: 1.5rem;
-  padding-top: 4.15rem;
+  padding-top: 0;
   display: grid;
   align-content: start;
   gap: 1.25rem;
@@ -1232,6 +1375,8 @@ const voiceMobileActions = computed<MobileAction[]>(() => [
   margin-top: 0.7rem;
 }
 .id-item-id {
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: #111a3d;
   font-size: 1.6rem;
   font-weight: 700;
@@ -1252,6 +1397,7 @@ const voiceMobileActions = computed<MobileAction[]>(() => [
   color: #2563eb;
 }
 .id-edit-btn {
+  flex: none;
   font-size: 1.25rem;
 }
 .id-description {
@@ -1287,23 +1433,9 @@ const voiceMobileActions = computed<MobileAction[]>(() => [
   justify-content: space-between;
   gap: 1rem;
 }
-.id-summary-actions-only {
-  position: absolute;
-  top: 1.25rem;
-  right: 1.5rem;
-  justify-content: flex-end;
-  width: auto;
-  max-width: 100%;
-  min-height: 0;
-}
-.id-release-group,
 .id-toolbar {
   display: flex;
   gap: 0.55rem;
-}
-.id-release-item-btn {
-  width: 9.35rem;
-  max-width: 100%;
 }
 .id-section-title {
   color: #111a3d;
@@ -1670,9 +1802,6 @@ const voiceMobileActions = computed<MobileAction[]>(() => [
   .id-summary-copy {
     gap: 1rem;
   }
-  .id-summary-copy > div:first-child {
-    padding-right: 3.75rem;
-  }
   .id-summary-main-info {
     gap: 1rem;
   }
@@ -1683,12 +1812,6 @@ const voiceMobileActions = computed<MobileAction[]>(() => [
     display: block;
     padding: 1rem 0 0;
     border-top: 1px solid #e2e7f1;
-  }
-  .id-summary-actions-only {
-    top: 0.75rem;
-    right: 0.75rem;
-    width: auto;
-    flex-direction: row;
   }
   .id-desktop-actions {
     display: none !important;

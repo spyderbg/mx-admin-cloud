@@ -17,7 +17,7 @@
         :key="action.label"
         type="button"
         class="mobile-actions-item"
-        :class="{ 'mobile-actions-item-danger': action.danger }"
+        :class="[action.tone && `mobile-actions-item-${action.tone}`, { 'mobile-actions-item-danger': action.danger }]"
         role="menuitem"
         :disabled="action.disabled"
         @click="runAction(action)"
@@ -37,6 +37,7 @@ export interface MobileAction {
   icon: string
   onClick: () => void
   danger?: boolean
+  tone?: 'primary' | 'success' | 'regenerate'
   disabled?: boolean
 }
 
@@ -47,7 +48,9 @@ const trigger = ref<HTMLButtonElement | null>(null)
 const open = ref(false)
 
 function runAction(action: MobileAction): void {
+  if (action.disabled) return
   open.value = false
+  trigger.value?.focus()
   action.onClick()
 }
 
@@ -102,6 +105,8 @@ onBeforeUnmount(() => {
   top: calc(100% + 0.35rem);
   right: 0;
   min-width: 12.5rem;
+  width: max-content;
+  max-width: min(22rem, calc(100vw - 3rem));
   overflow: hidden;
   border: 1px solid #e2e8f0;
   border-radius: 0.75rem;
@@ -126,8 +131,23 @@ onBeforeUnmount(() => {
   border-top: 1px solid #eef1f6;
 }
 .mobile-actions-item i {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 0.4rem;
+  background: #f1f5f9;
   font-size: 1.1rem;
 }
+.mobile-actions-item-primary { color: #2563eb; }
+.mobile-actions-item-primary i { background: #eef4ff; }
+.mobile-actions-item-success { color: #24704f; }
+.mobile-actions-item-success i { background: #e9f8f1; }
+.mobile-actions-item-regenerate { color: #0f766e; }
+.mobile-actions-item-regenerate i { background: #e6f4f3; }
+.mobile-actions-item-danger i { background: #fff0f1; }
 .mobile-actions-item:hover,
 .mobile-actions-item:focus-visible {
   background: #f3f7ff;
