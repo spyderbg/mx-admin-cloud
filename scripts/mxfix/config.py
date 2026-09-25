@@ -12,6 +12,8 @@ from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
+from mxissues.config import ConfigError as IssuesConfigError
+from mxissues.config import GitHubIssuesConfig, GitLabIssuesConfig, IssuesConfig
 from testenvlib.paths import REPO_ROOT
 
 TESTENV_TOML = REPO_ROOT / "testenv.toml"
@@ -63,6 +65,7 @@ class RunConfig:
     limits: LimitsConfig = field(default_factory=LimitsConfig)
     fixer: FixerConfig = field(default_factory=FixerConfig)
     git: GitConfig = field(default_factory=GitConfig)
+    issues: IssuesConfig = field(default_factory=IssuesConfig)
 
     def validate(self) -> None:
         if self.strategy not in STRATEGIES:
@@ -79,6 +82,10 @@ class RunConfig:
             raise ConfigError("[limits] max_new_issues must be >= 0 (0 disables issue creation entirely)")
         if self.fixer.timeout_seconds < 1:
             raise ConfigError("[fixer] timeout_seconds must be >= 1")
+        try:
+            self.issues.validate()
+        except IssuesConfigError as exc:
+            raise ConfigError(str(exc)) from exc
 
 
 def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
@@ -109,17 +116,34 @@ def load_raw(*, local_path: Path = TESTENV_LOCAL_TOML) -> dict[str, Any]:
     return data
 
 
+def _build_issues(raw: dict[str, Any]) -> IssuesConfig:
+    """[issues] + its nested [issues.gitlab] / [issues.github] (+
+    [issues.github.status_options]) — nested tables, so not _from_dict()'s flat merge.
+    status_options merges per key over the defaults: overriding one option name doesn't
+    require restating the other three.
+    """
+    gitlab = _from_dict(GitLabIssuesConfig, raw.get("gitlab", {}), path="issues.gitlab")
+    github_raw = dict(raw.get("github", {}))
+    status_options = github_raw.pop("status_options", {})
+    github = _from_dict(GitHubIssuesConfig, github_raw, path="issues.github")
+    if status_options:
+        github = GitHubIssuesConfig(**{**asdict(github), "status_options": {**github.status_options, **status_options}})
+    issues = _from_dict(IssuesConfig, {k: v for k, v in raw.items() if k not in ("gitlab", "github")}, path="issues")
+    return IssuesConfig(tracker=issues.tracker, gitlab=gitlab, github=github)
+
+
 def build_config(raw: dict[str, Any]) -> RunConfig:
     limits = _from_dict(LimitsConfig, raw.get("limits", {}), path="limits")
     fixer = _from_dict(FixerConfig, raw.get("fixer", {}), path="fixer")
     git = _from_dict(GitConfig, raw.get("git", {}), path="git")
+    issues = _build_issues(raw.get("issues", {}))
 
-    known_top = {"strategy", "limits", "fixer", "git"}
+    known_top = {"strategy", "limits", "fixer", "git", "issues"}
     unknown_top = set(raw) - known_top
     if unknown_top:
         raise ConfigError(f"Unknown top-level key(s) in testenv.toml: {', '.join(sorted(unknown_top))}")
 
-    config = RunConfig(strategy=raw.get("strategy", "report"), limits=limits, fixer=fixer, git=git)
+    config = RunConfig(strategy=raw.get("strategy", "report"), limits=limits, fixer=fixer, git=git, issues=issues)
     config.validate()
     return config
 
@@ -140,6 +164,21 @@ def load_config(*, overrides: dict[str, Any] | None = None) -> RunConfig:
     return build_config(raw)
 
 
+def load_issues_config(*, tracker: str | None = None) -> IssuesConfig:
+    """Just testenv.toml's [issues] section (+ testenv.local.toml, + a --tracker CLI
+    override) — what scripts/issues.py needs, validated the same way `run` validates it.
+    """
+    raw = load_raw()
+    if tracker is not None:
+        raw = _deep_merge(raw, {"issues": {"tracker": tracker}})
+    issues = _build_issues(raw.get("issues", {}))
+    try:
+        issues.validate()
+    except IssuesConfigError as exc:
+        raise ConfigError(str(exc)) from exc
+    return issues
+
+
 def render_config(config: RunConfig) -> str:
     lines = [f"strategy = {config.strategy!r}", "", "[limits]"]
     for f in fields(config.limits):
@@ -150,4 +189,12 @@ def render_config(config: RunConfig) -> str:
     lines.append("\n[git]")
     for f in fields(config.git):
         lines.append(f"  {f.name} = {getattr(config.git, f.name)!r}")
+    lines.append("\n[issues]")
+    lines.append(f"  tracker = {config.issues.tracker!r}")
+    lines.append("\n[issues.gitlab]")
+    for f in fields(config.issues.gitlab):
+        lines.append(f"  {f.name} = {getattr(config.issues.gitlab, f.name)!r}")
+    lines.append("\n[issues.github]")
+    for f in fields(config.issues.github):
+        lines.append(f"  {f.name} = {getattr(config.issues.github, f.name)!r}")
     return "\n".join(lines)

@@ -781,7 +781,8 @@ def test_category_detail_response_fields() -> None:
     )
     dumped = resp.model_dump()
     assert dumped["name"] == {"en": "Foods", "fr": "Aliments"}
-    assert dumped["items"] == [{"id": "I_Apple", "name": {"en": "apple", "fr": "pomme"}, "thumbnail_uri": None, "images_count": 0}]
+    assert dumped["items"] == [
+        {"id": "I_Apple", "name": {"en": "apple", "fr": "pomme"}, "thumbnail_uri": None, "images_count": 0}]
 
 
 def test_create_category_response() -> None:

@@ -15,7 +15,7 @@ docs/test_environment/implementation_plan.md §1 for the full mode comparison.
     testenv.py e2e [--base-url URL] [-- <playwright args>]
     testenv.py run [--strategy report|heal|batch|work] [--max-issues N] [--dry-run] [--print-config]
                     Workstream 3 — report checks+files issues; heal/batch also check
-                    first then fix; work skips straight to fixing GitLab's existing
+                    first then fix; work skips straight to fixing the tracker's existing
                     backlog. Driven by testenv.toml. See test_environment/README.md's
                     "Execution strategies" section.
 
@@ -471,8 +471,6 @@ def cmd_run(args: argparse.Namespace) -> int:
     # (scripts/requirements.txt, NOT backend/requirements.txt) — every other testenv.py
     # subcommand must keep working in an environment that only ever installed
     # Workstream 1's deps.
-    from gitlab.exceptions import GitlabAuthenticationError, GitlabGetError  # noqa: PLC0415
-
     from mxfix import git_target, worktree  # noqa: PLC0415
     from mxfix.claude_fixer import ClaudeFixer  # noqa: PLC0415
     from mxfix.codex_fixer import CodexFixer  # noqa: PLC0415
@@ -482,9 +480,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     from mxfix.strategy import heal as heal_strategy  # noqa: PLC0415
     from mxfix.strategy import report as report_strategy  # noqa: PLC0415
     from mxfix.strategy import work as work_strategy  # noqa: PLC0415
-    from mxissues import client as mxclient  # noqa: PLC0415
-    from mxissues.config import ConfigError as GitLabConfigError  # noqa: PLC0415
-    from mxissues.config import load_config as load_gitlab_config  # noqa: PLC0415
+    from mxissues import trackers  # noqa: PLC0415
+    from mxissues.tracker import TrackerError  # noqa: PLC0415
     from testenvlib.envfile import load_env_file  # noqa: PLC0415
 
     # Every testenv.toml setting has a --<setting> CLI flag (argparse leaves each at its
@@ -520,6 +517,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         overrides["fixer"] = fixer_overrides
     if git_overrides:
         overrides["git"] = git_overrides
+    if args.tracker is not None:
+        overrides["issues"] = {"tracker": args.tracker}
 
     try:
         config = load_config(overrides=overrides)
@@ -540,21 +539,14 @@ def cmd_run(args: argparse.Namespace) -> int:
         return 1
 
     try:
-        gitlab_config = load_gitlab_config()
-        gl = mxclient.connect(gitlab_config)
-        project = mxclient.get_project(gl, gitlab_config)
-    except GitLabConfigError as exc:
+        tracker = trackers.connect(config.issues)
+    except TrackerError as exc:
         print(f"{RED}{exc}{RESET}", file=sys.stderr)
         return 1
-    except GitlabAuthenticationError as exc:
-        print(f"{RED}GitLab authentication failed against {gitlab_config.host}: {exc}{RESET}", file=sys.stderr)
-        return 1
-    except GitlabGetError as exc:
-        print(f"{RED}GitLab project {gitlab_config.project!r} not reachable: {exc}{RESET}", file=sys.stderr)
-        return 1
+    print(f"{DIM}issue tracker: {tracker.display_name} ({', '.join(f'{k}={v}' for k, v in tracker.describe())}){RESET}")
 
     if config.strategy == "report":
-        outcome = report_strategy.run(config, project, repo_root=paths.REPO_ROOT, mode=args.mode, apply=not args.dry_run)
+        outcome = report_strategy.run(config, tracker, repo_root=paths.REPO_ROOT, mode=args.mode, apply=not args.dry_run)
         status = GREEN + "green" + RESET if outcome.check_run.green else RED + "red" + RESET
         print(f"\n{BOLD}report: {outcome.sync_report.summary()}{RESET}")
         print(
@@ -593,7 +585,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             return 1
 
     strategy_kwargs = dict(
-        config=config, project=project, fixer=fixer, gitlab_config=gitlab_config,
+        config=config, tracker=tracker, fixer=fixer,
         owner_repo=owner_repo, github_token=github_token, repo_root=paths.REPO_ROOT,
         mode=args.mode, max_issues=args.max_issues, dry_run=args.dry_run,
     )
@@ -705,7 +697,8 @@ def main() -> int:
     p_run.add_argument("--no-push", dest="push", action="store_false", help="overrides [git] push = false")
     p_run.add_argument("--open-pr", dest="open_pr", action="store_true", default=None, help="overrides [git] open_pr = true")
     p_run.add_argument("--no-open-pr", dest="open_pr", action="store_false", help="overrides [git] open_pr = false")
-    p_run.add_argument("--dry-run", action="store_true", help="checks still run and sync still previews, but no fixer, worktree, or GitLab/GitHub write happens")
+    p_run.add_argument("--tracker", choices=["gitlab", "github"], default=None, help="overrides [issues] tracker")
+    p_run.add_argument("--dry-run", action="store_true", help="checks still run and sync still previews, but no fixer, worktree, issue-tracker or GitHub write happens")
     p_run.add_argument("--print-config", action="store_true", help="print the fully-merged testenv.toml + testenv.local.toml + CLI config and exit; runs nothing")
     p_run.set_defaults(func=cmd_run)
 

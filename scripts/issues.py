@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
-"""GitLab issues as the task store (Workstream 2) — see
-docs/test_environment/implementation_plan.md Workstream 2 for the design.
+"""Issues as the task store (Workstream 2) — GitLab or GitHub, selected by testenv.toml's
+[issues] tracker (or --tracker). See test_environment/README.md's "Issue tracking"
+section, and docs/test_environment/implementation_plan.md Workstream 2 for the design.
 
-    issues.py doctor            token valid? project reachable? labels present?
-    issues.py init               create missing labels (idempotent)
+    issues.py [--tracker gitlab|github] <command> ...
+
+    issues.py doctor            token valid? project reachable? labels/status field present?
+    issues.py init               create missing labels (+ GitHub's project status field), idempotent
     issues.py list [--status S] [--source S] [--all]
-    issues.py show <iid>
+    issues.py show <number>
     issues.py open "<title>" [--source manual] [--severity S] [--file F ...]
-    issues.py start <iid>       -> status::in-progress
-    issues.py done <iid>        -> status::done + close
-    issues.py reopen <iid>
-    issues.py needs-human <iid>
+    issues.py start <number>       -> in-progress
+    issues.py done <number>        -> done + close
+    issues.py reopen <number>
+    issues.py needs-human <number>
     issues.py sync --e2e <json> | --pytest <xml> | --pylint <json>  [--apply]
     issues.py reconcile
 
@@ -28,15 +31,20 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.stdout.reconfigure(line_buffering=True)
 
-import gitlab  # noqa: E402
-from gitlab.exceptions import GitlabAuthenticationError, GitlabGetError  # noqa: E402
-
-from mxissues import client, fingerprint, state, sync  # noqa: E402
-from mxissues.config import ConfigError, GitLabConfig, is_insecure_remote_host, load_config  # noqa: E402
-from mxissues.models import SEVERITIES, Finding  # noqa: E402
+from mxfix.config import ConfigError, load_issues_config  # noqa: E402
+from mxissues import fingerprint, sync, trackers  # noqa: E402
+from mxissues.models import SEVERITIES, SOURCES, Finding  # noqa: E402
 from mxissues.sources import detector as detector_source  # noqa: E402
 from mxissues.sources import e2e as e2e_source  # noqa: E402
 from mxissues.sources import pylint_source, pytest_source  # noqa: E402
+from mxissues.tracker import (  # noqa: E402
+    OWNERSHIP_LABEL,
+    STATUSES,
+    IssueNotFoundError,
+    IssueTracker,
+    TrackerError,
+    TransitionError,
+)
 
 RED = "\033[91m"
 YELLOW = "\033[93m"
@@ -45,103 +53,74 @@ BOLD = "\033[1m"
 DIM = "\033[2m"
 RESET = "\033[0m"
 
-ISSUE_URL_TEMPLATE = "{host}/{project}/-/issues/{iid}"
-
 
 # ---------------------------------------------------------------------------
 # Connection helper — every command but --help needs this
 # ---------------------------------------------------------------------------
 
-def _connect() -> tuple[GitLabConfig, "gitlab.Gitlab", "gitlab.v4.objects.Project"] | None:
+def _create(args: argparse.Namespace) -> IssueTracker | None:
     try:
-        config = load_config()
-    except ConfigError as exc:
+        return trackers.create(load_issues_config(tracker=args.tracker))
+    except (ConfigError, TrackerError) as exc:
         print(f"{RED}{exc}{RESET}", file=sys.stderr)
         return None
 
-    try:
-        gl = client.connect(config)
-    except GitlabAuthenticationError as exc:
-        print(f"{RED}Authentication failed against {config.host}: {exc}{RESET}", file=sys.stderr)
-        return None
-    except Exception as exc:  # noqa: BLE001 - connection errors come in many shapes
-        hint = ""
-        if "Connection refused" in str(exc) or "Failed to establish" in str(exc):
-            hint = (
-                f"\n{YELLOW}If GITLAB_HOST points at 127.0.0.1, the SSH tunnel probably isn't up:"
-                f"\n  ssh -L 8080:localhost:80 <user>@82.103.77.45{RESET}"
-            )
-        print(f"{RED}Could not reach {config.host}: {exc}{RESET}{hint}", file=sys.stderr)
-        return None
 
-    try:
-        project = client.get_project(gl, config)
-    except GitlabGetError as exc:
-        print(f"{RED}Project {config.project!r} not reachable on {config.host}: {exc}{RESET}", file=sys.stderr)
+def _connect(args: argparse.Namespace) -> IssueTracker | None:
+    tracker = _create(args)
+    if tracker is None:
         return None
+    try:
+        tracker.connect()
+    except TrackerError as exc:
+        print(f"{RED}{exc}{RESET}", file=sys.stderr)
+        return None
+    return tracker
 
-    return config, gl, project
+
+def _status_text(status: str | None) -> str:
+    return status or f"{DIM}(no status){RESET}"
 
 
 # ---------------------------------------------------------------------------
 # doctor
 # ---------------------------------------------------------------------------
 
-def cmd_doctor(_args: argparse.Namespace) -> int:
+_DOCTOR_STYLE = {"ok": (GREEN, "[OK]"), "warn": (YELLOW, "[WARN]"), "fail": (RED, "[FAIL]"), "info": (DIM, "[INFO]")}
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    tracker = _create(args)
+    if tracker is None:
+        return 1
+
+    print(f"{BOLD}tracker:{RESET} {tracker.display_name}")
+    for key, value in tracker.describe():
+        print(f"{BOLD}{key}:{RESET} {value}")
+    for warning in tracker.config_warnings():
+        print(f"{YELLOW}[WARN] {warning}{RESET}")
+
     try:
-        config = load_config()
-    except ConfigError as exc:
+        tracker.connect()
+    except TrackerError as exc:
         print(f"{RED}[FAIL] {exc}{RESET}")
         return 1
 
-    print(f"{BOLD}host:{RESET}    {config.host}")
-    print(f"{BOLD}project:{RESET} {config.project}")
-
-    if is_insecure_remote_host(config.host):
-        print(
-            f"{YELLOW}[WARN] {config.host} is plain HTTP and not loopback — the token crosses the "
-            f"network in the clear on every call. See implementation_plan.md Workstream 2 finding 1 "
-            f"for the SSH-tunnel mitigation.{RESET}",
-        )
-
-    connected = _connect()
-    if connected is None:
-        return 1
-    _config, gl, project = connected
-    print(f"{GREEN}[OK] token valid, project reachable{RESET} (id={project.id}, default_branch={project.default_branch})")
-
-    try:
-        version_info = gl.http_get("/version")
-        version = version_info.get("version", "?")
-        enterprise = bool(version_info.get("enterprise", False))
-        edition = "Enterprise" if enterprise else "Community"
-        print(f"{GREEN}[OK]{RESET} GitLab {version} ({edition} edition)")
-        if enterprise:
-            print(
-                f"{DIM}  Scoped-label (status::*) exclusivity MAY be enforced server-side on Premium+ — "
-                f"this tool enforces it client-side regardless (see mxissues/state.py), so it's "
-                f"correct either way.{RESET}",
-            )
-        else:
-            print(f"{DIM}  Community edition: scoped labels are not exclusive server-side — client-side enforcement is load-bearing here.{RESET}")
-    except Exception as exc:  # noqa: BLE001
-        print(f"{YELLOW}[WARN] could not read /version: {exc}{RESET}")
-
-    try:
-        existing = {label.name for label in project.labels.list(all=True)}
-    except Exception as exc:  # noqa: BLE001
-        print(f"{RED}[FAIL] could not list labels: {exc}{RESET}")
-        return 1
-    missing = [name for name in client.ALL_LABELS if name not in existing]
-    if missing:
-        print(f"{YELLOW}[WARN] {len(missing)} label(s) not yet created — run `issues.py init`:{RESET}")
-        for name in missing:
-            print(f"  {YELLOW}- {name}{RESET}")
-    else:
-        print(f"{GREEN}[OK] all {len(client.ALL_LABELS)} labels present{RESET}")
+    checks = tracker.doctor()
+    for check in checks:
+        color, tag = _DOCTOR_STYLE[check.level]
+        print(f"{color}{tag}{RESET} {check.message}" + (f" {YELLOW}— run `issues.py init`{RESET}" if check.fixed_by_init else ""))
+        for detail in check.details:
+            print(f"  {DIM}- {detail}{RESET}")
 
     print()
-    print(f"{GREEN}{BOLD}doctor: all checks passed.{RESET}" if not missing else f"{YELLOW}{BOLD}doctor: reachable, but run `init` first.{RESET}")
+    if any(check.level == "fail" for check in checks):
+        print(f"{RED}{BOLD}doctor: problems found — see [FAIL] above.{RESET}")
+        return 1
+    if any(check.fixed_by_init for check in checks):
+        print(f"{YELLOW}{BOLD}doctor: reachable, but run `init` first.{RESET}")
+    else:
+        print(f"{GREEN}{BOLD}doctor: all checks passed.{RESET}")
     return 0
 
 
@@ -149,26 +128,22 @@ def cmd_doctor(_args: argparse.Namespace) -> int:
 # init
 # ---------------------------------------------------------------------------
 
-def cmd_init(_args: argparse.Namespace) -> int:
-    connected = _connect()
-    if connected is None:
+def cmd_init(args: argparse.Namespace) -> int:
+    tracker = _connect(args)
+    if tracker is None:
         return 1
-    _config, _gl, project = connected
 
-    existing = {label.name for label in project.labels.list(all=True)}
-    created = 0
-    for name in client.ALL_LABELS:
-        if name in existing:
-            continue
-        project.labels.create({"name": name, "color": f"#{client.LABEL_COLORS.get(name, '999999')}"})
-        print(f"{GREEN}  created {name}{RESET}")
-        created += 1
+    created, problems = tracker.init()
+    for item in created:
+        print(f"{GREEN}  created {item}{RESET}")
+    for problem in problems:
+        print(f"{RED}  {problem}{RESET}")
 
-    if created == 0:
-        print(f"{DIM}All labels already present — nothing to do.{RESET}")
-    else:
-        print(f"{GREEN}{BOLD}init: created {created} label(s).{RESET}")
-    return 0
+    if not created and not problems:
+        print(f"{DIM}Everything already present — nothing to do.{RESET}")
+    elif created:
+        print(f"{GREEN}{BOLD}init: created {len(created)} item(s).{RESET}")
+    return 1 if problems else 0
 
 
 # ---------------------------------------------------------------------------
@@ -176,52 +151,41 @@ def cmd_init(_args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 def cmd_list(args: argparse.Namespace) -> int:
-    connected = _connect()
-    if connected is None:
+    tracker = _connect(args)
+    if tracker is None:
         return 1
-    _config, _gl, project = connected
 
-    kwargs: dict[str, object] = {"all": True}
-    labels: list[str] = []
-    if args.status:
-        labels.append(f"status::{args.status}")
-    if args.source:
-        labels.append(f"source::{args.source}")
-    if labels:
-        kwargs["labels"] = ",".join(labels)
-    if not args.all:
-        kwargs["labels"] = (kwargs.get("labels", "") + ("," if kwargs.get("labels") else "") + client.OWNERSHIP_LABEL)
-
-    issues = project.issues.list(**kwargs)
+    labels = (f"source::{args.source}",) if args.source else ()
+    issues = tracker.list_issues(status=args.status, labels=labels, owned_only=not args.all)
     if not issues:
         print(f"{DIM}No matching issues.{RESET}")
         return 0
 
     for issue in issues:
-        status = client.status_label_of(issue) or f"{DIM}(no status label){RESET}"
-        owned = "" if client.is_owned(issue) else f" {DIM}(not mx-auto){RESET}"
-        print(f"  #{issue.iid:<5} [{status}] {issue.title}{owned}")
+        owned = "" if issue.owned else f" {DIM}(not {OWNERSHIP_LABEL}){RESET}"
+        closed = f" {DIM}(closed){RESET}" if issue.state == "closed" else ""
+        print(f"  #{issue.number:<5} [{_status_text(issue.status)}] {issue.title}{owned}{closed}")
     return 0
 
 
 def cmd_show(args: argparse.Namespace) -> int:
-    connected = _connect()
-    if connected is None:
+    tracker = _connect(args)
+    if tracker is None:
         return 1
-    _config, _gl, project = connected
 
     try:
-        issue = project.issues.get(args.iid)
-    except GitlabGetError:
-        print(f"{RED}No issue #{args.iid} in {project.path_with_namespace}.{RESET}", file=sys.stderr)
+        issue = tracker.get(args.number)
+    except IssueNotFoundError as exc:
+        print(f"{RED}{exc}{RESET}", file=sys.stderr)
         return 1
 
-    print(f"{BOLD}#{issue.iid} {issue.title}{RESET}")
+    print(f"{BOLD}#{issue.number} {issue.title}{RESET}")
     print(f"  state: {issue.state}")
+    print(f"  status: {_status_text(issue.status)}")
     print(f"  labels: {', '.join(issue.labels) or '(none)'}")
-    print(f"  owned by this tool: {client.is_owned(issue)}")
+    print(f"  owned by this tool: {issue.owned}")
     print(f"  url: {issue.web_url}")
-    meta = fingerprint.parse_meta_block(issue.description or "")
+    meta = fingerprint.parse_meta_block(issue.description)
     if meta:
         print(f"  fingerprint: {meta.get('fp')} (source={meta.get('source')}, occurrences={meta.get('occurrences')})")
     print()
@@ -234,10 +198,9 @@ def cmd_show(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 def cmd_open(args: argparse.Namespace) -> int:
-    connected = _connect()
-    if connected is None:
+    tracker = _connect(args)
+    if tracker is None:
         return 1
-    _config, _gl, project = connected
 
     source = args.source
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -252,10 +215,14 @@ def cmd_open(args: argparse.Namespace) -> int:
     body_lines.append(meta_block)
     body = "\n".join(body_lines)
 
-    labels = [client.OWNERSHIP_LABEL, "status::open", f"source::{source}", f"severity::{args.severity}"]
-    issue = project.issues.create({"title": args.title, "description": body, "labels": labels})
+    labels = [OWNERSHIP_LABEL, f"source::{source}", f"severity::{args.severity}"]
+    try:
+        issue = tracker.create(title=args.title, description=body, labels=labels, status="open")
+    except TrackerError as exc:
+        print(f"{RED}{exc}{RESET}", file=sys.stderr)
+        return 1
 
-    print(f"{GREEN}Created #{issue.iid}: {issue.title}{RESET}")
+    print(f"{GREEN}Created #{issue.number}: {issue.title}{RESET}")
     print(f"  {issue.web_url}")
     return 0
 
@@ -264,40 +231,36 @@ def cmd_open(args: argparse.Namespace) -> int:
 # state transitions
 # ---------------------------------------------------------------------------
 
-def _do_transition(iid: int, target: str) -> int:
-    connected = _connect()
-    if connected is None:
+def _do_transition(args: argparse.Namespace, target: str) -> int:
+    tracker = _connect(args)
+    if tracker is None:
         return 1
-    _config, _gl, project = connected
 
     try:
-        result = state.set_status_by_iid(project, iid, target)
-    except GitlabGetError:
-        print(f"{RED}No issue #{iid} in {project.path_with_namespace}.{RESET}", file=sys.stderr)
-        return 1
-    except state.TransitionError as exc:
+        result = tracker.set_status(args.number, target)
+    except (TrackerError, TransitionError) as exc:  # IssueNotFoundError is a TrackerError
         print(f"{RED}{exc}{RESET}", file=sys.stderr)
         return 1
 
     extra = " (closed)" if result.closed else " (reopened)" if result.reopened else ""
-    print(f"{GREEN}#{result.iid}: {result.from_status or '(none)'} -> {result.to_status}{extra}{RESET}")
+    print(f"{GREEN}#{result.number}: {result.from_status or '(none)'} -> {result.to_status}{extra}{RESET}")
     return 0
 
 
 def cmd_start(args: argparse.Namespace) -> int:
-    return _do_transition(args.iid, "status::in-progress")
+    return _do_transition(args, "in-progress")
 
 
 def cmd_done(args: argparse.Namespace) -> int:
-    return _do_transition(args.iid, "status::done")
+    return _do_transition(args, "done")
 
 
 def cmd_reopen(args: argparse.Namespace) -> int:
-    return _do_transition(args.iid, "status::open")
+    return _do_transition(args, "open")
 
 
 def cmd_needs_human(args: argparse.Namespace) -> int:
-    return _do_transition(args.iid, "status::needs-human")
+    return _do_transition(args, "needs-human")
 
 
 # ---------------------------------------------------------------------------
@@ -333,19 +296,18 @@ def cmd_sync(args: argparse.Namespace) -> int:
         print(f"{DIM}No failures/findings in the given input(s) — nothing to sync.{RESET}")
         return 0
 
-    connected = _connect()
-    if connected is None:
+    tracker = _connect(args)
+    if tracker is None:
         return 1
-    _config, _gl, project = connected
 
     if not args.apply:
-        print(f"{YELLOW}Dry run (pass --apply to write to GitLab). Plan for {len(findings)} finding(s):{RESET}\n")
+        print(f"{YELLOW}Dry run (pass --apply to write to {tracker.display_name}). Plan for {len(findings)} finding(s):{RESET}\n")
 
-    report = sync.run_sync(project, findings, apply=args.apply, max_new_issues=args.max_new_issues)
+    report = sync.run_sync(tracker, findings, apply=args.apply, max_new_issues=args.max_new_issues)
 
     for item in report.items:
         marker = {"create": GREEN, "update": YELLOW, "reopen": RED, "skip-not-owned": DIM, "skip-limit": YELLOW}[item.action]
-        iid_str = f"#{item.iid}" if item.iid is not None else "(new)"
+        iid_str = f"#{item.number}" if item.number is not None else "(new)"
         print(f"  {marker}{item.action:<16}{RESET} {iid_str:<6} {item.finding.title}")
         if item.detail:
             print(f"    {DIM}{item.detail}{RESET}")
@@ -361,30 +323,30 @@ def cmd_sync(args: argparse.Namespace) -> int:
 # reconcile
 # ---------------------------------------------------------------------------
 
-def cmd_reconcile(_args: argparse.Namespace) -> int:
-    """Fix issues the GitHub->GitLab mirror auto-closed via `Closes #N` on merge.
+def cmd_reconcile(args: argparse.Namespace) -> int:
+    """Fix tool-owned issues something else closed without setting status done.
 
-    The mirror parses commit messages on push to GitLab's default branch and closes
-    referenced issues itself — useful, but it races with `issues.py done`, and either
-    way it never touches the status:: label. This sweeps every tool-owned issue whose
-    GitLab state is closed but whose label isn't status::done, and corrects the label.
+    GitLab: the GitHub->GitLab mirror closes issues itself when it pushes a commit with a
+    `Closes <url>` reference to GitLab's default branch. GitHub: the fix commit's
+    `Closes owner/repo#N` does the same on reaching the default branch, or a human closes
+    one by hand. Either way that races with `issues.py done` and never touches the
+    status. This sweeps every tool-owned closed issue whose status isn't done and
+    corrects it.
     """
-    connected = _connect()
-    if connected is None:
+    tracker = _connect(args)
+    if tracker is None:
         return 1
-    _config, _gl, project = connected
 
-    candidates = project.issues.list(labels=[client.OWNERSHIP_LABEL], state="closed", all=True)
     fixed = 0
-    for issue in candidates:
-        if client.status_label_of(issue) == "status::done":
+    for issue in tracker.list_issues(owned_only=True, state="closed"):
+        if issue.status == "done":
             continue
         try:
-            result = state.transition(project, issue, "status::done")
-        except state.TransitionError as exc:
-            print(f"{RED}#{issue.iid}: {exc}{RESET}", file=sys.stderr)
+            result = tracker.set_status(issue.number, "done")
+        except (TrackerError, TransitionError) as exc:
+            print(f"{RED}#{issue.number}: {exc}{RESET}", file=sys.stderr)
             continue
-        print(f"{GREEN}#{result.iid}: {result.from_status or '(none)'} -> status::done (label corrected){RESET}")
+        print(f"{GREEN}#{result.number}: {result.from_status or '(none)'} -> done (status corrected){RESET}")
         fixed += 1
 
     if fixed == 0:
@@ -399,43 +361,46 @@ def cmd_reconcile(_args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 def main() -> int:
+    # --tracker is top-level only (must precede the subcommand), for the same argparse
+    # reason testenv.py's --mode is — see the comment in testenv.py's main().
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--tracker", choices=["gitlab", "github"], default=None, help="overrides testenv.toml's [issues] tracker; must precede the subcommand")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("doctor", help="token valid? project reachable? labels present?").set_defaults(func=cmd_doctor)
-    sub.add_parser("init", help="create missing labels (idempotent)").set_defaults(func=cmd_init)
+    sub.add_parser("doctor", help="token valid? project reachable? labels/status field present?").set_defaults(func=cmd_doctor)
+    sub.add_parser("init", help="create missing labels (+ GitHub's project status field), idempotent").set_defaults(func=cmd_init)
 
     p_list = sub.add_parser("list", help="list issues")
-    p_list.add_argument("--status", choices=["open", "in-progress", "done", "needs-human"])
-    p_list.add_argument("--source", choices=["detector", "e2e", "pytest", "pylint", "manual"])
+    p_list.add_argument("--status", choices=list(STATUSES))
+    p_list.add_argument("--source", choices=list(SOURCES))
     p_list.add_argument("--all", action="store_true", help="include issues this tool doesn't own (no mx-auto label)")
     p_list.set_defaults(func=cmd_list)
 
     p_show = sub.add_parser("show", help="show one issue")
-    p_show.add_argument("iid", type=int)
+    p_show.add_argument("number", type=int)
     p_show.set_defaults(func=cmd_show)
 
     p_open = sub.add_parser("open", help="file a new issue (always tool-owned: mx-auto)")
     p_open.add_argument("title")
-    p_open.add_argument("--source", default="manual", choices=["detector", "e2e", "pytest", "pylint", "manual"])
+    p_open.add_argument("--source", default="manual", choices=list(SOURCES))
     p_open.add_argument("--severity", default="medium", choices=list(SEVERITIES))
     p_open.add_argument("--file", action="append", default=[], help="an affected file path; repeatable")
     p_open.set_defaults(func=cmd_open)
 
-    p_start = sub.add_parser("start", help="-> status::in-progress")
-    p_start.add_argument("iid", type=int)
+    p_start = sub.add_parser("start", help="-> in-progress")
+    p_start.add_argument("number", type=int)
     p_start.set_defaults(func=cmd_start)
 
-    p_done = sub.add_parser("done", help="-> status::done + close")
-    p_done.add_argument("iid", type=int)
+    p_done = sub.add_parser("done", help="-> done + close")
+    p_done.add_argument("number", type=int)
     p_done.set_defaults(func=cmd_done)
 
-    p_reopen = sub.add_parser("reopen", help="-> status::open (reopens if closed)")
-    p_reopen.add_argument("iid", type=int)
+    p_reopen = sub.add_parser("reopen", help="-> open (reopens if closed)")
+    p_reopen.add_argument("number", type=int)
     p_reopen.set_defaults(func=cmd_reopen)
 
-    p_needs_human = sub.add_parser("needs-human", help="-> status::needs-human")
-    p_needs_human.add_argument("iid", type=int)
+    p_needs_human = sub.add_parser("needs-human", help="-> needs-human")
+    p_needs_human.add_argument("number", type=int)
     p_needs_human.set_defaults(func=cmd_needs_human)
 
     p_sync = sub.add_parser("sync", help="create/update issues from a machine-readable results file")
@@ -443,7 +408,7 @@ def main() -> int:
     p_sync.add_argument("--pylint", type=Path, default=None, metavar="JSON", help="pylint JSON from validate_build.py --json")
     p_sync.add_argument("--e2e", type=Path, default=None, metavar="JSON", help="Playwright JSON reporter output")
     p_sync.add_argument("--detector", type=Path, default=None, metavar="JSON", help="detector findings (initial_spec.md §1 schema)")
-    p_sync.add_argument("--apply", action="store_true", help="actually write to GitLab (default: dry run)")
+    p_sync.add_argument("--apply", action="store_true", help="actually write to the issue tracker (default: dry run)")
     p_sync.add_argument(
         "--max-new-issues", type=int, default=None, metavar="N",
         help="cap how many NEW issues this call files (existing-issue updates/reopens are never capped); default: unlimited "
@@ -451,7 +416,7 @@ def main() -> int:
     )
     p_sync.set_defaults(func=cmd_sync)
 
-    sub.add_parser("reconcile", help="fix labels on issues the GitHub->GitLab mirror auto-closed").set_defaults(func=cmd_reconcile)
+    sub.add_parser("reconcile", help="set status done on tool-owned issues something else closed").set_defaults(func=cmd_reconcile)
 
     args = parser.parse_args()
     return args.func(args)

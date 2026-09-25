@@ -12,7 +12,7 @@ land loop, shared by strategy/heal.py and strategy/work.py (batch's version diff
 enough — parallel dispatch, no per-candidate check run, bisect on a shared verify — that
 strategy/batch.py keeps its own). heal always calls the check->sync pipeline above
 before selecting; work (strategy/work.py) skips straight to selecting whatever is
-already status::open in GitLab.
+already open in the issue tracker.
 """
 
 from __future__ import annotations
@@ -23,18 +23,14 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from gitlab.v4.objects import Project, ProjectIssue
-
 from mxfix import git_target, worktree
 from mxfix.config import RunConfig
 from mxfix.fixer import Fixer, FixTask
-from mxissues import client as mxclient
-from mxissues import state as mxstate
 from mxissues import sync as sync_module
-from mxissues.config import GitLabConfig
 from mxissues.models import Finding
 from mxissues.sources import e2e as e2e_source
 from mxissues.sources import pylint_source, pytest_source
+from mxissues.tracker import Issue, IssueTracker
 
 RED = "\033[91m"
 GREEN = "\033[92m"
@@ -160,8 +156,8 @@ def run_all_checks(repo_root: Path, *, mode: str | None, workdir: Path, reset_st
     )
 
 
-def sync_findings(project: Project, check_run: CheckRun, *, max_new_issues: int, apply: bool) -> sync_module.SyncReport:
-    return sync_module.run_sync(project, check_run.findings, apply=apply, max_new_issues=max_new_issues)
+def sync_findings(tracker: IssueTracker, check_run: CheckRun, *, max_new_issues: int, apply: bool) -> sync_module.SyncReport:
+    return sync_module.run_sync(tracker, check_run.findings, apply=apply, max_new_issues=max_new_issues)
 
 
 _CHECK_CONFIG_BASENAMES = {"pylintrc", ".pylintrc", "pytest.ini", "pyproject.toml"}
@@ -215,29 +211,29 @@ def review_diff(worktree: Path, *, issue_source: str) -> str | None:
     return None
 
 
-def _severity_rank(issue: ProjectIssue) -> int:
+def _severity_rank(issue: Issue) -> int:
     ranks = [
         _SEVERITY_RANK[label.removeprefix("severity::")]
-        for label in (issue.labels or [])
+        for label in issue.labels
         if label.startswith("severity::") and label.removeprefix("severity::") in _SEVERITY_RANK
     ]
     return min(ranks, default=99)
 
 
-def _eligible_sorted(candidates: list[ProjectIssue], *, severity_threshold: str) -> list[ProjectIssue]:
+def _eligible_sorted(candidates: list[Issue], *, severity_threshold: str) -> list[Issue]:
     min_rank = _SEVERITY_RANK[severity_threshold]
     eligible = [issue for issue in candidates if _severity_rank(issue) <= min_rank]
-    eligible.sort(key=lambda issue: (_severity_rank(issue), issue.iid))
+    eligible.sort(key=lambda issue: (_severity_rank(issue), issue.number))
     return eligible
 
 
-def select_issues(project: Project, *, severity_threshold: str, limit: int) -> list[ProjectIssue]:
-    """status::open, tool-owned issues at/above *severity_threshold*, highest severity
-    and (within a severity) oldest iid first. "the single highest-severity status::open
-    issue" (heal, limit=1) / "up to concurrency issues above severity_threshold" (batch,
-    limit=concurrency) — implementation_plan.md §16.
+def select_issues(tracker: IssueTracker, *, severity_threshold: str, limit: int) -> list[Issue]:
+    """Open-status, tool-owned, not-closed issues at/above *severity_threshold*, highest
+    severity and (within a severity) oldest number first. "the single highest-severity
+    open issue" (heal, limit=1) / "up to concurrency issues above severity_threshold"
+    (batch, limit=concurrency) — implementation_plan.md §16.
     """
-    candidates = project.issues.list(labels=[mxclient.OWNERSHIP_LABEL, "status::open"], all=True)
+    candidates = tracker.list_issues(status="open", owned_only=True, state="open")
     return _eligible_sorted(candidates, severity_threshold=severity_threshold)[:limit]
 
 
@@ -248,23 +244,20 @@ def _is_ai_comment(body: str) -> bool:
     return body.strip().startswith(_AI_COMMENT_PREFIXES)
 
 
-def fresh_human_feedback(issue: ProjectIssue) -> str | None:
+def fresh_human_feedback(tracker: IssueTracker, issue: Issue) -> str | None:
     """Every human (non-system, non-AI-authored) comment on *issue* posted after the
     last AI-authored one, oldest first, joined into one block — or None if there isn't
     one yet (still genuinely needs a human; not retried blindly just because it's
-    status::needs-human).
+    needs-human).
 
     "AI-authored" is detected by the `"heal:"`/`"work:"`/`"batch:"` prefix every comment
-    work_one_issue()/batch.py already leaves — not by GitLab author identity, which
-    isn't reliably distinguishable from a human's own account without assuming a
-    specific token identity this module has no other reason to know. GitLab's own
-    system notes (label changes, state transitions) are excluded via each note's own
-    `system` flag; they're not comments either way.
+    work_one_issue()/batch.py already leaves — not by author identity, which isn't
+    reliably distinguishable from a human's own account without assuming a specific
+    token identity this module has no other reason to know. Tracker-generated system
+    notes (GitLab's label changes, state transitions) are excluded via Comment.system;
+    they're not comments either way.
     """
-    notes = sorted(
-        (note for note in issue.notes.list(all=True) if not getattr(note, "system", False)),
-        key=lambda note: note.created_at,
-    )
+    notes = [note for note in tracker.comments(issue.number) if not note.system]
     last_ai_at = next((note.created_at for note in reversed(notes) if _is_ai_comment(note.body)), None)
     human_notes = [
         note for note in notes
@@ -275,21 +268,21 @@ def fresh_human_feedback(issue: ProjectIssue) -> str | None:
     return "\n\n---\n\n".join(note.body.strip() for note in human_notes)
 
 
-def select_needs_human_with_feedback(project: Project, *, severity_threshold: str, limit: int) -> list[tuple[ProjectIssue, str]]:
-    """status::needs-human, tool-owned issues that have a fresh human comment since the
+def select_needs_human_with_feedback(tracker: IssueTracker, *, severity_threshold: str, limit: int) -> list[tuple[Issue, str]]:
+    """needs-human, tool-owned issues that have a fresh human comment since the
     last AI attempt — "for status::needs-human tasks, check for a comment and try to use
     it to resolve them." Same ownership guard and severity filter as select_issues(); a
     needs-human issue with no NEW comment is left alone (still genuinely needs a human).
     Returns (issue, feedback_text) pairs, sorted the same way select_issues() sorts.
     """
-    candidates = project.issues.list(labels=[mxclient.OWNERSHIP_LABEL, "status::needs-human"], all=True)
+    candidates = tracker.list_issues(status="needs-human", owned_only=True, state="open")
     eligible = _eligible_sorted(candidates, severity_threshold=severity_threshold)
 
-    result: list[tuple[ProjectIssue, str]] = []
+    result: list[tuple[Issue, str]] = []
     for issue in eligible:
         if len(result) >= limit:
             break
-        feedback = fresh_human_feedback(issue)
+        feedback = fresh_human_feedback(tracker, issue)
         if feedback is not None:
             result.append((issue, feedback))
     return result
@@ -304,8 +297,8 @@ class IssueOutcome:
 
 
 def work_one_issue(
-        issue: ProjectIssue, *, config: RunConfig, project: Project, fixer: Fixer,
-        gitlab_config: GitLabConfig, owner_repo: str, github_token: str,
+        issue: Issue, *, config: RunConfig, tracker: IssueTracker, fixer: Fixer,
+        owner_repo: str, github_token: str,
         mode: str | None, dry_run: bool, label: str, initial_feedback: str | None = None,
 ) -> IssueOutcome:
     """One issue, start to finish: worktree -> fixer.run() -> review_diff() -> reset +
@@ -313,26 +306,26 @@ def work_one_issue(
     (implementation_plan.md §16 "heal"). Shared by strategy/heal.py and
     strategy/work.py — they differ only in what selects the issue this gets called
     with (heal always runs its own check->sync first; work skips straight to whatever
-    is already status::open in GitLab — see strategy/work.py). *label* tags the prints
-    and GitLab comments this leaves ("heal" or "work") so it's clear afterward which
+    is already open in the tracker — see strategy/work.py). *label* tags the prints
+    and issue comments this leaves ("heal" or "work") so it's clear afterward which
     strategy actually did the work.
 
     *initial_feedback*, when given, seeds attempt 1's FixTask.feedback instead of
-    starting empty — this is how a status::needs-human issue with a fresh human comment
+    starting empty — this is how a needs-human issue with a fresh human comment
     (common.fresh_human_feedback()/select_needs_human_with_feedback()) gets retried: the
     human's own words go to the fixer exactly like a failed check's feedback would on a
     normal retry, with a fresh [limits] max_fix_attempts budget (nothing persists an
     attempt count across separate `run` invocations for ANY strategy — see
     strategy/batch.py's docstring on the same point).
     """
-    iid = issue.iid
+    iid = issue.number
     title = issue.title
-    body = issue.description or ""
+    body = issue.description
     branch = f"{config.git.branch_prefix}{iid}"
 
     print(f"\n{BOLD}=== issue #{iid}: {title} ==={RESET}")
     if initial_feedback is not None:
-        print(f"{DIM}  picking this up again — status::needs-human, but a human left a new comment since the last attempt:{RESET}")
+        print(f"{DIM}  picking this up again — needs-human, but a human left a new comment since the last attempt:{RESET}")
         print(f"{DIM}  {initial_feedback.strip()[:300]}{'...' if len(initial_feedback.strip()) > 300 else ''}{RESET}")
 
     if dry_run:
@@ -347,7 +340,7 @@ def work_one_issue(
         )
         return IssueOutcome(iid=iid, status="dry-run", detail="no action taken")
 
-    mxstate.set_status_by_iid(project, iid, "status::in-progress")
+    tracker.set_status(iid, "in-progress")
     wt_path = worktree.create(str(iid), branch, base_branch=config.git.base_branch)
 
     feedback: str | None = initial_feedback
@@ -359,8 +352,8 @@ def work_one_issue(
         if result.status == "no_change":
             detail = f"fixer reported no_change: {result.summary}"
             print(f"{YELLOW}  {detail} — worktree kept at {wt_path} for inspection.{RESET}")
-            mxstate.set_status_by_iid(project, iid, "status::needs-human")
-            issue.notes.create({"body": f"{label}: fixer reported no change needed on attempt {attempt}. {result.summary}\n\nMarking needs-human for a person to look."})
+            tracker.set_status(iid, "needs-human")
+            tracker.add_comment(iid, f"{label}: fixer reported no change needed on attempt {attempt}. {result.summary}\n\nMarking needs-human for a person to look.")
             return IssueOutcome(iid=iid, status="needs-human", detail=detail)
 
         if result.status != "fixed":
@@ -368,7 +361,7 @@ def work_one_issue(
             print(f"{YELLOW}  attempt {attempt}: fixer reported failure: {result.summary}{RESET}")
             continue
 
-        rejection = review_diff(wt_path, issue_source=mxclient.source_of(issue) or "")
+        rejection = review_diff(wt_path, issue_source=issue.source or "")
         if rejection is not None:
             feedback = f"Your change was rejected before checks even ran: {rejection}"
             print(f"{YELLOW}  attempt {attempt}: diff rejected — {rejection}{RESET}")
@@ -380,12 +373,12 @@ def work_one_issue(
             try:
                 commit_sha = git_target.commit_all(
                     wt_path, title=f"Fix: {title}", summary=result.summary,
-                    gitlab_host=gitlab_config.host, gitlab_project=gitlab_config.project, issue_iid=iid,
+                    closing_reference=tracker.closing_reference(iid),
                 )
             except git_target.GitTargetError as exc:
                 detail = f"checks were green but nothing to commit ({exc})"
                 print(f"{RED}  {detail}{RESET}")
-                mxstate.set_status_by_iid(project, iid, "status::needs-human")
+                tracker.set_status(iid, "needs-human")
                 return IssueOutcome(iid=iid, status="needs-human", detail=detail)
 
             pr_url = None
@@ -394,11 +387,10 @@ def work_one_issue(
                 if config.git.open_pr:
                     pr = git_target.open_pr(
                         token=github_token, owner_repo=owner_repo, base=config.git.base_branch, head=branch,
-                        title=f"Fix: {title}", gitlab_host=gitlab_config.host, gitlab_project=gitlab_config.project,
-                        issue_iid=iid, summary=result.summary,
+                        title=f"Fix: {title}", issue_link=tracker.link_line(iid), summary=result.summary,
                     )
                     pr_url = pr.html_url
-                    issue.notes.create({"body": f"{label}: fix pushed — {pr_url}\n\nStaying `status::in-progress` until that PR merges (see test_environment/README.md's \"Landing the fix\" section)."})
+                    tracker.add_comment(iid, f"{label}: fix pushed — {pr_url}\n\nStaying in-progress until that PR merges (see test_environment/README.md's \"Landing the fix\" section).")
 
             print(f"{GREEN}  #{iid}: committed {commit_sha[:8]}" + (f", opened {pr_url}" if pr_url else " (not pushed — [git] push = false)") + f"{RESET}")
             try:
@@ -412,6 +404,6 @@ def work_one_issue(
 
     detail = f"exhausted {config.limits.max_fix_attempts} attempt(s) without a green check run"
     print(f"{RED}  #{iid}: {detail} — marking needs-human, worktree kept at {wt_path} for inspection.{RESET}")
-    mxstate.set_status_by_iid(project, iid, "status::needs-human")
-    issue.notes.create({"body": f"{label}: {detail}. Last failures:\n\n{feedback or '(none captured)'}\n\nWorktree kept at `{wt_path}` for inspection."})
+    tracker.set_status(iid, "needs-human")
+    tracker.add_comment(iid, f"{label}: {detail}. Last failures:\n\n{feedback or '(none captured)'}\n\nWorktree kept at `{wt_path}` for inspection.")
     return IssueOutcome(iid=iid, status="needs-human", detail=detail)

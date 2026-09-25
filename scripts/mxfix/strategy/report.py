@@ -9,10 +9,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from gitlab.v4.objects import Project
-
 from mxfix.config import RunConfig
 from mxissues.sync import SyncReport
+from mxissues.tracker import IssueTracker
 
 from . import common
 
@@ -23,8 +22,8 @@ class ReportOutcome:
     sync_report: SyncReport
 
 
-def run(config: RunConfig, project: Project, *, repo_root: Path, mode: str | None, apply: bool) -> ReportOutcome:
+def run(config: RunConfig, tracker: IssueTracker, *, repo_root: Path, mode: str | None, apply: bool) -> ReportOutcome:
     workdir = repo_root / ".mxfix" / "report"
     check_run = common.run_all_checks(repo_root, mode=mode, workdir=workdir, reset_stack=False)
-    sync_report = common.sync_findings(project, check_run, max_new_issues=config.limits.max_new_issues, apply=apply)
+    sync_report = common.sync_findings(tracker, check_run, max_new_issues=config.limits.max_new_issues, apply=apply)
     return ReportOutcome(check_run=check_run, sync_report=sync_report)

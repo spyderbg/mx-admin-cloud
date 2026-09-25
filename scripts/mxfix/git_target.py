@@ -1,21 +1,25 @@
-"""Landing a fix: commit (with a close-on-merge reference GitLab's mirror will act on),
+"""Landing a fix: commit (with a close-on-merge reference the issue tracker will act on),
 push to GitHub, open a PR via the REST API (no `gh` CLI dependency — GITHUB_PAT +
 httpx), and cross-link both ways. See implementation_plan.md §17 "Landing the fix".
 
-**Correction versus the plan's literal wording, made deliberately:** the plan's example
-commit message is `Closes #<iid>` — a *bare* `#<iid>`. That syntax is exactly what
-GitLab's mirror is meant to trigger on once the commit reaches GitLab's default branch
-(implementation_plan.md Workstream 2 finding 2). But the same commit is pushed to
-**GitHub** first, as part of this PR — and GitHub recognizes the identical
-`Closes #<number>` pattern as *its own* auto-close syntax, against GitHub's issue/PR
-numbering in this repository, which has nothing to do with the GitLab issue's iid. A
-bare "Closes #7" could therefore close an unrelated GitHub issue or PR numbered 7. GitLab
-also accepts a **full issue URL** in a closing pattern, not just `#iid` — so every
-closing reference here uses the full `GITLAB_HOST/GITLAB_PROJECT/-/issues/<iid>` URL,
-never a bare `#<iid>`: GitLab still auto-closes on it once mirrored, and GitHub's parser
-does not recognize a non-github.com URL as anything special. The PR body's back-link
-goes further and avoids GitHub's closing keywords entirely ("GitLab issue:", not
-"Closes"), so it cannot even attempt to act on it.
+The closing reference and the PR's back-link come from the configured issue tracker
+(mxissues.tracker.IssueTracker.closing_reference()/link_line()), not from here:
+
+  - GitLab: the full `<host>/<project>/-/issues/<iid>` URL ([issues.gitlab]), **never a bare
+    `#<iid>`** — a deliberate correction versus the plan's literal `Closes #<iid>`. The
+    commit is pushed to **GitHub** first, as part of this PR, and GitHub recognizes
+    `Closes #<number>` as *its own* auto-close syntax against GitHub's numbering, which
+    has nothing to do with the GitLab iid — a bare "Closes #7" could close an unrelated
+    GitHub issue or PR numbered 7. GitLab also accepts a full issue URL in a closing
+    pattern, and GitHub's parser ignores a non-github.com URL, so the URL form satisfies
+    GitLab's auto-close (once the mirror pushes it to GitLab's default branch) while
+    being inert on GitHub.
+  - GitHub: `owner/repo#<number>` — GitHub closes the issue once the commit reaches the
+    repository's default branch.
+
+Either way the PR body's back-link avoids closing keywords entirely ("GitLab issue:
+<url>", not "Closes"), so merging the PR into [git] base_branch never closes anything by
+itself — the commit reaching the default branch does.
 """
 
 from __future__ import annotations
@@ -38,10 +42,6 @@ def _run_git(args: list[str], *, cwd: Path) -> subprocess.CompletedProcess:
     return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=False)
 
 
-def gitlab_issue_url(*, gitlab_host: str, gitlab_project: str, iid: int) -> str:
-    return f"{gitlab_host.rstrip('/')}/{gitlab_project}/-/issues/{iid}"
-
-
 def github_owner_repo(*, cwd: Path = Path(".")) -> str:
     """Parse 'owner/repo' out of the origin remote — handles both SSH and HTTPS forms."""
     result = _run_git(["remote", "get-url", "origin"], cwd=cwd)
@@ -57,10 +57,10 @@ def github_owner_repo(*, cwd: Path = Path(".")) -> str:
     return match.group("path")
 
 
-def commit_all(worktree: Path, *, title: str, summary: str, gitlab_host: str, gitlab_project: str, issue_iid: int) -> str:
-    """git add -A && git commit; message ends with a close-on-merge GitLab issue URL
-    (see module docstring for why it's a URL, never a bare `#<iid>`). Returns the
-    resulting commit sha, or raises GitTargetError if there was nothing to commit.
+def commit_all(worktree: Path, *, title: str, summary: str, closing_reference: str) -> str:
+    """git add -A && git commit; message ends with `Closes <closing_reference>` (the
+    tracker's — see module docstring). Returns the resulting commit sha, or raises
+    GitTargetError if there was nothing to commit.
     """
     add_result = _run_git(["add", "-A"], cwd=worktree)
     if add_result.returncode != 0:
@@ -70,8 +70,7 @@ def commit_all(worktree: Path, *, title: str, summary: str, gitlab_host: str, gi
     if not status.stdout.strip():
         raise GitTargetError("nothing to commit — the fixer reported success but left no changes in the worktree")
 
-    url = gitlab_issue_url(gitlab_host=gitlab_host, gitlab_project=gitlab_project, iid=issue_iid)
-    message = f"{title}\n\n{summary.strip()}\n\nCloses {url}"
+    message = f"{title}\n\n{summary.strip()}\n\nCloses {closing_reference}"
 
     commit_result = _run_git(["commit", "-m", message], cwd=worktree)
     if commit_result.returncode != 0:
@@ -122,17 +121,15 @@ def open_pr(
         base: str,
         head: str,
         title: str,
-        gitlab_host: str,
-        gitlab_project: str,
-        issue_iid: int,
+        issue_link: str,
         summary: str,
 ) -> PullRequest:
-    """POST /repos/{owner_repo}/pulls. Body cross-links the GitLab issue without using a
-    GitHub closing keyword (see module docstring) — the issue itself is closed by the
-    GitLab mirror parsing the *commit* message on merge, not by this PR merging.
+    """POST /repos/{owner_repo}/pulls. Body carries *issue_link* (the tracker's
+    link_line(), which never uses a closing keyword — see module docstring): the issue
+    itself is closed by the *commit's* closing reference reaching the default branch,
+    not by this PR merging.
     """
-    url = gitlab_issue_url(gitlab_host=gitlab_host, gitlab_project=gitlab_project, iid=issue_iid)
-    body = f"{summary.strip()}\n\n---\nGitLab issue: {url}\n\n_Opened automatically by scripts/testenv.py run — see test_environment/README.md's \"Execution strategies\" section._"
+    body = f"{summary.strip()}\n\n---\n{issue_link}\n\n_Opened automatically by scripts/testenv.py run — see test_environment/README.md's \"Execution strategies\" section._"
 
     with httpx.Client(headers=_github_headers(token), timeout=30.0) as client:
         response = client.post(

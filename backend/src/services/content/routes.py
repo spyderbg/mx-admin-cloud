@@ -1445,6 +1445,7 @@ def create_item_endpoint(
 def get_content_service(
         registry: ServiceRegistry = Depends(get_registry),
 ) -> ContentService:
+    """Resolve the ContentService from the service registry."""
     return get_typed_service(
         registry=registry,
         service_name=content.SERVICE_NAME,

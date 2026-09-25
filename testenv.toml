@@ -1,8 +1,10 @@
 # Configuration for `scripts/testenv.py run` (Workstream 3 — selectable execution
-# strategies). Tracked in git — deliberately NOT under .testenv/, which `reset --purge`
-# deletes; your settings here would otherwise vanish the next time someone resets the
-# sandbox. Per-developer overrides go in a gitignored testenv.local.toml next to this
-# file (same shape, merged on top — see "Resolution order" at the bottom).
+# strategies), plus the [issues] tracker settings `scripts/issues.py` shares with it.
+# Tracked in git — so never put a token here (those stay in .env) — and deliberately NOT
+# under .testenv/, which `reset --purge` deletes; your settings here would otherwise
+# vanish the next time someone resets the sandbox. Per-developer overrides go in a
+# gitignored testenv.local.toml next to this file (same shape, merged on top — see
+# "Resolution order" at the bottom).
 #
 # See test_environment/README.md's "Execution strategies" section for the full design
 # and the Fixer/worktree/git-landing mechanics. This file only documents the *settings*.
@@ -10,21 +12,23 @@
 # Every setting below has a matching `--<setting>` flag on `testenv.py run`, noted right
 # above it as "CLI override: ..." — a flag always wins over both this file and
 # testenv.local.toml for that one invocation, and only the flags you actually pass take
-# effect (an unset flag never clobbers what's here with some CLI-side default). The one
-# exception is `run --max-issues N`, which has no key here at all — see [limits]
-# concurrency's own comment for how it relates instead.
+# effect (an unset flag never clobbers what's here with some CLI-side default). The
+# exceptions: `run --max-issues N`, which has no key here at all — see [limits]
+# concurrency's own comment for how it relates instead — and [issues.gitlab] /
+# [issues.github], which are per-project setup rather than per-run tuning, so they're
+# overridden in testenv.local.toml only.
 
 # -----------------------------------------------------------------------------------
 # strategy — which of the four execution modes `run` uses when none is given via
 # --strategy on the command line. One runner, four blast radii:
 #
 #   "report"  Check the repo (pylint, pytest, the frontend build, the Playwright suite),
-#             file anything newly broken as GitLab issues via `issues.py sync --apply`,
-#             and stop. Modifies NO code, anywhere. This is the only strategy safe to
-#             run unattended / on a schedule.
+#             file anything newly broken as issues (see [issues]) via
+#             `issues.py sync --apply`, and stop. Modifies NO code, anywhere. This is
+#             the only strategy safe to run unattended / on a schedule.
 #
 #   "heal"    Check the repo first (like "report"), THEN take the single
-#             highest-severity status::open issue, hand it to an AI fixer (see [fixer]
+#             highest-severity open issue, hand it to an AI fixer (see [fixer]
 #             below) in its own throwaway git worktree, run the full check suite against
 #             the fix, and on success commit + push + open a PR — all for ONE issue,
 #             then repeat for the next. Slow (fully sequential, resets the sandbox
@@ -33,12 +37,12 @@
 #             next issue's attempt.
 #
 #   "work"    Exactly "heal"'s per-issue loop, minus the check-the-repo-first step —
-#             goes straight to whatever is already status::open in GitLab and starts
+#             goes straight to whatever is already open in the issue tracker and starts
 #             fixing it. For working down a backlog "report"/"heal"/"batch" already
 #             filed: repeating the full check suite (several minutes — pytest/pylint/
 #             frontend build/e2e) before every single invocation buys nothing once you
-#             already know what's broken. Files nothing new itself — if GitLab has no
-#             status::open issue yet, run "report"/"heal"/"batch" (or `issues.py open`
+#             already know what's broken. Files nothing new itself — if the tracker has no
+#             open issue yet, run "report"/"heal"/"batch" (or `issues.py open`
 #             by hand) at least once first, or "work" just reports nothing to do.
 #
 #   "batch"   Like "heal", but up to [limits] concurrency issues at once, in parallel
@@ -53,8 +57,8 @@
 # "heal", "work" and "batch" write code, push branches to GitHub, and open real PRs —
 # run each with `--dry-run` first (always, no exceptions) before ever letting any of
 # them run for real. `run` also refuses to start any of the three at all unless the
-# fixer's preflight() passes and the GitLab token is valid, and refuses to start on a
-# dirty working tree.
+# fixer's preflight() passes and the issue tracker ([issues]) is reachable, and refuses
+# to start on a dirty working tree.
 #
 # CLI override: --strategy report|heal|batch|work
 strategy = "work"
@@ -62,7 +66,7 @@ strategy = "work"
 [limits]
 # The origin document's MAX_FIX_ATTEMPTS: how many times "heal"/"batch" will retry a
 # single issue (feeding the previous attempt's check failures back to the fixer as
-# feedback) before giving up and marking it status::needs-human instead of looping
+# feedback) before giving up and marking it needs-human instead of looping
 # forever on something the AI fixer cannot actually resolve.
 #
 # CLI override: --max-fix-attempts N
@@ -89,13 +93,13 @@ severity_threshold = "medium"
 
 # Safety rail on `issues.py sync --apply` (whether invoked directly or by "report" as
 # part of check -> sync -> select): the most NEW issues one sync call will file into
-# GitLab, regardless of how many findings the checks actually produced. A newly-broken
-# build can easily produce dozens of pytest/pylint failures in one run — without a cap,
-# one bad commit could flood the shared tracker with as many new issues in a single
-# unattended "report" run. Existing issues (recurrences, regressions reopened) are never
-# capped — only *new* issue creation is; anything past the limit is reported as skipped,
-# never silently dropped, and picked up again (still deduplicated, same fingerprint) on
-# the next sync once the count under the cap has been triaged down.
+# the issue tracker, regardless of how many findings the checks actually produced. A
+# newly-broken build can easily produce dozens of pytest/pylint failures in one run —
+# without a cap, one bad commit could flood the shared tracker with as many new issues
+# in a single unattended "report" run. Existing issues (recurrences, regressions
+# reopened) are never capped — only *new* issue creation is; anything past the limit is
+# reported as skipped, never silently dropped, and picked up again (still deduplicated,
+# same fingerprint) on the next sync once the count under the cap has been triaged down.
 #
 # CLI override: `testenv.py run --max-new-issues N`. Distinct from (but the same idea
 # as) `issues.py sync --max-new-issues N` on the separate issues.py CLI — that one only
@@ -146,13 +150,77 @@ branch_prefix = "ai/"
 push = true
 
 # Open a GitHub PR (via the REST API + GITHUB_PAT — no `gh` CLI dependency) once the
-# branch is pushed. Requires `push = true`; has no effect otherwise. The GitLab issue is
-# cross-linked from the PR body and stays status::in-progress (never auto-closed by PR
+# branch is pushed. Requires `push = true`; has no effect otherwise. The tracked issue is
+# cross-linked from the PR body and stays in-progress (never auto-closed by PR
 # creation) until the PR actually merges — see test_environment/README.md's "Landing the
 # fix" section.
 #
 # CLI override: --open-pr / --no-open-pr
 open_pr = true
+
+[issues]
+# Which issue tracker findings are filed into and "heal"/"work"/"batch" pick issues from —
+# used by `testenv.py run` AND by `scripts/issues.py`. Both backends share the same
+# workflow (open -> in-progress -> done, plus needs-human), labels (mx-auto, source::*,
+# severity::*), fingerprint dedup and ownership rule; they differ only in where the
+# workflow status is stored. See test_environment/README.md's "Issue tracking" section.
+#
+#   "gitlab"  The self-hosted GitLab project in [issues.gitlab] below. Status is an
+#             exclusive status::* label. Token: .env's GITLAB_TOKEN.
+#
+#   "github"  GitHub Issues on [issues.github] repo below. Status is NOT a label: it's a
+#             single-select field on a GitHub Project (Projects are free on every GitHub
+#             plan), plus the issue's native open/closed state. Token: .env's GITHUB_PAT
+#             (the same one PRs are opened with). Run `issues.py --tracker github doctor`
+#             then `init` once after configuring [issues.github].
+#
+# Switching trackers does not migrate existing issues — each tracker has its own backlog
+# (and its own .mxissues/index-<tracker>.json fingerprint cache).
+#
+# CLI override: `testenv.py run --tracker gitlab|github`, or
+# `issues.py --tracker gitlab|github <command>` (before the subcommand).
+tracker = "github"
+
+[issues.gitlab]
+# Only read when tracker = "gitlab". The token is NOT here — it's .env's GITLAB_TOKEN
+# (project access token, role Developer, scope api).
+#
+# Base URL of the GitLab instance. The instance has no TLS, so the token crosses the
+# network in the clear on this direct URL — `issues.py doctor` warns about it. To tunnel
+# instead, run `ssh -L 8080:localhost:80 <user>@82.103.77.45` and set
+# host = "http://127.0.0.1:8080" in your testenv.local.toml.
+host = "http://82.103.77.45"
+
+# "namespace/path" (or the numeric project id, as a string) issues are filed into.
+project = "marxman/mx-admin"
+
+[issues.github]
+# Only read when tracker = "github".
+#
+# "owner/repo" whose Issues are used. Empty = the repository the "origin" remote points at.
+repo = ""
+
+# The GitHub Project holding each issue's status: its owner (user or organization login;
+# empty = the repo's owner) and its number — the N in github.com/users/<owner>/projects/N
+# or github.com/orgs/<owner>/projects/N. Create an empty project in the GitHub UI first;
+# 0 means "not configured" and every GitHub command refuses to run until it's set.
+project_owner = "spyderbg"
+project_number = 1  # https://github.com/users/spyderbg/projects/1 ("mx-admin-cloud issues")
+
+# The single-select project field that holds the status. `issues.py init` creates it
+# with the four options below if it doesn't exist; it never edits an existing field. The
+# default is a dedicated field rather than the project's built-in "Status" so GitHub's
+# built-in project workflows (e.g. "Item closed -> Status: Done"), which only touch
+# "Status", can't race this tool's transitions.
+status_field = "mx-status"
+
+# Option name for each workflow status within status_field. Override any subset — e.g.
+# to reuse an existing field's option names — in testenv.local.toml.
+[issues.github.status_options]
+open = "Open"
+in-progress = "In progress"
+needs-human = "Needs human"
+done = "Done"
 
 # -----------------------------------------------------------------------------------
 # Resolution order: this file -> testenv.local.toml (gitignored, same shape, for

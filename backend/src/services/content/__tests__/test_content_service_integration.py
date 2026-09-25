@@ -1023,7 +1023,8 @@ async def test_items_create_without_image_returns_201(tmp_resolved: Path) -> Non
     class _TrackingProvider(_StubContentProvider):
         def create_item(self, category_id, english_word, image_data=None, image_extension=".png", generate_voices=True):
             seen.append((category_id, english_word, image_data, image_extension, generate_voices))
-            return CreateItem(category="foods", item=english_word, folder="apple", image_id="I_Apple", item_id="I_Apple")
+            return CreateItem(category="foods", item=english_word, folder="apple", image_id="I_Apple",
+                              item_id="I_Apple")
 
     app = _make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
@@ -1039,7 +1040,8 @@ async def test_items_create_picks_image_extension(tmp_resolved: Path) -> None:
     class _TrackingProvider(_StubContentProvider):
         def create_item(self, category_id, english_word, image_data=None, image_extension=".png", generate_voices=True):
             seen.append((image_data, image_extension))
-            return CreateItem(category="foods", item=english_word, folder="apple", image_id="I_Apple", item_id="I_Apple")
+            return CreateItem(category="foods", item=english_word, folder="apple", image_id="I_Apple",
+                              item_id="I_Apple")
 
     app = _make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
@@ -1054,7 +1056,8 @@ async def test_items_create_skips_voices_when_no_active_generators(tmp_resolved:
     class _TrackingProvider(_StubContentProvider):
         def create_item(self, category_id, english_word, image_data=None, image_extension=".png", generate_voices=True):
             seen_flags.append(generate_voices)
-            return CreateItem(category="foods", item=english_word, folder="apple", image_id="I_Apple", item_id="I_Apple")
+            return CreateItem(category="foods", item=english_word, folder="apple", image_id="I_Apple",
+                              item_id="I_Apple")
 
     app = _make_app(_TrackingProvider(tmp_resolved), tmp_resolved, voice_generation_available=False)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:

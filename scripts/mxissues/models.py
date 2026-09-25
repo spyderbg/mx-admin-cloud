@@ -10,7 +10,7 @@ SOURCES = ("e2e", "pytest", "pylint", "detector", "manual")
 
 @dataclass(frozen=True)
 class Finding:
-    """A single problem to track as a GitLab issue.
+    """A single problem to track as an issue.
 
     `fingerprint_key` is the source-specific stable string fed to
     fingerprint.compute() — NOT the fingerprint itself (each sources/*.py module builds

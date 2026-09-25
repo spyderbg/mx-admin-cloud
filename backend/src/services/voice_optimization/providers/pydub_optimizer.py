@@ -13,6 +13,7 @@ class PydubAudioOptimizer(AudioOptimizerBase):  # pylint: disable=too-few-public
 
     @classmethod
     def register(cls) -> None:
+        """Register this optimizer with the factory."""
         from src.services.voice_optimization import AudioOptimizerFactory
         AudioOptimizerFactory.register("pydub", cls)
 
@@ -46,6 +47,7 @@ class PydubAudioOptimizer(AudioOptimizerBase):  # pylint: disable=too-few-public
         mono: bool,
         vbr_quality: int,
     ) -> None:
+        """Decode *input_path*, apply channel/rate settings, and export MP3 to *output_path*."""
         # Imported lazily to keep optional dependency initialization local.
         from pydub import AudioSegment  # pylint: disable=import-outside-toplevel
 

@@ -1,9 +1,9 @@
-"""strategy "heal" — one status::open issue at a time, sequential, reset between every
+"""strategy "heal" — one open issue at a time, sequential, reset between every
 attempt (implementation_plan.md §16):
 
     check -> sync --apply (files anything newly broken, same as report)
-    select highest-severity status::open issue
-      -> status::in-progress
+    select highest-severity open issue
+      -> in-progress
       -> worktree .mxworktrees/<iid> on branch <branch_prefix><iid> off [git] base_branch
       -> fixer.run(task)
       -> common.review_diff() — reject a test-only diff for a pytest/e2e issue, or any
@@ -12,7 +12,7 @@ attempt (implementation_plan.md §16):
       -> testenv.py reset INSIDE that worktree, then the full check suite
           green -> commit, push, open PR, comment the PR link back onto the issue
           red   -> attempt += 1; feed failures back as FixTask.feedback
-                   attempt > max_fix_attempts -> status::needs-human, worktree kept
+                   attempt > max_fix_attempts -> needs-human, worktree kept
       -> next issue
 
 The reset runs inside the worktree, not the main tree — the fix exists only there until
@@ -32,13 +32,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from gitlab.v4.objects import Project
-
 from mxfix import worktree
 from mxfix.config import RunConfig
 from mxfix.fixer import Fixer
-from mxissues.config import GitLabConfig
 from mxissues.sync import SyncReport
+from mxissues.tracker import IssueTracker
 
 from . import common
 
@@ -54,21 +52,21 @@ class HealOutcome:
 
 
 def run(
-        config: RunConfig, project: Project, fixer: Fixer, *, gitlab_config: GitLabConfig,
+        config: RunConfig, tracker: IssueTracker, fixer: Fixer, *,
         owner_repo: str, github_token: str, repo_root: Path, mode: str | None,
         max_issues: int | None, dry_run: bool,
 ) -> HealOutcome:
     workdir = repo_root / ".mxfix" / "report"
     initial_check = common.run_all_checks(repo_root, mode=mode, workdir=workdir, reset_stack=False)
-    sync_report = common.sync_findings(project, initial_check, max_new_issues=config.limits.max_new_issues, apply=not dry_run)
+    sync_report = common.sync_findings(tracker, initial_check, max_new_issues=config.limits.max_new_issues, apply=not dry_run)
 
     # heal has no natural batch size (it's always exactly one issue at a time by
     # design) — --max-issues is the only thing that caps how many it works through in
     # one `run` invocation; unset means "keep going until nothing eligible is left".
     limit = max_issues if max_issues is not None else 10_000
-    issues = common.select_issues(project, severity_threshold=config.limits.severity_threshold, limit=limit)
+    issues = common.select_issues(tracker, severity_threshold=config.limits.severity_threshold, limit=limit)
     if not issues:
-        print(f"{DIM}No status::open issue at/above severity::{config.limits.severity_threshold} — nothing for heal to do.{RESET}")
+        print(f"{DIM}No open issue at/above severity::{config.limits.severity_threshold} — nothing for heal to do.{RESET}")
         return HealOutcome(initial_check=initial_check, sync_report=sync_report)
 
     if not dry_run:
@@ -76,7 +74,7 @@ def run(
 
     outcomes = [
         common.work_one_issue(
-            issue, config=config, project=project, fixer=fixer, gitlab_config=gitlab_config,
+            issue, config=config, tracker=tracker, fixer=fixer,
             owner_repo=owner_repo, github_token=github_token, mode=mode, dry_run=dry_run, label="heal",
         )
         for issue in issues

@@ -1,10 +1,10 @@
 # test_environment
 
-The single operational reference for mx-admin-cloud's sandbox test environment, GitLab
-issue tracking, and selectable AI-fixer execution strategies: an isolated, runnable
+The single operational reference for mx-admin-cloud's sandbox test environment, issue
+tracking (GitLab or GitHub), and selectable AI-fixer execution strategies: an isolated, runnable
 sandbox (the real backend, the real frontend, and a deterministic stub standing in for
 every external provider — OpenAI, Speaktor, Gemini, ComfyUI, Seq — driven end to end by
-Playwright), the GitLab issues its checks get filed as, and the strategies that can act
+Playwright), the issues its checks get filed as, and the strategies that can act
 on those issues. Nothing here touches real content or real credentials, and nothing
 pushes code or opens a PR unless an execution strategy is deliberately configured and
 run to do so.
@@ -18,7 +18,7 @@ day-to-day use**; if the two ever disagree, trust this one.
 
 Jump to: [Quick start](#quick-start) · [All available operations](#all-available-operations)
 · [Configuration](#configuration) · [Running specs](#running-specs) ·
-[GitLab issue tracking](#gitlab-issue-tracking) ·
+[Issue tracking](#issue-tracking) ·
 [Execution strategies](#execution-strategies) ·
 [Known gaps](#known-gaps-sandbox) · [Troubleshooting](#troubleshooting)
 
@@ -34,18 +34,19 @@ test_environment/
     stub_server.py         stdlib-only HTTP stub for every redirected provider
 ```
 
-The GitLab issue tracking and execution strategies pieces this file also documents live
+The issue tracking and execution strategies pieces this file also documents live
 elsewhere in the repo — this directory holds only the sandbox itself:
 
 ```
 scripts/testenv.py            entry point for all three workstreams (every command below)
 scripts/testenv.sh            its bash wrapper
-scripts/issues.py             GitLab issue tracking CLI (Workstream 2)
-scripts/mxissues/             its implementation — config, client, sync, fingerprinting, sources/
+scripts/issues.py             issue tracking CLI, GitLab or GitHub (Workstream 2)
+scripts/mxissues/             its implementation — tracker.py (interface), trackers/{gitlab,github}.py,
+                               config, sync, fingerprinting, sources/
 scripts/mxfix/                execution strategies implementation (Workstream 3) —
                                fixer.py, codex_fixer.py, claude_fixer.py, worktree.py,
                                git_target.py, strategy/
-testenv.toml                  repo root — execution strategies configuration (tracked)
+testenv.toml                  repo root — execution strategies + issue tracker selection (tracked)
 testenv.local.toml            repo root — your own overrides (gitignored, optional)
 ```
 
@@ -79,7 +80,7 @@ the rest of `scripts/*.sh`.)
 | `logs [backend\|frontend\|stub] [--follow]` | Prints (or tails) that service's log. No argument prints all three. |
 | `status` | Shows what's currently running (pid + port in native mode, `docker compose ps` in Docker mode). |
 | `shell <backend\|frontend\|stub>` | Docker mode: opens a shell in that container. Native mode: there's no container — it tells you which directory the process runs from and how to tail its log instead. |
-| `run [--strategy report\|heal\|batch\|work] [--max-issues N] [--dry-run] [--print-config]` | Workstream 3: check → sync → select → (heal/work/batch) fix, driven by repo-root `testenv.toml`. `report` only files GitLab issues; `heal`/`work`/`batch` write code in `.mxworktrees/`, push branches, and open PRs — `work` skips the check/file step and goes straight to whatever's already filed. Full reference: [Execution strategies](#execution-strategies) below — read it, and run `--dry-run` first, before ever using `heal`/`work`/`batch` for real. |
+| `run [--strategy report\|heal\|batch\|work] [--max-issues N] [--dry-run] [--print-config]` | Workstream 3: check → sync → select → (heal/work/batch) fix, driven by repo-root `testenv.toml`. `report` only files issues; `heal`/`work`/`batch` write code in `.mxworktrees/`, push branches, and open PRs — `work` skips the check/file step and goes straight to whatever's already filed. Full reference: [Execution strategies](#execution-strategies) below — read it, and run `--dry-run` first, before ever using `heal`/`work`/`batch` for real. |
 
 Every command accepts `--mode docker|native`, **placed before the command**
 (`testenv.py --mode docker up`, not `testenv.py up --mode docker`) — a subparser-defaults
@@ -171,13 +172,13 @@ Nothing under `.testenv/` is ever a symlink into a tracked path — asserted aft
 seed. The suite includes destructive specs (archive a category, delete an item, delete
 an image); a symlink there would follow straight through to real, tracked content.
 
-### GitLab and execution-strategy configuration
+### Issue tracker and execution-strategy configuration
 
-These have their own configuration — `.env`'s `GITLAB_HOST`/`GITLAB_PROJECT`/`GITLAB_TOKEN`
-and repo-root `testenv.toml`, respectively — documented where they're used rather than
-duplicated here: see [GitLab issue tracking](#gitlab-issue-tracking)'s
-[Setup](#setup) and [Execution strategies](#execution-strategies)'s
-[`testenv.toml`](#testenvtoml) below.
+These have their own configuration — repo-root `testenv.toml`'s `[issues]` section
+(tracker choice, GitLab host/project, GitHub repo/project) plus the tracker's token in
+`.env`, and the rest of `testenv.toml` for execution strategies — documented where they're used rather than duplicated here: see
+[Issue tracking](#issue-tracking)'s [Choosing a tracker](#choosing-a-tracker) and
+[Execution strategies](#execution-strategies)'s [`testenv.toml`](#testenvtoml) below.
 
 ## Running specs
 
@@ -205,42 +206,145 @@ time. `fixtures/stub.ts` talks directly to the stub's `/__calls`/`/__reset` — 
 behind the frontend's `/api`/`/internal`/`/content` proxy, so it needs `E2E_STUB_URL`
 (set by `testenv.py e2e` alongside `E2E_BASE_URL`) rather than a relative path.
 
-## GitLab issue tracking
+## Issue tracking
 
 *(Workstream 2.)* `scripts/issues.py` replaces the origin document's `tasks.sqlite` (§2)
-with the project's real GitLab issue tracker — see
+with a real issue tracker — the self-hosted GitLab project or GitHub Issues — see
 [implementation_plan.md](../docs/test_environment/implementation_plan.md) Workstream 2
-for the full design and findings kept there for implementation history. This section is
-the day-to-day operational reference: label schema, the state machine, the ownership
-rule, and the CLI.
+for the original (GitLab-only) design and findings kept there for implementation
+history. This section is the day-to-day operational reference: choosing a tracker, label
+schema, the state machine, the ownership rule, and the CLI.
 
-### Setup
+### Choosing a tracker
 
-Three keys in the repo-root `.env` (gitignored):
+`testenv.toml`'s `[issues] tracker` selects the backend for both `issues.py` and
+`testenv.py run`:
+
+```toml
+[issues]
+tracker = "gitlab"   # or "github"
+```
+
+Override it per developer in `testenv.local.toml`, or per invocation with
+`testenv.py run --tracker github` / `issues.py --tracker github <command>` (the flag goes
+**before** the subcommand). `testenv.py run --print-config` shows the resolved value.
+
+Both backends share the same workflow statuses (`open`, `in-progress`, `done`,
+`needs-human`), the same metadata labels, fingerprint dedup, ownership rule and CLI.
+They differ only in **where the workflow status lives**:
+
+| | GitLab | GitHub |
+|---|---|---|
+| Status | exclusive `status::*` label | single-select field on a GitHub Project — **no status labels** |
+| `done` | `status::done` + issue closed | field = `Done` + issue closed (`state_reason: completed`) |
+| Config | `testenv.toml` `[issues.gitlab]` + `.env`: `GITLAB_TOKEN` | `testenv.toml` `[issues.github]` + `.env`: `GITHUB_PAT` |
+| Fix commit closes via | `Closes <full GitLab issue URL>` | `Closes owner/repo#N` |
+
+Code-wise, everything goes through `mxissues/tracker.py`'s `IssueTracker` interface;
+`mxissues/trackers/gitlab.py` and `trackers/github.py` implement it. Adding another
+tracker means implementing that interface and registering it in `trackers/__init__.py`
+and `mxissues/config.py`'s `TRACKERS`.
+
+Both trackers split their configuration the same way: everything non-secret lives in
+`testenv.toml` (tracked, so the whole team shares it — override per developer in
+`testenv.local.toml`), and only the token lives in `.env` (gitignored). A token never
+goes in either TOML file.
+
+Switching trackers doesn't migrate anything — each tracker keeps its own backlog, and
+its own fingerprint cache (`.mxissues/index-<tracker>.json`).
+
+### GitLab setup
+
+Where the project is, in `testenv.toml` (already filled in for this project):
+
+```toml
+[issues.gitlab]
+host = "http://82.103.77.45"      # or http://127.0.0.1:8080 via an SSH tunnel
+project = "marxman/mx-admin"      # namespace/path, or the numeric project id
+```
+
+The token, in the repo-root `.env` (gitignored):
 
 ```
-GITLAB_HOST=http://82.103.77.45          # or http://127.0.0.1:8080 via an SSH tunnel
-GITLAB_PROJECT=marxman/mx-admin
-GITLAB_TOKEN=glpat-...                    # project access token, role Developer, scope api
+GITLAB_TOKEN=glpat-...            # project access token, role Developer, scope api
 ```
 
-The instance has no TLS — a token crosses the network in the clear unless you tunnel
-(`ssh -L 8080:localhost:80 <user>@82.103.77.45`, then `GITLAB_HOST=http://127.0.0.1:8080`).
-`issues.py doctor` warns on every run when `GITLAB_HOST` is plain HTTP and not loopback;
-it's a warning, not a hard stop, since direct is a valid (if riskier) choice you can make
-explicitly. See `.env`'s own comments for both forms.
+The instance has no TLS — a token crosses the network in the clear unless you tunnel:
+run `ssh -L 8080:localhost:80 <user>@82.103.77.45`, then set
+`host = "http://127.0.0.1:8080"` under `[issues.gitlab]` in your own
+`testenv.local.toml` (not the shared `testenv.toml`). `issues.py doctor` warns on every
+run when `host` is plain HTTP and not loopback; it's a warning, not a hard stop, since
+direct is a valid (if riskier) choice you can make explicitly.
+
+**Moving from the old `.env` setup:** `GITLAB_HOST`/`GITLAB_PROJECT` in `.env` are no
+longer read. If `[issues.gitlab]` is ever empty while your environment still sets them,
+`issues.py`/`testenv.py run` say so and point here instead of silently using them —
+move the values into `testenv.toml`/`testenv.local.toml` and delete them from `.env`.
+`GITLAB_TOKEN` stays in `.env`.
 
 Install `python-gitlab` via `scripts/requirements.txt` (already wired into
 `scripts/setup_initial.py`), or `pip install -r scripts/requirements.txt` directly into
 whichever venv you're running `issues.py` from.
 
-**`issues.py doctor` runs first, always** — it's the only thing standing between a
-typo'd project path and a pile of issues filed into the wrong repository. It also
-reports the GitLab version and edition (this instance: 18.9.1, **Enterprise**, confirmed
+**`issues.py doctor` runs first, always** (either tracker) — it's the only thing
+standing between a typo'd project path and a pile of issues filed into the wrong
+repository. On GitLab it also reports the GitLab version and edition (this instance: 18.9.1, **Enterprise**, confirmed
 via `/version`'s `enterprise` field) — Community vs Enterprise/Premium decides whether
 GitLab enforces scoped-label (`status::*`) exclusivity server-side, but this tool
 enforces it client-side regardless (see [State machine](#state-machine) below), so it
 behaves identically either way.
+
+### GitHub setup
+
+GitHub Issues has only two native states (open/closed), so the four-state workflow is
+kept in a **single-select field on a GitHub Project** (Projects v2 — free on every GitHub
+plan, personal accounts and organizations alike) instead of in labels. Every issue this
+tool files or transitions is added to that project, and its status is the item's field
+value — visible as a board column if you group the project by that field.
+
+1. **Create an empty GitHub Project** in the UI (your profile or org → Projects → New
+   project) and note its number from the URL: `github.com/users/<owner>/projects/<N>` or
+   `github.com/orgs/<owner>/projects/<N>`.
+2. **Configure `testenv.toml`** (or `testenv.local.toml`):
+
+   ```toml
+   [issues]
+   tracker = "github"
+
+   [issues.github]
+   repo = ""               # "owner/repo"; empty = the repo the origin remote points at
+   project_owner = ""      # user/org owning the project; empty = the repo's owner
+   project_number = 7      # the <N> from step 1
+   status_field = "mx-status"
+   ```
+
+   `[issues.github.status_options]` maps each status to an option name (defaults:
+   `Open`, `In progress`, `Needs human`, `Done`); override any subset to reuse an
+   existing field's option names.
+3. **Token** — `.env`'s `GITHUB_PAT`, the same one PRs are opened with
+   ([Landing the fix](#landing-the-fix)). It needs to read/write issues and labels on the
+   repo **and** read/write the project: a classic PAT with the `repo` and `project`
+   scopes, or a fine-grained PAT with repository *Issues: read and write* plus Projects
+   read/write access for the project's owner (fine-grained tokens' Projects support
+   depends on whether the owner is a user or an organization — if `doctor` can't read
+   the project with one, use a classic token). Write (or triage) access to the repo also
+   matters: GitHub silently drops labels on issues created without it, and `doctor`
+   warns about that.
+4. `issues.py --tracker github doctor`, then `issues.py --tracker github init` — creates
+   the labels below (minus the `status::*` ones) and the `mx-status` field with its four
+   options.
+
+**`init` never edits an existing field's options.** Replacing a single-select field's
+option list through the API can reset every item's value, so if `status_field` already
+exists but lacks an option, `doctor`/`init` report exactly which ones to add in the
+project's UI instead.
+
+The default is a **dedicated** `mx-status` field rather than the project's built-in
+`Status`, because GitHub's built-in project workflows (*Item closed → Done*, *Item
+reopened → Todo*, …) only ever act on `Status` and run asynchronously — against a
+dedicated field they can't race this tool's read-back assertion. Pointing
+`status_field = "Status"` at the built-in field works too, provided those workflows are
+disabled or agree with `status_options`.
 
 ### Label schema
 
@@ -248,7 +352,7 @@ behaves identically either way.
 
 | Label | Purpose |
 |---|---|
-| `status::open` / `status::in-progress` / `status::done` / `status::needs-human` | the workflow |
+| `status::open` / `status::in-progress` / `status::done` / `status::needs-human` | the workflow — **GitLab only**; on GitHub it's the project field (see [GitHub setup](#github-setup)) |
 | `source::detector` / `::e2e` / `::pytest` / `::pylint` / `::manual` | provenance |
 | `severity::high` / `::medium` / `::low` | from the detector schema / sync's severity mapping |
 | `mx-auto` | ownership marker — see [Ownership rule](#ownership-rule) |
@@ -256,12 +360,13 @@ behaves identically either way.
 `status::needs-human` is the origin document's `MAX_FIX_ATTEMPTS` escape valve — without
 it a stuck task has nowhere to go but silently back to `open`. `heal`/`work` (see
 [Execution strategies](#execution-strategies) — both share the same retry loop) set it
-automatically once a fixer gives up after its retry budget; `issues.py needs-human <iid>`
+automatically once a fixer gives up after its retry budget; `issues.py needs-human <number>`
 sets it by hand.
 
 ### State machine
 
-Exactly one `status::*` label at a time, enforced **client-side**: every transition
+The same four statuses and transitions on both trackers — the diagram below uses
+GitLab's label names. **GitLab:** exactly one `status::*` label at a time, enforced **client-side**: every transition
 computes the full label set and sends it as one replacement (`issue.labels = [...]`),
 never `add_labels`/`remove_labels` (separate calls that can race and leave two
 `status::` labels set). Every transition re-fetches the issue by `iid` afterward and
@@ -288,6 +393,15 @@ closing reference and closes the issue *itself* — useful, but it races with
 reconcile` sweeps every tool-owned issue whose GitLab state is `closed` but whose label
 isn't `status::done` and corrects it — run it after a merge, or on a schedule.
 
+**GitHub:** a transition sets the project field (adding the issue to the project first
+if needed — `addProjectV2ItemById` is idempotent), then closes the issue for `done` or
+reopens it for anything else on a closed issue, then re-fetches it and asserts both the
+field value and the open/closed state — `TransitionError` if either is off. The same
+race exists in a different shape: a fix commit's `Closes owner/repo#N` closes the issue
+once it reaches the repository's default branch, and humans close issues by hand;
+neither touches the project field. `issues.py reconcile` corrects those exactly as it
+does on GitLab.
+
 ### Ownership rule
 
 So manual issues (and the 6 that already existed in this project before this tool ever
@@ -297,9 +411,9 @@ ran) are never clobbered:
   `issues.py open`, which is still tool-mediated even for a human-typed title.
 - It **rewrites descriptions, auto-reopens, or auto-closes** only issues carrying
   `mx-auto` (`sync`'s dedup logic skips — never comments on, never relabels — any match
-  that isn't tool-owned; see `mxissues/client.py`'s `is_owned()`).
+  that isn't tool-owned; see `Issue.owned` in `mxissues/tracker.py`).
 - It **transitions state** on *any* issue when named explicitly (`issues.py start 42`),
-  manual ones included — a human said so by iid, that's enough.
+  manual ones included — a human said so by number, that's enough.
 - `sync` never touches the body of an issue it doesn't own.
 
 Verified directly against the real project: `issues.py list` (no `--all`) shows only
@@ -333,12 +447,19 @@ Stored in the issue description as a fenced block:
 ```
 ````
 
-Lookup: a local cache at `.mxissues/index.json` is a fast path (fingerprint → iid); a
-cache miss, or a cached iid that no longer exists or whose stored fingerprint doesn't
-match, **always** falls through to a real search
-(`project.issues.list(search=f"mx-fp:{fp}", in_="description", state="all")`) — never
-straight to "create". The API is the source of truth; the cache is gitignored and safe
-to delete any time.
+Lookup: a local cache at `.mxissues/index-<tracker>.json` is a fast path (fingerprint →
+issue number); a cache miss, or a cached number that no longer exists or whose stored
+fingerprint doesn't match, **always** falls through to a real lookup against the
+tracker — never straight to "create":
+
+- **GitLab:** a search per finding
+  (`project.issues.list(search=f"mx-fp:{fp}", in_="description", state="all")`).
+- **GitHub:** one paginated GraphQL listing of every issue in the repo (any state, owned
+  or not), parsed once per process into a fingerprint index. Not the search API: its
+  index lags writes by seconds to minutes and it's limited to 30 requests/minute, either
+  of which could turn a sync into duplicates or a 403 halfway through.
+
+The API is the source of truth; the cache is gitignored and safe to delete any time.
 
 On a match:
 - Not tool-owned → skip entirely, report it, touch nothing.
@@ -376,7 +497,7 @@ python scripts/issues.py sync --e2e .testenv/artifacts/results.json --apply
 
 **`sync` defaults to a dry run** — creating issues in a shared tracker is outward-facing
 and awkward to undo (see [Ownership rule](#ownership-rule) on why deletion isn't a
-reliable undo), so it always prints the create/update/reopen plan first.
+reliable undo — GitHub only lets repository admins delete issues at all), so it always prints the create/update/reopen plan first.
 
 A full `sync --pytest --apply` against this repo's own (real, pre-existing, unrelated to
 this workstream) 20 failing auth-related backend tests was deliberately **not** run
@@ -388,17 +509,19 @@ synthetic failure instead, exercising the identical code.
 ### `issues.py` CLI reference
 
 ```
-issues.py doctor                          host/project/token/version/edition/labels
-issues.py init                            create missing labels (idempotent)
+issues.py [--tracker gitlab|github] <command>   (default: testenv.toml [issues] tracker)
+
+issues.py doctor                          connection/token/project/labels (+ GitLab version, GitHub status field)
+issues.py init                            create missing labels (+ GitHub's project status field), idempotent
 issues.py list [--status S] [--source S] [--all]
-issues.py show <iid>
+issues.py show <number>
 issues.py open "<title>" [--source manual] [--severity S] [--file F ...]
-issues.py start <iid>                     -> status::in-progress
-issues.py done <iid>                      -> status::done + close
-issues.py reopen <iid>                    -> status::open (reopens if closed)
-issues.py needs-human <iid>               -> status::needs-human
+issues.py start <number>                  -> in-progress
+issues.py done <number>                   -> done + close
+issues.py reopen <number>                 -> open (reopens if closed)
+issues.py needs-human <number>            -> needs-human
 issues.py sync --e2e <json> | --pytest <xml> | --pylint <json> | --detector <json>  [--apply]
-issues.py reconcile                       fix labels the mirror's auto-close missed
+issues.py reconcile                       set done on tool-owned issues something else closed
 ```
 
 ### Known gaps
@@ -412,6 +535,12 @@ issues.py reconcile                       fix labels the mirror's auto-close mis
   tier isn't visible to a project-scoped token, so whether it's actually enforced
   server-side is unconfirmed. Irrelevant in practice: the client-side read-back
   assertion in [State machine](#state-machine) is the safe path either way.
+- **The GitHub backend hasn't run against a live repository/project yet.** It's been
+  exercised against an in-memory fake of the REST + GraphQL API (create → recurrence →
+  done → regression reopen, the `max_new_issues` cap, the ownership guard, a paginated
+  fingerprint index, the transition read-back assertion) and a real 401 from
+  `api.github.com`, but not against a real project. Run `doctor`, `init`, then one
+  `issues.py --tracker github open "test"` + `start`/`done` by hand first.
 - **Rate limits** weren't a factor in testing (self-managed instances commonly leave
   them off), but `sync`'s dry run does one live search per finding with no batching —
   expect it to take a while (tens of seconds to minutes) against a few dozen findings
@@ -420,8 +549,8 @@ issues.py reconcile                       fix labels the mirror's auto-close mis
 ## Execution strategies
 
 *(Workstream 3.)* `scripts/testenv.py run` is the origin document's executor (§3): it
-takes whatever `scripts/issues.py` has filed in GitLab
-([GitLab issue tracking](#gitlab-issue-tracking), above) and, depending on the selected
+takes whatever `scripts/issues.py` has filed in the configured tracker
+([Issue tracking](#issue-tracking), above) and, depending on the selected
 **strategy**, either just reports on it or hands it to an AI coding agent running inside
 a throwaway git worktree. See
 [implementation_plan.md](../docs/test_environment/implementation_plan.md) §14–18 for the
@@ -434,7 +563,7 @@ exists and how it differs from `heal`.
 **Status: built, reviewed, not yet run for real.** Every piece below has been exercised
 up to the point that would invoke a real AI fixer, push a real branch, or open a real
 PR — `--print-config`, the dirty-tree gate, config loading/validation, and all the
-git/worktree/GitLab machinery `heal`/`work`/`batch` share with the already-validated
+git/worktree/issue-tracker machinery `heal`/`work`/`batch` share with the already-validated
 Workstream 2 pieces. Nothing has actually run `heal`, `work`, or `batch` against the live
 GitLab project yet. Do that deliberately, starting with `--dry-run` — see
 [Trying it for the first time](#trying-it-for-the-first-time) at the bottom.
@@ -458,7 +587,7 @@ All four share the machinery in `strategy/common.py`, but not all of the same pi
 The only strategy safe to run on a schedule.
 
 **`heal`** — check → sync first (same as `report`), then select the single
-highest-severity `status::open` issue, work on it alone in `.mxworktrees/<iid>`, verify
+highest-severity `open` issue, work on it alone in `.mxworktrees/<iid>`, verify
 with a full reset + check run, and either land it or retry with the failure fed back as
 feedback, up to `[limits] max_fix_attempts`. Then the next issue. Slow (every attempt
 fully resets the sandbox fixture and, in Docker mode, rebuilds images — see
@@ -468,12 +597,12 @@ a byte-identical starting point, and a failed attempt can't contaminate the next
 **`work`** — exactly `heal`'s per-issue loop (same worktree/fixer/review_diff/verify/land
 machinery, `strategy/common.py`'s `work_one_issue()` — both strategies call the same
 function), but **skips the check → sync step entirely** and goes straight to selecting
-whatever is already `status::open` in GitLab. It exists for working down a backlog
+whatever is already `open` in the issue tracker. It exists for working down a backlog
 `report`/`heal`/`batch` already filed across several separate `run` invocations: `heal`
 repeats the *entire* check suite (pytest/pylint/frontend build/e2e — several minutes, see
 [Verifying a fix](#verifying-a-fix-reset-not-just-up)) before it ever looks at an issue,
 every single time, even when nothing about the underlying findings has changed since the
-last invocation. `work` trusts GitLab's current `status::open` state as-is and skips
+last invocation. `work` trusts the tracker's current `open` state as-is and skips
 straight to the part that actually does something new. It never files anything itself —
 run `report`/`heal`/`batch` (or `issues.py open` by hand) at least once first, or `work`
 just reports nothing to do and exits.
@@ -542,7 +671,7 @@ isolated scratch repo, confirming the `type`/`subtype`/`is_error`/`result` field
 `claude_fixer.py` actually parses). Neither has been used to attempt a real fix yet.
 
 `preflight()` is cheap and side-effect-free (a version/auth check, nothing that touches
-GitLab or a worktree), so `run` calls it even in `--dry-run` — a dry run should be a
+the issue tracker or a worktree), so `run` calls it even in `--dry-run` — a dry run should be a
 genuine preview of whether the real thing would work, not just of the plan.
 
 The prompt (`fixer.build_prompt()`) follows the origin document's §3 constraints
@@ -621,7 +750,7 @@ and rejects two shapes outright:
 A rejection in `heal`/`work` becomes feedback for the next attempt (the fixer gets told
 *why*, which is often enough to redirect it to a real fix — both share the exact same
 retry loop, `strategy/common.py`'s `work_one_issue()`); in `batch` it's a dead end
-for that round — the candidate returns to `status::open` with the reason as a comment,
+for that round — the candidate returns to `open` with the reason as a comment,
 same as any other failed candidate (see [batch's scope boundary](#batch-has-no-cross-invocation-retry-counter)
 below).
 
@@ -632,7 +761,15 @@ still only defended against by the prompt constraints and by the full check suit
 
 ### Landing the fix
 
-**The commit's closing reference is a full GitLab issue URL, not a bare `#<iid>`** —
+**The commit's closing reference comes from the tracker.** On GitHub it's
+`Closes owner/repo#<number>` — unambiguous whether or not the issues live in the same
+repository as the PR, and acted on by GitHub once the commit reaches the repository's
+default branch (not on merge into `[git] base_branch` when that's a different branch).
+The PR body carries `GitHub issue: <url>`, never a closing keyword. The rest of this
+subsection's GitLab specifics (mirror, `reconcile`) have the GitHub equivalents
+described under [State machine](#state-machine).
+
+**On GitLab it's a full GitLab issue URL, not a bare `#<iid>`** —
 this is a deliberate correction of the origin plan's literal example, not an oversight.
 The plan's pseudocode shows `Closes #<iid>`; `scripts/mxfix/git_target.py` uses
 `Closes http://82.103.77.45/marxman/mx-admin/-/issues/<iid>` instead. Reason: the commit
@@ -649,17 +786,17 @@ even attempt to act on it.
 
 Sequence, once a candidate's checks are green:
 
-1. `git add -A && git commit` in the worktree — message ends with `Closes <gitlab-url>`.
+1. `git add -A && git commit` in the worktree — message ends with `Closes <tracker reference>`.
 2. `git push` the branch to `origin` (GitHub) — **only if `[git] push = true`**.
 3. Open a GitHub PR via the REST API (`httpx` + `GITHUB_PAT` from `.env` — no `gh` CLI
    dependency) — **only if `[git] push = true` and `[git] open_pr = true`**. PR base is
-   `[git] base_branch`; body cross-links the GitLab issue.
-4. A GitLab comment links back to the PR. **The issue is not closed here** — it stays
-   `status::in-progress` until the PR actually merges. Closing on "PR opened" would mark
+   `[git] base_branch`; body cross-links the tracked issue.
+4. An issue comment links back to the PR. **The issue is not closed here** — it stays
+   `in-progress` until the PR actually merges. Closing on "PR opened" would mark
    unreviewed work as done.
-5. On merge, the GitHub→GitLab mirror pushes those commits to GitLab's default branch,
+5. On merge (GitLab), the GitHub→GitLab mirror pushes those commits to GitLab's default branch,
    GitLab parses the `Closes <url>` reference and closes the issue itself.
-   `issues.py reconcile` ([GitLab issue tracking](#gitlab-issue-tracking), above) sweeps
+   `issues.py reconcile` ([Issue tracking](#issue-tracking), above) sweeps
    issues whose GitLab state is closed but whose label isn't `status::done` and corrects
    the label — the same mechanism that already resolves the mirror/`issues.py done` race
    documented in that section's [State machine](#state-machine).
@@ -696,7 +833,7 @@ That's the plan's own accepted tradeoff (risk #14), not something this implement
 adds on top.
 
 A candidate that doesn't merge cleanly onto the integration branch at all is detected
-before any verification happens and returned to `status::open` with a `merge-conflict`
+before any verification happens and returned to `open` with a `merge-conflict`
 comment, for a later run to retry alone.
 
 #### batch has no cross-invocation retry counter
@@ -707,11 +844,11 @@ exactly one fixer attempt per invocation — there's no per-round retry before t
 merge+verify step, matching the plan's own pseudocode, which draws no inner retry loop
 for batch. A candidate `batch` isolates as the culprit (via bisection), or whose fixer
 attempt fails outright, or whose diff is rejected, or that won't merge cleanly, always
-goes back to plain `status::open` with the failure recorded as a GitLab comment —
-**never** `status::needs-human`; only `heal`/`work`'s counted retry loop sets that. The
+goes back to plain `open` with the failure recorded as an issue comment —
+**never** `needs-human`; only `heal`/`work`'s counted retry loop sets that. The
 next `run` (another `batch` round, or a `heal`/`work` run for a focused, attempt-counted
 retry) picks it up from there. Persisting a retry count for `batch` specifically across separate process
-invocations would need a new mechanism (there's nowhere in the current label/fingerprint
+invocations would need a new mechanism (there's nowhere in the current status/fingerprint
 schema to put it) — a known, named gap, not a silent one.
 
 ### `testenv.py run` CLI reference
@@ -721,10 +858,11 @@ testenv.py run [--strategy report|heal|batch|work] [--max-issues N]
                 [--max-fix-attempts N] [--concurrency N] [--severity-threshold high|medium|low]
                 [--max-new-issues N] [--adapter codex|claude] [--timeout-seconds N]
                 [--base-branch NAME] [--branch-prefix PREFIX] [--push | --no-push]
-                [--open-pr | --no-open-pr] [--dry-run] [--print-config]
+                [--open-pr | --no-open-pr] [--tracker gitlab|github] [--dry-run] [--print-config]
 ```
 
-Every `testenv.toml` setting has a matching `--<setting>` flag — `testenv.py run --help`
+Every `testenv.toml` setting except `[issues.github]` (per-repository setup, overridden in
+`testenv.local.toml` only) has a matching `--<setting>` flag — `testenv.py run --help`
 is the exact, always-current list; `testenv.toml`'s own comments note each one right next
 to the setting it overrides. Only the flags you actually pass take effect (an unset flag
 never clobbers `testenv.toml`/`testenv.local.toml` with some CLI-side default), and a
@@ -738,16 +876,18 @@ flag always wins over both files for that one invocation — see `testenv.toml`'
 | `--max-fix-attempts` / `--concurrency` / `--severity-threshold` / `--max-new-issues` | Override the matching `[limits]` key. |
 | `--adapter` / `--timeout-seconds` | Override the matching `[fixer]` key. |
 | `--base-branch` / `--branch-prefix` / `--push`/`--no-push` / `--open-pr`/`--no-open-pr` | Override the matching `[git]` key. The push/open-pr pairs are the tri-state pattern (unset = whatever `testenv.toml` says; the flag always wins either direction). |
-| `--dry-run` | Checks still run and `sync` still previews for `report`/`heal`/`batch` (same as omitting `--apply` on `issues.py sync` — `work` has no check/sync step to preview), but no fixer runs, no worktree is created, and nothing is written to GitLab or GitHub. Prints the plan instead: which issue(s), which worktree/branch names, which fixer, and whether it would push/open a PR. |
-| `--print-config` | Prints the fully-merged config — including any other flags passed alongside it — and exits. Runs nothing else: no GitLab connection, no check suite, no dirty-tree check. |
+| `--tracker` | Overrides `[issues] tracker` — see [Choosing a tracker](#choosing-a-tracker). |
+| `--dry-run` | Checks still run and `sync` still previews for `report`/`heal`/`batch` (same as omitting `--apply` on `issues.py sync` — `work` has no check/sync step to preview), but no fixer runs, no worktree is created, and nothing is written to the issue tracker or GitHub. Prints the plan instead: which issue(s), which worktree/branch names, which fixer, and whether it would push/open a PR. |
+| `--print-config` | Prints the fully-merged config — including any other flags passed alongside it — and exits. Runs nothing else: no issue-tracker connection, no check suite, no dirty-tree check. |
 
 Preflight `run` always does before touching anything (beyond `--print-config`, which
 skips all of it):
 
-1. Load and validate `testenv.toml` (+ `testenv.local.toml` + `--strategy` override).
+1. Load and validate `testenv.toml` (+ `testenv.local.toml` + CLI overrides).
 2. Refuse if the **main** working tree has uncommitted changes.
-3. Connect to GitLab (`.env`'s `GITLAB_HOST`/`GITLAB_PROJECT`/`GITLAB_TOKEN`) — the same
-   connection [GitLab issue tracking](#gitlab-issue-tracking) already validates live.
+3. Connect to the `[issues]` tracker — the same connection `issues.py doctor` checks
+   ([Issue tracking](#issue-tracking)); a GitHub project without its status field fails
+   here, before anything is filed.
 4. `report` stops here (after its own check→sync). `heal`/`work`/`batch` additionally:
    run the selected fixer's `preflight()`, and — only if `[git] open_pr = true` —
    confirm `GITHUB_PAT` is set and the `origin` remote looks like a `github.com` remote.
@@ -759,19 +899,19 @@ In order, each step strictly safer than the next:
 1. `testenv.py run --print-config` — confirms `testenv.toml` loads and validates; no
    network calls at all.
 2. `testenv.py run --strategy report` (commit or stash first) — runs the full check
-   suite and `sync --apply`s real findings into GitLab. No code is touched. This is the
+   suite and `sync --apply`s real findings into the issue tracker. No code is touched. This is the
    strategy meant to run unattended, so this is also the safe way to see current signal
    before ever selecting `heal`/`work`/`batch`.
 3. `testenv.py run --strategy heal --dry-run`,
    `testenv.py run --strategy batch --dry-run`, and — once step 2 has actually filed
    something — `testenv.py run --strategy work --dry-run` — exercises fixer
    `preflight()` for real and prints exactly what each would do, still without touching
-   a worktree or GitLab.
+   a worktree or the issue tracker.
 4. Only once 1–3 look right: `testenv.py run --strategy heal --max-issues 1` against a
    single, low-severity issue, with `[git] push = false` in `testenv.local.toml` first
    (land locally, inspect the commit and worktree by hand, decide about pushing
    separately) before ever trusting `push`/`open_pr = true` unattended. `work
-   --max-issues 1` behaves identically once GitLab already has something `status::open`
+   --max-issues 1` behaves identically once the tracker already has something `open`
    — the only difference from `heal` is skipping the check/file step first.
 
 Nothing in this repository has run step 4 yet.

@@ -1,4 +1,4 @@
-"""Local fingerprint -> issue iid cache, a fast path only.
+"""Local fingerprint -> issue number cache (one per tracker), a fast path only.
 
 The API is the source of truth (implementation_plan.md §11) — this cache may be absent
 or stale on another machine (or after someone deletes an issue by hand), so a cache
@@ -10,19 +10,21 @@ from __future__ import annotations
 
 import json
 
-from .paths import CACHE_FILE
+from .paths import cache_file
 
 
-def load() -> dict[str, int]:
-    if not CACHE_FILE.is_file():
+def load(tracker_name: str) -> dict[str, int]:
+    path = cache_file(tracker_name)
+    if not path.is_file():
         return {}
     try:
-        data = json.loads(CACHE_FILE.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
     return {str(k): int(v) for k, v in data.items()} if isinstance(data, dict) else {}
 
 
-def save(cache: dict[str, int]) -> None:
-    CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    CACHE_FILE.write_text(json.dumps(cache, indent=2, sort_keys=True), encoding="utf-8")
+def save(tracker_name: str, cache: dict[str, int]) -> None:
+    path = cache_file(tracker_name)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(cache, indent=2, sort_keys=True), encoding="utf-8")
