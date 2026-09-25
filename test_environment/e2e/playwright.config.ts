@@ -3,7 +3,7 @@ import { AUTH_STATE_PATH } from './fixtures/testEnv'
 
 /**
  * Every root CSV in the fixture is row-index aligned (_set_csv_row_aligned,
- * backend/src/services/content/providers/file_system.py:674) — a half-completed write
+ * backend/src/services/content/providers/file_system/provider.py) — a half-completed write
  * under a concurrent spec misaligns every category below it, and the *next* spec fails
  * with an error that looks unrelated. fullyParallel/workers/retries are load-bearing,
  * not perf tuning: a retry would run against state the first attempt already mutated,

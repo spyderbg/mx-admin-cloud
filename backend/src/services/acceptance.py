@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from src.services.models import ServiceProvider
 from typing_extensions import override
+from src.services.models import ServiceProvider
 
 ValidateProviderFn = Callable[[ServiceProvider], None]
 BuildProviderFn = Callable[[ServiceProvider, Path], Any]

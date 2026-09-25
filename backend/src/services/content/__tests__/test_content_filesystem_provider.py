@@ -21,6 +21,7 @@ from src.services.content.providers.file_system import (
     FileSystemContentProvider,
 )
 from src.services.content.__tests__.content_fs_helpers import (
+    patch_fs_settings,
     make_fs_provider,
     write_category_registry,
 )
@@ -114,7 +115,7 @@ def test_write_image_bytes_success(tmp_path: Path) -> None:
 def test_write_image_bytes_missing_parent_directory_names_the_cause(tmp_path: Path) -> None:
     """A vanished parent dir (e.g. an unmounted Docker volume) must not read as a generic OSError."""
     target = tmp_path / "not_mounted" / "foods_01.png"
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.CONTENT_DIR = "/app/content"
         with pytest.raises(ContentOperationError, match="does not exist"):
             FileSystemContentProvider._write_image_bytes(target, b"fake-png")
@@ -124,7 +125,7 @@ def test_write_image_bytes_permission_denied_names_the_cause(tmp_path: Path) -> 
     """A UID mismatch between host and container surfaces as PermissionError — call it out by name."""
     target = tmp_path / "foods_01.png"
     with patch(
-            "src.services.content.providers.file_system.open",
+            "src.services.content.providers.file_system.provider.open",
             side_effect=PermissionError(13, "Permission denied"),
             create=True,
     ):
@@ -139,7 +140,7 @@ def test_write_image_bytes_permission_denied_names_the_cause(tmp_path: Path) -> 
 def test_ensure_content_root_exists_raises_when_root_missing(tmp_path: Path) -> None:
     """A missing content root (unmounted volume, misconfigured CONTENT_DIR) must not look like a 404."""
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = tmp_path / "does_not_exist"
         mock_settings.CONTENT_DIR = "/app/content"
         with pytest.raises(ContentOperationError, match="mounted"):
@@ -151,7 +152,7 @@ def test_validate_category_path_returns_name_and_path_when_category_exists(tmp_p
     write_category_registry(content_root, [("C_Foods", "Foods")])
     (content_root / "foods").mkdir(parents=True)
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         assert provider._validate_category_path("C_Foods") == ("foods", content_root / "foods")
 
@@ -160,7 +161,7 @@ def test_validate_category_path_category_not_found_when_folder_missing(tmp_path:
     content_root = tmp_path / "content"
     write_category_registry(content_root, [("C_Foods", "Foods")])  # registered, but no folder on disk
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         with pytest.raises(CategoryNotFoundError):
             provider._validate_category_path("C_Foods")
@@ -170,7 +171,7 @@ def test_validate_category_path_category_not_found_when_id_unregistered(tmp_path
     content_root = tmp_path / "content"
     content_root.mkdir()
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         with pytest.raises(CategoryNotFoundError):
             provider._validate_category_path("C_Foods")
@@ -178,7 +179,7 @@ def test_validate_category_path_category_not_found_when_id_unregistered(tmp_path
 
 def test_validate_category_path_reports_missing_root_instead_of_missing_category(tmp_path: Path) -> None:
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = tmp_path / "does_not_exist"
         mock_settings.CONTENT_DIR = "/app/content"
         with pytest.raises(ContentOperationError, match="mounted"):
@@ -188,7 +189,7 @@ def test_validate_category_path_reports_missing_root_instead_of_missing_category
 def test_folder_name_for_id_reports_missing_root_instead_of_missing_id(tmp_path: Path) -> None:
     """Same failure, reached through the registry lookup every category-scoped call goes through."""
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = tmp_path / "does_not_exist"
         mock_settings.CONTENT_DIR = "/app/content"
         with pytest.raises(ContentOperationError, match="mounted"):
@@ -201,7 +202,7 @@ def test_folder_name_for_id_reports_missing_root_instead_of_missing_id(tmp_path:
 
 def test_list_archived_entries_empty_when_archive_dir_not_set() -> None:
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.ARCHIVE_DIR = ""
         entries = provider._list_archived_entries()
     assert entries == []
@@ -209,7 +210,7 @@ def test_list_archived_entries_empty_when_archive_dir_not_set() -> None:
 
 def test_list_archived_entries_empty_when_archive_root_missing(tmp_path: Path) -> None:
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.ARCHIVE_DIR = str(tmp_path / "nonexistent")
         mock_settings.archive_path = tmp_path / "nonexistent"
         entries = provider._list_archived_entries()
@@ -223,7 +224,7 @@ def test_list_archived_entries_returns_matching_folders(tmp_path: Path) -> None:
     (archive_root / "drinks_1600000000").mkdir()
     (archive_root / "not_a_match").mkdir()
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.ARCHIVE_DIR = str(archive_root)
         mock_settings.archive_path = archive_root
         entries = provider._list_archived_entries()
@@ -238,7 +239,7 @@ def test_list_archived_entries_skips_dotfiles(tmp_path: Path) -> None:
     archive_root.mkdir()
     (archive_root / ".hidden_1000").mkdir()
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.ARCHIVE_DIR = str(archive_root)
         mock_settings.archive_path = archive_root
         entries = provider._list_archived_entries()
@@ -281,7 +282,7 @@ def test_list_categories_returns_sorted_names(tmp_path: Path) -> None:
     (content_root / ".hidden").mkdir()
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.ARCHIVE_DIR = ""
         result = provider.list_categories()
@@ -295,7 +296,7 @@ def test_list_categories_thumbnail_uri_empty_when_icon_missing(tmp_path: Path) -
     (content_root / "foods").mkdir()
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.ARCHIVE_DIR = ""
         result = provider.list_categories()
@@ -311,7 +312,7 @@ def test_list_categories_thumbnail_uri_set_when_icon_exists(tmp_path: Path) -> N
     (cat / "foods.png").write_bytes(b"icon")
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.ARCHIVE_DIR = ""
         result = provider.list_categories()
@@ -327,7 +328,7 @@ def test_list_categories_thumbnail_uri_matches_non_png_extension(tmp_path: Path)
     (cat / "foods.jpg").write_bytes(b"icon")
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.ARCHIVE_DIR = ""
         result = provider.list_categories()
@@ -337,7 +338,7 @@ def test_list_categories_thumbnail_uri_matches_non_png_extension(tmp_path: Path)
 
 def test_list_categories_error_when_root_missing(tmp_path: Path) -> None:
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = tmp_path / "nonexistent"
         mock_settings.ARCHIVE_DIR = ""
         with pytest.raises(ContentOperationError):
@@ -350,7 +351,7 @@ def test_list_categories_archived_only_skips_content_root(tmp_path: Path) -> Non
     (archive_root / "foods_1000").mkdir()
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.ARCHIVE_DIR = str(archive_root)
         mock_settings.archive_path = archive_root
         result = provider.list_categories(archived_only=True)
@@ -368,7 +369,7 @@ def test_list_categories_include_archived(tmp_path: Path) -> None:
     (archive_root / "drinks_1000").mkdir()
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.ARCHIVE_DIR = str(archive_root)
         mock_settings.archive_path = archive_root
@@ -384,7 +385,7 @@ def test_list_categories_include_archived(tmp_path: Path) -> None:
 
 def test_category_id_by_name_invalid_name(tmp_path: Path) -> None:
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = tmp_path
         with pytest.raises(InvalidCategoryNameError):
             provider.category_id_by_name("bad name!")
@@ -394,7 +395,7 @@ def test_category_id_by_name_not_found(tmp_path: Path) -> None:
     content_root = tmp_path / "content"
     content_root.mkdir()
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         with pytest.raises(CategoryNotFoundError):
             provider.category_id_by_name("foods")
@@ -404,7 +405,7 @@ def test_category_id_by_name_success(tmp_path: Path) -> None:
     content_root = tmp_path / "content"
     write_category_registry(content_root, [("C_Foods", "Foods")])
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         assert provider.category_id_by_name("foods") == "C_Foods"
 
@@ -417,7 +418,7 @@ def test_category_details_not_found(tmp_path: Path) -> None:
     content_root = tmp_path / "content"
     content_root.mkdir()
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         with pytest.raises(CategoryNotFoundError):
             provider.category_details("C_Foods")
@@ -436,7 +437,7 @@ def test_category_details_returns_items_and_csv(tmp_path: Path) -> None:
     (cat / "items_ids.csv").write_text("I_Apple\nI_Banana\n", encoding="utf-8")
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
         result = provider.category_details("C_Foods")
@@ -460,7 +461,7 @@ def test_category_details_returns_items_and_csv(tmp_path: Path) -> None:
 
 def test_create_category_invalid_name(tmp_path: Path) -> None:
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = tmp_path
         with pytest.raises(InvalidCategoryNameError):
             provider.create_category("bad name!")
@@ -470,7 +471,7 @@ def test_create_category_already_exists(tmp_path: Path) -> None:
     content_root = tmp_path / "content"
     (content_root / "foods").mkdir(parents=True)
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         with pytest.raises(CategoryConflictError):
             provider.create_category("foods")
@@ -482,7 +483,7 @@ def test_create_category_success(tmp_path: Path) -> None:
 
     provider = make_fs_provider()
     with (
-        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch_fs_settings() as mock_settings,
         patch.object(FileSystemContentProvider, "_translate_word", return_value="translated"),
         patch.object(FileSystemContentProvider, "_generate_audio", return_value=b"audio"),
         patch.object(FileSystemContentProvider, "_generate_image", return_value=(b"icon", ".png")),
@@ -505,7 +506,7 @@ def test_create_category_icon_failure_rolls_back(tmp_path: Path) -> None:
 
     provider = make_fs_provider()
     with (
-        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch_fs_settings() as mock_settings,
         patch.object(FileSystemContentProvider, "_translate_word", return_value="translated"),
         patch.object(FileSystemContentProvider, "_generate_audio", return_value=b"audio"),
         patch.object(
@@ -529,7 +530,7 @@ def test_create_category_writes_jpeg_icon_when_provider_returns_jpeg(tmp_path: P
 
     provider = make_fs_provider()
     with (
-        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch_fs_settings() as mock_settings,
         patch.object(FileSystemContentProvider, "_translate_word", return_value="translated"),
         patch.object(FileSystemContentProvider, "_generate_audio", return_value=b"audio"),
         patch.object(FileSystemContentProvider, "_generate_image", return_value=(b"icon", ".jpg")),
@@ -549,7 +550,7 @@ def test_create_category_normalizes_name_to_snake_case(tmp_path: Path) -> None:
 
     provider = make_fs_provider()
     with (
-        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch_fs_settings() as mock_settings,
         patch.object(FileSystemContentProvider, "_translate_word", return_value="translated"),
         patch.object(FileSystemContentProvider, "_generate_audio", return_value=b"audio"),
         patch.object(FileSystemContentProvider, "_generate_image", return_value=(b"icon", ".png")),
@@ -571,7 +572,7 @@ def test_create_category_rejects_unsafe_name(tmp_path: Path) -> None:
     content_root.mkdir()
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         with pytest.raises(InvalidCategoryNameError):
             provider.create_category("foods/../etc")
@@ -583,7 +584,7 @@ def test_create_category_translation_failure(tmp_path: Path) -> None:
 
     provider = make_fs_provider()
     with (
-        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch_fs_settings() as mock_settings,
         patch.object(
             FileSystemContentProvider,
             "_translate_word",
@@ -606,7 +607,7 @@ def test_archive_category_not_found(tmp_path: Path) -> None:
     content_root = tmp_path / "content"
     content_root.mkdir()
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.archive_path = tmp_path / "archive"
         with pytest.raises(CategoryNotFoundError):
@@ -621,7 +622,7 @@ def test_archive_category_moves_to_archive(tmp_path: Path) -> None:
     write_category_registry(content_root, [("C_Foods", "Foods")])
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.archive_path = archive_root
         result = provider.archive_category("C_Foods")
@@ -642,7 +643,7 @@ def test_delete_category_image_category_not_found(tmp_path: Path) -> None:
     content_root = tmp_path / "content"
     content_root.mkdir()
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         with pytest.raises(CategoryNotFoundError):
             provider.delete_category_image("C_Nonexistent", "foods_01")
@@ -653,7 +654,7 @@ def test_delete_category_image_image_not_found(tmp_path: Path) -> None:
     (content_root / "foods").mkdir(parents=True)
     write_category_registry(content_root, [("C_Foods", "Foods")])
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         with pytest.raises(CategoryNotFoundError):
             provider.delete_category_image("C_Foods", "foods_01")
@@ -666,7 +667,7 @@ def test_delete_category_image_removes_file(tmp_path: Path) -> None:
     image_path.write_bytes(b"fake-png")
     write_category_registry(content_root, [("C_Foods", "Foods")])
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         provider.delete_category_image("C_Foods", "foods_01")
 
@@ -681,7 +682,7 @@ def test_add_category_image_category_not_found(tmp_path: Path) -> None:
     content_root = tmp_path / "content"
     content_root.mkdir()
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         with pytest.raises(CategoryNotFoundError):
             provider.add_category_image("C_Nonexistent", b"fake-png", ".png")
@@ -690,7 +691,7 @@ def test_add_category_image_category_not_found(tmp_path: Path) -> None:
 def test_add_category_image_root_missing_names_the_cause(tmp_path: Path) -> None:
     """The Docker corner case this error path exists for: an unmounted content volume."""
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = tmp_path / "does_not_exist"
         mock_settings.CONTENT_DIR = "/app/content"
         with pytest.raises(ContentOperationError, match="mounted"):
@@ -702,7 +703,7 @@ def test_add_category_image_writes_file(tmp_path: Path) -> None:
     (content_root / "foods").mkdir(parents=True)
     write_category_registry(content_root, [("C_Foods", "Foods")])
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         result = provider.add_category_image("C_Foods", b"fake-png", ".png")
 

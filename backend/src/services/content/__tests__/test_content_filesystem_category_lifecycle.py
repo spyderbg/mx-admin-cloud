@@ -20,6 +20,7 @@ from src.services.content.providers.file_system import (
     FileSystemContentProvider,
 )
 from src.services.content.__tests__.content_fs_helpers import (
+    patch_fs_settings,
     make_fs_provider,
     write_category_registry,
 )
@@ -33,7 +34,7 @@ def test_update_category_details_not_found(tmp_path: Path) -> None:
     content_root = tmp_path / "content"
     content_root.mkdir()
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
         with pytest.raises(CategoryNotFoundError):
@@ -49,7 +50,7 @@ def test_update_category_details_writes_name_and_description(tmp_path: Path) -> 
     (content_root / "categories_fr.csv").write_text("Aliments\n", encoding="utf-8")
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
         result = provider.update_category_details(
@@ -72,7 +73,7 @@ def test_update_category_details_preserves_other_rows(tmp_path: Path) -> None:
     write_category_registry(content_root, [("C_Foods", "Foods"), ("C_Drinks", "Drinks")])
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en"]
         provider.update_category_details(
@@ -91,7 +92,7 @@ def test_rename_category_not_found(tmp_path: Path) -> None:
     content_root = tmp_path / "content"
     content_root.mkdir()
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         with pytest.raises(CategoryNotFoundError):
             provider.rename_category("C_Foods", "C_Meals")
@@ -102,7 +103,7 @@ def test_rename_category_invalid_new_id(tmp_path: Path) -> None:
     (content_root / "foods").mkdir(parents=True)
     write_category_registry(content_root, [("C_Foods", "Foods")])
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         with pytest.raises(InvalidCategoryNameError):
             provider.rename_category("C_Foods", "not a valid id!")
@@ -114,7 +115,7 @@ def test_rename_category_conflict(tmp_path: Path) -> None:
     (content_root / "drinks").mkdir(parents=True)
     write_category_registry(content_root, [("C_Foods", "Foods"), ("C_Drinks", "Drinks")])
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en"]
         with pytest.raises(CategoryConflictError):
@@ -133,7 +134,7 @@ def test_rename_category_moves_folder_and_updates_id_only(tmp_path: Path) -> Non
     (content_root / "categories_fr.csv").write_text("Aliments\nBoissons\n", encoding="utf-8")
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
         result = provider.rename_category("C_Foods", "C_Meals")
@@ -153,7 +154,7 @@ def test_rename_category_list_categories_returns_new_id_not_folder_name(tmp_path
     write_category_registry(content_root, [("C_Foods", "Foods")])
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.ARCHIVE_DIR = ""
         mock_settings.SUPPORTED_LANGUAGES = ["en"]
@@ -171,7 +172,7 @@ def test_rename_category_details_resolve_by_new_id(tmp_path: Path) -> None:
     (content_root / "descriptions_en.csv").write_text("Tasty meals\n", encoding="utf-8")
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en"]
         provider.rename_category("C_Foods", "C_Meals")
@@ -197,7 +198,7 @@ def test_rename_category_renames_prefixed_voice_and_icon_files(tmp_path: Path) -
     write_category_registry(content_root, [("C_Foods", "Foods")])
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
         provider.rename_category("C_Foods", "C_Meals")
@@ -217,7 +218,7 @@ def test_rename_category_same_id_is_noop(tmp_path: Path) -> None:
     write_category_registry(content_root, [("C_Foods", "Foods")])
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         result = provider.rename_category("C_Foods", "C_Foods")
 
@@ -234,7 +235,7 @@ def test_remove_category_not_found(tmp_path: Path) -> None:
     content_root = tmp_path / "content"
     content_root.mkdir()
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.ARCHIVE_DIR = ""
         with pytest.raises(CategoryNotFoundError):
@@ -247,7 +248,7 @@ def test_remove_category_permanently_deletes_when_no_archive_dir(tmp_path: Path)
     write_category_registry(content_root, [("C_Foods", "Foods")])
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.ARCHIVE_DIR = ""
         result = provider.remove_category("C_Foods")
@@ -264,7 +265,7 @@ def test_remove_category_deletes_registry_rows(tmp_path: Path) -> None:
     )
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.ARCHIVE_DIR = ""
         mock_settings.SUPPORTED_LANGUAGES = ["en"]
@@ -286,7 +287,7 @@ def test_remove_then_create_same_category_leaves_one_registry_row(tmp_path: Path
 
     provider = make_fs_provider()
     with (
-        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch_fs_settings() as mock_settings,
         patch.object(FileSystemContentProvider, "_translate_word", return_value="translated"),
         patch.object(FileSystemContentProvider, "_generate_audio", return_value=b"audio"),
         patch.object(FileSystemContentProvider, "_generate_image", return_value=(b"icon", ".png")),
@@ -307,7 +308,7 @@ def test_remove_category_archives_when_archive_dir_set(tmp_path: Path) -> None:
     write_category_registry(content_root, [("C_Foods", "Foods")])
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.archive_path = archive_root
         mock_settings.ARCHIVE_DIR = str(archive_root)
@@ -322,7 +323,7 @@ def test_remove_category_archives_when_archive_dir_set(tmp_path: Path) -> None:
 
 def test_restore_category_empty_name(tmp_path: Path) -> None:
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.archive_path = tmp_path / "archive"
         mock_settings.content_path = tmp_path / "content"
         with pytest.raises(InvalidCategoryNameError):
@@ -331,7 +332,7 @@ def test_restore_category_empty_name(tmp_path: Path) -> None:
 
 def test_restore_category_archive_dir_missing(tmp_path: Path) -> None:
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.archive_path = tmp_path / "nonexistent"
         mock_settings.content_path = tmp_path / "content"
         with pytest.raises(ArchiveUnavailableError):
@@ -345,7 +346,7 @@ def test_restore_category_no_archive_found(tmp_path: Path) -> None:
     write_category_registry(content_root, [("C_Foods", "Foods")])
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.archive_path = archive_root
         mock_settings.content_path = content_root
         with pytest.raises(CategoryNotFoundError, match="No archive found"):
@@ -361,7 +362,7 @@ def test_restore_category_conflict_with_existing(tmp_path: Path) -> None:
     write_category_registry(content_root, [("C_Foods", "Foods")])
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.archive_path = archive_root
         mock_settings.content_path = content_root
         with pytest.raises(CategoryConflictError):
@@ -377,7 +378,7 @@ def test_restore_category_success(tmp_path: Path) -> None:
     content_root.mkdir(parents=True, exist_ok=True)
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.archive_path = archive_root
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
@@ -399,7 +400,7 @@ def test_restore_category_accepts_full_archive_folder_name(tmp_path: Path) -> No
     content_root.mkdir(parents=True, exist_ok=True)
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.archive_path = archive_root
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en"]
@@ -417,7 +418,7 @@ def test_restore_category_picks_most_recent_archive(tmp_path: Path) -> None:
     content_root.mkdir(parents=True, exist_ok=True)
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.archive_path = archive_root
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en"]
@@ -435,7 +436,7 @@ def test_restore_category_rebuilds_registry_rows_from_manifest(tmp_path: Path) -
     (content_root / "categories_fr.csv").write_text("Animaux\nAliments\n", encoding="utf-8")
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.archive_path = archive_root
         mock_settings.ARCHIVE_DIR = str(archive_root)
@@ -467,7 +468,7 @@ def test_restore_category_rebuilds_registry_rows_from_manifest(tmp_path: Path) -
 
 def test_delete_archived_category_empty_name(tmp_path: Path) -> None:
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.archive_path = tmp_path / "archive"
         with pytest.raises(InvalidCategoryNameError):
             provider.delete_archived_category("")
@@ -475,7 +476,7 @@ def test_delete_archived_category_empty_name(tmp_path: Path) -> None:
 
 def test_delete_archived_category_archive_dir_missing(tmp_path: Path) -> None:
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.archive_path = tmp_path / "nonexistent"
         with pytest.raises(ArchiveUnavailableError):
             provider.delete_archived_category("foods")
@@ -486,7 +487,7 @@ def test_delete_archived_category_no_archive_found(tmp_path: Path) -> None:
     archive_root.mkdir()
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.archive_path = archive_root
         with pytest.raises(CategoryNotFoundError, match="No archive found"):
             provider.delete_archived_category("foods")
@@ -499,7 +500,7 @@ def test_delete_archived_category_removes_folder(tmp_path: Path) -> None:
     (archived / "apple").mkdir()
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.archive_path = archive_root
         result = provider.delete_archived_category("foods")
 
@@ -515,7 +516,7 @@ def test_delete_archived_category_accepts_full_archive_folder_name(tmp_path: Pat
     (archive_root / "foods_2000").mkdir(parents=True)
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.archive_path = archive_root
         result = provider.delete_archived_category("foods_1000")
 
@@ -531,7 +532,7 @@ def test_delete_archived_category_picks_most_recent_archive(tmp_path: Path) -> N
     (archive_root / "foods_2000").mkdir(parents=True)
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.archive_path = archive_root
         result = provider.delete_archived_category("foods")
 
@@ -550,7 +551,7 @@ def test_delete_archived_category_does_not_modify_registry_csvs(tmp_path: Path) 
     )
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.archive_path = archive_root
         mock_settings.ARCHIVE_DIR = str(archive_root)
@@ -581,7 +582,7 @@ def test_delete_archived_category_after_restore_cannot_find_snapshot(tmp_path: P
     content_root.mkdir(parents=True, exist_ok=True)
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.archive_path = archive_root
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en"]

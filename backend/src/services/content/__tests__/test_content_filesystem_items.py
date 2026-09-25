@@ -26,6 +26,7 @@ from src.services.content.providers.file_system import (
     _extension_for_content_type,
 )
 from src.services.content.__tests__.content_fs_helpers import (
+    patch_fs_settings,
     make_fs_provider,
     write_category_registry,
     write_item_registry,
@@ -84,7 +85,7 @@ def test_create_item_success_with_image(tmp_path: Path) -> None:
     content_root, category_path = _prepare_category(tmp_path)
     provider = make_fs_provider()
     with (
-        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch_fs_settings() as mock_settings,
         patch.object(FileSystemContentProvider, "_translate_word", side_effect=_fake_translate),
         patch.object(FileSystemContentProvider, "_generate_audio", return_value=b"audio"),
     ):
@@ -117,7 +118,7 @@ def test_create_item_success_without_image(tmp_path: Path) -> None:
     content_root, category_path = _prepare_category(tmp_path)
     provider = make_fs_provider()
     with (
-        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch_fs_settings() as mock_settings,
         patch.object(FileSystemContentProvider, "_translate_word", side_effect=_fake_translate),
         patch.object(FileSystemContentProvider, "_generate_audio", return_value=b"audio"),
     ):
@@ -140,7 +141,7 @@ def test_create_item_translation_failure_leaves_no_trace(tmp_path: Path) -> None
     content_root, category_path = _prepare_category(tmp_path)
     provider = make_fs_provider()
     with (
-        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch_fs_settings() as mock_settings,
         patch.object(FileSystemContentProvider, "_translate_word", side_effect=RuntimeError("translator down")),
         patch.object(FileSystemContentProvider, "_generate_audio", return_value=b"audio") as audio_mock,
     ):
@@ -165,9 +166,9 @@ def test_translate_word_strict_rejects_unsuccessful_response() -> None:
             return {"success": False, "lang_text": {"lang_code": "en", "text": "apple"}}
 
     with (
-        patch("src.services.content.providers.file_system.httpx.post", return_value=_Response()),
-        patch("src.services.content.providers.file_system.create_internal_token", return_value="token"),
-        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch("src.services.content.providers.file_system.internal_api.httpx.post", return_value=_Response()),
+        patch("src.services.content.providers.file_system.internal_api.create_internal_token", return_value="token"),
+        patch_fs_settings() as mock_settings,
     ):
         mock_settings.API_BASE_URL = "http://test"
         # Lenient mode (used by create_category) keeps echoing the source text.
@@ -180,7 +181,7 @@ def test_create_item_tts_failure_still_creates_item(tmp_path: Path) -> None:
     content_root, category_path = _prepare_category(tmp_path)
     provider = make_fs_provider()
     with (
-        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch_fs_settings() as mock_settings,
         patch.object(FileSystemContentProvider, "_translate_word", side_effect=_fake_translate),
         patch.object(FileSystemContentProvider, "_generate_audio", side_effect=RuntimeError("boom")),
     ):
@@ -211,7 +212,7 @@ def test_create_item_partial_tts_failure(tmp_path: Path) -> None:
 
     provider = make_fs_provider()
     with (
-        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch_fs_settings() as mock_settings,
         patch.object(FileSystemContentProvider, "_translate_word", side_effect=_fake_translate),
         patch.object(FileSystemContentProvider, "_generate_audio", side_effect=fake_audio),
     ):
@@ -229,7 +230,7 @@ def test_create_item_stops_after_no_active_tts_providers(tmp_path: Path) -> None
     content_root, _ = _prepare_category(tmp_path)
     provider = make_fs_provider()
     with (
-        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch_fs_settings() as mock_settings,
         patch.object(FileSystemContentProvider, "_translate_word", side_effect=_fake_translate),
         patch.object(
             FileSystemContentProvider,
@@ -250,7 +251,7 @@ def test_create_item_generate_voices_false_skips_tts(tmp_path: Path) -> None:
     content_root, category_path = _prepare_category(tmp_path)
     provider = make_fs_provider()
     with (
-        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch_fs_settings() as mock_settings,
         patch.object(FileSystemContentProvider, "_translate_word", side_effect=_fake_translate),
         patch.object(FileSystemContentProvider, "_generate_audio", return_value=b"audio") as audio_mock,
     ):
@@ -270,7 +271,7 @@ def test_create_item_conflict_existing_folder(tmp_path: Path) -> None:
     (category_path / "apple").mkdir()
     provider = make_fs_provider()
     with (
-        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch_fs_settings() as mock_settings,
         patch.object(FileSystemContentProvider, "_translate_word", side_effect=_fake_translate) as translate_mock,
     ):
         mock_settings.content_path = content_root
@@ -288,7 +289,7 @@ def test_create_item_conflict_existing_id_row(tmp_path: Path) -> None:
     (category_path / "items_en.csv").write_text("apple\n", encoding="utf-8")
     provider = make_fs_provider()
     with (
-        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch_fs_settings() as mock_settings,
         patch.object(FileSystemContentProvider, "_translate_word", side_effect=_fake_translate),
     ):
         mock_settings.content_path = content_root
@@ -308,7 +309,7 @@ def test_create_item_rolls_back_on_disk_failure(tmp_path: Path) -> None:
     (category_path / "items_fr.csv").mkdir()
     provider = make_fs_provider()
     with (
-        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch_fs_settings() as mock_settings,
         patch.object(FileSystemContentProvider, "_translate_word", side_effect=_fake_translate),
         patch.object(FileSystemContentProvider, "_generate_audio", return_value=b"audio") as audio_mock,
     ):
@@ -326,7 +327,7 @@ def test_create_item_rolls_back_on_disk_failure(tmp_path: Path) -> None:
 def test_create_item_unknown_category(tmp_path: Path) -> None:
     content_root, _ = _prepare_category(tmp_path)
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
         with pytest.raises(CategoryNotFoundError):
@@ -338,7 +339,7 @@ def test_create_item_missing_category_folder(tmp_path: Path) -> None:
     write_category_registry(content_root, [("C_Foods", "foods")])  # registered, but no folder on disk
     provider = make_fs_provider()
     with (
-        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch_fs_settings() as mock_settings,
         patch.object(FileSystemContentProvider, "_translate_word", side_effect=_fake_translate),
     ):
         mock_settings.content_path = content_root
@@ -368,7 +369,7 @@ def test_update_item_name_not_found(tmp_path: Path) -> None:
     write_item_registry(category_path, [("I_Apple", "apple")])
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
         with pytest.raises(CategoryNotFoundError):
@@ -383,7 +384,7 @@ def test_update_item_name_writes_localized_name(tmp_path: Path) -> None:
     (category_path / "items_fr.csv").write_text("pomme\nbanane\n", encoding="utf-8")
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
         result = provider.update_item_name(
@@ -408,7 +409,7 @@ def test_regenerate_item_voice_unknown_voice_id(tmp_path: Path) -> None:
     write_item_registry(category_path, [("I_Apple", "apple")])
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
         with pytest.raises(CategoryNotFoundError):
@@ -425,7 +426,7 @@ def test_regenerate_item_voice_uses_current_text_and_overwrites_file(tmp_path: P
 
     provider = make_fs_provider()
     with (
-        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch_fs_settings() as mock_settings,
         patch.object(FileSystemContentProvider, "_generate_audio", return_value=b"fresh") as audio_mock,
     ):
         mock_settings.content_path = content_root
@@ -447,7 +448,7 @@ def test_regenerate_item_voice_creates_missing_file_and_falls_back_to_english(tm
 
     provider = make_fs_provider()
     with (
-        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch_fs_settings() as mock_settings,
         patch.object(FileSystemContentProvider, "_generate_audio", return_value=b"fresh") as audio_mock,
     ):
         mock_settings.content_path = content_root
@@ -467,7 +468,7 @@ def test_regenerate_item_voice_wraps_tts_failure(tmp_path: Path) -> None:
 
     provider = make_fs_provider()
     with (
-        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch_fs_settings() as mock_settings,
         patch.object(FileSystemContentProvider, "_generate_audio", side_effect=RuntimeError("boom")),
     ):
         mock_settings.content_path = content_root
@@ -483,7 +484,7 @@ def test_item_voice_sidecar_tracks_upload_generation_provider_and_deletion(tmp_p
     write_item_registry(category_path, [("I_Apple", "apple")])
     provider = make_fs_provider()
 
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en"]
         provider.add_item_voice("C_Foods", "I_Apple", "en", b"uploaded audio")
@@ -508,8 +509,11 @@ def test_item_voice_sidecar_tracks_upload_generation_provider_and_deletion(tmp_p
             request=httpx.Request("POST", "http://test/internal/generators/generate-word"),
         )
         with (
-            patch("src.services.content.providers.file_system.httpx.post", return_value=response),
-            patch("src.services.content.providers.file_system.create_internal_token", return_value="token"),
+            patch("src.services.content.providers.file_system.internal_api.httpx.post", return_value=response),
+            patch(
+                "src.services.content.providers.file_system.internal_api.create_internal_token",
+                return_value="token",
+            ),
         ):
             provider.regenerate_item_voice("C_Foods", "I_Apple", "apple-v-en")
 
@@ -534,7 +538,7 @@ def test_regenerate_category_voice_unknown_voice_id(tmp_path: Path) -> None:
     category_path.mkdir(parents=True)
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
         with pytest.raises(CategoryNotFoundError):
@@ -551,7 +555,7 @@ def test_regenerate_category_voice_uses_current_name_and_overwrites_file(tmp_pat
 
     provider = make_fs_provider()
     with (
-        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch_fs_settings() as mock_settings,
         patch.object(FileSystemContentProvider, "_generate_audio", return_value=b"fresh") as audio_mock,
     ):
         mock_settings.content_path = content_root
@@ -576,7 +580,7 @@ def test_regenerate_category_voice_creates_missing_file_and_falls_back_to_englis
 
     provider = make_fs_provider()
     with (
-        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch_fs_settings() as mock_settings,
         patch.object(FileSystemContentProvider, "_generate_audio", return_value=b"fresh") as audio_mock,
     ):
         mock_settings.content_path = content_root
@@ -596,7 +600,7 @@ def test_regenerate_category_voice_wraps_tts_failure(tmp_path: Path) -> None:
 
     provider = make_fs_provider()
     with (
-        patch("src.services.content.providers.file_system.settings") as mock_settings,
+        patch_fs_settings() as mock_settings,
         patch.object(FileSystemContentProvider, "_generate_audio", side_effect=RuntimeError("boom")),
     ):
         mock_settings.content_path = content_root
@@ -610,7 +614,7 @@ def test_regenerate_category_voice_missing_category_folder(tmp_path: Path) -> No
     write_category_registry(content_root, [("C_Foods", "foods")])  # registered, but no folder on disk
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en"]
         with pytest.raises(CategoryNotFoundError):
@@ -658,7 +662,7 @@ def test_collect_voices_surfaces_provider_and_parameters(tmp_path: Path) -> None
     )
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
         voices = provider._collect_voices(category_path, "foods")
@@ -676,7 +680,7 @@ def test_add_category_voice_uploaded_has_custom_provider(tmp_path: Path) -> None
     content_root, _ = _prepare_category(tmp_path)
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en"]
         result = provider.add_category_voice("C_Foods", "en", b"uploaded audio")
@@ -696,7 +700,7 @@ def test_remove_item_not_found(tmp_path: Path) -> None:
     write_item_registry(category_path, [("I_Apple", "apple")])
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en"]
         with pytest.raises(CategoryNotFoundError):
@@ -711,7 +715,7 @@ def test_remove_item_deletes_folder_and_csv_rows(tmp_path: Path) -> None:
     (category_path / "items_fr.csv").write_text("pomme\nbanane\n", encoding="utf-8")
 
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
         result = provider.remove_item("C_Foods", "I_Apple")

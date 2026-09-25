@@ -2,11 +2,35 @@
 
 from __future__ import annotations
 
+import importlib
+import pkgutil
+from collections.abc import Iterator
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
+import src.services.content.providers.file_system as fs_package
 from src.services.content.providers.file_system import (
     FileSystemContentProvider,
 )
+
+
+@contextmanager
+def patch_fs_settings() -> Iterator[MagicMock]:
+    """Patch `settings` in every file_system provider module with one shared mock.
+
+    The provider is split across several modules (paths.py, images.py, voices.py, ...) that
+    each import `settings` themselves, so patching a single module would leave the others
+    reading the real settings. Modules are discovered, not listed, so moving code between
+    them never silently un-patches anything.
+    """
+    mock_settings = MagicMock()
+    with ExitStack() as stack:
+        for module_info in pkgutil.iter_modules(fs_package.__path__, fs_package.__name__ + "."):
+            module = importlib.import_module(module_info.name)
+            if hasattr(module, "settings"):
+                stack.enter_context(patch.object(module, "settings", mock_settings))
+        yield mock_settings
 
 
 def make_fs_provider() -> FileSystemContentProvider:

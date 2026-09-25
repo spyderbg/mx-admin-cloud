@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -14,6 +13,7 @@ from src.services.content.models import (
     ContentOperationError,
 )
 from src.services.content.__tests__.content_fs_helpers import (
+    patch_fs_settings,
     make_fs_provider,
     write_category_registry,
     write_item_registry,
@@ -29,7 +29,7 @@ def test_add_item_image_item_not_found(tmp_path: Path) -> None:
     (content_root / "foods").mkdir(parents=True)
     write_category_registry(content_root, [("C_Foods", "Foods")])
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         with pytest.raises(CategoryNotFoundError):
             provider.add_item_image("C_Foods", "I_Apple", b"fake-png", ".png")
@@ -37,7 +37,7 @@ def test_add_item_image_item_not_found(tmp_path: Path) -> None:
 
 def test_add_item_image_root_missing_names_the_cause(tmp_path: Path) -> None:
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = tmp_path / "does_not_exist"
         mock_settings.CONTENT_DIR = "/app/content"
         with pytest.raises(ContentOperationError, match="mounted"):
@@ -50,7 +50,7 @@ def test_add_item_image_writes_file(tmp_path: Path) -> None:
     write_category_registry(content_root, [("C_Foods", "Foods")])
     write_item_registry(category_path, [("I_Apple", "Apple")])
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         result = provider.add_item_image("C_Foods", "I_Apple", b"fake-png-2", ".png")
 
@@ -65,7 +65,7 @@ def test_add_item_image_first_image_is_copied_into_main_and_01(tmp_path: Path) -
     write_item_registry(category_path, [("I_Apple", "Apple")])
     (category_path / "apple" / "01.png").unlink()  # start from an item with no images yet
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         result = provider.add_item_image("C_Foods", "I_Apple", b"fake-png", ".png")
 
@@ -82,7 +82,7 @@ def test_add_item_image_after_main_exists_gets_index(tmp_path: Path) -> None:
     (category_path / "apple" / "01.png").unlink()
     (category_path / "apple" / "apple.png").write_bytes(b"main-image")
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         result = provider.add_item_image("C_Foods", "I_Apple", b"fake-png-2", ".png")
 
@@ -115,7 +115,7 @@ def test_item_images_excludes_main_image_from_the_list(tmp_path: Path) -> None:
         "apple_02": b"second-variant",
     })
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         result = provider.item_images("C_Foods", "I_Apple")
 
@@ -133,7 +133,7 @@ def test_category_summary_excludes_dedicated_main_image_from_count(tmp_path: Pat
         "apple_02": b"second-variant",
     })
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         item = provider.category_details("C_Foods").items[0]
 
@@ -148,7 +148,7 @@ def test_category_summary_counts_all_legacy_variants(tmp_path: Path) -> None:
         "apple_02": b"second-variant",
     })
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         item = provider.category_details("C_Foods").items[0]
 
@@ -163,7 +163,7 @@ def test_item_images_main_image_matching_no_variant_selects_none(tmp_path: Path)
         "apple_01": b"first-variant",
     })
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         result = provider.item_images("C_Foods", "I_Apple")
 
@@ -175,7 +175,7 @@ def test_item_images_main_image_matching_no_variant_selects_none(tmp_path: Path)
 def test_item_images_with_only_main_image_has_empty_list(tmp_path: Path) -> None:
     content_root, _ = _prepare_item_with_images(tmp_path, {"apple": b"main-content"})
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         result = provider.item_images("C_Foods", "I_Apple")
 
@@ -191,7 +191,7 @@ def test_item_images_without_main_falls_back_to_first_variant(tmp_path: Path) ->
         "apple_02": b"second-variant",
     })
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         result = provider.item_images("C_Foods", "I_Apple")
 
@@ -206,7 +206,7 @@ def test_set_main_item_image_copies_the_variant_over_the_main_image(tmp_path: Pa
         "apple_01": b"variant-content",
     })
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         result = provider.set_main_item_image("C_Foods", "I_Apple", "apple_01")
 
@@ -224,7 +224,7 @@ def test_set_main_item_image_already_main_is_noop(tmp_path: Path) -> None:
         "apple_01": b"variant-content",
     })
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         provider.set_main_item_image("C_Foods", "I_Apple", "apple")
 
@@ -238,7 +238,7 @@ def test_set_main_item_image_with_no_existing_main_copies_target(tmp_path: Path)
         "apple_02": b"second-content",
     })
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         provider.set_main_item_image("C_Foods", "I_Apple", "apple_02")
 
@@ -255,7 +255,7 @@ def test_set_main_item_image_keeps_every_variant_listed(tmp_path: Path) -> None:
         "apple_03": b"third-content",
     })
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         before = provider.item_images("C_Foods", "I_Apple")
         after = provider.set_main_item_image("C_Foods", "I_Apple", "apple_03")
@@ -274,7 +274,7 @@ def test_set_main_item_image_repeated_selection_keeps_every_variant(tmp_path: Pa
         "apple_03": b"third-content",
     })
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         for target, expected in [("apple_02", b"second-content"), ("apple_03", b"third-content"),
                                  ("apple_01", b"first-content")]:
@@ -293,7 +293,7 @@ def test_set_main_item_image_replaces_main_stored_under_another_extension(tmp_pa
     content_root, item_path = _prepare_item_with_images(tmp_path, {"apple": b"main-content"})
     (item_path / "apple_01.jpg").write_bytes(b"jpg-content")
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         result = provider.set_main_item_image("C_Foods", "I_Apple", "apple_01")
 
@@ -306,7 +306,7 @@ def test_set_main_item_image_replaces_main_stored_under_another_extension(tmp_pa
 def test_set_main_item_image_not_found(tmp_path: Path) -> None:
     content_root, _ = _prepare_item_with_images(tmp_path, {"apple": b"main-content"})
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         with pytest.raises(CategoryNotFoundError):
             provider.set_main_item_image("C_Foods", "I_Apple", "apple_99")
@@ -319,7 +319,7 @@ def test_delete_item_image_promotes_lowest_index_when_main_deleted(tmp_path: Pat
         "apple_02": b"second-content",
     })
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         result = provider.item_images("C_Foods", "I_Apple")
         provider.delete_item_image("C_Foods", "I_Apple", "apple")
@@ -339,7 +339,7 @@ def test_delete_item_image_non_main_leaves_main_untouched(tmp_path: Path) -> Non
         "apple_01": b"first-content",
     })
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         provider.delete_item_image("C_Foods", "I_Apple", "apple_01")
 
@@ -350,7 +350,7 @@ def test_delete_item_image_non_main_leaves_main_untouched(tmp_path: Path) -> Non
 def test_delete_item_image_last_remaining_is_allowed(tmp_path: Path) -> None:
     content_root, item_path = _prepare_item_with_images(tmp_path, {"apple": b"main-content"})
     provider = make_fs_provider()
-    with patch("src.services.content.providers.file_system.settings") as mock_settings:
+    with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         provider.delete_item_image("C_Foods", "I_Apple", "apple")
 

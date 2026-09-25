@@ -606,7 +606,7 @@ class StructLogProvider(LoggingServiceProvider):
     def _abbreviate_log_level(
         _logger: Any, _method: str, event_dict: dict[str, Any],
     ) -> dict[str, Any]:
-        _LEVEL_ABBREV: dict[str, str] = {
+        _LEVEL_ABBREV: dict[str, str] = {  # pylint: disable=invalid-name
             "trace":    "TRC",
             "debug":    "DBG",
             "info":     "INF",

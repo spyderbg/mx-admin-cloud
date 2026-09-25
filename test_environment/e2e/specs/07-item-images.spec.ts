@@ -1,8 +1,8 @@
 /**
  * drinks/water: exercises the main/variant split (implementation plan §6, spec 7;
  * commit 86fcf35's main-image-by-copy behaviour) at
- * backend/src/services/content/providers/file_system.py:1678 (item_images) and :1860
- * (set_main_item_image). See content-quirks.spec.ts for the fallback-main assertion this
+ * backend/src/services/content/providers/file_system/items.py (item_images and
+ * set_main_item_image). See content-quirks.spec.ts for the fallback-main assertion this
  * spec builds on: water starts with water_01 selected via fallback, not "no main image".
  */
 
