@@ -34,7 +34,7 @@ def _build_translation_provider(
     return TextTranslationProviderFactory.create(provider, base_dir)
 
 
-SERVICE_CLASS = TextTranslationService
+SERVICE_CLASS = TextTranslationService  # pylint: disable=invalid-name
 SERVICE_NAME = "text_translation"
 SERVICE_ACCEPT_CRITERIA = ServiceAcceptCriteria(
     service_name=SERVICE_NAME,
