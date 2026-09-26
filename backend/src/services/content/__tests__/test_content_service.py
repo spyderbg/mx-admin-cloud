@@ -35,10 +35,10 @@ from src.services.content.schemas import (
     DeleteArchivedCategoryResponse,
     ItemSummary,
     RemoveCategoryResponse,
-    RenameCategoryBody,
-    RenameCategoryResponse,
     RestoreCategoryBody,
     RestoreCategoryResponse,
+    UpdateCategoryBody,
+    UpdateCategoryResponse,
 )
 from src.services.content.service import ContentService
 from src.services.models import ServiceProvider
@@ -117,6 +117,10 @@ class _StubProvider(ContentProvider):
             "name": item_name,
         })
 
+    def update_item_id(self, category_id: str, item_id: str, new_item_id: str) -> dict[str, Any]:
+        self._record("update_item_id", category_id, item_id, new_item_id)
+        return self._returns.get("update_item_id", {"id": new_item_id})
+
     def remove_item(self, category_id: str, item_id: str) -> dict[str, Any]:
         self._record("remove_item", category_id, item_id)
         return self._returns.get("remove_item", {
@@ -187,9 +191,9 @@ class _StubProvider(ContentProvider):
             "message": f"updated details for {category_id}",
         })
 
-    def rename_category(self, category_id: str, new_category_id: str) -> dict[str, Any]:
-        self._record("rename_category", category_id, new_category_id)
-        return self._returns.get("rename_category", {
+    def update_category_id(self, category_id: str, new_category_id: str) -> dict[str, Any]:
+        self._record("update_category_id", category_id, new_category_id)
+        return self._returns.get("update_category_id", {
             "category": category_id,
             "message": f"renamed {category_id} to {new_category_id}",
         })
@@ -373,6 +377,9 @@ class _ConcreteProvider(ContentProvider):
     def update_item_name(self, category_id, item_id, item_name):
         return {}
 
+    def update_item_id(self, category_id, item_id, new_item_id):
+        return {}
+
     def remove_item(self, category_id, item_id):
         return {}
 
@@ -394,7 +401,7 @@ class _ConcreteProvider(ContentProvider):
     def update_category_details(self, category_id, category_name, description):
         return {}
 
-    def rename_category(self, category_id, new_category_id):
+    def update_category_id(self, category_id, new_category_id):
         return {}
 
     def remove_category(self, category_id):
@@ -671,6 +678,14 @@ def test_update_item_delegates(tmp_path: Path) -> None:
     assert stub.calls["update_item_name"] == [("C_Foods", "I_Apple", item_name)]
 
 
+def test_update_item_id_delegates(tmp_path: Path) -> None:
+    stub = _StubProvider(tmp_path)
+    svc = _make_service(tmp_path, [stub])
+    result = svc.update_item_id("C_Foods", "I_Apple", "I_GreenApple")
+    assert result["id"] == "I_GreenApple"
+    assert stub.calls["update_item_id"] == [("C_Foods", "I_Apple", "I_GreenApple")]
+
+
 def test_remove_item_delegates(tmp_path: Path) -> None:
     stub = _StubProvider(tmp_path)
     svc = _make_service(tmp_path, [stub])
@@ -689,12 +704,12 @@ def test_update_category_details_delegates(tmp_path: Path) -> None:
     assert stub.calls["update_category_details"] == [("C_Foods", name, description)]
 
 
-def test_rename_category_delegates(tmp_path: Path) -> None:
+def test_update_category_id_delegates(tmp_path: Path) -> None:
     stub = _StubProvider(tmp_path)
     svc = _make_service(tmp_path, [stub])
-    result = svc.rename_category("C_Foods", "C_Meals")
+    result = svc.update_category_id("C_Foods", "C_Meals")
     assert result["category"] == "C_Foods"
-    assert stub.calls["rename_category"] == [("C_Foods", "C_Meals")]
+    assert stub.calls["update_category_id"] == [("C_Foods", "C_Meals")]
 
 
 def test_remove_category_delegates(tmp_path: Path) -> None:
@@ -732,17 +747,17 @@ def test_create_category_body_requires_name() -> None:
         CreateCategoryBody()  # type: ignore[call-arg]
 
 
-def test_rename_category_body_requires_name_and_description() -> None:
-    body = RenameCategoryBody(category_name={"en": "meals"}, description={"en": "tasty meals"})
+def test_update_category_body_requires_name_and_description() -> None:
+    body = UpdateCategoryBody(category_name={"en": "meals"}, description={"en": "tasty meals"})
     assert body.category_name.en == "meals"
     assert body.description.en == "tasty meals"
     assert body.new_category_id is None
     with pytest.raises(ValidationError):
-        RenameCategoryBody(category_name={"en": "meals"})  # type: ignore[call-arg]
+        UpdateCategoryBody(category_name={"en": "meals"})  # type: ignore[call-arg]
 
 
-def test_rename_category_body_accepts_new_category_id() -> None:
-    body = RenameCategoryBody(
+def test_update_category_body_accepts_new_category_id() -> None:
+    body = UpdateCategoryBody(
         category_name={"en": "meals"}, description={"en": "tasty meals"}, new_category_id="C_Meals",
     )
     assert body.new_category_id == "C_Meals"
@@ -798,8 +813,8 @@ def test_create_item_response() -> None:
     assert resp.image_id == "I_Apple"
 
 
-def test_rename_category_response() -> None:
-    resp = RenameCategoryResponse(
+def test_update_category_response() -> None:
+    resp = UpdateCategoryResponse(
         category="meals", message="renamed", category_id="C_Foods", old_category_id="C_Foods",
     )
     assert resp.category == "meals"

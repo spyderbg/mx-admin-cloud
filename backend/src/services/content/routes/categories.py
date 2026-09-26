@@ -1,4 +1,4 @@
-"""Content API routes for categories: the category itself, its images and its voices."""
+"""Content API routes for categories: the category itself, its images, and its voices."""
 
 from __future__ import annotations
 
@@ -35,10 +35,10 @@ from src.services.content.schemas import (
     ImageResponse,
     ItemSummary,
     RemoveCategoryResponse,
-    RenameCategoryBody,
-    RenameCategoryResponse,
     RestoreCategoryBody,
     RestoreCategoryResponse,
+    UpdateCategoryBody,
+    UpdateCategoryResponse,
     VoiceResponse,
 )
 from src.services.content.service import ContentService
@@ -240,7 +240,9 @@ def categories_details(
         name=result.name,
         description=result.description,
         items=[
-            ItemSummary(id=item.id, name=item.name, thumbnail_uri=item.thumbnail_uri, images_count=item.images_count)
+            ItemSummary(
+                id=item.id, name=item.name, thumbnail_uri=item.thumbnail_uri or None, images_count=item.images_count,
+            )
             for item in result.items
         ],
     )
@@ -248,7 +250,7 @@ def categories_details(
 
 @router.patch(
     CATEGORY_DETAILS,
-    response_model=RenameCategoryResponse,
+    response_model=UpdateCategoryResponse,
     status_code=status.HTTP_200_OK,
     tags=[TAG_CATEGORIES],
     summary="Update a content category's name and description",
@@ -258,12 +260,12 @@ def categories_details(
             "Requires authentication."
     ),
 )
-def categories_rename(
+def categories_update(
         category_id: str,
-        body: RenameCategoryBody,
+        body: UpdateCategoryBody,
         service: ContentServiceDep,
         _user: dict = Depends(get_current_user),
-) -> RenameCategoryResponse:
+) -> UpdateCategoryResponse:
     """Update a category's localized name and description, and optionally its id."""
     try:
         result = service.update_category_details(category_id, body.category_name, body.description)
@@ -273,7 +275,7 @@ def categories_rename(
         if body.new_category_id:
             requested_id = body.new_category_id
             if requested_id != category_id:
-                rename_result = service.rename_category(category_id, requested_id)
+                rename_result = service.update_category_id(category_id, requested_id)
                 category = rename_result.category
                 message = f"{message} {rename_result.message}"
             new_category_id = requested_id
@@ -283,7 +285,7 @@ def categories_rename(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return RenameCategoryResponse(
+    return UpdateCategoryResponse(
         category=category,
         message=message,
         category_id=new_category_id,

@@ -135,6 +135,7 @@ def test_category_summary_excludes_dedicated_main_image_from_count(tmp_path: Pat
     provider = make_fs_provider()
     with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
         item = provider.category_details("C_Foods").items[0]
 
     assert item.images_count == 2
@@ -150,6 +151,7 @@ def test_category_summary_counts_all_legacy_variants(tmp_path: Path) -> None:
     provider = make_fs_provider()
     with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
         item = provider.category_details("C_Foods").items[0]
 
     assert item.images_count == 2

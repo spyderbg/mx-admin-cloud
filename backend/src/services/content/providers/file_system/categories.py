@@ -1,5 +1,5 @@
 """Category methods for the file_system content provider: the category itself (listing, creation,
-details, rename, archive/restore, removal), its images and its voices.
+details, update, archive/restore, removal), its images, and its voices.
 """
 
 from __future__ import annotations
@@ -30,8 +30,8 @@ from src.services.content.models import (
     CreateCategory,
     DeleteArchivedCategory,
     InvalidCategoryNameError,
-    RenameCategory,
     RestoreCategory,
+    UpdateCategory,
 )
 from src.services.content.providers.file_system.constants import (
     VoiceCreationMethod,
@@ -616,7 +616,7 @@ class FileSystemCategoriesMixin(ContentProvider):  # pylint: disable=abstract-me
             category_id: str,
             category_name: LocalizedString,
             description: LocalizedString,
-    ) -> RenameCategory:
+    ) -> UpdateCategory:
         folder_name = self._folder_name_for_id(category_id)
         index = self._category_row_index(category_id)
         root = self._content_root()
@@ -629,12 +629,12 @@ class FileSystemCategoriesMixin(ContentProvider):  # pylint: disable=abstract-me
             if lang in settings.SUPPORTED_LANGUAGES:
                 self._write_csv_row_at_index(root / _DESCRIPTIONS_LANG_CSV.format(lang), index, value)
 
-        return RenameCategory(
+        return UpdateCategory(
             category=folder_name,
             message=f"Category '{folder_name}' details updated.",
         )
 
-    def rename_category(self, category_id: str, new_category_id: str) -> RenameCategory:
+    def update_category_id(self, category_id: str, new_category_id: str) -> UpdateCategory:
         if not self._is_safe_category_name(new_category_id):
             raise InvalidCategoryNameError(new_category_id)
 
@@ -644,7 +644,7 @@ class FileSystemCategoriesMixin(ContentProvider):  # pylint: disable=abstract-me
         new_folder_name = self._folder_name_from_category_id(new_category_id)
 
         if new_category_id == category_id:
-            return RenameCategory(
+            return UpdateCategory(
                 category=folder_name,
                 message=f"Category id '{category_id}' unchanged.",
             )
@@ -661,7 +661,7 @@ class FileSystemCategoriesMixin(ContentProvider):  # pylint: disable=abstract-me
 
         self._write_csv_row_at_index(self._content_root() / _CATEGORIES_IDS, index, new_category_id)
 
-        return RenameCategory(
+        return UpdateCategory(
             category=new_folder_name,
             message=f"Category id '{category_id}' renamed to '{new_category_id}'.",
         )

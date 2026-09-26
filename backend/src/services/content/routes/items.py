@@ -85,7 +85,9 @@ def items_list(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
     return ItemListResponse(
         items=[
-            ItemSummary(id=item.id, name=item.name, thumbnail_uri=item.thumbnail_uri, images_count=item.images_count)
+            ItemSummary(
+                id=item.id, name=item.name, thumbnail_uri=item.thumbnail_uri or None, images_count=item.images_count,
+            )
             for item in result.items
         ]
     )
@@ -186,6 +188,8 @@ def items_get(
     summary="Update an item in a category",
     description=(
             "Update the localized name of a content item within a specific category. "
+            "When 'new_item_id' is given and differs from item_id, the item's id is changed too; "
+            "fails with 409 if another item in the category already uses that id. "
             "Requires authentication."
     ),
 )
@@ -196,11 +200,15 @@ def items_update(
         service: ContentServiceDep,
         _user: dict = Depends(get_current_user),
 ) -> ItemSummary:
-    """Update an item's localized name."""
+    """Update an item's localized name, and optionally its id."""
     try:
         result = service.update_item(category_id, item_id, body.item_name)
+        if body.new_item_id and body.new_item_id != item_id:
+            result = service.update_item_id(category_id, item_id, body.new_item_id)
     except CategoryNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except CategoryConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return ItemSummary(

@@ -477,6 +477,7 @@ import {
   ensureCategoriesLoaded,
   ensureCategoryDetail,
   ensureItemDetail,
+  invalidateCategoriesCache,
   invalidateItemDetail,
   sharedCategories,
   updateCachedItemImages,
@@ -785,12 +786,26 @@ const closeItemIdEdit = (): void => {
   showItemIdEdit.value = false
 }
 
-const confirmItemIdEdit = (): void => {
-  const trimmed = itemIdEditValue.value.trim()
-  const currentId = item.value?.id ?? ''
+const confirmItemIdEdit = async (): Promise<void> => {
+  const cat = category.value
+  const currentItem = item.value
+  const newItemId = itemIdEditValue.value.trim()
   showItemIdEdit.value = false
-  if (trimmed && trimmed !== currentId) {
-    announceBackendPending(`rename item id ${currentId} to ${trimmed}`)
+  if (!cat || !currentItem || !newItemId || newItemId === currentItem.id) return
+  try {
+    // item_name is required by the endpoint; resending the current names leaves them unchanged.
+    const result = await itemsUpdate(cat.id, currentItem.id, {
+      new_item_id: newItemId,
+      item_name: currentItem.localizedName ?? new LocalizedString({}),
+    })
+    // The item's id is part of the cached category list and of the route, so reload the
+    // list and then move to the renamed item's URL.
+    invalidateCategoriesCache()
+    await ensureCategoriesLoaded()
+    await router.replace({ name: 'item-detail', params: { categoryId: cat.id, itemId: result.id } })
+    showToast(`Item id changed to ${result.id}.`, 'success')
+  } catch (err) {
+    showToast(extractErrorMessage(err), 'error')
   }
 }
 

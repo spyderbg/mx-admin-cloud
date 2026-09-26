@@ -340,6 +340,62 @@ async def test_update_item_not_found_returns_404(tmp_resolved: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_update_item_without_new_id_does_not_rename(tmp_resolved: Path) -> None:
+    seen: list[tuple[str, str, str]] = []
+
+    class _TrackingProvider(StubContentProvider):
+        def update_item_id(self, category_id: str, item_id: str, new_item_id: str) -> ItemDetail:
+            seen.append((category_id, item_id, new_item_id))
+            return ItemDetail(id=new_item_id)
+
+    app = make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        for body in (
+                {"item_name": {"en": "apple"}},
+                {"item_name": {"en": "apple"}, "new_item_id": "I_Apple"},
+        ):
+            response = await c.put("/api/v1/content/categories/foods/items/I_Apple", json=body)
+            assert response.status_code == 200
+            assert response.json()["id"] == "I_Apple"
+    assert not seen
+
+
+@pytest.mark.asyncio
+async def test_update_item_with_new_id_renames_item(tmp_resolved: Path) -> None:
+    seen: list[tuple[str, str, str]] = []
+
+    class _TrackingProvider(StubContentProvider):
+        def update_item_id(self, category_id: str, item_id: str, new_item_id: str) -> ItemDetail:
+            seen.append((category_id, item_id, new_item_id))
+            return ItemDetail(id=new_item_id)
+
+    app = make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.put(
+            "/api/v1/content/categories/foods/items/I_Apple",
+            json={"item_name": {"en": "apple"}, "new_item_id": "I_GreenApple"},
+        )
+    assert response.status_code == 200
+    assert response.json()["id"] == "I_GreenApple"
+    assert seen == [("foods", "I_Apple", "I_GreenApple")]
+
+
+@pytest.mark.asyncio
+async def test_update_item_new_id_conflict_returns_409(tmp_resolved: Path) -> None:
+    provider = StubContentProvider(tmp_resolved).raises(
+        "update_item_id", CategoryConflictError("Item id already exists: I_Banana")
+    )
+    app = make_app(provider, tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.put(
+            "/api/v1/content/categories/foods/items/I_Apple",
+            json={"item_name": {"en": "apple"}, "new_item_id": "I_Banana"},
+        )
+    assert response.status_code == 409
+    assert "already exists" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_update_item_requires_auth(client_no_auth: AsyncClient) -> None:
     response = await client_no_auth.put(
         "/api/v1/content/categories/foods/items/I_Apple",

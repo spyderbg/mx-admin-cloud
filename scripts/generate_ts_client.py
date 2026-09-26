@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Generate a TypeScript API client and MSW handler stubs from a FastAPI routes.py file.
+Generate a TypeScript API client and MSW handler stubs from a service's FastAPI routes —
+either a single routes.py file or a routes/ package (see load_route_modules).
 
 Usage:
     python generate_ts_client.py <service_name>
@@ -141,6 +142,77 @@ def _is_annotated_depends(node: ast.AST) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Route sources
+# ---------------------------------------------------------------------------
+
+RouteContext = dict[str, object]
+
+
+def build_route_context(trees: list[ast.Module], base_prefix: str = "") -> RouteContext:
+    """Collect what route parsing needs to know beyond a single module.
+
+    In a routes/ package, route modules import their path constants and
+    ``Annotated[..., Depends(...)]`` aliases from a sibling module (e.g. common.py), so
+    these are gathered across every module. *base_prefix* is the package router's
+    prefix; each module's own router prefix is appended to it when parsing.
+    """
+    schema_names: set[str] = set()
+    annotated_deps: set[str] = set()
+    path_constants: dict[str, str] = {}
+    for tree in trees:
+        schema_names |= collect_imported_schema_names(tree)
+        annotated_deps |= collect_annotated_aliases(tree)
+        path_constants.update(collect_path_constants(tree))
+    return {
+        "base_prefix": base_prefix,
+        "schema_names": schema_names,
+        "annotated_deps": annotated_deps,
+        "path_constants": path_constants,
+    }
+
+
+def _included_router_modules(tree: ast.Module) -> list[str]:
+    """Return X for each ``router.include_router(X.router)`` call, in source order."""
+    names: list[str] = []
+    for node in ast.walk(tree):
+        if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "include_router"
+                and node.args
+                and isinstance(node.args[0], ast.Attribute)
+                and isinstance(node.args[0].value, ast.Name)
+        ):
+            names.append(node.args[0].value.id)
+    return names
+
+
+def load_route_modules(service_dir: Path) -> tuple[list[tuple[Path, ast.Module]], RouteContext] | None:
+    """Return the service's route modules, in registration order, and their shared context.
+
+    Supports a single ``routes.py``, or a ``routes/`` package whose ``__init__.py`` defines
+    the prefixed router and includes one sub-router per module
+    (``router.include_router(items.router)``). Returns None when neither exists.
+    """
+    routes_file = service_dir / "routes.py"
+    if routes_file.is_file():
+        tree = ast.parse(routes_file.read_text())
+        return [(routes_file, tree)], build_route_context([tree])
+
+    package_dir = service_dir / "routes"
+    init_file = package_dir / "__init__.py"
+    if not init_file.is_file():
+        return None
+
+    trees = {path.stem: ast.parse(path.read_text()) for path in sorted(package_dir.glob("*.py"))}
+    init_tree = trees["__init__"]
+    included = [name for name in _included_router_modules(init_tree) if name in trees]
+    module_names = included or [name for name in trees if name != "__init__"]
+    context = build_route_context(list(trees.values()), base_prefix=extract_router_prefix(init_tree))
+    return [(package_dir / f"{name}.py", trees[name]) for name in module_names], context
+
+
+# ---------------------------------------------------------------------------
 # Route parsing
 # ---------------------------------------------------------------------------
 
@@ -165,12 +237,13 @@ def parse_function_body_raises_501(body: list[ast.stmt]) -> bool:
     return False
 
 
-def parse_routes(tree: ast.Module) -> list[dict]:
+def parse_routes(tree: ast.Module, context: RouteContext | None = None) -> list[dict]:
     """Parse all implemented (non-501) route functions from the AST."""
-    schema_names = collect_imported_schema_names(tree)
-    annotated_deps = collect_annotated_aliases(tree)
-    prefix = extract_router_prefix(tree)
-    path_constants = collect_path_constants(tree)
+    context = context or build_route_context([tree])
+    schema_names = context["schema_names"]
+    annotated_deps = context["annotated_deps"]
+    prefix = context["base_prefix"] + extract_router_prefix(tree)
+    path_constants = context["path_constants"]
 
     routes: list[dict] = []
 
@@ -643,14 +716,15 @@ def _fastapi_path_to_msw(prefix: str, route_path: str) -> str:
     return re.sub(r"\{([^}]+)\}", r":\1", full)
 
 
-def _parse_all_routes_for_handlers(tree: ast.Module) -> list[dict]:
+def _parse_all_routes_for_handlers(tree: ast.Module, context: RouteContext | None = None) -> list[dict]:
     """Parse ALL routes (including 501 stubs) for MSW handler generation.
 
     Returns only the minimal fields needed: method, path, prefix, summary,
     is_501, dec_status_code.
     """
-    prefix = extract_router_prefix(tree)
-    path_constants = collect_path_constants(tree)
+    context = context or build_route_context([tree])
+    prefix = context["base_prefix"] + extract_router_prefix(tree)
+    path_constants = context["path_constants"]
     routes: list[dict] = []
 
     for node in ast.walk(tree):
@@ -850,20 +924,19 @@ def update_handlers_file(service_name: str, all_routes: list[dict]) -> None:
 
 def main() -> None:
     service_name = sys.argv[1] if len(sys.argv) >= 2 else "content"
-    routes_path = BACKEND_SERVICES_DIR / service_name / "routes.py"
+    service_dir = BACKEND_SERVICES_DIR / service_name
 
-    if not routes_path.exists():
-        print(f"❌  routes.py not found: {routes_path}")
+    loaded = load_route_modules(service_dir)
+    if loaded is None:
+        print(f"❌  Neither routes.py nor a routes/ package found in {service_dir}")
         sys.exit(1)
-
-    source = routes_path.read_text()
-    tree = ast.parse(source)
+    route_modules, context = loaded
 
     # --- Generate TypeScript client (implemented routes only) ---
-    routes = parse_routes(tree)
+    routes = [route for _, tree in route_modules for route in parse_routes(tree, context)]
 
     if not routes:
-        print(f"⚠   No implemented routes found in {routes_path}")
+        print(f"⚠   No implemented routes found in {service_dir}")
         sys.exit(0)
 
     ts_code = generate_ts(routes, service_name)
@@ -882,7 +955,9 @@ def main() -> None:
 
     # --- Generate MSW handler stubs (all routes, missing only) ---
     print()
-    all_routes = _parse_all_routes_for_handlers(tree)
+    all_routes = [
+        route for _, tree in route_modules for route in _parse_all_routes_for_handlers(tree, context)
+    ]
     update_handlers_file(service_name, all_routes)
 
 

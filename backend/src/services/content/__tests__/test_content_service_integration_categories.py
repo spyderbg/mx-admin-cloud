@@ -18,17 +18,20 @@ from httpx import ASGITransport, AsyncClient
 
 from src.services.content.models import (
     ArchiveCategory,
+    ArchivedEntry,
     ArchiveUnavailableError,
     CategoryConflictError,
     CategoryDetails,
     CategoryImage,
+    CategoryList,
     CategoryNotFoundError,
+    CategorySummary,
     ContentOperationError,
     CreateCategory,
     DeleteArchivedCategory,
     InvalidCategoryNameError,
     ItemDetail,
-    RenameCategory,
+    UpdateCategory,
 )
 from src.services.content.__tests__.content_http_helpers import PNG_BYTES, StubContentProvider, make_app
 
@@ -42,7 +45,11 @@ async def test_list_categories_returns_200(client: AsyncClient) -> None:
     response = await client.get("/api/v1/content/categories")
     assert response.status_code == 200
     body = response.json()
-    assert body["categories"] == ["foods", "drinks"]
+    assert body["categories"] == [
+        {"id": "C_Foods", "name": {"en": "Foods"}, "items_count": 2, "thumbnail_uri": "/content/foods/foods.png"},
+        {"id": "C_Drinks", "name": {"en": "Drinks"}, "items_count": 0, "thumbnail_uri": None},
+    ]
+    assert body["archived"] is None
     assert body["error"] is None
 
 
@@ -50,39 +57,39 @@ async def test_list_categories_returns_200(client: AsyncClient) -> None:
 async def test_list_categories_include_archived(tmp_resolved: Path) -> None:
     provider = StubContentProvider(tmp_resolved).returns(
         "list_categories",
-        {
-            "categories": ["foods"],
-            "archived": [
-                {"base_name": "drinks", "archive_folder": "drinks_1000", "archived_at": 1000}
-            ],
-        },
+        CategoryList(
+            categories=[CategorySummary(id="C_Foods", name={"en": "Foods"})],
+            archived=[ArchivedEntry(base_name="drinks", archive_folder="drinks_1000", archived_at=1000)],
+        ),
     )
     app = make_app(provider, tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         response = await c.get("/api/v1/content/categories", params={"include_archived": "true"})
     assert response.status_code == 200
     body = response.json()
-    assert len(body["archived"]) == 1
-    assert body["archived"][0]["base_name"] == "drinks"
+    assert [category["id"] for category in body["categories"]] == ["C_Foods"]
+    assert body["archived"] == [{"base_name": "drinks", "archive_folder": "drinks_1000", "archived_at": 1000}]
 
 
 @pytest.mark.asyncio
 async def test_list_categories_archived_only(tmp_resolved: Path) -> None:
     provider = StubContentProvider(tmp_resolved).returns(
         "list_categories",
-        {"categories": [], "archived": [{"base_name": "foods", "archive_folder": "foods_999", "archived_at": 999}]},
+        CategoryList(archived=[ArchivedEntry(base_name="foods", archive_folder="foods_999", archived_at=999)]),
     )
     app = make_app(provider, tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         response = await c.get("/api/v1/content/categories", params={"archived_only": "true"})
     assert response.status_code == 200
-    assert response.json()["categories"] == []
+    body = response.json()
+    assert body["categories"] == []
+    assert [entry["archive_folder"] for entry in body["archived"]] == ["foods_999"]
 
 
 @pytest.mark.asyncio
 async def test_list_categories_provider_error_returns_500(tmp_resolved: Path) -> None:
-    provider = StubContentProvider(tmp_resolved).returns(
-        "list_categories", {"error": "Content root does not exist: /x"}
+    provider = StubContentProvider(tmp_resolved).raises(
+        "list_categories", ContentOperationError("Content root does not exist: /x")
     )
     app = make_app(provider, tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
@@ -268,9 +275,9 @@ async def test_rename_category_passes_category_id_and_body(tmp_resolved: Path) -
     seen: list[tuple[str, dict[str, str], dict[str, str]]] = []
 
     class _TrackingProvider(StubContentProvider):
-        def update_category_details(self, category_id: str, category_name: Any, description: Any) -> RenameCategory:
+        def update_category_details(self, category_id: str, category_name: Any, description: Any) -> UpdateCategory:
             seen.append((category_id, category_name.to_dict(), description.to_dict()))
-            return RenameCategory(category=category_id, message="updated")
+            return UpdateCategory(category=category_id, message="updated")
 
     app = make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
@@ -335,13 +342,13 @@ async def test_rename_category_without_new_id_keeps_same_category_id(tmp_resolve
 
 
 @pytest.mark.asyncio
-async def test_rename_category_with_new_id_calls_rename_category(tmp_resolved: Path) -> None:
+async def test_rename_category_with_new_id_calls_update_category_id(tmp_resolved: Path) -> None:
     seen: list[tuple[str, str]] = []
 
     class _TrackingProvider(StubContentProvider):
-        def rename_category(self, category_id: str, new_category_id: str) -> RenameCategory:
+        def update_category_id(self, category_id: str, new_category_id: str) -> UpdateCategory:
             seen.append((category_id, new_category_id))
-            return RenameCategory(category="meals", message="renamed")
+            return UpdateCategory(category="meals", message="renamed")
 
     app = make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
@@ -355,7 +362,7 @@ async def test_rename_category_with_new_id_calls_rename_category(tmp_resolved: P
 @pytest.mark.asyncio
 async def test_rename_category_new_id_conflict_returns_409(tmp_resolved: Path) -> None:
     provider = StubContentProvider(tmp_resolved).raises(
-        "rename_category", CategoryConflictError("Category id already exists: C_Meals"),
+        "update_category_id", CategoryConflictError("Category id already exists: C_Meals"),
     )
     app = make_app(provider, tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:

@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from src.api.dependencies import get_registry, require_internal
+from src.core.config import settings
 from src.services import text_translation as text_translation_pkg
 from src.services.text_translation import routes as text_translation_routes
 from src.services.text_translation.models import TextTranslationServiceProvider, TranslateTextRequest
@@ -173,7 +174,10 @@ async def client_bad_registry() -> AsyncClient:
 
 
 @pytest.fixture
-async def client_no_internal_auth() -> AsyncClient:
+async def client_no_internal_auth(monkeypatch: pytest.MonkeyPatch) -> AsyncClient:
+    # The dev default AUTH_DISABLED=True bypasses verify_token; the 401 paths
+    # under test only exist with auth enabled.
+    monkeypatch.setattr(settings, "AUTH_DISABLED", False)
     app = FastAPI()
     app.include_router(text_translation_routes.router)
     transport = ASGITransport(app=app)

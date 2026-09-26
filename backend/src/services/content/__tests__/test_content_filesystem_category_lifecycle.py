@@ -85,20 +85,20 @@ def test_update_category_details_preserves_other_rows(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# rename_category
+# update_category_id
 # ---------------------------------------------------------------------------
 
-def test_rename_category_not_found(tmp_path: Path) -> None:
+def test_update_category_id_not_found(tmp_path: Path) -> None:
     content_root = tmp_path / "content"
     content_root.mkdir()
     provider = make_fs_provider()
     with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         with pytest.raises(CategoryNotFoundError):
-            provider.rename_category("C_Foods", "C_Meals")
+            provider.update_category_id("C_Foods", "C_Meals")
 
 
-def test_rename_category_invalid_new_id(tmp_path: Path) -> None:
+def test_update_category_id_invalid_new_id(tmp_path: Path) -> None:
     content_root = tmp_path / "content"
     (content_root / "foods").mkdir(parents=True)
     write_category_registry(content_root, [("C_Foods", "Foods")])
@@ -106,10 +106,10 @@ def test_rename_category_invalid_new_id(tmp_path: Path) -> None:
     with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         with pytest.raises(InvalidCategoryNameError):
-            provider.rename_category("C_Foods", "not a valid id!")
+            provider.update_category_id("C_Foods", "not a valid id!")
 
 
-def test_rename_category_conflict(tmp_path: Path) -> None:
+def test_update_category_id_conflict(tmp_path: Path) -> None:
     content_root = tmp_path / "content"
     (content_root / "foods").mkdir(parents=True)
     (content_root / "drinks").mkdir(parents=True)
@@ -119,14 +119,14 @@ def test_rename_category_conflict(tmp_path: Path) -> None:
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en"]
         with pytest.raises(CategoryConflictError):
-            provider.rename_category("C_Foods", "C_Drinks")
+            provider.update_category_id("C_Foods", "C_Drinks")
 
     assert (content_root / "categories_ids.csv").read_text(encoding="utf-8") == "C_Foods\nC_Drinks\n"
     assert (content_root / "foods").is_dir()
     assert (content_root / "drinks").is_dir()
 
 
-def test_rename_category_moves_folder_and_updates_id_only(tmp_path: Path) -> None:
+def test_update_category_id_moves_folder_and_updates_id_only(tmp_path: Path) -> None:
     content_root = tmp_path / "content"
     (content_root / "foods").mkdir(parents=True)
     (content_root / "drinks").mkdir(parents=True)
@@ -137,7 +137,7 @@ def test_rename_category_moves_folder_and_updates_id_only(tmp_path: Path) -> Non
     with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
-        result = provider.rename_category("C_Foods", "C_Meals")
+        result = provider.update_category_id("C_Foods", "C_Meals")
 
     assert result.category == "meals"
     assert not (content_root / "foods").exists()
@@ -148,7 +148,7 @@ def test_rename_category_moves_folder_and_updates_id_only(tmp_path: Path) -> Non
     assert (content_root / "categories_fr.csv").read_text(encoding="utf-8") == "Aliments\nBoissons\n"
 
 
-def test_rename_category_list_categories_returns_new_id_not_folder_name(tmp_path: Path) -> None:
+def test_update_category_id_list_categories_returns_new_id_not_folder_name(tmp_path: Path) -> None:
     content_root = tmp_path / "content"
     (content_root / "foods").mkdir(parents=True)
     write_category_registry(content_root, [("C_Foods", "Foods")])
@@ -158,14 +158,14 @@ def test_rename_category_list_categories_returns_new_id_not_folder_name(tmp_path
         mock_settings.content_path = content_root
         mock_settings.ARCHIVE_DIR = ""
         mock_settings.SUPPORTED_LANGUAGES = ["en"]
-        provider.rename_category("C_Foods", "C_Meals")
+        provider.update_category_id("C_Foods", "C_Meals")
         result = provider.list_categories()
 
     assert [c.id for c in result.categories] == ["C_Meals"]
     assert result.categories[0].name.to_dict() == {"en": "Foods"}
 
 
-def test_rename_category_details_resolve_by_new_id(tmp_path: Path) -> None:
+def test_update_category_id_details_resolve_by_new_id(tmp_path: Path) -> None:
     content_root = tmp_path / "content"
     (content_root / "foods").mkdir(parents=True)
     write_category_registry(content_root, [("C_Foods", "Foods")])
@@ -175,7 +175,7 @@ def test_rename_category_details_resolve_by_new_id(tmp_path: Path) -> None:
     with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en"]
-        provider.rename_category("C_Foods", "C_Meals")
+        provider.update_category_id("C_Foods", "C_Meals")
 
         with pytest.raises(CategoryNotFoundError):
             provider.category_details("C_Foods")
@@ -187,7 +187,7 @@ def test_rename_category_details_resolve_by_new_id(tmp_path: Path) -> None:
     assert details.description.to_dict() == {"en": "Tasty meals"}
 
 
-def test_rename_category_renames_prefixed_voice_and_icon_files(tmp_path: Path) -> None:
+def test_update_category_id_renames_prefixed_voice_and_icon_files(tmp_path: Path) -> None:
     content_root = tmp_path / "content"
     foods = content_root / "foods"
     foods.mkdir(parents=True)
@@ -201,7 +201,7 @@ def test_rename_category_renames_prefixed_voice_and_icon_files(tmp_path: Path) -
     with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
-        provider.rename_category("C_Foods", "C_Meals")
+        provider.update_category_id("C_Foods", "C_Meals")
 
     meals = content_root / "meals"
     assert (meals / "meals_en.mp3").read_bytes() == b"english voice"
@@ -212,7 +212,7 @@ def test_rename_category_renames_prefixed_voice_and_icon_files(tmp_path: Path) -
     assert not (meals / "foods.png").exists()
 
 
-def test_rename_category_same_id_is_noop(tmp_path: Path) -> None:
+def test_update_category_id_same_id_is_noop(tmp_path: Path) -> None:
     content_root = tmp_path / "content"
     (content_root / "foods").mkdir(parents=True)
     write_category_registry(content_root, [("C_Foods", "Foods")])
@@ -220,7 +220,7 @@ def test_rename_category_same_id_is_noop(tmp_path: Path) -> None:
     provider = make_fs_provider()
     with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
-        result = provider.rename_category("C_Foods", "C_Foods")
+        result = provider.update_category_id("C_Foods", "C_Foods")
 
     assert result.category == "foods"
     assert (content_root / "categories_ids.csv").read_text(encoding="utf-8") == "C_Foods\n"

@@ -1,5 +1,5 @@
-"""Item methods for the file_system content provider: the item itself (creation, renaming,
-removal, summaries), its images and its voices.
+"""Item methods for the file_system content provider: the item itself (creation, updating,
+removal, summaries), its images, and its voices.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ from src.services.content.models import (
     ContentOperationError,
     ContentProvider,
     CreateItem,
+    InvalidCategoryNameError,
     ItemDetail,
     ItemImages,
     ItemVoices,
@@ -330,17 +331,42 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             if lang in settings.SUPPORTED_LANGUAGES:
                 self._write_csv_row_at_index(category_path / _ITEMS_LANG_CSV.format(lang), index, value)
 
+        return self._item_detail(category_path, category_name, item_id)
+
+    def update_item_id(self, category_id: str, item_id: str, new_item_id: str) -> ItemDetail:
+        if not self._is_safe_category_name(new_item_id):
+            raise InvalidCategoryNameError(
+                f"Invalid item id '{new_item_id}': use only letters, digits and underscores.",
+            )
+
+        category_name = self._folder_name_for_id(category_id)
+        category_path = self._category_path(category_name)
+        self._resolve_item_path(category_path, category_name, item_id)
+
+        # The item folder and its files are named after the English word, not the id, so
+        # only the id row in the registry changes.
+        ids_path = category_path / _ITEMS_IDS
+        item_ids = self._read_csv_column(ids_path)
+        if new_item_id != item_id:
+            if new_item_id in item_ids:
+                raise CategoryConflictError(f"Item id already exists: {new_item_id}")
+            self._write_csv_row_at_index(ids_path, item_ids.index(item_id), new_item_id)
+
+        return self._item_detail(category_path, category_name, new_item_id)
+
+    def _item_detail(self, category_path: Path, category_name: str, item_id: str) -> ItemDetail:
+        """Return the ItemDetail for *item_id* as currently registered, or raise CategoryNotFoundError."""
         item_ids, items_by_lang = self._read_item_csv_data(category_path)
-        updated = next(
+        found = next(
             (
                 item for item in self._collect_items(category_path, category_name, item_ids, items_by_lang)
                 if item.id == item_id
             ),
             None,
         )
-        if updated is None:
+        if found is None:
             raise CategoryNotFoundError(f"Item '{item_id}' not found in category '{category_name}'.")
-        return updated
+        return found
 
     def remove_item(self, category_id: str, item_id: str) -> RemoveItem:
         category_name = self._folder_name_for_id(category_id)

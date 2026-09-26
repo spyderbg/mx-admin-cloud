@@ -9,6 +9,7 @@ import pytest
 
 from httpx import ASGITransport, AsyncClient
 
+from src.core.config import settings
 from src.services.content.__tests__.content_http_helpers import StubContentProvider, make_app
 
 
@@ -28,8 +29,11 @@ async def client(tmp_resolved: Path) -> AsyncClient:
 
 
 @pytest.fixture
-async def client_no_auth() -> AsyncClient:
+async def client_no_auth(monkeypatch: pytest.MonkeyPatch) -> AsyncClient:
     """A client for an app with no auth override, for asserting 401 responses."""
+    # The dev default AUTH_DISABLED=True bypasses verify_token; the 401 paths
+    # under test only exist with auth enabled.
+    monkeypatch.setattr(settings, "AUTH_DISABLED", False)
     app = make_app(auth=False)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c

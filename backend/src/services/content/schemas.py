@@ -60,7 +60,7 @@ class CreateCategoryBody(BaseModel):
     name: str
 
 
-class RenameCategoryBody(BaseModel):
+class UpdateCategoryBody(BaseModel):
     """Request body for updating a category's localized name and description."""
 
     new_category_id: str | None = None
@@ -119,7 +119,7 @@ class CreateCategoryResponse(BaseModel):
     message: str
 
 
-class RenameCategoryResponse(BaseModel):
+class UpdateCategoryResponse(BaseModel):
     """Response for PATCH /content/categories/{category_id}."""
 
     category: str
@@ -202,8 +202,9 @@ class CategoryVoicesResponse(BaseModel):
 
 
 class UpdateItemBody(BaseModel):
-    """Request body for updating an item's localized name."""
+    """Request body for updating an item's localized name, and optionally its id."""
 
+    new_item_id: str | None = None
     item_name: LocalizedString
 
 

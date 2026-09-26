@@ -16,10 +16,10 @@ import type {
   ItemSummary,
   ItemVoicesResponse,
   RemoveCategoryResponse,
-  RenameCategoryBody,
-  RenameCategoryResponse,
   RestoreCategoryBody,
   RestoreCategoryResponse,
+  UpdateCategoryBody,
+  UpdateCategoryResponse,
   UpdateItemBody,
   VoiceResponse,
 } from '../types/contentSchemas'
@@ -55,8 +55,8 @@ export const categoriesDetails = async (categoryId: string): Promise<CategoryDet
 }
 
 /** Update a content category's name and description */
-export const categoriesRename = async (categoryId: string, body: RenameCategoryBody): Promise<RenameCategoryResponse> => {
-  const r = await client.patch<RenameCategoryResponse>(`/content/categories/${categoryId}`, body)
+export const categoriesUpdate = async (categoryId: string, body: UpdateCategoryBody): Promise<UpdateCategoryResponse> => {
+  const r = await client.patch<UpdateCategoryResponse>(`/content/categories/${categoryId}`, body)
   return r.data
 }
 

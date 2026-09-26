@@ -80,7 +80,7 @@ import {
 } from '../api/cache'
 import { readUiConfiguration, writeUiConfiguration } from '../api/uiConfigurationDb'
 import { LocalizedString, SUPPORTED_LANGUAGES, type Language, type Voice } from '../types/viewModels'
-import { categoriesRemove, categoriesRename } from '../api/contentClient'
+import { categoriesRemove, categoriesUpdate } from '../api/contentClient'
 import type { CreateItemResponse } from '../types/contentSchemas'
 import AddItemModal from '../components/AddItemModal.vue'
 import CategoryDetail from '../components/CategoryDetail.vue'
@@ -200,7 +200,7 @@ const onRenameCategory = async (name: string, language?: Language): Promise<void
   const newCategoryId = language ? undefined : name
 
   try {
-    const result = await categoriesRename(currentCategory.id, {
+    const result = await categoriesUpdate(currentCategory.id, {
       new_category_id: newCategoryId,
       category_name: categoryName,
       description,

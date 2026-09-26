@@ -306,7 +306,7 @@ class FileSystemContentProvider(
 
         Folder keys are derived from each category's id (see _folder_name_from_category_id),
         matching the on-disk folder name — not from the mutable English display name, which
-        can be updated independently of the id/folder (see rename_category).
+        can be updated independently of the id/folder (see update_category_id).
         """
         root = self._content_root()
         try:

@@ -138,21 +138,6 @@ export interface RemoveCategoryResponse {
     message: string
 }
 
-/** Request body for updating a category's localized name and description. */
-export interface RenameCategoryBody {
-    new_category_id?: string | null
-    category_name: LocalizedString
-    description: LocalizedString
-}
-
-/** Response for PATCH /content/categories/{category_id}. */
-export interface RenameCategoryResponse {
-    category: string
-    message: string
-    category_id: string
-    old_category_id: string
-}
-
 /** Request body for restoring a category. */
 export interface RestoreCategoryBody {
     name: string
@@ -166,8 +151,24 @@ export interface RestoreCategoryResponse {
     message: string
 }
 
-/** Request body for updating an item's localized name. */
+/** Request body for updating a category's localized name and description. */
+export interface UpdateCategoryBody {
+    new_category_id?: string | null
+    category_name: LocalizedString
+    description: LocalizedString
+}
+
+/** Response for PATCH /content/categories/{category_id}. */
+export interface UpdateCategoryResponse {
+    category: string
+    message: string
+    category_id: string
+    old_category_id: string
+}
+
+/** Request body for updating an item's localized name, and optionally its id. */
 export interface UpdateItemBody {
+    new_item_id?: string | null
     item_name: LocalizedString
 }
 

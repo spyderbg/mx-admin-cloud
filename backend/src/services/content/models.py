@@ -193,7 +193,7 @@ class ArchiveCategory:
 
 
 @dataclass
-class RenameCategory:
+class UpdateCategory:
     """Result of updating a category's id or its localized details."""
 
     category: str = ""
@@ -306,11 +306,11 @@ class ContentProvider(ServiceProvider, ABC):  # pylint: disable=too-many-public-
             category_id: str,
             category_name: LocalizedString,
             description: LocalizedString,
-    ) -> RenameCategory:
+    ) -> UpdateCategory:
         """Update a category's localized name and description, keyed by category_id."""
 
     @abstractmethod
-    def rename_category(self, category_id: str, new_category_id: str) -> RenameCategory:
+    def update_category_id(self, category_id: str, new_category_id: str) -> UpdateCategory:
         """Change a category's id from category_id to new_category_id."""
 
     @abstractmethod
@@ -355,6 +355,10 @@ class ContentProvider(ServiceProvider, ABC):  # pylint: disable=too-many-public-
             item_name: LocalizedString,
     ) -> ItemDetail:
         """Update an item's localized name, keyed by category_id and item_id."""
+
+    @abstractmethod
+    def update_item_id(self, category_id: str, item_id: str, new_item_id: str) -> ItemDetail:
+        """Change an item's id from item_id to new_item_id within its category."""
 
     @abstractmethod
     def remove_item(self, category_id: str, item_id: str) -> RemoveItem:

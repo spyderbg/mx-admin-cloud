@@ -556,55 +556,6 @@ components:
         Maybe an archive result or a permanent delete result, so both
 
         "archived" and "removed" are optional.'
-    RenameCategoryBody:
-      properties:
-        new_category_id:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: New Category Id
-        category_name:
-          additionalProperties:
-            type: string
-          type: object
-          title: Category Name
-          description: 'Language-code → translation map (e.g. {"en": "dog", "fr":
-            "chien"})'
-        description:
-          additionalProperties:
-            type: string
-          type: object
-          title: Description
-          description: 'Language-code → translation map (e.g. {"en": "dog", "fr":
-            "chien"})'
-      type: object
-      required:
-      - category_name
-      - description
-      title: RenameCategoryBody
-      description: Request body for updating a category's localized name and description.
-    RenameCategoryResponse:
-      properties:
-        category:
-          type: string
-          title: Category
-        message:
-          type: string
-          title: Message
-        category_id:
-          type: string
-          title: Category Id
-        old_category_id:
-          type: string
-          title: Old Category Id
-      type: object
-      required:
-      - category
-      - message
-      - category_id
-      - old_category_id
-      title: RenameCategoryResponse
-      description: Response for PATCH /content/categories/{category_id}.
     RestoreCategoryBody:
       properties:
         name:
@@ -639,8 +590,62 @@ components:
       - message
       title: RestoreCategoryResponse
       description: Response for POST /content/categories/restore.
+    UpdateCategoryBody:
+      properties:
+        new_category_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: New Category Id
+        category_name:
+          additionalProperties:
+            type: string
+          type: object
+          title: Category Name
+          description: 'Language-code → translation map (e.g. {"en": "dog", "fr":
+            "chien"})'
+        description:
+          additionalProperties:
+            type: string
+          type: object
+          title: Description
+          description: 'Language-code → translation map (e.g. {"en": "dog", "fr":
+            "chien"})'
+      type: object
+      required:
+      - category_name
+      - description
+      title: UpdateCategoryBody
+      description: Request body for updating a category's localized name and description.
+    UpdateCategoryResponse:
+      properties:
+        category:
+          type: string
+          title: Category
+        message:
+          type: string
+          title: Message
+        category_id:
+          type: string
+          title: Category Id
+        old_category_id:
+          type: string
+          title: Old Category Id
+      type: object
+      required:
+      - category
+      - message
+      - category_id
+      - old_category_id
+      title: UpdateCategoryResponse
+      description: Response for PATCH /content/categories/{category_id}.
     UpdateItemBody:
       properties:
+        new_item_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: New Item Id
         item_name:
           additionalProperties:
             type: string
@@ -652,7 +657,8 @@ components:
       required:
       - item_name
       title: UpdateItemBody
-      description: Request body for updating an item's localized name.
+      description: Request body for updating an item's localized name, and optionally
+        its id.
     ValidationError:
       properties:
         loc:
@@ -885,7 +891,7 @@ paths:
       summary: Update a content category's name and description
       description: Update the localized name and description of a content category,
         identified by category_id. The category must exist to be updated. Requires authentication.
-      operationId: categories_rename_api_v1_content_categories__category_id__patch
+      operationId: categories_update_api_v1_content_categories__category_id__patch
       security:
       - OAuth2PasswordBearer: []
       parameters:
@@ -900,14 +906,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RenameCategoryBody'
+              $ref: '#/components/schemas/UpdateCategoryBody'
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RenameCategoryResponse'
+                $ref: '#/components/schemas/UpdateCategoryResponse'
         '422':
           description: Validation Error
           content:
@@ -1455,7 +1461,9 @@ paths:
       - Items
       summary: Update an item in a category
       description: Update the localized name of a content item within a specific category.
-        Requires authentication.
+        When 'new_item_id' is given and differs from item_id, the item's id is changed
+        too; fails with 409 if another item in the category already uses that id. Requires
+        authentication.
       operationId: items_update_api_v1_content_categories__category_id__items__item_id__put
       security:
       - OAuth2PasswordBearer: []

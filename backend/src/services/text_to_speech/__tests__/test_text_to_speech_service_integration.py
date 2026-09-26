@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from src.api.dependencies import get_registry, require_internal
+from src.core.config import settings
 from src.core.models import GeneratedAudio
 from src.services import text_to_speech as text_to_speech_pkg
 from src.services.text_to_speech import routes as tts_routes
@@ -191,7 +192,10 @@ async def client_bad_registry() -> AsyncClient:
 
 
 @pytest.fixture
-async def client_no_internal_auth() -> AsyncClient:
+async def client_no_internal_auth(monkeypatch: pytest.MonkeyPatch) -> AsyncClient:
+    # The dev default AUTH_DISABLED=True bypasses verify_token; the 401 paths
+    # under test only exist with auth enabled.
+    monkeypatch.setattr(settings, "AUTH_DISABLED", False)
     app = FastAPI()
     app.include_router(tts_routes.router)
     transport = ASGITransport(app=app)

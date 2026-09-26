@@ -18,6 +18,7 @@ from src.services.content.models import (
     CategoryDetails,
     CategoryImage,
     CategoryList,
+    CategorySummary,
     CategoryVoice,
     ContentProvider,
     CreateCategory,
@@ -27,8 +28,8 @@ from src.services.content.models import (
     ItemImages,
     ItemVoices,
     RemoveItem,
-    RenameCategory,
     RestoreCategory,
+    UpdateCategory,
 )
 from src.services.content.routes import get_content_service, get_voice_generation_available
 from src.services.content.service import ContentService
@@ -75,7 +76,12 @@ class StubContentProvider(ContentProvider):
     def list_categories(
             self, include_archived: bool = False, archived_only: bool = False
     ) -> CategoryList:
-        return self._call("list_categories", CategoryList(categories=["foods", "drinks"]))
+        return self._call("list_categories", CategoryList(categories=[
+            CategorySummary(
+                id="C_Foods", name={"en": "Foods"}, items_count=2, thumbnail_uri="/content/foods/foods.png",
+            ),
+            CategorySummary(id="C_Drinks", name={"en": "Drinks"}),
+        ]))
 
     def category_id_by_name(self, category_name: str) -> str:
         return self._call("category_id_by_name", category_name)
@@ -109,6 +115,9 @@ class StubContentProvider(ContentProvider):
 
     def update_item_name(self, category_id: str, item_id: str, item_name: Any) -> ItemDetail:
         return self._call("update_item_name", ItemDetail(id=item_id, name=item_name))
+
+    def update_item_id(self, category_id: str, item_id: str, new_item_id: str) -> ItemDetail:
+        return self._call("update_item_id", ItemDetail(id=new_item_id))
 
     def remove_item(self, category_id: str, item_id: str) -> RemoveItem:
         return self._call("remove_item", RemoveItem(category=category_id, item=item_id))
@@ -164,14 +173,14 @@ class StubContentProvider(ContentProvider):
 
     def update_category_details(
             self, category_id: str, category_name: Any, description: Any,
-    ) -> RenameCategory:
+    ) -> UpdateCategory:
         return self._call(
-            "update_category_details", RenameCategory(category=category_id, message="updated"),
+            "update_category_details", UpdateCategory(category=category_id, message="updated"),
         )
 
-    def rename_category(self, category_id: str, new_category_id: str) -> RenameCategory:
+    def update_category_id(self, category_id: str, new_category_id: str) -> UpdateCategory:
         return self._call(
-            "rename_category", RenameCategory(category=new_category_id, message="renamed"),
+            "update_category_id", UpdateCategory(category=new_category_id, message="renamed"),
         )
 
     def remove_category(self, category_id: str) -> ArchiveCategory:

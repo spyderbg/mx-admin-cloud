@@ -18,6 +18,7 @@ from src.services.content.models import (
     CategoryConflictError,
     CategoryNotFoundError,
     ContentOperationError,
+    InvalidCategoryNameError,
 )
 from src.core.localization import LocalizedString
 from src.services.content.providers.file_system import (
@@ -205,7 +206,7 @@ def test_create_item_tts_failure_still_creates_item(tmp_path: Path) -> None:
 def test_create_item_partial_tts_failure(tmp_path: Path) -> None:
     content_root, category_path = _prepare_category(tmp_path)
 
-    def fake_audio(lang: str) -> bytes:
+    def fake_audio(_word: str, lang: str) -> bytes:
         if lang == "fr":
             raise RuntimeError("fr voice unavailable")
         return b"audio"
@@ -396,6 +397,91 @@ def test_update_item_name_writes_localized_name(tmp_path: Path) -> None:
     assert result.name.fr == "pomme verte"
     assert (category_path / "items_en.csv").read_text(encoding="utf-8") == "green apple\nbanana\n"
     assert (category_path / "items_fr.csv").read_text(encoding="utf-8") == "pomme verte\nbanane\n"
+
+
+# ---------------------------------------------------------------------------
+# update_item_id
+# ---------------------------------------------------------------------------
+
+def test_update_item_id_rewrites_id_row_only(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    category_path = content_root / "foods"
+    write_category_registry(content_root, [("C_Foods", "Foods")])
+    write_item_registry(category_path, [("I_Apple", "apple"), ("I_Banana", "banana")])
+
+    provider = make_fs_provider()
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        result = provider.update_item_id("C_Foods", "I_Apple", "I_GreenApple")
+
+    assert result.id == "I_GreenApple"
+    assert result.name.en == "apple"
+    assert _csv_rows(category_path / "items_ids.csv") == ["I_GreenApple", "I_Banana"]
+    assert _csv_rows(category_path / "items_en.csv") == ["apple", "banana"]
+    assert (category_path / "apple").is_dir()
+
+
+def test_update_item_id_same_id_is_noop(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    category_path = content_root / "foods"
+    write_category_registry(content_root, [("C_Foods", "Foods")])
+    write_item_registry(category_path, [("I_Apple", "apple")])
+
+    provider = make_fs_provider()
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        result = provider.update_item_id("C_Foods", "I_Apple", "I_Apple")
+
+    assert result.id == "I_Apple"
+    assert _csv_rows(category_path / "items_ids.csv") == ["I_Apple"]
+
+
+def test_update_item_id_conflict_with_existing_id(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    category_path = content_root / "foods"
+    write_category_registry(content_root, [("C_Foods", "Foods")])
+    write_item_registry(category_path, [("I_Apple", "apple"), ("I_Banana", "banana")])
+
+    provider = make_fs_provider()
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        with pytest.raises(CategoryConflictError):
+            provider.update_item_id("C_Foods", "I_Apple", "I_Banana")
+
+    assert _csv_rows(category_path / "items_ids.csv") == ["I_Apple", "I_Banana"]
+
+
+def test_update_item_id_rejects_unsafe_id(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    category_path = content_root / "foods"
+    write_category_registry(content_root, [("C_Foods", "Foods")])
+    write_item_registry(category_path, [("I_Apple", "apple")])
+
+    provider = make_fs_provider()
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        with pytest.raises(InvalidCategoryNameError):
+            provider.update_item_id("C_Foods", "I_Apple", "I Green/Apple")
+
+    assert _csv_rows(category_path / "items_ids.csv") == ["I_Apple"]
+
+
+def test_update_item_id_not_found(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    category_path = content_root / "foods"
+    write_category_registry(content_root, [("C_Foods", "Foods")])
+    write_item_registry(category_path, [("I_Apple", "apple")])
+
+    provider = make_fs_provider()
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        with pytest.raises(CategoryNotFoundError):
+            provider.update_item_id("C_Foods", "I_Missing", "I_Other")
 
 
 # ---------------------------------------------------------------------------

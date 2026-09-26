@@ -23,8 +23,8 @@ from src.services.content.models import (
     ItemImages,
     ItemVoices,
     RemoveItem,
-    RenameCategory,
     RestoreCategory,
+    UpdateCategory,
 )
 from src.services.models import Service, ServiceProvider
 from src.services.provider_factory import ServiceProviderFactory
@@ -106,13 +106,13 @@ class ContentService(Service):  # pylint: disable=too-many-public-methods
             category_id: str,
             category_name: LocalizedString,
             description: LocalizedString,
-    ) -> RenameCategory:
+    ) -> UpdateCategory:
         """Update a category's localized name and description via the active provider."""
         return self._select_provider().update_category_details(category_id, category_name, description)
 
-    def rename_category(self, category_id: str, new_category_id: str) -> RenameCategory:
+    def update_category_id(self, category_id: str, new_category_id: str) -> UpdateCategory:
         """Rename a category's id via the active provider."""
-        return self._select_provider().rename_category(category_id, new_category_id)
+        return self._select_provider().update_category_id(category_id, new_category_id)
 
     def remove_category(self, category_name: str) -> ArchiveCategory:
         """Remove a category via the active provider, looked up by folder name."""
@@ -254,6 +254,10 @@ class ContentService(Service):  # pylint: disable=too-many-public-methods
     def update_item(self, category_id: str, item_id: str, item_name: LocalizedString) -> ItemDetail:
         """Update an item's localized name via the active provider."""
         return self._select_provider().update_item_name(category_id, item_id, item_name)
+
+    def update_item_id(self, category_id: str, item_id: str, new_item_id: str) -> ItemDetail:
+        """Rename an item's id via the active provider."""
+        return self._select_provider().update_item_id(category_id, item_id, new_item_id)
 
     def remove_item(self, category_id: str, item_id: str) -> RemoveItem:
         """Remove an item via the active provider."""
