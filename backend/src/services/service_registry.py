@@ -261,7 +261,6 @@ class ServiceRegistryBuilder:
         for service_name, criteria in criteria_map.items():
             config_dir = self._config_root / criteria.config_subdir
             if not config_dir.exists():
-                self._registry.replace_service_providers(service_name, [])
                 continue
             for config_path in sorted(config_dir.glob("*.json")):
                 payload = self._read_json_file(config_path)
@@ -283,11 +282,10 @@ class ServiceRegistryBuilder:
                 if materialized is not None:
                     built[service_name].append(materialized)
 
-        for service_name, providers in built.items():
+        for service_name, criteria in criteria_map.items():
+            providers = self._merge_runtime_providers(built[service_name], criteria)
             providers.sort(key=lambda provider: getattr(provider, "priority", 999))
             self._registry.replace_service_providers(service_name, providers)
-
-        self._ensure_runtime_configuration_provider()
 
         # log results
         self._log_apply_result(results)
@@ -301,6 +299,7 @@ class ServiceRegistryBuilder:
         common_provider = ServiceProvider.from_dict(payload, Path(source))
         if common_provider is None:
             apply_result.error = "Invalid service_provider envelope."
+            return apply_result
 
         candidates = [
             (service_name, criteria)
@@ -381,11 +380,15 @@ class ServiceRegistryBuilder:
             criteria: ServiceAcceptCriteria,
     ) -> tuple[ConfigApplyResult, Any | None]:
 
-        apply_result = ConfigApplyResult(_runtime_source_config_name(source.stem))
+        config_name = _runtime_source_config_name(str(source))
+        apply_result = ConfigApplyResult(config_name)
         service_provider = ServiceProvider.from_dict(payload, source)
         if service_provider is None:
             apply_result.error = "Invalid service_provider envelope."
             return apply_result, None
+        # "from_dict" names the provider after the path stem, which garbles runtime
+        # sources: "<runtime-upload:openai.json>" would become "<runtime-upload:openai".
+        service_provider.name = config_name
 
         if not criteria.can_accept(service_provider):
             apply_result.error = (
@@ -412,38 +415,30 @@ class ServiceRegistryBuilder:
 
     @staticmethod
     def _replace_provider_by_identity(providers: list[Any], new_provider: Any) -> list[Any]:
-        provider_name = str(getattr(new_provider, "provider_name", "")).strip().lower()
-        service_name = str(getattr(new_provider, "service_name", "")).strip().lower()
+        """Replace the provider that has *new_provider*'s config name.
+
+        *providers* all belong to one service, whose config names are unique, while
+        several configs may share a provider type ("ffmpeg_high", "ffmpeg_low").
+        """
+        config_name = str(getattr(new_provider, "name", "")).strip().lower()
         updated = [
             provider
             for provider in providers
-            if not (
-                    str(getattr(provider, "provider_name", "")).strip().lower() == provider_name
-                    and str(getattr(provider, "service_name", "")).strip().lower() == service_name
-            )
+            if str(getattr(provider, "name", "")).strip().lower() != config_name
         ]
         updated.append(new_provider)
         return updated
 
-    def _ensure_runtime_configuration_provider(self) -> None:
-        """Ensure the registry keeps one runtime-wired file-system configuration provider."""
-        try:
-            providers = self._registry.service_providers_snapshot("configuration")
-        except KeyError:
-            return
+    def _merge_runtime_providers(self, providers: list[Any], criteria: ServiceAcceptCriteria) -> list[Any]:
+        """Add the service's runtime-wired providers, replacing loaded ones of the same provider type."""
+        if criteria.build_runtime_providers is None:
+            return providers
+        runtime_providers = criteria.build_runtime_providers(self._config_root, self)
+        runtime_types = {self._provider_type(provider) for provider in runtime_providers}
+        merged = [provider for provider in providers if self._provider_type(provider) not in runtime_types]
+        merged.extend(runtime_providers)
+        return merged
 
-        from src.services.configuration.providers.file_system import (  # pylint: disable=import-outside-toplevel
-            FileSystemConfigurationProvider,
-        )
-
-        runtime_provider = FileSystemConfigurationProvider.build_runtime(self._config_root, self)
-        merged = [
-            provider
-            for provider in providers
-            if str(
-                getattr(provider, "provider_name", getattr(provider, "provider", ""))
-            ).strip().lower() != "file_system"
-        ]
-        merged.append(runtime_provider)
-        merged.sort(key=lambda provider: getattr(provider, "priority", 999))
-        self._registry.replace_service_providers("configuration", merged)
+    @staticmethod
+    def _provider_type(provider: Any) -> str:
+        return str(getattr(provider, "provider", "")).strip().lower()

@@ -1,7 +1,10 @@
 """Configuration subsystem: service class, factory, and provider implementations."""
 # pylint: disable=invalid-name
 
+from __future__ import annotations
+
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import src.services.configuration.providers  # noqa: F401 — triggers provider auto-import
 
@@ -18,8 +21,12 @@ from src.services.configuration.models import (
     InvalidConfigurationNameError,
     UnknownConfigurationServiceError,
 )
+from src.services.configuration.providers.file_system import FileSystemConfigurationProvider
 from src.services.configuration.service import ConfigurationProviderFactory, ConfigurationService
 from src.services.models import ServiceProvider
+
+if TYPE_CHECKING:
+    from src.services.service_registry import ServiceRegistryBuilder
 
 __all__ = [
     "ConfigurationService",
@@ -53,6 +60,15 @@ def _build_configuration_provider(
     return ConfigurationProviderFactory.create(provider, base_dir)
 
 
+def _build_runtime_configuration_providers(
+        config_root: Path,
+        registry_builder: ServiceRegistryBuilder,
+) -> list[ConfigurationProvider]:
+    # The file-system provider validates and reloads through the registry
+    # builder, which no config file can supply.
+    return [FileSystemConfigurationProvider.build_runtime(config_root, registry_builder)]
+
+
 SERVICE_CLASS = ConfigurationService
 SERVICE_NAME = "configuration"
 SERVICE_ACCEPT_CRITERIA = ServiceAcceptCriteria(
@@ -60,4 +76,5 @@ SERVICE_ACCEPT_CRITERIA = ServiceAcceptCriteria(
     config_subdir="configuration",
     validate_provider=_validate_configuration_provider,
     build_provider=_build_configuration_provider,
+    build_runtime_providers=_build_runtime_configuration_providers,
 )

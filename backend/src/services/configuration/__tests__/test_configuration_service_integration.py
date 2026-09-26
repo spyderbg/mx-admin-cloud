@@ -245,6 +245,98 @@ def test_builder_keeps_runtime_configuration_provider(tmp_resolved: Path) -> Non
     )
 
 
+def test_builder_replaces_file_based_file_system_provider_with_runtime_one(tmp_resolved: Path) -> None:
+    config_root = tmp_resolved / "config"
+    config_dir = config_root / "configuration"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "fs.json").write_text(
+        json.dumps({
+            "service_provider": {
+                "service": "configuration",
+                "provider": "file_system",
+                "enabled": True,
+                "priority": 5,
+            }
+        }),
+        encoding="utf-8",
+    )
+
+    registry = ServiceRegistry.build_runtime(tmp_resolved)
+    builder = ServiceRegistryBuilder(registry, tmp_resolved, config_root)
+    builder.load_all_from_disk()
+
+    typed_service = registry.get_typed_service("configuration", ConfigurationService)
+    file_system_providers = [
+        provider for provider in typed_service.get_all_providers()
+        if provider.provider == "file_system"
+    ]
+    assert [provider.name for provider in file_system_providers] == ["configuration_file_system"]
+    # Only the runtime-wired provider has the registry builder these operations need.
+    assert [summary.config_name for summary in typed_service.list_configurations("configuration")] == ["fs"]
+
+
+def _ffmpeg_payload(priority: int) -> dict[str, Any]:
+    return {
+        "service_provider": {
+            "service": "voice_optimization",
+            "provider": "ffmpeg",
+            "enabled": True,
+            "priority": priority,
+            "config": {"sample_rate": 22050},
+        }
+    }
+
+
+def _load_ffmpeg_configs(tmp_resolved: Path) -> tuple[ServiceRegistry, ServiceRegistryBuilder]:
+    """Load two voice-optimization configs that share the 'ffmpeg' provider type."""
+    config_root = tmp_resolved / "config"
+    config_dir = config_root / "voice_optimizers"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "ffmpeg_high.json").write_text(json.dumps(_ffmpeg_payload(1)), encoding="utf-8")
+    (config_dir / "ffmpeg_low.json").write_text(json.dumps(_ffmpeg_payload(2)), encoding="utf-8")
+
+    registry = ServiceRegistry.build_runtime(tmp_resolved)
+    builder = ServiceRegistryBuilder(registry, tmp_resolved, config_root)
+    builder.load_all_from_disk()
+    return registry, builder
+
+
+def _voice_optimization_priorities(registry: ServiceRegistry) -> dict[str, int]:
+    return {
+        provider.name: provider.priority
+        for provider in registry.service_providers_snapshot("voice_optimization")
+    }
+
+
+def test_runtime_upload_replaces_only_the_config_with_the_same_name(tmp_resolved: Path) -> None:
+    registry, builder = _load_ffmpeg_configs(tmp_resolved)
+
+    result = builder.apply_runtime_payload(_ffmpeg_payload(7), source="<runtime-upload:ffmpeg_low.json>")
+
+    assert result.accepted
+    assert result.config_name == "ffmpeg_low"
+    assert _voice_optimization_priorities(registry) == {"ffmpeg_high": 1, "ffmpeg_low": 7}
+
+
+def test_runtime_apply_without_file_name_keeps_loaded_configs(tmp_resolved: Path) -> None:
+    registry, builder = _load_ffmpeg_configs(tmp_resolved)
+
+    result = builder.apply_runtime_payload(_ffmpeg_payload(7))
+
+    assert result.accepted
+    assert _voice_optimization_priorities(registry) == {"ffmpeg_high": 1, "ffmpeg_low": 2, "<runtime-upload>": 7}
+
+
+def test_runtime_apply_rejects_malformed_envelope(tmp_resolved: Path) -> None:
+    registry, builder = _load_ffmpeg_configs(tmp_resolved)
+
+    result = builder.apply_runtime_payload({"service_provider": "not-an-object"})
+
+    assert not result.accepted
+    assert result.error == "Invalid service_provider envelope."
+    assert _voice_optimization_priorities(registry) == {"ffmpeg_high": 1, "ffmpeg_low": 2}
+
+
 @pytest.fixture
 async def client_with_summaries(tmp_resolved: Path) -> AsyncClient:
     stub = _StubConfigurationProvider(tmp_resolved).with_summaries([_SUMMARY])
