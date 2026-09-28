@@ -37,7 +37,7 @@ from src.services.content.providers.file_system.constants import (
 )
 
 
-# Read size for content hashing (identifying which variant the main image was copied from).
+# Read size for content hashing (identifying which variant a main image/voice was copied from).
 _DIGEST_CHUNK_SIZE = 64 * 1024
 
 
@@ -65,13 +65,14 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         return digest.hexdigest()
 
     @classmethod
-    def _item_main_image_source_id(cls, main_path: Path, variant_paths: list[Path]) -> str | None:
+    def _main_copy_source_id(cls, main_path: Path, variant_paths: list[Path]) -> str | None:
         """Return the id of the variant *main_path* was copied from, or None if it matches none.
 
-        The main image is a byte-for-byte copy of one variant (see set_main_item_image
-        and add_item_image), so which one is selected is recoverable from the files
-        themselves — no sidecar to write, and existing content works unchanged. Sizes are
-        compared first, so normally only the single same-sized candidate is ever read.
+        A main image or main voice is a byte-for-byte copy of one variant (see
+        set_main_item_image, add_item_image and set_main_item_voice), so which one is
+        selected is recoverable from the files themselves — no sidecar to write, and
+        existing content works unchanged. Sizes are compared first, so normally only the
+        single same-sized candidate is ever read.
         """
         try:
             main_size = main_path.stat().st_size
@@ -109,6 +110,33 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             if voice_id == f"{item_folder_name}-v-{lang}":
                 return lang
         return None
+
+    @staticmethod
+    def _split_item_voice_files(
+            files: list[Path],
+            item_folder_name: str,
+            language: str,
+    ) -> tuple[Path | None, list[Path]]:
+        """Return (main, variants) among *files* for one language of an item.
+
+        The main voice is stored with no index suffix (``{name}_en.mp3``) and each variant
+        with one (``{name}_en_01.mp3``), mirroring how item images are laid out.
+        """
+        pattern = re.compile(
+            r"^" + re.escape(item_folder_name) + r"_" + re.escape(language) + r"(_\d+)?\.mp3$",
+            re.IGNORECASE,
+        )
+        main: Path | None = None
+        variants: list[Path] = []
+        for f in sorted(files):
+            match = pattern.match(f.name)
+            if not f.is_file() or not match:
+                continue
+            if match.group(1):
+                variants.append(f)
+            elif main is None:
+                main = f
+        return main, variants
 
     @classmethod
     def _find_item_voice_file(
@@ -430,37 +458,48 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             item_id=item_id,
             images=images,
             thumbnail_uri=main_uri,
-            main_image_id=self._item_main_image_source_id(main_path, variant_paths),
+            main_image_id=self._main_copy_source_id(main_path, variant_paths),
         )
 
     def item_voices(self, category_id: str, item_id: str) -> ItemVoices:
-        """Build one CategoryVoice entry per supported language for the item.
+        """Build one CategoryVoice entry per supported language, plus each language's variants.
 
-        A language with no TTS file yet is still included (file_uri=None) so
-        callers can render a placeholder/upload slot for it.
+        A language with no TTS file yet is still included in *voices* (file_uri=None) so
+        callers can render a placeholder/upload slot for it. That entry is the main voice
+        (``{name}_en.mp3``), or the first variant when no main file exists yet (legacy
+        data). Numbered recordings (``{name}_en_01.mp3``) are also listed in *variants*,
+        and *main_voice_ids* names the variant each language's main voice was copied from
+        (see set_main_item_voice).
         """
         category_name = self._folder_name_for_id(category_id)
         category_path = self._category_path(category_name)
         item_folder_name = self._item_folder_for_id(category_path, item_id)
         item_folder = category_path / item_folder_name if item_folder_name else None
         files = sorted(item_folder.iterdir()) if item_folder and item_folder.is_dir() else []
-        voices: list[CategoryVoice] = []
-        for lang in settings.SUPPORTED_LANGUAGES:
-            pattern = re.compile(
-                r"^" + re.escape(item_folder_name or "") + r"_" + re.escape(lang) + r"(_\d+)?\.mp3$",
-                re.IGNORECASE,
-            )
-            match = next((f for f in files if f.is_file() and pattern.match(f.name)), None)
-            provider, parameters = self._read_voice_metadata(match) if match else ("unknown", {})
-            voices.append(CategoryVoice(
-                id=f"{item_folder_name}-v-{lang}",
+
+        def to_voice(voice_id: str, lang: str, path: Path | None) -> CategoryVoice:
+            provider, parameters = self._read_voice_metadata(path) if path else ("unknown", {})
+            return CategoryVoice(
+                id=voice_id,
                 language=lang,
                 type="tts",
-                file_uri=f"/content/{category_name}/{item_folder_name}/{match.name}" if match else None,
+                file_uri=f"/content/{category_name}/{item_folder_name}/{path.name}" if path else None,
                 provider=provider,
                 parameters=parameters,
-            ))
-        return ItemVoices(item_id=item_id, voices=voices)
+            )
+
+        voices: list[CategoryVoice] = []
+        variants: list[CategoryVoice] = []
+        main_voice_ids: dict[str, str | None] = {}
+        for lang in settings.SUPPORTED_LANGUAGES:
+            main, variant_paths = self._split_item_voice_files(files, item_folder_name or "", lang)
+            voices.append(to_voice(f"{item_folder_name}-v-{lang}", lang, main or next(iter(variant_paths), None)))
+            variants.extend(to_voice(path.stem, lang, path) for path in variant_paths)
+            if main is not None:
+                main_voice_ids[lang] = self._main_copy_source_id(main, variant_paths)
+            else:
+                main_voice_ids[lang] = variant_paths[0].stem if variant_paths else None
+        return ItemVoices(item_id=item_id, voices=voices, variants=variants, main_voice_ids=main_voice_ids)
 
     def add_item_image(
             self,
@@ -593,6 +632,46 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             raise ContentOperationError(f"Failed to set main image for item '{item_id}': {exc}") from exc
 
         return self.item_images(category_id, item_id)
+
+    def set_main_item_voice(self, category_id: str, item_id: str, voice_id: str, language: str) -> ItemVoices:
+        category_name = self._folder_name_for_id(category_id)
+        category_path = self._category_path(category_name)
+        item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
+
+        if language not in settings.SUPPORTED_LANGUAGES:
+            raise ContentOperationError(f"Unsupported language: {language}")
+
+        main_path, variant_paths = self._split_item_voice_files(
+            list(item_path.iterdir()), item_folder_name, language,
+        )
+        if voice_id in (f"{item_folder_name}-v-{language}", f"{item_folder_name}_{language}") and (
+                main_path or variant_paths
+        ):
+            return self.item_voices(category_id, item_id)  # Already the voice in use.
+
+        target = next((p for p in variant_paths if p.stem == voice_id), None)
+        if target is None:
+            raise CategoryNotFoundError(
+                f"Voice '{voice_id}' not found for language '{language}' of item '{item_id}' "
+                f"in category '{category_name}'.",
+            )
+
+        # Like the main image, the main voice is the file with no index suffix
+        # ("apple_en.mp3"). Selecting a variant COPIES it, with its metadata sidecar, over
+        # the main file: the variant stays where it is, so the item keeps every recording.
+        main_path = main_path or self._item_voice_path(item_path, item_folder_name, language)
+        target_metadata = self._voice_metadata_path(target)
+        main_metadata = self._voice_metadata_path(main_path)
+        try:
+            shutil.copyfile(target, main_path)
+            if target_metadata.is_file():
+                shutil.copyfile(target_metadata, main_metadata)
+            else:
+                main_metadata.unlink(missing_ok=True)
+        except OSError as exc:
+            raise ContentOperationError(f"Failed to set main voice for item '{item_id}': {exc}") from exc
+
+        return self.item_voices(category_id, item_id)
 
     def add_item_voice(self, category_id: str, item_id: str, language: str, audio_data: bytes) -> CategoryVoice:
         category_name = self._folder_name_for_id(category_id)

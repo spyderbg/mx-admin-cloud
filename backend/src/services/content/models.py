@@ -145,10 +145,16 @@ class ItemImages:
 
 @dataclass
 class ItemVoices:
-    """Voice audio files for a specific item."""
+    """Voice audio files for a specific item, with the selected main voice per language."""
 
     item_id: str = ""
+    #: One entry per supported language: the voice currently used for that language.
     voices: list[CategoryVoice] = field(default_factory=list)
+    #: Alternative recordings per language, any of which can be selected as main.
+    variants: list[CategoryVoice] = field(default_factory=list)
+    #: Language -> id of the entry in *variants* the main voice was copied from, i.e. the
+    #: one currently selected as main. None when it matches no variant of that language.
+    main_voice_ids: dict[str, str | None] = field(default_factory=dict)
 
 
 @dataclass
@@ -400,6 +406,10 @@ class ContentProvider(ServiceProvider, ABC):  # pylint: disable=too-many-public-
     @abstractmethod
     def set_main_item_image(self, category_id: str, item_id: str, image_id: str) -> ItemImages:
         """Make the image file variant with the given image_id the item's main image."""
+
+    @abstractmethod
+    def set_main_item_voice(self, category_id: str, item_id: str, voice_id: str, language: str) -> ItemVoices:
+        """Make the voice variant with the given voice_id the item's main voice for *language*."""
 
     @abstractmethod
     def add_item_voice(self, category_id: str, item_id: str, language: str, audio_data: bytes) -> CategoryVoice:

@@ -18,6 +18,7 @@ import type {
   RemoveCategoryResponse,
   RestoreCategoryBody,
   RestoreCategoryResponse,
+  SetMainItemVoiceBody,
   UpdateCategoryBody,
   UpdateCategoryResponse,
   UpdateItemBody,
@@ -212,6 +213,12 @@ export const itemsVoicesUpdate = async (categoryId: string, itemId: string, voic
 /** Delete a voice from an item */
 export const itemsVoicesDelete = async (categoryId: string, itemId: string, voiceId: string): Promise<VoiceResponse> => {
   const r = await client.delete<VoiceResponse>(`/content/categories/${categoryId}/items/${itemId}/voices/${voiceId}`)
+  return r.data
+}
+
+/** Set a voice variant as the item's main voice for a language */
+export const itemsVoicesSetMain = async (categoryId: string, itemId: string, voiceId: string, body: SetMainItemVoiceBody): Promise<ItemVoicesResponse> => {
+  const r = await client.put<ItemVoicesResponse>(`/content/categories/${categoryId}/items/${itemId}/voices/${voiceId}/main`, body)
   return r.data
 }
 

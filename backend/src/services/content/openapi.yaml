@@ -492,6 +492,20 @@ components:
           type: array
           title: Voices
           default: []
+        variants:
+          items:
+            $ref: '#/components/schemas/VoiceResponse'
+          type: array
+          title: Variants
+          default: []
+        main_voice_ids:
+          additionalProperties:
+            anyOf:
+            - type: string
+            - type: 'null'
+          type: object
+          title: Main Voice Ids
+          default: {}
       type: object
       required:
       - item_id
@@ -571,6 +585,16 @@ components:
       - message
       title: RestoreCategoryResponse
       description: Response for POST /content/categories/restore.
+    SetMainItemVoiceBody:
+      properties:
+        language:
+          type: string
+          title: Language
+      type: object
+      required:
+      - language
+      title: SetMainItemVoiceBody
+      description: Request body for selecting an item's main voice for a language.
     UpdateCategoryBody:
       properties:
         new_category_id:
@@ -1736,7 +1760,9 @@ paths:
       - Items Voices
       summary: List voices for an item
       description: Retrieve a list of all voice files associated with a content item.
-        Returns the voice filenames and their metadata. Requires authentication.
+        Returns one voice per language, the alternative recordings (variants) per language,
+        and which variant is currently selected as each language's main voice. Requires
+        authentication.
       operationId: items_voices_list_api_v1_content_categories__category_id__items__item_id__voices_get
       security:
       - OAuth2PasswordBearer: []
@@ -1893,6 +1919,55 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VoiceResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/content/categories/{category_id}/items/{item_id}/voices/{voice_id}/main:
+    put:
+      tags:
+      - Items Voices
+      summary: Set a voice variant as the item's main voice for a language
+      description: Make the voice variant identified by voice_id the item's main voice
+        for the given language — the one returned in 'voices' and played for that language.
+        The variant must belong to that language. Requires authentication.
+      operationId: items_voices_set_main_api_v1_content_categories__category_id__items__item_id__voices__voice_id__main_put
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Item Id
+      - name: voice_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Voice Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetMainItemVoiceBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemVoicesResponse'
         '422':
           description: Validation Error
           content:

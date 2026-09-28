@@ -123,6 +123,8 @@ export interface ItemVoicesResponse {
     item_id: string
     name: LocalizedString
     voices?: VoiceResponse[]
+    variants?: VoiceResponse[]
+    main_voice_ids?: Record<string, string | null>
 }
 
 /** Response for DELETE /content/categories/{name}.
@@ -149,6 +151,11 @@ export interface RestoreCategoryResponse {
     name?: string | null
     from_archive?: string | null
     message: string
+}
+
+/** Request body for selecting an item's main voice for a language. */
+export interface SetMainItemVoiceBody {
+    language: string
 }
 
 /** Request body for updating a category's localized name and description. */

@@ -46,6 +46,7 @@ CATEGORY_ITEM_IMAGE = "/categories/{category_id}/items/{item_id}/images/{image_i
 CATEGORY_ITEM_IMAGE_MAIN = "/categories/{category_id}/items/{item_id}/images/{image_id}/main"
 CATEGORY_ITEM_VOICES = "/categories/{category_id}/items/{item_id}/voices"
 CATEGORY_ITEM_VOICE = "/categories/{category_id}/items/{item_id}/voices/{voice_id}"
+CATEGORY_ITEM_VOICE_MAIN = "/categories/{category_id}/items/{item_id}/voices/{voice_id}/main"
 CATEGORY_ITEM_VOICE_REGENERATE = "/categories/{category_id}/items/{item_id}/voices/{voice_id}/regenerate"
 
 NO_VOICE_GENERATORS_WARNING = "No active voice generators configured; voices were not generated."

@@ -18,9 +18,11 @@ from httpx import ASGITransport, AsyncClient
 from src.services.content.models import (
     CategoryConflictError,
     CategoryNotFoundError,
+    CategoryVoice,
     ContentOperationError,
     CreateItem,
     ItemDetail,
+    ItemVoices,
     RemoveItem,
 )
 from src.services.content.__tests__.content_http_helpers import PNG_BYTES, StubContentProvider, make_app
@@ -339,4 +341,81 @@ async def test_delete_item_not_found_returns_404(tmp_resolved: Path) -> None:
 @pytest.mark.asyncio
 async def test_delete_item_requires_auth(client_no_auth: AsyncClient) -> None:
     response = await client_no_auth.delete("/api/v1/content/categories/foods/items/I_Apple")
+    assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# PUT /api/v1/content/categories/{category_id}/items/{item_id}/voices/{voice_id}/main
+# ---------------------------------------------------------------------------
+
+_VOICE_MAIN_URL = "/api/v1/content/categories/foods/items/I_Foods/voices/apple_en_02/main"
+
+
+@pytest.mark.asyncio
+async def test_set_main_item_voice_returns_voices_listing(tmp_resolved: Path) -> None:
+    seen: list[tuple[str, str, str, str]] = []
+
+    class _TrackingProvider(StubContentProvider):
+        def set_main_item_voice(self, category_id: str, item_id: str, voice_id: str, language: str) -> ItemVoices:
+            seen.append((category_id, item_id, voice_id, language))
+            return ItemVoices(
+                item_id=item_id,
+                voices=[CategoryVoice(id="apple-v-en", language="en", type="tts",
+                                      file_uri="/content/foods/apple/apple_en.mp3")],
+                variants=[CategoryVoice(id="apple_en_02", language="en", type="tts",
+                                        file_uri="/content/foods/apple/apple_en_02.mp3")],
+                main_voice_ids={"en": "apple_en_02"},
+            )
+
+    app = make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.put(_VOICE_MAIN_URL, json={"language": " en "})
+    assert response.status_code == 200
+    assert seen == [("foods", "I_Foods", "apple_en_02", "en")]
+    body = response.json()
+    assert body["item_id"] == "I_Foods"
+    assert body["name"] == {"en": "apple"}
+    assert [v["id"] for v in body["voices"]] == ["apple-v-en"]
+    assert [v["id"] for v in body["variants"]] == ["apple_en_02"]
+    assert body["main_voice_ids"] == {"en": "apple_en_02"}
+
+
+@pytest.mark.asyncio
+async def test_set_main_item_voice_requires_language(client: AsyncClient) -> None:
+    response = await client.put(_VOICE_MAIN_URL, json={})
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_set_main_item_voice_unknown_item_returns_404(client: AsyncClient) -> None:
+    response = await client.put(
+        "/api/v1/content/categories/foods/items/I_Missing/voices/apple_en_02/main", json={"language": "en"},
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_set_main_item_voice_unknown_voice_returns_404(tmp_resolved: Path) -> None:
+    provider = StubContentProvider(tmp_resolved).raises("set_main_item_voice", CategoryNotFoundError("nope"))
+    app = make_app(provider, tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.put(_VOICE_MAIN_URL, json={"language": "en"})
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_set_main_item_voice_unsupported_language_returns_400(tmp_resolved: Path) -> None:
+    provider = StubContentProvider(tmp_resolved).raises(
+        "set_main_item_voice", ContentOperationError("Unsupported language: de"),
+    )
+    app = make_app(provider, tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.put(_VOICE_MAIN_URL, json={"language": "de"})
+    assert response.status_code == 400
+    assert "Unsupported language" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_set_main_item_voice_requires_auth(client_no_auth: AsyncClient) -> None:
+    response = await client_no_auth.put(_VOICE_MAIN_URL, json={"language": "en"})
     assert response.status_code == 401

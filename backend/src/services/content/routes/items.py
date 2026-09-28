@@ -18,6 +18,7 @@ from src.services.content.models import (
     CategoryNotFoundError,
     ContentError,
     InvalidCategoryNameError,
+    ItemVoices,
 )
 from src.core.localization import LocalizedString
 from src.services.content.schemas import (
@@ -27,6 +28,7 @@ from src.services.content.schemas import (
     ItemListResponse,
     ItemSummary,
     ItemVoicesResponse,
+    SetMainItemVoiceBody,
     UpdateItemBody,
     VoiceResponse,
 )
@@ -37,6 +39,7 @@ from src.services.content.routes.common import (
     CATEGORY_ITEM_IMAGES,
     CATEGORY_ITEM_IMAGE_MAIN,
     CATEGORY_ITEM_VOICE,
+    CATEGORY_ITEM_VOICE_MAIN,
     CATEGORY_ITEM_VOICES,
     CATEGORY_ITEM_VOICE_REGENERATE,
     ContentServiceDep,
@@ -50,6 +53,17 @@ from src.services.content.routes.common import (
 )
 
 router = APIRouter()
+
+
+def _item_voices_response(item_id: str, item_name: LocalizedString, voices: ItemVoices) -> ItemVoicesResponse:
+    """Build an ItemVoicesResponse from a provider-returned ItemVoices."""
+    return ItemVoicesResponse(
+        item_id=item_id,
+        name=item_name,
+        voices=[_voice_response(v) for v in voices.voices],
+        variants=[_voice_response(v) for v in voices.variants],
+        main_voice_ids=voices.main_voice_ids,
+    )
 
 
 # region Items
@@ -468,7 +482,8 @@ def items_images_set_main(
     summary="List voices for an item",
     description=(
             "Retrieve a list of all voice files associated with a content item. "
-            "Returns the voice filenames and their metadata. "
+            "Returns one voice per language, the alternative recordings (variants) per language, "
+            "and which variant is currently selected as each language's main voice. "
             "Requires authentication."
     ),
 )
@@ -495,11 +510,7 @@ def items_voices_list(
     item = next((i for i in result.items if i.id == item_id), None)
     item_name = item.name if item else LocalizedString({})
     voices_result = service.item_voices(category_id, item_id)
-    return ItemVoicesResponse(
-        item_id=item_id,
-        name=item_name,
-        voices=[_voice_response(v) for v in voices_result.voices],
-    )
+    return _item_voices_response(item_id, item_name, voices_result)
 
 
 @router.post(
@@ -607,6 +618,52 @@ def items_voices_delete(
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return _voice_response(result, "delete")
+
+
+@router.put(
+    CATEGORY_ITEM_VOICE_MAIN,
+    response_model=ItemVoicesResponse,
+    status_code=status.HTTP_200_OK,
+    tags=[TAG_ITEMS_VOICES],
+    summary="Set a voice variant as the item's main voice for a language",
+    description=(
+            "Make the voice variant identified by voice_id the item's main voice for the given "
+            "language — the one returned in 'voices' and played for that language. The variant "
+            "must belong to that language. Requires authentication."
+    ),
+)
+def items_voices_set_main(
+        category_id: str,
+        item_id: str,
+        voice_id: str,
+        body: SetMainItemVoiceBody,
+        service: ContentServiceDep,
+        _user: dict = Depends(get_current_user),
+) -> ItemVoicesResponse:
+    """Make the given voice variant the item's main voice for a language."""
+    try:
+        result = service.category_details_by_id(category_id)
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidCategoryNameError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+    item = next((i for i in result.items if i.id == item_id), None)
+    if item is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Item '{item_id}' not found in category '{category_id}'",
+        )
+    try:
+        voices_result = service.set_main_item_voice(category_id, item_id, voice_id, body.language.strip())
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidCategoryNameError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return _item_voices_response(item_id, item.name, voices_result)
 
 
 @router.post(

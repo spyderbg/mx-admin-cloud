@@ -208,6 +208,12 @@ class UpdateItemBody(BaseModel):
     item_name: LocalizedString
 
 
+class SetMainItemVoiceBody(BaseModel):
+    """Request body for selecting an item's main voice for a language."""
+
+    language: str
+
+
 # endregion
 
 # region Items Response models
@@ -248,6 +254,12 @@ class ItemVoicesResponse(BaseModel):
 
     item_id: str
     name: LocalizedString
+    # One voice per supported language: the one currently used for that language.
     voices: list[VoiceResponse] = []
+    # Alternative recordings per language, any of which can be selected as main.
+    variants: list[VoiceResponse] = []
+    # Language -> id of the variant the main voice was copied from, i.e. the one currently
+    # selected as main. None when the main voice matches no variant of that language.
+    main_voice_ids: dict[str, str | None] = {}
 
 # endregion

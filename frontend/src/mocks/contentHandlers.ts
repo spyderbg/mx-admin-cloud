@@ -650,4 +650,7 @@ export const contentHandlers = [
       main_image_id: itemMainImageId(item),
     })
   }),
+
+  // Set a voice variant as the item's main voice for a language
+  http.put('/api/v1/content/categories/:category_id/items/:item_id/voices/:voice_id/main', () => HttpResponse.json({})),
 ]
