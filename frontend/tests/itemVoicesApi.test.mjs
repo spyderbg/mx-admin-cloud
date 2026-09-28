@@ -42,6 +42,16 @@ test('selection encodes IDs and propagates backend rejection', async () => {
   await assert.rejects(api.selectItemVoice('fruit & veg', 'item/1', 'take#1', 'bg'), failure)
 })
 
+test('deletion sends DELETE to the encoded item voice endpoint', async () => {
+  const response = { id: 'take#1', language: 'en', type: 'tts', action: 'delete' }
+  client.defaults.adapter = async (config) => {
+    assert.equal(config.method, 'delete')
+    assert.equal(config.url, '/content/categories/fruit%20%26%20veg/items/item%2F1/voices/take%231')
+    return { data: response, status: 200, statusText: 'OK', headers: {}, config }
+  }
+  assert.deepEqual(await api.deleteItemVoice('fruit & veg', 'item/1', 'take#1'), response)
+})
+
 test('list loads real backend variants and enables selection without proposed capabilities', async () => {
   client.defaults.adapter = async (config) => ({
     status: 200, statusText: 'OK', headers: {}, config,

@@ -6,9 +6,14 @@
         <div class="iv-card-title"><h3>{{ title }}</h3><span v-if="selected" class="iv-badge">{{ copy.inUse }}</span></div>
         <p>{{ source === 'uploaded' ? copy.uploaded : voice.provider || copy.unknown }}<span v-if="source === 'generated'"> · {{ copy.generated }}</span></p>
       </div>
-      <button type="button" class="iv-replace" :disabled="busy" :aria-label="`${copy.replace}: ${title}`" @click="$emit('replace')">
-        <i class="mdi mdi-pencil" aria-hidden="true"></i><span>{{ copy.replace }}</span>
-      </button>
+      <div class="iv-card-actions">
+        <button type="button" class="iv-card-action iv-card-action-edit" :disabled="busy" :title="copy.replace" :aria-label="`${copy.replace}: ${title}`" @click="$emit('replace')">
+          <i class="mdi mdi-pencil" aria-hidden="true"></i>
+        </button>
+        <button type="button" class="iv-card-action iv-card-action-delete" :disabled="busy" :title="copy.deleteVoice" :aria-label="`${copy.deleteVoice}: ${title}`" @click="$emit('delete')">
+          <i class="mdi mdi-delete" aria-hidden="true"></i>
+        </button>
+      </div>
     </header>
 
     <div v-if="source === 'generated' || voice.optimized_file_uri" class="iv-versions" :aria-label="`${title}: ${copy.preview}`" role="group">
@@ -57,7 +62,7 @@ import VoiceAudioPreview from './VoiceAudioPreview.vue'
 import VoiceParametersTooltip from './VoiceParametersTooltip.vue'
 
 const props = defineProps<{ voice: ItemVoiceRecord; capabilities: VoiceCapabilities; selected: boolean; busy: boolean; optimizing: boolean; active: boolean; revision: number }>()
-const emit = defineEmits<{ play: []; replace: []; drop: [files: FileList]; optimize: []; select: [version: AudioVersion] }>()
+const emit = defineEmits<{ play: []; replace: []; delete: []; drop: [files: FileList]; optimize: []; select: [version: AudioVersion] }>()
 const language = useContentLanguage()
 const copy = computed(() => itemVoiceCopy[language.value])
 const title = computed(() => voiceTitle(props.voice))
@@ -111,9 +116,12 @@ function onDrop(event: DragEvent): void {
 .iv-card-title h3 { font-size: 1rem; font-weight: 700; margin: 0; overflow-wrap: anywhere; }
 .iv-card-heading p { margin: .3rem 0 0; color: #63708c; font-size: .78rem; overflow-wrap: anywhere; }
 .iv-badge { color: white; background: #2f8f68; border-radius: 20px; padding: .2rem .55rem; font-size: .68rem; white-space: nowrap; }
-.iv-replace { display: flex; align-items: center; gap: .35rem; border: 0; border-radius: 5px; background: transparent; color: #4f46e5; font-size: .72rem; min-height: 32px; cursor: pointer; }
-.iv-replace span { display: inline; }
-.iv-replace i { font-size: 1.1rem; }
+.iv-card-actions { display: flex; gap: .35rem; flex: none; }
+.iv-card-action { display: inline-flex; align-items: center; justify-content: center; width: 1.75rem; height: 1.75rem; padding: 0; border: 0; border-radius: 50%; color: #fff; font-size: .9rem; cursor: pointer; }
+.iv-card-action-edit { background: #2563eb; }
+.iv-card-action-edit:hover:not(:disabled) { background: #1d4ed8; }
+.iv-card-action-delete { background: #ef4444; }
+.iv-card-action-delete:hover:not(:disabled) { background: #dc2626; }
 .iv-versions { display: flex; border: 1px solid #d7e3f3; border-radius: 6px; overflow: hidden; background: #eef3fa; }
 .iv-versions button { flex: 1; border: 0; background: transparent; padding: .45rem; color: #536481; font-size: .78rem; cursor: pointer; }
 .iv-versions button[aria-pressed="true"] { background: #4f46e5; color: white; border-radius: 5px; }
@@ -132,14 +140,13 @@ function onDrop(event: DragEvent): void {
 .iv-button { display: inline-flex; justify-content: center; align-items: center; gap: .35rem; border: 1px solid #818cf8; border-radius: 6px; background: white; color: #4f46e5; font-size: .77rem; font-weight: 600; min-height: 36px; padding: .45rem .65rem; flex: 1 1 auto; cursor: pointer; }
 .iv-select { background: #4f46e5; color: white; }
 .iv-is-selected, .iv-is-selected:disabled { background: #e1f2eb; border-color: #e1f2eb; color: #24704f; opacity: 1; }
-.iv-button:disabled:not(.iv-is-selected), .iv-replace:disabled { opacity: .5; cursor: default; }
+.iv-button:disabled:not(.iv-is-selected), .iv-card-action:disabled { opacity: .5; cursor: default; }
 .iv-drop { display: flex; justify-content: center; gap: .5rem; align-items: center; color: #596984; border: 1px dashed #a5b4fc; border-radius: 6px; background: transparent; min-height: 36px; font-size: .75rem; cursor: pointer; }
 button:focus-visible, summary:focus-visible { outline: 3px solid #a5b4fc; outline-offset: 2px; }
 @media (max-width: 575px) {
-  .iv-replace span { display: none; }
   .iv-card { padding: .8rem; gap: .8rem; }
   .iv-card-selected { padding: calc(.8rem - 1px); }
-  .iv-replace { min-height: 44px; min-width: 44px; justify-content: center; }
+  .iv-card-action { width: 2.75rem; height: 2.75rem; }
   .iv-button, .iv-drop, .iv-versions button { min-height: 44px; }
   .iv-details summary { padding: .5rem 0; }
 }

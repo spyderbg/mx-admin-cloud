@@ -1,9 +1,23 @@
 <template>
   <section class="ivs" aria-labelledby="item-voices-heading" :aria-busy="loading || !!busyKey">
     <header class="ivs-header">
-      <div><h2 id="item-voices-heading">{{ copy.title }}</h2><p>{{ copy.description }}</p></div>
-      <div class="ivs-summary"><span>{{ groups.length }} {{ copy.languages }} · {{ voiceCount }} {{ copy.voices }}</span>
-        <button type="button" class="ivs-button" @click="toggleAll"><i :class="expanded.size ? 'mdi mdi-chevron-up' : 'mdi mdi-chevron-down'" aria-hidden="true"></i>{{ expanded.size ? copy.collapse : copy.expand }}</button>
+      <h2 id="item-voices-heading">{{ copy.title }} <span>({{ voiceCount }})</span></h2>
+      <div class="ivs-summary">
+        <div class="ivs-summary-buttons">
+          <button
+            v-for="action in voiceActions"
+            :key="action.label"
+            type="button"
+            class="btn btn-sm ivs-action-button"
+            :class="action.tone && `ivs-summary-action-${action.tone}`"
+            :disabled="action.disabled"
+            @click="action.onClick"
+          >
+            <i class="mdi" :class="action.icon" aria-hidden="true"></i>
+            {{ action.label }}
+          </button>
+        </div>
+        <MobileActionsMenu class="ivs-summary-menu" label="Voice actions" :actions="voiceActions" />
       </div>
     </header>
     <p v-if="mockMode" class="ivs-notice ivs-demo"><i class="mdi mdi-information-outline" aria-hidden="true"></i>{{ copy.demo }}</p>
@@ -13,7 +27,6 @@
     <p v-if="loading && !data" class="ivs-loading" role="status">{{ copy.loading }}</p>
     <div v-else-if="loadFailed" class="ivs-notice ivs-error" role="alert"><span>{{ copy.loadError }}</span><button type="button" class="ivs-button" @click="load()">{{ copy.retry }}</button></div>
     <template v-if="data">
-      <p v-if="!capabilities.multiple_voices || !capabilities.generate || !capabilities.optimize || !capabilities.select" class="ivs-notice ivs-availability">{{ copy.legacy }}</p>
       <div class="ivs-groups">
         <section v-for="group in groups" :key="group.language" class="ivs-group" :aria-label="langLabel(group.language)">
           <header class="ivs-group-header">
@@ -24,37 +37,42 @@
               <span class="ivs-count">{{ group.voices.length }} {{ group.voices.length === 1 ? copy.voice : copy.voices }}</span>
               <span class="ivs-current" :class="{ 'ivs-no-selection': !group.selected }">{{ group.selected ? `${copy.inUse}: ${voiceTitle(group.selected)} · ${copy[group.selected.selected_version || 'original']}` : copy.noSelection }}</span>
             </button>
-            <div class="ivs-group-actions">
-              <button type="button" class="ivs-button" :disabled="busy" @click="openUpload(group.language)"><i class="mdi mdi-plus" aria-hidden="true"></i>{{ copy.add }}</button>
-              <button type="button" class="ivs-button ivs-primary" :disabled="busy" @click="openGenerate(group.language)"><i class="mdi mdi-auto-fix" aria-hidden="true"></i>{{ copy.generate }}</button>
-            </div>
           </header>
           <div v-show="expanded.has(group.language)" :id="`voices-${group.language}`" class="ivs-group-body">
             <div class="ivs-base"><span>{{ copy.baseVoice }}</span>
               <button type="button" :disabled="busy" @click="openGenerate(group.language)">{{ baseVoiceLabel(group.language) }}<i class="mdi mdi-chevron-down" aria-hidden="true"></i></button>
               <span class="ivs-spoken">{{ copy.text }}: <strong>{{ data.name[group.language] || '—' }}</strong></span>
             </div>
-            <div v-if="group.voices.length" class="ivs-cards">
+            <div class="ivs-cards">
               <ItemVoiceCard v-for="voice in group.voices" :key="voice.id" :voice="voice" :capabilities="capabilities"
                 :selected="group.selected?.id === voice.id" :busy="busy" :optimizing="busyKey === `optimize:${voice.id}`"
                 :active="activePlayer === voice.id" :revision="revision" @play="onPlay(voice.id)"
                 @replace="openUpload(group.language, voice.id)" @drop="openUpload(group.language, voice.id, $event)"
-                @optimize="optimize(voice)" @select="select(voice, $event)" />
+                @delete="openDelete(voice)" @optimize="optimize(voice)" @select="select(voice, $event)" />
+              <button
+                type="button"
+                class="ivs-add-card"
+                :class="{ 'ivs-drop-active': dragLanguage === group.language }"
+                :disabled="busy"
+                :aria-label="`${copy.add}: ${langLabel(group.language)}`"
+                @click="chooseLanguageFile(group.language)"
+                @dragover.prevent.stop="onLanguageDrag($event, group.language)"
+                @dragleave="leaveLanguageDrop($event)"
+                @drop.prevent.stop="dropInLanguage($event, group.language)"
+              >
+                <i class="mdi" :class="busyKey === `upload-language:${group.language}` ? 'mdi-loading mdi-spin' : 'mdi-plus-circle-outline'" aria-hidden="true"></i>
+                <strong>{{ copy.add }}</strong>
+                <span>{{ busyKey === `upload-language:${group.language}` ? copy.saving : copy.addHint }}</span>
+              </button>
             </div>
-            <p v-else class="ivs-empty">{{ copy.empty }}</p>
-            <button type="button" class="ivs-drop" :class="{ 'ivs-drop-active': dragLanguage === group.language }" :disabled="busy"
-              @click="openUpload(group.language)" @dragover.prevent.stop="onLanguageDrag($event, group.language)"
-              @dragleave="leaveLanguageDrop($event)" @drop.prevent.stop="dropInLanguage($event, group.language)">
-              <i class="mdi mdi-upload" aria-hidden="true"></i><span><strong>{{ copy.dropAdd }} {{ langLabel(group.language) }}</strong><small>{{ copy.or }} <u>{{ copy.browse }}</u> · {{ formatsLabel }}</small></span>
-            </button>
           </div>
         </section>
       </div>
-      <p class="ivs-help"><i class="mdi mdi-information-outline" aria-hidden="true"></i>{{ copy.dropHint }}</p>
+      <input ref="languageFileInput" type="file" :accept="acceptedFormats" hidden @change="pickLanguageFile" />
     </template>
 
     <VoiceDialog v-if="dialog === 'generate'" :title="copy.generate" :busy="!!busyKey" @close="closeDialog" @submit="generate">
-      <div class="ivs-dialog-language"><i :class="`flag-icon flag-icon-${langFlag(formLanguage)}`" aria-hidden="true"></i><div><strong>{{ langLabel(formLanguage) }}</strong><small>{{ copy.newRecording }} {{ itemName }}</small></div></div>
+      <label class="ivs-field">{{ copy.language }}<select v-model="formLanguage" :disabled="!!busyKey"><option v-for="language in SUPPORTED_LANGUAGES" :key="language" :value="language">{{ langLabel(language) }}</option></select></label>
       <p v-if="!capabilities.generate" class="ivs-notice">{{ copy.generationUnavailable }}</p>
       <div v-if="formError" class="ivs-notice ivs-error" role="alert">{{ formError }}<button v-if="presetsFailed" type="button" class="ivs-button" @click="loadPresets">{{ copy.retry }}</button></div>
       <label class="ivs-field">{{ copy.text }}<input v-model="generationText" required :disabled="!!busyKey || !capabilities.generate" /></label>
@@ -78,7 +96,6 @@
 
     <VoiceDialog v-if="dialog === 'upload'" :title="uploadMode === 'replace' ? copy.replace : copy.add" :busy="!!busyKey" @close="closeDialog" @submit="upload">
       <label class="ivs-field">{{ copy.language }}<select v-model="formLanguage" :disabled="!!busyKey"><option v-for="language in SUPPORTED_LANGUAGES" :key="language" :value="language">{{ langLabel(language) }}</option></select></label>
-      <div class="ivs-mode" role="group" :aria-label="copy.mode"><button type="button" :aria-pressed="uploadMode === 'add'" :disabled="!!busyKey" @click="uploadMode = 'add'">{{ copy.addNew }}</button><button type="button" :aria-pressed="uploadMode === 'replace'" :disabled="!!busyKey || !uploadVoices.length" @click="uploadMode = 'replace'">{{ copy.replaceExisting }}</button></div>
       <label v-if="uploadMode === 'replace'" class="ivs-field">{{ copy.replaceTarget }}<select v-model="uploadTarget" required :disabled="!!busyKey"><option v-for="voice in uploadVoices" :key="voice.id" :value="voice.id">{{ voiceTitle(voice) }}</option></select></label>
       <p v-if="cannotAdd" class="ivs-notice">{{ copy.addUnavailable }}</p>
       <div v-if="formError" class="ivs-notice ivs-error" role="alert">{{ formError }}</div>
@@ -90,7 +107,14 @@
       <div v-if="uploadFile" class="ivs-file"><i class="mdi mdi-file-music" aria-hidden="true"></i><div><strong>{{ uploadFile.name }}</strong><small>{{ copy.ready }}</small></div><button type="button" :disabled="!!busyKey" :aria-label="copy.remove" @click="setFile(null)"><i class="mdi mdi-close" aria-hidden="true"></i></button></div>
       <div v-if="uploadUrl" class="ivs-upload-preview"><strong>{{ copy.preview }}</strong><VoiceAudioPreview :src="uploadUrl" :label="uploadFile?.name || copy.preview" :active="activePlayer === 'upload-preview'" @play="onPlay('upload-preview')" /></div>
       <p class="ivs-notice">{{ uploadMode === 'replace' ? copy.replaceHint : capabilities.multiple_voices ? copy.keepSelection : '' }}</p>
-      <template #footer><button type="button" class="ivs-button" :disabled="!!busyKey" @click="closeDialog">{{ copy.cancel }}</button><button type="submit" class="ivs-button ivs-primary ivs-submit" :disabled="!canUpload"><i class="mdi" :class="busyKey ? 'mdi-loading mdi-spin' : 'mdi-upload'" aria-hidden="true"></i>{{ busyKey ? copy.saving : uploadMode === 'replace' ? copy.replace : copy.upload }}</button></template>
+      <template #footer><button type="button" class="ivs-button" :disabled="!!busyKey" @click="closeDialog">{{ copy.cancel }}</button><button type="submit" class="ivs-button ivs-primary ivs-submit" :disabled="!canUpload"><i class="mdi" :class="busyKey ? 'mdi-loading mdi-spin' : 'mdi-upload'" aria-hidden="true"></i>{{ busyKey ? copy.saving : uploadMode === 'replace' ? copy.replace : copy.add }}</button></template>
+    </VoiceDialog>
+
+    <VoiceDialog v-if="dialog === 'delete' && deleteTarget" :title="copy.deleteVoice" :busy="!!busyKey" @close="closeDialog" @submit="deleteVoice">
+      <p class="ivs-delete-confirm">{{ copy.deleteConfirm.replace('{voice}', voiceTitle(deleteTarget)) }}</p>
+      <p v-if="formError" class="ivs-notice ivs-error" role="alert">{{ formError }}</p>
+      <p class="ivs-notice">{{ copy.deleteHelp }}</p>
+      <template #footer><button type="button" class="ivs-button" :disabled="!!busyKey" @click="closeDialog">{{ copy.cancel }}</button><button type="submit" class="ivs-button ivs-danger" :disabled="!!busyKey"><i class="mdi" :class="busyKey ? 'mdi-loading mdi-spin' : 'mdi-delete'" aria-hidden="true"></i>{{ busyKey ? copy.deleting : copy.deleteVoice }}</button></template>
     </VoiceDialog>
   </section>
 </template>
@@ -101,13 +125,14 @@ import type { Voice, Language } from '../types/viewModels'
 import { SUPPORTED_LANGUAGES } from '../types/viewModels'
 import type { AudioVersion, ItemVoiceList, ItemVoiceRecord, VoicePreset } from '../types/itemVoices'
 import { legacyVoiceCapabilities } from '../types/itemVoices'
-import { generateItemVoice, listItemVoices, listVoicePresets, optimizeItemVoice, selectItemVoice, uploadItemVoice } from '../api/itemVoicesClient'
+import { deleteItemVoice, generateItemVoice, listItemVoices, listVoicePresets, optimizeItemVoice, selectItemVoice, uploadItemVoice } from '../api/itemVoicesClient'
 import { invalidateItemDetail } from '../api/cache'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import { itemVoiceCopy } from '../utils/itemVoiceCopy'
 import { selectedVoice, validateAudioFile, voiceErrorMessage, voiceTitle, voiceSelectionId } from '../utils/itemVoices'
 import { langFlag, langLabel } from '../utils/voiceLabels'
 import ItemVoiceCard from './ItemVoiceCard.vue'
+import MobileActionsMenu, { type MobileAction } from './MobileActionsMenu.vue'
 import VoiceDialog from './VoiceDialog.vue'
 import VoiceAudioPreview from './VoiceAudioPreview.vue'
 
@@ -127,6 +152,28 @@ const formats = computed(() => capabilities.value.upload_formats.length ? capabi
 const formatsLabel = computed(() => formats.value.map((format) => format.toUpperCase()).join(', '))
 const acceptedFormats = computed(() => formats.value.map((format) => `.${format}`).join(','))
 const expanded = ref(new Set<Language>([language.value]))
+const voiceActions = computed<MobileAction[]>(() => [
+  {
+    label: copy.value.add,
+    icon: 'mdi-plus',
+    tone: 'primary',
+    disabled: busy.value,
+    onClick: () => openUpload(language.value),
+  },
+  {
+    label: copy.value.generate,
+    icon: 'mdi-auto-fix',
+    tone: 'regenerate',
+    disabled: busy.value,
+    onClick: () => openGenerate(language.value),
+  },
+  {
+    label: expanded.value.size ? copy.value.collapse : copy.value.expand,
+    icon: expanded.value.size ? 'mdi-chevron-up' : 'mdi-chevron-down',
+    tone: 'primary',
+    onClick: toggleAll,
+  },
+])
 const activePlayer = ref<string | null>(null)
 const revision = ref(0)
 const groups = computed(() => SUPPORTED_LANGUAGES.map((language) => {
@@ -188,15 +235,17 @@ function baseVoiceLabel(language: Language): string {
   return voice ? `${voice.provider} / ${voice.parameters?.actor || voice.parameters?.voice}` : copy.value.currentConfig
 }
 
-const dialog = ref<'upload' | 'generate' | null>(null)
+const dialog = ref<'upload' | 'generate' | 'delete' | null>(null)
 const formLanguage = ref<Language>('en')
 const formError = ref('')
+const deleteTarget = ref<ItemVoiceRecord | null>(null)
 function closeDialog(): void {
   if (busyKey.value) return
   presetController?.abort()
   dialog.value = null
   formError.value = ''
   activePlayer.value = null
+  deleteTarget.value = null
   setFile(null)
 }
 
@@ -237,6 +286,16 @@ function select(voice: ItemVoiceRecord, version: AudioVersion): void {
   const voiceId = voiceSelectionId(voice, version)
   if (!capabilities.value.select || !voiceId) return
   void mutate(`select:${voice.id}`, () => selectItemVoice(props.categoryId, props.itemId, voiceId, voice.language), copy.value.selectedSuccess)
+}
+function openDelete(voice: ItemVoiceRecord): void {
+  if (busy.value) return
+  deleteTarget.value = voice
+  dialog.value = 'delete'
+}
+function deleteVoice(): void {
+  const voice = deleteTarget.value
+  if (!voice) return
+  void mutate(`delete:${voice.id}`, () => deleteItemVoice(props.categoryId, props.itemId, voice.id), copy.value.deletedSuccess)
 }
 
 const availablePresets = ref<VoicePreset[]>([])
@@ -311,12 +370,18 @@ const uploadFile = ref<File | null>(null)
 const uploadUrl = ref('')
 const uploadDragging = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
+const languageFileInput = ref<HTMLInputElement | null>(null)
+const languageFileInputLanguage = ref<Language | null>(null)
 const uploadVoices = computed(() => groups.value.find((group) => group.language === formLanguage.value)?.voices || [])
 const cannotAdd = computed(() => uploadMode.value === 'add' && !capabilities.value.multiple_voices && uploadVoices.value.length > 0)
 const canUpload = computed(() => !busy.value && !!uploadFile.value && !cannotAdd.value && (uploadMode.value === 'add' || uploadVoices.value.some((voice) => voice.id === uploadTarget.value)))
 watch(formLanguage, () => {
   uploadTarget.value = uploadVoices.value[0]?.id || ''
   if (!uploadVoices.value.length) uploadMode.value = 'add'
+  if (dialog.value === 'generate') {
+    generationText.value = data.value?.name[formLanguage.value] || ''
+    void loadPresets()
+  }
 }, { flush: 'sync' })
 function setFile(file: File | null): void {
   if (uploadUrl.value) URL.revokeObjectURL(uploadUrl.value)
@@ -341,6 +406,41 @@ function pickFile(event: Event): void {
   input.value = ''
 }
 function onUploadDrop(event: DragEvent): void { uploadDragging.value = false; acceptFiles(event.dataTransfer?.files || null) }
+function chooseLanguageFile(language: Language): void {
+  if (busy.value) return
+  languageFileInputLanguage.value = language
+  if (languageFileInput.value) languageFileInput.value.value = ''
+  languageFileInput.value?.click()
+}
+function pickLanguageFile(event: Event): void {
+  const input = event.target as HTMLInputElement
+  const language = languageFileInputLanguage.value
+  const files = input.files
+  input.value = ''
+  if (language) void uploadLanguageFiles(language, files)
+}
+async function uploadLanguageFiles(language: Language, files: FileList | null): Promise<void> {
+  if (busy.value || !files?.length) return
+  if (files.length > 1) {
+    notice.value = { text: copy.value.oneFile, error: true }
+    return
+  }
+  const file = files[0]
+  const error = validateAudioFile(file, formats.value)
+  if (error) {
+    notice.value = {
+      text: error === 'empty' ? copy.value.emptyFile : `${copy.value.invalidFile} ${formatsLabel.value}`,
+      error: true,
+    }
+    return
+  }
+  expanded.value = new Set([...expanded.value, language])
+  await mutate(
+    `upload-language:${language}`,
+    () => uploadItemVoice(props.categoryId, props.itemId, language, file),
+    copy.value.saved,
+  )
+}
 function openUpload(language: Language, voiceId?: string, files?: FileList): void {
   if (busy.value) return
   formLanguage.value = language
@@ -369,7 +469,7 @@ function leaveLanguageDrop(event: DragEvent): void {
 }
 function dropInLanguage(event: DragEvent, language: Language): void {
   dragLanguage.value = null
-  if (event.dataTransfer?.files.length) openUpload(language, undefined, event.dataTransfer.files)
+  if (event.dataTransfer?.files.length) void uploadLanguageFiles(language, event.dataTransfer.files)
 }
 void load()
 onBeforeUnmount(() => {
@@ -383,13 +483,21 @@ onBeforeUnmount(() => {
 <style scoped>
 .ivs { container-type: inline-size; container-name: voices; color: #111a3d; border: 1px solid #e6eaf4; border-radius: 10px; background: #fff; padding: 1.35rem; margin-bottom: 1rem; box-shadow: 0 4px 18px #19264d0a; }
 .ivs-header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
-.ivs-header h2 { font-size: 1.45rem; font-weight: 700; margin: 0 0 .35rem; }
-.ivs-header p { color: #63708c; font-size: .87rem; margin: 0; line-height: 1.5; }
-.ivs-summary { display: flex; align-items: center; flex-wrap: wrap; gap: .8rem; font-size: .8rem; color: #63708c; }
+.ivs-header h2 { color: #111a3d; font-size: 1.05rem; font-weight: 700; margin: 0; }
+.ivs-header h2 span { margin-left: .35rem; }
+.ivs-summary { display: flex; align-items: center; }
+.ivs-summary-buttons { display: none; gap: .55rem; }
+.ivs-action-button { white-space: nowrap; }
+.ivs-summary-action-primary { border: 1px solid #2563eb; background: #eef4ff; color: #2563eb; }
+.ivs-summary-action-regenerate { border: 1px solid #0f766e; background: #e6f4f3; color: #0f766e; }
+.ivs-summary-action-primary:hover,
+.ivs-summary-action-regenerate:hover { filter: brightness(.95); }
 .ivs-button { display: inline-flex; align-items: center; justify-content: center; gap: .4rem; border: 1px solid #818cf8; border-radius: 6px; background: white; color: #4f46e5; font-weight: 600; font-size: .8rem; padding: .5rem .85rem; min-height: 38px; cursor: pointer; line-height: 1.3; }
 .ivs-button:hover:not(:disabled) { background: #eef2ff; }
 .ivs-primary { background: #4f46e5; color: white; border-color: #4f46e5; }
 .ivs-primary:hover:not(:disabled) { background: #4338ca; }
+.ivs-danger { border-color: #ef4444; background: #ef4444; color: white; }
+.ivs-danger:hover:not(:disabled) { border-color: #dc2626; background: #dc2626; }
 .ivs-button:disabled { opacity: .5; cursor: default; }
 .ivs-button i { font-size: 1.1rem; }
 .ivs button { scroll-margin-top: 80px; }
@@ -403,25 +511,23 @@ onBeforeUnmount(() => {
 .ivs-count { white-space: nowrap; font-size: .75rem; color: #63708c; }
 .ivs-current { color: #24704f; font-size: .74rem; padding-left: .85rem; border-left: 1px solid #cddced; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ivs-no-selection { color: #64748b; }
-.ivs-group-actions { display: flex; gap: .55rem; }
 .ivs-group-body { border-top: 1px solid #dbe6f4; padding: .9rem; }
 .ivs-base { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; font-size: .78rem; margin-bottom: 1rem; }
 .ivs-base > span:first-child { color: #596984; }
 .ivs-base button { display: flex; justify-content: space-between; gap: 1.5rem; align-items: center; min-height: 36px; border: 1px solid #cbd8ec; border-radius: 6px; background: white; color: #334155; padding: .4rem .65rem; max-width: 100%; overflow-wrap: anywhere; }
 .ivs-spoken { margin-left: .65rem; overflow-wrap: anywhere; }
 .ivs-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch; gap: .9rem; }
-.ivs-drop { display: flex; width: 100%; align-items: center; justify-content: center; gap: .85rem; padding: 1rem; margin-top: 1rem; border: 1px dashed #93baf2; border-radius: 7px; background: #f5f9ff; color: #334155; cursor: pointer; }
-.ivs-drop > i { color: #4f46e5; font-size: 1.5rem; }
-.ivs-drop strong { display: block; font-size: .8rem; font-weight: 500; }
-.ivs-drop small { display: block; color: #63708c; margin-top: .2rem; }
-.ivs-drop u { color: #4f46e5; text-underline-offset: 3px; }
+.ivs-add-card { min-width: 0; min-height: 13rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .55rem; padding: 1rem; border: 1px dashed #93baf2; border-radius: 10px; background: #f8fbff; color: #334155; font: inherit; cursor: pointer; }
+.ivs-add-card > i { color: #4f46e5; font-size: 2rem; }
+.ivs-add-card strong { color: #173d86; font-size: 1rem; }
+.ivs-add-card span { max-width: 16rem; color: #63708c; font-size: .8rem; line-height: 1.45; }
+.ivs-add-card:hover:not(:disabled) { background: #f1f6ff; border-color: #4f46e5; }
+.ivs-add-card:disabled { cursor: default; opacity: .6; }
 .ivs-drop-active { background: #e0e7ff !important; outline: 2px dashed #4f46e5; outline-offset: -4px; }
-.ivs-help { display: flex; gap: .45rem; font-size: .76rem; color: #63708c; margin: 1rem 0 0; }
 .ivs-notice { display: flex; align-items: center; justify-content: space-between; gap: .65rem; border-radius: 7px; background: #eff6ff; color: #475569; padding: .8rem 1rem; font-size: .8rem; line-height: 1.5; margin: 0 0 1rem; }
 .ivs-notice:empty { display: none; }
 .ivs-notice > button:not(.ivs-button), .ivs-file > button { flex: none; display: grid; place-items: center; min-width: 36px; min-height: 36px; border: 0; background: transparent; color: inherit; border-radius: 5px; font-size: 1.2rem; cursor: pointer; }
 .ivs-error { background: #fff1f2; color: #9f1239; }
-.ivs-availability { background: #f8fafc; border: 1px solid #e2e8f0; }
 .ivs-demo { font-size: .74rem; justify-content: flex-start; }
 .ivs-empty, .ivs-loading { color: #64748b; text-align: center; padding: 1.5rem .5rem; font-size: .9rem; }
 .ivs-dialog-language { display: flex; align-items: center; gap: .8rem; background: #f1f7ff; padding: 1rem; border-radius: 7px; margin-bottom: 1.25rem; }
@@ -438,16 +544,13 @@ onBeforeUnmount(() => {
 .ivs-checkbox { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin: .5rem 0 0; font-size: .86rem; }
 .ivs-checkbox input { accent-color: #2f8f68; width: 22px; height: 22px; }
 .ivs-submit { flex: 1; min-height: 44px; }
-.ivs-mode { display: flex; background: #edf3fc; border: 1px solid #cbd8ec; border-radius: 6px; margin-bottom: 1.1rem; }
-.ivs-mode button { flex: 1; border: 0; border-radius: 5px; padding: .65rem; min-height: 44px; background: transparent; color: #536481; cursor: pointer; font-size: .85rem; }
-.ivs-mode button[aria-pressed="true"] { background: #4f46e5; color: white; }
-.ivs-mode button:disabled { opacity: .5; cursor: default; }
 .ivs-upload-drop { display: flex; flex-direction: column; align-items: center; gap: .55rem; text-align: center; border: 1px dashed #93baf2; padding: 1.5rem; background: #f8fbff; border-radius: 8px; }
 .ivs-upload-drop > i { color: #4f46e5; font-size: 2rem; }
 .ivs-upload-drop > span, .ivs-upload-drop small { color: #64748b; font-size: .8rem; }
 .ivs-file { display: flex; align-items: center; gap: .8rem; padding: .85rem; border-radius: 7px; background: #f1f7ff; margin-top: .8rem; }
 .ivs-file > i { font-size: 1.6rem; }
 .ivs-file > div { flex: 1; min-width: 0; font-size: .85rem; overflow-wrap: anywhere; }
+.ivs-delete-confirm { margin: 0 0 1rem; line-height: 1.5; }
 .ivs-upload-preview { margin: 1.2rem 0; font-size: .85rem; }
 .ivs-upload-preview > strong { display: block; margin-bottom: .6rem; }
 button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #a5b4fc; outline-offset: 2px; }
@@ -456,19 +559,19 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   .ivs-toggle { flex-basis: 15rem; }
   .ivs-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+@container voices (min-width: 48rem) {
+  .ivs-summary-buttons { display: flex; }
+  .ivs-summary-menu { display: none; }
+}
 @container voices (max-width: 42rem) {
   .ivs-cards { grid-template-columns: minmax(0, 1fr); }
-  .ivs-group-actions { width: 100%; }
-  .ivs-group-actions > button { flex: 1; }
   .ivs-group-body { padding: .65rem; }
   .ivs-spoken { width: 100%; margin: 0; }
-  .ivs-summary { width: 100%; justify-content: space-between; }
 }
 @media (max-width: 575px) {
   .ivs { padding: .8rem; }
   .ivs-header { gap: .8rem; }
   .ivs-header h2 { font-size: 1.3rem; }
-  .ivs-header p { font-size: .8rem; }
   .ivs-toggle { min-height: 44px; }
   .ivs-button { min-height: 44px; padding: .5rem .6rem; font-size: .76rem; }
   .ivs-base button { min-height: 44px; }

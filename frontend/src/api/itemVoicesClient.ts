@@ -21,6 +21,10 @@ export async function uploadItemVoice(categoryId: string, itemId: string, langua
     : (await client.post<ItemVoiceRecord>(url, body)).data
 }
 
+export async function deleteItemVoice(categoryId: string, itemId: string, voiceId: string): Promise<ItemVoiceRecord> {
+  return (await client.delete<ItemVoiceRecord>(`${path(categoryId, itemId)}/${encodeURIComponent(voiceId)}`)).data
+}
+
 // Proposed endpoints are called ONLY when the list response advertises their
 // capability. They are implemented by frontend MSW fixtures, not by the backend.
 export async function listVoicePresets(categoryId: string, itemId: string, language: Language, signal?: AbortSignal): Promise<VoicePreset[]> {

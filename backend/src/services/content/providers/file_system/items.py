@@ -382,8 +382,7 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             item_id: str,
             item_name: LocalizedString,
     ) -> ItemDetail:
-        category_name = self._folder_name_for_id(category_id)
-        category_path = self._category_path(category_name)
+        category_name, category_path = self._validate_category_path(category_id)
         self._resolve_item_path(category_path, category_name, item_id)
 
         index = self._read_csv_column(category_path / _ITEMS_IDS).index(item_id)
@@ -399,8 +398,7 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
                 f"Invalid item id '{new_item_id}': use only letters, digits and underscores.",
             )
 
-        category_name = self._folder_name_for_id(category_id)
-        category_path = self._category_path(category_name)
+        category_name, category_path = self._validate_category_path(category_id)
         self._resolve_item_path(category_path, category_name, item_id)
 
         # The item folder and its files are named after the English word, not the id, so
@@ -429,8 +427,7 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         return found
 
     def remove_item(self, category_id: str, item_id: str) -> RemoveItem:
-        category_name = self._folder_name_for_id(category_id)
-        category_path = self._category_path(category_name)
+        category_name, category_path = self._validate_category_path(category_id)
         _, item_path = self._resolve_item_path(category_path, category_name, item_id)
 
         index = self._read_csv_column(category_path / _ITEMS_IDS).index(item_id)
@@ -603,8 +600,7 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         )
 
     def delete_item_image(self, category_id: str, item_id: str, image_id: str) -> CategoryImage:
-        category_name = self._folder_name_for_id(category_id)
-        category_path = self._category_path(category_name)
+        category_name, category_path = self._validate_category_path(category_id)
         item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
 
         existing = self._find_item_image_by_id(item_path, image_id)
@@ -635,8 +631,7 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         return CategoryImage(id=image_id, file_uri=file_uri)
 
     def set_main_item_image(self, category_id: str, item_id: str, image_id: str) -> ItemImages:
-        category_name = self._folder_name_for_id(category_id)
-        category_path = self._category_path(category_name)
+        category_name, category_path = self._validate_category_path(category_id)
         item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
 
         target = self._find_item_image_by_id(item_path, image_id)
@@ -666,8 +661,7 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         return self.item_images(category_id, item_id)
 
     def set_main_item_voice(self, category_id: str, item_id: str, voice_id: str, language: str) -> ItemVoices:
-        category_name = self._folder_name_for_id(category_id)
-        category_path = self._category_path(category_name)
+        category_name, category_path = self._validate_category_path(category_id)
         item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
 
         if language not in settings.SUPPORTED_LANGUAGES:
@@ -708,8 +702,7 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         another variant. An optimizer that fails is reported in *warnings*; the run only
         fails outright when every optimizer does.
         """
-        category_name = self._folder_name_for_id(category_id)
-        category_path = self._category_path(category_name)
+        category_name, category_path = self._validate_category_path(category_id)
         item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
 
         language = self._language_for_item_voice_ref(item_folder_name, voice_id)
@@ -817,8 +810,7 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         return self._next_item_voice_variant_path(item_path, item_folder_name, language)
 
     def add_item_voice(self, category_id: str, item_id: str, language: str, audio_data: bytes) -> CategoryVoice:
-        category_name = self._folder_name_for_id(category_id)
-        category_path = self._category_path(category_name)
+        category_name, category_path = self._validate_category_path(category_id)
         item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
 
         if language not in settings.SUPPORTED_LANGUAGES:
@@ -847,8 +839,7 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         )
 
     def update_item_voice(self, category_id: str, item_id: str, voice_id: str, audio_data: bytes) -> CategoryVoice:
-        category_name = self._folder_name_for_id(category_id)
-        category_path = self._category_path(category_name)
+        category_name, category_path = self._validate_category_path(category_id)
         item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
 
         found = self._find_item_voice_file(item_path, item_folder_name, voice_id)
@@ -876,8 +867,7 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         )
 
     def delete_item_voice(self, category_id: str, item_id: str, voice_id: str) -> CategoryVoice:
-        category_name = self._folder_name_for_id(category_id)
-        category_path = self._category_path(category_name)
+        category_name, category_path = self._validate_category_path(category_id)
         item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
 
         found = self._find_item_voice_file(item_path, item_folder_name, voice_id)
@@ -899,8 +889,7 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         )
 
     def regenerate_item_voice(self, category_id: str, item_id: str, voice_id: str) -> CategoryVoice:
-        category_name = self._folder_name_for_id(category_id)
-        category_path = self._category_path(category_name)
+        category_name, category_path = self._validate_category_path(category_id)
         item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
 
         language = self._language_for_item_voice_id(item_folder_name, voice_id)
