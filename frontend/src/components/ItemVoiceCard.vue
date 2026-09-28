@@ -43,10 +43,9 @@
       <button type="button" class="iv-button iv-select" :class="{ 'iv-is-selected': selectedVersion }"
         :disabled="busy || selectedVersion || !canSelect" :title="!selectedVersion && !canSelect ? copy.selectUnavailable : undefined"
         @click="$emit('select', version)">
-        <i class="mdi mdi-check" aria-hidden="true"></i>{{ selectedVersion ? `${copy.selected} ${langLabel(voice.language)}` : copy.use }}
+        <i class="mdi mdi-check" aria-hidden="true"></i>{{ selectedVersion ? `${copy.selected} ${langLabel(voice.language, language)}` : copy.use }}
       </button>
     </div>
-    <button type="button" class="iv-drop" :disabled="busy" @click="$emit('replace')"><i class="mdi mdi-upload" aria-hidden="true"></i>{{ copy.dropReplace }}</button>
   </article>
 </template>
 
@@ -141,13 +140,12 @@ function onDrop(event: DragEvent): void {
 .iv-select { background: #4f46e5; color: white; }
 .iv-is-selected, .iv-is-selected:disabled { background: #e1f2eb; border-color: #e1f2eb; color: #24704f; opacity: 1; }
 .iv-button:disabled:not(.iv-is-selected), .iv-card-action:disabled { opacity: .5; cursor: default; }
-.iv-drop { display: flex; justify-content: center; gap: .5rem; align-items: center; color: #596984; border: 1px dashed #a5b4fc; border-radius: 6px; background: transparent; min-height: 36px; font-size: .75rem; cursor: pointer; }
 button:focus-visible, summary:focus-visible { outline: 3px solid #a5b4fc; outline-offset: 2px; }
 @media (max-width: 575px) {
   .iv-card { padding: .8rem; gap: .8rem; }
   .iv-card-selected { padding: calc(.8rem - 1px); }
   .iv-card-action { width: 2.75rem; height: 2.75rem; }
-  .iv-button, .iv-drop, .iv-versions button { min-height: 44px; }
+  .iv-button, .iv-versions button { min-height: 44px; }
   .iv-details summary { padding: .5rem 0; }
 }
 </style>

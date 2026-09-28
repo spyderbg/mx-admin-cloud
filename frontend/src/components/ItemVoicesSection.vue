@@ -28,12 +28,12 @@
     <div v-else-if="loadFailed" class="ivs-notice ivs-error" role="alert"><span>{{ copy.loadError }}</span><button type="button" class="ivs-button" @click="load()">{{ copy.retry }}</button></div>
     <template v-if="data">
       <div class="ivs-groups">
-        <section v-for="group in groups" :key="group.language" class="ivs-group" :aria-label="langLabel(group.language)">
+        <section v-for="group in groups" :key="group.language" class="ivs-group" :aria-label="langLabel(group.language, language)">
           <header class="ivs-group-header">
             <button type="button" class="ivs-toggle" :aria-expanded="expanded.has(group.language)" :aria-controls="`voices-${group.language}`" @click="toggleGroup(group.language)">
               <i :class="expanded.has(group.language) ? 'mdi mdi-chevron-down' : 'mdi mdi-chevron-right'" aria-hidden="true"></i>
               <i :class="`flag-icon flag-icon-${langFlag(group.language)}`" aria-hidden="true"></i>
-              <span class="ivs-language">{{ langLabel(group.language) }}</span>
+              <span class="ivs-language">{{ langLabel(group.language, language) }}</span>
               <span class="ivs-count">{{ group.voices.length }} {{ group.voices.length === 1 ? copy.voice : copy.voices }}</span>
               <span class="ivs-current" :class="{ 'ivs-no-selection': !group.selected }">{{ group.selected ? `${copy.inUse}: ${voiceTitle(group.selected)} · ${copy[group.selected.selected_version || 'original']}` : copy.noSelection }}</span>
             </button>
@@ -54,7 +54,7 @@
                 class="ivs-add-card"
                 :class="{ 'ivs-drop-active': dragLanguage === group.language }"
                 :disabled="busy"
-                :aria-label="`${copy.add}: ${langLabel(group.language)}`"
+                :aria-label="`${copy.add}: ${langLabel(group.language, language)}`"
                 @click="chooseLanguageFile(group.language)"
                 @dragover.prevent.stop="onLanguageDrag($event, group.language)"
                 @dragleave="leaveLanguageDrop($event)"
@@ -72,7 +72,7 @@
     </template>
 
     <VoiceDialog v-if="dialog === 'generate'" :title="copy.generate" :busy="!!busyKey" @close="closeDialog" @submit="generate">
-      <label class="ivs-field">{{ copy.language }}<select v-model="formLanguage" :disabled="!!busyKey"><option v-for="language in SUPPORTED_LANGUAGES" :key="language" :value="language">{{ langLabel(language) }}</option></select></label>
+      <label class="ivs-field">{{ copy.language }}<select v-model="formLanguage" :disabled="!!busyKey"><option v-for="optionLanguage in SUPPORTED_LANGUAGES" :key="optionLanguage" :value="optionLanguage">{{ langLabel(optionLanguage, language) }}</option></select></label>
       <p v-if="!capabilities.generate" class="ivs-notice">{{ copy.generationUnavailable }}</p>
       <div v-if="formError" class="ivs-notice ivs-error" role="alert">{{ formError }}<button v-if="presetsFailed" type="button" class="ivs-button" @click="loadPresets">{{ copy.retry }}</button></div>
       <label class="ivs-field">{{ copy.text }}<input v-model="generationText" required :disabled="!!busyKey || !capabilities.generate" /></label>
@@ -95,7 +95,7 @@
     </VoiceDialog>
 
     <VoiceDialog v-if="dialog === 'upload'" :title="uploadMode === 'replace' ? copy.replace : copy.add" :busy="!!busyKey" @close="closeDialog" @submit="upload">
-      <label class="ivs-field">{{ copy.language }}<select v-model="formLanguage" :disabled="!!busyKey"><option v-for="language in SUPPORTED_LANGUAGES" :key="language" :value="language">{{ langLabel(language) }}</option></select></label>
+      <label class="ivs-field">{{ copy.language }}<select v-model="formLanguage" :disabled="!!busyKey"><option v-for="optionLanguage in SUPPORTED_LANGUAGES" :key="optionLanguage" :value="optionLanguage">{{ langLabel(optionLanguage, language) }}</option></select></label>
       <label v-if="uploadMode === 'replace'" class="ivs-field">{{ copy.replaceTarget }}<select v-model="uploadTarget" required :disabled="!!busyKey"><option v-for="voice in uploadVoices" :key="voice.id" :value="voice.id">{{ voiceTitle(voice) }}</option></select></label>
       <p v-if="cannotAdd" class="ivs-notice">{{ copy.addUnavailable }}</p>
       <div v-if="formError" class="ivs-notice ivs-error" role="alert">{{ formError }}</div>
@@ -151,7 +151,7 @@ const capabilities = computed(() => ({ ...legacyVoiceCapabilities, ...data.value
 const formats = computed(() => capabilities.value.upload_formats.length ? capabilities.value.upload_formats : ['mp3'])
 const formatsLabel = computed(() => formats.value.map((format) => format.toUpperCase()).join(', '))
 const acceptedFormats = computed(() => formats.value.map((format) => `.${format}`).join(','))
-const expanded = ref(new Set<Language>([language.value]))
+const expanded = ref(new Set<Language>())
 const voiceActions = computed<MobileAction[]>(() => [
   {
     label: copy.value.add,
@@ -214,7 +214,7 @@ watch(identity, () => {
   data.value = null
   notice.value = null
   activePlayer.value = null
-  expanded.value = new Set([language.value])
+  expanded.value = new Set()
   chosenPresets.value = {}
   void load()
 })

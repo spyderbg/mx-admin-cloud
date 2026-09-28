@@ -3,11 +3,19 @@ import { test } from 'node:test'
 import { selectedVoice, voiceAudioUri, validateAudioFile, voiceSource, audioFileName, normalizeItemVoices, voiceSelectionId } from '../src/utils/itemVoices.ts'
 import { legacyVoiceCapabilities, type ItemVoiceRecord } from '../src/types/itemVoices.ts'
 import { cacheBustedUri } from '../src/utils/cacheBustedUri.ts'
+import { langLabel } from '../src/utils/voiceLabels.ts'
 
 const voice = (overrides: Partial<ItemVoiceRecord> = {}): ItemVoiceRecord => ({
   id: 'en-1', language: 'en', type: 'tts', file_uri: '/content/en.mp3', ...overrides,
 })
 const multi = { ...legacyVoiceCapabilities, multiple_voices: true, select: true }
+
+test('language names follow the globally selected display language', () => {
+  assert.deepEqual(['en', 'es', 'fr', 'bg'].map((lang) => langLabel(lang as 'en' | 'es' | 'fr' | 'bg', 'en')), ['English', 'Spanish', 'French', 'Bulgarian'])
+  assert.deepEqual(['en', 'es', 'fr', 'bg'].map((lang) => langLabel(lang as 'en' | 'es' | 'fr' | 'bg', 'es')), ['Inglés', 'Español', 'Francés', 'Búlgaro'])
+  assert.deepEqual(['en', 'es', 'fr', 'bg'].map((lang) => langLabel(lang as 'en' | 'es' | 'fr' | 'bg', 'fr')), ['Anglais', 'Espagnol', 'Français', 'Bulgare'])
+  assert.deepEqual(['en', 'es', 'fr', 'bg'].map((lang) => langLabel(lang as 'en' | 'es' | 'fr' | 'bg', 'bg')), ['Английски', 'Испански', 'Френски', 'Български'])
+})
 
 test('a legacy recording is already the active item voice, while an empty language is not', () => {
   const current = voice()

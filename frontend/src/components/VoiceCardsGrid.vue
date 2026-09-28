@@ -42,7 +42,7 @@
           <i class="mdi mdi-delete"></i>
         </button>
       </div>
-      <div class="voice-card-flag" :title="langLabel(voice.language)" :aria-label="langLabel(voice.language)">
+      <div class="voice-card-flag" :title="langLabel(voice.language, contentLanguage)" :aria-label="langLabel(voice.language, contentLanguage)">
         <i :class="'flag-icon flag-icon-' + langFlag(voice.language)"></i>
       </div>
       <ServerWord
