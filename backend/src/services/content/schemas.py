@@ -213,7 +213,7 @@ class UpdateItemBody(BaseModel):
 # region Items Response models
 
 class CreateItemResponse(BaseModel):
-    """Response for POST /content/categories/{category_id}/items (and legacy POST /content/items)."""
+    """Response for POST /content/categories/{category_id}/items."""
 
     category: str
     item: str

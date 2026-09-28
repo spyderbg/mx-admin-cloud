@@ -69,7 +69,7 @@ export interface CreateCategoryResponse {
     message: string
 }
 
-/** Response for POST /content/categories/{category_id}/items (and legacy POST /content/items). */
+/** Response for POST /content/categories/{category_id}/items. */
 export interface CreateItemResponse {
     category: string
     item: string

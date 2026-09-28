@@ -574,47 +574,6 @@ export const contentHandlers = [
     return HttpResponse.json({ ...toVoiceResponse(voice), action: 'delete' })
   }),
 
-  // Create a new content item
-  http.post('/api/v1/content/items', async ({ request }) => {
-    const form = await request.formData()
-    const categoryName = String(form.get('category') ?? '')
-    const itemName = String(form.get('item') ?? '')
-    const category = findCategory(categoryName)
-    if (!category || !itemName.trim()) return HttpResponse.json({ detail: 'Invalid category or item' }, { status: 422 })
-
-    const catSlug = slugify(category.name['en'] ?? '')
-    const folder = slugify(itemName)
-    const itemId = itemIdFromEnglishWord(itemName)
-    category.items.push({
-      id: itemId,
-      name: itemName,
-      images: [],
-      thumbnailUri: '',
-      voices: (['en', 'es', 'fr', 'bg'] as const).map((lang) => ({
-        id: `${folder}-v-${lang}`,
-        name: itemName,
-        language: lang,
-        type: lang === 'en' || lang === 'fr' ? 'male' : 'female',
-        fileUri: '',
-        provider: 'unknown',
-        parameters: {},
-      })),
-    })
-    return HttpResponse.json(
-      {
-        category: catSlug,
-        item: itemName,
-        folder,
-        image_id: itemId,
-        item_id: itemId,
-        voices_generated: [],
-        voice_warnings: [],
-        message: `Item '${itemName}' created.`,
-      },
-      { status: 201 },
-    )
-  }),
-
   // Create a new item in a category (translations + optional image; voices are backend-decided)
   http.post('/api/v1/content/categories/:category_id/items', async ({ params, request }) => {
     const category = findCategoryById(String(params.category_id))

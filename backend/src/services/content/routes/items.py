@@ -1,6 +1,4 @@
-"""Content API routes for items: the item itself, its images and its voices, plus the
-legacy POST /items creation endpoint.
-"""
+"""Content API routes for items: the item itself, its images and its voices."""
 
 from __future__ import annotations
 
@@ -42,7 +40,6 @@ from src.services.content.routes.common import (
     CATEGORY_ITEM_VOICES,
     CATEGORY_ITEM_VOICE_REGENERATE,
     ContentServiceDep,
-    ITEMS,
     TAG_ITEMS,
     TAG_ITEMS_IMAGES,
     TAG_ITEMS_VOICES,
@@ -121,7 +118,7 @@ def items_create(
     word = item.strip()
     if not word:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Item name is required")
-    image_data, ext = _read_image_upload(image, required=False)
+    image_data, ext = _read_image_upload(image)
     try:
         result = service.create_item_by_id(
             category_id,
@@ -641,48 +638,6 @@ def items_voices_regenerate(
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return _voice_response(result, "regenerate")
-
-
-# endregion
-
-# region Legacy item creation
-
-@router.post(
-    ITEMS,
-    response_model=CreateItemResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Create a new content item",
-    description=(
-            "Create a new content item with an image and associated voices, identified by "
-            "category folder name. Prefer 'POST /categories/{category_id}/items', which makes "
-            "the image optional. "
-            "The image must be in PNG, JPG, or JPEG format. "
-            "Voices are generated when an active text to speech provider exists; voice problems "
-            "are reported in 'voice_warnings' and never block creation. "
-            "Requires authentication."
-    ),
-)
-def create_item_endpoint(
-        service: ContentServiceDep,
-        voice_generation_available: VoiceGenerationAvailableDep,
-        image: UploadFile = File(...),  # pylint: disable=invalid-name
-        category: str = Form(...),
-        item: str = Form(...),
-        _user: dict = Depends(get_current_user),
-) -> CreateItemResponse:
-    """Create a new content item (image + voices)."""
-    image_data, ext = _read_image_upload(image, required=True)
-    try:
-        result = service.create_item(
-            category_name=category.strip(),
-            english_word=item.strip(),
-            image_data=image_data,
-            image_extension=ext,
-            generate_voices=voice_generation_available,
-        )
-    except ContentError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return _create_item_response(result, voice_generation_available)
 
 
 # endregion

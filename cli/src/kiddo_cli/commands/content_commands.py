@@ -9,6 +9,20 @@ from kiddo_cli.auth_flow import run_with_auth
 from kiddo_cli.output import print_error, print_json, print_request_error
 
 
+def _resolve_category_id(category: str, token: str) -> str | None:
+    """Return the id of the category matching *category* by id or English name, else None."""
+    categories = get("/content/categories", token=token).get("categories", [])
+    for entry in categories:
+        if entry.get("id") == category:
+            return entry["id"]
+    wanted = category.replace("_", " ").strip().lower()
+    for entry in categories:
+        english = (entry.get("name") or {}).get("en", "")
+        if english.replace("_", " ").strip().lower() == wanted:
+            return entry["id"]
+    return None
+
+
 def register(app: typer.Typer) -> None:
     """Register content commands on the given Typer app."""
 
@@ -99,24 +113,32 @@ def register(app: typer.Typer) -> None:
 
     @app.command("create-item")
     def create_item(
-            image_path: Path = typer.Option(..., "--image", help="Path to image file", path_type=Path),
-            category: str = typer.Option(..., "--category", help="Category name"),
+            category: str = typer.Option(..., "--category", help="Category id (e.g. C_Foods) or name (e.g. foods)"),
             item: str = typer.Option(..., "--item", help="English word for the item"),
+            image_path: Path | None = typer.Option(None, "--image", help="Path to image file (optional)", path_type=Path),
             url: str = typer.Option(None, "--url", help="Backend base URL"),
             token: str | None = typer.Option(None, "--token", help="Bearer token (else auth via CLI socket)"),
     ):
         """Create a new content item (calls backend API)."""
-        if not image_path.exists() or not image_path.is_file():
+        if image_path is not None and (not image_path.exists() or not image_path.is_file()):
             print_error("Image file not found", str(image_path))
             raise typer.Exit(1)
 
         def run(t: str):
             try:
-                with open(image_path, "rb") as f:
-                    files = {"image": (image_path.name, f, "application/octet-stream")}
-                    data = {"category": category, "item": item}
-                    result = post("/content/items", data=data, files=files, token=t, timeout=120)
-                    print_json(result)
+                category_id = _resolve_category_id(category, t)
+                if category_id is None:
+                    print_error("Category not found", category)
+                    raise typer.Exit(1)
+                data = {"item": item}
+                path = f"/content/categories/{category_id}/items"
+                if image_path is None:
+                    result = post(path, data=data, token=t, timeout=120)
+                else:
+                    with open(image_path, "rb") as f:
+                        files = {"image": (image_path.name, f, "application/octet-stream")}
+                        result = post(path, data=data, files=files, token=t, timeout=120)
+                print_json(result)
             except requests.RequestException as e:
                 print_request_error(e)
                 raise typer.Exit(1)

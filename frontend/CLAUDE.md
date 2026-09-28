@@ -66,8 +66,8 @@ Layering for content/categories:
 
 Mutation routes (category rename/icon/voices, item create, item images/voices) are implemented on the backend and
 exposed in `contentClient.ts`. Components call them directly and then refresh via `cache.ts`'s
-`invalidate…` + `ensure…` pair — see `CategoryDetail.vue` (icon/voice mutations), `CategoriesView.vue` ("Add New
-Item" → `createItemEndpoint`), and `ItemDetailsView.vue` (item file/voice mutations) for the pattern to follow for
+`invalidate…` + `ensure…` pair — see `CategoryDetail.vue` (icon/voice mutations), `AddItemModal.vue` ("Add New
+Item" → `itemsCreate`), and `ItemDetailsView.vue` (item file/voice mutations) for the pattern to follow for
 any new mutation. `src/data/mockData.ts` is only consumed by `src/mocks/contentHandlers.ts` (MSW fixtures) — `cache.ts`
 has no mock fallback at runtime.
 

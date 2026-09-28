@@ -48,20 +48,16 @@ CATEGORY_ITEM_VOICES = "/categories/{category_id}/items/{item_id}/voices"
 CATEGORY_ITEM_VOICE = "/categories/{category_id}/items/{item_id}/voices/{voice_id}"
 CATEGORY_ITEM_VOICE_REGENERATE = "/categories/{category_id}/items/{item_id}/voices/{voice_id}/regenerate"
 
-ITEMS = "/items"
-
 NO_VOICE_GENERATORS_WARNING = "No active voice generators configured; voices were not generated."
 
 
-def _read_image_upload(image: UploadFile | None, *, required: bool) -> tuple[bytes | None, str]:
+def _read_image_upload(image: UploadFile | None) -> tuple[bytes | None, str]:
     """Return (bytes, extension) for an uploaded image, or (None, ".png") when none was sent.
 
     An absent file may arrive as None or as an UploadFile with an empty filename, depending
-    on the client. Raises 400 when the file is required but missing, or when it is empty.
+    on the client. Raises 400 when the file is empty.
     """
     if image is None or not image.filename:
-        if required:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Image file is required")
         return None, ".png"
     image_data = image.file.read()
     if not image_data:

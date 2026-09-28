@@ -199,7 +199,7 @@ Base URL for all routes below: `/api/v1`. Protected routes require `Authorizatio
 | `PUT`    | [/content/categories/{name}](src/services/content/routes/categories.py)  | Yes  | Update category name or description. **Stub (501).**                             |
 | `PATCH`  | [/content/categories/{name}](src/services/content/routes/categories.py)  | Yes  | Rename category. Body: `{"name": "..."}`.                                        |
 | `DELETE` | [/content/categories/{name}](src/services/content/routes/categories.py)  | Yes  | Remove category by id or folder name. Archives if `ARCHIVE_DIR` set; else deletes. |
-| `POST`   | [/content/items](src/services/content/routes/items.py)              | Yes  | Create a content item. Multipart: `image`, `category`, `item`. Returns 201.      |
+| `POST`   | [/content/categories/{id}/items](src/services/content/routes/items.py) | Yes  | Create an item in a category. Multipart: `item`, optional `image`. Returns 201; 404 unknown category, 409 existing item. |
 
 #### Category Voices (stub — 501)
 
@@ -907,8 +907,8 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/jso
 
 # Create item (multipart)
 curl -X POST -H "Authorization: Bearer $TOKEN" \
-  -F "image=@./pic.png" -F "category=foods" -F "item=apple pie" \
-  http://localhost:8000/api/v1/content/items
+  -F "image=@./pic.png" -F "item=apple pie" \
+  http://localhost:8000/api/v1/content/categories/C_Foods/items
 
 # List generators — admin JWT satisfies require_internal
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/internal/generators/

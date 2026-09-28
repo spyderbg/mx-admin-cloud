@@ -216,24 +216,6 @@ class ContentService(Service):  # pylint: disable=too-many-public-methods
         """Return voice files for a specific item via the active provider."""
         return self._select_provider().item_voices(category_id, item_id)
 
-    def create_item(
-            self,
-            category_name: str,
-            english_word: str,
-            image_data: bytes | None = None,
-            image_extension: str = ".png",
-            generate_voices: bool = True,
-    ) -> CreateItem:
-        """Create a content item via the active provider, looked up by category folder name."""
-        provider = self._select_provider()
-        return provider.create_item(
-            provider.category_id_by_name(category_name),
-            english_word,
-            image_data,
-            image_extension,
-            generate_voices=generate_voices,
-        )
-
     def create_item_by_id(
             self,
             category_id: str,

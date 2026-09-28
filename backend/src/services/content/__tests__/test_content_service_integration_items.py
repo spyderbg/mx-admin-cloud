@@ -27,126 +27,6 @@ from src.services.content.__tests__.content_http_helpers import PNG_BYTES, StubC
 
 
 # ---------------------------------------------------------------------------
-# POST /api/v1/content/items  (multipart form)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_create_item_returns_201(client: AsyncClient) -> None:
-    response = await client.post(
-        "/api/v1/content/items",
-        files={"image": ("apple.png", PNG_BYTES, "image/png")},
-        data={"category": "foods", "item": "apple"},
-    )
-    assert response.status_code == 201
-    body = response.json()
-    assert body["category"] == "foods"
-    assert body["item"] == "apple"
-    assert body["folder"] == "apple"
-    assert body["image_id"] == "I_Apple"
-
-
-@pytest.mark.asyncio
-async def test_create_item_strips_whitespace(tmp_resolved: Path) -> None:
-    seen: list[tuple[str, str]] = []
-
-    class _TrackingProvider(StubContentProvider):
-        def create_item(self, category_id, english_word, image_data=None, image_extension=".png", generate_voices=True):
-            seen.append((category_id, english_word))
-            return CreateItem(
-                category=category_id,
-                item=english_word,
-                folder=english_word.lower(),
-                image_id=f"I_{english_word.title()}",
-            )
-
-    app = make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        await c.post(
-            "/api/v1/content/items",
-            files={"image": ("a.png", PNG_BYTES, "image/png")},
-            data={"category": "  foods  ", "item": "  apple  "},
-        )
-    assert seen == [("foods", "apple")]
-
-
-@pytest.mark.asyncio
-async def test_create_item_picks_correct_extension(tmp_resolved: Path) -> None:
-    seen_ext: list[str] = []
-
-    class _ExtProvider(StubContentProvider):
-        def create_item(self, category_id, english_word, image_data=None, image_extension=".png", generate_voices=True):
-            seen_ext.append(image_extension)
-            return CreateItem(category=category_id, item=english_word, folder=english_word, image_id="X")
-
-    app = make_app(_ExtProvider(tmp_resolved), tmp_resolved)
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        await c.post(
-            "/api/v1/content/items",
-            files={"image": ("photo.JPEG", b"data", "image/jpeg")},
-            data={"category": "foods", "item": "apple"},
-        )
-    assert seen_ext == [".jpeg"]
-
-
-@pytest.mark.asyncio
-async def test_create_item_defaults_unknown_extension_to_png(tmp_resolved: Path) -> None:
-    seen_ext: list[str] = []
-
-    class _ExtProvider(StubContentProvider):
-        def create_item(self, category_id, english_word, image_data=None, image_extension=".png", generate_voices=True):
-            seen_ext.append(image_extension)
-            return CreateItem(category=category_id, item=english_word, folder=english_word, image_id="X")
-
-    app = make_app(_ExtProvider(tmp_resolved), tmp_resolved)
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        await c.post(
-            "/api/v1/content/items",
-            files={"image": ("photo.bmp", b"data", "image/bmp")},
-            data={"category": "foods", "item": "apple"},
-        )
-    assert seen_ext == [".png"]
-
-
-@pytest.mark.asyncio
-async def test_create_item_missing_filename_returns_error(client: AsyncClient) -> None:
-    # httpx with an empty filename string sends no Content-Disposition filename,
-    # which FastAPI's multipart parser rejects with 422 before reaching the handler.
-    response = await client.post(
-        "/api/v1/content/items",
-        files={"image": ("", PNG_BYTES, "image/png")},
-        data={"category": "foods", "item": "apple"},
-    )
-    assert response.status_code in (400, 422)
-
-
-@pytest.mark.asyncio
-async def test_create_item_service_error_returns_400(tmp_resolved: Path) -> None:
-    provider = StubContentProvider(tmp_resolved).raises(
-        "create_item", CategoryConflictError("Item folder already exists: apple")
-    )
-    app = make_app(provider, tmp_resolved)
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        response = await c.post(
-            "/api/v1/content/items",
-            files={"image": ("apple.png", PNG_BYTES, "image/png")},
-            data={"category": "foods", "item": "apple"},
-        )
-    assert response.status_code == 400
-    assert "already exists" in response.json()["detail"]
-
-
-@pytest.mark.asyncio
-async def test_create_item_requires_auth(client_no_auth: AsyncClient) -> None:
-    response = await client_no_auth.post(
-        "/api/v1/content/items",
-        files={"image": ("a.png", PNG_BYTES, "image/png")},
-        data={"category": "foods", "item": "apple"},
-    )
-    assert response.status_code == 401
-
-
-# ---------------------------------------------------------------------------
 # POST /api/v1/content/categories/{category_id}/items  (multipart form)
 # ---------------------------------------------------------------------------
 
@@ -201,6 +81,22 @@ async def test_items_create_picks_image_extension(tmp_resolved: Path) -> None:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         await c.post(_ITEMS_URL, files={"image": ("photo.JPEG", b"data", "image/jpeg")}, data={"item": "apple"})
     assert seen == [(b"data", ".jpeg")]
+
+
+@pytest.mark.asyncio
+async def test_items_create_defaults_unknown_extension_to_png(tmp_resolved: Path) -> None:
+    seen: list[str] = []
+
+    class _TrackingProvider(StubContentProvider):
+        def create_item(self, category_id, english_word, image_data=None, image_extension=".png", generate_voices=True):
+            seen.append(image_extension)
+            return CreateItem(category="foods", item=english_word, folder="apple", image_id="I_Apple",
+                              item_id="I_Apple")
+
+    app = make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        await c.post(_ITEMS_URL, files={"image": ("photo.bmp", b"data", "image/bmp")}, data={"item": "apple"})
+    assert seen == [".png"]
 
 
 @pytest.mark.asyncio

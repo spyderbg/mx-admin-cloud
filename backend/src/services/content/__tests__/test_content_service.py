@@ -637,21 +637,6 @@ def test_create_category_delegates(tmp_path: Path) -> None:
     assert stub.calls["create_category"] == [("animals",)]
 
 
-def test_create_item_delegates(tmp_path: Path) -> None:
-    stub = _StubProvider(tmp_path)
-    svc = _make_service(tmp_path, [stub])
-    result = svc.create_item("foods", "apple", b"\x89PNG", ".png")
-    assert result.item == "apple"
-    assert stub.calls["create_item"] == [("foods", "apple", b"\x89PNG", ".png", True)]
-
-
-def test_create_item_passes_generate_voices_flag(tmp_path: Path) -> None:
-    stub = _StubProvider(tmp_path)
-    svc = _make_service(tmp_path, [stub])
-    svc.create_item("foods", "apple", None, ".png", generate_voices=False)
-    assert stub.calls["create_item"] == [("foods", "apple", None, ".png", False)]
-
-
 def test_create_item_by_id_delegates_without_name_lookup(tmp_path: Path) -> None:
     stub = _StubProvider(tmp_path)
     svc = _make_service(tmp_path, [stub])
