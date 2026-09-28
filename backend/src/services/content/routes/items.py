@@ -28,6 +28,7 @@ from src.services.content.schemas import (
     ItemListResponse,
     ItemSummary,
     ItemVoicesResponse,
+    OptimizeItemVoiceResponse,
     SetMainItemVoiceBody,
     UpdateItemBody,
     VoiceResponse,
@@ -40,6 +41,7 @@ from src.services.content.routes.common import (
     CATEGORY_ITEM_IMAGE_MAIN,
     CATEGORY_ITEM_VOICE,
     CATEGORY_ITEM_VOICE_MAIN,
+    CATEGORY_ITEM_VOICE_OPTIMIZE,
     CATEGORY_ITEM_VOICES,
     CATEGORY_ITEM_VOICE_REGENERATE,
     ContentServiceDep,
@@ -664,6 +666,60 @@ def items_voices_set_main(
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return _item_voices_response(item_id, item.name, voices_result)
+
+
+@router.post(
+    CATEGORY_ITEM_VOICE_OPTIMIZE,
+    response_model=OptimizeItemVoiceResponse,
+    status_code=status.HTTP_200_OK,
+    tags=[TAG_ITEMS_VOICES],
+    summary="Create optimized versions of an item voice",
+    description=(
+            "Run every active voice optimizer on the original recording of the voice identified by "
+            "voice_id (a per-language voice id or a variant id) and store each result as a new "
+            "variant of that language. The original is kept as a variant too, and the main voice "
+            "is not changed: select any of them with the set-main endpoint. Re-optimizing replaces "
+            "an optimizer's previous output. Optimizers that fail are reported in 'warnings'; the "
+            "request fails with 400 only when none is active or all of them fail. "
+            "Requires authentication."
+    ),
+)
+def items_voices_optimize(
+        category_id: str,
+        item_id: str,
+        voice_id: str,
+        service: ContentServiceDep,
+        _user: dict = Depends(get_current_user),
+) -> OptimizeItemVoiceResponse:
+    """Create one optimized variant of an item voice per active optimizer."""
+    try:
+        result = service.category_details_by_id(category_id)
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidCategoryNameError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+    item = next((i for i in result.items if i.id == item_id), None)
+    if item is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Item '{item_id}' not found in category '{category_id}'",
+        )
+    try:
+        optimized = service.optimize_item_voice(category_id, item_id, voice_id)
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidCategoryNameError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return OptimizeItemVoiceResponse(
+        **_item_voices_response(item_id, item.name, optimized).model_dump(),
+        source_voice_id=optimized.source_voice_id,
+        optimized_voice_ids=optimized.optimized_voice_ids,
+        warnings=optimized.warnings,
+    )
 
 
 @router.post(

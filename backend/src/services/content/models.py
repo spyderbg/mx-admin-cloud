@@ -158,6 +158,18 @@ class ItemVoices:
 
 
 @dataclass
+class OptimizedItemVoice(ItemVoices):
+    """Result of optimizing an item voice: the refreshed voice listing plus what was produced."""
+
+    #: Id of the original recording (a variant) the optimized versions were made from.
+    source_voice_id: str = ""
+    #: Ids of the variants written by this run, one per optimizer that succeeded.
+    optimized_voice_ids: list[str] = field(default_factory=list)
+    #: One message per active optimizer that failed; the others' results are kept.
+    warnings: list[str] = field(default_factory=list)
+
+
+@dataclass
 class CreateCategory:
     """Result of creating a new category."""
 
@@ -410,6 +422,10 @@ class ContentProvider(ServiceProvider, ABC):  # pylint: disable=too-many-public-
     @abstractmethod
     def set_main_item_voice(self, category_id: str, item_id: str, voice_id: str, language: str) -> ItemVoices:
         """Make the voice variant with the given voice_id the item's main voice for *language*."""
+
+    @abstractmethod
+    def optimize_item_voice(self, category_id: str, item_id: str, voice_id: str) -> OptimizedItemVoice:
+        """Create one optimized variant of an item voice per active voice optimizer, keeping the original."""
 
     @abstractmethod
     def add_item_voice(self, category_id: str, item_id: str, language: str, audio_data: bytes) -> CategoryVoice:

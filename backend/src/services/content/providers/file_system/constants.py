@@ -26,3 +26,4 @@ class VoiceCreationMethod(str, Enum):
 
     UPLOADED = "uploaded"
     GENERATED = "generated"
+    OPTIMIZED = "optimized"

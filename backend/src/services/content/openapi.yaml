@@ -512,6 +512,60 @@ components:
       - name
       title: ItemVoicesResponse
       description: Response for GET /categories/{name}/items/{item_id}/voices.
+    OptimizeItemVoiceResponse:
+      properties:
+        item_id:
+          type: string
+          title: Item Id
+        name:
+          additionalProperties:
+            type: string
+          type: object
+          title: Name
+          description: 'Language-code → translation map (e.g. {"en": "dog", "fr":
+            "chien"})'
+        voices:
+          items:
+            $ref: '#/components/schemas/VoiceResponse'
+          type: array
+          title: Voices
+          default: []
+        variants:
+          items:
+            $ref: '#/components/schemas/VoiceResponse'
+          type: array
+          title: Variants
+          default: []
+        main_voice_ids:
+          additionalProperties:
+            anyOf:
+            - type: string
+            - type: 'null'
+          type: object
+          title: Main Voice Ids
+          default: {}
+        source_voice_id:
+          type: string
+          title: Source Voice Id
+        optimized_voice_ids:
+          items:
+            type: string
+          type: array
+          title: Optimized Voice Ids
+          default: []
+        warnings:
+          items:
+            type: string
+          type: array
+          title: Warnings
+          default: []
+      type: object
+      required:
+      - item_id
+      - name
+      - source_voice_id
+      title: OptimizeItemVoiceResponse
+      description: Response for POST /categories/{category_id}/items/{item_id}/voices/{voice_id}/optimize.
     RemoveCategoryResponse:
       properties:
         archived:
@@ -1968,6 +2022,53 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ItemVoicesResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/content/categories/{category_id}/items/{item_id}/voices/{voice_id}/optimize:
+    post:
+      tags:
+      - Items Voices
+      summary: Create optimized versions of an item voice
+      description: 'Run every active voice optimizer on the original recording of the
+        voice identified by voice_id (a per-language voice id or a variant id) and store
+        each result as a new variant of that language. The original is kept as a variant
+        too, and the main voice is not changed: select any of them with the set-main
+        endpoint. Re-optimizing replaces an optimizer''s previous output. Optimizers
+        that fail are reported in ''warnings''; the request fails with 400 only when
+        none is active or all of them fail. Requires authentication.'
+      operationId: items_voices_optimize_api_v1_content_categories__category_id__items__item_id__voices__voice_id__optimize_post
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Item Id
+      - name: voice_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Voice Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OptimizeItemVoiceResponse'
         '422':
           description: Validation Error
           content:

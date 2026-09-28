@@ -274,6 +274,10 @@ class _StubProvider(ContentProvider):
         self._record("set_main_item_voice", category_id, item_id, voice_id, language)
         return self._returns.get("set_main_item_voice", {"item_id": item_id, "voices": [], "variants": []})
 
+    def optimize_item_voice(self, category_id: str, item_id: str, voice_id: str) -> dict[str, Any]:
+        self._record("optimize_item_voice", category_id, item_id, voice_id)
+        return self._returns.get("optimize_item_voice", {"item_id": item_id, "source_voice_id": voice_id})
+
     def add_item_voice(self, category_id: str, item_id: str, language: str, audio_data: bytes) -> dict[str, Any]:
         self._record("add_item_voice", category_id, item_id, language, audio_data)
         return self._returns.get("add_item_voice", {
@@ -436,6 +440,9 @@ class _ConcreteProvider(ContentProvider):
         return {}
 
     def set_main_item_voice(self, category_id, item_id, voice_id, language):
+        return {}
+
+    def optimize_item_voice(self, category_id, item_id, voice_id):
         return {}
 
     def add_item_voice(self, category_id, item_id, language, audio_data):
@@ -692,6 +699,14 @@ def test_set_main_item_voice_delegates(tmp_path: Path) -> None:
     result = svc.set_main_item_voice("C_Foods", "I_Apple", "apple_en_02", "en")
     assert result["item_id"] == "I_Apple"
     assert stub.calls["set_main_item_voice"] == [("C_Foods", "I_Apple", "apple_en_02", "en")]
+
+
+def test_optimize_item_voice_delegates(tmp_path: Path) -> None:
+    stub = _StubProvider(tmp_path)
+    svc = _make_service(tmp_path, [stub])
+    result = svc.optimize_item_voice("C_Foods", "I_Apple", "apple-v-en")
+    assert result["source_voice_id"] == "apple-v-en"
+    assert stub.calls["optimize_item_voice"] == [("C_Foods", "I_Apple", "apple-v-en")]
 
 
 def test_update_category_details_delegates(tmp_path: Path) -> None:

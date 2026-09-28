@@ -5,9 +5,7 @@
 from __future__ import annotations
 
 import base64
-import csv
 import json
-from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -29,6 +27,8 @@ from src.services.content.providers.file_system import (
 from src.services.content.__tests__.content_fs_helpers import (
     patch_fs_settings,
     make_fs_provider,
+    voice_metadata_normalized,
+    without_date,
     write_category_registry,
     write_item_registry,
 )
@@ -62,26 +62,6 @@ def _csv_rows(path: Path) -> list[str]:
     return FileSystemContentProvider._read_csv_column(path)
 
 
-def _voice_metadata(path: Path) -> dict[str, str]:
-    with path.open(encoding="utf-8", newline="") as file_handle:
-        return next(csv.DictReader(file_handle))
-
-
-def _without_date(parameters: dict[str, object]) -> dict[str, object]:
-    """Assert a 'date' stamp is present and ISO-formatted, then strip it for comparison."""
-    assert "date" in parameters
-    datetime.fromisoformat(str(parameters["date"]))
-    return {k: v for k, v in parameters.items() if k != "date"}
-
-
-def _voice_metadata_normalized(path: Path) -> dict[str, object]:
-    """Like _voice_metadata(), but with 'parameters' parsed and its 'date' stamp
-    replaced by a presence check, so callers can assert the rest exactly."""
-    row = _voice_metadata(path)
-    parameters = json.loads(row["parameters"])
-    return {**row, "parameters": _without_date(parameters)}
-
-
 def test_create_item_success_with_image(tmp_path: Path) -> None:
     content_root, category_path = _prepare_category(tmp_path)
     provider = make_fs_provider()
@@ -105,7 +85,7 @@ def test_create_item_success_with_image(tmp_path: Path) -> None:
     assert (item_path / "apple_01.png").read_bytes() == b"\x89PNG"
     assert (item_path / "apple_en.mp3").exists()
     assert (item_path / "apple_fr.mp3").exists()
-    assert _voice_metadata_normalized(item_path / "apple_en.csv") == {
+    assert voice_metadata_normalized(item_path / "apple_en.csv") == {
         "creation_method": "generated",
         "provider": "unknown",
         "parameters": {"_text": "apple"},
@@ -576,7 +556,7 @@ def test_item_voice_sidecar_tracks_upload_generation_provider_and_deletion(tmp_p
         provider.add_item_voice("C_Foods", "I_Apple", "en", b"uploaded audio")
 
         metadata_path = category_path / "apple" / "apple_en.csv"
-        assert _voice_metadata_normalized(metadata_path) == {
+        assert voice_metadata_normalized(metadata_path) == {
             "creation_method": "uploaded",
             "provider": "custom",
             "parameters": {},
@@ -603,7 +583,7 @@ def test_item_voice_sidecar_tracks_upload_generation_provider_and_deletion(tmp_p
         ):
             provider.regenerate_item_voice("C_Foods", "I_Apple", "apple-v-en")
 
-        assert _voice_metadata_normalized(metadata_path) == {
+        assert voice_metadata_normalized(metadata_path) == {
             "creation_method": "generated",
             "provider": "openai",
             "parameters": {**parameters, "_text": "apple"},
@@ -611,175 +591,6 @@ def test_item_voice_sidecar_tracks_upload_generation_provider_and_deletion(tmp_p
         provider.delete_item_voice("C_Foods", "I_Apple", "apple-v-en")
 
     assert not metadata_path.exists()
-
-
-# ---------------------------------------------------------------------------
-# item voice variants and set_main_item_voice
-# ---------------------------------------------------------------------------
-
-def _prepare_item_with_voices(tmp_path: Path, voices: dict[str, bytes]) -> tuple[Path, Path]:
-    """Write a Foods/Apple registry and *voices* ({stem: bytes}) as MP3s into the item folder."""
-    content_root = tmp_path / "content"
-    category_path = content_root / "foods"
-    write_category_registry(content_root, [("C_Foods", "Foods")])
-    write_item_registry(category_path, [("I_Apple", "apple")])
-    item_path = category_path / "apple"
-    for stem, data in voices.items():
-        (item_path / f"{stem}.mp3").write_bytes(data)
-    return content_root, item_path
-
-
-def test_item_voices_lists_variants_and_the_selected_main_per_language(tmp_path: Path) -> None:
-    content_root, _ = _prepare_item_with_voices(tmp_path, {
-        "apple_en": b"second-en",  # the English main voice is a copy of apple_en_02
-        "apple_en_01": b"first-en",
-        "apple_en_02": b"second-en",
-        "apple_fr": b"custom-fr",  # matches no variant
-        "apple_fr_01": b"first-fr",
-    })
-    provider = make_fs_provider()
-    with patch_fs_settings() as mock_settings:
-        mock_settings.content_path = content_root
-        mock_settings.SUPPORTED_LANGUAGES = ["en", "fr", "bg"]
-        result = provider.item_voices("C_Foods", "I_Apple")
-
-    assert [(v.id, v.file_uri) for v in result.voices] == [
-        ("apple-v-en", "/content/foods/apple/apple_en.mp3"),
-        ("apple-v-fr", "/content/foods/apple/apple_fr.mp3"),
-        ("apple-v-bg", None),
-    ]
-    assert [(v.id, v.language) for v in result.variants] == [
-        ("apple_en_01", "en"), ("apple_en_02", "en"), ("apple_fr_01", "fr"),
-    ]
-    assert result.main_voice_ids == {"en": "apple_en_02", "fr": None, "bg": None}
-
-
-def test_item_voices_without_main_uses_first_variant(tmp_path: Path) -> None:
-    content_root, _ = _prepare_item_with_voices(tmp_path, {"apple_en_01": b"first-en", "apple_en_02": b"second-en"})
-    provider = make_fs_provider()
-    with patch_fs_settings() as mock_settings:
-        mock_settings.content_path = content_root
-        mock_settings.SUPPORTED_LANGUAGES = ["en"]
-        result = provider.item_voices("C_Foods", "I_Apple")
-
-    assert result.voices[0].file_uri == "/content/foods/apple/apple_en_01.mp3"
-    assert result.main_voice_ids == {"en": "apple_en_01"}
-
-
-def test_set_main_item_voice_copies_the_variant_and_its_metadata_over_the_main_voice(tmp_path: Path) -> None:
-    content_root, item_path = _prepare_item_with_voices(tmp_path, {
-        "apple_en": b"main-en",
-        "apple_en_01": b"first-en",
-        "apple_en_02": b"second-en",
-    })
-    provider = make_fs_provider()
-    with patch_fs_settings() as mock_settings:
-        mock_settings.content_path = content_root
-        mock_settings.SUPPORTED_LANGUAGES = ["en"]
-        provider._write_voice_metadata(item_path / "apple_en.mp3", VoiceCreationMethod.UPLOADED, "custom")
-        provider._write_voice_metadata(
-            item_path / "apple_en_02.mp3", VoiceCreationMethod.GENERATED, "openai", {"actor": "alloy"},
-        )
-        result = provider.set_main_item_voice("C_Foods", "I_Apple", "apple_en_02", "en")
-
-    assert (item_path / "apple_en.mp3").read_bytes() == b"second-en"
-    # The variant is copied, never moved: every recording stays in the item.
-    assert (item_path / "apple_en_01.mp3").read_bytes() == b"first-en"
-    assert (item_path / "apple_en_02.mp3").read_bytes() == b"second-en"
-    assert (item_path / "apple_en.csv").read_text() == (item_path / "apple_en_02.csv").read_text()
-    assert result.main_voice_ids == {"en": "apple_en_02"}
-    assert [v.id for v in result.variants] == ["apple_en_01", "apple_en_02"]
-    assert result.voices[0].provider == "openai"
-
-
-def test_set_main_item_voice_drops_stale_metadata_when_the_variant_has_none(tmp_path: Path) -> None:
-    content_root, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"main-en", "apple_en_01": b"first-en"})
-    provider = make_fs_provider()
-    with patch_fs_settings() as mock_settings:
-        mock_settings.content_path = content_root
-        mock_settings.SUPPORTED_LANGUAGES = ["en"]
-        provider._write_voice_metadata(item_path / "apple_en.mp3", VoiceCreationMethod.UPLOADED, "custom")
-        provider.set_main_item_voice("C_Foods", "I_Apple", "apple_en_01", "en")
-
-    assert (item_path / "apple_en.mp3").read_bytes() == b"first-en"
-    assert not (item_path / "apple_en.csv").exists()
-
-
-def test_set_main_item_voice_with_no_existing_main_creates_it(tmp_path: Path) -> None:
-    content_root, item_path = _prepare_item_with_voices(tmp_path, {
-        "apple_en_01": b"first-en",
-        "apple_en_02": b"second-en",
-    })
-    provider = make_fs_provider()
-    with patch_fs_settings() as mock_settings:
-        mock_settings.content_path = content_root
-        mock_settings.SUPPORTED_LANGUAGES = ["en"]
-        result = provider.set_main_item_voice("C_Foods", "I_Apple", "apple_en_02", "en")
-
-    assert (item_path / "apple_en.mp3").read_bytes() == b"second-en"
-    assert result.voices[0].file_uri == "/content/foods/apple/apple_en.mp3"
-    assert result.main_voice_ids == {"en": "apple_en_02"}
-
-
-def test_set_main_item_voice_leaves_other_languages_untouched(tmp_path: Path) -> None:
-    content_root, item_path = _prepare_item_with_voices(tmp_path, {
-        "apple_en": b"main-en",
-        "apple_en_01": b"first-en",
-        "apple_fr": b"main-fr",
-        "apple_fr_01": b"first-fr",
-    })
-    provider = make_fs_provider()
-    with patch_fs_settings() as mock_settings:
-        mock_settings.content_path = content_root
-        mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
-        provider.set_main_item_voice("C_Foods", "I_Apple", "apple_fr_01", "fr")
-
-    assert (item_path / "apple_en.mp3").read_bytes() == b"main-en"
-    assert (item_path / "apple_fr.mp3").read_bytes() == b"first-fr"
-
-
-@pytest.mark.parametrize("voice_id", ["apple-v-en", "apple_en"])
-def test_set_main_item_voice_already_in_use_is_noop(tmp_path: Path, voice_id: str) -> None:
-    content_root, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"main-en", "apple_en_01": b"first-en"})
-    provider = make_fs_provider()
-    with patch_fs_settings() as mock_settings:
-        mock_settings.content_path = content_root
-        mock_settings.SUPPORTED_LANGUAGES = ["en"]
-        provider.set_main_item_voice("C_Foods", "I_Apple", voice_id, "en")
-
-    assert (item_path / "apple_en.mp3").read_bytes() == b"main-en"
-
-
-def test_set_main_item_voice_variant_of_another_language_is_not_found(tmp_path: Path) -> None:
-    content_root, _ = _prepare_item_with_voices(tmp_path, {"apple_en": b"main-en", "apple_fr_01": b"first-fr"})
-    provider = make_fs_provider()
-    with patch_fs_settings() as mock_settings:
-        mock_settings.content_path = content_root
-        mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
-        with pytest.raises(CategoryNotFoundError, match="language 'en'"):
-            provider.set_main_item_voice("C_Foods", "I_Apple", "apple_fr_01", "en")
-
-
-@pytest.mark.parametrize("voice_id", ["apple_en_99", "../apple_en_01", "apple-v-en"])
-def test_set_main_item_voice_not_found(tmp_path: Path, voice_id: str) -> None:
-    # "apple-v-en" is only a no-op when the language has a voice; here it has none.
-    content_root, _ = _prepare_item_with_voices(tmp_path, {})
-    provider = make_fs_provider()
-    with patch_fs_settings() as mock_settings:
-        mock_settings.content_path = content_root
-        mock_settings.SUPPORTED_LANGUAGES = ["en"]
-        with pytest.raises(CategoryNotFoundError):
-            provider.set_main_item_voice("C_Foods", "I_Apple", voice_id, "en")
-
-
-def test_set_main_item_voice_unsupported_language(tmp_path: Path) -> None:
-    content_root, _ = _prepare_item_with_voices(tmp_path, {"apple_en_01": b"first-en"})
-    provider = make_fs_provider()
-    with patch_fs_settings() as mock_settings:
-        mock_settings.content_path = content_root
-        mock_settings.SUPPORTED_LANGUAGES = ["en"]
-        with pytest.raises(ContentOperationError, match="Unsupported language"):
-            provider.set_main_item_voice("C_Foods", "I_Apple", "apple_en_01", "de")
 
 
 # ---------------------------------------------------------------------------
@@ -824,7 +635,7 @@ def test_regenerate_category_voice_uses_current_name_and_overwrites_file(tmp_pat
     assert (category_path / "foods_fr.mp3").read_bytes() == b"fresh"
     # _generate_audio is mocked to return plain bytes, so no provider/parameters attrs are carried.
     assert result.provider == "unknown"
-    assert _without_date(result.parameters) == {"_text": "Aliments"}
+    assert without_date(result.parameters) == {"_text": "Aliments"}
 
 
 def test_regenerate_category_voice_creates_missing_file_and_falls_back_to_english(tmp_path: Path) -> None:
@@ -895,7 +706,7 @@ def test_read_voice_metadata_reads_provider_and_parameters(tmp_path: Path) -> No
     provider = make_fs_provider()
     read_provider, parameters = provider._read_voice_metadata(voice_path)
     assert read_provider == "openai"
-    assert _without_date(parameters) == {"actor": "alloy"}
+    assert without_date(parameters) == {"actor": "alloy"}
 
 
 def test_read_voice_metadata_blank_provider_and_invalid_json_fall_back_to_defaults(tmp_path: Path) -> None:
@@ -925,7 +736,7 @@ def test_collect_voices_surfaces_provider_and_parameters(tmp_path: Path) -> None
     en_voice = next(v for v in voices if v.language == "en")
     fr_voice = next(v for v in voices if v.language == "fr")
     assert en_voice.provider == "speaktor"
-    assert _without_date(en_voice.parameters) == {"voice": "en-US-1"}
+    assert without_date(en_voice.parameters) == {"voice": "en-US-1"}
     # No file for 'fr' at all, let alone a metadata sidecar.
     assert fr_voice.provider == "unknown"
     assert fr_voice.parameters == {}
@@ -941,7 +752,7 @@ def test_add_category_voice_uploaded_has_custom_provider(tmp_path: Path) -> None
         result = provider.add_category_voice("C_Foods", "en", b"uploaded audio")
 
     assert result.provider == "custom"
-    assert _without_date(result.parameters) == {}
+    assert without_date(result.parameters) == {}
 
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 import { delay, http, HttpResponse } from 'msw'
 import { mockCategories } from '../data/mockData'
-import type { GenerateItemVoice, ItemVoiceList, ItemVoiceRecord, VoicePreset } from '../types/itemVoices'
+import type { GenerateItemVoice, ItemVoiceList, ItemVoiceListResponse, ItemVoiceRecord, VoicePreset } from '../types/itemVoices'
 import { SUPPORTED_LANGUAGES, type Language } from '../types/viewModels'
 
 // Frontend-only contract preview. No synthesis/optimization or disk writes occur.
@@ -34,13 +34,29 @@ function getList(categoryId: string, itemId: string): ItemVoiceList | undefined 
   if (english) {
     // Mock audio is intentionally reused; the UI explicitly labels this simulation.
     english.optimized_file_uri = `${english.file_uri}?preview=optimized`
+    english.optimized_voice_id = `${english.id}-optimized`
     english.selected_version = 'optimized'
-    voices.push({ ...english, id: `${english.id}-take-2`, display_name: 'Milena · Take 2', optimized_file_uri: null, is_selected: false, selected_version: 'original', parameters: { ...english.parameters, speed: .9 } })
-    voices.push({ ...english, id: `${english.id}-manual`, display_name: 'Manual recording', provider: 'custom', creation_method: 'uploaded', optimized_file_uri: null, is_selected: false, selected_version: 'original', parameters: { date: '2026-09-28T09:00:00Z' } })
+    voices.push({ ...english, id: `${english.id}-take-2`, display_name: 'Milena · Take 2', optimized_file_uri: null, optimized_voice_id: null, is_selected: false, selected_version: 'original', parameters: { ...english.parameters, speed: .9 } })
+    voices.push({ ...english, id: `${english.id}-manual`, display_name: 'Manual recording', provider: 'custom', creation_method: 'uploaded', optimized_file_uri: null, optimized_voice_id: null, is_selected: false, selected_version: 'original', parameters: { date: '2026-09-28T09:00:00Z' } })
   }
   const list = { item_id: itemId, name, voices, capabilities }
   records.set(key, list)
   return list
+}
+
+// Match the real list/main endpoint contract; inline optimized previews also
+// carry an explicit target ID so selection never silently selects the original.
+function listResponse(list: ItemVoiceList): ItemVoiceListResponse {
+  const selected = list.voices.filter((voice) => voice.is_selected && voice.file_uri)
+  return {
+    ...list,
+    voices: selected.map((voice) => ({ ...voice, file_uri: voice.selected_version === 'optimized' ? voice.optimized_file_uri : voice.file_uri })),
+    variants: list.voices,
+    main_voice_ids: Object.fromEntries(SUPPORTED_LANGUAGES.map((language) => {
+      const voice = selected.find((entry) => entry.language === language)
+      return [language, voice ? (voice.selected_version === 'optimized' ? voice.optimized_voice_id : voice.id) || null : null]
+    })),
+  }
 }
 
 const error = (detail: string, status = 400) => HttpResponse.json({ detail }, { status })
@@ -58,6 +74,7 @@ function replaceFile(voice: ItemVoiceRecord, file: File): void {
   uploadedUrls.add(url)
   voice.file_uri = url
   voice.optimized_file_uri = null
+  voice.optimized_voice_id = null
   voice.selected_version = 'original'
   voice.creation_method = 'uploaded'
   voice.provider = 'custom'
@@ -68,7 +85,7 @@ function replaceFile(voice: ItemVoiceRecord, file: File): void {
 export const itemVoiceHandlers = [
   http.get(base, ({ params }) => {
     const list = findList(params)
-    return list ? HttpResponse.json(list) : error('Item not found.', 404)
+    return list ? HttpResponse.json(listResponse(list)) : error('Item not found.', 404)
   }),
   http.get(`${base}/presets`, ({ params, request }) => {
     if (!findList(params)) return error('Item not found.', 404)
@@ -91,6 +108,7 @@ export const itemVoiceHandlers = [
       optimized_file_uri: body.optimize ? source.file_uri : null,
       parameters: { actor: preset.name, model: preset.model, speed: body.speed, _text: body.text, voice_settings: { stability: body.stability, similarity_boost: body.similarity }, date: new Date().toISOString() },
     }
+    if (voice.optimized_file_uri) voice.optimized_voice_id = `${voice.id}-optimized`
     list.voices.push(voice)
     return HttpResponse.json(voice, { status: 201 })
   }),
@@ -116,19 +134,21 @@ export const itemVoiceHandlers = [
     const voice = findList(params)?.voices.find((entry) => entry.id === params.voice_id)
     if (!voice?.file_uri) return error('Voice not found.', 404)
     await delay(350)
+    voice.optimized_voice_id = `${voice.id}-optimized`
     voice.optimized_file_uri = voice.file_uri.startsWith('blob:') ? voice.file_uri : `${voice.file_uri.split('?')[0]}?preview=optimized`
     return HttpResponse.json(voice)
   }),
-  http.put(`${base}/:voice_id/selection`, async ({ params, request }) => {
+  http.put(`${base}/:voice_id/main`, async ({ params, request }) => {
     const list = findList(params)
-    const voice = list?.voices.find((entry) => entry.id === params.voice_id)
+    const voice = list?.voices.find((entry) => entry.id === params.voice_id || entry.optimized_voice_id === params.voice_id)
     if (!list || !voice?.file_uri) return error('Voice not found.', 404)
-    const { version } = await request.json() as { version: string }
-    if (version !== 'original' && version !== 'optimized') return error('Invalid audio version.')
+    const { language } = await request.json() as { language: string }
+    if (language !== voice.language) return error('Voice not found for this language.', 404)
+    const version = params.voice_id === voice.optimized_voice_id ? 'optimized' : 'original'
     if (version === 'optimized' && !voice.optimized_file_uri) return error('No optimized audio available.')
-    list.voices.filter((entry) => entry.language === voice.language).forEach((entry) => { entry.is_selected = entry.id === voice.id })
+    list.voices.filter((entry) => entry.language === language).forEach((entry) => { entry.is_selected = entry.id === voice.id })
     voice.selected_version = version
-    return HttpResponse.json(voice)
+    return HttpResponse.json(listResponse(list))
   }),
   http.delete(`${base}/:voice_id`, ({ params }) => {
     const list = findList(params)

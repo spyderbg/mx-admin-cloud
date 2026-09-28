@@ -1,7 +1,7 @@
 """Internal HTTP callers for the file_system content provider (respect the HTTP boundary rule).
 
-Translation, TTS and image generation are delegated to the internal /internal/* endpoints
-rather than calling other services in-process.
+Translation, TTS, image generation and voice optimization are delegated to the internal
+/internal/* endpoints rather than calling other services in-process.
 """
 
 from __future__ import annotations
@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import json
 from datetime import timedelta
+from pathlib import Path
 
 import httpx
 
@@ -118,6 +119,39 @@ class FileSystemInternalApiMixin(ContentProvider):  # pylint: disable=abstract-m
             response.headers.get("X-TTS-Provider", "unknown"),
             parameters,
         )
+
+    @classmethod
+    def _active_voice_optimizers(cls) -> list[str]:
+        """Return the names of the enabled voice optimizers, in priority order.
+
+        Uses the internal /internal/optimizers/ listing, which includes disabled configs too.
+        """
+        token = create_internal_token("voice-optimization-service", timedelta(seconds=30))
+        response = httpx.get(
+            f"{settings.API_BASE_URL}/internal/optimizers/",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30.0,
+        )
+        if response.is_error:
+            raise RuntimeError(cls._extract_error_detail(response))
+        return [str(entry["name"]) for entry in response.json() if entry.get("enabled")]
+
+    @classmethod
+    def _optimize_audio_file(cls, optimizer: str, raw_path: Path, output_path: Path) -> None:
+        """Optimize *raw_path* into *output_path* via /internal/optimizers/{optimizer}/optimize.
+
+        That endpoint reads and writes the given paths itself, so the voice_optimization
+        service must see the same content filesystem as this provider.
+        """
+        token = create_internal_token("voice-optimization-service", timedelta(seconds=30))
+        response = httpx.post(
+            f"{settings.API_BASE_URL}/internal/optimizers/{optimizer}/optimize",
+            json={"raw_path": str(raw_path), "output_path": str(output_path)},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=httpx.Timeout(300.0, connect=10.0),
+        )
+        if response.is_error:
+            raise RuntimeError(cls._extract_error_detail(response))
 
     @classmethod
     def _generate_image(cls, prompt: str, filename_text: str | None = None) -> tuple[bytes, str]:

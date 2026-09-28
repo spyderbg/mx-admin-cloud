@@ -22,6 +22,7 @@ from src.services.content.models import (
     ItemDetail,
     ItemImages,
     ItemVoices,
+    OptimizedItemVoice,
     RemoveItem,
     RestoreCategory,
     UpdateCategory,
@@ -283,6 +284,10 @@ class ContentService(Service):  # pylint: disable=too-many-public-methods
     def set_main_item_voice(self, category_id: str, item_id: str, voice_id: str, language: str) -> ItemVoices:
         """Make an item's voice variant the main voice for a language via the active provider."""
         return self._select_provider().set_main_item_voice(category_id, item_id, voice_id, language)
+
+    def optimize_item_voice(self, category_id: str, item_id: str, voice_id: str) -> OptimizedItemVoice:
+        """Create optimized variants of an item voice via the active provider."""
+        return self._select_provider().optimize_item_voice(category_id, item_id, voice_id)
 
     # ------------------------------------------------------------------
     # Item voices methods

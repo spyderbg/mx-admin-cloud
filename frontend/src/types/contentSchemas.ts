@@ -127,6 +127,13 @@ export interface ItemVoicesResponse {
     main_voice_ids?: Record<string, string | null>
 }
 
+/** Response for POST /categories/{category_id}/items/{item_id}/voices/{voice_id}/optimize. */
+export interface OptimizeItemVoiceResponse extends ItemVoicesResponse {
+    source_voice_id: string
+    optimized_voice_ids?: string[]
+    warnings?: string[]
+}
+
 /** Response for DELETE /content/categories/{name}.
 
     Maybe an archive result or a permanent delete result, so both

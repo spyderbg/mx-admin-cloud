@@ -105,7 +105,7 @@ import { generateItemVoice, listItemVoices, listVoicePresets, optimizeItemVoice,
 import { invalidateItemDetail } from '../api/cache'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import { itemVoiceCopy } from '../utils/itemVoiceCopy'
-import { selectedVoice, validateAudioFile, voiceErrorMessage, voiceTitle } from '../utils/itemVoices'
+import { selectedVoice, validateAudioFile, voiceErrorMessage, voiceTitle, voiceSelectionId } from '../utils/itemVoices'
 import { langFlag, langLabel } from '../utils/voiceLabels'
 import ItemVoiceCard from './ItemVoiceCard.vue'
 import VoiceDialog from './VoiceDialog.vue'
@@ -234,8 +234,9 @@ function optimize(voice: ItemVoiceRecord): void {
   void mutate(`optimize:${voice.id}`, () => optimizeItemVoice(props.categoryId, props.itemId, voice.id), copy.value.optimizedSuccess)
 }
 function select(voice: ItemVoiceRecord, version: AudioVersion): void {
-  if (!capabilities.value.select || (version === 'optimized' && !voice.optimized_file_uri)) return
-  void mutate(`select:${voice.id}`, () => selectItemVoice(props.categoryId, props.itemId, voice.id, version), copy.value.selectedSuccess)
+  const voiceId = voiceSelectionId(voice, version)
+  if (!capabilities.value.select || !voiceId) return
+  void mutate(`select:${voice.id}`, () => selectItemVoice(props.categoryId, props.itemId, voiceId, voice.language), copy.value.selectedSuccess)
 }
 
 const availablePresets = ref<VoicePreset[]>([])

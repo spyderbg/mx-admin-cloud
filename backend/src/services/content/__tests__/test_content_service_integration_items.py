@@ -23,6 +23,7 @@ from src.services.content.models import (
     CreateItem,
     ItemDetail,
     ItemVoices,
+    OptimizedItemVoice,
     RemoveItem,
 )
 from src.services.content.__tests__.content_http_helpers import PNG_BYTES, StubContentProvider, make_app
@@ -418,4 +419,84 @@ async def test_set_main_item_voice_unsupported_language_returns_400(tmp_resolved
 @pytest.mark.asyncio
 async def test_set_main_item_voice_requires_auth(client_no_auth: AsyncClient) -> None:
     response = await client_no_auth.put(_VOICE_MAIN_URL, json={"language": "en"})
+    assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/content/categories/{category_id}/items/{item_id}/voices/{voice_id}/optimize
+# ---------------------------------------------------------------------------
+
+_VOICE_OPTIMIZE_URL = "/api/v1/content/categories/foods/items/I_Foods/voices/apple-v-en/optimize"
+
+
+@pytest.mark.asyncio
+async def test_optimize_item_voice_returns_listing_and_produced_variants(tmp_resolved: Path) -> None:
+    seen: list[tuple[str, str, str]] = []
+
+    class _TrackingProvider(StubContentProvider):
+        def optimize_item_voice(self, category_id: str, item_id: str, voice_id: str) -> OptimizedItemVoice:
+            seen.append((category_id, item_id, voice_id))
+            return OptimizedItemVoice(
+                item_id=item_id,
+                voices=[CategoryVoice(id="apple-v-en", language="en", type="tts",
+                                      file_uri="/content/foods/apple/apple_en.mp3")],
+                variants=[
+                    CategoryVoice(id="apple_en_01", language="en", type="tts",
+                                  file_uri="/content/foods/apple/apple_en_01.mp3"),
+                    CategoryVoice(id="apple_en_02", language="en", type="tts",
+                                  file_uri="/content/foods/apple/apple_en_02.mp3",
+                                  parameters={"_optimizer": "ffmpeg_low", "_source": "apple_en_01"}),
+                ],
+                main_voice_ids={"en": "apple_en_01"},
+                source_voice_id="apple_en_01",
+                optimized_voice_ids=["apple_en_02"],
+                warnings=["Voice optimization failed for pydub_optimized: boom"],
+            )
+
+    app = make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.post(_VOICE_OPTIMIZE_URL)
+    assert response.status_code == 200
+    assert seen == [("foods", "I_Foods", "apple-v-en")]
+    body = response.json()
+    assert body["item_id"] == "I_Foods"
+    assert body["name"] == {"en": "apple"}
+    assert [v["id"] for v in body["variants"]] == ["apple_en_01", "apple_en_02"]
+    assert body["variants"][1]["parameters"]["_optimizer"] == "ffmpeg_low"
+    assert body["main_voice_ids"] == {"en": "apple_en_01"}
+    assert body["source_voice_id"] == "apple_en_01"
+    assert body["optimized_voice_ids"] == ["apple_en_02"]
+    assert body["warnings"] == ["Voice optimization failed for pydub_optimized: boom"]
+
+
+@pytest.mark.asyncio
+async def test_optimize_item_voice_unknown_item_returns_404(client: AsyncClient) -> None:
+    response = await client.post("/api/v1/content/categories/foods/items/I_Missing/voices/apple-v-en/optimize")
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_optimize_item_voice_unknown_voice_returns_404(tmp_resolved: Path) -> None:
+    provider = StubContentProvider(tmp_resolved).raises("optimize_item_voice", CategoryNotFoundError("nope"))
+    app = make_app(provider, tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.post(_VOICE_OPTIMIZE_URL)
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_optimize_item_voice_without_optimizers_returns_400(tmp_resolved: Path) -> None:
+    provider = StubContentProvider(tmp_resolved).raises(
+        "optimize_item_voice", ContentOperationError("No active voice optimizers configured."),
+    )
+    app = make_app(provider, tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.post(_VOICE_OPTIMIZE_URL)
+    assert response.status_code == 400
+    assert "No active voice optimizers" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_optimize_item_voice_requires_auth(client_no_auth: AsyncClient) -> None:
+    response = await client_no_auth.post(_VOICE_OPTIMIZE_URL)
     assert response.status_code == 401

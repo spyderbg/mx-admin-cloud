@@ -9,6 +9,7 @@ export interface ItemVoiceRecord {
   type: string
   file_uri?: string | null
   optimized_file_uri?: string | null
+  optimized_voice_id?: string | null
   display_name?: string
   creation_method?: 'generated' | 'uploaded' | 'unknown'
   provider?: string
@@ -31,6 +32,13 @@ export interface ItemVoiceList {
   name: Partial<Record<Language, string>>
   voices: ItemVoiceRecord[]
   capabilities?: Partial<VoiceCapabilities>
+}
+
+/** Wire response: main recordings and selectable variants are separate lists. */
+export interface ItemVoiceListResponse extends Omit<ItemVoiceList, 'voices'> {
+  voices?: ItemVoiceRecord[]
+  variants?: ItemVoiceRecord[]
+  main_voice_ids?: Record<string, string | null>
 }
 
 export interface VoicePreset {

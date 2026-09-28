@@ -1,12 +1,14 @@
 import client from './client'
-import type { AudioVersion, GenerateItemVoice, ItemVoiceList, ItemVoiceRecord, VoicePreset } from '../types/itemVoices'
+import { itemsVoicesSetMain } from './contentClient'
+import { normalizeItemVoices } from '../utils/itemVoices'
+import type { GenerateItemVoice, ItemVoiceList, ItemVoiceListResponse, ItemVoiceRecord, VoicePreset } from '../types/itemVoices'
 import type { Language } from '../types/viewModels'
 
 const path = (categoryId: string, itemId: string): string =>
   `/content/categories/${encodeURIComponent(categoryId)}/items/${encodeURIComponent(itemId)}/voices`
 
 export async function listItemVoices(categoryId: string, itemId: string, signal?: AbortSignal): Promise<ItemVoiceList> {
-  return (await client.get<ItemVoiceList>(path(categoryId, itemId), { signal })).data
+  return normalizeItemVoices((await client.get<ItemVoiceListResponse>(path(categoryId, itemId), { signal })).data)
 }
 
 export async function uploadItemVoice(categoryId: string, itemId: string, language: Language, file: File, voiceId?: string): Promise<ItemVoiceRecord> {
@@ -33,6 +35,6 @@ export async function optimizeItemVoice(categoryId: string, itemId: string, voic
   return (await client.post<ItemVoiceRecord>(`${path(categoryId, itemId)}/${encodeURIComponent(voiceId)}/optimize`)).data
 }
 
-export async function selectItemVoice(categoryId: string, itemId: string, voiceId: string, version: AudioVersion): Promise<ItemVoiceRecord> {
-  return (await client.put<ItemVoiceRecord>(`${path(categoryId, itemId)}/${encodeURIComponent(voiceId)}/selection`, { version })).data
+export async function selectItemVoice(categoryId: string, itemId: string, voiceId: string, language: Language) {
+  return itemsVoicesSetMain(encodeURIComponent(categoryId), encodeURIComponent(itemId), encodeURIComponent(voiceId), { language })
 }

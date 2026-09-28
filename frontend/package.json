@@ -5,7 +5,7 @@
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "type-check": "vue-tsc --noEmit",
-    "test:voices": "node --experimental-strip-types --test tests/itemVoices.test.ts",
+    "test:voices": "node --experimental-strip-types --test tests/itemVoices.test.ts tests/itemVoicesApi.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

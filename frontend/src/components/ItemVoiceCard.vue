@@ -36,7 +36,7 @@
         {{ optimizing ? copy.optimizing : voice.optimized_file_uri ? copy.optimizeAgain : copy.optimize }}
       </button>
       <button type="button" class="iv-button iv-select" :class="{ 'iv-is-selected': selectedVersion }"
-        :disabled="busy || selectedVersion || !capabilities.select" :title="!selectedVersion && !capabilities.select ? copy.selectUnavailable : undefined"
+        :disabled="busy || selectedVersion || !canSelect" :title="!selectedVersion && !canSelect ? copy.selectUnavailable : undefined"
         @click="$emit('select', version)">
         <i class="mdi mdi-check" aria-hidden="true"></i>{{ selectedVersion ? `${copy.selected} ${langLabel(voice.language)}` : copy.use }}
       </button>
@@ -50,7 +50,7 @@ import { computed, ref, watch } from 'vue'
 import type { AudioVersion, ItemVoiceRecord, VoiceCapabilities } from '../types/itemVoices'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import { itemVoiceCopy } from '../utils/itemVoiceCopy'
-import { audioFileName, voiceTitle, voiceSource, voiceAudioUri } from '../utils/itemVoices'
+import { audioFileName, voiceTitle, voiceSource, voiceAudioUri, voiceSelectionId } from '../utils/itemVoices'
 import { langLabel } from '../utils/voiceLabels'
 import { cacheBustedUri } from '../utils/cacheBustedUri'
 import VoiceAudioPreview from './VoiceAudioPreview.vue'
@@ -68,6 +68,7 @@ const src = computed(() => {
   return uri && !uri.startsWith('blob:') && !uri.startsWith('data:') ? cacheBustedUri(uri, props.revision) : uri
 })
 const selectedVersion = computed(() => props.selected && version.value === (props.voice.selected_version || 'original'))
+const canSelect = computed(() => props.capabilities.select && !!voiceSelectionId(props.voice, version.value))
 watch(() => props.voice.optimized_file_uri, (uri) => { if (!uri && version.value === 'optimized') version.value = 'original' })
 const created = computed(() => {
   const date = props.voice.parameters?.date

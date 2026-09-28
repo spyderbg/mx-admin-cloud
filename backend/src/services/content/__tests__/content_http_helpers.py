@@ -27,6 +27,7 @@ from src.services.content.models import (
     ItemDetail,
     ItemImages,
     ItemVoices,
+    OptimizedItemVoice,
     RemoveItem,
     RestoreCategory,
     UpdateCategory,
@@ -248,6 +249,9 @@ class StubContentProvider(ContentProvider):
 
     def set_main_item_voice(self, category_id: str, item_id: str, voice_id: str, language: str) -> ItemVoices:
         return self._call("set_main_item_voice", ItemVoices(item_id=item_id))
+
+    def optimize_item_voice(self, category_id: str, item_id: str, voice_id: str) -> OptimizedItemVoice:
+        return self._call("optimize_item_voice", OptimizedItemVoice(item_id=item_id, source_voice_id=voice_id))
 
     def add_item_voice(self, category_id: str, item_id: str, language: str, audio_data: bytes) -> CategoryVoice:
         return self._call("add_item_voice", CategoryVoice(

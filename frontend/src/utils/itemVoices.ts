@@ -1,4 +1,34 @@
-import type { ItemVoiceRecord, VoiceCapabilities, AudioVersion } from '../types/itemVoices'
+import type { ItemVoiceRecord, ItemVoiceList, ItemVoiceListResponse, VoiceCapabilities, AudioVersion } from '../types/itemVoices'
+
+export function normalizeItemVoices(response: ItemVoiceListResponse): ItemVoiceList {
+  if (!response.variants || !response.main_voice_ids) {
+    return { ...response, voices: response.voices || [] }
+  }
+  const mainIds = response.main_voice_ids
+  const voices = response.variants.map((voice) => {
+    const optimized = !!voice.optimized_voice_id && mainIds[voice.language] === voice.optimized_voice_id
+    return {
+      ...voice,
+      is_selected: mainIds[voice.language] === voice.id || optimized,
+      selected_version: optimized ? 'optimized' as const : 'original' as const,
+    }
+  })
+  // A standalone main file may have no matching variant. Keep that recording
+  // visible and selected, but avoid duplicating a main file copied from a variant.
+  for (const main of response.voices || []) {
+    if (main.file_uri && !voices.some((voice) => voice.language === main.language && voice.is_selected)) {
+      const existing = voices.find((voice) => voice.id === main.id && voice.language === main.language)
+      if (existing) existing.is_selected = true
+      else voices.push({ ...main, is_selected: true, selected_version: 'original' })
+    }
+  }
+  return { ...response, voices, capabilities: { select: true, ...response.capabilities } }
+}
+
+export function voiceSelectionId(voice: ItemVoiceRecord, version: AudioVersion): string | undefined {
+  if (!voiceAudioUri(voice, version)) return undefined
+  return version === 'optimized' ? voice.optimized_voice_id || undefined : voice.id
+}
 
 export function voiceTitle(voice: ItemVoiceRecord): string {
   const actor = voice.parameters?.actor ?? voice.parameters?.voice

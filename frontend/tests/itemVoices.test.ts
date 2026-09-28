@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { selectedVoice, voiceAudioUri, validateAudioFile, voiceSource, audioFileName } from '../src/utils/itemVoices.ts'
+import { selectedVoice, voiceAudioUri, validateAudioFile, voiceSource, audioFileName, normalizeItemVoices, voiceSelectionId } from '../src/utils/itemVoices.ts'
 import { legacyVoiceCapabilities, type ItemVoiceRecord } from '../src/types/itemVoices.ts'
 import { cacheBustedUri } from '../src/utils/cacheBustedUri.ts'
 
@@ -55,4 +55,35 @@ test('cache busting refreshes real files and leaves uploaded preview URLs playab
   assert.equal(cacheBustedUri('data:audio/wav;base64,AAAA', 2), 'data:audio/wav;base64,AAAA')
   assert.equal(audioFileName('/content/my%20voice.mp3?v=1'), 'my voice.mp3')
   assert.equal(audioFileName('/content/bad%encoding.mp3'), 'bad%encoding.mp3')
+})
+
+
+test('standalone main recordings remain selected alongside alternatives, without selecting by order', () => {
+  const response = {
+    item_id: 'item', name: { en: 'bananas' },
+    voices: [voice({ id: 'main' }), voice({ id: 'es-main', language: 'es', file_uri: null })],
+    variants: [voice({ id: 'candidate' }), voice({ id: 'es-candidate', language: 'es' })],
+    main_voice_ids: { en: null, es: null },
+  }
+  const normalized = normalizeItemVoices(response)
+  assert.deepEqual(normalized.voices.map(({ id, is_selected }) => [id, is_selected]), [
+    ['candidate', false], ['es-candidate', false], ['main', true],
+  ])
+  assert.equal(response.variants[0].is_selected, undefined)
+  assert.equal(normalized.capabilities?.select, true)
+  assert.equal(normalized.capabilities?.multiple_voices, undefined)
+})
+
+test('selection respects language mappings and keeps optimized variants addressable by their actual ID', () => {
+  const optimized = voice({ id: 'en-optimized', parameters: { _source: 'en-1', _optimizer: 'ffmpeg' } })
+  const normalized = normalizeItemVoices({
+    item_id: 'item', name: {}, voices: [],
+    variants: [voice(), optimized, voice({ id: 'es-1', language: 'es' })],
+    main_voice_ids: { en: optimized.id, es: 'es-1' },
+  })
+  assert.deepEqual(normalized.voices.filter((entry) => entry.is_selected).map((entry) => entry.id), ['en-optimized', 'es-1'])
+  assert.equal(voiceSelectionId(normalized.voices[1], 'original'), 'en-optimized')
+  assert.equal(voiceSelectionId(voice({ optimized_file_uri: '/optimized.mp3' }), 'optimized'), undefined)
+  assert.equal(voiceSelectionId(voice({ optimized_file_uri: '/optimized.mp3', optimized_voice_id: 'optimized-id' }), 'optimized'), 'optimized-id')
+  assert.equal(voiceSelectionId(voice({ file_uri: null }), 'original'), undefined)
 })

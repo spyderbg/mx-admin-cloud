@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import csv
 import importlib
+import json
 import pkgutil
 from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -71,3 +74,24 @@ def write_item_registry(category_path: Path, entries: list[tuple[str, str]]) -> 
     for _, word in entries:
         (category_path / word.lower()).mkdir(parents=True, exist_ok=True)
         (category_path / word.lower() / "01.png").write_bytes(b"fake-png")
+
+
+def voice_metadata(path: Path) -> dict[str, str]:
+    """Return the single row of a voice's metadata sidecar CSV."""
+    with path.open(encoding="utf-8", newline="") as file_handle:
+        return next(csv.DictReader(file_handle))
+
+
+def without_date(parameters: dict[str, object]) -> dict[str, object]:
+    """Assert a 'date' stamp is present and ISO-formatted, then strip it for comparison."""
+    assert "date" in parameters
+    datetime.fromisoformat(str(parameters["date"]))
+    return {k: v for k, v in parameters.items() if k != "date"}
+
+
+def voice_metadata_normalized(path: Path) -> dict[str, object]:
+    """Like voice_metadata(), but with 'parameters' parsed and its 'date' stamp
+    replaced by a presence check, so callers can assert the rest exactly."""
+    row = voice_metadata(path)
+    parameters = json.loads(row["parameters"])
+    return {**row, "parameters": without_date(parameters)}

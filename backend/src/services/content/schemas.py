@@ -262,4 +262,15 @@ class ItemVoicesResponse(BaseModel):
     # selected as main. None when the main voice matches no variant of that language.
     main_voice_ids: dict[str, str | None] = {}
 
+
+class OptimizeItemVoiceResponse(ItemVoicesResponse):
+    """Response for POST /categories/{category_id}/items/{item_id}/voices/{voice_id}/optimize."""
+
+    # Id of the original recording (a variant) the optimized versions were made from.
+    source_voice_id: str
+    # Ids of the variants written by this run, one per optimizer that succeeded.
+    optimized_voice_ids: list[str] = []
+    # One message per active optimizer that failed; the others' results are kept.
+    warnings: list[str] = []
+
 # endregion

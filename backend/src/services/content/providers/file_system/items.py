@@ -26,6 +26,7 @@ from src.services.content.models import (
     ItemDetail,
     ItemImages,
     ItemVoices,
+    OptimizedItemVoice,
     RemoveItem,
 )
 from src.services.content.providers.file_system.constants import (
@@ -137,6 +138,37 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             elif main is None:
                 main = f
         return main, variants
+
+    @staticmethod
+    def _language_for_item_voice_ref(item_folder_name: str, voice_id: str) -> str | None:
+        """Return the language *voice_id* belongs to, or None if it names no voice of this item.
+
+        Accepts the per-language id (``{name}-v-en``), the main voice's stem (``{name}_en``)
+        and a variant's stem (``{name}_en_01``).
+        """
+        for lang in settings.SUPPORTED_LANGUAGES:
+            if voice_id in (f"{item_folder_name}-v-{lang}", f"{item_folder_name}_{lang}"):
+                return lang
+            if re.fullmatch(re.escape(f"{item_folder_name}_{lang}") + r"_\d+", voice_id):
+                return lang
+        return None
+
+    @staticmethod
+    def _next_item_voice_variant_path(item_path: Path, item_folder_name: str, language: str) -> Path:
+        """First ``{name}_{language}_{index:02d}.mp3`` path (1-based) that does not exist yet."""
+        index = 1
+        while (candidate := item_path / f"{item_folder_name}_{language}_{index:02d}.mp3").exists():
+            index += 1
+        return candidate
+
+    def _copy_voice_with_metadata(self, source: Path, target: Path) -> None:
+        """Copy an MP3 and its metadata sidecar; drop the target's sidecar when the source has none."""
+        shutil.copyfile(source, target)
+        source_metadata = self._voice_metadata_path(source)
+        if source_metadata.is_file():
+            shutil.copyfile(source_metadata, self._voice_metadata_path(target))
+        else:
+            self._voice_metadata_path(target).unlink(missing_ok=True)
 
     @classmethod
     def _find_item_voice_file(
@@ -660,18 +692,129 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         # ("apple_en.mp3"). Selecting a variant COPIES it, with its metadata sidecar, over
         # the main file: the variant stays where it is, so the item keeps every recording.
         main_path = main_path or self._item_voice_path(item_path, item_folder_name, language)
-        target_metadata = self._voice_metadata_path(target)
-        main_metadata = self._voice_metadata_path(main_path)
         try:
-            shutil.copyfile(target, main_path)
-            if target_metadata.is_file():
-                shutil.copyfile(target_metadata, main_metadata)
-            else:
-                main_metadata.unlink(missing_ok=True)
+            self._copy_voice_with_metadata(target, main_path)
         except OSError as exc:
             raise ContentOperationError(f"Failed to set main voice for item '{item_id}': {exc}") from exc
 
         return self.item_voices(category_id, item_id)
+
+    def optimize_item_voice(self, category_id: str, item_id: str, voice_id: str) -> OptimizedItemVoice:
+        """Write one optimized variant of the voice's original recording per active optimizer.
+
+        The original is kept as a variant alongside the optimized ones, and the main voice
+        is left as it is: choosing among them is set_main_item_voice's job. Re-running an
+        optimizer on the same original overwrites its previous output instead of adding
+        another variant. An optimizer that fails is reported in *warnings*; the run only
+        fails outright when every optimizer does.
+        """
+        category_name = self._folder_name_for_id(category_id)
+        category_path = self._category_path(category_name)
+        item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
+
+        language = self._language_for_item_voice_ref(item_folder_name, voice_id)
+        if language is None:
+            raise CategoryNotFoundError(
+                f"Voice '{voice_id}' not found for item '{item_id}' in category '{category_name}'.",
+            )
+
+        try:
+            optimizers = self._active_voice_optimizers()
+        except (RuntimeError, httpx.HTTPError) as exc:
+            raise ContentOperationError(f"Voice optimization is unavailable: {exc}") from exc
+        if not optimizers:
+            raise ContentOperationError("No active voice optimizers configured.")
+
+        source = self._original_item_voice(item_path, item_folder_name, language, voice_id)
+        source_provider, source_parameters = self._read_voice_metadata(source)
+        source_parameters.pop("date", None)
+
+        optimized_ids: list[str] = []
+        warnings: list[str] = []
+        for optimizer in optimizers:
+            target = self._optimized_item_voice_path(item_path, item_folder_name, language, source.stem, optimizer)
+            # Optimize into a temporary file so a failed run never leaves a half-written
+            # variant behind. It keeps the .mp3 suffix: ffmpeg picks the format from it.
+            partial = item_path / f".{target.stem}.optimizing.mp3"
+            try:
+                self._optimize_audio_file(optimizer, source.resolve(), partial.resolve())
+                partial.replace(target)
+                self._write_voice_metadata(
+                    target,
+                    VoiceCreationMethod.OPTIMIZED,
+                    source_provider,
+                    {**source_parameters, "_optimizer": optimizer, "_source": source.stem},
+                )
+            except (RuntimeError, httpx.HTTPError, OSError) as exc:
+                warnings.append(f"Voice optimization failed for {optimizer}: {exc}")
+                partial.unlink(missing_ok=True)
+                continue
+            optimized_ids.append(target.stem)
+
+        if not optimized_ids:
+            raise ContentOperationError("; ".join(warnings))
+
+        voices = self.item_voices(category_id, item_id)
+        return OptimizedItemVoice(
+            item_id=voices.item_id,
+            voices=voices.voices,
+            variants=voices.variants,
+            main_voice_ids=voices.main_voice_ids,
+            source_voice_id=source.stem,
+            optimized_voice_ids=optimized_ids,
+            warnings=warnings,
+        )
+
+    def _original_item_voice(self, item_path: Path, item_folder_name: str, language: str, voice_id: str) -> Path:
+        """Return the original recording (a variant) that optimized versions of *voice_id* come from.
+
+        A main voice that is not a copy of any variant is first kept as a new variant, so
+        selecting an optimized version as main later never loses it. An optimized variant
+        resolves to the recording it was made from, so optimizations never stack.
+        """
+        main, variants = self._split_item_voice_files(list(item_path.iterdir()), item_folder_name, language)
+        if voice_id in (f"{item_folder_name}-v-{language}", f"{item_folder_name}_{language}"):
+            if main is None:
+                source = variants[0] if variants else None
+            else:
+                copied_from = self._main_copy_source_id(main, variants)
+                source = next((v for v in variants if v.stem == copied_from), None)
+                if source is None:
+                    source = self._next_item_voice_variant_path(item_path, item_folder_name, language)
+                    try:
+                        self._copy_voice_with_metadata(main, source)
+                    except OSError as exc:
+                        raise ContentOperationError(f"Failed to keep the original voice: {exc}") from exc
+        else:
+            source = next((v for v in variants if v.stem == voice_id), None)
+        if source is None:
+            raise CategoryNotFoundError(f"Voice '{voice_id}' has no audio to optimize.")
+
+        _, parameters = self._read_voice_metadata(source)
+        if parameters.get("_optimizer"):
+            original = next((v for v in variants if v.stem == parameters.get("_source")), None)
+            if original is None:
+                raise ContentOperationError(
+                    f"The original recording of optimized voice '{source.stem}' no longer exists.",
+                )
+            return original
+        return source
+
+    def _optimized_item_voice_path(
+            self,
+            item_path: Path,
+            item_folder_name: str,
+            language: str,
+            source_id: str,
+            optimizer: str,
+    ) -> Path:
+        """Return the variant *optimizer* previously produced from *source_id*, else a new variant path."""
+        _, variants = self._split_item_voice_files(list(item_path.iterdir()), item_folder_name, language)
+        for variant in variants:
+            _, parameters = self._read_voice_metadata(variant)
+            if parameters.get("_optimizer") == optimizer and parameters.get("_source") == source_id:
+                return variant
+        return self._next_item_voice_variant_path(item_path, item_folder_name, language)
 
     def add_item_voice(self, category_id: str, item_id: str, language: str, audio_data: bytes) -> CategoryVoice:
         category_name = self._folder_name_for_id(category_id)

@@ -1,82 +1,69 @@
-# Item Voices: frontend integration and missing API support
+# Item Voices: frontend integration and remaining API support
 
-The language accordion/card layout and mobile dialogs are implemented in the frontend. No backend code or generated API schemas were changed. Existing upload/replace and audio URLs remain usable. New candidate operations are enabled only when the voices response advertises the corresponding capability; the frontend never substitutes regeneration (which overwrites audio) for creating a new take.
+The language accordion/card layout and mobile dialogs are implemented in the frontend. Selection uses the generated `itemsVoicesSetMain` client. This integration changes no backend code or generated schemas.
 
-## Existing API behavior
+## Implemented voice selection
 
 Base path: `/api/v1/content/categories/{category_id}/items/{item_id}/voices`.
 
-| Endpoint | Current behavior |
-| --- | --- |
-| `GET /voices` | Returns one entry per supported language, including empty placeholders. The filesystem provider returns the first matching MP3, not every candidate. |
-| `POST /voices` | Multipart `language` + `audio`. Adds the first recording for a language. Returns 409 if one already exists. |
-| `PUT /voices/{voice_id}` | Multipart `audio`. Replaces an existing recording. Returns 404 for an empty placeholder. |
-| `DELETE /voices/{voice_id}` | Deletes/resets a recording. Existing summary-card controls retain this action. |
-| `POST /voices/{voice_id}/regenerate` | Overwrites the current file using the active configuration. This is retained in the existing Item Voices summary; it is not used by the new Generate dialog. |
+“Use for item” sends `PUT /{voice_id}/main` with the selected recording’s language:
 
-Legacy uploads are restricted to MP3 in the new section because the current implementation writes bytes to an `.mp3` filename without transcoding or preserving the supplied extension. The upload dialog supports WAV when a future API advertises it. Replacement of the legacy recording changes the item immediately; the dialog explains this before submission.
+```json
+{ "language": "en" }
+```
 
-## Missing endpoints (proposed contract)
+The request uses the variant’s actual ID, including when selecting a separately listed optimized variant. It does not send a `version` property or call `/selection`. Success refreshes both the Voices section and Item Voices summary, including their audio URLs. A failed request displays an error without changing the current selection.
 
-The following paths are relative to the base path above. These contracts are handwritten in `src/api/itemVoicesClient.ts` / `src/types/itemVoices.ts`, and simulated only in the frontend MSW preview.
-
-| Method and suffix | Required behavior |
-| --- | --- |
-| `GET /presets?language=en` | Return usable per-language base voices: `id`, `provider`, `name`, `model`, `language`, `speed`, and optional `stability`/`similarity` defaults. |
-| `POST /generate` | Create and persist a **new** candidate for the item. Body: `language`, `text`, `preset_id`, `speed`, optional `stability`/`similarity`, and `optimize`. Return the created voice. Keep the existing selection. |
-| `POST /{voice_id}/optimize` | Persist an optimized version while retaining the original. Return the voice with `optimized_file_uri`. Do not select a different voice as a side effect. |
-| `PUT /{voice_id}/selection` | Body: `{ "version": "original" \| "optimized" }`. Atomically select this voice/version for its language. Return the updated voice and preserve selections for other languages. Reject missing audio/versions. |
-
-The existing internal generator endpoints are not substitutes: `/internal/generators/` omits the language-specific base voices; `/internal/generators/generate-word` uses the highest-priority configuration; `/{provider}/generate` accepts pipeline input and returns filesystem paths, not a saved item candidate with per-request voice settings. Similarly `/internal/optimizers/{optimizer}/optimize` requires server filesystem paths and does not attach a version to an item. The browser should not infer or send server filesystem paths from public audio URLs.
-
-## Required extensions to existing endpoints
-
-- Extend `GET /voices` to enumerate every candidate with stable unique IDs. Add `optimized_file_uri`, `is_selected`, `selected_version`, optional `display_name`, and `creation_method` (`generated`, `uploaded`, or `unknown`). Retain `provider` and `parameters`, including actual generation metadata and creation time. Return real audio URLs; the UI does not invent optimized filenames.
-- Extend `POST /voices` to append additional candidates for a language without overwriting the current recording. Preserve the actual format or transcode uploads. Keep `PUT /voices/{voice_id}` scoped to replacing that particular candidate, invalidate an obsolete optimized version, and return refreshed metadata.
-- Return a `capabilities` object on `GET /voices`. Only set a flag to true when the corresponding operation works for the current user/item. The frontend defaults missing flags to false and missing upload formats to MP3.
-
-Example upgraded list response:
+`GET /voices` and the selection response return `ItemVoicesResponse`:
 
 ```json
 {
   "item_id": "I_Bananas",
   "name": { "en": "bananas", "es": "plátano", "fr": "banane", "bg": "банани" },
-  "capabilities": {
-    "multiple_voices": true,
-    "generate": true,
-    "optimize": true,
-    "select": true,
-    "presets": true,
-    "upload_formats": ["mp3", "wav"]
-  },
-  "voices": [{
-    "id": "bananas-en-take-1",
-    "language": "en",
-    "type": "tts",
-    "display_name": "Milena",
-    "creation_method": "generated",
-    "provider": "elevenlabs",
-    "file_uri": "/content/fruits/bananas/take-1.mp3",
-    "optimized_file_uri": "/content/fruits/bananas/take-1-optimized.mp3",
-    "is_selected": true,
-    "selected_version": "optimized",
-    "parameters": {
-      "actor": "Milena",
-      "model": "eleven_multilingual_v2",
-      "speed": 1.0,
-      "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 },
-      "date": "2026-09-28T08:00:00Z"
-    }
-  }]
+  "voices": [
+    { "id": "bananas-v-en", "language": "en", "type": "tts", "file_uri": "/content/fruits/bananas/bananas_en.mp3" }
+  ],
+  "variants": [
+    { "id": "bananas_en_01", "language": "en", "type": "tts", "file_uri": "/content/fruits/bananas/bananas_en_01.mp3" },
+    { "id": "bananas_en_02", "language": "en", "type": "tts", "file_uri": "/content/fruits/bananas/bananas_en_02.mp3" }
+  ],
+  "main_voice_ids": { "en": "bananas_en_02", "es": null, "fr": null, "bg": null }
 }
 ```
 
-For each language, at most one candidate is selected. No candidate may be selected when its chosen audio version is unavailable. Empty language groups remain visible so users can add their first recording. A legacy single recording is displayed as selected because it is already the audio used for that item; once `multiple_voices` is enabled the API must explicitly identify the selection.
+The frontend renders `variants`, marks selection using `main_voice_ids`, and avoids duplicating the current main recording. A standalone main file with no matching variant remains visible and selected. Empty language groups remain visible. The presence of `variants` and `main_voice_ids` enables selection without requiring the proposed `capabilities` extension; an explicit `capabilities.select: false` disables it.
+
+## Other existing endpoints
+
+| Suffix | Behavior |
+| --- | --- |
+| `POST /` | Multipart `language` + `audio`. Adds the first recording for a language; currently returns 409 if one already exists. |
+| `PUT /{voice_id}` | Multipart `audio`. Replaces a recording; empty placeholders return 404. |
+| `DELETE /{voice_id}` | Deletes/resets a recording. Existing summary controls retain this action. |
+| `POST /{voice_id}/regenerate` | Overwrites the current recording using the active configuration. The new Generate dialog does not substitute this operation for creating a new take. |
+| `POST /{voice_id}/optimize` | Now implemented in the backend: returns the updated voice lists, `source_voice_id`, `optimized_voice_ids`, and warnings. Adapting the optimization UI from its inline preview contract to this response remains separate work. |
+
+Uploads remain restricted to MP3 unless the API advertises additional formats, because the existing implementation writes bytes to an `.mp3` filename. Listing multiple variants does not imply that the upload endpoint can append recordings.
+
+## Missing endpoints and extensions
+
+The following paths are relative to the base path above. Generation/preset contracts are handwritten in `src/api/itemVoicesClient.ts` / `src/types/itemVoices.ts` and simulated in the frontend MSW preview.
+
+| Endpoint | Required behavior |
+| --- | --- |
+| `GET /presets?language=en` | Return per-language base voices: `id`, `provider`, `name`, `model`, `language`, `speed`, optional `stability`/`similarity` defaults. |
+| `POST /generate` | Create a new saved candidate. Body: `language`, `text`, `preset_id`, `speed`, optional `stability`/`similarity`, `optimize`. Preserve the current selection. |
+| Extend `POST /voices` | Append additional uploads for a language without overwriting the current recording; preserve the format or transcode it. |
+| Optional `capabilities` on `GET /voices` | Advertise available generation, optimization, presets, multiple uploads, and supported upload formats. These flags default to false and formats to MP3. Selection already works with the implemented list contract. |
+
+Existing internal generator endpoints are not substitutes for saved per-item candidates with per-request settings. The browser should not infer server filesystem paths from public audio URLs.
+
+The mock preview retains inline Original/Optimized tabs. These use an explicit `optimized_voice_id` alongside `optimized_file_uri` so selecting an optimized preview targets its own ID. An optimized URL alone cannot authorize selecting the original recording in its place. The real backend’s optimized variants are independently selectable by their returned IDs.
 
 ## Preview and verification
 
-Run `npm run test:voices` (Node 22.6+; the project uses Node 24) for the selection, version-URL, upload-format, and preview-URL regression tests. Run `npm run build` for TypeScript and the production bundle.
+Run `npm run test:voices` (Node 22.6+) for request URL/method/body, backend rejection, response mapping, selection, and audio/upload regression tests. Run `npm run build` for TypeScript and the production bundle.
 
-Run `VITE_MOCK_DATA=true npm run dev` and open `/categories/C_Fruits/items/I_Bananas`. The preview seeds generated/manual alternatives, supports selection and upload/replacement, and simulates generation/optimization using sample audio. The visible preview notice makes this explicit. All preview state is in browser memory and resets on reload; no files in the content directory are modified.
+Run `VITE_MOCK_DATA=true npm run dev` and open `/categories/C_Fruits/items/I_Bananas`. The preview uses the `/main` method/body and the `voices` / `variants` / `main_voice_ids` response structure. Generation/optimization use sample audio; preview uploads and selections exist only in browser memory. The visible preview notice identifies this simulation. No content files are modified.
 
-The existing page summary and image section remain in place. The new section is a three-column card grid on wide desktop, two columns on narrower layouts, and one column on mobile. Generation and upload dialogs become full-screen mobile forms with reachable actions, native modal focus containment, and file-picker alternatives to drag-and-drop. New controls are translated into English, Spanish, French, and Bulgarian.
+The desktop grid adapts from three columns to two, then one on mobile. Mobile dialogs use full-screen forms, with file-picker alternatives to drag-and-drop. Controls are translated into English, Spanish, French, and Bulgarian.
