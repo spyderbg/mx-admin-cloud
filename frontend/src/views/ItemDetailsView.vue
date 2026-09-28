@@ -195,110 +195,16 @@
       </div>
     </section>
 
-    <section class="id-panel">
-      <div class="id-section-header">
-        <h4 class="id-section-title">
-          {{ voicesLabel(contentLanguage) }}
-          <span>({{ item.voices.length }})</span>
-        </h4>
-        <div class="id-summary-actions">
-          <div class="id-summary-buttons">
-            <button
-              v-for="action in voiceActions"
-              :key="action.label"
-              type="button"
-              class="btn btn-sm"
-              :class="`id-summary-action-${action.tone}`"
-              :disabled="action.disabled"
-              @click="action.onClick"
-            >
-              <i class="mdi mr-1" :class="action.icon" aria-hidden="true"></i>
-              {{ action.label }}
-            </button>
-          </div>
-          <MobileActionsMenu class="id-summary-menu" label="Voice actions" :actions="voiceActions" />
-        </div>
-      </div>
-      <input ref="voiceFileInputRef" type="file" accept="audio/*" class="d-none" aria-hidden="true" tabindex="-1" @change="onVoiceFilePicked" />
-      <div class="table-responsive id-voices-table-wrap">
-        <table class="table id-voices-table mb-0">
-          <thead>
-            <tr>
-              <th>{{ languageColumnLabel(contentLanguage) }}</th>
-              <th>{{ generatorLabel(contentLanguage) }}</th>
-              <th>{{ normalFileColumnLabel(contentLanguage) }}</th>
-              <th>{{ optimizedFileColumnLabel(contentLanguage) }}</th>
-              <th class="text-right">{{ actionsColumnLabel(contentLanguage) }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <template v-for="group in groupedVoices" :key="group.language">
-              <tr
-                v-for="(voice, index) in group.voices"
-                v-show="index === 0 || isLanguageExpanded(group.language)"
-                :key="voice.id"
-              >
-                <td>
-                  <div
-                    v-if="index === 0"
-                    class="id-voice-language"
-                    :class="{ 'id-voice-language-clickable': group.voices.length > 1 }"
-                    :title="langLabel(group.language)"
-                    :role="group.voices.length > 1 ? 'button' : undefined"
-                    :tabindex="group.voices.length > 1 ? 0 : undefined"
-                    :aria-expanded="group.voices.length > 1 ? isLanguageExpanded(group.language) : undefined"
-                    :aria-label="langLabel(group.language)"
-                    @click="group.voices.length > 1 && toggleLanguageGroup(group.language)"
-                    @keydown.enter.prevent="group.voices.length > 1 && toggleLanguageGroup(group.language)"
-                    @keydown.space.prevent="group.voices.length > 1 && toggleLanguageGroup(group.language)"
-                  >
-                    <i
-                      class="mdi id-voice-chevron"
-                      :class="isLanguageExpanded(group.language) ? 'mdi-chevron-down' : 'mdi-chevron-right'"
-                    ></i>
-                    <i :class="'flag-icon flag-icon-' + langFlag(group.language)"></i>
-                    <span class="id-count-pill">{{ group.voices.length }}</span>
-                  </div>
-                </td>
-                <td><VoiceParametersTooltip :provider="voice.provider" :parameters="voice.parameters" /></td>
-                <td>
-                  <div class="id-audio-preview">
-                    <button class="id-audio-play" :class="{ 'id-audio-play-active': playingVoiceId === voice.id }" :disabled="!hasAudio(voice)" :aria-label="!hasAudio(voice) ? voiceFileMissingLabel(contentLanguage) : (playingVoiceId === voice.id ? stopLabel(contentLanguage) : playLabel(contentLanguage))" :title="!hasAudio(voice) ? voiceFileMissingLabel(contentLanguage) : (playingVoiceId === voice.id ? stopLabel(contentLanguage) : playLabel(contentLanguage))" @click="togglePlay(voice)">
-                      <i :class="playingVoiceId === voice.id ? 'mdi mdi-stop' : 'mdi mdi-play'"></i>
-                    </button>
-                    <span :title="voiceFileName(voice)">{{ voiceFileName(voice) }}</span>
-                  </div>
-                </td>
-                <td>
-                  <div class="id-audio-preview">
-                    <button class="id-audio-play" :class="{ 'id-audio-play-active': playingVoiceId === voice.id }" :disabled="!hasAudio(voice)" :aria-label="!hasAudio(voice) ? voiceFileMissingLabel(contentLanguage) : (playingVoiceId === voice.id ? stopLabel(contentLanguage) : playLabel(contentLanguage))" :title="!hasAudio(voice) ? voiceFileMissingLabel(contentLanguage) : (playingVoiceId === voice.id ? stopLabel(contentLanguage) : playLabel(contentLanguage))" @click="togglePlay(voice)">
-                      <i :class="playingVoiceId === voice.id ? 'mdi mdi-stop' : 'mdi mdi-play'"></i>
-                    </button>
-                    <span :title="optimizedVoiceFileName(voice)">{{ optimizedVoiceFileName(voice) }}</span>
-                  </div>
-                </td>
-                <td>
-                  <div class="item-voice-actions">
-                    <button class="id-action-square id-action-regenerate" type="button" :disabled="isRegeneratingVoices" title="Regenerate voice" aria-label="Regenerate voice" @click="regenerateVoice(voice)">
-                      <i class="mdi" :class="regeneratingVoiceId === voice.id ? 'mdi-loading mdi-spin' : 'mdi-auto-fix'"></i>
-                    </button>
-                    <button class="id-action-square id-action-release" type="button" title="Release voice" aria-label="Release voice" @click="onReleaseVoice(voice)">
-                      <i class="mdi mdi-upload"></i>
-                    </button>
-                    <button class="id-action-square id-action-edit" type="button" title="Replace voice" aria-label="Replace voice" @click="onUploadVoice(voice)">
-                      <i class="mdi mdi-pencil"></i>
-                    </button>
-                    <button class="id-action-square id-action-delete" type="button" title="Delete or reset voice" aria-label="Delete or reset voice" @click="openVoiceDeleteModal(voice)">
-                      <i class="mdi mdi-delete"></i>
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            </template>
-          </tbody>
-        </table>
-      </div>
-    </section>
+    <ItemVoicesSection
+      :category-id="category.id"
+      :item-id="item.id"
+      :item-name="breadcrumbItem"
+      :voices="item.voices"
+      :external-playing-id="playingVoiceId"
+      :disabled="isRegeneratingVoices || deletingItem"
+      @play="stopAudio"
+      @changed="onVoicesChanged"
+    />
   </div>
 
   <div v-else class="text-center py-5">
@@ -433,26 +339,6 @@
   </Teleport>
 
   <Teleport to="body">
-    <div v-if="voiceDeleteTarget" class="cd-modal-overlay" @click.self="cancelVoiceDelete">
-      <div class="cd-modal-box">
-        <div class="cd-modal-header">
-          <h5 class="cd-modal-title">Delete or reset voice</h5>
-          <button type="button" class="cd-modal-close" @click="cancelVoiceDelete">&times;</button>
-        </div>
-        <div class="cd-modal-body">
-          Are you sure you want to delete or reset the voice for
-          <strong>{{ voiceDeleteTarget.name }}</strong>
-          (<span class="text-uppercase">{{ voiceDeleteTarget.language }}</span>)?
-        </div>
-        <div class="cd-modal-footer">
-          <button type="button" class="btn btn-secondary" @click="cancelVoiceDelete">Cancel</button>
-          <button type="button" class="btn btn-danger" @click="confirmVoiceDelete">Delete</button>
-        </div>
-      </div>
-    </div>
-  </Teleport>
-
-  <Teleport to="body">
     <div v-if="imagePreview" class="image-preview-overlay" @click.self="closeImagePreview">
       <button
         type="button"
@@ -500,16 +386,13 @@ import { useAudioPlayer } from '../composables/useAudioPlayer'
 import ViewBreadcrumb from '../components/ViewBreadcrumb.vue'
 import MobileActionsMenu, { type MobileAction } from '../components/MobileActionsMenu.vue'
 import VoiceCardsGrid, { type VoiceExtraAction } from '../components/VoiceCardsGrid.vue'
-import VoiceParametersTooltip from '../components/VoiceParametersTooltip.vue'
+import ItemVoicesSection from '../components/ItemVoicesSection.vue'
 import { resizeImageToMaxDimension } from '../utils/imageResize'
 import { imageIdFromUri } from '../utils/imageId'
 import { cacheBustedUri } from '../utils/cacheBustedUri'
-import { langFlag, langLabel } from '../utils/voiceLabels'
 import cameraPlaceholderUrl from '../assets/images/samples/camera-placeholder.svg'
 import {
   addImageLabel,
-  addVoiceLabel,
-  actionsColumnLabel,
   breadcrumbCategoriesLabel,
   archiveTypeToConfirmLabel,
   cancelLabel,
@@ -525,29 +408,21 @@ import {
   imageVariantLabel,
   itemIdLabel,
   itemVoicesLabel,
-  languageColumnLabel,
   localizedCategoryLabel,
   localizedImageLabel,
   mainItemImageLabel,
   newItemIdLabel,
   noLabel,
-  normalFileColumnLabel,
-  optimizedFileColumnLabel,
-  playLabel,
   promptLabel,
   regenerateAllVoicesLabel,
   regenerateAllVoicesConfirmParts,
   releaseAllImagesLabel,
-  releaseAllVoicesLabel,
   releaseItemLabel,
   saveLabel,
   selectedLabel,
   selectImageLabel,
-  stopLabel,
   sourceFileLabel,
   uploadingImageLabel,
-  voiceFileMissingLabel,
-  voicesLabel,
   yesLabel,
 } from '../utils/localizedLabels'
 import { toPascalCaseWords } from '../utils/pascalCaseWords'
@@ -694,48 +569,14 @@ const currentImageCard = computed(() => {
   }
 })
 
-const groupedVoices = computed(() =>
-  SUPPORTED_LANGUAGES
-    .map((language) => ({
-      language,
-      voices: item.value?.voices.filter((voice) => voice.language === language) ?? [],
-    }))
-    .filter((group) => group.voices.length > 0),
-)
-
-const expandedVoiceLanguages = ref<Set<Language>>(new Set())
-
-function isLanguageExpanded(language: Language): boolean {
-  return expandedVoiceLanguages.value.has(language)
-}
-
-function toggleLanguageGroup(language: Language): void {
-  const next = new Set(expandedVoiceLanguages.value)
-  if (next.has(language)) {
-    next.delete(language)
-  } else {
-    next.add(language)
-  }
-  expandedVoiceLanguages.value = next
-}
-
 const itemVoiceCards = computed(() =>
   SUPPORTED_LANGUAGES.flatMap((language) =>
-    item.value?.voices.filter((voice) => voice.language === language) ?? [],
+    item.value?.voices.filter((voice) => voice.language === language && voice.isSelected !== false)
+      .map((voice) => voice.selectedVersion === 'optimized' && voice.optimizedFileUri
+        ? { ...voice, fileUri: voice.optimizedFileUri }
+        : voice) ?? [],
   ),
 )
-
-function voiceFileName(voice: Voice): string {
-  return fileNameFromUri(voice.fileUri)
-}
-
-function optimizedVoiceFileName(voice: Voice): string {
-  const fileName = voiceFileName(voice)
-  if (fileName === 'No file') return fileName
-  const dotIndex = fileName.lastIndexOf('.')
-  if (dotIndex <= 0) return `${fileName}_optimized`
-  return `${fileName.slice(0, dotIndex)}_optimized${fileName.slice(dotIndex)}`
-}
 
 type ToastVariant = 'success' | 'error'
 const toast = ref<{ message: string; variant: ToastVariant } | null>(null)
@@ -763,6 +604,14 @@ async function refreshItem(): Promise<void> {
   if (!cat || !currentItem) return
   invalidateItemDetail(cat.id, currentItem.id)
   await ensureItemDetail(cat.id, currentItem.id)
+}
+
+async function onVoicesChanged(): Promise<void> {
+  stopAudio()
+  for (const voice of item.value?.voices ?? []) {
+    voiceVersions.value[voice.id] = (voiceVersions.value[voice.id] ?? 0) + 1
+  }
+  await refreshItem()
 }
 
 const announceBackendPending = (message: string): void => {
@@ -1039,89 +888,6 @@ const confirmDelete = async (): Promise<void> => {
   }
 }
 
-const voiceFileInputRef = ref<HTMLInputElement | null>(null)
-const voiceUploadTarget = ref<Voice | null>(null)
-
-const onUploadVoice = (voice: Voice): void => {
-  voiceUploadTarget.value = voice
-  voiceFileInputRef.value?.click()
-}
-
-const onAddVoice = (): void => {
-  announceBackendPending(`add voice for item ${item.value?.id ?? 'unknown item'}`)
-}
-
-const onVoiceFilePicked = async (e: Event): Promise<void> => {
-  const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  const cat = category.value
-  const currentItem = item.value
-  const voice = voiceUploadTarget.value
-  voiceUploadTarget.value = null
-  if (!file || !cat || !currentItem || !voice) {
-    input.value = ''
-    return
-  }
-
-  const wasAdd = !hasAudio(voice)
-  try {
-    let result
-    if (wasAdd) {
-      const formData = new FormData()
-      formData.append('language', voice.language)
-      formData.append('audio', file)
-      result = await itemsVoicesAdd(cat.id, currentItem.id, formData)
-    } else {
-      const formData = new FormData()
-      formData.append('audio', file)
-      result = await itemsVoicesUpdate(cat.id, currentItem.id, voice.id, formData)
-    }
-    await refreshItem()
-    voiceVersions.value = { ...voiceVersions.value, [voice.id]: (voiceVersions.value[voice.id] ?? 0) + 1 }
-    showToast(`Voice for ${voice.name} (${voice.language.toUpperCase()}) ${pastTense(result.action)}.`, 'success')
-  } catch (err) {
-    showToast(extractErrorMessage(err), 'error')
-  } finally {
-    input.value = ''
-  }
-}
-
-const onReleaseVoice = (voice: Voice): void => {
-  announceBackendPending(`release ${voice.language.toUpperCase()} voice ${voice.id} for item ${item.value?.id ?? 'unknown item'}`)
-}
-
-const onReleaseAllItemVoices = (): void => {
-  announceBackendPending(`release voices for item ${item.value?.id ?? 'unknown item'}`)
-}
-
-const voiceDeleteTarget = ref<Voice | null>(null)
-
-const openVoiceDeleteModal = (voice: Voice): void => {
-  voiceDeleteTarget.value = voice
-}
-
-const cancelVoiceDelete = (): void => {
-  voiceDeleteTarget.value = null
-}
-
-const confirmVoiceDelete = async (): Promise<void> => {
-  const voice = voiceDeleteTarget.value
-  const cat = category.value
-  const currentItem = item.value
-  voiceDeleteTarget.value = null
-  if (!voice || !cat || !currentItem) return
-  if (playingVoiceId.value === voice.id) stopAudio()
-
-  try {
-    const result = await itemsVoicesDelete(cat.id, currentItem.id, voice.id)
-    await refreshItem()
-    voiceVersions.value = { ...voiceVersions.value, [voice.id]: (voiceVersions.value[voice.id] ?? 0) + 1 }
-    showToast(`Voice for ${voice.name} (${voice.language.toUpperCase()}) ${pastTense(result.action)}.`, 'success')
-  } catch (err) {
-    showToast(extractErrorMessage(err), 'error')
-  }
-}
-
 async function uploadVoiceCard(voice: Voice, file: File, wasAdd: boolean): Promise<void> {
   const cat = category.value
   const currentItem = item.value
@@ -1308,11 +1074,6 @@ const imageActions = computed<MobileAction[]>(() => [
   ...(hasFiles.value
     ? [{ label: releaseAllImagesLabel(contentLanguage.value), icon: 'mdi-upload', tone: 'success' as const, onClick: onReleaseAllItemImages }]
     : []),
-])
-
-const voiceActions = computed<MobileAction[]>(() => [
-  { label: addVoiceLabel(contentLanguage.value), icon: 'mdi-plus', tone: 'primary', onClick: onAddVoice },
-  { label: releaseAllVoicesLabel(contentLanguage.value), icon: 'mdi-upload', tone: 'success' as const, onClick: onReleaseAllItemVoices },
 ])
 
 </script>
@@ -1667,148 +1428,6 @@ const voiceActions = computed<MobileAction[]>(() => [
   align-self: start;
   min-width: 0;
 }
-.id-voices-table-wrap {
-  margin-top: 0.8rem;
-  overflow-x: visible;
-}
-.id-voices-table {
-  width: 100%;
-  min-width: 0;
-  table-layout: fixed;
-}
-.id-voices-table th {
-  border-top: 0;
-  color: #111a3d;
-  font-size: 0.76rem;
-  font-weight: 700;
-  white-space: nowrap;
-}
-.id-voices-table th,
-.id-voices-table td {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.id-voices-table td {
-  color: #111a3d;
-  font-size: 0.82rem;
-  vertical-align: middle;
-  white-space: nowrap;
-}
-.id-voices-table th:nth-child(1),
-.id-voices-table td:nth-child(1) {
-  width: 11%;
-}
-.id-voices-table th:nth-child(2),
-.id-voices-table td:nth-child(2) {
-  width: 8%;
-}
-.id-voices-table td:nth-child(2) {
-  /* Let the provider-name tooltip popover escape the cell instead of being clipped. */
-  overflow: visible;
-}
-.id-voices-table th:nth-child(3),
-.id-voices-table td:nth-child(3) {
-  width: 31%;
-}
-.id-voices-table th:nth-child(4),
-.id-voices-table td:nth-child(4) {
-  width: 33%;
-}
-.id-voices-table th:nth-child(5),
-.id-voices-table td:nth-child(5) {
-  width: 17%;
-}
-.id-voice-language,
-.item-voice-actions,
-.id-audio-preview {
-  display: flex;
-  align-items: center;
-}
-.id-voice-language {
-  gap: 0.4rem;
-  font-weight: 600;
-  min-width: 0;
-}
-.id-voice-language-clickable {
-  cursor: pointer;
-}
-.id-voice-chevron,
-.id-voice-language .flag-icon,
-.id-count-pill {
-  flex-shrink: 0;
-}
-.id-voice-chevron {
-  transition: transform 0.15s ease;
-}
-.id-count-pill {
-  min-width: 1.25rem;
-  border-radius: 4px;
-  background: #edf1f7;
-  color: #4b587d;
-  font-size: 0.72rem;
-  line-height: 1.25rem;
-  text-align: center;
-}
-.id-audio-preview {
-  gap: 0.5rem;
-  color: #4b587d;
-  min-width: 0;
-}
-.id-audio-preview span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.id-audio-play {
-  width: 1.6rem;
-  height: 1.6rem;
-  border: 0;
-  border-radius: 50%;
-  background: #eef1f6;
-  color: #111827;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-}
-.id-audio-play-active {
-  background: #ef4444;
-  color: #fff;
-}
-.id-audio-play:disabled {
-  color: #94a3b8;
-  cursor: not-allowed;
-}
-.item-voice-actions {
-  justify-content: flex-end;
-  gap: 0.45rem;
-}
-.id-action-square {
-  width: 1.7rem;
-  height: 1.7rem;
-  border-radius: 4px;
-  font-size: 0.95rem;
-}
-.id-action-release {
-  background: #e9f8f1;
-  color: #2f8f68;
-}
-.id-action-regenerate {
-  background: #e6f4f3;
-  color: #0f766e;
-}
-.id-action-square:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-.id-action-edit {
-  background: #eef4ff;
-  color: #2563eb;
-}
-.id-action-delete {
-  background: #fff0f1;
-  color: #ef4444;
-}
 @media (max-width: 1399px) {
   .id-image-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1909,12 +1528,6 @@ const voiceActions = computed<MobileAction[]>(() => [
   }
   .id-image-grid > .id-add-image-card {
     display: none;
-  }
-  .id-voices-table-wrap {
-    overflow-x: auto;
-  }
-  .id-voices-table {
-    min-width: 42rem;
   }
 }
 .cd-modal-overlay {

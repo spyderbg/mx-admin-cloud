@@ -174,6 +174,9 @@ const normalizeVoices = (
       language,
       type: typeof voice.type === 'string' ? voice.type : 'male',
       fileUri: typeof voice.file_uri === 'string' ? voice.file_uri : '',
+      isSelected: typeof voice.is_selected === 'boolean' ? voice.is_selected : undefined,
+      selectedVersion: voice.selected_version === 'optimized' ? 'optimized' : 'original',
+      optimizedFileUri: typeof voice.optimized_file_uri === 'string' ? voice.optimized_file_uri : undefined,
       provider: typeof voice.provider === 'string' && voice.provider ? voice.provider : 'unknown',
       parameters:
         voice.parameters && typeof voice.parameters === 'object'

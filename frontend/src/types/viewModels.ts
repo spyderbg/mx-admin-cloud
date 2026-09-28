@@ -26,6 +26,10 @@ export interface Voice {
     provider: string
     /** Generation parameters recorded alongside the voice file. */
     parameters: Record<string, unknown>
+    /** Optional candidate-selection fields; absent on the legacy single-voice API. */
+    isSelected?: boolean
+    selectedVersion?: 'original' | 'optimized'
+    optimizedFileUri?: string
 }
 
 export interface Item {
