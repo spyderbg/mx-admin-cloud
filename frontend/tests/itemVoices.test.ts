@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { selectedVoice, voiceAudioUri, validateAudioFile, voiceSource, audioFileName, normalizeItemVoices, voiceSelectionId } from '../src/utils/itemVoices.ts'
+import { selectedVoice, voiceAudioUri, validateAudioFile, voiceSource, audioFileName, normalizeItemVoices, voiceSelectionId, voiceGenerationText } from '../src/utils/itemVoices.ts'
 import { legacyVoiceCapabilities, type ItemVoiceRecord } from '../src/types/itemVoices.ts'
 import { cacheBustedUri } from '../src/utils/cacheBustedUri.ts'
 import { langLabel } from '../src/utils/voiceLabels.ts'
@@ -55,6 +55,12 @@ test('manual/unknown recordings do not acquire fabricated generation metadata', 
   assert.equal(voiceSource(voice({ provider: 'unknown' })), 'unknown')
   assert.equal(voiceSource(voice({ provider: 'elevenlabs' })), 'generated')
   assert.equal(voiceSource(voice({ provider: 'elevenlabs', creation_method: 'uploaded' })), 'uploaded')
+})
+
+test('each generated voice exposes only its own stored synthesis text', () => {
+  assert.equal(voiceGenerationText(voice({ parameters: { _text: '  yellow bananas  ' } })), 'yellow bananas')
+  assert.equal(voiceGenerationText(voice({ parameters: { _text: 42 } })), '')
+  assert.equal(voiceGenerationText(voice()), '')
 })
 
 test('cache busting refreshes real files and leaves uploaded preview URLs playable', () => {

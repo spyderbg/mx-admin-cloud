@@ -28,7 +28,7 @@ function getList(categoryId: string, itemId: string): ItemVoiceList | undefined 
     id: voice.id, language: voice.language, type: 'tts', file_uri: voice.fileUri,
     display_name: 'Milena', provider: 'elevenlabs', creation_method: 'generated',
     is_selected: !!voice.fileUri, selected_version: 'original',
-    parameters: { actor: 'Milena', model: 'eleven_multilingual_v2', speed: 1, voice_settings: { stability: .5, similarity_boost: .75 }, date: '2026-09-28T08:00:00Z' },
+    parameters: { actor: 'Milena', model: 'eleven_multilingual_v2', speed: 1, _text: name[voice.language], voice_settings: { stability: .5, similarity_boost: .75 }, date: '2026-09-28T08:00:00Z' },
   }))
   const english = voices.find((voice) => voice.language === 'en' && voice.file_uri)
   if (english) {

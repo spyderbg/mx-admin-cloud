@@ -1,0 +1,53 @@
+### Add a voice to an item
+# language is the ISO code for the new voice; fails with 409 if the item already has a voice for it.
+POST {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}/voices
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="language"
+
+de
+--WebAppBoundary
+Content-Disposition: form-data; name="audio"; filename="item_voice.mp3"
+Content-Type: audio/mpeg
+
+< ./fixtures/item_voice.mp3
+--WebAppBoundary--
+
+### Update voice for an item
+# voice_id identifies the item+language pair; fails with 404 if it has no audio file yet.
+PUT {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}/voices/{{item_voice_id}}
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="audio"; filename="item_voice.mp3"
+Content-Type: audio/mpeg
+
+< ./fixtures/item_voice.mp3
+--WebAppBoundary--
+
+### Delete a voice from an item
+DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}/voices/{{item_voice_id}}
+
+### Delete a voice from an item - category not found
+DELETE {{settings.CONTENT_URL}}/categories/does_not_exist/icon
+
+### Delete a voice from an item - item not found
+DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/items/does_not_exist
+
+### Delete a voice from an item - voice not found
+DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}/voices/does_not_exist
+
+### Set a voice variant as the item's main voice for a language
+# voice_id must be a variant belonging to the given language; the original recording is kept as a variant too.
+PUT {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}/voices/{{item_voice_id}}/main
+Content-Type: application/json
+
+{
+  "language": "de"
+}
+
+### Create optimized versions of an item voice
+# Runs every active voice optimizer on the original recording; each result is stored as a new variant.
+# Fails with 400 only when no optimizer is active or all of them fail (see 'warnings' in the response).
+POST {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}/voices/{{item_voice_id}}/optimize

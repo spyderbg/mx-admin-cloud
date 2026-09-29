@@ -35,6 +35,11 @@ export function voiceTitle(voice: ItemVoiceRecord): string {
   return voice.display_name || (typeof actor === 'string' ? actor : '') || voice.id
 }
 
+export function voiceGenerationText(voice: ItemVoiceRecord): string {
+  const text = voice.parameters?._text
+  return typeof text === 'string' ? text.trim() : ''
+}
+
 export function voiceSource(voice: ItemVoiceRecord): 'generated' | 'uploaded' | 'unknown' {
   if (voice.creation_method) return voice.creation_method
   if (voice.provider === 'custom') return 'uploaded'

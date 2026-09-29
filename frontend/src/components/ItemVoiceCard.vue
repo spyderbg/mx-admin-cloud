@@ -4,7 +4,6 @@
     <header class="iv-card-header">
       <div class="iv-card-heading">
         <div class="iv-card-title"><h3>{{ title }}</h3><span v-if="selected" class="iv-badge">{{ copy.inUse }}</span></div>
-        <p>{{ source === 'uploaded' ? copy.uploaded : voice.provider || copy.unknown }}<span v-if="source === 'generated'"> · {{ copy.generated }}</span></p>
       </div>
       <div class="iv-card-actions">
         <button type="button" class="iv-card-action iv-card-action-edit" :disabled="busy" :title="copy.replace" :aria-label="`${copy.replace}: ${title}`" @click="$emit('replace')">
@@ -15,6 +14,17 @@
         </button>
       </div>
     </header>
+
+    <div class="iv-card-meta">
+      <p v-if="generationText" class="iv-spoken-text">
+        <span>{{ copy.text }}:</span>
+        <strong>{{ generationText }}</strong>
+      </p>
+      <p class="iv-provider">
+        <span>{{ copy.provider }}:</span>
+        <strong>{{ voice.provider || copy.unknown }}</strong>
+      </p>
+    </div>
 
     <div v-if="source === 'generated' || voice.optimized_file_uri" class="iv-versions" :aria-label="`${title}: ${copy.preview}`" role="group">
       <button type="button" :aria-pressed="version === 'original'" @click="version = 'original'">{{ copy.original }}</button>
@@ -54,7 +64,7 @@ import { computed, ref, watch } from 'vue'
 import type { AudioVersion, ItemVoiceRecord, VoiceCapabilities } from '../types/itemVoices'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import { itemVoiceCopy } from '../utils/itemVoiceCopy'
-import { audioFileName, voiceTitle, voiceSource, voiceAudioUri, voiceSelectionId } from '../utils/itemVoices'
+import { audioFileName, voiceTitle, voiceSource, voiceAudioUri, voiceSelectionId, voiceGenerationText } from '../utils/itemVoices'
 import { langLabel } from '../utils/voiceLabels'
 import { cacheBustedUri } from '../utils/cacheBustedUri'
 import VoiceAudioPreview from './VoiceAudioPreview.vue'
@@ -66,6 +76,7 @@ const language = useContentLanguage()
 const copy = computed(() => itemVoiceCopy[language.value])
 const title = computed(() => voiceTitle(props.voice))
 const source = computed(() => voiceSource(props.voice))
+const generationText = computed(() => source.value === 'generated' ? voiceGenerationText(props.voice) : '')
 const version = ref<AudioVersion>(props.voice.selected_version === 'optimized' && props.voice.optimized_file_uri ? 'optimized' : 'original')
 const src = computed(() => {
   const uri = voiceAudioUri(props.voice, version.value)
@@ -113,8 +124,10 @@ function onDrop(event: DragEvent): void {
 .iv-card-heading { min-width: 0; flex: 1; }
 .iv-card-title { display: flex; flex-wrap: wrap; gap: .45rem; align-items: center; }
 .iv-card-title h3 { font-size: 1rem; font-weight: 700; margin: 0; overflow-wrap: anywhere; }
-.iv-card-heading p { margin: .3rem 0 0; color: #63708c; font-size: .78rem; overflow-wrap: anywhere; }
 .iv-badge { color: white; background: #2f8f68; border-radius: 20px; padding: .2rem .55rem; font-size: .68rem; white-space: nowrap; }
+.iv-card-meta { display: grid; gap: .25rem; }
+.iv-spoken-text, .iv-provider { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem; margin: 0; color: #596984; font-size: .75rem; line-height: 1.4; }
+.iv-spoken-text strong, .iv-provider strong { color: #111a3d; font-size: .82rem; overflow-wrap: anywhere; }
 .iv-card-actions { display: flex; gap: .35rem; flex: none; }
 .iv-card-action { display: inline-flex; align-items: center; justify-content: center; width: 1.75rem; height: 1.75rem; padding: 0; border: 0; border-radius: 50%; color: #fff; font-size: .9rem; cursor: pointer; }
 .iv-card-action-edit { background: #2563eb; }

@@ -204,6 +204,7 @@
       :disabled="isRegeneratingVoices || deletingItem"
       @play="stopAudio"
       @changed="onVoicesChanged"
+      @toast="showToast"
     />
   </div>
 

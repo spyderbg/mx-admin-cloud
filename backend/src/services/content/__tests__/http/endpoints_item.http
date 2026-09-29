@@ -1,0 +1,78 @@
+### Create a new item in a category
+# item is the item's English name; it is translated into every supported language, and voices are
+# generated best-effort for any active TTS provider (see 'voice_warnings' in the response).
+POST {{settings.CONTENT_URL}}/categories/{{category_id}}/items
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="item"
+
+Hot Chocolate
+--WebAppBoundary--
+
+### Create a new item in a category - with an image
+POST {{settings.CONTENT_URL}}/categories/{{category_id}}/items
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="item"
+
+Hot Chocolate
+--WebAppBoundary
+Content-Disposition: form-data; name="image"; filename="item_image.png"
+Content-Type: image/png
+
+< ./fixtures/item_image.png
+--WebAppBoundary--
+
+### Create a new item in a category - category not found
+POST {{settings.CONTENT_URL}}/categories/does_not_exist/items
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="item"
+
+Hot Chocolate
+--WebAppBoundary--
+
+### Update an item's localized name
+PUT {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}
+Content-Type: application/json
+
+{
+  "item_name": {
+    "en": "Hot Chocolate"
+  }
+}
+
+### Update an item's id
+# new_item_id renames the item id itself; fails with 409 if another item in the category already uses it.
+PUT {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}
+Content-Type: application/json
+
+{
+  "item_name": {
+    "en": "Hot Chocolate"
+  },
+  "new_item_id": "{{item_id}}"
+}
+
+### Update an item - not found
+PUT {{settings.CONTENT_URL}}/categories/{{category_id}}/items/does_not_exist
+Content-Type: application/json
+
+{
+  "item_name": {
+    "en": "Hot Chocolate"
+  }
+}
+
+### Delete an item from a category
+# Permanently removes the item and all associated metadata; cannot be undone.
+DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}
+
+### Delete an item - category not found
+DELETE {{settings.CONTENT_URL}}/categories/does_not_exist/items/{{item_id}}
+
+### Delete an item - item not found
+DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/items/does_not_exist

@@ -20,9 +20,6 @@
         <MobileActionsMenu class="ivs-summary-menu" label="Voice actions" :actions="voiceActions" />
       </div>
     </header>
-    <div v-if="notice" class="ivs-notice" :class="{ 'ivs-error': notice.error }" :role="notice.error ? 'alert' : 'status'">
-      <span>{{ notice.text }}</span><button type="button" :aria-label="copy.close" @click="notice = null"><i class="mdi mdi-close" aria-hidden="true"></i></button>
-    </div>
     <p v-if="loading && !data" class="ivs-loading" role="status">{{ copy.loading }}</p>
     <div v-else-if="loadFailed" class="ivs-notice ivs-error" role="alert"><span>{{ copy.loadError }}</span><button type="button" class="ivs-button" @click="load()">{{ copy.retry }}</button></div>
     <template v-if="data">
@@ -38,10 +35,6 @@
             </button>
           </header>
           <div v-show="expanded.has(group.language)" :id="`voices-${group.language}`" class="ivs-group-body">
-            <div class="ivs-base"><span>{{ copy.baseVoice }}</span>
-              <button type="button" :disabled="busy" @click="openGenerate(group.language)">{{ baseVoiceLabel(group.language) }}<i class="mdi mdi-chevron-down" aria-hidden="true"></i></button>
-              <span class="ivs-spoken">{{ copy.text }}: <strong>{{ data.name[group.language] || '—' }}</strong></span>
-            </div>
             <div class="ivs-cards">
               <ItemVoiceCard v-for="voice in group.voices" :key="voice.id" :voice="voice" :capabilities="capabilities"
                 :selected="group.selected?.id === voice.id" :busy="busy" :optimizing="busyKey === `optimize:${voice.id}`"
@@ -90,7 +83,7 @@
         <label class="ivs-checkbox"><span>{{ copy.autoOptimize }}</span><input v-model="autoOptimize" type="checkbox" :disabled="!capabilities.optimize" role="switch" /></label>
       </fieldset>
       <p class="ivs-notice">{{ copy.keepSelection }}</p>
-      <template #footer><button type="button" class="ivs-button" :disabled="!!busyKey" @click="closeDialog">{{ copy.cancel }}</button><button type="submit" class="ivs-button ivs-primary ivs-submit" :disabled="!canGenerate"><i class="mdi" :class="busyKey ? 'mdi-loading mdi-spin' : 'mdi-auto-fix'" aria-hidden="true"></i>{{ busyKey ? copy.generating : copy.generate }}</button></template>
+      <template #footer><button type="submit" class="ivs-button ivs-primary ivs-submit" :disabled="!canGenerate"><i class="mdi" :class="busyKey ? 'mdi-loading mdi-spin' : 'mdi-auto-fix'" aria-hidden="true"></i>{{ busyKey ? copy.generating : copy.generate }}</button></template>
     </VoiceDialog>
 
     <VoiceDialog v-if="dialog === 'upload'" :title="uploadMode === 'replace' ? copy.replace : copy.add" :busy="!!busyKey" @close="closeDialog" @submit="upload">
@@ -136,13 +129,12 @@ import VoiceDialog from './VoiceDialog.vue'
 import VoiceAudioPreview from './VoiceAudioPreview.vue'
 
 const props = defineProps<{ categoryId: string; itemId: string; itemName: string; voices: Voice[]; externalPlayingId: string | null; disabled: boolean }>()
-const emit = defineEmits<{ changed: []; play: [] }>()
+const emit = defineEmits<{ changed: []; play: []; toast: [message: string, variant: 'success' | 'error'] }>()
 const language = useContentLanguage()
 const copy = computed(() => itemVoiceCopy[language.value])
 const data = ref<ItemVoiceList | null>(null)
 const loading = ref(false)
 const loadFailed = ref(false)
-const notice = ref<{ text: string; error: boolean } | null>(null)
 const busyKey = ref('')
 const busy = computed(() => !!busyKey.value || props.disabled || loading.value)
 const capabilities = computed(() => ({ ...legacyVoiceCapabilities, ...data.value?.capabilities }))
@@ -210,7 +202,6 @@ watch(identity, () => {
   busyKey.value = ''
   closeDialog()
   data.value = null
-  notice.value = null
   activePlayer.value = null
   expanded.value = new Set()
   chosenPresets.value = {}
@@ -226,13 +217,6 @@ function toggleGroup(language: Language): void {
   expanded.value = next
 }
 function toggleAll(): void { expanded.value = expanded.value.size ? new Set() : new Set(SUPPORTED_LANGUAGES) }
-function baseVoiceLabel(language: Language): string {
-  const preset = chosenPresets.value[language]
-  if (preset) return `${preset.provider} / ${preset.name}`
-  const voice = groups.value.find((group) => group.language === language)?.voices.find((voice) => voice.parameters?.actor || voice.parameters?.voice)
-  return voice ? `${voice.provider} / ${voice.parameters?.actor || voice.parameters?.voice}` : copy.value.currentConfig
-}
-
 const dialog = ref<'upload' | 'generate' | 'delete' | null>(null)
 const formLanguage = ref<Language>('en')
 const formError = ref('')
@@ -254,7 +238,6 @@ async function mutate(key: string, action: () => Promise<unknown>, success: stri
   const itemId = props.itemId
   busyKey.value = key
   formError.value = ''
-  notice.value = null
   activePlayer.value = null
   try {
     await action()
@@ -265,13 +248,13 @@ async function mutate(key: string, action: () => Promise<unknown>, success: stri
     if (operation !== id) return
     busyKey.value = ''
     closeDialog()
-    notice.value = { text: refreshed ? success : copy.value.refreshError, error: !refreshed }
+    emit('toast', refreshed ? success : copy.value.refreshError, refreshed ? 'success' : 'error')
     emit('changed')
   } catch (error) {
     if (operation !== id) return
     const message = voiceErrorMessage(error) || copy.value.operationError
     if (dialog.value) formError.value = message
-    else notice.value = { text: message, error: true }
+    else emit('toast', message, 'error')
   } finally {
     if (operation === id) busyKey.value = ''
   }
@@ -420,16 +403,13 @@ function pickLanguageFile(event: Event): void {
 async function uploadLanguageFiles(language: Language, files: FileList | null): Promise<void> {
   if (busy.value || !files?.length) return
   if (files.length > 1) {
-    notice.value = { text: copy.value.oneFile, error: true }
+    emit('toast', copy.value.oneFile, 'error')
     return
   }
   const file = files[0]
   const error = validateAudioFile(file, formats.value)
   if (error) {
-    notice.value = {
-      text: error === 'empty' ? copy.value.emptyFile : `${copy.value.invalidFile} ${formatsLabel.value}`,
-      error: true,
-    }
+    emit('toast', error === 'empty' ? copy.value.emptyFile : `${copy.value.invalidFile} ${formatsLabel.value}`, 'error')
     return
   }
   expanded.value = new Set([...expanded.value, language])
@@ -510,10 +490,6 @@ onBeforeUnmount(() => {
 .ivs-current { color: #24704f; font-size: .74rem; padding-left: .85rem; border-left: 1px solid #cddced; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ivs-no-selection { color: #64748b; }
 .ivs-group-body { border-top: 1px solid #dbe6f4; padding: .9rem; }
-.ivs-base { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; font-size: .78rem; margin-bottom: 1rem; }
-.ivs-base > span:first-child { color: #596984; }
-.ivs-base button { display: flex; justify-content: space-between; gap: 1.5rem; align-items: center; min-height: 36px; border: 1px solid #cbd8ec; border-radius: 6px; background: white; color: #334155; padding: .4rem .65rem; max-width: 100%; overflow-wrap: anywhere; }
-.ivs-spoken { margin-left: .65rem; overflow-wrap: anywhere; }
 .ivs-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch; gap: .9rem; }
 .ivs-add-card { min-width: 0; min-height: 13rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .55rem; padding: 1rem; border: 1px dashed #93baf2; border-radius: 10px; background: #f8fbff; color: #334155; font: inherit; cursor: pointer; }
 .ivs-add-card > i { color: #4f46e5; font-size: 2rem; }
@@ -563,7 +539,6 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 @container voices (max-width: 42rem) {
   .ivs-cards { grid-template-columns: minmax(0, 1fr); }
   .ivs-group-body { padding: .65rem; }
-  .ivs-spoken { width: 100%; margin: 0; }
 }
 @media (max-width: 575px) {
   .ivs { padding: .8rem; }
@@ -571,7 +546,6 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   .ivs-header h2 { font-size: 1.3rem; }
   .ivs-toggle { min-height: 44px; }
   .ivs-button { min-height: 44px; padding: .5rem .6rem; font-size: .76rem; }
-  .ivs-base button { min-height: 44px; }
   .ivs-group-header { padding: .5rem .6rem; }
   .ivs-language { font-size: .92rem; }
   .ivs-toggle { gap: .5rem; }
