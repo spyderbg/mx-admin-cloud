@@ -266,7 +266,10 @@ function optimize(voice: ItemVoiceRecord): void {
 function select(voice: ItemVoiceRecord, version: AudioVersion): void {
   const voiceId = voiceSelectionId(voice, version)
   if (!capabilities.value.select || !voiceId) return
-  void mutate(`select:${voice.id}`, () => selectItemVoice(props.categoryId, props.itemId, voiceId, voice.language), copy.value.selectedSuccess)
+  const success = copy.value.selectedSuccess
+    .replace('{voice}', voiceTitle(voice))
+    .replace('{language}', langLabel(voice.language, language.value))
+  void mutate(`select:${voice.id}`, () => selectItemVoice(props.categoryId, props.itemId, voiceId, voice.language), success)
 }
 function openDelete(voice: ItemVoiceRecord): void {
   if (busy.value) return

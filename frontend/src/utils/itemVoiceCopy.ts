@@ -29,7 +29,7 @@ const en = {
   cancel: 'Cancel', close: 'Close', upload: 'Add audio', saving: 'Saving…', generating: 'Generating…',
   optimizing: 'Optimizing…', saved: 'Audio saved.', generatedSuccess: 'New recording generated.',
   optimizedSuccess: 'Optimized audio is ready. Preview it before selecting it for the item.',
-  selectedSuccess: 'Item voice updated.', operationError: 'The operation failed. Please try again.',
+  selectedSuccess: '{voice} selected for {language}.', operationError: 'The operation failed. Please try again.',
   refreshError: 'The change was saved, but the updated voices could not be loaded. Try again.',
   emptyFile: 'This file is empty. Choose an audio recording.', invalidFile: 'Choose an audio file in one of these formats:',
   oneFile: 'Add one audio file at a time.', play: 'Play', pause: 'Pause', seek: 'Seek audio',
@@ -54,7 +54,7 @@ const es: typeof en = {
   noPresets: 'No hay voces base para este idioma.', presetsError: 'No se pudieron cargar las voces base.', language: 'Idioma', mode: 'Modo', addNew: 'Añadir nueva', replaceExisting: 'Reemplazar existente',
   replaceTarget: 'Voz a reemplazar', dropHere: 'Suelta el audio aquí', preview: 'Vista previa', ready: 'Listo para subir', remove: 'Quitar archivo',
   replaceHint: 'Reemplazar actualiza esta grabación. Si está seleccionada, también cambia el audio del elemento.', cancel: 'Cancelar', close: 'Cerrar', upload: 'Añadir audio', saving: 'Guardando…', generating: 'Generando…', optimizing: 'Optimizando…',
-  saved: 'Audio guardado.', generatedSuccess: 'Nueva grabación generada.', optimizedSuccess: 'Audio optimizado listo. Escúchalo antes de seleccionarlo.', selectedSuccess: 'Voz actualizada.', operationError: 'La operación falló. Inténtalo de nuevo.',
+  saved: 'Audio guardado.', generatedSuccess: 'Nueva grabación generada.', optimizedSuccess: 'Audio optimizado listo. Escúchalo antes de seleccionarlo.', selectedSuccess: '{voice} seleccionada para {language}.', operationError: 'La operación falló. Inténtalo de nuevo.',
   refreshError: 'Se guardó el cambio, pero no se pudieron actualizar las voces. Reintenta.', emptyFile: 'El archivo está vacío.', invalidFile: 'Elige un archivo en uno de estos formatos:', oneFile: 'Añade un archivo cada vez.',
   play: 'Reproducir', pause: 'Pausar', seek: 'Posición del audio', playbackError: 'No se pudo reproducir el audio.', noAudio: 'Sin archivo de audio', chooseVoice: 'Elige una voz base',
 }
@@ -74,7 +74,7 @@ const fr: typeof en = {
   newRecording: 'Nouvel enregistrement pour', settings: 'Réglages de la voix', autoOptimize: 'Optimiser après la génération', keepSelection: 'La voix actuelle reste sélectionnée. Choisissez la nouvelle quand vous le souhaitez.', noPresets: 'Aucune voix de base pour cette langue.', presetsError: 'Impossible de charger les voix de base.',
   language: 'Langue', mode: 'Mode', addNew: 'Ajouter', replaceExisting: 'Remplacer', replaceTarget: 'Voix à remplacer', dropHere: 'Déposer l’audio ici', preview: 'Aperçu', ready: 'Prêt à importer', remove: 'Retirer le fichier',
   replaceHint: 'Le remplacement modifie cet enregistrement et, s’il est sélectionné, l’audio de l’élément.', cancel: 'Annuler', close: 'Fermer', upload: 'Ajouter un audio', saving: 'Enregistrement…', generating: 'Génération…', optimizing: 'Optimisation…', saved: 'Audio enregistré.', generatedSuccess: 'Nouvel enregistrement généré.',
-  optimizedSuccess: 'Audio optimisé prêt. Écoutez-le avant de le sélectionner.', selectedSuccess: 'Voix mise à jour.', operationError: 'L’opération a échoué. Réessayez.', refreshError: 'Modification enregistrée, mais actualisation impossible. Réessayez.',
+  optimizedSuccess: 'Audio optimisé prêt. Écoutez-le avant de le sélectionner.', selectedSuccess: '{voice} sélectionnée pour {language}.', operationError: 'L’opération a échoué. Réessayez.', refreshError: 'Modification enregistrée, mais actualisation impossible. Réessayez.',
   emptyFile: 'Ce fichier est vide.', invalidFile: 'Choisissez un fichier dans ces formats :', oneFile: 'Ajoutez un seul fichier à la fois.', play: 'Lire', pause: 'Pause', seek: 'Position audio', playbackError: 'Impossible de lire cet audio.', noAudio: 'Aucun fichier audio', chooseVoice: 'Choisissez une voix de base',
 }
 
@@ -93,7 +93,7 @@ const bg: typeof en = {
   newRecording: 'Нов запис за', settings: 'Настройки на гласа', autoOptimize: 'Оптимизирай след генериране', keepSelection: 'Текущият глас остава избран. Изберете новия, когато сте готови.', noPresets: 'Няма базови гласове за този език.', presetsError: 'Базовите гласове не могат да се заредят.',
   language: 'Език', mode: 'Режим', addNew: 'Добави нов', replaceExisting: 'Замени съществуващ', replaceTarget: 'Глас за замяна', dropHere: 'Пуснете аудио тук', preview: 'Преглед', ready: 'Готов за качване', remove: 'Премахни файла',
   replaceHint: 'Замяната променя този запис. Ако е избран, аудиото на елемента също се променя.', cancel: 'Отказ', close: 'Затвори', upload: 'Добави аудио', saving: 'Запазване…', generating: 'Генериране…', optimizing: 'Оптимизиране…', saved: 'Аудиото е запазено.', generatedSuccess: 'Новият запис е генериран.',
-  optimizedSuccess: 'Оптимизираното аудио е готово. Прослушайте го, преди да го изберете.', selectedSuccess: 'Гласът на елемента е обновен.', operationError: 'Операцията е неуспешна. Опитайте отново.', refreshError: 'Промяната е запазена, но гласовете не могат да се обновят. Опитайте отново.',
+  optimizedSuccess: 'Оптимизираното аудио е готово. Прослушайте го, преди да го изберете.', selectedSuccess: '{voice} е избран за {language}.', operationError: 'Операцията е неуспешна. Опитайте отново.', refreshError: 'Промяната е запазена, но гласовете не могат да се обновят. Опитайте отново.',
   emptyFile: 'Файлът е празен. Изберете аудио запис.', invalidFile: 'Изберете аудио файл в един от тези формати:', oneFile: 'Добавяйте по един аудио файл.', play: 'Пусни', pause: 'Пауза', seek: 'Позиция в записа', playbackError: 'Аудиото не може да се възпроизведе.', noAudio: 'Няма аудио файл', chooseVoice: 'Изберете базов глас',
 }
 
