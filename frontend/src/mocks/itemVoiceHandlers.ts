@@ -138,15 +138,13 @@ export const itemVoiceHandlers = [
     voice.optimized_file_uri = voice.file_uri.startsWith('blob:') ? voice.file_uri : `${voice.file_uri.split('?')[0]}?preview=optimized`
     return HttpResponse.json(voice)
   }),
-  http.put(`${base}/:voice_id/main`, async ({ params, request }) => {
+  http.put(`${base}/:voice_id/main`, ({ params }) => {
     const list = findList(params)
     const voice = list?.voices.find((entry) => entry.id === params.voice_id || entry.optimized_voice_id === params.voice_id)
     if (!list || !voice?.file_uri) return error('Voice not found.', 404)
-    const { language } = await request.json() as { language: string }
-    if (language !== voice.language) return error('Voice not found for this language.', 404)
     const version = params.voice_id === voice.optimized_voice_id ? 'optimized' : 'original'
     if (version === 'optimized' && !voice.optimized_file_uri) return error('No optimized audio available.')
-    list.voices.filter((entry) => entry.language === language).forEach((entry) => { entry.is_selected = entry.id === voice.id })
+    list.voices.filter((entry) => entry.language === voice.language).forEach((entry) => { entry.is_selected = entry.id === voice.id })
     voice.selected_version = version
     return HttpResponse.json(listResponse(list))
   }),

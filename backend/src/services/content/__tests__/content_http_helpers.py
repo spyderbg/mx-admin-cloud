@@ -247,7 +247,7 @@ class StubContentProvider(ContentProvider):
     def set_main_item_image(self, category_id: str, item_id: str, image_id: str) -> ItemImages:
         return self._call("set_main_item_image", ItemImages(item_id=item_id))
 
-    def set_main_item_voice(self, category_id: str, item_id: str, voice_id: str, language: str) -> ItemVoices:
+    def set_main_item_voice(self, category_id: str, item_id: str, voice_id: str) -> ItemVoices:
         return self._call("set_main_item_voice", ItemVoices(item_id=item_id))
 
     def optimize_item_voice(self, category_id: str, item_id: str, voice_id: str) -> OptimizedItemVoice:

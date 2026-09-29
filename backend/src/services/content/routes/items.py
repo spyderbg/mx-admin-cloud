@@ -29,7 +29,6 @@ from src.services.content.schemas import (
     ItemSummary,
     ItemVoicesResponse,
     OptimizeItemVoiceResponse,
-    SetMainItemVoiceBody,
     UpdateItemBody,
     VoiceResponse,
 )
@@ -627,22 +626,21 @@ def items_voices_delete(
     response_model=ItemVoicesResponse,
     status_code=status.HTTP_200_OK,
     tags=[TAG_ITEMS_VOICES],
-    summary="Set a voice variant as the item's main voice for a language",
+    summary="Set a voice variant as the item's main voice for its language",
     description=(
-            "Make the voice variant identified by voice_id the item's main voice for the given "
-            "language — the one returned in 'voices' and played for that language. The variant "
-            "must belong to that language. Requires authentication."
+            "Make the voice variant identified by voice_id the item's main voice for its language "
+            "(a per-language voice id or a variant id) — the one returned in 'voices' and played "
+            "for that language. Requires authentication."
     ),
 )
 def items_voices_set_main(
         category_id: str,
         item_id: str,
         voice_id: str,
-        body: SetMainItemVoiceBody,
         service: ContentServiceDep,
         _user: dict = Depends(get_current_user),
 ) -> ItemVoicesResponse:
-    """Make the given voice variant the item's main voice for a language."""
+    """Make the given voice variant the item's main voice for its language."""
     try:
         result = service.category_details_by_id(category_id)
     except CategoryNotFoundError as exc:
@@ -658,7 +656,7 @@ def items_voices_set_main(
             detail=f"Item '{item_id}' not found in category '{category_id}'",
         )
     try:
-        voices_result = service.set_main_item_voice(category_id, item_id, voice_id, body.language.strip())
+        voices_result = service.set_main_item_voice(category_id, item_id, voice_id)
     except CategoryNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except InvalidCategoryNameError as exc:

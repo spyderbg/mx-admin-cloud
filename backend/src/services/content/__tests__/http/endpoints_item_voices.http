@@ -38,56 +38,24 @@ DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/items/does_not_exist
 ### Delete a voice from an item - voice not found
 DELETE {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}/voices/does_not_exist
 
-### Set a voice variant as the item's main voice for a language
-# voice_id must be a variant belonging to the given language; the original recording is kept as a variant too.
+### Set a voice variant as the item's main voice for its language
+# voice_id is a per-language voice id or a variant id; its language is derived from voice_id itself.
+# The original recording is kept as a variant too.
 PUT {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}/voices/{{item_voice_id}}/main
-Content-Type: application/json
 
-{
-  "language": "de"
-}
-
-### Set a voice variant as the item's main voice for a language - already the main voice
+### Set a voice variant as the item's main voice for its language - already the main voice
 # Idempotent: selecting the language's current main voice id is a no-op and returns 200.
 PUT {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}/voices/{{item_voice_id}}/main
-Content-Type: application/json
 
-{
-  "language": "en"
-}
-
-### Set a voice variant as the item's main voice for a language - category not found
+### Set a voice variant as the item's main voice for its language - category not found
 PUT {{settings.CONTENT_URL}}/categories/does_not_exist/items/{{item_id}}/voices/{{item_voice_id}}/main
-Content-Type: application/json
 
-{
-  "language": "de"
-}
-
-### Set a voice variant as the item's main voice for a language - item not found
+### Set a voice variant as the item's main voice for its language - item not found
 PUT {{settings.CONTENT_URL}}/categories/{{category_id}}/items/does_not_exist/voices/{{item_voice_id}}/main
-Content-Type: application/json
 
-{
-  "language": "de"
-}
-
-### Set a voice variant as the item's main voice for a language - voice not found
-# voice_id must be an existing variant for that language, not just any known voice id.
+### Set a voice variant as the item's main voice for its language - voice not found
+# voice_id must be an existing variant for the item, not just any known voice id.
 PUT {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}/voices/does_not_exist/main
-Content-Type: application/json
-
-{
-  "language": "de"
-}
-
-### Set a voice variant as the item's main voice for a language - unsupported language
-PUT {{settings.CONTENT_URL}}/categories/{{category_id}}/items/{{item_id}}/voices/{{item_voice_id}}/main
-Content-Type: application/json
-
-{
-  "language": "does_not_exist"
-}
 
 ### Create optimized versions of an item voice
 # Runs every active voice optimizer on the original recording; each result is stored as a new variant.

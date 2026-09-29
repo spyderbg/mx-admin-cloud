@@ -160,11 +160,6 @@ export interface RestoreCategoryResponse {
     message: string
 }
 
-/** Request body for selecting an item's main voice for a language. */
-export interface SetMainItemVoiceBody {
-    language: string
-}
-
 /** Request body for updating a category's localized name and description. */
 export interface UpdateCategoryBody {
     new_category_id?: string | null

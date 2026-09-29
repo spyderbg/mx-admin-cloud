@@ -270,8 +270,8 @@ class _StubProvider(ContentProvider):
         self._record("set_main_item_image", category_id, item_id, image_id)
         return self._returns.get("set_main_item_image", {"item_id": item_id, "images": [], "thumbnail_uri": None})
 
-    def set_main_item_voice(self, category_id: str, item_id: str, voice_id: str, language: str) -> dict[str, Any]:
-        self._record("set_main_item_voice", category_id, item_id, voice_id, language)
+    def set_main_item_voice(self, category_id: str, item_id: str, voice_id: str) -> dict[str, Any]:
+        self._record("set_main_item_voice", category_id, item_id, voice_id)
         return self._returns.get("set_main_item_voice", {"item_id": item_id, "voices": [], "variants": []})
 
     def optimize_item_voice(self, category_id: str, item_id: str, voice_id: str) -> dict[str, Any]:
@@ -439,7 +439,7 @@ class _ConcreteProvider(ContentProvider):
     def set_main_item_image(self, category_id, item_id, image_id):
         return {}
 
-    def set_main_item_voice(self, category_id, item_id, voice_id, language):
+    def set_main_item_voice(self, category_id, item_id, voice_id):
         return {}
 
     def optimize_item_voice(self, category_id, item_id, voice_id):
@@ -696,9 +696,9 @@ def test_remove_item_delegates(tmp_path: Path) -> None:
 def test_set_main_item_voice_delegates(tmp_path: Path) -> None:
     stub = _StubProvider(tmp_path)
     svc = _make_service(tmp_path, [stub])
-    result = svc.set_main_item_voice("C_Foods", "I_Apple", "apple_en_02", "en")
+    result = svc.set_main_item_voice("C_Foods", "I_Apple", "apple_en_02")
     assert result["item_id"] == "I_Apple"
-    assert stub.calls["set_main_item_voice"] == [("C_Foods", "I_Apple", "apple_en_02", "en")]
+    assert stub.calls["set_main_item_voice"] == [("C_Foods", "I_Apple", "apple_en_02")]
 
 
 def test_optimize_item_voice_delegates(tmp_path: Path) -> None:

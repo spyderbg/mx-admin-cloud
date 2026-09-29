@@ -420,8 +420,8 @@ class ContentProvider(ServiceProvider, ABC):  # pylint: disable=too-many-public-
         """Make the image file variant with the given image_id the item's main image."""
 
     @abstractmethod
-    def set_main_item_voice(self, category_id: str, item_id: str, voice_id: str, language: str) -> ItemVoices:
-        """Make the voice variant with the given voice_id the item's main voice for *language*."""
+    def set_main_item_voice(self, category_id: str, item_id: str, voice_id: str) -> ItemVoices:
+        """Make the voice variant with the given voice_id the item's main voice for its language."""
 
     @abstractmethod
     def optimize_item_voice(self, category_id: str, item_id: str, voice_id: str) -> OptimizedItemVoice:

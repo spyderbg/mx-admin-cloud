@@ -208,12 +208,6 @@ class UpdateItemBody(BaseModel):
     item_name: LocalizedString
 
 
-class SetMainItemVoiceBody(BaseModel):
-    """Request body for selecting an item's main voice for a language."""
-
-    language: str
-
-
 # endregion
 
 # region Items Response models

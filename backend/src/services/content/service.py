@@ -281,9 +281,9 @@ class ContentService(Service):  # pylint: disable=too-many-public-methods
         """Make an item's image file variant the main image via the active provider."""
         return self._select_provider().set_main_item_image(category_id, item_id, image_id)
 
-    def set_main_item_voice(self, category_id: str, item_id: str, voice_id: str, language: str) -> ItemVoices:
-        """Make an item's voice variant the main voice for a language via the active provider."""
-        return self._select_provider().set_main_item_voice(category_id, item_id, voice_id, language)
+    def set_main_item_voice(self, category_id: str, item_id: str, voice_id: str) -> ItemVoices:
+        """Make an item's voice variant the main voice for its language via the active provider."""
+        return self._select_provider().set_main_item_voice(category_id, item_id, voice_id)
 
     def optimize_item_voice(self, category_id: str, item_id: str, voice_id: str) -> OptimizedItemVoice:
         """Create optimized variants of an item voice via the active provider."""

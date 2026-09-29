@@ -269,7 +269,7 @@ function select(voice: ItemVoiceRecord, version: AudioVersion): void {
   const success = copy.value.selectedSuccess
     .replace('{voice}', voiceTitle(voice))
     .replace('{language}', langLabel(voice.language, language.value))
-  void mutate(`select:${voice.id}`, () => selectItemVoice(props.categoryId, props.itemId, voiceId, voice.language), success)
+  void mutate(`select:${voice.id}`, () => selectItemVoice(props.categoryId, props.itemId, voiceId), success)
 }
 function openDelete(voice: ItemVoiceRecord): void {
   if (busy.value) return

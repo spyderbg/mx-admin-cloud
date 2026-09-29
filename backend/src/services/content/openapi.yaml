@@ -639,16 +639,6 @@ components:
       - message
       title: RestoreCategoryResponse
       description: Response for POST /content/categories/restore.
-    SetMainItemVoiceBody:
-      properties:
-        language:
-          type: string
-          title: Language
-      type: object
-      required:
-      - language
-      title: SetMainItemVoiceBody
-      description: Request body for selecting an item's main voice for a language.
     UpdateCategoryBody:
       properties:
         new_category_id:
@@ -1983,10 +1973,10 @@ paths:
     put:
       tags:
       - Items Voices
-      summary: Set a voice variant as the item's main voice for a language
+      summary: Set a voice variant as the item's main voice for its language
       description: Make the voice variant identified by voice_id the item's main voice
-        for the given language — the one returned in 'voices' and played for that language.
-        The variant must belong to that language. Requires authentication.
+        for its language (a per-language voice id or a variant id) — the one returned
+        in 'voices' and played for that language. Requires authentication.
       operationId: items_voices_set_main_api_v1_content_categories__category_id__items__item_id__voices__voice_id__main_put
       security:
       - OAuth2PasswordBearer: []
@@ -2009,12 +1999,6 @@ paths:
         schema:
           type: string
           title: Voice Id
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SetMainItemVoiceBody'
       responses:
         '200':
           description: Successful Response

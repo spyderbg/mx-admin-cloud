@@ -39,6 +39,6 @@ export async function optimizeItemVoice(categoryId: string, itemId: string, voic
   return (await client.post<ItemVoiceRecord>(`${path(categoryId, itemId)}/${encodeURIComponent(voiceId)}/optimize`)).data
 }
 
-export async function selectItemVoice(categoryId: string, itemId: string, voiceId: string, language: Language) {
-  return itemsVoicesSetMain(encodeURIComponent(categoryId), encodeURIComponent(itemId), encodeURIComponent(voiceId), { language })
+export async function selectItemVoice(categoryId: string, itemId: string, voiceId: string) {
+  return itemsVoicesSetMain(encodeURIComponent(categoryId), encodeURIComponent(itemId), encodeURIComponent(voiceId))
 }

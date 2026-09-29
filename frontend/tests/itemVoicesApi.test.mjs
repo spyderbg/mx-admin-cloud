@@ -18,28 +18,28 @@ after(async () => {
   else delete globalThis.localStorage
 })
 
-test('selection sends PUT to the generated main endpoint with the voice language', async () => {
+test('selection sends a bodyless PUT to the generated main endpoint', async () => {
   const response = { item_id: 'I_Bananas', name: { en: 'bananas' }, voices: [], variants: [], main_voice_ids: { en: 'bananas_en_02' } }
   let requests = 0
   client.defaults.adapter = async (config) => {
     requests++
     assert.equal(config.method, 'put')
     assert.equal(config.baseURL + config.url, '/api/v1/content/categories/C_Fruits/items/I_Bananas/voices/bananas_en_02/main')
-    assert.deepEqual(JSON.parse(config.data), { language: 'en' })
+    assert.equal(config.data, undefined)
     return { data: response, status: 200, statusText: 'OK', headers: {}, config }
   }
-  assert.deepEqual(await api.selectItemVoice('C_Fruits', 'I_Bananas', 'bananas_en_02', 'en'), response)
+  assert.deepEqual(await api.selectItemVoice('C_Fruits', 'I_Bananas', 'bananas_en_02'), response)
   assert.equal(requests, 1)
 })
 
 test('selection encodes IDs and propagates backend rejection', async () => {
-  const failure = new Error('Voice not found for language')
+  const failure = new Error('Voice not found')
   client.defaults.adapter = async (config) => {
     assert.equal(config.url, '/content/categories/fruit%20%26%20veg/items/item%2F1/voices/take%231/main')
-    assert.deepEqual(JSON.parse(config.data), { language: 'bg' })
+    assert.equal(config.data, undefined)
     throw failure
   }
-  await assert.rejects(api.selectItemVoice('fruit & veg', 'item/1', 'take#1', 'bg'), failure)
+  await assert.rejects(api.selectItemVoice('fruit & veg', 'item/1', 'take#1'), failure)
 })
 
 test('deletion sends DELETE to the encoded item voice endpoint', async () => {

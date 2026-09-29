@@ -354,11 +354,11 @@ _VOICE_MAIN_URL = "/api/v1/content/categories/foods/items/I_Foods/voices/apple_e
 
 @pytest.mark.asyncio
 async def test_set_main_item_voice_returns_voices_listing(tmp_resolved: Path) -> None:
-    seen: list[tuple[str, str, str, str]] = []
+    seen: list[tuple[str, str, str]] = []
 
     class _TrackingProvider(StubContentProvider):
-        def set_main_item_voice(self, category_id: str, item_id: str, voice_id: str, language: str) -> ItemVoices:
-            seen.append((category_id, item_id, voice_id, language))
+        def set_main_item_voice(self, category_id: str, item_id: str, voice_id: str) -> ItemVoices:
+            seen.append((category_id, item_id, voice_id))
             return ItemVoices(
                 item_id=item_id,
                 voices=[CategoryVoice(id="apple-v-en", language="en", type="tts",
@@ -370,9 +370,9 @@ async def test_set_main_item_voice_returns_voices_listing(tmp_resolved: Path) ->
 
     app = make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        response = await c.put(_VOICE_MAIN_URL, json={"language": " en "})
+        response = await c.put(_VOICE_MAIN_URL)
     assert response.status_code == 200
-    assert seen == [("foods", "I_Foods", "apple_en_02", "en")]
+    assert seen == [("foods", "I_Foods", "apple_en_02")]
     body = response.json()
     assert body["item_id"] == "I_Foods"
     assert body["name"] == {"en": "apple"}
@@ -382,16 +382,8 @@ async def test_set_main_item_voice_returns_voices_listing(tmp_resolved: Path) ->
 
 
 @pytest.mark.asyncio
-async def test_set_main_item_voice_requires_language(client: AsyncClient) -> None:
-    response = await client.put(_VOICE_MAIN_URL, json={})
-    assert response.status_code == 422
-
-
-@pytest.mark.asyncio
 async def test_set_main_item_voice_unknown_item_returns_404(client: AsyncClient) -> None:
-    response = await client.put(
-        "/api/v1/content/categories/foods/items/I_Missing/voices/apple_en_02/main", json={"language": "en"},
-    )
+    response = await client.put("/api/v1/content/categories/foods/items/I_Missing/voices/apple_en_02/main")
     assert response.status_code == 404
 
 
@@ -400,25 +392,25 @@ async def test_set_main_item_voice_unknown_voice_returns_404(tmp_resolved: Path)
     provider = StubContentProvider(tmp_resolved).raises("set_main_item_voice", CategoryNotFoundError("nope"))
     app = make_app(provider, tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        response = await c.put(_VOICE_MAIN_URL, json={"language": "en"})
+        response = await c.put(_VOICE_MAIN_URL)
     assert response.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_set_main_item_voice_unsupported_language_returns_400(tmp_resolved: Path) -> None:
+async def test_set_main_item_voice_provider_error_returns_400(tmp_resolved: Path) -> None:
     provider = StubContentProvider(tmp_resolved).raises(
-        "set_main_item_voice", ContentOperationError("Unsupported language: de"),
+        "set_main_item_voice", ContentOperationError("Failed to set main voice for item 'I_Foods': disk full"),
     )
     app = make_app(provider, tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        response = await c.put(_VOICE_MAIN_URL, json={"language": "de"})
+        response = await c.put(_VOICE_MAIN_URL)
     assert response.status_code == 400
-    assert "Unsupported language" in response.json()["detail"]
+    assert "Failed to set main voice" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
 async def test_set_main_item_voice_requires_auth(client_no_auth: AsyncClient) -> None:
-    response = await client_no_auth.put(_VOICE_MAIN_URL, json={"language": "en"})
+    response = await client_no_auth.put(_VOICE_MAIN_URL)
     assert response.status_code == 401
 
 

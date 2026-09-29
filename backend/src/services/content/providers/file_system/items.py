@@ -660,12 +660,15 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
 
         return self.item_images(category_id, item_id)
 
-    def set_main_item_voice(self, category_id: str, item_id: str, voice_id: str, language: str) -> ItemVoices:
+    def set_main_item_voice(self, category_id: str, item_id: str, voice_id: str) -> ItemVoices:
         category_name, category_path = self._validate_category_path(category_id)
         item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
 
-        if language not in settings.SUPPORTED_LANGUAGES:
-            raise ContentOperationError(f"Unsupported language: {language}")
+        language = self._language_for_item_voice_ref(item_folder_name, voice_id)
+        if language is None:
+            raise CategoryNotFoundError(
+                f"Voice '{voice_id}' not found for item '{item_id}' in category '{category_name}'.",
+            )
 
         main_path, variant_paths = self._split_item_voice_files(
             list(item_path.iterdir()), item_folder_name, language,
