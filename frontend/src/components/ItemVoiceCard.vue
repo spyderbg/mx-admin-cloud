@@ -27,7 +27,7 @@
       <div><dt>{{ copy.source }}</dt><dd>{{ copy.uploaded }}</dd></div>
       <div v-if="created"><dt>{{ copy.created }}</dt><dd>{{ created }}</dd></div>
     </dl>
-    <details v-else class="iv-details" :open="selected">
+    <details v-else class="iv-details">
       <summary>{{ copy.details }}</summary>
       <dl v-if="metadata.length" class="iv-meta"><div v-for="entry in metadata" :key="entry.label"><dt>{{ entry.label }}</dt><dd>{{ entry.value }}</dd></div></dl>
       <p v-else class="iv-empty-meta">{{ copy.noDetails }}</p>

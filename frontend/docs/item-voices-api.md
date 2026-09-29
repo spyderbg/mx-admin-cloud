@@ -64,6 +64,6 @@ The mock preview retains inline Original/Optimized tabs. These use an explicit `
 
 Run `npm run test:voices` (Node 22.6+) for request URL/method/body, backend rejection, response mapping, selection, and audio/upload regression tests. Run `npm run build` for TypeScript and the production bundle.
 
-Run `VITE_MOCK_DATA=true npm run dev` and open `/categories/C_Fruits/items/I_Bananas`. The preview uses the `/main` method/body and the `voices` / `variants` / `main_voice_ids` response structure. Generation/optimization use sample audio; preview uploads and selections exist only in browser memory. The visible preview notice identifies this simulation. No content files are modified.
+Run `VITE_MOCK_DATA=true npm run dev` and open `/categories/C_Fruits/items/I_Bananas`. The preview uses the `/main` method/body and the `voices` / `variants` / `main_voice_ids` response structure. Generation/optimization use sample audio; preview uploads and selections exist only in browser memory. No content files are modified.
 
 The desktop grid adapts from three columns to two, then one on mobile. Mobile dialogs use full-screen forms, with file-picker alternatives to drag-and-drop. Controls are translated into English, Spanish, French, and Bulgarian.

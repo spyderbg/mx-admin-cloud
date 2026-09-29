@@ -20,7 +20,6 @@
         <MobileActionsMenu class="ivs-summary-menu" label="Voice actions" :actions="voiceActions" />
       </div>
     </header>
-    <p v-if="mockMode" class="ivs-notice ivs-demo"><i class="mdi mdi-information-outline" aria-hidden="true"></i>{{ copy.demo }}</p>
     <div v-if="notice" class="ivs-notice" :class="{ 'ivs-error': notice.error }" :role="notice.error ? 'alert' : 'status'">
       <span>{{ notice.text }}</span><button type="button" :aria-label="copy.close" @click="notice = null"><i class="mdi mdi-close" aria-hidden="true"></i></button>
     </div>
@@ -140,7 +139,6 @@ const props = defineProps<{ categoryId: string; itemId: string; itemName: string
 const emit = defineEmits<{ changed: []; play: [] }>()
 const language = useContentLanguage()
 const copy = computed(() => itemVoiceCopy[language.value])
-const mockMode = import.meta.env.VITE_MOCK_DATA === 'true'
 const data = ref<ItemVoiceList | null>(null)
 const loading = ref(false)
 const loadFailed = ref(false)
@@ -528,7 +526,6 @@ onBeforeUnmount(() => {
 .ivs-notice:empty { display: none; }
 .ivs-notice > button:not(.ivs-button), .ivs-file > button { flex: none; display: grid; place-items: center; min-width: 36px; min-height: 36px; border: 0; background: transparent; color: inherit; border-radius: 5px; font-size: 1.2rem; cursor: pointer; }
 .ivs-error { background: #fff1f2; color: #9f1239; }
-.ivs-demo { font-size: .74rem; justify-content: flex-start; }
 .ivs-empty, .ivs-loading { color: #64748b; text-align: center; padding: 1.5rem .5rem; font-size: .9rem; }
 .ivs-dialog-language { display: flex; align-items: center; gap: .8rem; background: #f1f7ff; padding: 1rem; border-radius: 7px; margin-bottom: 1.25rem; }
 .ivs-dialog-language > i { font-size: 1.5rem; }

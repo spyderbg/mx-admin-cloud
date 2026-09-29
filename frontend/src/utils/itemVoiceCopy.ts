@@ -34,7 +34,6 @@ const en = {
   emptyFile: 'This file is empty. Choose an audio recording.', invalidFile: 'Choose an audio file in one of these formats:',
   oneFile: 'Add one audio file at a time.', play: 'Play', pause: 'Pause', seek: 'Seek audio',
   playbackError: 'This audio could not be played.', noAudio: 'No audio file', chooseVoice: 'Choose a base voice',
-  demo: 'Preview data: generation and optimization are simulated. Uploaded audio is kept only until you reload.',
 }
 
 const es: typeof en = {
@@ -58,7 +57,6 @@ const es: typeof en = {
   saved: 'Audio guardado.', generatedSuccess: 'Nueva grabación generada.', optimizedSuccess: 'Audio optimizado listo. Escúchalo antes de seleccionarlo.', selectedSuccess: 'Voz actualizada.', operationError: 'La operación falló. Inténtalo de nuevo.',
   refreshError: 'Se guardó el cambio, pero no se pudieron actualizar las voces. Reintenta.', emptyFile: 'El archivo está vacío.', invalidFile: 'Elige un archivo en uno de estos formatos:', oneFile: 'Añade un archivo cada vez.',
   play: 'Reproducir', pause: 'Pausar', seek: 'Posición del audio', playbackError: 'No se pudo reproducir el audio.', noAudio: 'Sin archivo de audio', chooseVoice: 'Elige una voz base',
-  demo: 'Datos de prueba: generación y optimización simuladas. El audio subido se pierde al recargar.',
 }
 
 const fr: typeof en = {
@@ -78,7 +76,6 @@ const fr: typeof en = {
   replaceHint: 'Le remplacement modifie cet enregistrement et, s’il est sélectionné, l’audio de l’élément.', cancel: 'Annuler', close: 'Fermer', upload: 'Ajouter un audio', saving: 'Enregistrement…', generating: 'Génération…', optimizing: 'Optimisation…', saved: 'Audio enregistré.', generatedSuccess: 'Nouvel enregistrement généré.',
   optimizedSuccess: 'Audio optimisé prêt. Écoutez-le avant de le sélectionner.', selectedSuccess: 'Voix mise à jour.', operationError: 'L’opération a échoué. Réessayez.', refreshError: 'Modification enregistrée, mais actualisation impossible. Réessayez.',
   emptyFile: 'Ce fichier est vide.', invalidFile: 'Choisissez un fichier dans ces formats :', oneFile: 'Ajoutez un seul fichier à la fois.', play: 'Lire', pause: 'Pause', seek: 'Position audio', playbackError: 'Impossible de lire cet audio.', noAudio: 'Aucun fichier audio', chooseVoice: 'Choisissez une voix de base',
-  demo: 'Aperçu : génération et optimisation simulées. Les imports sont perdus au rechargement.',
 }
 
 const bg: typeof en = {
@@ -98,7 +95,6 @@ const bg: typeof en = {
   replaceHint: 'Замяната променя този запис. Ако е избран, аудиото на елемента също се променя.', cancel: 'Отказ', close: 'Затвори', upload: 'Добави аудио', saving: 'Запазване…', generating: 'Генериране…', optimizing: 'Оптимизиране…', saved: 'Аудиото е запазено.', generatedSuccess: 'Новият запис е генериран.',
   optimizedSuccess: 'Оптимизираното аудио е готово. Прослушайте го, преди да го изберете.', selectedSuccess: 'Гласът на елемента е обновен.', operationError: 'Операцията е неуспешна. Опитайте отново.', refreshError: 'Промяната е запазена, но гласовете не могат да се обновят. Опитайте отново.',
   emptyFile: 'Файлът е празен. Изберете аудио запис.', invalidFile: 'Изберете аудио файл в един от тези формати:', oneFile: 'Добавяйте по един аудио файл.', play: 'Пусни', pause: 'Пауза', seek: 'Позиция в записа', playbackError: 'Аудиото не може да се възпроизведе.', noAudio: 'Няма аудио файл', chooseVoice: 'Изберете базов глас',
-  demo: 'Примерни данни: генерирането и оптимизацията са симулирани. Каченото аудио се губи при презареждане.',
 }
 
 export const itemVoiceCopy: Record<Language, typeof en> = { en, es, fr, bg }
