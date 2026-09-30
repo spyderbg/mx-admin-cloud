@@ -15,12 +15,13 @@ from fastapi import (
 
 from src.api.dependencies import get_registry
 from src.api.service_resolver import get_typed_service
-from src.services import content, text_to_speech
+from src.services import content, text_to_speech, voice_optimization
 from src.services.content.models import CategoryVoice, CreateItem
 from src.services.content.schemas import CreateItemResponse, VoiceResponse
 from src.services.content.service import ContentService
 from src.services.service_registry import ServiceRegistry
 from src.services.text_to_speech.service import TextToSpeechService
+from src.services.voice_optimization.service import VoiceOptimizationService
 
 TAG_CATEGORIES = "Categories"
 TAG_CATEGORIES_IMAGES = "Categories Images"
@@ -136,3 +137,25 @@ def get_voice_generation_available(
 
 
 VoiceGenerationAvailableDep = Annotated[bool, Depends(get_voice_generation_available)]
+
+
+def get_voice_optimization_available(
+        registry: ServiceRegistry = Depends(get_registry),
+) -> bool:
+    """Return whether at least one voice optimizer is active.
+
+    The voices list advertises this so clients only offer optimization when it can run.
+    A missing or unconfigured voice optimization service just means it is unavailable.
+    """
+    try:
+        service = get_typed_service(
+            registry=registry,
+            service_name=voice_optimization.SERVICE_NAME,
+            expected_type=VoiceOptimizationService,
+        )
+    except HTTPException:
+        return False
+    return bool(service.get_active_providers())
+
+
+VoiceOptimizationAvailableDep = Annotated[bool, Depends(get_voice_optimization_available)]

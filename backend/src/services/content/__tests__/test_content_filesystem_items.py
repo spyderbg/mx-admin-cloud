@@ -655,7 +655,7 @@ def test_regenerate_item_voice_unknown_voice_id(tmp_path: Path) -> None:
             provider.regenerate_item_voice("C_Foods", "I_Apple", "apple-v-de")
 
 
-def test_regenerate_item_voice_uses_current_text_and_overwrites_file(tmp_path: Path) -> None:
+def test_regenerate_item_voice_uses_current_text_and_adds_a_variant(tmp_path: Path) -> None:
     content_root = tmp_path / "content"
     category_path = content_root / "foods"
     write_category_registry(content_root, [("C_Foods", "Foods")])
@@ -673,10 +673,14 @@ def test_regenerate_item_voice_uses_current_text_and_overwrites_file(tmp_path: P
         result = provider.regenerate_item_voice("C_Foods", "I_Apple", "apple-v-fr")
 
     audio_mock.assert_called_once_with("pomme verte", "fr")
-    assert result.id == "apple-v-fr"
+    assert result.id == "apple_fr_02"
     assert result.language == "fr"
-    assert result.file_uri == "/content/foods/apple/apple_fr.mp3"
-    assert (category_path / "apple" / "apple_fr.mp3").read_bytes() == b"fresh"
+    assert result.file_uri == "/content/foods/apple/apple_fr_02.mp3"
+    item_path = category_path / "apple"
+    assert (item_path / "apple_fr_02.mp3").read_bytes() == b"fresh"
+    # Nothing is overwritten: the main voice is untouched and also kept as the first variant.
+    assert (item_path / "apple_fr.mp3").read_bytes() == b"stale"
+    assert (item_path / "apple_fr_01.mp3").read_bytes() == b"stale"
 
 
 def test_regenerate_item_voice_creates_missing_file_and_falls_back_to_english(tmp_path: Path) -> None:
@@ -695,8 +699,11 @@ def test_regenerate_item_voice_creates_missing_file_and_falls_back_to_english(tm
         result = provider.regenerate_item_voice("C_Foods", "I_Apple", "apple-v-fr")
 
     audio_mock.assert_called_once_with("apple", "fr")
+    # With no recording yet, the first take is the main voice.
+    assert result.id == "apple-v-fr"
     assert result.file_uri == "/content/foods/apple/apple_fr.mp3"
     assert (category_path / "apple" / "apple_fr.mp3").read_bytes() == b"fresh"
+    assert not (category_path / "apple" / "apple_fr_01.mp3").exists()
 
 
 def test_regenerate_item_voice_wraps_tts_failure(tmp_path: Path) -> None:
@@ -756,7 +763,10 @@ def test_item_voice_sidecar_tracks_upload_generation_provider_and_deletion(tmp_p
         ):
             provider.regenerate_item_voice("C_Foods", "I_Apple", "apple-v-en")
 
-        assert voice_metadata_normalized(metadata_path) == {
+        # The uploaded main keeps its own sidecar (and is kept as a variant); the new take gets its own.
+        assert voice_metadata_normalized(metadata_path)["creation_method"] == "uploaded"
+        assert voice_metadata_normalized(category_path / "apple" / "apple_en_01.csv")["creation_method"] == "uploaded"
+        assert voice_metadata_normalized(category_path / "apple" / "apple_en_02.csv") == {
             "creation_method": "generated",
             "provider": "openai",
             "parameters": {**parameters, "_text": "apple"},

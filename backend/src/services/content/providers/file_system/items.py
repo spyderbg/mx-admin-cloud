@@ -171,6 +171,28 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         else:
             self._voice_metadata_path(target).unlink(missing_ok=True)
 
+    def _keep_main_voice_as_variant(self, item_path: Path, item_folder_name: str, language: str) -> Path | None:
+        """Return the variant the language's main voice was copied from, keeping the main as one if none matches.
+
+        A main voice that is not a copy of any variant (a freshly created item's first
+        recording, or one uploaded straight into the main file) exists nowhere else, so
+        anything that replaces the main or adds takes next to it first saves it as a new
+        variant. Returns None when the language has no main voice.
+        """
+        main, variants = self._split_item_voice_files(list(item_path.iterdir()), item_folder_name, language)
+        if main is None:
+            return None
+        copied_from = self._main_copy_source_id(main, variants)
+        source = next((v for v in variants if v.stem == copied_from), None)
+        if source is not None:
+            return source
+        source = self._next_item_voice_variant_path(item_path, item_folder_name, language)
+        try:
+            self._copy_voice_with_metadata(main, source)
+        except OSError as exc:
+            raise ContentOperationError(f"Failed to keep the original voice: {exc}") from exc
+        return source
+
     @classmethod
     def _find_item_voice_file(
             cls,
@@ -725,6 +747,8 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         # Like the main image, the main voice is the file with no index suffix
         # ("apple_en.mp3"). Selecting a variant COPIES it, with its metadata sidecar, over
         # the main file: the variant stays where it is, so the item keeps every recording.
+        # A main that is no variant's copy would be lost by that, so it is saved as one first.
+        self._keep_main_voice_as_variant(item_path, item_folder_name, language)
         main_path = main_path or self._item_voice_path(item_path, item_folder_name, language)
         try:
             self._copy_voice_with_metadata(target, main_path)
@@ -805,19 +829,12 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         selecting an optimized version as main later never loses it. An optimized variant
         resolves to the recording it was made from, so optimizations never stack.
         """
-        main, variants = self._split_item_voice_files(list(item_path.iterdir()), item_folder_name, language)
+        _, variants = self._split_item_voice_files(list(item_path.iterdir()), item_folder_name, language)
         if voice_id in (f"{item_folder_name}-v-{language}", f"{item_folder_name}_{language}"):
-            if main is None:
-                source = variants[0] if variants else None
-            else:
-                copied_from = self._main_copy_source_id(main, variants)
-                source = next((v for v in variants if v.stem == copied_from), None)
-                if source is None:
-                    source = self._next_item_voice_variant_path(item_path, item_folder_name, language)
-                    try:
-                        self._copy_voice_with_metadata(main, source)
-                    except OSError as exc:
-                        raise ContentOperationError(f"Failed to keep the original voice: {exc}") from exc
+            source = (
+                self._keep_main_voice_as_variant(item_path, item_folder_name, language)
+                or next(iter(variants), None)
+            )
         else:
             source = next((v for v in variants if v.stem == voice_id), None)
         if source is None:
@@ -929,10 +946,18 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         )
 
     def regenerate_item_voice(self, category_id: str, item_id: str, voice_id: str) -> CategoryVoice:
+        """Synthesize a new take of the voice's language from the item's current text.
+
+        Existing recordings are never overwritten: the take is added as a new variant
+        next to them (the current main voice is first saved as a variant if it is not one
+        already) and the main voice is left as it is, so the takes can be compared and one
+        chosen with set_main_item_voice. Only a language with no recording yet gets its
+        first take as the main voice.
+        """
         category_name, category_path = self._validate_category_path(category_id)
         item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
 
-        language = self._language_for_item_voice_id(item_folder_name, voice_id)
+        language = self._language_for_item_voice_ref(item_folder_name, voice_id)
         if language is None:
             raise CategoryNotFoundError(
                 f"Voice '{voice_id}' not found for item '{item_id}' in category '{category_name}'.",
@@ -949,10 +974,14 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         except (ValueError, RuntimeError, httpx.HTTPError) as exc:
             raise ContentOperationError(f"Voice generation failed for {language}: {exc}") from exc
 
-        # Reuse the existing file (it may carry a numeric suffix) so the voice keeps its URI.
-        found = self._find_item_voice_file(item_path, item_folder_name, voice_id)
-        voice_path = found[1] if found else self._item_voice_path(item_path, item_folder_name, language)
+        main, variants = self._split_item_voice_files(list(item_path.iterdir()), item_folder_name, language)
+        first_take = main is None and not variants
         try:
+            if first_take:
+                voice_path = self._item_voice_path(item_path, item_folder_name, language)
+            else:
+                self._keep_main_voice_as_variant(item_path, item_folder_name, language)
+                voice_path = self._next_item_voice_variant_path(item_path, item_folder_name, language)
             voice_path.write_bytes(audio_bytes)
             self._write_generated_voice_metadata(voice_path, audio_bytes, word)
         except OSError as exc:
@@ -960,7 +989,7 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
 
         provider, parameters = self._read_voice_metadata(voice_path)
         return CategoryVoice(
-            id=voice_id,
+            id=f"{item_folder_name}-v-{language}" if first_take else voice_path.stem,
             language=language,
             type="tts",
             file_uri=f"/content/{category_name}/{item_folder_name}/{voice_path.name}",

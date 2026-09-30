@@ -12,10 +12,19 @@ from fastapi import APIRouter
 
 from src.core.config import settings
 from src.services.content.routes import categories, items
-from src.services.content.routes.common import get_content_service, get_voice_generation_available
+from src.services.content.routes.common import (
+    get_content_service,
+    get_voice_generation_available,
+    get_voice_optimization_available,
+)
 
 router = APIRouter(prefix=f"{settings.API_V1_STR}/content")
 router.include_router(categories.router)
 router.include_router(items.router)
 
-__all__ = ["router", "get_content_service", "get_voice_generation_available"]
+__all__ = [
+    "router",
+    "get_content_service",
+    "get_voice_generation_available",
+    "get_voice_optimization_available",
+]

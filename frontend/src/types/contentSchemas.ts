@@ -125,6 +125,7 @@ export interface ItemVoicesResponse {
     voices?: VoiceResponse[]
     variants?: VoiceResponse[]
     main_voice_ids?: Record<string, string | null>
+    capabilities?: VoiceCapabilities | null
 }
 
 /** Response for POST /categories/{category_id}/items/{item_id}/voices/{voice_id}/optimize. */
@@ -179,6 +180,16 @@ export interface UpdateCategoryResponse {
 export interface UpdateItemBody {
     new_item_id?: string | null
     item_name: LocalizedString
+}
+
+/** Which voice actions the API can perform right now, so a client only offers the working ones. */
+export interface VoiceCapabilities {
+    multiple_voices?: boolean
+    generate?: boolean
+    optimize?: boolean
+    select?: boolean
+    presets?: boolean
+    upload_formats?: string[]
 }
 
 /** A single voice entry. */

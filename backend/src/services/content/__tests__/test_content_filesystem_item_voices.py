@@ -102,7 +102,10 @@ def test_set_main_item_voice_copies_the_variant_and_its_metadata_over_the_main_v
     assert (item_path / "apple_en_02.mp3").read_bytes() == b"second-en"
     assert (item_path / "apple_en.csv").read_text() == (item_path / "apple_en_02.csv").read_text()
     assert result.main_voice_ids == {"en": "apple_en_02"}
-    assert [v.id for v in result.variants] == ["apple_en_01", "apple_en_02"]
+    # The replaced main matched no variant, so it was saved as one instead of being lost.
+    assert (item_path / "apple_en_03.mp3").read_bytes() == b"main-en"
+    assert voice_metadata_normalized(item_path / "apple_en_03.csv")["creation_method"] == "uploaded"
+    assert [v.id for v in result.variants] == ["apple_en_01", "apple_en_02", "apple_en_03"]
     assert result.voices[0].provider == "openai"
 
 
@@ -188,6 +191,125 @@ def test_set_main_item_voice_not_found(tmp_path: Path, voice_id: str) -> None:
         mock_settings.SUPPORTED_LANGUAGES = ["en"]
         with pytest.raises(CategoryNotFoundError):
             provider.set_main_item_voice("C_Foods", "I_Apple", voice_id)
+
+
+# ---------------------------------------------------------------------------
+# regenerate_item_voice: takes are added, never overwritten
+# ---------------------------------------------------------------------------
+
+def _regenerate(provider: FileSystemContentProvider, content_root: Path, voice_id: str, audio: bytes | Exception):
+    """Run regenerate_item_voice for the Apple item with the TTS call stubbed to return *audio*."""
+    stub = {"side_effect": audio} if isinstance(audio, Exception) else {"return_value": audio}
+    with (
+        patch_fs_settings() as mock_settings,
+        patch.object(FileSystemContentProvider, "_generate_audio", **stub),
+    ):
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        return provider.regenerate_item_voice("C_Foods", "I_Apple", voice_id)
+
+
+def _mp3s(item_path: Path) -> dict[str, bytes]:
+    return {f.stem: f.read_bytes() for f in sorted(item_path.glob("*.mp3"))}
+
+
+def test_regenerate_item_voice_saves_the_original_main_as_a_variant_then_adds_the_new_take(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"original"})
+    provider = make_fs_provider()
+
+    result = _regenerate(provider, content_root, "apple-v-en", b"take-two")
+
+    assert result.id == "apple_en_02"
+    assert _mp3s(item_path) == {"apple_en": b"original", "apple_en_01": b"original", "apple_en_02": b"take-two"}
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        voices = provider.item_voices("C_Foods", "I_Apple")
+    # The main voice is still the original recording; the new take waits to be chosen.
+    assert voices.main_voice_ids == {"en": "apple_en_01"}
+    assert [v.id for v in voices.variants] == ["apple_en_01", "apple_en_02"]
+
+
+def test_regenerate_item_voice_again_keeps_adding_takes(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"original"})
+    provider = make_fs_provider()
+
+    _regenerate(provider, content_root, "apple-v-en", b"take-two")
+    result = _regenerate(provider, content_root, "apple-v-en", b"take-three")
+
+    assert result.id == "apple_en_03"
+    assert _mp3s(item_path) == {
+        "apple_en": b"original", "apple_en_01": b"original", "apple_en_02": b"take-two", "apple_en_03": b"take-three",
+    }
+
+
+def test_regenerate_item_voice_does_not_duplicate_a_main_that_is_already_a_variant(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"same", "apple_en_01": b"same"})
+    provider = make_fs_provider()
+
+    result = _regenerate(provider, content_root, "apple-v-en", b"new")
+
+    assert result.id == "apple_en_02"
+    assert _mp3s(item_path) == {"apple_en": b"same", "apple_en_01": b"same", "apple_en_02": b"new"}
+
+
+@pytest.mark.parametrize("voice_id", ["apple-v-en", "apple_en", "apple_en_01"])
+def test_regenerate_item_voice_accepts_the_main_and_variant_references(tmp_path: Path, voice_id: str) -> None:
+    content_root, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"same", "apple_en_01": b"same"})
+    provider = make_fs_provider()
+
+    result = _regenerate(provider, content_root, voice_id, b"new")
+
+    assert result.id == "apple_en_02"
+    assert _mp3s(item_path)["apple_en_02"] == b"new"
+
+
+def test_regenerate_item_voice_writes_generation_metadata_for_the_new_take(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"original"})
+    provider = make_fs_provider()
+
+    result = _regenerate(provider, content_root, "apple-v-en", b"take-two")
+
+    assert result.provider == "unknown"
+    assert voice_metadata_normalized(item_path / "apple_en_02.csv") == {
+        "creation_method": "generated", "provider": "unknown", "parameters": {"_text": "apple"},
+    }
+
+
+def test_regenerate_item_voice_with_only_variants_adds_a_variant_and_no_main(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_voices(tmp_path, {"apple_en_01": b"first"})
+    provider = make_fs_provider()
+
+    result = _regenerate(provider, content_root, "apple-v-en", b"new")
+
+    assert result.id == "apple_en_02"
+    assert _mp3s(item_path) == {"apple_en_01": b"first", "apple_en_02": b"new"}
+
+
+def test_regenerate_item_voice_failure_changes_nothing(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"original"})
+    provider = make_fs_provider()
+
+    with pytest.raises(ContentOperationError, match="Voice generation failed for en: boom"):
+        _regenerate(provider, content_root, "apple-v-en", RuntimeError("boom"))
+
+    assert _mp3s(item_path) == {"apple_en": b"original"}
+
+
+def test_a_regenerated_take_can_be_chosen_and_the_original_chosen_back(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"original"})
+    provider = make_fs_provider()
+    new_take = _regenerate(provider, content_root, "apple-v-en", b"take-two")
+
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        chosen = provider.set_main_item_voice("C_Foods", "I_Apple", new_take.id)
+        assert (item_path / "apple_en.mp3").read_bytes() == b"take-two"
+        assert chosen.main_voice_ids == {"en": "apple_en_02"}
+
+        provider.set_main_item_voice("C_Foods", "I_Apple", "apple_en_01")
+    assert _mp3s(item_path) == {"apple_en": b"original", "apple_en_01": b"original", "apple_en_02": b"take-two"}
 
 
 # ---------------------------------------------------------------------------

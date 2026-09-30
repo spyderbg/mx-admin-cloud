@@ -30,6 +30,7 @@ from src.services.content.schemas import (
     ItemVoicesResponse,
     OptimizeItemVoiceResponse,
     UpdateItemBody,
+    VoiceCapabilities,
     VoiceResponse,
 )
 from src.services.content.routes.common import (
@@ -48,6 +49,7 @@ from src.services.content.routes.common import (
     TAG_ITEMS_IMAGES,
     TAG_ITEMS_VOICES,
     VoiceGenerationAvailableDep,
+    VoiceOptimizationAvailableDep,
     _create_item_response,
     _read_image_upload,
     _voice_response,
@@ -485,13 +487,15 @@ def items_images_set_main(
             "Retrieve a list of all voice files associated with a content item. "
             "Returns one voice per language, the alternative recordings (variants) per language, "
             "and which variant is currently selected as each language's main voice. "
-            "Requires authentication."
+            "'capabilities' says which voice actions can run right now (for example, optimize "
+            "needs an active voice optimizer). Requires authentication."
     ),
 )
 def items_voices_list(
         category_id: str,
         item_id: str,
         service: ContentServiceDep,
+        optimization_available: VoiceOptimizationAvailableDep,
         _user: dict = Depends(get_current_user),
 ) -> ItemVoicesResponse:
     """List voices for an item."""
@@ -511,7 +515,11 @@ def items_voices_list(
     item = next((i for i in result.items if i.id == item_id), None)
     item_name = item.name if item else LocalizedString({})
     voices_result = service.item_voices(category_id, item_id)
-    return _item_voices_response(item_id, item_name, voices_result)
+    response = _item_voices_response(item_id, item_name, voices_result)
+    # POST /voices still refuses a second recording for a language, and there are no
+    # generate/presets endpoints, so only selection and (when an optimizer is active) optimization are on.
+    response.capabilities = VoiceCapabilities(optimize=optimization_available)
+    return response
 
 
 @router.post(
@@ -725,11 +733,15 @@ def items_voices_optimize(
     response_model=VoiceResponse,
     status_code=status.HTTP_200_OK,
     tags=[TAG_ITEMS_VOICES],
-    summary="Regenerate a voice for an item",
+    summary="Generate a new take of an item voice",
     description=(
-            "Re-synthesize the audio for an item voice from the item's current text in that "
-            "language, using the active text-to-speech configuration. Overwrites any existing "
-            "audio file, and creates one when the voice has none yet. Requires authentication."
+            "Synthesize a new take of an item's voice from the item's current text in the voice's "
+            "language, using the active text-to-speech configuration. Nothing is overwritten: the "
+            "take is added as a new variant of that language (the current main voice is first kept "
+            "as a variant if it is not one already) and the main voice stays as it is, so takes can "
+            "be compared and one chosen with the set-main endpoint. The response is the new variant. "
+            "Only a language with no recording yet gets the take as its main voice. "
+            "voice_id is a per-language voice id or a variant id. Requires authentication."
     ),
 )
 def items_voices_regenerate(
@@ -739,7 +751,7 @@ def items_voices_regenerate(
         service: ContentServiceDep,
         _user: dict = Depends(get_current_user),
 ) -> VoiceResponse:
-    """Regenerate an item voice from its current text."""
+    """Add a newly synthesized take of an item voice, keeping the existing recordings."""
     try:
         result = service.regenerate_item_voice(category_id, item_id, voice_id)
     except CategoryNotFoundError as exc:

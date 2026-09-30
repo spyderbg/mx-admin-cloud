@@ -997,8 +997,8 @@ async function regenerateAllVoices(): Promise<void> {
     await ensureItemDetail(cat.id, currentItem.id)
     showToast(
       failures.length
-        ? `Regenerated ${voices.length - failures.length} of ${voices.length} voices. Failed: ${failures.join('; ')}`
-        : `All ${voices.length} voices regenerated.`,
+        ? `Added new takes for ${voices.length - failures.length} of ${voices.length} voices. Failed: ${failures.join('; ')}`
+        : `New takes added for all ${voices.length} voices. Choose them in Voices to use them.`,
       failures.length ? 'error' : 'success',
     )
   } catch (err) {
@@ -1020,7 +1020,7 @@ async function regenerateVoice(voice: Voice): Promise<void> {
     await itemsVoicesRegenerate(cat.id, currentItem.id, voice.id)
     await refreshItem()
     voiceVersions.value = { ...voiceVersions.value, [voice.id]: (voiceVersions.value[voice.id] ?? 0) + 1 }
-    showToast(`Voice for ${voice.name} (${voice.language.toUpperCase()}) regenerated.`, 'success')
+    showToast(`New take added for ${voice.name} (${voice.language.toUpperCase()}). Choose it in Voices to use it.`, 'success')
   } catch (err) {
     showToast(extractErrorMessage(err), 'error')
   } finally {

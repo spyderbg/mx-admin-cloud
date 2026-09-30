@@ -32,7 +32,11 @@ from src.services.content.models import (
     RestoreCategory,
     UpdateCategory,
 )
-from src.services.content.routes import get_content_service, get_voice_generation_available
+from src.services.content.routes import (
+    get_content_service,
+    get_voice_generation_available,
+    get_voice_optimization_available,
+)
 from src.services.content.service import ContentService
 
 
@@ -339,12 +343,14 @@ def make_app(
         *,
         auth: bool = True,
         voice_generation_available: bool = True,
+        voice_optimization_available: bool = True,
 ) -> FastAPI:
     """A bare app with just the content router, its auth and service dependencies overridden."""
     app = FastAPI()
     app.include_router(content_routes.router)
     # The real dependency reads app.state.registry, which this bare app never sets.
     app.dependency_overrides[get_voice_generation_available] = lambda: voice_generation_available
+    app.dependency_overrides[get_voice_optimization_available] = lambda: voice_optimization_available
     if auth:
         app.dependency_overrides[get_current_user] = lambda: {"username": "tester", "role": "admin"}
     if provider is not None and tmp_path is not None:

@@ -506,6 +506,10 @@ components:
           type: object
           title: Main Voice Ids
           default: {}
+        capabilities:
+          anyOf:
+          - $ref: '#/components/schemas/VoiceCapabilities'
+          - type: 'null'
       type: object
       required:
       - item_id
@@ -544,6 +548,10 @@ components:
           type: object
           title: Main Voice Ids
           default: {}
+        capabilities:
+          anyOf:
+          - $ref: '#/components/schemas/VoiceCapabilities'
+          - type: 'null'
         source_voice_id:
           type: string
           title: Source Voice Id
@@ -734,6 +742,37 @@ components:
       - msg
       - type
       title: ValidationError
+    VoiceCapabilities:
+      properties:
+        multiple_voices:
+          type: boolean
+          title: Multiple Voices
+          default: false
+        generate:
+          type: boolean
+          title: Generate
+          default: false
+        optimize:
+          type: boolean
+          title: Optimize
+          default: false
+        select:
+          type: boolean
+          title: Select
+          default: true
+        presets:
+          type: boolean
+          title: Presets
+          default: false
+        upload_formats:
+          items:
+            type: string
+          type: array
+          title: Upload Formats
+      type: object
+      title: VoiceCapabilities
+      description: Which voice actions the API can perform right now, so a client
+        only offers the working ones.
     VoiceResponse:
       properties:
         id:
@@ -1805,8 +1844,9 @@ paths:
       summary: List voices for an item
       description: Retrieve a list of all voice files associated with a content item.
         Returns one voice per language, the alternative recordings (variants) per language,
-        and which variant is currently selected as each language's main voice. Requires
-        authentication.
+        and which variant is currently selected as each language's main voice. 'capabilities'
+        says which voice actions can run right now (for example, optimize needs an active
+        voice optimizer). Requires authentication.
       operationId: items_voices_list_api_v1_content_categories__category_id__items__item_id__voices_get
       security:
       - OAuth2PasswordBearer: []
@@ -2063,11 +2103,15 @@ paths:
     post:
       tags:
       - Items Voices
-      summary: Regenerate a voice for an item
-      description: Re-synthesize the audio for an item voice from the item's current
-        text in that language, using the active text-to-speech configuration. Overwrites
-        any existing audio file, and creates one when the voice has none yet. Requires
-        authentication.
+      summary: Generate a new take of an item voice
+      description: 'Synthesize a new take of an item''s voice from the item''s current
+        text in the voice''s language, using the active text-to-speech configuration.
+        Nothing is overwritten: the take is added as a new variant of that language
+        (the current main voice is first kept as a variant if it is not one already)
+        and the main voice stays as it is, so takes can be compared and one chosen with
+        the set-main endpoint. The response is the new variant. Only a language with
+        no recording yet gets the take as its main voice. voice_id is a per-language
+        voice id or a variant id. Requires authentication.'
       operationId: items_voices_regenerate_api_v1_content_categories__category_id__items__item_id__voices__voice_id__regenerate_post
       security:
       - OAuth2PasswordBearer: []

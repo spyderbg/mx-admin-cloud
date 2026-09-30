@@ -346,6 +346,62 @@ async def test_delete_item_requires_auth(client_no_auth: AsyncClient) -> None:
 
 
 # ---------------------------------------------------------------------------
+# GET /api/v1/content/categories/{category_id}/items/{item_id}/voices  (capabilities)
+# ---------------------------------------------------------------------------
+
+_VOICES_URL = "/api/v1/content/categories/foods/items/I_Foods/voices"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("optimizers_active", [True, False])
+async def test_list_item_voices_advertises_what_can_run(tmp_resolved: Path, optimizers_active: bool) -> None:
+    app = make_app(StubContentProvider(tmp_resolved), tmp_resolved, voice_optimization_available=optimizers_active)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.get(_VOICES_URL)
+    assert response.status_code == 200
+    # Only selection and (with an active optimizer) optimization exist: POST /voices still refuses a
+    # second recording, and there are no generate/presets endpoints.
+    assert response.json()["capabilities"] == {
+        "multiple_voices": False,
+        "generate": False,
+        "optimize": optimizers_active,
+        "select": True,
+        "presets": False,
+        "upload_formats": ["mp3"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_set_main_response_carries_no_capabilities(tmp_resolved: Path) -> None:
+    app = make_app(StubContentProvider(tmp_resolved), tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        set_main = await c.put(_VOICE_MAIN_URL)
+    assert set_main.status_code == 200
+    assert set_main.json()["capabilities"] is None
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/content/categories/{category_id}/items/{item_id}/voices/{voice_id}/regenerate
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_regenerate_item_voice_returns_the_new_take(tmp_resolved: Path) -> None:
+    class _TrackingProvider(StubContentProvider):
+        def regenerate_item_voice(self, category_id: str, item_id: str, voice_id: str) -> CategoryVoice:
+            return CategoryVoice(id="apple_en_02", language="en", type="tts",
+                                 file_uri="/content/foods/apple/apple_en_02.mp3", provider="openai")
+
+    app = make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.post(f"{_VOICES_URL}/apple-v-en/regenerate")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == "apple_en_02"
+    assert body["file_uri"] == "/content/foods/apple/apple_en_02.mp3"
+    assert body["action"] == "regenerate"
+
+
+# ---------------------------------------------------------------------------
 # PUT /api/v1/content/categories/{category_id}/items/{item_id}/voices/{voice_id}/main
 # ---------------------------------------------------------------------------
 

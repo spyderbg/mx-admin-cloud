@@ -243,6 +243,23 @@ class ItemImagesResponse(BaseModel):
     main_image_id: str | None = None
 
 
+class VoiceCapabilities(BaseModel):
+    """Which voice actions the API can perform right now, so a client only offers the working ones."""
+
+    # POST /voices can add another recording for a language that already has one.
+    multiple_voices: bool = False
+    # POST /voices/generate (per-request text, preset and settings) exists.
+    generate: bool = False
+    # POST /voices/{voice_id}/optimize can run: at least one voice optimizer is active.
+    optimize: bool = False
+    # PUT /voices/{voice_id}/main: any recording of a language can be made its main voice.
+    select: bool = True
+    # GET /voices/presets exists.
+    presets: bool = False
+    # Audio formats accepted by the upload endpoints.
+    upload_formats: list[str] = Field(default_factory=lambda: ["mp3"])
+
+
 class ItemVoicesResponse(BaseModel):
     """Response for GET /categories/{name}/items/{item_id}/voices."""
 
@@ -255,6 +272,8 @@ class ItemVoicesResponse(BaseModel):
     # Language -> id of the variant the main voice was copied from, i.e. the one currently
     # selected as main. None when the main voice matches no variant of that language.
     main_voice_ids: dict[str, str | None] = {}
+    # What a client can do with the voices; only the list endpoint fills it in.
+    capabilities: VoiceCapabilities | None = None
 
 
 class OptimizeItemVoiceResponse(ItemVoicesResponse):
