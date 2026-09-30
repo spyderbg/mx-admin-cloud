@@ -535,7 +535,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   .ivs-toggle { flex-basis: 15rem; }
   .ivs-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-@container voices (min-width: 48rem) {
+@container item-details (min-width: 64rem) {
   .ivs-summary-buttons { display: flex; }
   .ivs-summary-menu { display: none; }
 }

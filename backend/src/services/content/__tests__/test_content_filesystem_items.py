@@ -95,6 +95,40 @@ def test_create_item_success_with_image(tmp_path: Path) -> None:
     assert _csv_rows(category_path / "items_fr.csv") == ["apple-fr"]
 
 
+def test_create_item_names_folder_after_the_item_id(tmp_path: Path) -> None:
+    content_root, category_path = _prepare_category(tmp_path)
+    provider = make_fs_provider()
+    with (
+        patch_fs_settings() as mock_settings,
+        patch.object(FileSystemContentProvider, "_translate_word", side_effect=_fake_translate),
+    ):
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
+        result = provider.create_item("C_Foods", " Ice-Cream  Cone ", b"\x89PNG", ".png", generate_voices=False)
+
+    assert result.item_id == "I_IceCreamCone"
+    assert result.folder == "ice_cream_cone"
+    item_path = category_path / "ice_cream_cone"
+    assert (item_path / "ice_cream_cone.png").exists()
+    assert (item_path / "ice_cream_cone_01.png").exists()
+
+
+def test_create_item_rejects_word_without_letters_or_digits(tmp_path: Path) -> None:
+    content_root, category_path = _prepare_category(tmp_path)
+    provider = make_fs_provider()
+    with (
+        patch_fs_settings() as mock_settings,
+        patch.object(FileSystemContentProvider, "_translate_word", side_effect=_fake_translate) as translate_mock,
+    ):
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
+        with pytest.raises(ContentOperationError, match="Could not derive an item id"):
+            provider.create_item("C_Foods", "!!!")
+
+    assert translate_mock.call_count == 0
+    assert not (category_path / "items_ids.csv").exists()
+
+
 def test_create_item_success_without_image(tmp_path: Path) -> None:
     content_root, category_path = _prepare_category(tmp_path)
     provider = make_fs_provider()
@@ -379,27 +413,166 @@ def test_update_item_name_writes_localized_name(tmp_path: Path) -> None:
     assert (category_path / "items_fr.csv").read_text(encoding="utf-8") == "pomme verte\nbanane\n"
 
 
+def test_update_item_name_keeps_folder_and_files_reachable(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    category_path = content_root / "foods"
+    write_category_registry(content_root, [("C_Foods", "Foods")])
+    write_item_registry(category_path, [("I_Apple", "apple")])
+    _write_apple_files(category_path)
+
+    provider = make_fs_provider()
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        result = provider.update_item_name("C_Foods", "I_Apple", LocalizedString({"en": "green apple"}))
+        images = provider.item_images("C_Foods", "I_Apple")
+        voices = provider.item_voices("C_Foods", "I_Apple")
+
+    assert result.name.en == "green apple"
+    assert result.thumbnail_uri == "/content/foods/apple/apple.png"
+    assert sorted(f.name for f in (category_path / "apple").iterdir()) == [
+        "apple.png", "apple_01.png", "apple_en.csv", "apple_en.mp3", "apple_en_01.mp3", "notes.txt",
+    ]
+    assert not (category_path / "green_apple").exists()
+    assert images.thumbnail_uri == "/content/foods/apple/apple.png"
+    assert voices.voices[0].file_uri == "/content/foods/apple/apple_en.mp3"
+
+
 # ---------------------------------------------------------------------------
 # update_item_id
 # ---------------------------------------------------------------------------
 
-def test_update_item_id_rewrites_id_row_only(tmp_path: Path) -> None:
+def _write_apple_files(category_path: Path) -> None:
+    """Fill the 'apple' item folder with the file kinds an item carries, plus one it doesn't own."""
+    item_path = category_path / "apple"
+    (item_path / "01.png").unlink()  # the placeholder write_item_registry leaves behind
+    for name in ("apple.png", "apple_01.png", "apple_en.mp3", "apple_en_01.mp3", "apple_en.csv"):
+        (item_path / name).write_bytes(name.encode())
+    (item_path / "notes.txt").write_bytes(b"not an item file")
+
+
+def test_update_item_id_moves_folder_and_renames_its_files(tmp_path: Path) -> None:
     content_root = tmp_path / "content"
     category_path = content_root / "foods"
     write_category_registry(content_root, [("C_Foods", "Foods")])
     write_item_registry(category_path, [("I_Apple", "apple"), ("I_Banana", "banana")])
+    _write_apple_files(category_path)
 
     provider = make_fs_provider()
     with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en"]
         result = provider.update_item_id("C_Foods", "I_Apple", "I_GreenApple")
+        images = provider.item_images("C_Foods", "I_GreenApple")
 
     assert result.id == "I_GreenApple"
     assert result.name.en == "apple"
+    assert result.thumbnail_uri == "/content/foods/green_apple/green_apple.png"
+    assert result.images_count == 1
     assert _csv_rows(category_path / "items_ids.csv") == ["I_GreenApple", "I_Banana"]
     assert _csv_rows(category_path / "items_en.csv") == ["apple", "banana"]
-    assert (category_path / "apple").is_dir()
+    assert not (category_path / "apple").exists()
+    assert sorted(f.name for f in (category_path / "green_apple").iterdir()) == [
+        "green_apple.png",
+        "green_apple_01.png",
+        "green_apple_en.csv",
+        "green_apple_en.mp3",
+        "green_apple_en_01.mp3",
+        "notes.txt",
+    ]
+    assert (category_path / "green_apple" / "green_apple_01.png").read_bytes() == b"apple_01.png"
+    assert (category_path / "banana").is_dir()
+    assert images.thumbnail_uri == "/content/foods/green_apple/green_apple.png"
+    assert [image.id for image in images.images] == ["green_apple_01"]
+
+
+def test_update_item_id_to_id_with_same_folder_keeps_folder(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    category_path = content_root / "foods"
+    write_category_registry(content_root, [("C_Foods", "Foods")])
+    write_item_registry(category_path, [("I_IceTea", "ice tea")])
+
+    provider = make_fs_provider()
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        result = provider.update_item_id("C_Foods", "I_IceTea", "I_Ice_Tea")
+
+    assert result.id == "I_Ice_Tea"
+    assert _csv_rows(category_path / "items_ids.csv") == ["I_Ice_Tea"]
+    assert (category_path / "ice_tea" / "01.png").exists()
+
+
+def test_update_item_id_conflict_with_existing_folder(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    category_path = content_root / "foods"
+    write_category_registry(content_root, [("C_Foods", "Foods")])
+    write_item_registry(category_path, [("I_Apple", "apple")])
+    _write_apple_files(category_path)
+    (category_path / "green_apple").mkdir()  # not registered, but it would be overwritten
+
+    provider = make_fs_provider()
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        with pytest.raises(CategoryConflictError, match="green_apple"):
+            provider.update_item_id("C_Foods", "I_Apple", "I_GreenApple")
+
+    assert _csv_rows(category_path / "items_ids.csv") == ["I_Apple"]
+    assert (category_path / "apple" / "apple.png").exists()
+    assert not list((category_path / "green_apple").iterdir())
+
+
+def test_update_item_id_rolls_back_folder_when_a_file_rename_fails(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    category_path = content_root / "foods"
+    write_category_registry(content_root, [("C_Foods", "Foods")])
+    write_item_registry(category_path, [("I_Apple", "apple")])
+    _write_apple_files(category_path)
+    original_files = sorted(f.name for f in (category_path / "apple").iterdir())
+
+    real_rename = Path.rename
+    calls = {"count": 0}
+
+    def flaky_rename(self: Path, target: Path) -> Path:
+        calls["count"] += 1
+        if calls["count"] == 3:  # the folder move and one file went through
+            raise OSError("disk on fire")
+        return real_rename(self, target)
+
+    provider = make_fs_provider()
+    with patch_fs_settings() as mock_settings, patch.object(Path, "rename", flaky_rename):
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        with pytest.raises(ContentOperationError, match="Failed to rename item folder 'apple' to 'green_apple'"):
+            provider.update_item_id("C_Foods", "I_Apple", "I_GreenApple")
+
+    assert _csv_rows(category_path / "items_ids.csv") == ["I_Apple"]
+    assert not (category_path / "green_apple").exists()
+    assert sorted(f.name for f in (category_path / "apple").iterdir()) == original_files
+
+
+def test_update_item_id_restores_folder_when_id_row_cannot_be_written(tmp_path: Path) -> None:
+    content_root = tmp_path / "content"
+    category_path = content_root / "foods"
+    write_category_registry(content_root, [("C_Foods", "Foods")])
+    write_item_registry(category_path, [("I_Apple", "apple")])
+    _write_apple_files(category_path)
+    original_files = sorted(f.name for f in (category_path / "apple").iterdir())
+
+    provider = make_fs_provider()
+    with (
+        patch_fs_settings() as mock_settings,
+        patch.object(FileSystemContentProvider, "_write_csv_row_at_index", side_effect=OSError("read-only")),
+    ):
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        with pytest.raises(OSError, match="read-only"):
+            provider.update_item_id("C_Foods", "I_Apple", "I_GreenApple")
+
+    assert _csv_rows(category_path / "items_ids.csv") == ["I_Apple"]
+    assert not (category_path / "green_apple").exists()
+    assert sorted(f.name for f in (category_path / "apple").iterdir()) == original_files
 
 
 def test_update_item_id_same_id_is_noop(tmp_path: Path) -> None:

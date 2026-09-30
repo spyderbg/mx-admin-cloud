@@ -142,14 +142,19 @@ Every service emits over HTTP today. Coverage lives in `src/core/__tests__/test_
 
 ```
 content/<category>/
-├── images/<name>/
-│   ├── <name>.png, <name>_thumb.png
-│   └── <name>_en.mp3, <name>_es.mp3, <name>_fr.mp3, <name>_bg.mp3
-├── category_icon.png
-└── category_en.mp3, category_es.mp3, ...
+├── <item>/                          # named after the item id: I_WaterBottle -> water_bottle
+│   ├── <item>.png                   # main image (a copy of one variant)
+│   ├── <item>_01.png, <item>_02.jpg # image variants
+│   └── <item>_en.mp3, <item>_en_01.mp3, <item>_en.csv, ...  # voices, voice variants, metadata sidecars
+├── items_ids.csv, items_<lang>.csv  # row-aligned registry: id, then the name per language
+└── <category>.png, <category>_en.mp3, ...   # category icon and voices
 
 archive/<category>_<unix_timestamp>/   # Deleted categories
 ```
+
+An item's folder is derived from its **id only** (`_folder_name_from_item_id`), never from its names:
+editing an item's English word leaves the folder alone, while changing its id renames the folder
+and the files inside it that carry the old folder name.
 
 ### Authentication
 

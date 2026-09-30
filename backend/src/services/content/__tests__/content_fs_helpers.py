@@ -1,5 +1,7 @@
 """Shared helpers for the FileSystemContentProvider unit tests (test_content_filesystem_*.py)."""
 
+# pylint: disable=protected-access
+
 from __future__ import annotations
 
 import csv
@@ -63,7 +65,10 @@ def write_category_registry(content_root: Path, entries: list[tuple[str, str]]) 
 
 
 def write_item_registry(category_path: Path, entries: list[tuple[str, str]]) -> None:
-    """Write items_ids.csv/items_en.csv rows. *entries* is a list of (item_id, english_word)."""
+    """Write items_ids.csv/items_en.csv rows and each item's folder (named after its id).
+
+    *entries* is a list of (item_id, english_word).
+    """
     category_path.mkdir(parents=True, exist_ok=True)
     (category_path / "items_ids.csv").write_text(
         "".join(f"{iid}\n" for iid, _ in entries), encoding="utf-8",
@@ -71,9 +76,10 @@ def write_item_registry(category_path: Path, entries: list[tuple[str, str]]) -> 
     (category_path / "items_en.csv").write_text(
         "".join(f"{word}\n" for _, word in entries), encoding="utf-8",
     )
-    for _, word in entries:
-        (category_path / word.lower()).mkdir(parents=True, exist_ok=True)
-        (category_path / word.lower() / "01.png").write_bytes(b"fake-png")
+    for item_id, _ in entries:
+        item_folder = category_path / FileSystemContentProvider._folder_name_from_item_id(item_id)
+        item_folder.mkdir(parents=True, exist_ok=True)
+        (item_folder / "01.png").write_bytes(b"fake-png")
 
 
 def voice_metadata(path: Path) -> dict[str, str]:

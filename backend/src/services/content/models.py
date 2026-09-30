@@ -467,15 +467,18 @@ class ContentProvider(ServiceProvider, ABC):  # pylint: disable=too-many-public-
         _, _, remainder = category_id.partition("_")
         return cls._to_snake(remainder or category_id)
 
-    @staticmethod
-    def _english_word_to_folder_name(word: str) -> str:
-        if not word or not word.strip():
-            return ""
-        normalized = word.strip().replace(" ", "_")
-        normalized = re.sub(r"_+", "_", normalized).strip("_")
-        return normalized.lower()
+    @classmethod
+    def _folder_name_from_item_id(cls, item_id: str) -> str:
+        """Derive the on-disk folder name from an item id, e.g. 'I_WaterBottle' -> 'water_bottle'.
+
+        The folder follows the id and nothing else: editing an item's names never moves it,
+        and only an id change does.
+        """
+        _, _, remainder = item_id.partition("_")
+        folder = cls._to_snake(remainder or item_id)
+        return re.sub(r"_+", "_", folder).strip("_")
 
     def _english_word_to_image_id(self, word: str) -> str:
-        if not word or not word.strip():
-            return ""
-        return "I_" + self._to_pascal(word.strip())
+        """Return the item id for *word* (e.g. 'red apple' -> 'I_RedApple'), or "" if it has no letters or digits."""
+        pascal = self._to_pascal(word.strip()) if word else ""
+        return f"I_{pascal}" if pascal else ""

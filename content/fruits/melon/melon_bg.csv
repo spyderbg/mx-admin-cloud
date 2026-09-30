@@ -1,0 +1,2 @@
+creation_method,provider,parameters
+generated,elevenlabs,"{""_text"": ""пъпеш"", ""actor"": ""Milena"", ""date"": ""2026-09-30T04:07:23.047509+00:00"", ""language"": ""bg"", ""model"": ""eleven_multilingual_v2"", ""output_format"": ""mp3"", ""speaker_boost"": true, ""speed"": 0.7, ""use_space"": ""yes"", ""voice_id"": ""M1ydWt7KnBCiuv4CnEDC"", ""voice_settings"": {""similarity_boost"": 0.7, ""stability"": 0.6}}"

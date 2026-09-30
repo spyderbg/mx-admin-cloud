@@ -510,27 +510,27 @@ def test_folder_name_from_category_id(category_id: str, expected: str) -> None:
     assert ContentProvider._folder_name_from_category_id(category_id) == expected
 
 
-@pytest.mark.parametrize("word,expected", [
-    ("apple", "apple"),
-    ("Red Apple", "red_apple"),
-    ("red  apple", "red_apple"),
-    ("  banana  ", "banana"),
-    ("_leading", "leading"),
-    ("trailing_", "trailing"),
-    ("multi___under", "multi_under"),
-    ("", ""),
-    ("   ", ""),
+@pytest.mark.parametrize("item_id,expected", [
+    ("I_Apple", "apple"),
+    ("I_RedApple", "red_apple"),
+    ("I_WaterBottle", "water_bottle"),
+    ("I_Apple2", "apple2"),
+    ("I_already_snake", "already_snake"),
+    ("I_Ice_Tea", "ice_tea"),
+    ("I_iceTea", "ice_tea"),
 ])
-def test_english_word_to_folder_name(word: str, expected: str) -> None:
-    assert ContentProvider._english_word_to_folder_name(word) == expected
+def test_folder_name_from_item_id(item_id: str, expected: str) -> None:
+    assert ContentProvider._folder_name_from_item_id(item_id) == expected
 
 
 @pytest.mark.parametrize("word,expected", [
     ("apple", "I_Apple"),
     ("red apple", "I_RedApple"),
     ("  cherry  ", "I_Cherry"),
+    ("ice-cream", "I_IceCream"),
     ("", ""),
     ("   ", ""),
+    ("!!!", ""),
 ])
 def test_english_word_to_image_id(word: str, expected: str) -> None:
     assert _provider._english_word_to_image_id(word) == expected

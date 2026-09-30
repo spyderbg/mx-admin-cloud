@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import csv
 import datetime
+import re
 import sys
 from pathlib import Path
 
@@ -62,6 +63,16 @@ def read_csv(path: Path) -> list[str]:
         return []
     with open(path, 'r', encoding='utf-8') as f:
         return [row[0].strip() for row in csv.reader(f) if row]
+
+
+def folder_from_item_id(item_id: str) -> str:
+    """Mirror ContentProvider._folder_name_from_item_id ('I_WaterBottle' -> 'water_bottle').
+
+    Duplicated for the same reason as in testenv_seed.py: this script must not import backend/src.
+    """
+    _, _, remainder = item_id.partition('_')
+    folder = re.sub(r'(?<!^)(?=[A-Z])', '_', remainder or item_id).lower()
+    return re.sub(r'_+', '_', folder).strip('_')
 
 
 def find_images(directory: Path) -> list[Path]:
@@ -121,7 +132,11 @@ def build_items(cat_dir: Path, content_root: Path, cat_key: str) -> tuple[list[d
     category_thumbnail = ''
     for i_idx in range(len(item_ids)):
         name_en = item_names['en'][i_idx] if i_idx < len(item_names['en']) else ''
-        folder = name_en.lower().replace(' ', '_')
+        # items_* content names each folder after the item id; the legacy images_* layout after the English name.
+        if prefix == 'items':
+            folder = folder_from_item_id(item_ids[i_idx])
+        else:
+            folder = name_en.lower().replace(' ', '_')
         item_dir = cat_dir / folder
 
         imgs = find_images(item_dir)

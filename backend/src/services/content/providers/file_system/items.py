@@ -4,6 +4,7 @@ removal, summaries), its images, and its voices.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import re
 import shutil
@@ -199,10 +200,10 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             self,
             category_path: Path,
             category_name: str,
-            english_word: str,
+            item_id: str,
     ) -> tuple[str, int]:
         """Return (thumbnail_uri, images_count) for one item, scanning its image folder."""
-        folder_name = self._english_word_to_folder_name(english_word)
+        folder_name = self._folder_name_from_item_id(item_id)
         item_folder = category_path / folder_name
         if not item_folder.is_dir():
             return "", 0
@@ -233,14 +234,9 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             items_by_lang: dict[str, list[str]],
     ) -> list[ItemDetail]:
         """Build ItemDetail list from CSV data and filesystem scan."""
-        en_words = items_by_lang.get("en", [])
         items = []
         for i, iid in enumerate(item_ids):
-            thumbnail_uri, images_count = "", 0
-            if i < len(en_words):
-                thumbnail_uri, images_count = self._item_thumbnail_and_count(
-                    category_path, category_name, en_words[i]
-                )
+            thumbnail_uri, images_count = self._item_thumbnail_and_count(category_path, category_name, iid)
             items.append(ItemDetail(
                 id=iid,
                 name=LocalizedString({lang: names[i] for lang, names in items_by_lang.items() if i < len(names)}),
@@ -311,10 +307,10 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             raise ContentOperationError("Item word is required")
         english_word = english_word.strip()
 
-        folder_name = self._english_word_to_folder_name(english_word)
         item_id = self._english_word_to_image_id(english_word)
+        folder_name = self._folder_name_from_item_id(item_id)
         if not folder_name:
-            raise ContentOperationError("Could not derive folder name from item word")
+            raise ContentOperationError("Could not derive an item id from item word")
 
         category_name, category_path = self._validate_category_path(category_id)
         item_path = self._validate_item_path(category_path, folder_name, item_id)
@@ -399,18 +395,59 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             )
 
         category_name, category_path = self._validate_category_path(category_id)
-        self._resolve_item_path(category_path, category_name, item_id)
+        old_folder, _ = self._resolve_item_path(category_path, category_name, item_id)
 
-        # The item folder and its files are named after the English word, not the id, so
-        # only the id row in the registry changes.
         ids_path = category_path / _ITEMS_IDS
         item_ids = self._read_csv_column(ids_path)
         if new_item_id != item_id:
             if new_item_id in item_ids:
                 raise CategoryConflictError(f"Item id already exists: {new_item_id}")
-            self._write_csv_row_at_index(ids_path, item_ids.index(item_id), new_item_id)
+
+            # The folder is named after the id, so it moves with it. Two different ids can
+            # map to the same folder name (I_IceTea / I_iceTea), so check before touching disk.
+            new_folder = self._folder_name_from_item_id(new_item_id)
+            moved = new_folder != old_folder
+            if moved:
+                if not new_folder:
+                    raise InvalidCategoryNameError(f"Invalid item id '{new_item_id}': it names no folder.")
+                if (category_path / new_folder).exists():
+                    raise CategoryConflictError(f"Item folder already exists: {new_folder}")
+                self._rename_item_folder(category_path, old_folder, new_folder)
+            try:
+                self._write_csv_row_at_index(ids_path, item_ids.index(item_id), new_item_id)
+            except Exception:
+                if moved:
+                    self._rename_item_folder(category_path, new_folder, old_folder)
+                raise
 
         return self._item_detail(category_path, category_name, new_item_id)
+
+    @staticmethod
+    def _rename_item_folder(category_path: Path, old_name: str, new_name: str) -> None:
+        """Move an item's folder to *new_name* and rename the files inside that carry the old name.
+
+        Item files are named after their folder ("apple.png", "apple_01.png", "apple_en.mp3",
+        "apple_en.csv", ...) and the main image/voice lookups depend on that, so the files have
+        to follow the folder. All or nothing: on failure whatever was renamed is put back.
+        """
+        old_path = category_path / old_name
+        new_path = category_path / new_name
+        done: list[tuple[Path, Path]] = []  # (source, target) of every rename made so far
+        try:
+            old_path.rename(new_path)
+            done.append((old_path, new_path))
+            for entry in sorted(new_path.iterdir()):
+                if entry.is_file() and entry.name.startswith((f"{old_name}.", f"{old_name}_")):
+                    target = new_path / (new_name + entry.name[len(old_name):])
+                    entry.rename(target)
+                    done.append((entry, target))
+        except OSError as exc:
+            for source, target in reversed(done):
+                with contextlib.suppress(OSError):  # best effort: the original error is the one to report
+                    target.rename(source)
+            raise ContentOperationError(
+                f"Failed to rename item folder '{old_name}' to '{new_name}': {exc}",
+            ) from exc
 
     def _item_detail(self, category_path: Path, category_name: str, item_id: str) -> ItemDetail:
         """Return the ItemDetail for *item_id* as currently registered, or raise CategoryNotFoundError."""

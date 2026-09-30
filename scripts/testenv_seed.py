@@ -43,22 +43,21 @@ DIM = "\033[2m"
 RESET = "\033[0m"
 
 _UNDERSCORE_RE = re.compile(r"_+")
+_CAMEL_BOUNDARY_RE = re.compile(r"(?<!^)(?=[A-Z])")
 
 
-def _english_word_to_folder_name(word: str) -> str:
-    """Mirror FileSystemContentProvider._english_word_to_folder_name exactly.
+def _folder_name_from_item_id(item_id: str) -> str:
+    """Mirror ContentProvider._folder_name_from_item_id exactly ('I_WaterBottle' -> 'water_bottle').
 
     Duplicated rather than imported: importing backend/src from scripts/ would require
-    putting the backend package on sys.path just for a four-line pure string transform,
+    putting the backend package on sys.path just for a few-line pure string transform,
     coupling the seed tooling to backend internals for no real benefit. If this rule
     ever changes, content-quirks.spec.ts / item tests will fail loudly against the app
     itself, not silently here.
     """
-    if not word or not word.strip():
-        return ""
-    normalized = word.strip().replace(" ", "_")
-    normalized = _UNDERSCORE_RE.sub("_", normalized).strip("_")
-    return normalized.lower()
+    _, _, remainder = item_id.partition("_")
+    folder = _CAMEL_BOUNDARY_RE.sub("_", remainder or item_id).lower()
+    return _UNDERSCORE_RE.sub("_", folder).strip("_")
 
 
 def _read_csv_rows(path: Path) -> list[list[str]]:
@@ -125,18 +124,16 @@ def _kept_item_folder_names(category_src: Path, folder: str) -> set[str]:
     if indices is None:
         return set()
     ids_path = category_src / paths.ITEMS_IDS_FILE
-    en_path = category_src / "items_en.csv"
-    if not en_path.is_file():
+    if not ids_path.is_file():
         return set()
-    en_rows = _read_csv_rows(en_path)
+    id_rows = _read_csv_rows(ids_path)
     names: set[str] = set()
     for i in indices:
-        if i >= len(en_rows) or not en_rows[i]:
+        if i >= len(id_rows) or not id_rows[i]:
             continue
-        folder_name = _english_word_to_folder_name(en_rows[i][0])
+        folder_name = _folder_name_from_item_id(id_rows[i][0].strip())
         if folder_name:
             names.add(folder_name)
-    del ids_path  # only used for the existence check above; ids don't name folders
     return names
 
 
