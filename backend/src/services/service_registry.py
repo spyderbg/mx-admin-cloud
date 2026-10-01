@@ -18,6 +18,7 @@ import src.services as _services_pkg
 from src.core.utils import JsonObjectReadError, read_json_object
 from src.services.acceptance import ConfigApplyResult, ServiceAcceptCriteria
 from src.services.models import Service, ServiceProvider
+from src.services.provider_strategy import STRATEGIES_FILE, InvalidStrategiesFileError, read_strategies
 
 ServiceT = TypeVar("ServiceT", bound=Service)
 
@@ -287,8 +288,39 @@ class ServiceRegistryBuilder:
             providers.sort(key=lambda provider: getattr(provider, "priority", 999))
             self._registry.replace_service_providers(service_name, providers)
 
+        self._apply_provider_strategies()
+
         # log results
         self._log_apply_result(results)
+
+    def get_service(self, service_name: str) -> Service:
+        """Return the registered service instance for *service_name* (KeyError if unknown)."""
+        return self._registry.get_service(service_name)
+
+    def _apply_provider_strategies(self) -> None:
+        """Give every service its stored provider strategy, or its default when none or an unsupported one is stored.
+
+        A broken strategies file never stops the configuration from loading: it is reported
+        and every service falls back to its default.
+        """
+        console = Console()
+        try:
+            stored = read_strategies(self._config_root)
+        except InvalidStrategiesFileError as exc:
+            console.print(Text(f"{exc} Using the default provider strategies.", style="red"))
+            stored = {}
+        for service_name, service in self._registry.get_registered_services().items():
+            if not service.SUPPORTED_STRATEGIES:
+                continue
+            requested = stored.get(service_name)
+            strategy = service.resolve_provider_strategy(requested)
+            if requested is not None and requested != strategy:
+                console.print(Text(
+                    f"{STRATEGIES_FILE}: '{service_name}' does not support {requested.value}; "
+                    f"using {strategy.value}.",
+                    style="red",
+                ))
+            service.set_provider_strategy(strategy)
 
     def apply_runtime_payload(self, payload: dict[str, Any], source: str = "<runtime-upload>") -> ConfigApplyResult:
         """Validate and apply one runtime-submitted config payload in memory."""

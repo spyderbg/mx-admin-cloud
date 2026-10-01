@@ -37,6 +37,7 @@ from src.services.content.providers.file_system.constants import (
     _ITEMS_IDS,
     _ITEMS_LANG_CSV,
 )
+from src.services.provider_strategy import ProviderSelectionStrategy
 
 
 # Read size for content hashing (identifying which variant a main image/voice was copied from).
@@ -758,13 +759,11 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         return self.item_voices(category_id, item_id)
 
     def optimize_item_voice(self, category_id: str, item_id: str, voice_id: str) -> OptimizedItemVoice:
-        """Write one optimized variant of the voice's original recording per active optimizer.
+        """Optimize a voice with every provider or stop at the first success.
 
-        The original is kept as a variant alongside the optimized ones, and the main voice
-        is left as it is: choosing among them is set_main_item_voice's job. Re-running an
-        optimizer on the same original overwrites its previous output instead of adding
-        another variant. An optimizer that fails is reported in *warnings*; the run only
-        fails outright when every optimizer does.
+        Keep the original and main voice. Re-running an optimizer overwrites its
+        previous output. Report failed optimizers in *warnings* and fail only when
+        every optimizer tried fails.
         """
         category_name, category_path = self._validate_category_path(category_id)
         item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
@@ -781,6 +780,7 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             raise ContentOperationError(f"Voice optimization is unavailable: {exc}") from exc
         if not optimizers:
             raise ContentOperationError("No active voice optimizers configured.")
+        strategy = self._voice_optimization_strategy()
 
         source = self._original_item_voice(item_path, item_folder_name, language, voice_id)
         source_provider, source_parameters = self._read_voice_metadata(source)
@@ -807,6 +807,8 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
                 partial.unlink(missing_ok=True)
                 continue
             optimized_ids.append(target.stem)
+            if strategy is ProviderSelectionStrategy.FIRST_SUCCESS:
+                break
 
         if not optimized_ids:
             raise ContentOperationError("; ".join(warnings))

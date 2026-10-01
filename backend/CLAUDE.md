@@ -138,6 +138,28 @@ so a record stays attributable once it reaches a collector that runs none of the
 
 Every service emits over HTTP today. Coverage lives in `src/core/__tests__/test_log_client.py`.
 
+### Provider selection strategy
+
+How a service dispatches one task to its active providers (always in ascending `priority`):
+**ALL_PROVIDERS** calls every one, **FIRST_SUCCESS** tries them until one succeeds.
+
+| Service | Supported | Default | Applied in |
+|---------|-----------|---------|------------|
+| `logging` | both | ALL_PROVIDERS | `LoggingService.emit` (providers without `provider_category`) |
+| `voice_optimization` | both | ALL_PROVIDERS | content `optimize_item_voice` (reads the strategy over the internal configuration API) |
+| `text_to_speech`, `text_to_image` | FIRST_SUCCESS | FIRST_SUCCESS | `generate()` without an explicit `provider_name` |
+| `text_translation` | FIRST_SUCCESS | FIRST_SUCCESS | `translate_text` (no chaining) |
+| `content`, `configuration`, `evaluation` | none | — | single provider |
+
+- Shared code: `src/services/provider_strategy.py` (enum, `first_success`, `dispatch_each`,
+  `AllProvidersFailedError`, `read_strategies`). A service declares `SUPPORTED_STRATEGIES` and
+  `DEFAULT_STRATEGY` as class attributes (`src/services/models.py`) and reads `self.provider_strategy`.
+- Stored per service in `config/_service_strategies.json` (config root, never a provider directory);
+  the registry applies it on every load, keeping the default for a missing, unsupported or broken entry.
+  Changed through `GET/PUT /internal/configurations/{service}/strategy` and the service Configuration page.
+- Calls that name a provider (`/internal/generators/{provider}/generate`,
+  `/internal/optimizers/{name}/optimize`, `LoggingService.log(name, ...)`) bypass the strategy.
+
 ### Content Filesystem Layout (relative to project root)
 
 ```

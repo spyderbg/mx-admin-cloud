@@ -89,9 +89,9 @@ async def list_translators(
     status_code=status.HTTP_200_OK,
     summary="Translate text using active translators",
     description=(
-            "Translate 'text' from 'input_lang_code' to 'target_lang_code' using every "
-            "active translator in priority order and return the last successful "
-            "translation. "
+            "Translate 'text' from 'input_lang_code' to 'target_lang_code' with the first "
+            "active translator, in priority order, that supports the pair and returns a "
+            "translation (FIRST_SUCCESS); translators that fail are reported in 'errors'. "
             "When no translator succeeds, the response echoes the input text and language. "
             "Responds with HTTP 503 when no active translators are configured."
     ),
@@ -142,8 +142,8 @@ async def translate_text(
     summary="Translate words in a file using active translators",
     description=(
             "Upload a file (TXT, CSV, or XLSX) and translate segments whose language differs "
-            "from 'target_lang_code' (per row/column language) using every active translator "
-            "in priority order. Returns one result per input word, including the original "
+            "from 'target_lang_code' (per row/column language), each with the first active "
+            "translator, in priority order, that succeeds. Returns one result per input word, including the original "
             "text, the translated text, and the resolved language code. "
             "Responds with HTTP 503 when no active translators are configured."
     ),

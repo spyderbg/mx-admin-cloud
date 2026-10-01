@@ -19,11 +19,19 @@ from src.services.configuration.models import (
     ConfigurationSummary,
     ConfigurationValidationError,
     InvalidConfigurationNameError,
+    ProviderStrategyInfo,
     UnknownConfigurationServiceError,
 )
 from src.services.configuration.service import ConfigurationProviderFactory
+from src.services.provider_strategy import (
+    STRATEGIES_FILE,
+    InvalidStrategiesFileError,
+    ProviderSelectionStrategy,
+    read_strategies,
+)
 
 if TYPE_CHECKING:
+    from src.services.models import Service
     from src.services.service_registry import ServiceRegistryBuilder
 
 _CONFIG_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -143,9 +151,8 @@ class FileSystemConfigurationProvider(ConfigurationProvider):
         target_path = self._config_path(service_name, config_name, create_dir=True)
         if target_path.exists():
             raise ConfigurationConflictError(f"Configuration '{config_name}' already exists for '{service_name}'.")
-        sanitized = prune_payload(payload)
-        self._validate(service_name, sanitized, source=target_path.name)
-        self._write_json(target_path, sanitized)
+        self._validate(service_name, payload, source=target_path.name)
+        self._write_json(target_path, payload)
         self._reload_registry()
         return ConfigurationMutationResult(config_name=config_name, changed=True)
 
@@ -171,6 +178,18 @@ class FileSystemConfigurationProvider(ConfigurationProvider):
         sanitized = prune_payload(merged_payload)
         self._validate(service_name, sanitized, source=target_path.name)
         self._write_json(target_path, sanitized)
+        self._reload_registry()
+        return ConfigurationMutationResult(config_name=config_name, changed=True)
+
+    def replace_configuration(
+            self, service_name: str, config_name: str, payload: dict[str, Any]
+    ) -> ConfigurationMutationResult:
+        """Validate and replace one file so removed dynamic fields stay removed."""
+        target_path = self._config_path(service_name, config_name)
+        if not target_path.exists():
+            raise ConfigurationNotFoundError(f"Configuration '{config_name}' was not found for '{service_name}'.")
+        self._validate(service_name, payload, source=target_path.name)
+        self._write_json(target_path, payload)
         self._reload_registry()
         return ConfigurationMutationResult(config_name=config_name, changed=True)
 
@@ -221,6 +240,45 @@ class FileSystemConfigurationProvider(ConfigurationProvider):
             return []
         names = [path.stem for path in sorted(config_dir.glob("*.json"))]
         return self.set_configurations_enabled(service_name, names, enabled)
+
+    def get_provider_strategy(self, service_name: str) -> ProviderStrategyInfo:
+        """Return the effective service strategy and supported choices."""
+        service = self._strategy_service(service_name)
+        try:
+            stored = read_strategies(self._config_root).get(service_name)
+        except InvalidStrategiesFileError as exc:
+            raise ConfigurationValidationError(str(exc)) from exc
+        return ProviderStrategyInfo(
+            service_name=service_name,
+            strategy=service.resolve_provider_strategy(stored),
+            supported_strategies=service.SUPPORTED_STRATEGIES,
+            default_strategy=service.DEFAULT_STRATEGY,
+        )
+
+    def set_provider_strategy(self, service_name: str, strategy: str) -> ProviderStrategyInfo:
+        """Persist a supported strategy and apply it to the running service."""
+        service = self._strategy_service(service_name)
+        if strategy not in service.SUPPORTED_STRATEGIES:
+            raise ConfigurationValidationError(
+                f"Service '{service_name}' does not support the provider strategy '{strategy}'."
+            )
+        try:
+            strategies = read_strategies(self._config_root)
+        except InvalidStrategiesFileError as exc:
+            raise ConfigurationValidationError(str(exc)) from exc
+        strategies[service_name] = ProviderSelectionStrategy(strategy)
+        self._write_json(
+            self._config_root / STRATEGIES_FILE,
+            {name: selected.value for name, selected in strategies.items()},
+        )
+        service.set_provider_strategy(strategy)
+        return self.get_provider_strategy(service_name)
+
+    def _strategy_service(self, service_name: str) -> Service:
+        self._config_dir_for_service(service_name)
+        if self._builder is None:
+            raise UnknownConfigurationServiceError("Registry builder is required for configuration operations.")
+        return self._builder.get_service(service_name)
 
     def _validate(self, service_name: str, payload: dict[str, Any], source: str) -> None:
         if self._builder is None:

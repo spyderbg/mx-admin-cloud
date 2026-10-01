@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from src.services.acceptance import ServiceAcceptCriteria
+from src.services.acceptance import ConfigApplyResult, ServiceAcceptCriteria
 from src.services.configuration.merge import deep_merge, prune_payload
 from src.services.configuration.models import (
     ConfigurationFileResult,
@@ -20,12 +20,15 @@ from src.services.configuration.models import (
     ConfigurationProviderUnavailableError,
     ConfigurationSummary,
     InvalidConfigurationNameError,
+    ProviderStrategyInfo,
 )
 from src.services.configuration.providers.file_system import FileSystemConfigurationProvider
 from src.services.configuration import service as configuration_service
 from src.services.configuration.service import LOG_SOURCE, ConfigurationService
 from src.services.logging.models import LogLevel
+from src.services.logging.service import LoggingService
 from src.services.models import ServiceProvider
+from src.services.provider_strategy import ProviderSelectionStrategy
 
 
 # ---------------------------------------------------------------------------
@@ -96,6 +99,12 @@ class _StubProvider(ConfigurationProvider):
         self._record("patch_configuration", service_name, config_name, patch)
         return ConfigurationMutationResult(config_name=config_name, changed=True)
 
+    def replace_configuration(
+            self, service_name: str, config_name: str, payload: dict[str, Any]
+    ) -> ConfigurationMutationResult:
+        self._record("replace_configuration", service_name, config_name, payload)
+        return ConfigurationMutationResult(config_name=config_name, changed=True)
+
     def set_configurations_enabled(
             self, service_name: str, config_names: list[str], enabled: bool
     ) -> list[ConfigurationMutationResult]:
@@ -107,6 +116,22 @@ class _StubProvider(ConfigurationProvider):
     ) -> list[ConfigurationMutationResult]:
         self._record("set_all_configurations_enabled", service_name, enabled)
         return [ConfigurationMutationResult(config_name="cfg", changed=True)]
+
+    def get_provider_strategy(self, service_name: str) -> ProviderStrategyInfo:
+        self._record("get_provider_strategy", service_name)
+        return ProviderStrategyInfo(
+            service_name, ProviderSelectionStrategy.FIRST_SUCCESS,
+            (ProviderSelectionStrategy.ALL_PROVIDERS, ProviderSelectionStrategy.FIRST_SUCCESS),
+            ProviderSelectionStrategy.FIRST_SUCCESS,
+        )
+
+    def set_provider_strategy(self, service_name: str, strategy: str) -> ProviderStrategyInfo:
+        self._record("set_provider_strategy", service_name, strategy)
+        return ProviderStrategyInfo(
+            service_name, ProviderSelectionStrategy(strategy),
+            (ProviderSelectionStrategy.ALL_PROVIDERS, ProviderSelectionStrategy.FIRST_SUCCESS),
+            ProviderSelectionStrategy.FIRST_SUCCESS,
+        )
 
 
 class _CapturedRecords:
@@ -327,6 +352,15 @@ def test_disable_all_configurations_delegates(tmp_path: Path) -> None:
     assert stub.calls["set_all_configurations_enabled"] == [("svc", False)]
 
 
+def test_provider_strategy_delegates(tmp_path: Path) -> None:
+    stub = _StubProvider(tmp_path)
+    svc = _make_service(tmp_path, [stub])
+    assert svc.get_service_provider_strategy("svc").strategy == ProviderSelectionStrategy.FIRST_SUCCESS
+    assert svc.set_service_provider_strategy("svc", "ALL_PROVIDERS").strategy == ProviderSelectionStrategy.ALL_PROVIDERS
+    assert stub.calls["get_provider_strategy"] == [("svc",)]
+    assert stub.calls["set_provider_strategy"] == [("svc", "ALL_PROVIDERS")]
+
+
 # ---------------------------------------------------------------------------
 # deep_merge
 # ---------------------------------------------------------------------------
@@ -428,13 +462,34 @@ class _FakeBuilder:
             validate_provider=lambda provider: None,
             build_provider=lambda provider, base_dir: provider,
         )
+        self._service = LoggingService("logging", "tests", Path("."), Path("."))
 
     def get_accept_criteria(self) -> dict[str, ServiceAcceptCriteria]:
         return {"logging": self._criteria}
 
+    def get_service(self, service_name: str) -> LoggingService:
+        assert service_name == "logging"
+        return self._service
+
+    def validate_config_payload(self, _service_name: str, _payload: dict[str, Any], source: str) -> ConfigApplyResult:
+        return ConfigApplyResult(config_name=source, accepted=True)
+
+    def load_all_from_disk(self) -> None:
+        pass
+
 
 def _make_fs_provider(tmp_path: Path) -> FileSystemConfigurationProvider:
     return FileSystemConfigurationProvider.build_runtime(tmp_path, _FakeBuilder())  # type: ignore[arg-type]
+
+
+def test_provider_strategy_persists_outside_provider_directory(tmp_path: Path) -> None:
+    provider = _make_fs_provider(tmp_path)
+    assert provider.get_provider_strategy("logging").strategy == ProviderSelectionStrategy.ALL_PROVIDERS
+    saved = provider.set_provider_strategy("logging", "FIRST_SUCCESS")
+    assert saved.strategy == ProviderSelectionStrategy.FIRST_SUCCESS
+    assert provider.get_provider_strategy("logging").strategy == ProviderSelectionStrategy.FIRST_SUCCESS
+    assert json.loads((tmp_path / "_service_strategies.json").read_text()) == {"logging": "FIRST_SUCCESS"}
+    assert not (tmp_path / "logging").exists()
 
 
 _DISK_PAYLOAD: dict[str, Any] = {
@@ -470,6 +525,31 @@ def test_fs_get_configuration_missing_raises_not_found(tmp_path: Path) -> None:
     provider = _make_fs_provider(tmp_path)
     with pytest.raises(ConfigurationNotFoundError):
         provider.get_configuration("logging", "missing")
+
+
+def test_fs_replace_configuration_removes_omitted_dynamic_fields(tmp_path: Path) -> None:
+    path = _write_config(tmp_path, "default", _DISK_PAYLOAD)
+    provider = _make_fs_provider(tmp_path)
+    replacement = {
+        "service_provider": {
+            "service": "logging", "provider": "struct_log", "enabled": True,
+            "config": {"handlers": {"console": {"level": "INFO", "filename": ""}}},
+        }
+    }
+    provider.replace_configuration("logging", "default", replacement)
+    assert json.loads(path.read_text()) == replacement
+
+
+def test_fs_add_configuration_preserves_empty_dynamic_fields(tmp_path: Path) -> None:
+    provider = _make_fs_provider(tmp_path)
+    payload = {
+        "service_provider": {
+            "service": "logging", "provider": "struct_log", "enabled": False,
+            "config": {"handlers": {}, "prompt_prefix": ""},
+        }
+    }
+    provider.add_configuration("logging", "new", payload)
+    assert json.loads((tmp_path / "logging" / "new.json").read_text()) == payload
 
 
 def test_fs_list_configurations_includes_version(tmp_path: Path) -> None:

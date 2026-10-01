@@ -40,6 +40,9 @@ from src.services.configuration.schemas import (
     ConfigurationMutationResponse,
     ConfigurationServicesResponse,
     PatchConfigurationRequest,
+    ProviderStrategyRequest,
+    ProviderStrategyResponse,
+    ReplaceConfigurationRequest,
 )
 from src.services.configuration.service import LOG_SOURCE
 from src.services.service_registry import ServiceRegistry
@@ -56,6 +59,7 @@ CONFIG_SERVICES = ""
 CONFIG_APPLY = "/apply"
 CONFIG_UPLOAD = "/upload"
 CONFIG_SERVICE = "/{service_name}"
+CONFIG_SERVICE_STRATEGY = "/{service_name}/strategy"
 CONFIG_SERVICE_ITEM = "/{service_name}/{config_name}"
 CONFIG_ENABLE_CONFIGURATIONS = "/{service_name}/enable-configurations"
 CONFIG_DISABLE_CONFIGURATIONS = "/{service_name}/disable-configurations"
@@ -170,6 +174,45 @@ def list_service_configs(
 
 
 @router.get(
+    CONFIG_SERVICE_STRATEGY,
+    response_model=ProviderStrategyResponse,
+    summary="Get provider selection strategy for a service",
+)
+def get_provider_strategy(
+        service_name: str,
+        service: ConfigurationServiceDep,
+) -> ProviderStrategyResponse:
+    """Return the effective strategy and choices for a service."""
+    try:
+        strategy_info = service.get_service_provider_strategy(service_name)
+    except UnknownConfigurationServiceError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ConfigurationValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return ProviderStrategyResponse(**strategy_info.__dict__)
+
+
+@router.put(
+    CONFIG_SERVICE_STRATEGY,
+    response_model=ProviderStrategyResponse,
+    summary="Save provider selection strategy for a service",
+)
+def set_provider_strategy(
+        service_name: str,
+        body: ProviderStrategyRequest,
+        service: ConfigurationServiceDep,
+) -> ProviderStrategyResponse:
+    """Persist and apply a supported provider strategy."""
+    try:
+        strategy_info = service.set_service_provider_strategy(service_name, body.strategy.value)
+    except UnknownConfigurationServiceError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ConfigurationValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return ProviderStrategyResponse(**strategy_info.__dict__)
+
+
+@router.get(
     CONFIG_SERVICE_ITEM,
     response_model=ConfigurationFileResponse,
     status_code=status.HTTP_200_OK,
@@ -281,6 +324,29 @@ def patch_service_config(
             config_name=config_name,
             patch=body.patch,
         )
+    except (UnknownConfigurationServiceError, ConfigurationNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (InvalidConfigurationNameError, ConfigurationValidationError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return ConfigurationMutationResponse(**result.__dict__)
+
+
+@router.put(
+    CONFIG_SERVICE_ITEM,
+    response_model=ConfigurationMutationResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Replace a configuration file",
+    description="Validate and replace the full JSON payload of an existing configuration file.",
+)
+def replace_service_config(
+        service_name: str,
+        config_name: str,
+        body: ReplaceConfigurationRequest,
+        service: ConfigurationServiceDep,
+) -> ConfigurationMutationResponse:
+    """Replace an existing JSON config file."""
+    try:
+        result = service.replace_configuration(service_name, config_name, body.payload)
     except (UnknownConfigurationServiceError, ConfigurationNotFoundError) as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except (InvalidConfigurationNameError, ConfigurationValidationError) as exc:

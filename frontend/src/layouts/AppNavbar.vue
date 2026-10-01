@@ -100,6 +100,7 @@
       :service="configService"
       @close="configService = null"
       @saved="onConfigSaved"
+      @configure="openConfigView"
     />
     <Teleport to="body">
       <div v-if="navToast" class="cd-toast cd-toast-success">
@@ -255,6 +256,13 @@ const onConfigSaved = (message: string): void => {
   if (navToastTimer) clearTimeout(navToastTimer)
   navToast.value = message
   navToastTimer = setTimeout(() => { navToast.value = null }, 4000)
+}
+
+const openConfigView = (): void => {
+  const service = configService.value
+  if (!service) return
+  configService.value = null
+  router.push({ name: 'service-configuration', params: { serviceName: service } })
 }
 
 const logout = (): void => {

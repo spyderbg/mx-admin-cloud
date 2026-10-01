@@ -6,6 +6,7 @@ from pathlib import Path
 from typing_extensions import override
 
 from src.services.models import Service, ServiceProvider
+from src.services.provider_strategy import ProviderSelectionStrategy
 from src.services.provider_factory import ServiceProviderFactory
 from src.services.voice_optimization.models import AudioOptimizerBase
 
@@ -23,6 +24,9 @@ class VoiceOptimizationService(Service):
     all active optimizers in priority order, feeding the output of each into the
     next (pipeline mode).
     """
+
+    SUPPORTED_STRATEGIES = (ProviderSelectionStrategy.ALL_PROVIDERS, ProviderSelectionStrategy.FIRST_SUCCESS)
+    DEFAULT_STRATEGY = ProviderSelectionStrategy.ALL_PROVIDERS
 
     def __init__(
             self,

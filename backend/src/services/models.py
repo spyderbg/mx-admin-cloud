@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from src.core.languages import normalize_language_code
+from src.services.provider_strategy import ProviderSelectionStrategy
 from src.services.schemas import ServiceProviderInfo
 
 
@@ -37,12 +38,31 @@ class Service(ABC):
     public methods called from routes.
     """
 
+    # How one task is dispatched to the active providers (see provider_strategy.py). A
+    # service that always works with a single provider supports none and has no default.
+    SUPPORTED_STRATEGIES: tuple[ProviderSelectionStrategy, ...] = ()
+    DEFAULT_STRATEGY: ProviderSelectionStrategy | None = None
+
     def __init__(self, service_name: str, package_name: str, service_dir: Path, base_dir: Path) -> None:
         self.name: str = service_name
         self.class_name: str = self.__class__.__name__
         self.package_name: str = package_name
         self.service_dir: Path = service_dir
         self.base_dir: Path = base_dir
+        self.provider_strategy: ProviderSelectionStrategy | None = self.DEFAULT_STRATEGY
+
+    @classmethod
+    def resolve_provider_strategy(cls, stored: str | None) -> ProviderSelectionStrategy | None:
+        """Return *stored* when this service supports it, else the service's default."""
+        if stored is not None and stored in cls.SUPPORTED_STRATEGIES:
+            return ProviderSelectionStrategy(stored)
+        return cls.DEFAULT_STRATEGY
+
+    def set_provider_strategy(self, strategy: str) -> None:
+        """Select how tasks are dispatched to providers; ValueError if this service does not support it."""
+        if strategy not in self.SUPPORTED_STRATEGIES:
+            raise ValueError(f"Service '{self.name}' does not support the provider strategy '{strategy}'.")
+        self.provider_strategy = ProviderSelectionStrategy(strategy)
 
     @abstractmethod
     def replace_providers(self, providers: list["ServiceProvider"]) -> None:

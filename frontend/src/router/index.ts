@@ -35,6 +35,11 @@ const router = createRouter({
           name: 'item-detail',
           component: () => import('../views/ItemDetailsView.vue'),
         },
+        {
+          path: 'configuration/:serviceName',
+          name: 'service-configuration',
+          component: () => import('../views/ServiceConfigurationView.vue'),
+        },
       ],
     },
   ],

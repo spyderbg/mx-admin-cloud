@@ -62,6 +62,9 @@
           </div>
         </div>
         <div class="cd-modal-footer">
+          <button type="button" class="btn btn-outline-primary cfg-configure-button" :disabled="saving" @click="openConfiguration">
+            <i class="mdi mdi-tune" aria-hidden="true"></i> Configure
+          </button>
           <button type="button" class="btn btn-secondary" :disabled="saving" @click="cancel">Cancel</button>
           <button
             type="button"
@@ -98,6 +101,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: []
   saved: [message: string]
+  configure: []
 }>()
 
 interface ConfigRow {
@@ -180,6 +184,12 @@ async function loadRows(): Promise<void> {
 function cancel(): void {
   if (saving.value) return
   emit('close')
+}
+
+function openConfiguration(): void {
+  if (saving.value) return
+  if (hasChanges.value && !window.confirm('Discard unsaved changes and open the detailed configuration view?')) return
+  emit('configure')
 }
 
 async function confirmChanges(): Promise<void> {
@@ -281,6 +291,7 @@ onUnmounted(() => {
   justify-content: flex-end;
   gap: 0.5rem;
 }
+.cfg-configure-button { margin-right: auto; }
 
 /* Config table */
 .cfg-status {

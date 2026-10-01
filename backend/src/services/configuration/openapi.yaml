@@ -213,6 +213,59 @@ components:
       - patch
       title: PatchConfigurationRequest
       description: Body model for merge-patching an existing configuration file.
+    ProviderSelectionStrategy:
+      type: string
+      enum:
+      - ALL_PROVIDERS
+      - FIRST_SUCCESS
+      title: ProviderSelectionStrategy
+      description: Planned provider dispatch policy for a service.
+    ProviderStrategyRequest:
+      properties:
+        strategy:
+          $ref: '#/components/schemas/ProviderSelectionStrategy'
+      type: object
+      required:
+      - strategy
+      title: ProviderStrategyRequest
+      description: Selection strategy to persist for a service.
+    ProviderStrategyResponse:
+      properties:
+        service_name:
+          type: string
+          title: Service Name
+        strategy:
+          anyOf:
+          - $ref: '#/components/schemas/ProviderSelectionStrategy'
+          - type: 'null'
+        supported_strategies:
+          items:
+            $ref: '#/components/schemas/ProviderSelectionStrategy'
+          type: array
+          title: Supported Strategies
+        default_strategy:
+          anyOf:
+          - $ref: '#/components/schemas/ProviderSelectionStrategy'
+          - type: 'null'
+      type: object
+      required:
+      - service_name
+      - strategy
+      - supported_strategies
+      - default_strategy
+      title: ProviderStrategyResponse
+      description: Effective strategy and available choices for a service.
+    ReplaceConfigurationRequest:
+      properties:
+        payload:
+          additionalProperties: true
+          type: object
+          title: Payload
+      type: object
+      required:
+      - payload
+      title: ReplaceConfigurationRequest
+      description: Body model for replacing the complete JSON payload of one file.
     ValidationError:
       properties:
         loc:
@@ -532,6 +585,69 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /internal/configurations/{service_name}/strategy:
+    get:
+      tags:
+      - internal-configurations
+      summary: Get provider selection strategy for a service
+      description: Return the effective strategy and choices for a service.
+      operationId: get_provider_strategy_internal_configurations__service_name__strategy_get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: service_name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Service Name
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderStrategyResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - internal-configurations
+      summary: Save provider selection strategy for a service
+      description: Persist and apply a supported provider strategy.
+      operationId: set_provider_strategy_internal_configurations__service_name__strategy_put
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: service_name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Service Name
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProviderStrategyRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderStrategyResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /internal/configurations/{service_name}/{config_name}:
     get:
       tags:
@@ -636,6 +752,47 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/PatchConfigurationRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigurationMutationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - internal-configurations
+      summary: Replace a configuration file
+      description: Validate and replace the full JSON payload of an existing configuration
+        file.
+      operationId: replace_service_config_internal_configurations__service_name___config_name__put
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: service_name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Service Name
+      - name: config_name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Config Name
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplaceConfigurationRequest'
       responses:
         '200':
           description: Successful Response

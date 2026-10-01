@@ -16,6 +16,7 @@ import httpx
 from src.core.config import settings
 from src.security.tokens import create_internal_token
 from src.services.content.models import ContentProvider
+from src.services.provider_strategy import ProviderSelectionStrategy
 
 
 def _extension_for_content_type(content_type: str | None) -> str:
@@ -135,6 +136,25 @@ class FileSystemInternalApiMixin(ContentProvider):  # pylint: disable=abstract-m
         if response.is_error:
             raise RuntimeError(cls._extract_error_detail(response))
         return [str(entry["name"]) for entry in response.json() if entry.get("enabled")]
+
+    @staticmethod
+    def _voice_optimization_strategy() -> ProviderSelectionStrategy:
+        """Return how optimizers are dispatched: every active one, or until one succeeds.
+
+        Read from the internal configuration API, like the optimizer listing. When it can't
+        be read, every active optimizer runs, which is the voice optimization service's default.
+        """
+        token = create_internal_token("configuration-service", timedelta(seconds=30))
+        try:
+            response = httpx.get(
+                f"{settings.API_BASE_URL}/internal/configurations/voice_optimization/strategy",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=30.0,
+            )
+            response.raise_for_status()
+            return ProviderSelectionStrategy(response.json().get("strategy"))
+        except (httpx.HTTPError, ValueError, AttributeError):
+            return ProviderSelectionStrategy.ALL_PROVIDERS
 
     @classmethod
     def _optimize_audio_file(cls, optimizer: str, raw_path: Path, output_path: Path) -> None:

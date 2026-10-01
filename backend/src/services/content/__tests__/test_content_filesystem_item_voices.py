@@ -18,6 +18,7 @@ from src.services.content.providers.file_system import (
     FileSystemContentProvider,
     VoiceCreationMethod,
 )
+from src.services.provider_strategy import ProviderSelectionStrategy
 from src.services.content.__tests__.content_fs_helpers import (
     patch_fs_settings,
     make_fs_provider,
@@ -330,12 +331,13 @@ def _fake_optimizer(failing: frozenset[str] = frozenset()):
     return optimize, calls
 
 
-def _optimize(
+def _optimize(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         content_root: Path,
         voice_id: str,
         optimizers: list[str],
         failing: frozenset[str] = frozenset(),
         languages: tuple[str, ...] = ("en",),
+        strategy: ProviderSelectionStrategy = ProviderSelectionStrategy.ALL_PROVIDERS,
 ):
     """Run optimize_item_voice for I_Apple with fake optimizers; return (result, optimizer calls)."""
     provider = make_fs_provider()
@@ -344,6 +346,7 @@ def _optimize(
         patch_fs_settings() as mock_settings,
         patch.object(FileSystemContentProvider, "_active_voice_optimizers", return_value=optimizers),
         patch.object(FileSystemContentProvider, "_optimize_audio_file", side_effect=optimize),
+        patch.object(FileSystemContentProvider, "_voice_optimization_strategy", return_value=strategy),
     ):
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = list(languages)
@@ -460,6 +463,34 @@ def test_optimize_item_voice_reports_a_failing_optimizer_and_keeps_the_others(tm
     assert not list(item_path.glob(".*"))
 
 
+def test_optimize_item_voice_first_success_stops_after_the_first_optimizer_that_succeeds(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"original"})
+
+    result, calls = _optimize(
+        content_root, "apple-v-en", ["ffmpeg_low", "pydub_optimized"],
+        strategy=ProviderSelectionStrategy.FIRST_SUCCESS,
+    )
+
+    assert [optimizer for optimizer, _, _ in calls] == ["ffmpeg_low"]
+    assert result.optimized_voice_ids == ["apple_en_02"]
+    assert (item_path / "apple_en_02.mp3").read_bytes() == b"ffmpeg_low:original"
+    assert not (item_path / "apple_en_03.mp3").exists()
+
+
+def test_optimize_item_voice_first_success_falls_back_past_a_failing_optimizer(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"original"})
+
+    result, calls = _optimize(
+        content_root, "apple-v-en", ["ffmpeg_low", "pydub_optimized", "ffmpeg_high"], frozenset({"ffmpeg_low"}),
+        strategy=ProviderSelectionStrategy.FIRST_SUCCESS,
+    )
+
+    assert [optimizer for optimizer, _, _ in calls] == ["ffmpeg_low", "pydub_optimized"]
+    assert result.optimized_voice_ids == ["apple_en_02"]
+    assert (item_path / "apple_en_02.mp3").read_bytes() == b"pydub_optimized:original"
+    assert result.warnings == ["Voice optimization failed for ffmpeg_low: ffmpeg_low exploded"]
+
+
 def test_optimize_item_voice_fails_when_every_optimizer_fails(tmp_path: Path) -> None:
     content_root, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"original"})
 
@@ -522,6 +553,38 @@ def test_active_voice_optimizers_lists_only_enabled_configs() -> None:
         patch("src.services.content.providers.file_system.internal_api.create_internal_token", return_value="t"),
     ):
         assert FileSystemContentProvider._active_voice_optimizers() == ["ffmpeg_low", "pydub_optimized"]
+
+
+def _strategy_lookup(response: httpx.Response | Exception) -> ProviderSelectionStrategy:
+    stub = {"side_effect": response} if isinstance(response, Exception) else {"return_value": response}
+    with (
+        patch_fs_settings(),
+        patch("src.services.content.providers.file_system.internal_api.httpx.get", **stub) as get,
+        patch("src.services.content.providers.file_system.internal_api.create_internal_token", return_value="t"),
+    ):
+        strategy = FileSystemContentProvider._voice_optimization_strategy()
+    assert get.call_args.args[0].endswith("/internal/configurations/voice_optimization/strategy")
+    return strategy
+
+
+_STRATEGY_REQUEST = httpx.Request("GET", "http://test/internal/configurations/voice_optimization/strategy")
+
+
+def test_voice_optimization_strategy_reads_the_configured_strategy() -> None:
+    response = httpx.Response(
+        200, json={"service_name": "voice_optimization", "strategy": "FIRST_SUCCESS"}, request=_STRATEGY_REQUEST,
+    )
+    assert _strategy_lookup(response) is ProviderSelectionStrategy.FIRST_SUCCESS
+
+
+@pytest.mark.parametrize("response", [
+    httpx.Response(500, json={"detail": "boom"}, request=_STRATEGY_REQUEST),
+    httpx.Response(200, json={"strategy": "SOMETHING_ELSE"}, request=_STRATEGY_REQUEST),
+    httpx.Response(200, json=["not", "an", "object"], request=_STRATEGY_REQUEST),
+    httpx.ConnectError("refused"),
+])
+def test_voice_optimization_strategy_falls_back_to_all_providers(response: httpx.Response | Exception) -> None:
+    assert _strategy_lookup(response) is ProviderSelectionStrategy.ALL_PROVIDERS
 
 
 def test_optimize_audio_file_raises_the_endpoint_detail(tmp_path: Path) -> None:

@@ -67,8 +67,7 @@ class TextTranslationServiceProvider(ServiceProvider, ABC):
         General-purpose providers (e.g. a lookup table spanning many languages)
         should accept any pair they have data for. Providers pinned to a single
         language pair (one config file per pair) must reject every other pair,
-        or the service's provider chain will invoke every language's provider
-        on every request.
+        or the service would hand them requests for other languages.
         """
 
     @abstractmethod

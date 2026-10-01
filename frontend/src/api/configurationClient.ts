@@ -12,6 +12,9 @@ import type {
   ConfigurationMutationResponse,
   ConfigurationServicesResponse,
   PatchConfigurationRequest,
+  ProviderStrategyRequest,
+  ProviderStrategyResponse,
+  ReplaceConfigurationRequest,
 } from '../types/configurationSchemas'
 
 /** List configurable services */
@@ -38,6 +41,18 @@ export const listServiceConfigs = async (serviceName: string): Promise<Configura
   return r.data
 }
 
+/** Get provider selection strategy for a service */
+export const getProviderStrategy = async (serviceName: string): Promise<ProviderStrategyResponse> => {
+  const r = await client.get<ProviderStrategyResponse>(`/internal/configurations/${serviceName}/strategy`)
+  return r.data
+}
+
+/** Save provider selection strategy for a service */
+export const setProviderStrategy = async (serviceName: string, body: ProviderStrategyRequest): Promise<ProviderStrategyResponse> => {
+  const r = await client.put<ProviderStrategyResponse>(`/internal/configurations/${serviceName}/strategy`, body)
+  return r.data
+}
+
 /** Get one configuration file */
 export const getServiceConfig = async (serviceName: string, configName: string): Promise<ConfigurationFileResponse> => {
   const r = await client.get<ConfigurationFileResponse>(`/internal/configurations/${serviceName}/${configName}`)
@@ -59,6 +74,12 @@ export const removeServiceConfig = async (serviceName: string, configName: strin
 /** Merge-patch a configuration file */
 export const patchServiceConfig = async (serviceName: string, configName: string, body: PatchConfigurationRequest): Promise<ConfigurationMutationResponse> => {
   const r = await client.patch<ConfigurationMutationResponse>(`/internal/configurations/${serviceName}/${configName}`, body)
+  return r.data
+}
+
+/** Replace a configuration file */
+export const replaceServiceConfig = async (serviceName: string, configName: string, body: ReplaceConfigurationRequest): Promise<ConfigurationMutationResponse> => {
+  const r = await client.put<ConfigurationMutationResponse>(`/internal/configurations/${serviceName}/${configName}`, body)
   return r.data
 }
 

@@ -1,4 +1,7 @@
 // Auto-generated – do not edit manually
+/** Planned provider dispatch policy for a service. */
+export type ProviderSelectionStrategy = 'ALL_PROVIDERS' | 'FIRST_SUCCESS'
+
 /** Body model for creating a new configuration file. */
 export interface AddConfigurationRequest {
     config_name: string
@@ -63,4 +66,22 @@ export interface ConfigurationServicesResponse {
 /** Body model for merge-patching an existing configuration file. */
 export interface PatchConfigurationRequest {
     patch: Record<string, any>
+}
+
+/** Selection strategy to persist for a service. */
+export interface ProviderStrategyRequest {
+    strategy: ProviderSelectionStrategy
+}
+
+/** Effective strategy and available choices for a service. */
+export interface ProviderStrategyResponse {
+    service_name: string
+    strategy: ProviderSelectionStrategy | null
+    supported_strategies: ProviderSelectionStrategy[]
+    default_strategy: ProviderSelectionStrategy | null
+}
+
+/** Body model for replacing the complete JSON payload of one file. */
+export interface ReplaceConfigurationRequest {
+    payload: Record<string, any>
 }

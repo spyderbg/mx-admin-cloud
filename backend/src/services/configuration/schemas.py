@@ -1,6 +1,7 @@
 """Schemas for internal runtime configuration endpoints."""
 
 from typing import Any
+from enum import Enum
 
 from pydantic import BaseModel, Field
 
@@ -38,6 +39,28 @@ class ConfigurationServicesResponse(BaseModel):
     services: list[str]
 
 
+class ProviderSelectionStrategy(str, Enum):
+    """Planned provider dispatch policy for a service."""
+
+    ALL_PROVIDERS = "ALL_PROVIDERS"
+    FIRST_SUCCESS = "FIRST_SUCCESS"
+
+
+class ProviderStrategyRequest(BaseModel):
+    """Selection strategy to persist for a service."""
+
+    strategy: ProviderSelectionStrategy
+
+
+class ProviderStrategyResponse(BaseModel):
+    """Effective strategy and available choices for a service."""
+
+    service_name: str
+    strategy: ProviderSelectionStrategy | None
+    supported_strategies: list[ProviderSelectionStrategy]
+    default_strategy: ProviderSelectionStrategy | None
+
+
 class ConfigurationFileResponse(BaseModel):
     """Full JSON payload of one configuration file."""
 
@@ -65,6 +88,12 @@ class PatchConfigurationRequest(BaseModel):
     """Body model for merge-patching an existing configuration file."""
 
     patch: dict[str, Any]
+
+
+class ReplaceConfigurationRequest(BaseModel):
+    """Body model for replacing the complete JSON payload of one file."""
+
+    payload: dict[str, Any]
 
 
 class BatchToggleConfigurationsRequest(BaseModel):

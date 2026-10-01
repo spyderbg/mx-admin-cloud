@@ -25,6 +25,7 @@ from src.core.log_client import emit_event
 from src.core.logging_route import LoggingAPIRoute
 from src.services import text_to_image
 from src.services.logging.models import LogLevel
+from src.services.provider_strategy import AllProvidersFailedError
 from src.services.service_registry import ServiceRegistry
 from src.services.text_to_image.models import ImageRequest, media_type_for_extension
 from src.services.text_to_image.schemas import (
@@ -291,6 +292,17 @@ async def generate_image(
             result = await service.generate(image_request, client)
         except NoActiveImageProvidersError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except AllProvidersFailedError as exc:
+            # Every provider was tried (and logged its own call); keep the per-request summary record.
+            await emit_event(
+                LOG_SOURCE,
+                "image_generation_failed",
+                LogLevel.ERROR,
+                endpoint="generate_image",
+                request_id=request_id,
+                errors=exc.errors,
+            )
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
         except Exception as exc:  # pylint: disable=broad-exception-caught
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 

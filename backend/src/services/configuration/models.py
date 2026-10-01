@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from src.services.models import ServiceProvider
+from src.services.provider_strategy import ProviderSelectionStrategy
 
 
 class ConfigurationError(Exception):
@@ -69,6 +70,17 @@ class ConfigurationMutationResult:
     error: str | None = None
 
 
+@dataclass(frozen=True)
+class ProviderStrategyInfo:
+    """A service's provider strategy in effect, and the ones it can be switched to."""
+
+    service_name: str
+    # None when the service always works with a single provider.
+    strategy: ProviderSelectionStrategy | None
+    supported_strategies: tuple[ProviderSelectionStrategy, ...]
+    default_strategy: ProviderSelectionStrategy | None
+
+
 class ConfigurationProvider(ServiceProvider, ABC):
     """Provider contract for CRUD and batch config operations."""
 
@@ -103,6 +115,12 @@ class ConfigurationProvider(ServiceProvider, ABC):
         """Merge-patch one existing configuration file."""
 
     @abstractmethod
+    def replace_configuration(
+            self, service_name: str, config_name: str, payload: dict[str, Any]
+    ) -> ConfigurationMutationResult:
+        """Replace the complete payload of one existing configuration file."""
+
+    @abstractmethod
     def set_configurations_enabled(
             self,
             service_name: str,
@@ -118,3 +136,11 @@ class ConfigurationProvider(ServiceProvider, ABC):
             enabled: bool,
     ) -> list[ConfigurationMutationResult]:
         """Set `enabled` state for all configuration files for one service."""
+
+    @abstractmethod
+    def get_provider_strategy(self, service_name: str) -> ProviderStrategyInfo:
+        """Return the provider strategy in effect for a service and the ones it supports."""
+
+    @abstractmethod
+    def set_provider_strategy(self, service_name: str, strategy: str) -> ProviderStrategyInfo:
+        """Persist a supported provider strategy for a service and apply it to the running service."""

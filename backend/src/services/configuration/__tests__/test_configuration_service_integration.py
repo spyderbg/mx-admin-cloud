@@ -25,11 +25,13 @@ from src.services.configuration.models import (
     ConfigurationSummary,
     ConfigurationValidationError,
     InvalidConfigurationNameError,
+    ProviderStrategyInfo,
     UnknownConfigurationServiceError,
 )
 from src.services.configuration.routes import get_configuration_service
 from src.services.configuration.service import ConfigurationService
 from src.services.service_registry import ServiceRegistry, ServiceRegistryBuilder
+from src.services.provider_strategy import ProviderSelectionStrategy
 
 
 # ---------------------------------------------------------------------------
@@ -58,6 +60,7 @@ class _StubConfigurationProvider(ConfigurationProvider):
         self._remove_exc: Exception | None = None
         self._patch_exc: Exception | None = None
         self._toggle_exc: Exception | None = None
+        self._strategy = "FIRST_SUCCESS"
 
     def with_summaries(self, summaries: list[ConfigurationSummary]) -> "_StubConfigurationProvider":
         self._list_result = summaries
@@ -126,6 +129,13 @@ class _StubConfigurationProvider(ConfigurationProvider):
             raise self._patch_exc
         return ConfigurationMutationResult(config_name=config_name, changed=True)
 
+    def replace_configuration(
+            self, service_name: str, config_name: str, payload: dict[str, Any]
+    ) -> ConfigurationMutationResult:
+        if self._patch_exc:
+            raise self._patch_exc
+        return ConfigurationMutationResult(config_name=config_name, changed=True)
+
     def set_configurations_enabled(
             self, service_name: str, config_names: list[str], enabled: bool
     ) -> list[ConfigurationMutationResult]:
@@ -139,6 +149,17 @@ class _StubConfigurationProvider(ConfigurationProvider):
         if self._toggle_exc:
             raise self._toggle_exc
         return [ConfigurationMutationResult(config_name="cfg", changed=True)]
+
+    def get_provider_strategy(self, service_name: str) -> ProviderStrategyInfo:
+        return ProviderStrategyInfo(
+            service_name, ProviderSelectionStrategy(self._strategy),
+            (ProviderSelectionStrategy.ALL_PROVIDERS, ProviderSelectionStrategy.FIRST_SUCCESS),
+            ProviderSelectionStrategy.FIRST_SUCCESS,
+        )
+
+    def set_provider_strategy(self, service_name: str, strategy: str) -> ProviderStrategyInfo:
+        self._strategy = strategy
+        return self.get_provider_strategy(service_name)
 
 
 def _make_accept_criteria(service_name: str) -> ServiceAcceptCriteria:
@@ -391,6 +412,46 @@ async def test_list_services_requires_auth(client_no_auth: AsyncClient) -> None:
 # ---------------------------------------------------------------------------
 # GET /internal/configurations/{service_name}/{config_name}
 # ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_provider_strategy_can_be_read_and_updated(client_empty: AsyncClient) -> None:
+    initial = await client_empty.get("/internal/configurations/logging/strategy")
+    assert initial.status_code == 200
+    assert initial.json() == {
+        "service_name": "logging", "strategy": "FIRST_SUCCESS",
+        "supported_strategies": ["ALL_PROVIDERS", "FIRST_SUCCESS"],
+        "default_strategy": "FIRST_SUCCESS",
+    }
+
+    saved = await client_empty.put(
+        "/internal/configurations/logging/strategy", json={"strategy": "ALL_PROVIDERS"}
+    )
+    assert saved.status_code == 200
+    assert saved.json() == {
+        "service_name": "logging", "strategy": "ALL_PROVIDERS",
+        "supported_strategies": ["ALL_PROVIDERS", "FIRST_SUCCESS"],
+        "default_strategy": "FIRST_SUCCESS",
+    }
+    assert (await client_empty.get("/internal/configurations/logging/strategy")).json() == saved.json()
+
+
+@pytest.mark.asyncio
+async def test_provider_strategy_rejects_unknown_value(client_empty: AsyncClient) -> None:
+    response = await client_empty.put(
+        "/internal/configurations/logging/strategy", json={"strategy": "UNKNOWN"}
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_replace_configuration_endpoint(client_empty: AsyncClient) -> None:
+    response = await client_empty.put(
+        "/internal/configurations/text_to_speech/openai",
+        json={"payload": {"service_provider": {"service": "text_to_speech", "provider": "openai"}}},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"config_name": "openai", "changed": True, "error": None}
+
 
 @pytest.mark.asyncio
 async def test_get_config_returns_full_payload(tmp_resolved: Path) -> None:

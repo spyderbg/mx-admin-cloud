@@ -8,6 +8,7 @@ from typing_extensions import override
 
 from src.core.models import GeneratedImage
 from src.services.models import Service, ServiceProvider
+from src.services.provider_strategy import ProviderSelectionStrategy, first_success
 from src.services.provider_factory import ServiceProviderFactory
 from src.services.text_to_image.models import ImageRequest, TextToImageProvider
 
@@ -31,6 +32,9 @@ class TextToImageService(Service):
     Loads providers from config files and exposes ``get_active_providers()``,
     which routes use to pick the highest-priority provider.
     """
+
+    SUPPORTED_STRATEGIES = (ProviderSelectionStrategy.FIRST_SUCCESS,)
+    DEFAULT_STRATEGY = ProviderSelectionStrategy.FIRST_SUCCESS
 
     def __init__(
             self,
@@ -85,6 +89,21 @@ class TextToImageService(Service):
             *,
             provider_name: str | None = None,
     ) -> GeneratedImage:
-        """Generate an image with the requested or highest-priority active provider."""
-        provider = self._resolve_active_provider(provider_name=provider_name)
-        return await provider.generate(request, client)
+        """Generate an image with the requested provider, or with the first active provider that succeeds.
+
+        With *provider_name* only that provider runs and its result is returned as is, even when
+        unsuccessful. Otherwise (FIRST_SUCCESS) active providers are tried in priority order and
+        a provider that raises or returns an unsuccessful result hands over to the next one;
+        AllProvidersFailedError carries every provider's error when none succeeds.
+        """
+        if provider_name is not None:
+            provider = self._resolve_active_provider(provider_name=provider_name)
+            return await provider.generate(request, client)
+        providers = self.get_active_providers()
+        if not providers:
+            raise NoActiveImageProvidersError("No active image providers configured.")
+        return await first_success(
+            providers,
+            lambda provider: provider.generate(request, client),
+            failure=lambda result: None if result.success else (result.error or "Generation failed."),
+        )

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing_extensions import override
 
 from src.services.models import LangCodeText, Service, ServiceProvider
+from src.services.provider_strategy import ProviderSelectionStrategy
 from src.services.provider_factory import ServiceProviderFactory
 from src.services.text_translation.models import (
     TextTranslationServiceProvider,
@@ -23,9 +24,12 @@ class TextTranslationService(Service):
     """Orchestrator for all text translation providers.
 
     Loads providers from config files and exposes: meth:`translate_text` which
-    iterates active providers in priority order, chaining results until the first
-    successful translation of each step.
+    tries active providers in priority order and returns the first successful
+    translation (FIRST_SUCCESS).
     """
+
+    SUPPORTED_STRATEGIES = (ProviderSelectionStrategy.FIRST_SUCCESS,)
+    DEFAULT_STRATEGY = ProviderSelectionStrategy.FIRST_SUCCESS
 
     def __init__(
             self,
@@ -68,45 +72,35 @@ class TextTranslationService(Service):
             target_lang_code: str | None = None,
             category: str | None = None,
     ) -> TranslateResult:
-        """Translate *text* through all active providers in priority order.
+        """Translate *text* with the first active provider that can (FIRST_SUCCESS).
 
-        Each provider's output is fed as input to the next provider.  A provider
-        that returns "None" is skipped (fallback).
+        Providers are tried in priority order, skipping those that don't support the language
+        pair. The first one to return a translation wins; one that returns "None" (can't
+        handle it) or raises hands over to the next, and raised errors are reported in
+        *errors*. Without any translation, *lang_text* echoes the input text in its language.
         """
-        current = text
-        current_lang_code = input_lang_code
-        success = False
         errors: list[str] = []
+        input_language: str | None = None
         for provider in self.get_active_providers():
             inp = input_lang_code or provider.default_input_language()
             tgt = target_lang_code or provider.default_output_language()
-            if not inp or not tgt:
+            if not inp or not tgt or not provider.supports(inp, tgt):
                 continue
-            if not provider.supports(inp, tgt):
-                continue
-            if current_lang_code is None:
-                current_lang_code = inp
+            input_language = input_language or inp
             try:
                 result = await provider.translate_text(
-                    TranslateTextRequest(
-                        text=current,
-                        input_lang_code=inp,
-                        target_lang_code=tgt,
-                        category=category,
-                    )
+                    TranslateTextRequest(text=text, input_lang_code=inp, target_lang_code=tgt, category=category)
                 )
-                if result is not None:
-                    current = result
-                    current_lang_code = tgt
-                    success = True
             except Exception as exc:  # pylint: disable=broad-exception-caught
                 errors.append(f"{provider.name}: {exc}")
                 continue
+            if result is not None:
+                return TranslateResult(success=True, lang_text=LangCodeText(lang_code=tgt, text=result), errors=errors)
 
-        if current_lang_code is None:
-            return TranslateResult(success=success, lang_text=None, errors=errors)
+        if input_language is None:
+            return TranslateResult(success=False, lang_text=None, errors=errors)
         return TranslateResult(
-            success=success,
-            lang_text=LangCodeText(lang_code=current_lang_code, text=current),
+            success=False,
+            lang_text=LangCodeText(lang_code=input_language, text=text),
             errors=errors,
         )

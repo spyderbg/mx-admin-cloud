@@ -14,6 +14,7 @@ from src.services.configuration.models import (
     ConfigurationProvider,
     ConfigurationProviderUnavailableError,
     ConfigurationSummary,
+    ProviderStrategyInfo,
 )
 from src.services.logging.models import LogLevel
 from src.services.models import Service, ServiceProvider
@@ -112,6 +113,15 @@ class ConfigurationService(Service):
             lambda: self._select_provider().patch_configuration(service_name, config_name, patch),
         )
 
+    def replace_configuration(
+            self, service_name: str, config_name: str, payload: dict[str, Any]
+    ) -> ConfigurationMutationResult:
+        """Replace one configuration's complete JSON payload."""
+        return self._run_operation(
+            "replace", service_name, config_name,
+            lambda: self._select_provider().replace_configuration(service_name, config_name, payload),
+        )
+
     def enable_configurations(
             self,
             service_name: str,
@@ -148,6 +158,21 @@ class ConfigurationService(Service):
         return self._run_operation(
             "disable_all", service_name, None,
             lambda: self._select_provider().set_all_configurations_enabled(service_name, enabled=False),
+        )
+
+    def get_service_provider_strategy(self, service_name: str) -> ProviderStrategyInfo:
+        """Return the effective strategy and choices for a service."""
+        return self._run_operation(
+            "get_strategy", service_name, None,
+            lambda: self._select_provider().get_provider_strategy(service_name),
+        )
+
+    def set_service_provider_strategy(self, service_name: str, strategy: str) -> ProviderStrategyInfo:
+        """Persist and apply a supported provider strategy."""
+        return self._run_operation(
+            "set_strategy", service_name, None,
+            lambda: self._select_provider().set_provider_strategy(service_name, strategy),
+            strategy=strategy,
         )
 
     def _run_operation(

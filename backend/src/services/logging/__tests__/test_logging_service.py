@@ -1,4 +1,4 @@
-"""Unit tests for LoggingService.emit() priority-ordered fallback logic."""
+"""Unit tests for LoggingService.emit(): dispatch per provider strategy (ALL_PROVIDERS / FIRST_SUCCESS)."""
 
 # pylint: disable=missing-function-docstring,too-few-public-methods
 
@@ -8,8 +8,11 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from src.services.logging.models import LogLevel, LogMessage, LoggingServiceProvider
 from src.services.logging.service import LoggingService
+from src.services.provider_strategy import ProviderSelectionStrategy
 
 
 class _StubLoggingProvider(LoggingServiceProvider):
@@ -64,7 +67,10 @@ class _StubLoggingProvider(LoggingServiceProvider):
         pass
 
 
-def _make_service(providers: list[LoggingServiceProvider]) -> LoggingService:
+def _make_service(
+        providers: list[LoggingServiceProvider],
+        strategy: ProviderSelectionStrategy | None = None,
+) -> LoggingService:
     service = LoggingService(
         service_name="logging",
         package_name="tests",
@@ -72,16 +78,27 @@ def _make_service(providers: list[LoggingServiceProvider]) -> LoggingService:
         base_dir=Path("."),
     )
     service.replace_providers(providers)
+    if strategy is not None:
+        service.set_provider_strategy(strategy)
     return service
 
 
 _MSG = LogMessage(event="test_event", level=LogLevel.INFO)
 
 
-def test_emit_ignores_providers_with_category() -> None:
+_ALL = ProviderSelectionStrategy.ALL_PROVIDERS
+_FIRST = ProviderSelectionStrategy.FIRST_SUCCESS
+
+
+def test_logging_defaults_to_all_providers() -> None:
+    assert _make_service([]).provider_strategy is _ALL
+
+
+@pytest.mark.parametrize("strategy", [_ALL, _FIRST])
+def test_emit_ignores_providers_with_category(strategy: ProviderSelectionStrategy) -> None:
     requests_prov = _StubLoggingProvider(name="requests", priority=1, category="requests")
     no_category_prov = _StubLoggingProvider(name="default", priority=10, category="")
-    service = _make_service([requests_prov, no_category_prov])
+    service = _make_service([requests_prov, no_category_prov], strategy)
 
     service.emit(_MSG)
 
@@ -89,57 +106,46 @@ def test_emit_ignores_providers_with_category() -> None:
     assert len(requests_prov.logged) == 0
 
 
-def test_emit_tries_highest_priority_first() -> None:
+@pytest.mark.parametrize("strategy", [_ALL, _FIRST])
+def test_emit_noop_without_uncategorized_active_providers(strategy: ProviderSelectionStrategy) -> None:
+    disabled = _StubLoggingProvider(name="off", priority=1, enabled=False)
+    special = _StubLoggingProvider(name="special", priority=1, category="requests")
+    service = _make_service([disabled, special], strategy)
+
+    service.emit(_MSG)  # should not raise
+
+    assert not disabled.logged
+    assert not special.logged
+
+
+@pytest.mark.parametrize("strategy", [_ALL, _FIRST])
+def test_emit_never_raises_when_every_provider_fails(strategy: ProviderSelectionStrategy) -> None:
+    fail1 = _StubLoggingProvider(name="f1", priority=1, should_fail=True)
+    fail2 = _StubLoggingProvider(name="f2", priority=5, should_fail=True)
+    service = _make_service([fail1, fail2], strategy)
+
+    service.emit(_MSG)  # should not raise
+
+
+# ALL_PROVIDERS ----------------------------------------------------------------
+
+def test_emit_all_providers_logs_through_every_active_provider() -> None:
     high = _StubLoggingProvider(name="high", priority=1)
     low = _StubLoggingProvider(name="low", priority=10)
-    service = _make_service([low, high])
+    peer = _StubLoggingProvider(name="peer", priority=10)
+    service = _make_service([low, high, peer], _ALL)
 
     service.emit(_MSG)
 
-    assert len(high.logged) == 1
-    assert len(low.logged) == 0
+    assert [len(p.logged) for p in (high, low, peer)] == [1, 1, 1]
+    assert high.logged[0] == ("high", _MSG)
 
 
-def test_emit_falls_back_on_failure() -> None:
-    failing = _StubLoggingProvider(name="failing", priority=1, should_fail=True)
-    fallback = _StubLoggingProvider(name="fallback", priority=5)
-    service = _make_service([failing, fallback])
-
-    service.emit(_MSG)
-
-    assert len(failing.logged) == 0
-    assert len(fallback.logged) == 1
-
-
-def test_emit_logs_to_all_same_priority_peers_on_success() -> None:
-    p1 = _StubLoggingProvider(name="a", priority=3)
-    p2 = _StubLoggingProvider(name="b", priority=3)
-    p3 = _StubLoggingProvider(name="c", priority=3)
-    service = _make_service([p1, p2, p3])
-
-    service.emit(_MSG)
-
-    assert len(p1.logged) == 1
-    assert len(p2.logged) == 1
-    assert len(p3.logged) == 1
-
-
-def test_emit_does_not_reach_lower_priority_after_success() -> None:
-    high = _StubLoggingProvider(name="high", priority=1)
-    low = _StubLoggingProvider(name="low", priority=10)
-    service = _make_service([high, low])
-
-    service.emit(_MSG)
-
-    assert len(high.logged) == 1
-    assert len(low.logged) == 0
-
-
-def test_emit_skips_failing_peer_but_logs_others() -> None:
-    ok1 = _StubLoggingProvider(name="ok1", priority=5)
+def test_emit_all_providers_keeps_going_past_a_failing_provider() -> None:
+    ok1 = _StubLoggingProvider(name="ok1", priority=1)
     fail = _StubLoggingProvider(name="fail", priority=5, should_fail=True)
-    ok2 = _StubLoggingProvider(name="ok2", priority=5)
-    service = _make_service([ok1, fail, ok2])
+    ok2 = _StubLoggingProvider(name="ok2", priority=10)
+    service = _make_service([ok1, fail, ok2], _ALL)
 
     service.emit(_MSG)
 
@@ -148,38 +154,27 @@ def test_emit_skips_failing_peer_but_logs_others() -> None:
     assert len(ok2.logged) == 1
 
 
-def test_emit_noop_when_no_active_providers() -> None:
-    disabled = _StubLoggingProvider(name="off", priority=1, enabled=False)
-    service = _make_service([disabled])
+# FIRST_SUCCESS ----------------------------------------------------------------
 
-    service.emit(_MSG)  # should not raise
-
-
-def test_emit_noop_when_all_providers_have_category() -> None:
-    prov = _StubLoggingProvider(name="special", priority=1, category="requests")
-    service = _make_service([prov])
+def test_emit_first_success_uses_only_the_highest_priority_provider() -> None:
+    high = _StubLoggingProvider(name="high", priority=1)
+    low = _StubLoggingProvider(name="low", priority=10)
+    service = _make_service([low, high], _FIRST)
 
     service.emit(_MSG)
 
-    assert len(prov.logged) == 0
+    assert len(high.logged) == 1
+    assert len(low.logged) == 0
 
 
-def test_emit_falls_through_entire_priority_group_on_all_fail() -> None:
+def test_emit_first_success_falls_back_in_priority_order() -> None:
     fail_a = _StubLoggingProvider(name="fail_a", priority=1, should_fail=True)
-    fail_b = _StubLoggingProvider(name="fail_b", priority=1, should_fail=True)
+    fail_b = _StubLoggingProvider(name="fail_b", priority=2, should_fail=True)
     fallback = _StubLoggingProvider(name="fallback", priority=5)
-    service = _make_service([fail_a, fail_b, fallback])
+    after = _StubLoggingProvider(name="after", priority=9)
+    service = _make_service([after, fail_a, fallback, fail_b], _FIRST)
 
     service.emit(_MSG)
 
-    assert len(fail_a.logged) == 0
-    assert len(fail_b.logged) == 0
     assert len(fallback.logged) == 1
-
-
-def test_emit_all_groups_fail_silently() -> None:
-    fail1 = _StubLoggingProvider(name="f1", priority=1, should_fail=True)
-    fail2 = _StubLoggingProvider(name="f2", priority=5, should_fail=True)
-    service = _make_service([fail1, fail2])
-
-    service.emit(_MSG)  # should not raise
+    assert len(after.logged) == 0
