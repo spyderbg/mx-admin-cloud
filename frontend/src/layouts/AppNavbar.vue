@@ -18,7 +18,7 @@
     <div class="navbar-menu-wrapper d-flex align-items-center flex-grow-1 justify-content-end">
       <MockDataBadge v-if="areBackendRequestsMocked" class="navbar-mock-badge" />
       <ul class="navbar-nav flex-row align-items-center">
-        <li class="nav-item dropdown config-dropdown">
+        <li ref="configDropdown" class="nav-item dropdown config-dropdown">
           <a
             class="nav-link dropdown-toggle px-2 d-flex align-items-center"
             href="#"
@@ -50,7 +50,7 @@
             </template>
           </div>
         </li>
-        <li class="nav-item dropdown language-dropdown">
+        <li ref="languageDropdown" class="nav-item dropdown language-dropdown">
           <a
             class="nav-link dropdown-toggle px-2 d-flex align-items-center"
             href="#"
@@ -78,7 +78,7 @@
             </a>
           </div>
         </li>
-        <li class="nav-item dropdown user-dropdown">
+        <li ref="userDropdown" class="nav-item dropdown user-dropdown">
           <a class="nav-link dropdown-toggle" href="#" @click.prevent="toggleUser">
             <img class="img-xs rounded-circle" :src="user.avatarUri" alt="Profile image" />
           </a>
@@ -165,12 +165,22 @@ const langOpen = ref(false)
 const userOpen = ref(false)
 
 const configOpen = ref(false)
+const configDropdown = ref<HTMLElement | null>(null)
+const languageDropdown = ref<HTMLElement | null>(null)
+const userDropdown = ref<HTMLElement | null>(null)
 const configServices = ref<string[]>([])
 const configServicesLoading = ref(false)
 const configServicesError = ref(false)
 const configService = ref<string | null>(null)
 const navToast = ref<string | null>(null)
 let navToastTimer: ReturnType<typeof setTimeout> | null = null
+
+const closeDropdownsOnOutsideClick = (event: PointerEvent): void => {
+  if (!(event.target instanceof Node)) return
+  if (configOpen.value && !configDropdown.value?.contains(event.target)) configOpen.value = false
+  if (langOpen.value && !languageDropdown.value?.contains(event.target)) langOpen.value = false
+  if (userOpen.value && !userDropdown.value?.contains(event.target)) userOpen.value = false
+}
 
 watch(
   () => props.sidebarActive,
@@ -187,10 +197,12 @@ onMounted(() => {
   compactNavMql = window.matchMedia(COMPACT_NAV_MQ)
   syncCompactNav()
   compactNavMql.addEventListener('change', syncCompactNav)
+  document.addEventListener('pointerdown', closeDropdownsOnOutsideClick)
 })
 
 onUnmounted(() => {
   compactNavMql?.removeEventListener('change', syncCompactNav)
+  document.removeEventListener('pointerdown', closeDropdownsOnOutsideClick)
   if (navToastTimer) clearTimeout(navToastTimer)
 })
 
