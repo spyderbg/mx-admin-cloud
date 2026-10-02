@@ -13,7 +13,7 @@
             "language": "en",
             "model": "eleven_multilingual_v2",
             "use_space": "no",
-            "speed": 1.0,
+            "speed": 1,
             "speaker_boost": true,
             "voice_settings": {
               "stability": 0.5,
@@ -26,7 +26,7 @@
             "language": "fr",
             "model": "eleven_multilingual_v2",
             "use_space": "no",
-            "speed": 1.0,
+            "speed": 1,
             "speaker_boost": true,
             "voice_settings": {
               "stability": 0.5,
@@ -39,7 +39,7 @@
             "language": "es",
             "model": "eleven_multilingual_v2",
             "use_space": "no",
-            "speed": 1.0,
+            "speed": 1,
             "speaker_boost": true,
             "voice_settings": {
               "stability": 0.5,

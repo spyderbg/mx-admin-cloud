@@ -43,4 +43,5 @@ SERVICE_ACCEPT_CRITERIA = ServiceAcceptCriteria(
     config_subdir="voice_optimizers",
     validate_provider=_validate_optimizer_provider,
     build_provider=_build_optimizer_provider,
+    available_providers=AudioOptimizerFactory.available_names,
 )

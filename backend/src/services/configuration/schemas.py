@@ -39,6 +39,13 @@ class ConfigurationServicesResponse(BaseModel):
     services: list[str]
 
 
+class ConfigurationProvidersResponse(BaseModel):
+    """Provider types available to one configurable service."""
+
+    service_name: str
+    providers: list[str]
+
+
 class ProviderSelectionStrategy(str, Enum):
     """Planned provider dispatch policy for a service."""
 

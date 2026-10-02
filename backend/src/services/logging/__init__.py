@@ -42,4 +42,5 @@ SERVICE_ACCEPT_CRITERIA = ServiceAcceptCriteria(
     config_subdir="logging",
     validate_provider=_validate_logging_provider,
     build_provider=_build_logging_provider,
+    available_providers=LoggingProviderFactory.available_names,
 )

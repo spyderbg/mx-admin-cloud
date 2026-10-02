@@ -162,12 +162,13 @@ class _StubConfigurationProvider(ConfigurationProvider):
         return self.get_provider_strategy(service_name)
 
 
-def _make_accept_criteria(service_name: str) -> ServiceAcceptCriteria:
+def _make_accept_criteria(service_name: str, provider_names: list[str] | None = None) -> ServiceAcceptCriteria:
     return ServiceAcceptCriteria(
         service_name=service_name,
         config_subdir=service_name,
         validate_provider=lambda provider: None,
         build_provider=lambda provider, base_dir: provider,
+        available_providers=lambda: provider_names or [],
     )
 
 
@@ -180,10 +181,12 @@ class _FakeRegistryBuilder:
             accepted: bool = True,
             error: str | None = None,
             service_names: list[str] | None = None,
+            provider_names: dict[str, list[str]] | None = None,
     ) -> None:
         self._accepted = accepted
         self._error = error
         self._service_names = service_names or ["configuration", "logging", "text_to_speech"]
+        self._provider_names = provider_names or {}
 
     def apply_runtime_payload(  # pylint: disable=unused-argument
             self,
@@ -197,7 +200,10 @@ class _FakeRegistryBuilder:
         )
 
     def get_accept_criteria(self) -> dict[str, ServiceAcceptCriteria]:
-        return {name: _make_accept_criteria(name) for name in self._service_names}
+        return {
+            name: _make_accept_criteria(name, self._provider_names.get(name))
+            for name in self._service_names
+        }
 
 
 def _make_configuration_service(
@@ -407,6 +413,21 @@ async def test_list_services_returns_sorted_names_without_configuration() -> Non
 async def test_list_services_requires_auth(client_no_auth: AsyncClient) -> None:
     response = await client_no_auth.get("/internal/configurations")
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_list_available_providers_for_service() -> None:
+    builder = _FakeRegistryBuilder(
+        service_names=["content"], provider_names={"content": ["file_system", "remote"]}
+    )
+    app = _make_app(builder=builder)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/internal/configurations/content/providers")
+        missing = await client.get("/internal/configurations/unknown/providers")
+    assert response.status_code == 200
+    assert response.json() == {"service_name": "content", "providers": ["file_system", "remote"]}
+    assert missing.status_code == 404
 
 
 # ---------------------------------------------------------------------------

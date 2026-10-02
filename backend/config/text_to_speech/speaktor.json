@@ -23,22 +23,22 @@
         "languages": {
           "en": {
             "voice_name": "Sveta",
-            "speed_rate": 1.0,
+            "speed_rate": 1,
             "use_space": "no"
           },
           "fr": {
             "voice_name": "Marie",
-            "speed_rate": 1.0,
+            "speed_rate": 1,
             "use_space": "no"
           },
           "es": {
             "voice_name": "Carmen",
-            "speed_rate": 1.0,
+            "speed_rate": 1,
             "use_space": "no"
           },
           "bg": {
             "voice_name": "Света",
-            "speed_rate": 1.0,
+            "speed_rate": 1,
             "use_space": "yes"
           }
         }

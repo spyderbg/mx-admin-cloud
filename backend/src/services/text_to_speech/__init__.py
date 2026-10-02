@@ -42,4 +42,5 @@ SERVICE_ACCEPT_CRITERIA = ServiceAcceptCriteria(
     config_subdir="text_to_speech",
     validate_provider=_validate_tts_provider,
     build_provider=_build_tts_provider,
+    available_providers=TextToSpeechProviderFactory.available_names,
 )

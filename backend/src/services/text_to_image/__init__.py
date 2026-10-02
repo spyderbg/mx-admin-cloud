@@ -42,4 +42,5 @@ SERVICE_ACCEPT_CRITERIA = ServiceAcceptCriteria(
     config_subdir="text_to_image",
     validate_provider=_validate_image_provider,
     build_provider=_build_image_provider,
+    available_providers=TextToImageProviderFactory.available_names,
 )

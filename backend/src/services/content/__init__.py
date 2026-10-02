@@ -49,4 +49,5 @@ SERVICE_ACCEPT_CRITERIA = ServiceAcceptCriteria(
     config_subdir="content",
     validate_provider=_validate_content_provider,
     build_provider=_build_content_provider,
+    available_providers=ContentProviderFactory.available_names,
 )

@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 ValidateProviderFn = Callable[[ServiceProvider], None]
 BuildProviderFn = Callable[[ServiceProvider, Path], Any]
 BuildRuntimeProvidersFn = Callable[[Path, "ServiceRegistryBuilder"], list[Any]]
+AvailableProvidersFn = Callable[[], list[str]]
 
 
 @dataclass(frozen=True)
@@ -32,6 +33,7 @@ class ServiceAcceptCriteria:
     validate_provider: ValidateProviderFn
     build_provider: BuildProviderFn
     build_runtime_providers: BuildRuntimeProvidersFn | None = None
+    available_providers: AvailableProvidersFn | None = None
 
     def can_accept(self, provider: ServiceProvider) -> bool:
         """Return whether this service can accept *provider* envelope."""

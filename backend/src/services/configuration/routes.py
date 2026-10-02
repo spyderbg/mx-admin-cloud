@@ -38,6 +38,7 @@ from src.services.configuration.schemas import (
     ConfigurationFileResponse,
     ConfigurationFileSummaryResponse,
     ConfigurationMutationResponse,
+    ConfigurationProvidersResponse,
     ConfigurationServicesResponse,
     PatchConfigurationRequest,
     ProviderStrategyRequest,
@@ -59,6 +60,7 @@ CONFIG_SERVICES = ""
 CONFIG_APPLY = "/apply"
 CONFIG_UPLOAD = "/upload"
 CONFIG_SERVICE = "/{service_name}"
+CONFIG_SERVICE_PROVIDERS = "/{service_name}/providers"
 CONFIG_SERVICE_STRATEGY = "/{service_name}/strategy"
 CONFIG_SERVICE_ITEM = "/{service_name}/{config_name}"
 CONFIG_ENABLE_CONFIGURATIONS = "/{service_name}/enable-configurations"
@@ -86,6 +88,24 @@ def list_configuration_services(
         name for name in builder.get_accept_criteria() if name != configuration.SERVICE_NAME
     )
     return ConfigurationServicesResponse(services=names)
+
+
+@router.get(
+    CONFIG_SERVICE_PROVIDERS,
+    response_model=ConfigurationProvidersResponse,
+    status_code=status.HTTP_200_OK,
+    summary="List available providers for a service",
+)
+def list_service_providers(
+        service_name: str,
+        builder: ServiceRegistryBuilder = Depends(get_registry_builder),
+) -> ConfigurationProvidersResponse:
+    """Return registered provider types, including types without a config file."""
+    criteria = builder.get_accept_criteria().get(service_name)
+    if criteria is None or service_name == configuration.SERVICE_NAME:
+        raise HTTPException(status_code=404, detail=f"Unknown configuration service: {service_name}")
+    providers = criteria.available_providers() if criteria.available_providers else []
+    return ConfigurationProvidersResponse(service_name=service_name, providers=providers)
 
 
 @router.post(

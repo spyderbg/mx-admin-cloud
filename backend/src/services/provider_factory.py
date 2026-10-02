@@ -31,6 +31,11 @@ class ServiceProviderFactory(Generic[ProviderT]):
         return provider_name.strip().lower() in cls._builders
 
     @classmethod
+    def available_names(cls) -> list[str]:
+        """Return the provider types this service can instantiate."""
+        return sorted(cls._builders)
+
+    @classmethod
     def create(cls, service_provider: ServiceProvider, base_dir: Path) -> ProviderT:
         """Instantiate the concrete provider for *provider*."""
         key = service_provider.provider.strip().lower()

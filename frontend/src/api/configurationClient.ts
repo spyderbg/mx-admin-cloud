@@ -10,6 +10,7 @@ import type {
   ConfigurationFileResponse,
   ConfigurationFileSummaryResponse,
   ConfigurationMutationResponse,
+  ConfigurationProvidersResponse,
   ConfigurationServicesResponse,
   PatchConfigurationRequest,
   ProviderStrategyRequest,
@@ -38,6 +39,12 @@ export const uploadConfigFile = async (formData: FormData): Promise<ApplyConfigu
 /** List configuration files for a service */
 export const listServiceConfigs = async (serviceName: string): Promise<ConfigurationFileSummaryResponse[]> => {
   const r = await client.get<ConfigurationFileSummaryResponse[]>(`/internal/configurations/${serviceName}`)
+  return r.data
+}
+
+/** List registered provider types for a service */
+export const listServiceProviders = async (serviceName: string): Promise<ConfigurationProvidersResponse> => {
+  const r = await client.get<ConfigurationProvidersResponse>(`/internal/configurations/${serviceName}/providers`)
   return r.data
 }
 

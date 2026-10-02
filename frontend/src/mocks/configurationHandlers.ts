@@ -137,6 +137,14 @@ export const configurationHandlers = [
     return HttpResponse.json(summaries)
   }),
 
+  http.get('/internal/configurations/:service_name/providers', ({ params }) => {
+    const service = String(params.service_name)
+    const summaries = mockConfigs[service]
+    if (!summaries) return new HttpResponse(null, { status: 404 })
+    const providers = [...new Set(summaries.map(file => file.provider).filter((name): name is string => Boolean(name)))].sort()
+    return HttpResponse.json({ service_name: service, providers })
+  }),
+
   // Service-wide strategy is stored separately from provider files.
   http.get('/internal/configurations/:service_name/strategy', ({ params }) => {
     const service = String(params.service_name)

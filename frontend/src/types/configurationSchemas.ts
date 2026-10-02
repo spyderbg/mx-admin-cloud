@@ -58,6 +58,12 @@ export interface ConfigurationMutationResponse {
     error?: string | null
 }
 
+/** Provider types available to one configurable service. */
+export interface ConfigurationProvidersResponse {
+    service_name: string
+    providers: string[]
+}
+
 /** Names of services that accept configuration files. */
 export interface ConfigurationServicesResponse {
     services: string[]

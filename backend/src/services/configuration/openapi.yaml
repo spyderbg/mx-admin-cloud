@@ -181,6 +181,22 @@ components:
       - changed
       title: ConfigurationMutationResponse
       description: Result model for one add/remove/patch mutation.
+    ConfigurationProvidersResponse:
+      properties:
+        service_name:
+          type: string
+          title: Service Name
+        providers:
+          items:
+            type: string
+          type: array
+          title: Providers
+      type: object
+      required:
+      - service_name
+      - providers
+      title: ConfigurationProvidersResponse
+      description: Provider types available to one configurable service.
     ConfigurationServicesResponse:
       properties:
         services:
@@ -579,6 +595,36 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BatchToggleConfigurationsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /internal/configurations/{service_name}/providers:
+    get:
+      tags:
+      - internal-configurations
+      summary: List available providers for a service
+      description: Return registered provider types, including types without a config
+        file.
+      operationId: list_service_providers_internal_configurations__service_name__providers_get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: service_name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Service Name
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigurationProvidersResponse'
         '422':
           description: Validation Error
           content:

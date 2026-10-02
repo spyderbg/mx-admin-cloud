@@ -41,4 +41,5 @@ SERVICE_ACCEPT_CRITERIA = ServiceAcceptCriteria(
     config_subdir="text_translation",
     validate_provider=_validate_translation_provider,
     build_provider=_build_translation_provider,
+    available_providers=TextTranslationProviderFactory.available_names,
 )
