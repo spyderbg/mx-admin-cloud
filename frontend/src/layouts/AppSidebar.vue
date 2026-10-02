@@ -1,5 +1,5 @@
 <template>
-  <nav class="sidebar sidebar-offcanvas" id="sidebar" :class="{ active: isActive }">
+  <nav class="sidebar sidebar-offcanvas" id="sidebar" :class="{ active: isActive }" :aria-label="isConfigurationNavigation ? 'Service configurations' : 'Categories'">
     <ul class="nav">
       <!-- User profile -->
       <li class="nav-item nav-profile">
@@ -43,23 +43,24 @@
           class="d-flex align-items-center justify-content-between flex-nowrap"
           style="gap: 0.35rem;"
         >
-          <span class="text-truncate">{{ breadcrumbCategoriesLabel(contentLanguage) }}</span>
+          <RouterLink v-if="isConfigurationNavigation" class="text-truncate cd-sidebar-root-link" :to="{ name: 'configuration' }" @click="requestCloseSidebar">Configuration</RouterLink>
+          <span v-else class="text-truncate">{{ breadcrumbCategoriesLabel(contentLanguage) }}</span>
           <div class="d-flex align-items-center flex-shrink-0" style="gap: 2px;">
             <button
               type="button"
               class="btn btn-sm border-0 rounded-0 p-1 cd-sidebar-tree-btn"
-              title="Expand all categories"
-              aria-label="Expand all categories"
-              @click.stop="expandAllCategories"
+              :title="isConfigurationNavigation ? 'Expand all services' : 'Expand all categories'"
+              :aria-label="isConfigurationNavigation ? 'Expand all services' : 'Expand all categories'"
+              @click.stop="expandAllNodes"
             >
               <i class="mdi mdi-unfold-more-horizontal" aria-hidden="true"></i>
             </button>
             <button
               type="button"
               class="btn btn-sm border-0 rounded-0 p-1 cd-sidebar-tree-btn"
-              title="Collapse all categories"
-              aria-label="Collapse all categories"
-              @click.stop="collapseAllCategories"
+              :title="isConfigurationNavigation ? 'Collapse all services' : 'Collapse all categories'"
+              :aria-label="isConfigurationNavigation ? 'Collapse all services' : 'Collapse all categories'"
+              @click.stop="collapseAllNodes"
             >
               <i class="mdi mdi-unfold-less-horizontal" aria-hidden="true"></i>
             </button>
@@ -69,6 +70,40 @@
 
       <li class="nav-item cd-sidebar-tree">
         <ul class="nav cd-sidebar-tree-list">
+          <template v-if="isConfigurationNavigation">
+            <li v-if="configurationServicesLoading" class="nav-item"><span class="nav-link cd-sidebar-status" role="status">Loading services…</span></li>
+            <li v-else-if="configurationServicesError" class="nav-item">
+              <span class="nav-link cd-sidebar-status" role="alert">{{ configurationServicesError }}</span>
+              <button class="btn btn-sm cd-sidebar-retry" type="button" @click="loadConfigurationTree">Try again</button>
+            </li>
+            <template v-else>
+              <li v-for="service in filteredServices" :key="service.id" class="nav-item" :class="{ active: service.id === activeServiceName }">
+                <RouterLink class="nav-link" :to="{ name: 'service-configuration', params: { serviceName: service.id } }" :aria-expanded="expandedServices.has(service.id)" :aria-current="service.id === activeServiceName && !activeConfigurationName ? 'page' : undefined" @click="toggleService(service.id)">
+                  <i class="menu-icon mdi mdi-tune" aria-hidden="true"></i>
+                  <span class="menu-title">{{ service.name }}</span>
+                  <i class="menu-arrow" aria-hidden="true"></i>
+                </RouterLink>
+                <div class="collapse" :class="{ show: expandedServices.has(service.id) }">
+                  <ul class="nav flex-column sub-menu">
+                    <li v-if="serviceConfigurationLoading[service.id]" class="nav-item"><span class="nav-link cd-sidebar-status">Loading configurations…</span></li>
+                    <li v-else-if="serviceConfigurationErrors[service.id]" class="nav-item">
+                      <button type="button" class="nav-link cd-sidebar-retry" @click="retryService(service.id)">Retry loading configurations</button>
+                    </li>
+                    <template v-else>
+                      <li v-for="file in service.files" :key="file.config_name" class="nav-item">
+                        <RouterLink class="nav-link" :to="{ name: 'service-configuration', params: { serviceName: service.id }, query: { config: file.config_name } }" :class="{ active: service.id === activeServiceName && file.config_name === activeConfigurationName }" :aria-current="service.id === activeServiceName && file.config_name === activeConfigurationName ? 'page' : undefined" @click="requestCloseSidebar">
+                          <span class="text-truncate" :title="file.filename">{{ file.filename }}</span>
+                        </RouterLink>
+                      </li>
+                      <li v-if="!service.files.length" class="nav-item"><span class="nav-link cd-sidebar-status">{{ filterText.trim() ? 'No matching configurations' : 'No configurations' }}</span></li>
+                    </template>
+                  </ul>
+                </div>
+              </li>
+              <li v-if="!filteredServices.length" class="nav-item"><span class="nav-link cd-sidebar-status">No services match</span></li>
+            </template>
+          </template>
+          <template v-else>
           <!-- Category tree -->
           <li
             v-for="cat in filteredCategories"
@@ -113,6 +148,7 @@
           <li v-if="filteredCategories.length === 0" class="nav-item">
             <span class="nav-link" style="opacity: 0.5; font-style: italic;">{{ noCategoriesMatchLabel(contentLanguage) }}</span>
           </li>
+          </template>
         </ul>
       </li>
     </ul>
@@ -123,6 +159,8 @@
 import { ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { sharedCategories } from '../api/cache'
+import { configurationServices, configurationServicesLoading, configurationServicesError, serviceConfigurationFiles, serviceConfigurationLoading, serviceConfigurationErrors, ensureConfigurationTree, refreshServiceConfigurations } from '../api/configurationCache'
+import { serviceDisplayName } from '../utils/configurationNavigation'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import { useCurrentUser } from '../composables/useCurrentUser'
 import { localizedCategoryLabel, localizedImageLabel, breadcrumbCategoriesLabel, noCategoriesMatchLabel, noMatchesLabel, filterLabel } from '../utils/localizedLabels'
@@ -145,6 +183,38 @@ const user = useCurrentUser()
 const contentLanguage = useContentLanguage()
 const filterText = ref('')
 const expandedIds = ref(new Set<string>())
+const expandedServices = ref(new Set<string>())
+const isConfigurationNavigation = computed(() => route.meta.navigation === 'configuration')
+const activeServiceName = computed(() => String(route.params.serviceName || ''))
+const activeConfigurationName = computed(() => typeof route.query.config === 'string' ? route.query.config : '')
+
+const filteredServices = computed(() => {
+  const query = filterText.value.toLowerCase().trim()
+  return configurationServices.value.map(id => {
+    const name = serviceDisplayName(id)
+    const files = serviceConfigurationFiles.value[id] ?? []
+    const matchesService = !query || name.toLowerCase().includes(query) || id.includes(query)
+    return { id, name, files: matchesService ? files : files.filter(file => file.filename.toLowerCase().includes(query) || file.provider?.toLowerCase().includes(query)), matchesService }
+  }).filter(service => service.matchesService || service.files.length)
+})
+
+async function loadConfigurationTree(): Promise<void> {
+  await ensureConfigurationTree().catch(() => undefined)
+}
+
+async function retryService(service: string): Promise<void> {
+  await refreshServiceConfigurations(service).catch(() => undefined)
+}
+
+watch(isConfigurationNavigation, (active) => {
+  filterText.value = ''
+  if (active) void loadConfigurationTree()
+}, { immediate: true })
+
+watch(activeServiceName, name => {
+  if (!name) return
+  expandedServices.value = new Set([...expandedServices.value, name])
+}, { immediate: true })
 
 const activeCategoryId = computed(() => route.params.categoryId as string || '')
 const activeItemId = computed(() => route.params.itemId as string || '')
@@ -191,6 +261,10 @@ const filteredCategories = computed((): FilteredCategory[] => {
 
 watch(filterText, (q) => {
   if (q.trim()) {
+    if (isConfigurationNavigation.value) {
+      expandedServices.value = new Set([...expandedServices.value, ...filteredServices.value.map(service => service.id)])
+      return
+    }
     const next = new Set(expandedIds.value)
     for (const cat of filteredCategories.value) {
       next.add(cat.id)
@@ -206,12 +280,22 @@ watch(activeCategoryId, (id) => {
   expandedIds.value = next
 }, { immediate: true })
 
-const expandAllCategories = (): void => {
-  expandedIds.value = new Set(sharedCategories.value.map((c) => c.id))
+const expandAllNodes = (): void => {
+  if (isConfigurationNavigation.value) expandedServices.value = new Set(configurationServices.value)
+  else expandedIds.value = new Set(sharedCategories.value.map((c) => c.id))
 }
 
-const collapseAllCategories = (): void => {
-  expandedIds.value = new Set()
+const collapseAllNodes = (): void => {
+  if (isConfigurationNavigation.value) expandedServices.value = new Set()
+  else expandedIds.value = new Set()
+}
+
+const toggleService = (service: string): void => {
+  const next = new Set(expandedServices.value)
+  if (next.has(service)) next.delete(service)
+  else next.add(service)
+  expandedServices.value = next
+  requestCloseSidebar()
 }
 
 const toggleCategory = (id: string): void => {
@@ -286,6 +370,11 @@ nav.sidebar.sidebar-offcanvas > .nav .cd-sidebar-tree-list .collapse .sub-menu .
 .cd-sidebar-tree-list .sub-menu .nav-link .text-truncate {
   min-width: 0;
 }
+
+.cd-sidebar-root-link { color: inherit; }
+.cd-sidebar-root-link:hover { color: #fff; text-decoration: none; }
+.cd-sidebar-status { opacity: .65; font-style: italic; white-space: normal; }
+.cd-sidebar-retry { color: #fff; background: transparent; border: 0; text-align: left; }
 
 .cd-sidebar-tree-list > .nav-item > .nav-link .menu-title {
   min-width: 0;

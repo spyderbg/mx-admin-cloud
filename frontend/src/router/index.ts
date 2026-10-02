@@ -2,7 +2,8 @@ import { createRouter, createWebHistory } from 'vue-router'
 
 const router = createRouter({
   history: createWebHistory(),
-  scrollBehavior(_to, _from, savedPosition) {
+  scrollBehavior(to, from, savedPosition) {
+    if (!savedPosition && to.path === from.path) return false
     return savedPosition ?? { top: 0 }
   },
   routes: [
@@ -36,9 +37,16 @@ const router = createRouter({
           component: () => import('../views/ItemDetailsView.vue'),
         },
         {
+          path: 'configuration',
+          name: 'configuration',
+          component: () => import('../views/ConfigurationsView.vue'),
+          meta: { navigation: 'configuration' },
+        },
+        {
           path: 'configuration/:serviceName',
           name: 'service-configuration',
           component: () => import('../views/ServiceConfigurationView.vue'),
+          meta: { navigation: 'configuration' },
         },
       ],
     },

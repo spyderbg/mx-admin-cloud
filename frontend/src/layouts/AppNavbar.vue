@@ -4,7 +4,7 @@
       class="text-center navbar-brand-wrapper d-flex align-items-top justify-content-center"
       :class="{ 'cd-brand-sidebar-trigger': isCompactNav }"
       :aria-controls="isCompactNav ? 'sidebar' : undefined"
-      :aria-label="isCompactNav ? 'Open or close categories menu' : undefined"
+      :aria-label="isCompactNav ? 'Open or close navigation menu' : undefined"
       :aria-expanded="isCompactNav ? sidebarActive : undefined"
       @click.capture="onBrandAreaClick"
     >
@@ -22,6 +22,7 @@
           <a
             class="nav-link dropdown-toggle px-2 d-flex align-items-center"
             href="#"
+            :aria-expanded="configOpen"
             @click.prevent="toggleConfig"
           >
             <div class="d-inline-flex config-nav-icon-wrap">
@@ -30,6 +31,11 @@
             <span class="profile-text font-weight-medium d-none d-md-block">{{ configurationLabel(selectedLang) }}</span>
           </a>
           <div class="dropdown-menu dropdown-menu-right navbar-dropdown py-2" :class="{ show: configOpen }">
+            <RouterLink class="dropdown-item" :to="{ name: 'configuration' }" @click="configOpen = false">
+              <i class="mdi mdi-view-grid-outline cfg-item-icon" aria-hidden="true"></i>
+              All services
+            </RouterLink>
+            <div class="dropdown-divider"></div>
             <span v-if="configServicesLoading" class="dropdown-item cfg-menu-status text-muted">
               {{ loadingServicesLabel(selectedLang) }}
             </span>
@@ -116,7 +122,7 @@ import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import ConfigurationModal from '../components/ConfigurationModal.vue'
 import MockDataBadge from '../components/MockDataBadge.vue'
-import { listConfigurationServices } from '../api/configurationClient'
+import { ensureConfigurationServices, refreshServiceConfigurations } from '../api/configurationCache'
 import type { Language } from '../types/viewModels'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import { useCurrentUser } from '../composables/useCurrentUser'
@@ -126,7 +132,7 @@ import logoMiniUrl from '../assets/images/logo-mini.svg'
 
 const props = withDefaults(
   defineProps<{
-    /** When the off-canvas category sidebar is open (mobile), header dropdowns must close. */
+    /** When the off-canvas sidebar is open (mobile), header dropdowns must close. */
     sidebarActive?: boolean
   }>(),
   { sidebarActive: false },
@@ -236,8 +242,7 @@ const loadConfigServices = async (): Promise<void> => {
   configServicesLoading.value = true
   configServicesError.value = false
   try {
-    const result = await listConfigurationServices()
-    configServices.value = result.services
+    configServices.value = await ensureConfigurationServices()
   } catch (err) {
     configServicesError.value = true
   } finally {
@@ -264,6 +269,7 @@ const selectConfigService = (service: string): void => {
 }
 
 const onConfigSaved = (message: string): void => {
+  if (configService.value) void refreshServiceConfigurations(configService.value).catch(() => undefined)
   configService.value = null
   if (navToastTimer) clearTimeout(navToastTimer)
   navToast.value = message
@@ -295,6 +301,23 @@ const logout = (): void => {
 .navbar-mock-badge {
   flex-shrink: 0;
   margin-right: 0.75rem;
+}
+
+@media (max-width: 767px) {
+  .navbar-mock-badge {
+    padding: 0 6px;
+    margin-right: 0.25rem;
+  }
+  .navbar-mock-badge :deep(span:last-child) {
+    display: none;
+  }
+  nav.navbar.default-layout .navbar-menu-wrapper .navbar-nav .nav-item {
+    margin-left: 0.25rem;
+  }
+  nav.navbar.default-layout .navbar-menu-wrapper .navbar-nav .nav-item .nav-link {
+    margin-left: 0;
+    margin-right: 0;
+  }
 }
 
 /*

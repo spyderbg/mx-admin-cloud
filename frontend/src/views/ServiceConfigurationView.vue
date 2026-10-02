@@ -1,8 +1,6 @@
 <template>
   <div class="service-config-page">
-    <nav class="cfg-breadcrumb" aria-label="Breadcrumb">
-      <span>Configuration</span><i class="mdi mdi-chevron-right" aria-hidden="true"></i><strong>{{ serviceLabel }}</strong>
-    </nav>
+    <ViewBreadcrumb :items="breadcrumbItems" />
     <div class="cfg-page-heading">
       <div>
         <h1>{{ serviceLabel }} Configuration</h1>
@@ -47,7 +45,8 @@
       <div v-if="loading" class="cfg-list-message">Loading configurations…</div>
       <div v-else-if="summaries.length === 0" class="cfg-list-message">No configuration files yet. Add one to get started.</div>
       <div v-else class="cfg-card-list">
-          <article v-for="summary in orderedSummaries" :key="summary.config_name" class="cfg-config-card" :class="{ expanded: selectedName === summary.config_name }">
+          <CollectionCard v-for="summary in orderedSummaries" :id="`cfg-card-${summary.config_name}`" :key="summary.config_name" class="cfg-config-card" :expanded="selectedName === summary.config_name">
+            <template #header>
             <div class="cfg-card-header">
               <button type="button" class="cfg-card-more" :aria-label="`${selectedName === summary.config_name ? 'Collapse' : 'Expand'} ${summary.filename}`" :aria-expanded="selectedName === summary.config_name" :disabled="busy || !summary.valid_json" @click="selectConfig(summary.config_name)"><i class="mdi" :class="selectedName === summary.config_name ? 'mdi-chevron-up' : 'mdi-chevron-down'" aria-hidden="true"></i></button>
               <span class="cfg-card-icon"><i class="mdi mdi-file-document-outline" aria-hidden="true"></i></span>
@@ -66,6 +65,7 @@
                 </div>
               </div>
             </div>
+            </template>
             <div v-if="summary.valid_json" class="cfg-card-quick-fields">
               <div class="cfg-quick-field"><label :for="`cfg-service-${summary.config_name}`">Service</label><input :id="`cfg-service-${summary.config_name}`" class="form-control" type="text" :value="serviceName" readonly title="A configuration belongs to the service shown on this page" /></div>
               <div class="cfg-quick-field"><label :for="`cfg-provider-${summary.config_name}`">Provider</label><select :id="`cfg-provider-${summary.config_name}`" class="form-control" :value="quickValue(summary, 'provider')" :disabled="busy || !cardFiles[summary.config_name]" @change="saveQuickField(summary, 'provider', $event)"><option value="" disabled>Select provider</option><option v-for="provider in providerChoices" :key="provider" :value="provider">{{ provider }}</option></select></div>
@@ -103,7 +103,7 @@
               </div>
             </template>
             </section>
-          </article>
+          </CollectionCard>
       </div>
     </section>
 
@@ -141,15 +141,21 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import type { AxiosError } from 'axios'
-import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute } from 'vue-router'
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import DynamicConfigFields from '../components/DynamicConfigFields.vue'
-import { addServiceConfig, getProviderStrategy, getServiceConfig, listServiceConfigs, listServiceProviders, removeServiceConfig, replaceServiceConfig, setProviderStrategy } from '../api/configurationClient'
+import CollectionCard from '../components/CollectionCard.vue'
+import ViewBreadcrumb from '../components/ViewBreadcrumb.vue'
+import { addServiceConfig, getProviderStrategy, getServiceConfig, listServiceProviders, removeServiceConfig, replaceServiceConfig, setProviderStrategy } from '../api/configurationClient'
+import { refreshServiceConfigurations } from '../api/configurationCache'
+import { orderConfigurationFiles, serviceDisplayName } from '../utils/configurationNavigation'
 import type { ConfigurationFileResponse, ConfigurationFileSummaryResponse, ProviderSelectionStrategy } from '../types/configurationSchemas'
 
 type JsonObject = Record<string, unknown>
 const route = useRoute()
+const router = useRouter()
 const serviceName = computed(() => String(route.params.serviceName || ''))
-const serviceLabel = computed(() => serviceName.value.split('_').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' '))
+const serviceLabel = computed(() => serviceDisplayName(serviceName.value))
+const requestedConfigName = computed(() => typeof route.query.config === 'string' ? route.query.config : '')
 const summaries = ref<ConfigurationFileSummaryResponse[]>([])
 const availableProviders = ref<string[]>([])
 const cardFiles = ref<Record<string, ConfigurationFileResponse>>({})
@@ -191,13 +197,12 @@ const providerChoices = computed(() => [...new Set([
   ...availableProviders.value,
   ...summaries.value.map(row => row.provider).filter((value): value is string => typeof value === 'string' && Boolean(value)),
 ])].sort())
-const orderedSummaries = computed(() => [...summaries.value].sort((left, right) => {
-  const leftPriority = left.priority ?? Number.POSITIVE_INFINITY
-  const rightPriority = right.priority ?? Number.POSITIVE_INFINITY
-  return leftPriority === rightPriority
-    ? left.filename.localeCompare(right.filename)
-    : leftPriority - rightPriority
-}))
+const orderedSummaries = computed(() => orderConfigurationFiles(summaries.value))
+const breadcrumbItems = computed(() => [
+  { label: 'Configuration', to: { name: 'configuration' } },
+  { label: serviceLabel.value, to: { name: 'service-configuration', params: { serviceName: serviceName.value } } },
+  ...(requestedConfigName.value ? [{ label: `${requestedConfigName.value}.json` }] : []),
+])
 const hasChanges = computed(() => {
   if (!currentFile.value || !draft.value) return false
   if (editorMode.value === 'json') {
@@ -248,7 +253,7 @@ async function loadPage(): Promise<void> {
   draft.value = null
   try {
     const [files, strategyResponse, providersResponse] = await Promise.all([
-      listServiceConfigs(serviceName.value),
+      refreshServiceConfigurations(serviceName.value),
       getProviderStrategy(serviceName.value),
       listServiceProviders(serviceName.value).catch(() => null),
     ])
@@ -260,9 +265,7 @@ async function loadPage(): Promise<void> {
     cardFiles.value = Object.fromEntries(details.flatMap(result => result.status === 'fulfilled' ? [[result.value.config_name, result.value]] : []))
     strategy.value = strategyResponse.strategy
     supportedStrategies.value = strategyResponse.supported_strategies
-    const preferred = typeof route.query.config === 'string' ? route.query.config : ''
-    const requested = files.find(row => row.config_name === preferred)
-    if (requested) await loadConfig(requested.config_name)
+    if (requestedConfigName.value) await openRequestedConfig(requestedConfigName.value)
   } catch (error) {
     if (request === pageRequest) pageError.value = message(error)
   } finally {
@@ -305,18 +308,35 @@ function clearSelection(): void {
   invalidFields.value = new Set()
 }
 
+function configLocation(name?: string) {
+  const query = { ...route.query }
+  delete query.config
+  if (name) query.config = name
+  return { name: 'service-configuration', params: { serviceName: serviceName.value }, query }
+}
+
 function closeEditor(): void {
-  if (confirmDiscard()) clearSelection()
+  if (!busy.value) void router.push(configLocation())
+}
+
+async function openRequestedConfig(name: string): Promise<void> {
+  if (!name) { clearSelection(); return }
+  const summary = summaries.value.find(file => file.config_name === name)
+  if (!summary?.valid_json) {
+    clearSelection()
+    pageError.value = summary ? `${summary.filename} is not valid JSON.` : `Configuration ${name}.json was not found.`
+    return
+  }
+  pageError.value = ''
+  await loadConfig(name)
+  if (selectedName.value === name) {
+    await nextTick()
+    document.getElementById(`cfg-card-${name}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
 }
 
 async function selectConfig(name: string): Promise<void> {
-  if (busy.value || !confirmDiscard()) return
-  if (name === selectedName.value) { clearSelection(); return }
-  await loadConfig(name)
-  if (selectedName.value === name && window.matchMedia('(max-width: 700px)').matches) {
-    await nextTick()
-    document.getElementById('cfg-expanded-editor')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
+  if (!busy.value) await router.push(configLocation(name === selectedName.value ? undefined : name))
 }
 
 type QuickField = 'provider' | 'provider_category' | 'priority' | 'version' | 'enabled'
@@ -351,7 +371,7 @@ async function persistQuickField(summary: ConfigurationFileSummaryResponse, key:
     if ((key === 'version' || key === 'provider_category') && value === '') delete payload.service_provider[key]
     else payload.service_provider[key] = value
     await replaceServiceConfig(serviceName.value, summary.config_name, { payload })
-    const [rows, saved] = await Promise.all([listServiceConfigs(serviceName.value), getServiceConfig(serviceName.value, summary.config_name)])
+    const [rows, saved] = await Promise.all([refreshServiceConfigurations(serviceName.value), getServiceConfig(serviceName.value, summary.config_name)])
     summaries.value = rows
     cardFiles.value = { ...cardFiles.value, [summary.config_name]: saved }
     if (selectedName.value === summary.config_name) await loadConfig(summary.config_name)
@@ -425,7 +445,7 @@ async function saveCurrent(): Promise<void> {
   try {
     await replaceServiceConfig(serviceName.value, selectedName.value, { payload })
     const name = selectedName.value
-    summaries.value = await listServiceConfigs(serviceName.value)
+    summaries.value = await refreshServiceConfigurations(serviceName.value)
     await loadConfig(name)
     showToast(`${name}.json saved.`)
   } catch (error) { pageError.value = message(error) }
@@ -487,8 +507,9 @@ async function createConfiguration(): Promise<void> {
   try {
     await addServiceConfig(serviceName.value, { config_name: name, payload })
     createOpen.value = false
-    summaries.value = await listServiceConfigs(serviceName.value)
+    summaries.value = await refreshServiceConfigurations(serviceName.value)
     await loadConfig(name)
+    await router.push(configLocation(name))
     showToast(`${name}.json created.`)
   } catch (error) { createError.value = message(error) }
   finally { createBusy.value = false }
@@ -501,23 +522,32 @@ async function removeConfiguration(name: string): Promise<void> {
   pageError.value = ''
   try {
     await removeServiceConfig(serviceName.value, name)
-    summaries.value = await listServiceConfigs(serviceName.value)
-    if (selectedName.value === name) clearSelection()
+    summaries.value = await refreshServiceConfigurations(serviceName.value)
+    if (selectedName.value === name) {
+      clearSelection()
+      await router.replace(configLocation())
+    }
     showToast(`${name}.json removed.`)
   } catch (error) { pageError.value = message(error) }
   finally { busy.value = false }
 }
 
 watch(serviceName, () => { void loadPage() }, { immediate: true })
-onBeforeUnmount(clearToast)
+watch([requestedConfigName, loading], ([name, isLoading], [previousName]) => {
+  if (name !== previousName) pageError.value = ''
+  if (!isLoading && (name !== previousName || name !== (selectedName.value ?? ''))) void openRequestedConfig(name)
+})
+onBeforeUnmount(() => {
+  ++pageRequest
+  ++detailRequest
+  clearToast()
+})
 onBeforeRouteLeave(() => confirmDiscard())
 onBeforeRouteUpdate(() => confirmDiscard())
 </script>
 
 <style scoped>
 .service-config-page { color: #172550; max-width: 1200px; margin: 0 auto; }
-.cfg-breadcrumb { display: flex; align-items: center; gap: .35rem; color: #7583a0; font-size: .83rem; margin-bottom: .8rem; }
-.cfg-breadcrumb strong { color: #334465; font-weight: 600; }
 .cfg-page-heading { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; margin-bottom: 1.25rem; }
 .cfg-page-heading h1 { margin: 0 0 .25rem; font-size: clamp(1.55rem, 2.3vw, 2.15rem); font-weight: 750; letter-spacing: -.025em; }
 .cfg-page-heading p { margin: 0; color: #71809e; font-size: .88rem; }
@@ -526,7 +556,7 @@ onBeforeRouteUpdate(() => confirmDiscard())
 .cd-toast { position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 99999; display: flex; align-items: center; gap: .5rem; max-width: 360px; padding: .75rem 1rem; border-radius: 6px; color: #fff; font-size: .9rem; box-shadow: 0 4px 16px rgba(0, 0, 0, .25); }
 .cd-toast i { font-size: 1.2rem; flex-shrink: 0; }
 .cd-toast-success { background: #16a34a; }
-.cfg-strategy-card, .cfg-config-card { background: #fff; border: 1px solid #e0e6f0; border-radius: 12px; box-shadow: 0 3px 16px rgba(25, 45, 90, .045); }
+.cfg-strategy-card { background: #fff; border: 1px solid #e0e6f0; border-radius: 12px; box-shadow: 0 3px 16px rgba(25, 45, 90, .045); }
 .cfg-strategy-card { padding: 1.1rem 1.2rem; margin-bottom: 1.1rem; }
 .cfg-saving-label { color: #5570ad; font-size: .8rem; }
 .cfg-strategy-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
@@ -548,8 +578,7 @@ onBeforeRouteUpdate(() => confirmDiscard())
 .cfg-add-inline { display: none; }
 .cfg-list-message { border: 1px dashed #cbd6e7; border-radius: 12px; background: #fff; padding: 2rem 1.25rem; color: #6d7b99; font-size: .87rem; }
 .cfg-card-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: .9rem; }
-.cfg-config-card { display: flex; flex-direction: column; min-width: 0; overflow: hidden; transition: border-color .18s, box-shadow .18s; }
-.cfg-config-card.expanded { border: 2px solid #2364ed; box-shadow: 0 8px 28px rgba(34, 72, 151, .12); }
+.cfg-config-card { display: flex; flex-direction: column; scroll-margin-top: 5rem; }
 .cfg-card-header { display: flex; align-items: flex-start; gap: .4rem; min-width: 0; padding: .95rem 1rem .75rem; }
 .cfg-card-icon { display: grid; place-items: center; width: 1.5rem; height: 2rem; color: #1d376d; font-size: 1.25rem; flex: none; }
 .cfg-card-identity { flex: 1; min-width: 0; }

@@ -26,31 +26,12 @@
         :key="card.id"
         class="col-md-6 col-lg-4 col-xl-3 mb-4"
       >
-        <div
-          class="cd-card card-hover"
-          style="border: 1px solid rgba(0,0,0,0.12); border-radius: 12px; overflow: hidden; cursor: pointer; transition: box-shadow 0.2s, transform 0.2s;"
-          @mouseover="hoverCard(card.id, true)"
-          @mouseleave="hoverCard(card.id, false)"
-          @click="goToCategory(card.id)"
-        >
-          <div
-            class="d-flex align-items-center p-4"
-            :class="hoveredCard === card.id ? 'bg-light' : ''"
-          >
-            <img
-              :src="card.iconUri"
-              :alt="card.name"
-              class="cd-card-icon mr-3"
-              style="width: 64px; height: 64px; border-radius: 10px; object-fit: cover; flex-shrink: 0;"
-            />
-            <div class="flex-grow-1">
-              <h5 class="mb-1 text-truncate" :title="card.name">{{ card.name }}</h5>
-              <p class="text-muted mb-0" style="font-size: 0.875rem;">
-                {{ itemCountLabel(contentLanguage, card.itemCount) }}
-              </p>
-            </div>
-          </div>
-        </div>
+        <CollectionCard
+          :title="card.name"
+          :image-src="card.iconUri"
+          :description="itemCountLabel(contentLanguage, card.itemCount)"
+          :to="{ name: 'category', params: { categoryId: card.id } }"
+        />
       </div>
     </div>
 
@@ -244,25 +225,17 @@ import {
 } from '../utils/localizedLabels'
 import { toPascalCaseWords } from '../utils/pascalCaseWords'
 import cameraPlaceholderUrl from '../assets/images/samples/camera-placeholder.svg'
+import CollectionCard from '../components/CollectionCard.vue'
 
 
 const router = useRouter()
 const contentLanguage = useContentLanguage()
 const loading = sharedLoading
 const error = sharedError
-const hoveredCard = ref('')
 
 const pageTitle = computed(() =>
   toPascalCaseWords(breadcrumbCategoriesLabel(contentLanguage.value)),
 )
-
-const hoverCard = (id: string, isHovered: boolean): void => {
-  hoveredCard.value = isHovered ? id : ''
-}
-
-const goToCategory = (id: string): void => {
-  router.push(`/categories/${id}`)
-}
 
 const cards = computed(() => {
   const lang = contentLanguage.value
@@ -441,14 +414,6 @@ async function confirmDeleteArchivedCategory(): Promise<void> {
 </script>
 
 <style scoped>
-.card-hover {
-  background: #fff;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-}
-
-.card-hover:hover {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
-}
 .archived-section {
   margin-top: 1.25rem;
   padding: 1.5rem;
