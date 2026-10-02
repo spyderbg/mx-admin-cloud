@@ -14,7 +14,6 @@
     </div>
 
     <div v-if="pageError" class="alert alert-danger" role="alert">{{ pageError }}</div>
-    <div v-if="notice" class="alert alert-success cfg-notice" role="status">{{ notice }}</div>
 
     <div class="cfg-strategy-section-heading">
       <h2 id="strategy-title">Provider selection strategy</h2>
@@ -130,11 +129,17 @@
         </div>
       </div>
     </Teleport>
+    <Teleport to="body">
+      <div v-if="toast" class="cd-toast cd-toast-success" role="status">
+        <i class="mdi mdi-check-circle" aria-hidden="true"></i>
+        <span>{{ toast }}</span>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import type { AxiosError } from 'axios'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute } from 'vue-router'
 import DynamicConfigFields from '../components/DynamicConfigFields.vue'
@@ -156,7 +161,8 @@ const detailLoading = ref(false)
 const busy = ref(false)
 const pageError = ref('')
 const detailError = ref('')
-const notice = ref('')
+const toast = ref<string | null>(null)
+let toastTimer: ReturnType<typeof setTimeout> | null = null
 const strategy = ref<ProviderSelectionStrategy | null>(null)
 const supportedStrategies = ref<ProviderSelectionStrategy[]>([])
 const strategyLoading = ref(false)
@@ -208,6 +214,18 @@ function message(error: unknown): string {
   return typeof detail === 'string' ? detail : error instanceof Error ? error.message : 'The operation failed. Please try again.'
 }
 
+function clearToast(): void {
+  if (toastTimer) clearTimeout(toastTimer)
+  toastTimer = null
+  toast.value = null
+}
+
+function showToast(text: string): void {
+  clearToast()
+  toast.value = text
+  toastTimer = setTimeout(() => { toast.value = null; toastTimer = null }, 4000)
+}
+
 function parseJsonObject(text: string): JsonObject | null {
   try { const value: unknown = JSON.parse(text); return isObject(value) ? value : null } catch { return null }
 }
@@ -219,7 +237,7 @@ async function loadPage(): Promise<void> {
   strategyLoading.value = true
   pageError.value = ''
   detailError.value = ''
-  notice.value = ''
+  clearToast()
   summaries.value = []
   availableProviders.value = []
   cardFiles.value = {}
@@ -337,7 +355,7 @@ async function persistQuickField(summary: ConfigurationFileSummaryResponse, key:
     summaries.value = rows
     cardFiles.value = { ...cardFiles.value, [summary.config_name]: saved }
     if (selectedName.value === summary.config_name) await loadConfig(summary.config_name)
-    notice.value = `${summary.filename} saved.`
+    showToast(`${summary.filename} saved.`)
   } catch (error) {
     pageError.value = message(error)
     if (input && previous !== undefined) input.value = previous
@@ -360,7 +378,7 @@ async function changeStrategy(next: ProviderSelectionStrategy): Promise<void> {
     if (service !== serviceName.value) return
     strategy.value = result.strategy
     supportedStrategies.value = result.supported_strategies
-    notice.value = 'Provider strategy saved.'
+    showToast('Provider strategy saved.')
   } catch (error) {
     if (service === serviceName.value) strategyError.value = message(error)
   } finally { strategySaving.value = false }
@@ -409,7 +427,7 @@ async function saveCurrent(): Promise<void> {
     const name = selectedName.value
     summaries.value = await listServiceConfigs(serviceName.value)
     await loadConfig(name)
-    notice.value = `${name}.json saved.`
+    showToast(`${name}.json saved.`)
   } catch (error) { pageError.value = message(error) }
   finally { busy.value = false }
 }
@@ -471,7 +489,7 @@ async function createConfiguration(): Promise<void> {
     createOpen.value = false
     summaries.value = await listServiceConfigs(serviceName.value)
     await loadConfig(name)
-    notice.value = `${name}.json created.`
+    showToast(`${name}.json created.`)
   } catch (error) { createError.value = message(error) }
   finally { createBusy.value = false }
 }
@@ -485,12 +503,13 @@ async function removeConfiguration(name: string): Promise<void> {
     await removeServiceConfig(serviceName.value, name)
     summaries.value = await listServiceConfigs(serviceName.value)
     if (selectedName.value === name) clearSelection()
-    notice.value = `${name}.json removed.`
+    showToast(`${name}.json removed.`)
   } catch (error) { pageError.value = message(error) }
   finally { busy.value = false }
 }
 
 watch(serviceName, () => { void loadPage() }, { immediate: true })
+onBeforeUnmount(clearToast)
 onBeforeRouteLeave(() => confirmDiscard())
 onBeforeRouteUpdate(() => confirmDiscard())
 </script>
@@ -504,7 +523,9 @@ onBeforeRouteUpdate(() => confirmDiscard())
 .cfg-page-heading p { margin: 0; color: #71809e; font-size: .88rem; }
 .cfg-add-top { white-space: nowrap; }
 .cfg-add-top i, .cfg-add-inline i { margin-right: .2rem; }
-.cfg-notice { padding: .65rem 1rem; }
+.cd-toast { position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 99999; display: flex; align-items: center; gap: .5rem; max-width: 360px; padding: .75rem 1rem; border-radius: 6px; color: #fff; font-size: .9rem; box-shadow: 0 4px 16px rgba(0, 0, 0, .25); }
+.cd-toast i { font-size: 1.2rem; flex-shrink: 0; }
+.cd-toast-success { background: #16a34a; }
 .cfg-strategy-card, .cfg-config-card { background: #fff; border: 1px solid #e0e6f0; border-radius: 12px; box-shadow: 0 3px 16px rgba(25, 45, 90, .045); }
 .cfg-strategy-card { padding: 1.1rem 1.2rem; margin-bottom: 1.1rem; }
 .cfg-saving-label { color: #5570ad; font-size: .8rem; }
