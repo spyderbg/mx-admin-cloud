@@ -38,6 +38,21 @@ def _load(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _provider_type(path: Path) -> str:
+    """Return a config's provider type normalised as the backend reads it, or '' if unreadable.
+
+    The backend skips a config that isn't a JSON object with a service_provider object, so
+    such a file is no provider of any type here either.
+    """
+    try:
+        envelope = _load(path).get("service_provider")
+    except (OSError, ValueError, AttributeError):
+        return ""
+    if not isinstance(envelope, dict):
+        return ""
+    return str(envelope.get("provider", "")).strip().lower()
+
+
 def _dump(path: Path, data: dict) -> None:
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
@@ -109,6 +124,27 @@ class Rewriter:
             data["service_provider"]["config"]["content_dir"] = ""
         self._edit("text_translation/static.json", mutate)
 
+    def redirect_qwen_translate(self) -> None:
+        """Point every qwen_translate config's base_url at the translation stub.
+
+        Matched by provider type, not file name (one config per language pair), and set
+        unconditionally: a config without a base_url falls back to the provider's default,
+        which is the real self-hosted Qwen server.
+        """
+        def mutate(data: dict) -> None:
+            envelope = data["service_provider"]
+            if not isinstance(envelope.get("config"), dict):
+                envelope["config"] = {}  # the backend reads a missing or non-object config as {}
+            envelope["config"]["base_url"] = f"{self.stub}/v1/"
+        configs = [
+            path for path in sorted((self.config_dir / "text_translation").glob("*.json"))
+            if _provider_type(path) == "qwen_translate"
+        ]
+        if not configs:
+            self.summary.append(f"{DIM}  no qwen_translate configs in text_translation/{RESET}")
+        for path in configs:
+            self._edit(f"text_translation/{path.name}", mutate)
+
     def enable_seq_logging(self) -> None:
         def mutate(data: dict) -> None:
             seq = data["service_provider"]["config"]["handlers"]["seq"]
@@ -157,6 +193,7 @@ def build(*, stub_base_url: str, force: bool) -> int:
     rewriter.enable_comfyui_image()
     rewriter.redirect_speaktor_tts()
     rewriter.fallback_static_translate()
+    rewriter.redirect_qwen_translate()
     rewriter.enable_seq_logging()
 
     _assert_no_symlinks()

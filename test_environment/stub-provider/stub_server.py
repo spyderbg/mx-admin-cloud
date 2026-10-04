@@ -9,6 +9,9 @@ standard library.
 Routes, one per redirected provider (see docs/test_environment/implementation_plan.md §4):
 
     POST /v1/chat/completions           openai_translate            -> "{word}-{lang}"
+                                        qwen_translate (same shape) -> "{word}-{lang}"
+                                                 (calls are recorded alike — /__calls
+                                                 cannot tell the two providers apart)
     POST /v1/images/generations         openai_http (image)         -> b64 PNG
     POST /tts                           speaktor (response_mode=raw)-> raw MP3 bytes
     POST /v1beta/models/{model}:predict         genai_http (imagen) -> b64 PNG

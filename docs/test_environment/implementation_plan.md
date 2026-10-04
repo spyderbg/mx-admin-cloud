@@ -283,7 +283,7 @@ the stub path, not the static lookup.
 
 ## 4. Provider neutralisation
 
-`scripts/testenv_config.py` copies **all 20** config files (the builder reads the whole
+`scripts/testenv_config.py` copies **every** config file (the builder reads the whole
 directory — a missing file is a missing provider, not a disabled one) and rewrites:
 
 | Config | Test state | Change |
@@ -292,6 +292,7 @@ directory — a missing file is a missing provider, not a disabled one) and rewr
 | `logging/{default,requests}.json` | on | none (`seq` handler already `"active": false`) |
 | `text_translation/static.json` | on, prio 1 | `content_dir: ""` → falls back to `settings.content_path` |
 | `text_translation/openai_en_{bg,es,fr}.json` | on, prio 2 | none — repointed via `OPENAI_BASE_URL` |
+| `text_translation/qwen_en_{bg,es,fr}.json` | on, prio 3 | `base_url` → `http://stub:8080/v1/`, set on **every** `qwen_translate` config (matched by provider type, so new language pairs are covered); a config without one would fall back to the real self-hosted server |
 | `text_to_speech/speaktor.json` | on, prio 2 | `endpoint` → `http://stub:8080/tts`; `response_mode` → `"raw"`; **drop the `Authorization` header** |
 | `text_to_speech/{openai,elevenlabs,static}.json` | off | already off — cannot be stubbed |
 | **`text_to_image/openai.json`** | **→ off** | **`true` → `false`** (SDK provider, prio 1, would shadow the stubbable one) |
@@ -304,7 +305,9 @@ directory — a missing file is a missing provider, not a disabled one) and rewr
 
 Keeping **both** `static_translate` (prio 1) and the OpenAI-stub configs (prio 2) means seeded
 words resolve offline and instantly while new words fall through to the stub — and gives a
-spec that asserts the priority chain works.
+spec that asserts the priority chain works. The Qwen configs (prio 3) are only tried when both
+fail, which the stubbed OpenAI never does, so no spec reaches Qwen today: its redirect is a
+safety net that keeps the test environment off the real Qwen server.
 
 ### `tests/stub-provider/stub_server.py`
 
@@ -331,6 +334,7 @@ their base URL from config:
 | Service | Provider | Redirect seam | Stub route |
 |---|---|---|---|
 | Translation | `openai_translate` | `OPENAI_BASE_URL` env | `POST /v1/chat/completions` |
+| Translation (Qwen) | `qwen_translate` | **`base_url` in config** — OpenAI-compatible SDK client, same request shape | `POST /v1/chat/completions` (shared with `openai_translate`) |
 | TTS | `speaktor` | `endpoint` in config | `POST /tts` |
 | Image (OpenAI) | `openai_http` | `endpoint` in config | `POST /v1/images/generations` |
 | Image (Gemini) | `genai_http` | **`base_url` in config** — [genai_http_image.py:43](backend/src/services/text_to_image/providers/genai_http_image.py#L43) reads `generate_config.get("base_url") or BASE_URL` | `POST /v1beta/models/{model}:predict` → `{"predictions":[{"bytesBase64Encoded":"…"}]}` |
@@ -494,6 +498,14 @@ def child_env(test_env: dict[str, str]) -> dict[str, str]:
 
 Both modes use it: Compose is invoked with this env, and `app.py` starts every child process
 with it. Dummy values only — `OPENAI_API_KEY=test-openai-key-not-real`.
+
+The allowlist alone is not enough for the backend: `backend/src/core/config.py` calls
+`load_dotenv()`, which searches upward from `backend/src/core/` for a `.env` and fills in every
+variable not already set. So `test.env` lists **every** provider key the backend reads — a
+dummy (`QWEN_API_KEY=test-qwen-key-not-real`) or an empty string (`ELEVENLABS_API_KEY=`) —
+because a key that is merely absent would be filled from a real `backend/.env` or repo-root
+`.env` in native mode. A new provider key therefore needs an entry in
+`testenv_seed._write_test_env` (dummy values live in `scripts/testenvlib/paths.py`).
 
 `doctor` refuses to start on a hit: scan the composed child env (and, in Docker mode,
 `docker inspect` of the running container) for `sk-`, `sk_`, `glpat-`, `ghp_`, **or any value

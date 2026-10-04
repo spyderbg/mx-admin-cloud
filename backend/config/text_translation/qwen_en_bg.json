@@ -1,0 +1,16 @@
+{
+  "service_provider": {
+    "service": "text_translation",
+    "provider": "qwen_translate",
+    "enabled": true,
+    "priority": 3,
+    "config": {
+      "input_language": "en",
+      "output_language": "bg",
+      "model": "Qwen3.8-27B-Q4_K_M.gguf",
+      "prompt": "You are a professional translator.\nTranslate the given {{ input_language }} word into {{ output_language }}.\nALWAYS treat the input as a NOUN (object name) belonging to the category: {{ category }}.\nReturn ONLY the translated noun, in singular form.\nNo articles, no explanations, no extra text.",
+      "temperature": 0,
+      "base_url": "http://82.103.77.45:8080/v1/"
+    }
+  }
+}

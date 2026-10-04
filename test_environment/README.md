@@ -3,7 +3,7 @@
 The single operational reference for mx-admin-cloud's sandbox test environment, issue
 tracking (GitLab or GitHub), and selectable AI-fixer execution strategies: an isolated, runnable
 sandbox (the real backend, the real frontend, and a deterministic stub standing in for
-every external provider — OpenAI, Speaktor, Gemini, ComfyUI, Seq — driven end to end by
+every external provider — OpenAI, Qwen, Speaktor, Gemini, ComfyUI, Seq — driven end to end by
 Playwright), the issues its checks get filed as, and the strategies that can act
 on those issues. Nothing here touches real content or real credentials, and nothing
 pushes code or opens a PR unless an execution strategy is deliberately configured and
@@ -139,6 +139,13 @@ values are never read: child processes get an **allowlist**-built environment
 `.testenv/test.env` supplies, nothing else from your shell), specifically so a real key
 exported by having sourced `scripts/app.sh`/`scripts/deploy.sh` in the same shell can't
 leak in. `doctor` scans for this on every run and refuses to report success on a hit.
+
+Every provider key the backend reads is listed in `test.env`, as a dummy or as an empty
+value, never left out: the backend's `load_dotenv()` fills any unset variable from a real
+`backend/.env` or repo-root `.env`. A new provider key therefore needs an entry in
+`scripts/testenv_seed.py` (`_write_test_env`), with any dummy value defined in
+`scripts/testenvlib/paths.py`. `up` reuses an existing `test.env` rather than regenerating
+it, so after such a change run `reset` (or `seed --force`) before the next `up`.
 
 ### The seeded fixture
 

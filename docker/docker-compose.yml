@@ -19,6 +19,7 @@ services:
       - ARCHIVE_DIR=/app/archive
       - DB_PATH=/app/data/users.db
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - QWEN_API_KEY=${QWEN_API_KEY:-}
       - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
       - SPEAKTOR_API_KEY=${SPEAKTOR_API_KEY}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
@@ -64,6 +65,7 @@ services:
       - ARCHIVE_DIR=/app/archive
       - DB_PATH=/app/data/users.db
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - QWEN_API_KEY=${QWEN_API_KEY:-}
       - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
       - SPEAKTOR_API_KEY=${SPEAKTOR_API_KEY}
       - GEMINI_API_KEY=${GEMINI_API_KEY}

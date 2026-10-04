@@ -142,6 +142,7 @@ DOCKER_STUB_CONTAINER = "mxtest-stub"
 
 TEST_OPENAI_API_KEY = "test-openai-key-not-real"
 TEST_GEMINI_API_KEY = "test-gemini-key-not-real"
+TEST_QWEN_API_KEY = "test-qwen-key-not-real"
 TEST_SECRET_KEY = "test-secret-key-do-not-use-in-production"
 TEST_DEFAULT_ADMIN_PASSWORD = "TestAdmin123!"
 

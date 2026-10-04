@@ -67,6 +67,7 @@ class Settings(BaseSettings):
 
     # Provider API keys
     OPENAI_API_KEY: str | None = None
+    QWEN_API_KEY: str | None = None
     ELEVENLABS_API_KEY: str | None = None
     SPEAKTOR_API_KEY: str | None = None
     GEMINI_API_KEY: str | None = None

@@ -267,6 +267,7 @@ def _write_test_env() -> None:
         "TEST_OUTPUT_DIR": str(paths.TEST_OUTPUT_DIR),
         "TEST_STUB_DIR": str(paths.STUB_PROVIDER_DIR),
         "OPENAI_API_KEY": paths.TEST_OPENAI_API_KEY,
+        "QWEN_API_KEY": paths.TEST_QWEN_API_KEY,
         "ELEVENLABS_API_KEY": "",
         "SPEAKTOR_API_KEY": "",
         "GEMINI_API_KEY": paths.TEST_GEMINI_API_KEY,

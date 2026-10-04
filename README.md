@@ -136,6 +136,7 @@ Key settings (see `backend/src/core/config.py`). Use `backend/.env` or the proce
 | `ARCHIVE_DIR` | Archive directory for removed categories (optional) |
 | `DB_PATH` | SQLite user database path (default `data/users.db`) |
 | `OPENAI_API_KEY` | Required for TTS, translation, and category icon generation |
+| `QWEN_API_KEY` | Self-hosted Qwen translation provider (optional) |
 | `ELEVENLABS_API_KEY` | ElevenLabs TTS provider (optional) |
 | `SPEAKTOR_API_KEY` | Speaktor TTS provider (optional) |
 | `CONFIG_DIR` | Path to TTS config directory (default `config`) |
@@ -148,6 +149,17 @@ Key settings (see `backend/src/core/config.py`). Use `backend/.env` or the proce
 | `DEFAULT_ADMIN_PASSWORD` | Initial `admin` password on first DB init |
 | `DEBUG_MODE` | Relaxes some admin/UDS checks when true (local dev only) |
 | `AUTH_DISABLED` | If true, skip auth checks |
+
+The `qwen_translate` provider uses the OpenAI-compatible Chat Completions API for
+Qwen3.8 27B (self-hosted). Its configurations are
+`backend/config/text_translation/qwen_en_{bg,es,fr}.json`, with the model
+`/home/spyder/llm/models/Qwen3.8-27B-GGUF/Qwen3.8-27B-Q4_K_M.gguf` and
+`base_url` set to `http://82.103.77.45:8080/v1/`. Set `QWEN_API_KEY` in the backend
+environment or `.env`; credentials are read from the environment, not stored in JSON.
+These configurations are enabled at priority 3, after static translations (1) and
+OpenAI translations (2). Adjust their priority or disable the OpenAI configurations
+to prefer Qwen. Each configuration can override `model`, `base_url`, `prompt`, and
+`temperature`.
 
 ---
 
