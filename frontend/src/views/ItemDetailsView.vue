@@ -208,6 +208,8 @@
     />
   </div>
 
+  <p v-else-if="sharedContentUnavailable" class="text-danger text-center py-5">{{ noActiveContentProviderLabel(contentLanguage) }}</p>
+
   <div v-else class="text-center py-5">
     <h4 class="text-muted">Item not found</h4>
     <router-link :to="{ name: 'dashboard' }" class="btn btn-primary mt-3">Back to Categories</router-link>
@@ -367,6 +369,7 @@ import {
   invalidateCategoriesCache,
   invalidateItemDetail,
   sharedCategories,
+  sharedContentUnavailable,
   updateCachedItemImages,
 } from '../api/cache'
 import {
@@ -413,6 +416,7 @@ import {
   localizedImageLabel,
   mainItemImageLabel,
   newItemIdLabel,
+  noActiveContentProviderLabel,
   noLabel,
   promptLabel,
   regenerateAllVoicesLabel,

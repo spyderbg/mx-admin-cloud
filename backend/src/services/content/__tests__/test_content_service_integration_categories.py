@@ -16,6 +16,7 @@ import pytest
 
 from httpx import ASGITransport, AsyncClient
 
+from src.api.dependencies import get_registry
 from src.services.content.models import (
     ArchiveCategory,
     ArchivedEntry,
@@ -34,6 +35,7 @@ from src.services.content.models import (
     UpdateCategory,
 )
 from src.services.content.__tests__.content_http_helpers import PNG_BYTES, StubContentProvider, make_app
+from src.services.service_registry import ServiceRegistry
 
 
 # ---------------------------------------------------------------------------
@@ -96,6 +98,20 @@ async def test_list_categories_provider_error_returns_500(tmp_resolved: Path) ->
         response = await c.get("/api/v1/content/categories")
     assert response.status_code == 500
     assert "Content root does not exist" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_list_categories_returns_503_when_the_content_provider_is_disabled(tmp_resolved: Path) -> None:
+    provider = StubContentProvider(tmp_resolved)
+    provider.enabled = False
+    registry = ServiceRegistry.build_runtime(tmp_resolved)
+    registry.replace_service_providers("content", [provider])
+    app = make_app()  # resolves the content service through the real dependency
+    app.dependency_overrides[get_registry] = lambda: registry
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.get("/api/v1/content/categories")
+    assert response.status_code == 503
+    assert response.json()["detail"] == "No active content provider is configured."
 
 
 @pytest.mark.asyncio

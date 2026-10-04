@@ -1,4 +1,5 @@
 import { ref, shallowRef } from 'vue'
+import { revalidateContent } from './cache'
 import { listConfigurationServices, listServiceConfigs } from './configurationClient'
 import type { ConfigurationFileSummaryResponse } from '../types/configurationSchemas'
 import { orderConfigurationFiles, serviceDisplayName } from '../utils/configurationNavigation'
@@ -9,6 +10,8 @@ export const configurationServicesError = ref('')
 export const serviceConfigurationFiles = shallowRef<Record<string, ConfigurationFileSummaryResponse[]>>({})
 export const serviceConfigurationLoading = shallowRef<Record<string, boolean>>({})
 export const serviceConfigurationErrors = shallowRef<Record<string, string>>({})
+
+const CONTENT_SERVICE = 'content'
 
 let servicesLoaded = false
 let servicesRequest: Promise<string[]> | null = null
@@ -48,6 +51,8 @@ export function refreshServiceConfigurations(service: string): Promise<Configura
   const request = listServiceConfigs(service).then(files => {
     const ordered = orderConfigurationFiles(files)
     serviceConfigurationFiles.value = { ...serviceConfigurationFiles.value, [service]: ordered }
+    // Every content configuration change ends in this refresh; content may have come or gone.
+    if (service === CONTENT_SERVICE) void revalidateContent()
     return ordered
   }).catch(error => {
     serviceConfigurationErrors.value = { ...serviceConfigurationErrors.value, [service]: 'Could not load configurations.' }

@@ -3,10 +3,6 @@
     "service": "content",
     "provider": "file_system",
     "enabled": false,
-    "priority": 1,
-    "config": {
-      "content_root": "",
-      "archive_root": ""
-    }
+    "priority": 1
   }
 }

@@ -7,7 +7,6 @@ from datetime import timedelta
 from typing import AsyncIterator
 
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
 from src.api.dependencies import require_admin, require_uds
@@ -110,7 +109,7 @@ async def lifespan(app_lifespan: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title=settings.PROJECT_NAME, lifespan=lifespan)
 
-app.mount("/content", StaticFiles(directory=str(settings.content_path)), name="content")
+app.mount("/content", content_routes.ContentStaticFiles(directory=str(settings.content_path)), name="content")
 
 app.include_router(routes_auth.router, prefix=settings.API_V1_STR, tags=["auth"])
 app.include_router(routes_common.router, prefix=settings.API_V1_STR, tags=["tasks"])

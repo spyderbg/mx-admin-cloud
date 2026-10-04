@@ -14,7 +14,7 @@ from fastapi import (
 )
 
 from src.api.dependencies import get_registry
-from src.api.service_resolver import get_typed_service
+from src.api.service_resolver import get_typed_service, require_active_providers
 from src.services import content, text_to_speech, voice_optimization
 from src.services.content.models import CategoryVoice, CreateItem
 from src.services.content.schemas import CreateItemResponse, VoiceResponse
@@ -106,12 +106,18 @@ def _create_item_response(result: CreateItem, voice_generation_available: bool) 
 def get_content_service(
         registry: ServiceRegistry = Depends(get_registry),
 ) -> ContentService:
-    """Resolve the ContentService from the service registry."""
-    return get_typed_service(
+    """Resolve the ContentService from the service registry; 503 when no content provider is active."""
+    service = get_typed_service(
         registry=registry,
         service_name=content.SERVICE_NAME,
         expected_type=ContentService,
     )
+    require_active_providers(
+        service,
+        service_name=content.SERVICE_NAME,
+        detail="No active content provider is configured.",
+    )
+    return service
 
 
 ContentServiceDep = Annotated[ContentService, Depends(get_content_service)]

@@ -1,4 +1,5 @@
 import { ref, shallowRef } from 'vue'
+import type { AxiosError } from 'axios'
 import type { ArchivedCategory, CategoryFull, Item, Voice } from '../types/viewModels'
 import { LocalizedString } from '../types/viewModels'
 import {
@@ -106,6 +107,9 @@ export const sharedLoading = ref(false)
 
 /** Error message from the last failed fetch, or empty string. */
 export const sharedError = ref('')
+
+/** Whether the category list last answered 503: no content provider is active, so nothing is cached. */
+export const sharedContentUnavailable = ref(false)
 
 // ---------------------------------------------------------------------------
 // Loaded-state tracking (prevent duplicate fetches across navigations)
@@ -278,11 +282,46 @@ async function _loadCategoriesBasic(): Promise<CategoryFull[]> {
 
     return categories
   } catch (err) {
-    sharedError.value = 'Failed to load categories.'
+    if (isContentUnavailable(err)) markContentUnavailable()
+    else sharedError.value = 'Failed to load categories.'
     console.error('Failed to load categories:', err)
     return []
   } finally {
     sharedLoading.value = false
+  }
+}
+
+/** Whether *err* is the category list answering 503: no content provider is active. */
+function isContentUnavailable(err: unknown): boolean {
+  return (err as AxiosError).response?.status === 503
+}
+
+/** Drop every cached category, so views show that no content provider is active instead of stale content. */
+function markContentUnavailable(): void {
+  invalidateCategoriesCache()
+  sharedContentUnavailable.value = true
+  sharedError.value = 'No active content provider is configured.'
+}
+
+/**
+ * Bring the category cache in line with whether content is available right now, which a
+ * content configuration change (in this app, or a config file edited on disk) can flip.
+ *
+ * With categories cached, one list request checks they may still be shown; a 503 drops them.
+ * After content was unavailable the categories are loaded again, so they return once it is not.
+ */
+export const revalidateContent = async (): Promise<void> => {
+  if (sharedLoading.value) return // a load in progress reports availability itself
+  if (sharedContentUnavailable.value) {
+    invalidateCategoriesCache() // an empty cache makes ensureCategoriesLoaded load, not revalidate
+    await ensureCategoriesLoaded()
+    return
+  }
+  if (sharedCategories.value.length === 0) return // nothing cached that could be stale
+  try {
+    await withInflight('revalidate', () => categoriesList())
+  } catch (err) {
+    if (isContentUnavailable(err)) markContentUnavailable()
   }
 }
 
@@ -299,14 +338,19 @@ export const invalidateCategoriesCache = (): void => {
 /**
  * Load the basic category list with items for all categories.
  * Used by DashboardView. 1 list request + N parallel detail requests.
+ *
+ * Cached categories are returned at once, while revalidateContent checks in the background
+ * that content is still available, so views stop showing them once it is not.
  */
 export const ensureCategoriesLoaded = async (): Promise<CategoryFull[]> => {
   if (sharedCategories.value.length > 0 && failedCategoryIds.size === 0) {
+    void revalidateContent()
     return sharedCategories.value
   }
 
   sharedLoading.value = true
   sharedError.value = ''
+  sharedContentUnavailable.value = false
 
   return withInflight('basic:all', _loadCategoriesBasic)
 }

@@ -3,7 +3,7 @@
     <div class="spinner-border text-primary" role="status"></div>
     <p class="mt-2 text-muted">{{ loadingCategoriesLabel(contentLanguage) }}</p>
   </div>
-  <p v-else-if="sharedError && sharedCategories.length === 0" class="text-danger text-center py-5">{{ failedToLoadCategoriesLabel(contentLanguage) }}</p>
+  <p v-else-if="sharedError && sharedCategories.length === 0" class="text-danger text-center py-5">{{ categoriesLoadErrorLabel(contentLanguage, sharedContentUnavailable) }}</p>
   <div v-else-if="category" style="width: 100%;">
     <ViewBreadcrumb :items="breadcrumbItems" />
     <CategoryDetail
@@ -75,6 +75,7 @@ import {
   invalidateCategoriesCache,
   sharedCategories,
   sharedCategoryNames,
+  sharedContentUnavailable,
   sharedLoading,
   sharedError,
 } from '../api/cache'
@@ -89,7 +90,7 @@ import ViewBreadcrumb from '../components/ViewBreadcrumb.vue'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import {
   addNewItemLabel,
-  failedToLoadCategoriesLabel,
+  categoriesLoadErrorLabel,
   itemCreatedLabel,
   itemCreatedWithWarningsLabel,
   localizedCategoryLabel,

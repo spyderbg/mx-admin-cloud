@@ -175,7 +175,7 @@ def test_registry_applies_stored_strategies_and_defaults(tmp_path: Path) -> None
     assert strategies["logging"] is FIRST
     assert strategies["voice_optimization"] is ALL
     assert strategies["text_to_speech"] is FIRST
-    assert strategies["content"] is None
+    assert strategies["content"] is FIRST
 
 
 def test_registry_keeps_the_default_for_an_unsupported_stored_strategy(tmp_path: Path) -> None:

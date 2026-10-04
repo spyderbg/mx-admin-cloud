@@ -22,6 +22,7 @@ from src.services.content.models import (
     CategoryConflictError,
     InvalidCategoryNameError,
     ContentError,
+    ContentOperationError,
     CreateItem,
 )
 from src.services.content.schemas import (
@@ -42,6 +43,7 @@ from src.services.content.schemas import (
 )
 from src.services.content.service import ContentService
 from src.services.models import ServiceProvider
+from src.services.provider_strategy import ProviderSelectionStrategy
 
 
 # ---------------------------------------------------------------------------
@@ -598,13 +600,87 @@ def test_select_provider_prefers_active_provider(tmp_path: Path) -> None:
     assert "list_categories" not in disabled.calls
 
 
-def test_select_provider_falls_back_to_first_when_all_disabled(tmp_path: Path) -> None:
+def test_select_provider_raises_when_all_providers_are_disabled(tmp_path: Path) -> None:
     first = _StubProvider(tmp_path, name="first", enabled=False)
     second = _StubProvider(tmp_path, name="second", enabled=False)
     svc = _make_service(tmp_path, [first, second])
+    with pytest.raises(ContentProviderUnavailableError, match="No active content provider"):
+        svc.list_categories()
+    assert not first.calls
+    assert not second.calls
+
+
+# ---------------------------------------------------------------------------
+# ContentService — FIRST_SUCCESS provider strategy
+# ---------------------------------------------------------------------------
+
+class _FailingProvider(_StubProvider):
+    """Stub whose category reads raise *error*."""
+
+    def __init__(self, base: Path, error: Exception, *, name: str = "failing") -> None:
+        super().__init__(base, name=name)
+        self._error = error
+
+    def list_categories(
+            self, include_archived: bool = False, archived_only: bool = False
+    ) -> dict[str, Any]:
+        self._record("list_categories", include_archived, archived_only)
+        raise self._error
+
+    def category_details(self, category_id: str) -> dict[str, Any]:
+        self._record("category_details", category_id)
+        raise self._error
+
+
+def test_content_service_uses_first_success_strategy(tmp_path: Path) -> None:
+    svc = _make_service(tmp_path, [])
+    assert svc.SUPPORTED_STRATEGIES == (ProviderSelectionStrategy.FIRST_SUCCESS,)
+    assert svc.provider_strategy is ProviderSelectionStrategy.FIRST_SUCCESS
+
+
+def test_first_success_stops_at_the_first_provider_that_succeeds(tmp_path: Path) -> None:
+    primary = _StubProvider(tmp_path, name="primary")
+    backup = _StubProvider(tmp_path, name="backup")
+    svc = _make_service(tmp_path, [primary, backup])
     svc.list_categories()
-    assert "list_categories" in first.calls
-    assert "list_categories" not in second.calls
+    assert "list_categories" in primary.calls
+    assert "list_categories" not in backup.calls
+
+
+def test_first_success_falls_through_to_the_next_active_provider(tmp_path: Path) -> None:
+    primary = _FailingProvider(tmp_path, ContentOperationError("disk gone"), name="primary")
+    disabled = _StubProvider(tmp_path, name="disabled", enabled=False)
+    backup = _StubProvider(tmp_path, name="backup")
+    svc = _make_service(tmp_path, [primary, disabled, backup])
+    assert svc.list_categories() == {"categories": ["cats", "dogs"]}
+    assert "list_categories" in primary.calls
+    assert not disabled.calls
+    assert "list_categories" in backup.calls
+
+
+def test_first_success_runs_a_compound_operation_on_one_provider(tmp_path: Path) -> None:
+    primary = _FailingProvider(tmp_path, CategoryNotFoundError("missing"), name="primary")
+    backup = _StubProvider(tmp_path, name="backup", return_values={"category_id_by_name": "C_Cats"})
+    svc = _make_service(tmp_path, [primary, backup])
+    svc.category_details_by_name("cats")
+    assert backup.calls["category_id_by_name"] == [("cats",)]
+    assert backup.calls["category_details"] == [("C_Cats",)]
+
+
+def test_first_success_reraises_a_single_provider_error_unchanged(tmp_path: Path) -> None:
+    error = CategoryNotFoundError("Category 'cats': directory is missing.")
+    svc = _make_service(tmp_path, [_FailingProvider(tmp_path, error)])
+    with pytest.raises(CategoryNotFoundError) as caught:
+        svc.category_details_by_id("cats")
+    assert caught.value is error
+
+
+def test_first_success_raises_the_highest_priority_error_type_with_every_message(tmp_path: Path) -> None:
+    primary = _FailingProvider(tmp_path, CategoryNotFoundError("missing"), name="primary")
+    backup = _FailingProvider(tmp_path, ContentOperationError("disk gone"), name="backup")
+    svc = _make_service(tmp_path, [primary, backup])
+    with pytest.raises(CategoryNotFoundError, match="^primary: missing; backup: disk gone$"):
+        svc.category_details_by_id("cats")
 
 
 # ---------------------------------------------------------------------------

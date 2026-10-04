@@ -44,7 +44,7 @@
               {{ loadingCategoriesLabel(selectedLang) }}
             </span>
             <span v-else-if="categoriesError && !categories.length" class="dropdown-item cfg-menu-status text-danger" role="alert">
-              {{ failedToLoadCategoriesLabel(selectedLang) }}
+              {{ categoriesLoadErrorLabel(selectedLang, categoriesUnavailable) }}
             </span>
             <template v-else>
               <RouterLink
@@ -176,6 +176,7 @@ import {
   sharedCategories as categories,
   sharedLoading as categoriesLoading,
   sharedError as categoriesError,
+  sharedContentUnavailable as categoriesUnavailable,
 } from '../api/cache'
 import type { Language } from '../types/viewModels'
 import { useContentLanguage } from '../composables/useContentLanguage'
@@ -183,8 +184,8 @@ import { useCurrentUser } from '../composables/useCurrentUser'
 import {
   allCategoriesLabel,
   breadcrumbCategoriesLabel,
+  categoriesLoadErrorLabel,
   configurationLabel,
-  failedToLoadCategoriesLabel,
   failedToLoadServicesLabel,
   loadingCategoriesLabel,
   loadingServicesLabel,

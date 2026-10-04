@@ -60,8 +60,11 @@ Layering for content/categories:
 - `src/api/cache.ts` — **hand-written** boundary that views consume. It calls `contentClient.ts`, maps backend DTOs
   (snake_case, e.g. `file_uri`) to the camelCase UI view-models in `src/types/viewModels.ts`, and provides in-flight
   request **dedup** (`withInflight`) plus shared reactive state (`sharedCategories`, `sharedCategoryNames`,
-  `sharedLoading`, `sharedError`) so multiple views don't re-fetch the same data. Views import
-  `ensureCategoriesLoaded()` / `ensureCategoryDetail()` / `ensureItemDetail()` from here.
+  `sharedLoading`, `sharedError`, `sharedContentUnavailable`) so multiple views don't re-fetch the same data. Views
+  import `ensureCategoriesLoaded()` / `ensureCategoryDetail()` / `ensureItemDetail()` from here. Serving cached
+  categories triggers `revalidateContent()` (one list request), as does every refresh of the `content`
+  configurations: a 503 (no active content provider) drops the cache and sets `sharedContentUnavailable`, so views
+  show why instead of stale content (`npm run test:content`).
 - `src/api/auth.ts` — login/status/list (no generated equivalent; handles the token).
 
 Mutation routes (category rename/icon/voices, item create, item images/voices) are implemented on the backend and

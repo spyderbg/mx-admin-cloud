@@ -80,7 +80,7 @@ const mockPayloads: Record<string, Record<string, JsonObject>> = Object.fromEntr
 )
 const strategies: Record<string, ProviderSelectionStrategy> = { logging: 'ALL_PROVIDERS' }
 const supportedStrategies: Record<string, ProviderSelectionStrategy[]> = {
-  content: [], logging: ['ALL_PROVIDERS', 'FIRST_SUCCESS'],
+  content: ['FIRST_SUCCESS'], logging: ['ALL_PROVIDERS', 'FIRST_SUCCESS'],
   text_to_speech: ['FIRST_SUCCESS'], text_to_image: ['FIRST_SUCCESS'],
   text_translation: ['FIRST_SUCCESS'], voice_optimization: ['ALL_PROVIDERS', 'FIRST_SUCCESS'],
 }

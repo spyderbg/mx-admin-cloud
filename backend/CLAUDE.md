@@ -149,7 +149,8 @@ How a service dispatches one task to its active providers (always in ascending `
 | `voice_optimization` | both | ALL_PROVIDERS | content `optimize_item_voice` (reads the strategy over the internal configuration API) |
 | `text_to_speech`, `text_to_image` | FIRST_SUCCESS | FIRST_SUCCESS | `generate()` without an explicit `provider_name` |
 | `text_translation` | FIRST_SUCCESS | FIRST_SUCCESS | `translate_text` (no chaining) |
-| `content`, `configuration`, `evaluation` | none | — | single provider |
+| `content` | FIRST_SUCCESS | FIRST_SUCCESS | every `ContentService` operation; with no active config the API and `/content` files answer 503 |
+| `configuration`, `evaluation` | none | — | single provider |
 
 - Shared code: `src/services/provider_strategy.py` (enum, `first_success`, `dispatch_each`,
   `AllProvidersFailedError`, `read_strategies`). A service declares `SUPPORTED_STRATEGIES` and

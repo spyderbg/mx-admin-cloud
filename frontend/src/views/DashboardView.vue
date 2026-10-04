@@ -14,7 +14,7 @@
       <p class="mt-2 text-muted">{{ loadingCategoriesLabel(contentLanguage) }}</p>
     </div>
 
-    <p v-else-if="error" class="text-danger text-center py-5">{{ failedToLoadCategoriesLabel(contentLanguage) }}</p>
+    <p v-else-if="error" class="text-danger text-center py-5">{{ categoriesLoadErrorLabel(contentLanguage, sharedContentUnavailable) }}</p>
 
     <div v-else-if="cards.length === 0" class="text-center py-5">
       <p class="text-muted">{{ noCategoriesFoundLabel(contentLanguage) }}</p>
@@ -201,6 +201,7 @@ import {
   invalidateCategoriesCache,
   sharedArchivedCategories,
   sharedCategories,
+  sharedContentUnavailable,
   sharedLoading,
   sharedError,
 } from '../api/cache'
@@ -215,8 +216,8 @@ import {
   archiveTypeToConfirmLabel,
   breadcrumbCategoriesLabel,
   cancelLabel,
+  categoriesLoadErrorLabel,
   deleteLabel,
-  failedToLoadCategoriesLabel,
   itemCountLabel,
   loadingCategoriesLabel,
   localizedCategoryLabel,

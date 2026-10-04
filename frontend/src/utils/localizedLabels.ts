@@ -73,6 +73,22 @@ export function failedToLoadCategoriesLabel(lang: Language): string {
   return labels[lang] ?? labels.en
 }
 
+/** Error shown when no content provider is active; unknown `lang` falls back to English. */
+export function noActiveContentProviderLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'No active content provider is configured.',
+    es: 'No hay ningún proveedor de contenido activo configurado.',
+    fr: 'Aucun fournisseur de contenu actif n’est configuré.',
+    bg: 'Няма конфигуриран активен доставчик на съдържание.',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Error shown when the category list fails to load, naming the cause when no content provider is active. */
+export function categoriesLoadErrorLabel(lang: Language, contentUnavailable: boolean): string {
+  return contentUnavailable ? noActiveContentProviderLabel(lang) : failedToLoadCategoriesLabel(lang)
+}
+
 /** Empty state when no categories exist; unknown `lang` falls back to English. */
 export function noCategoriesFoundLabel(lang: Language): string {
   const labels: Record<Language, string> = {
