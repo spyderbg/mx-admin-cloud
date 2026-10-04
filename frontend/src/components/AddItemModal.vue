@@ -1,6 +1,6 @@
 <template>
   <Teleport to="body">
-    <div v-if="show" class="cd-modal-overlay" @click.self="close">
+    <div v-if="show" class="cd-modal-overlay" @click.self="close" @keydown.esc.stop.prevent="close">
       <div class="cd-modal-box">
         <div class="cd-modal-header">
           <h5 class="cd-modal-title">{{ addNewItemTitleLabel(contentLanguage) }}</h5>

@@ -2,7 +2,7 @@
   "service_provider": {
     "service": "content",
     "provider": "file_system",
-    "enabled": false,
+    "enabled": true,
     "priority": 1
   }
 }
