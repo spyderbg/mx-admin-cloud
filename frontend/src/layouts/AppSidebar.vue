@@ -79,7 +79,7 @@
             <template v-else>
               <li v-for="service in filteredServices" :key="service.id" class="nav-item" :class="{ active: service.id === activeServiceName }">
                 <RouterLink class="nav-link" :to="{ name: 'service-configuration', params: { serviceName: service.id } }" :aria-expanded="expandedServices.has(service.id)" :aria-current="service.id === activeServiceName && !activeConfigurationName ? 'page' : undefined" @click="toggleService(service.id)">
-                  <i class="menu-icon mdi mdi-tune" aria-hidden="true"></i>
+                  <ServiceIcon :service="service.id" class="cd-sidebar-service-icon" />
                   <span class="menu-title">{{ service.name }}</span>
                   <i class="menu-arrow" aria-hidden="true"></i>
                 </RouterLink>
@@ -158,6 +158,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import ServiceIcon from '../components/ServiceIcon.vue'
 import { sharedCategories } from '../api/cache'
 import { configurationServices, configurationServicesLoading, configurationServicesError, serviceConfigurationFiles, serviceConfigurationLoading, serviceConfigurationErrors, ensureConfigurationTree, refreshServiceConfigurations } from '../api/configurationCache'
 import { serviceDisplayName } from '../utils/configurationNavigation'
@@ -372,6 +373,7 @@ nav.sidebar.sidebar-offcanvas > .nav .cd-sidebar-tree-list .collapse .sub-menu .
 }
 
 .cd-sidebar-root-link { color: inherit; }
+.cd-sidebar-service-icon { margin-right: .75rem; font-size: 1.25rem; color: #fff; }
 .cd-sidebar-root-link:hover { color: #fff; text-decoration: none; }
 .cd-sidebar-status { opacity: .65; font-style: italic; white-space: normal; }
 .cd-sidebar-retry { color: #fff; background: transparent; border: 0; text-align: left; }

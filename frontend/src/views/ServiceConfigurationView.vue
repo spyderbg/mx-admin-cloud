@@ -3,7 +3,7 @@
     <ViewBreadcrumb :items="breadcrumbItems" />
     <div class="cfg-page-heading">
       <div>
-        <h1>{{ serviceLabel }} Configuration</h1>
+        <h1><ServiceIcon :service="serviceName" /> {{ serviceLabel }} Configuration</h1>
         <p>Manage provider files and their settings for this service.</p>
       </div>
       <button class="btn btn-primary cfg-add-top" type="button" :disabled="loading || busy" @click="openCreate(false)">
@@ -144,6 +144,7 @@ import type { AxiosError } from 'axios'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import DynamicConfigFields from '../components/DynamicConfigFields.vue'
 import CollectionCard from '../components/CollectionCard.vue'
+import ServiceIcon from '../components/ServiceIcon.vue'
 import ViewBreadcrumb from '../components/ViewBreadcrumb.vue'
 import { addServiceConfig, getProviderStrategy, getServiceConfig, listServiceProviders, removeServiceConfig, replaceServiceConfig, setProviderStrategy } from '../api/configurationClient'
 import { refreshServiceConfigurations } from '../api/configurationCache'
@@ -549,7 +550,7 @@ onBeforeRouteUpdate(() => confirmDiscard())
 <style scoped>
 .service-config-page { color: #172550; max-width: 1200px; margin: 0 auto; }
 .cfg-page-heading { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; margin-bottom: 1.25rem; }
-.cfg-page-heading h1 { margin: 0 0 .25rem; font-size: clamp(1.55rem, 2.3vw, 2.15rem); font-weight: 750; letter-spacing: -.025em; }
+.cfg-page-heading h1 { display: flex; align-items: center; gap: .5rem; margin: 0 0 .25rem; font-size: clamp(1.55rem, 2.3vw, 2.15rem); font-weight: 750; letter-spacing: -.025em; }
 .cfg-page-heading p { margin: 0; color: #71809e; font-size: .88rem; }
 .cfg-add-top { white-space: nowrap; }
 .cfg-add-top i, .cfg-add-inline i { margin-right: .2rem; }

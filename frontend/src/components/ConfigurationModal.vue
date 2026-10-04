@@ -3,7 +3,7 @@
     <div class="cd-modal-overlay" @click.self="cancel">
       <div class="cd-modal-box cfg-modal-box">
         <div class="cd-modal-header">
-          <h5 class="cd-modal-title">{{ serviceLabel(service) }} Configuration</h5>
+          <h5 class="cd-modal-title"><ServiceIcon :service="service" /> {{ serviceLabel(service) }} Configuration</h5>
           <button type="button" class="cd-modal-close" @click="cancel">&times;</button>
         </div>
         <div class="cd-modal-body">
@@ -90,6 +90,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import ServiceIcon from './ServiceIcon.vue'
 import type { AxiosError } from 'axios'
 import { listServiceConfigs, patchServiceConfig } from '../api/configurationClient'
 import type { ConfigurationFileSummaryResponse } from '../types/configurationSchemas'
@@ -262,6 +263,9 @@ onUnmounted(() => {
   border-bottom: 1px solid #dee2e6;
 }
 .cd-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   margin: 0;
   font-size: 1.1rem;
   font-weight: 600;

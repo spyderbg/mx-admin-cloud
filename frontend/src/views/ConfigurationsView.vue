@@ -17,7 +17,7 @@
     <div v-else class="row">
       <div v-for="service in configurationServices" :key="service" class="col-md-6 col-xl-4 mb-4">
         <CollectionCard :title="serviceDisplayName(service)" :description="configurationCount(service)" :to="{ name: 'service-configuration', params: { serviceName: service } }">
-          <template #icon><i class="mdi mdi-tune" aria-hidden="true"></i></template>
+          <template #icon><ServiceIcon :service="service" /></template>
         </CollectionCard>
       </div>
     </div>
@@ -27,6 +27,7 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import CollectionCard from '../components/CollectionCard.vue'
+import ServiceIcon from '../components/ServiceIcon.vue'
 import ViewBreadcrumb from '../components/ViewBreadcrumb.vue'
 import { configurationServices, configurationServicesLoading, configurationServicesError, serviceConfigurationFiles, serviceConfigurationErrors, ensureConfigurationTree } from '../api/configurationCache'
 import { serviceDisplayName } from '../utils/configurationNavigation'

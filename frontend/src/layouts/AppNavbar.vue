@@ -50,7 +50,7 @@
                 href="#"
                 @click.prevent="selectConfigService(svc)"
               >
-                <i class="mdi mdi-tune cfg-item-icon"></i>
+                <ServiceIcon :service="svc" class="cfg-item-icon" />
                 {{ serviceLabel(svc) }}
               </a>
             </template>
@@ -121,6 +121,7 @@
 import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import ConfigurationModal from '../components/ConfigurationModal.vue'
+import ServiceIcon from '../components/ServiceIcon.vue'
 import MockDataBadge from '../components/MockDataBadge.vue'
 import { ensureConfigurationServices, refreshServiceConfigurations } from '../api/configurationCache'
 import type { Language } from '../types/viewModels'
@@ -354,6 +355,10 @@ nav.navbar.default-layout .navbar-menu-wrapper .navbar-nav .nav-item.config-drop
 
 .cfg-item-icon {
   margin-right: 0.5rem;
+}
+
+.service-icon.cfg-item-icon {
+  font-size: 1.125rem;
 }
 
 .cfg-menu-status {
