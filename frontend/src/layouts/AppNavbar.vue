@@ -18,6 +18,52 @@
     <div class="navbar-menu-wrapper d-flex align-items-center flex-grow-1 justify-content-end">
       <MockDataBadge v-if="areBackendRequestsMocked" class="navbar-mock-badge" />
       <ul class="navbar-nav flex-row align-items-center">
+        <li ref="categoriesDropdown" class="nav-item dropdown categories-dropdown" @keydown.esc.stop.prevent="closeCategoriesDropdown">
+          <button
+            ref="categoriesToggle"
+            type="button"
+            class="nav-link dropdown-toggle px-2 d-flex align-items-center categories-nav-toggle"
+            :aria-label="breadcrumbCategoriesLabel(selectedLang)"
+            :title="breadcrumbCategoriesLabel(selectedLang)"
+            aria-controls="categories-nav-menu"
+            :aria-expanded="categoriesOpen"
+            @click="toggleCategories"
+          >
+            <div class="d-inline-flex config-nav-icon-wrap">
+              <CategoryListIcon class="categories-nav-icon" />
+            </div>
+            <span class="profile-text font-weight-medium d-none d-md-block">{{ breadcrumbCategoriesLabel(selectedLang) }}</span>
+          </button>
+          <div id="categories-nav-menu" class="dropdown-menu dropdown-menu-right navbar-dropdown py-2" :class="{ show: categoriesOpen }">
+            <RouterLink class="dropdown-item" :to="{ name: 'dashboard' }" @click="categoriesOpen = false">
+              <CategoryListIcon class="categories-item-icon" />
+              {{ allCategoriesLabel(selectedLang) }}
+            </RouterLink>
+            <div class="dropdown-divider"></div>
+            <span v-if="categoriesLoading && !categories.length" class="dropdown-item cfg-menu-status text-muted" role="status">
+              {{ loadingCategoriesLabel(selectedLang) }}
+            </span>
+            <span v-else-if="categoriesError && !categories.length" class="dropdown-item cfg-menu-status text-danger" role="alert">
+              {{ failedToLoadCategoriesLabel(selectedLang) }}
+            </span>
+            <template v-else>
+              <RouterLink
+                v-for="category in categories"
+                :key="category.id"
+                class="dropdown-item"
+                :to="{ name: 'category', params: { categoryId: category.id } }"
+                :title="localizedCategoryLabel(category, selectedLang)"
+                @click="categoriesOpen = false"
+              >
+                <CategoryListIcon class="categories-item-icon" />
+                <span class="text-truncate">{{ localizedCategoryLabel(category, selectedLang) }}</span>
+              </RouterLink>
+              <span v-if="!categories.length" class="dropdown-item cfg-menu-status text-muted" role="status">
+                {{ noCategoriesFoundLabel(selectedLang) }}
+              </span>
+            </template>
+          </div>
+        </li>
         <li ref="configDropdown" class="nav-item dropdown config-dropdown">
           <a
             class="nav-link dropdown-toggle px-2 d-flex align-items-center"
@@ -33,7 +79,7 @@
           <div class="dropdown-menu dropdown-menu-right navbar-dropdown py-2" :class="{ show: configOpen }">
             <RouterLink class="dropdown-item" :to="{ name: 'configuration' }" @click="configOpen = false">
               <i class="mdi mdi-view-grid-outline cfg-item-icon" aria-hidden="true"></i>
-              All services
+              {{ configurationText.allServices }}
             </RouterLink>
             <div class="dropdown-divider"></div>
             <span v-if="configServicesLoading" class="dropdown-item cfg-menu-status text-muted">
@@ -118,16 +164,34 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import CategoryListIcon from '../components/CategoryListIcon.vue'
 import ConfigurationModal from '../components/ConfigurationModal.vue'
 import ServiceIcon from '../components/ServiceIcon.vue'
 import MockDataBadge from '../components/MockDataBadge.vue'
 import { ensureConfigurationServices, refreshServiceConfigurations } from '../api/configurationCache'
+import {
+  ensureCategoriesLoaded,
+  sharedCategories as categories,
+  sharedLoading as categoriesLoading,
+  sharedError as categoriesError,
+} from '../api/cache'
 import type { Language } from '../types/viewModels'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import { useCurrentUser } from '../composables/useCurrentUser'
-import { configurationLabel, failedToLoadServicesLabel, loadingServicesLabel } from '../utils/localizedLabels'
+import {
+  allCategoriesLabel,
+  breadcrumbCategoriesLabel,
+  configurationLabel,
+  failedToLoadCategoriesLabel,
+  failedToLoadServicesLabel,
+  loadingCategoriesLabel,
+  loadingServicesLabel,
+  localizedCategoryLabel,
+  noCategoriesFoundLabel,
+} from '../utils/localizedLabels'
+import { configurationLabels, localizedServiceLabel } from '../utils/localizedConfigurations'
 import logoUrl from '../assets/images/logo.svg'
 import logoMiniUrl from '../assets/images/logo-mini.svg'
 
@@ -160,6 +224,7 @@ const emit = defineEmits<{
   'close-sidebar': []
 }>()
 
+const route = useRoute()
 const router = useRouter()
 const user = useCurrentUser()
 const areBackendRequestsMocked = import.meta.env.VITE_MOCK_DATA === 'true'
@@ -168,9 +233,13 @@ const languages: Language[] = ['en', 'es', 'fr', 'bg']
 const langFlags: Record<Language, string> = { en: 'us', es: 'es', fr: 'fr', bg: 'bg' }
 const langLabels: Record<Language, string> = { en: 'English', es: 'Español', fr: 'Français', bg: 'Български' }
 const selectedLang = useContentLanguage()
+const configurationText = computed(() => configurationLabels(selectedLang.value))
 const langOpen = ref(false)
 const userOpen = ref(false)
 
+const categoriesOpen = ref(false)
+const categoriesDropdown = ref<HTMLElement | null>(null)
+const categoriesToggle = ref<HTMLButtonElement | null>(null)
 const configOpen = ref(false)
 const configDropdown = ref<HTMLElement | null>(null)
 const languageDropdown = ref<HTMLElement | null>(null)
@@ -184,6 +253,7 @@ let navToastTimer: ReturnType<typeof setTimeout> | null = null
 
 const closeDropdownsOnOutsideClick = (event: PointerEvent): void => {
   if (!(event.target instanceof Node)) return
+  if (categoriesOpen.value && !categoriesDropdown.value?.contains(event.target)) categoriesOpen.value = false
   if (configOpen.value && !configDropdown.value?.contains(event.target)) configOpen.value = false
   if (langOpen.value && !languageDropdown.value?.contains(event.target)) langOpen.value = false
   if (userOpen.value && !userDropdown.value?.contains(event.target)) userOpen.value = false
@@ -193,12 +263,17 @@ watch(
   () => props.sidebarActive,
   (active) => {
     if (active) {
+      categoriesOpen.value = false
       langOpen.value = false
       userOpen.value = false
       configOpen.value = false
     }
   },
 )
+
+watch(() => route.fullPath, () => {
+  categoriesOpen.value = false
+})
 
 onMounted(() => {
   compactNavMql = window.matchMedia(COMPACT_NAV_MQ)
@@ -216,6 +291,7 @@ onUnmounted(() => {
 const toggleLang = (): void => {
   const next = !langOpen.value
   if (next) {
+    categoriesOpen.value = false
     userOpen.value = false
     configOpen.value = false
     emit('close-sidebar')
@@ -226,6 +302,7 @@ const toggleLang = (): void => {
 const toggleUser = (): void => {
   const next = !userOpen.value
   if (next) {
+    categoriesOpen.value = false
     langOpen.value = false
     configOpen.value = false
     emit('close-sidebar')
@@ -233,11 +310,25 @@ const toggleUser = (): void => {
   userOpen.value = next
 }
 
+const toggleCategories = (): void => {
+  const next = !categoriesOpen.value
+  if (next) {
+    langOpen.value = false
+    userOpen.value = false
+    configOpen.value = false
+    emit('close-sidebar')
+    void ensureCategoriesLoaded().catch(() => undefined)
+  }
+  categoriesOpen.value = next
+}
+
+const closeCategoriesDropdown = (): void => {
+  categoriesOpen.value = false
+  categoriesToggle.value?.focus()
+}
+
 const serviceLabel = (service: string): string =>
-  service
-    .split('_')
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ')
+  localizedServiceLabel(service, selectedLang.value)
 
 const loadConfigServices = async (): Promise<void> => {
   configServicesLoading.value = true
@@ -254,6 +345,7 @@ const loadConfigServices = async (): Promise<void> => {
 const toggleConfig = (): void => {
   const next = !configOpen.value
   if (next) {
+    categoriesOpen.value = false
     langOpen.value = false
     userOpen.value = false
     emit('close-sidebar')
@@ -327,12 +419,14 @@ const logout = (): void => {
   menu wrapper. Bootstrap also sets `.navbar-nav .dropdown-menu { position: static }` unless
   a parent `.navbar-expand-*` applies. Pin each trigger + force absolute menus with fixed widths.
 */
+.navbar-menu-wrapper .categories-dropdown,
 .navbar-menu-wrapper .config-dropdown,
 .navbar-menu-wrapper .language-dropdown,
 .navbar-menu-wrapper .user-dropdown {
   position: relative !important;
 }
 
+nav.navbar.default-layout .navbar-menu-wrapper .navbar-nav .nav-item.categories-dropdown .dropdown-menu.navbar-dropdown,
 nav.navbar.default-layout .navbar-menu-wrapper .navbar-nav .nav-item.config-dropdown .dropdown-menu.navbar-dropdown {
   position: absolute !important;
   top: 100% !important;
@@ -342,6 +436,33 @@ nav.navbar.default-layout .navbar-menu-wrapper .navbar-nav .nav-item.config-drop
   width: 210px !important;
   max-width: calc(100vw - 1rem);
   transform: none !important;
+}
+
+@media (max-width: 767px) {
+  nav.navbar.default-layout .navbar-menu-wrapper .navbar-nav .nav-item.categories-dropdown .dropdown-menu.navbar-dropdown {
+    left: 0 !important;
+    right: auto !important;
+  }
+}
+
+.categories-nav-toggle {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.categories-nav-icon {
+  font-size: 1.25rem;
+}
+
+.categories-item-icon {
+  margin-right: 0.5rem;
+  font-size: 1.125rem;
+}
+
+.categories-dropdown .dropdown-menu {
+  max-height: min(420px, calc(100dvh - 80px));
+  overflow-y: auto;
 }
 
 .cfg-nav-icon {

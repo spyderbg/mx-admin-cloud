@@ -1,5 +1,5 @@
 <template>
-  <nav class="sidebar sidebar-offcanvas" id="sidebar" :class="{ active: isActive }" :aria-label="isConfigurationNavigation ? 'Service configurations' : 'Categories'">
+  <nav class="sidebar sidebar-offcanvas" id="sidebar" :class="{ active: isActive }" :aria-label="isConfigurationNavigation ? configurationText.serviceConfigurations : breadcrumbCategoriesLabel(contentLanguage)">
     <ul class="nav">
       <!-- User profile -->
       <li class="nav-item nav-profile">
@@ -43,14 +43,14 @@
           class="d-flex align-items-center justify-content-between flex-nowrap"
           style="gap: 0.35rem;"
         >
-          <RouterLink v-if="isConfigurationNavigation" class="text-truncate cd-sidebar-root-link" :to="{ name: 'configuration' }" @click="requestCloseSidebar">Configuration</RouterLink>
+          <RouterLink v-if="isConfigurationNavigation" class="text-truncate cd-sidebar-root-link" :to="{ name: 'configuration' }" @click="requestCloseSidebar">{{ configurationLabel(contentLanguage) }}</RouterLink>
           <span v-else class="text-truncate">{{ breadcrumbCategoriesLabel(contentLanguage) }}</span>
           <div class="d-flex align-items-center flex-shrink-0" style="gap: 2px;">
             <button
               type="button"
               class="btn btn-sm border-0 rounded-0 p-1 cd-sidebar-tree-btn"
-              :title="isConfigurationNavigation ? 'Expand all services' : 'Expand all categories'"
-              :aria-label="isConfigurationNavigation ? 'Expand all services' : 'Expand all categories'"
+              :title="isConfigurationNavigation ? configurationText.expandAllServices : 'Expand all categories'"
+              :aria-label="isConfigurationNavigation ? configurationText.expandAllServices : 'Expand all categories'"
               @click.stop="expandAllNodes"
             >
               <i class="mdi mdi-unfold-more-horizontal" aria-hidden="true"></i>
@@ -58,8 +58,8 @@
             <button
               type="button"
               class="btn btn-sm border-0 rounded-0 p-1 cd-sidebar-tree-btn"
-              :title="isConfigurationNavigation ? 'Collapse all services' : 'Collapse all categories'"
-              :aria-label="isConfigurationNavigation ? 'Collapse all services' : 'Collapse all categories'"
+              :title="isConfigurationNavigation ? configurationText.collapseAllServices : 'Collapse all categories'"
+              :aria-label="isConfigurationNavigation ? configurationText.collapseAllServices : 'Collapse all categories'"
               @click.stop="collapseAllNodes"
             >
               <i class="mdi mdi-unfold-less-horizontal" aria-hidden="true"></i>
@@ -71,10 +71,10 @@
       <li class="nav-item cd-sidebar-tree">
         <ul class="nav cd-sidebar-tree-list">
           <template v-if="isConfigurationNavigation">
-            <li v-if="configurationServicesLoading" class="nav-item"><span class="nav-link cd-sidebar-status" role="status">Loading services…</span></li>
+            <li v-if="configurationServicesLoading" class="nav-item"><span class="nav-link cd-sidebar-status" role="status">{{ loadingServicesLabel(contentLanguage) }}</span></li>
             <li v-else-if="configurationServicesError" class="nav-item">
-              <span class="nav-link cd-sidebar-status" role="alert">{{ configurationServicesError }}</span>
-              <button class="btn btn-sm cd-sidebar-retry" type="button" @click="loadConfigurationTree">Try again</button>
+              <span class="nav-link cd-sidebar-status" role="alert">{{ failedToLoadServicesLabel(contentLanguage) }}</span>
+              <button class="btn btn-sm cd-sidebar-retry" type="button" @click="loadConfigurationTree">{{ configurationText.tryAgain }}</button>
             </li>
             <template v-else>
               <li v-for="service in filteredServices" :key="service.id" class="nav-item" :class="{ active: service.id === activeServiceName }">
@@ -85,9 +85,9 @@
                 </RouterLink>
                 <div class="collapse" :class="{ show: expandedServices.has(service.id) }">
                   <ul class="nav flex-column sub-menu">
-                    <li v-if="serviceConfigurationLoading[service.id]" class="nav-item"><span class="nav-link cd-sidebar-status">Loading configurations…</span></li>
+                    <li v-if="serviceConfigurationLoading[service.id]" class="nav-item"><span class="nav-link cd-sidebar-status">{{ configurationText.loadingConfigurations }}</span></li>
                     <li v-else-if="serviceConfigurationErrors[service.id]" class="nav-item">
-                      <button type="button" class="nav-link cd-sidebar-retry" @click="retryService(service.id)">Retry loading configurations</button>
+                      <button type="button" class="nav-link cd-sidebar-retry" @click="retryService(service.id)">{{ configurationText.retryConfigurations }}</button>
                     </li>
                     <template v-else>
                       <li v-for="file in service.files" :key="file.config_name" class="nav-item">
@@ -95,12 +95,12 @@
                           <span class="text-truncate" :title="file.filename">{{ file.filename }}</span>
                         </RouterLink>
                       </li>
-                      <li v-if="!service.files.length" class="nav-item"><span class="nav-link cd-sidebar-status">{{ filterText.trim() ? 'No matching configurations' : 'No configurations' }}</span></li>
+                      <li v-if="!service.files.length" class="nav-item"><span class="nav-link cd-sidebar-status">{{ filterText.trim() ? configurationText.noConfigurationsMatch : configurationText.noConfigurations }}</span></li>
                     </template>
                   </ul>
                 </div>
               </li>
-              <li v-if="!filteredServices.length" class="nav-item"><span class="nav-link cd-sidebar-status">No services match</span></li>
+              <li v-if="!filteredServices.length" class="nav-item"><span class="nav-link cd-sidebar-status">{{ configurationText.noServicesMatch }}</span></li>
             </template>
           </template>
           <template v-else>
@@ -161,10 +161,10 @@ import { useRoute, useRouter } from 'vue-router'
 import ServiceIcon from '../components/ServiceIcon.vue'
 import { sharedCategories } from '../api/cache'
 import { configurationServices, configurationServicesLoading, configurationServicesError, serviceConfigurationFiles, serviceConfigurationLoading, serviceConfigurationErrors, ensureConfigurationTree, refreshServiceConfigurations } from '../api/configurationCache'
-import { serviceDisplayName } from '../utils/configurationNavigation'
+import { configurationLabels, localizedServiceLabel } from '../utils/localizedConfigurations'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import { useCurrentUser } from '../composables/useCurrentUser'
-import { localizedCategoryLabel, localizedImageLabel, breadcrumbCategoriesLabel, noCategoriesMatchLabel, noMatchesLabel, filterLabel } from '../utils/localizedLabels'
+import { localizedCategoryLabel, localizedImageLabel, breadcrumbCategoriesLabel, noCategoriesMatchLabel, noMatchesLabel, filterLabel, configurationLabel, loadingServicesLabel, failedToLoadServicesLabel } from '../utils/localizedLabels'
 
 defineProps<{
   isActive: boolean
@@ -182,6 +182,7 @@ const route = useRoute()
 const router = useRouter()
 const user = useCurrentUser()
 const contentLanguage = useContentLanguage()
+const configurationText = computed(() => configurationLabels(contentLanguage.value))
 const filterText = ref('')
 const expandedIds = ref(new Set<string>())
 const expandedServices = ref(new Set<string>())
@@ -192,7 +193,7 @@ const activeConfigurationName = computed(() => typeof route.query.config === 'st
 const filteredServices = computed(() => {
   const query = filterText.value.toLowerCase().trim()
   return configurationServices.value.map(id => {
-    const name = serviceDisplayName(id)
+    const name = localizedServiceLabel(id, contentLanguage.value)
     const files = serviceConfigurationFiles.value[id] ?? []
     const matchesService = !query || name.toLowerCase().includes(query) || id.includes(query)
     return { id, name, files: matchesService ? files : files.filter(file => file.filename.toLowerCase().includes(query) || file.provider?.toLowerCase().includes(query)), matchesService }

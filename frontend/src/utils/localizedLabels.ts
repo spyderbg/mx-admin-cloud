@@ -40,6 +40,17 @@ export function breadcrumbCategoriesLabel(lang: Language): string {
   return labels[lang] ?? labels.en
 }
 
+/** Link to the complete category list in the header menu. */
+export function allCategoriesLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'All categories',
+    es: 'Todas las categorías',
+    fr: 'Toutes les catégories',
+    bg: 'Всички категории',
+  }
+  return labels[lang] ?? labels.en
+}
+
 /** Loading state while categories are fetched; unknown `lang` falls back to English. */
 export function loadingCategoriesLabel(lang: Language): string {
   const labels: Record<Language, string> = {
