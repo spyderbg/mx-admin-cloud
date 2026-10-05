@@ -1,5 +1,5 @@
 <template>
-  <span class="vpt-trigger" tabindex="0">
+  <span class="vpt-trigger" :class="{ 'vpt-controlled': open !== undefined, 'vpt-open': open }" tabindex="0">
     <slot>{{ provider }}</slot>
     <div class="vpt-box" role="tooltip">
       <div v-if="entries.length === 0" class="vpt-empty">No generation parameters recorded.</div>
@@ -14,10 +14,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   provider?: string
   parameters?: Record<string, unknown>
-}>()
+  open?: boolean
+}>(), { open: undefined })
 
 const entries = computed<[string, string][]>(() =>
   Object.entries(props.parameters ?? {}).map(([key, value]) => [
@@ -71,9 +72,10 @@ const entries = computed<[string, string][]>(() =>
   border-top-color: #f8fbff;
   z-index: 1;
 }
-.vpt-trigger:hover .vpt-box,
-.vpt-trigger:focus-visible .vpt-box,
-.vpt-trigger:focus-within .vpt-box {
+.vpt-trigger:not(.vpt-controlled):hover .vpt-box,
+.vpt-trigger:not(.vpt-controlled):focus-visible .vpt-box,
+.vpt-trigger:not(.vpt-controlled):focus-within .vpt-box,
+.vpt-trigger.vpt-open .vpt-box {
   opacity: 1;
   visibility: visible;
 }

@@ -2,7 +2,7 @@
   "service_provider": {
     "service": "text_translation",
     "provider": "openai_translate",
-    "enabled": true,
+    "enabled": false,
     "priority": 2,
     "config": {
       "input_language": "en",

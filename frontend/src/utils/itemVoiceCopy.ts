@@ -5,8 +5,9 @@ const en = {
   voices: 'voices', voice: 'voice', collapse: 'Collapse all', expand: 'Expand all', inUse: 'In use',
   noSelection: 'No recording selected', generate: 'Generate Voice', add: 'Add Voice', baseVoice: 'Base voice',
   text: 'Spoken text', currentConfig: 'Current configuration', original: 'Original', optimized: 'Optimized',
-  generated: 'Generated', uploaded: 'Uploaded', unknown: 'Source not recorded', details: 'Generation details',
+  generated: 'Generated', uploaded: 'Uploaded', unknown: 'Source not recorded', details: 'Generation details', viewDetails: 'View',
   model: 'Model', speed: 'Speed', stability: 'Stability', similarity: 'Similarity', created: 'Created',
+  copyJson: 'Copy JSON', copied: 'Copied', copyError: 'Could not copy the generation details. Please try again.',
   provider: 'Provider', source: 'Source', file: 'File', noDetails: 'No generation parameters recorded.',
   optimize: 'Optimize', optimizeAgain: 'Optimize again', use: 'Use for item', selected: 'Selected for',
   replace: 'Replace audio', deleteVoice: 'Delete voice', deleteConfirm: 'Are you sure you want to delete "{voice}"?',
@@ -38,6 +39,8 @@ const en = {
 
 const es: typeof en = {
   ...en, title: 'Voces', description: 'Elige una grabación por idioma para este elemento.', languages: 'idiomas', voices: 'voces', voice: 'voz',
+  viewDetails: 'Ver',
+  copyJson: 'Copiar JSON', copied: 'Copiado', copyError: 'No se pudieron copiar los detalles de generación. Inténtalo de nuevo.',
   collapse: 'Contraer todo', expand: 'Expandir todo', inUse: 'En uso', noSelection: 'Sin grabación seleccionada', generate: 'Generar voz', add: 'Añadir voz',
   baseVoice: 'Voz base', text: 'Texto hablado', currentConfig: 'Configuración actual', original: 'Original', optimized: 'Optimizada', generated: 'Generada',
   uploaded: 'Subida', unknown: 'Origen no registrado', details: 'Detalles de generación', model: 'Modelo', speed: 'Velocidad', stability: 'Estabilidad', similarity: 'Similitud', created: 'Creada',
@@ -61,6 +64,8 @@ const es: typeof en = {
 
 const fr: typeof en = {
   ...en, title: 'Voix', description: 'Choisissez un enregistrement par langue pour cet élément.', languages: 'langues', voices: 'voix', voice: 'voix',
+  viewDetails: 'Voir',
+  copyJson: 'Copier le JSON', copied: 'Copié', copyError: 'Impossible de copier les détails de génération. Réessayez.',
   collapse: 'Tout réduire', expand: 'Tout développer', inUse: 'Utilisée', noSelection: 'Aucun enregistrement choisi', generate: 'Générer une voix', add: 'Ajouter une voix',
   baseVoice: 'Voix de base', text: 'Texte prononcé', currentConfig: 'Configuration actuelle', original: 'Original', optimized: 'Optimisé', generated: 'Générée', uploaded: 'Importée',
   unknown: 'Origine inconnue', details: 'Détails de génération', model: 'Modèle', speed: 'Vitesse', stability: 'Stabilité', similarity: 'Similarité', created: 'Créée', provider: 'Fournisseur', source: 'Origine', file: 'Fichier', noDetails: 'Aucun paramètre enregistré.',
@@ -80,6 +85,8 @@ const fr: typeof en = {
 
 const bg: typeof en = {
   ...en, title: 'Гласове', description: 'Изберете един запис за всеки език на този елемент.', languages: 'езика', voices: 'гласа', voice: 'глас',
+  viewDetails: 'Преглед',
+  copyJson: 'Копирай JSON', copied: 'Копирано', copyError: 'Данните за генерирането не могат да бъдат копирани. Опитайте отново.',
   collapse: 'Свий всички', expand: 'Разгъни всички', inUse: 'Използва се', noSelection: 'Няма избран запис', generate: 'Генерирай глас', add: 'Добави глас',
   baseVoice: 'Базов глас', text: 'Текст за изговаряне', currentConfig: 'Текуща конфигурация', original: 'Оригинал', optimized: 'Оптимизиран', generated: 'Генериран', uploaded: 'Качен', unknown: 'Неизвестен източник',
   details: 'Данни за генерирането', model: 'Модел', speed: 'Скорост', stability: 'Стабилност', similarity: 'Сходство', created: 'Създаден', provider: 'Доставчик', source: 'Източник', file: 'Файл', noDetails: 'Няма записани параметри.',

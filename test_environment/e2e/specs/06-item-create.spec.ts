@@ -49,3 +49,40 @@ test('duplicate item name is caught before the round trip', async ({ page }) => 
   await expect(modal.primaryButton(page)).toBeDisabled()
   await expect(page.locator('.cd-modal-body .text-danger')).toBeVisible()
 })
+
+test('Escape closes Add New Item after a failed submission loses focus', async ({ page }) => {
+  let failCreation!: () => void
+  const failureRequested = new Promise<void>((resolve) => { failCreation = resolve })
+  await page.route('**/content/categories/C_Fruits/items', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue()
+    await failureRequested
+    await route.fulfill({
+      status: 500,
+      contentType: 'application/json',
+      body: JSON.stringify({ detail: 'Simulated creation error' }),
+    })
+  })
+
+  await page.goto(`/categories/${FIXTURE.categories.fruits.id}`)
+  await addItem.openButton(page).click()
+  await modal.nameInput(page).fill('escape regression')
+  await modal.primaryButton(page).click()
+  await expect(modal.primaryButton(page)).toBeDisabled()
+  await expect.poll(() => page.evaluate(() => document.activeElement === document.body)).toBe(true)
+
+  // Escape must not dismiss a submission while it is still running.
+  await page.keyboard.press('Escape')
+  await expect(modal.box(page)).toBeVisible()
+
+  failCreation()
+  await expect(modal.errorText(page)).toHaveText('Simulated creation error')
+  await expect(modal.primaryButton(page)).toBeEnabled()
+  await page.keyboard.press('Escape')
+  await expect(modal.box(page)).toBeHidden()
+
+  await addItem.openButton(page).click()
+  await expect(modal.nameInput(page)).toHaveValue('')
+  await expect(modal.errorText(page)).toBeHidden()
+  await page.keyboard.press('Escape')
+  await expect(modal.box(page)).toBeHidden()
+})

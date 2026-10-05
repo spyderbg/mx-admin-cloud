@@ -1,6 +1,6 @@
 <template>
   <Teleport to="body">
-    <div v-if="show" class="cd-modal-overlay" @click.self="close" @keydown.esc.stop.prevent="close">
+    <div v-if="show" class="cd-modal-overlay" @click.self="close">
       <div class="cd-modal-box">
         <div class="cd-modal-header">
           <h5 class="cd-modal-title">{{ addNewItemTitleLabel(contentLanguage) }}</h5>
@@ -67,7 +67,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { AxiosError } from 'axios'
 import { itemsCreate } from '../api/contentClient'
 import type { CreateItemResponse } from '../types/contentSchemas'
@@ -152,7 +152,18 @@ watch(
   },
 )
 
-onBeforeUnmount(revokePreview)
+function onDocumentKeydown(event: KeyboardEvent): void {
+  if (!props.show || event.key !== 'Escape') return
+  event.preventDefault()
+  event.stopPropagation()
+  close()
+}
+
+onMounted(() => document.addEventListener('keydown', onDocumentKeydown))
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', onDocumentKeydown)
+  revokePreview()
+})
 
 function close(): void {
   if (creating.value) return
