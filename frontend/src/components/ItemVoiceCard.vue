@@ -18,21 +18,23 @@
     <dl class="iv-card-meta">
       <div v-if="generationText" class="iv-description-field iv-spoken-text">
         <dt>{{ copy.text }}:</dt>
-        <dd><strong>{{ generationText }}</strong></dd>
+        <dd>
+          <JsonDetailsPopup :title="copy.text" :data="{ text: generationText }" :open="informationPopup === 'text'" :top-inset="72"
+            :copy-label="copy.copyJson" :copied-label="copy.copied" :copy-error-label="copy.copyError" :empty-label="copy.noDetails"
+            @update:open="updateInformationPopup('text', $event)">{{ generationText }}</JsonDetailsPopup>
+        </dd>
       </div>
       <div class="iv-description-field iv-provider">
         <dt>{{ copy.provider }}:</dt>
         <dd>
-          <VoiceParametersTooltip v-if="source === 'generated'" class="iv-provider-settings" :parameters="voice.parameters" :provider="voice.provider"
-            :open="informationPopup === 'provider'" @mouseenter="informationPopup = 'provider'" @focusin="informationPopup = 'provider'"
-            @mouseleave="closeProviderPopup" @focusout="closeProviderPopup" @keydown.esc.prevent.stop="informationPopup = null">
-            <strong>{{ voice.provider || copy.unknown }}</strong>
+          <VoiceParametersTooltip :parameters="voice.parameters" :provider="voice.provider"
+            :open="informationPopup === 'provider'" @update:open="updateInformationPopup('provider', $event)">
+            {{ voice.provider || copy.unknown }}
           </VoiceParametersTooltip>
-          <strong v-else>{{ voice.provider || copy.unknown }}</strong>
         </dd>
       </div>
-      <VoiceGenerationDetails v-if="source !== 'uploaded'" class="iv-description-field" :parameters="voice.parameters" :metadata="metadata"
-        :open="informationPopup === 'generation'" @update:open="updateGenerationPopup" />
+      <VoiceGenerationDetails v-if="source !== 'uploaded'" class="iv-description-field" :parameters="voice.parameters"
+        :open="informationPopup === 'generation'" @update:open="updateInformationPopup('generation', $event)" />
     </dl>
 
     <dl v-if="source === 'uploaded'" class="iv-meta">
@@ -72,6 +74,7 @@ import { cacheBustedUri } from '../utils/cacheBustedUri'
 import VoiceAudioPreview from './VoiceAudioPreview.vue'
 import VoiceParametersTooltip from './VoiceParametersTooltip.vue'
 import VoiceGenerationDetails from './VoiceGenerationDetails.vue'
+import JsonDetailsPopup from './JsonDetailsPopup.vue'
 
 const props = defineProps<{ voice: ItemVoiceRecord; capabilities: VoiceCapabilities; selected: boolean; busy: boolean; optimizing: boolean; active: boolean; revision: number }>()
 const emit = defineEmits<{ play: []; replace: []; delete: []; drop: [files: FileList]; optimize: []; select: [version: AudioVersion] }>()
@@ -87,34 +90,17 @@ const src = computed(() => {
 })
 const selectedVersion = computed(() => props.selected && version.value === (props.voice.selected_version || 'original'))
 const canSelect = computed(() => props.capabilities.select && !!voiceSelectionId(props.voice, version.value))
-const informationPopup = ref<'provider' | 'generation' | null>(null)
-function closeProviderPopup(event: MouseEvent | FocusEvent): void {
-  if (informationPopup.value !== 'provider') return
-  const target = event.currentTarget as HTMLElement
-  if (event.relatedTarget instanceof Node && target.contains(event.relatedTarget)) return
-  if (event.type === 'mouseleave' && target.contains(document.activeElement)) return
-  informationPopup.value = null
-}
-function updateGenerationPopup(open: boolean): void {
-  if (open) informationPopup.value = 'generation'
-  else if (informationPopup.value === 'generation') informationPopup.value = null
+type InformationPopup = 'text' | 'provider' | 'generation'
+const informationPopup = ref<InformationPopup | null>(null)
+function updateInformationPopup(popup: InformationPopup, open: boolean): void {
+  if (open) informationPopup.value = popup
+  else if (informationPopup.value === popup) informationPopup.value = null
 }
 watch(() => props.voice.optimized_file_uri, (uri) => { if (!uri && version.value === 'optimized') version.value = 'original' })
 const created = computed(() => {
   const date = props.voice.parameters?.date
   if (typeof date !== 'string' || !Number.isFinite(Date.parse(date))) return ''
   return new Intl.DateTimeFormat(language.value, { dateStyle: 'medium' }).format(new Date(date))
-})
-const metadata = computed(() => {
-  const p = props.voice.parameters || {}
-  const settings = p.voice_settings && typeof p.voice_settings === 'object' ? p.voice_settings as Record<string, unknown> : {}
-  const rows: { label: string; value: string }[] = []
-  if (typeof p.model === 'string') rows.push({ label: copy.value.model, value: p.model })
-  if (typeof p.speed === 'number') rows.push({ label: copy.value.speed, value: `${p.speed}×` })
-  if (typeof settings.stability === 'number') rows.push({ label: copy.value.stability, value: `${Math.round(settings.stability * 100)}%` })
-  if (typeof settings.similarity_boost === 'number') rows.push({ label: copy.value.similarity, value: `${Math.round(settings.similarity_boost * 100)}%` })
-  if (created.value) rows.push({ label: copy.value.created, value: created.value })
-  return rows
 })
 const dragging = ref(false)
 function onDragOver(event: DragEvent): void {
@@ -141,11 +127,13 @@ function onDrop(event: DragEvent): void {
 .iv-card-title h3 { font-size: 1rem; font-weight: 700; margin: 0; overflow-wrap: anywhere; }
 .iv-badge { color: white; background: #2f8f68; border-radius: 20px; padding: .2rem .55rem; font-size: .68rem; white-space: nowrap; }
 .iv-card-meta { position: relative; min-width: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); grid-template-rows: auto auto; row-gap: .3rem; margin: 0; padding: 0; border: 1px solid #d7e3f3; border-radius: 6px; background: #fff; }
-.iv-description-field { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: subgrid; grid-row: span 2; align-items: start; row-gap: inherit; margin: 0; padding: .55rem .6rem; color: #596984; font-size: .75rem; line-height: 1.4; }
+.iv-description-field { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: subgrid; grid-row: span 2; align-items: start; row-gap: inherit; margin: 0; padding: .55rem .45rem; color: #596984; font-size: .75rem; line-height: 1.4; }
 .iv-description-field + .iv-description-field { border-left: 1px solid #e5edf8; }
 .iv-description-field > :deep(dt) { min-width: 0; font-weight: 400; overflow-wrap: anywhere; }
 .iv-description-field > :deep(dd) { min-width: 0; margin: 0; }
-.iv-description-field strong, .iv-description-field :deep(.vgd-trigger) { color: #111a3d; font-size: .82rem; font-weight: 700; overflow-wrap: anywhere; }
+.iv-description-field :deep(.jdp) { position: static; width: 100%; }
+.iv-description-field :deep(.jdp-trigger) { color: #111a3d; font-size: .82rem; font-weight: 700; }
+.iv-description-field :deep(.jdp-popup) { left: 0; transform: none; }
 .iv-card-actions { display: flex; gap: .35rem; flex: none; }
 .iv-card-action { display: inline-flex; align-items: center; justify-content: center; width: 1.75rem; height: 1.75rem; padding: 0; border: 0; border-radius: 50%; color: #fff; font-size: .9rem; cursor: pointer; }
 .iv-card-action-edit { background: #2563eb; }
@@ -161,8 +149,6 @@ function onDrop(event: DragEvent): void {
 .iv-meta > div { display: grid; grid-template-columns: minmax(4rem, .8fr) minmax(0, 1.4fr); gap: .5rem; align-items: baseline; }
 .iv-meta dt { font-weight: 400; color: #596984; }
 .iv-meta dd { margin: 0; overflow-wrap: anywhere; }
-.iv-provider-settings { position: static; }
-.iv-provider-settings :deep(.vpt-box) { bottom: calc(100% + 8px); left: 0; transform: none; min-width: 220px; max-width: min(320px, calc(100vw - 100px)); }
 .iv-card-footer { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: auto; padding-top: .35rem; }
 .iv-button { display: inline-flex; justify-content: center; align-items: center; gap: .35rem; border: 1px solid #818cf8; border-radius: 6px; background: white; color: #4f46e5; font-size: .77rem; font-weight: 600; min-height: 36px; padding: .45rem .65rem; flex: 1 1 auto; cursor: pointer; }
 .iv-select { background: #4f46e5; color: white; }
