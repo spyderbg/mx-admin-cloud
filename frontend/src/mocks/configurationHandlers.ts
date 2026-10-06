@@ -78,6 +78,11 @@ const mockPayloads: Record<string, Record<string, JsonObject>> = Object.fromEntr
     },
   }]))]),
 )
+export function getMockTtsConfiguration(configName: string) {
+  const payload = mockPayloads.text_to_speech?.[configName]
+  return payload ? { config_name: configName, filename: `${configName}.json`, payload } : undefined
+}
+
 const strategies: Record<string, ProviderSelectionStrategy> = { logging: 'ALL_PROVIDERS' }
 const supportedStrategies: Record<string, ProviderSelectionStrategy[]> = {
   content: ['FIRST_SUCCESS'], logging: ['ALL_PROVIDERS', 'FIRST_SUCCESS'],

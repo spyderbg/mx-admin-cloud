@@ -1,5 +1,7 @@
 import { delay, http, HttpResponse } from 'msw'
 import { mockCategories } from '../data/mockData'
+import { getMockTtsConfiguration } from './configurationHandlers'
+import { ttsConfigurationOption } from '../utils/ttsConfigurations'
 import type { GenerateItemVoice, ItemVoiceList, ItemVoiceListResponse, ItemVoiceRecord, VoicePreset } from '../types/itemVoices'
 import { SUPPORTED_LANGUAGES, type Language } from '../types/viewModels'
 
@@ -97,16 +99,17 @@ export const itemVoiceHandlers = [
     if (!list) return error('Item not found.', 404)
     const body = await request.json() as GenerateItemVoice
     if (!SUPPORTED_LANGUAGES.includes(body.language) || !body.text.trim()) return error('Language and text are required.')
-    const preset = presets(body.language).find((entry) => entry.id === body.preset_id)
-    if (!preset) return error('Base voice not found.', 404)
+    const file = getMockTtsConfiguration(body.configuration_name)
+    const configuration = file && ttsConfigurationOption(file, body.language)
+    if (!configuration) return error('Text-to-speech configuration not found for this language.', 404)
     const source = list.voices.find((voice) => voice.language === body.language && voice.file_uri) || list.voices.find((voice) => voice.file_uri)
     if (!source?.file_uri) return error('No sample audio is available for this preview.')
     await delay(450)
     const voice: ItemVoiceRecord = {
-      id: crypto.randomUUID(), language: body.language, type: 'tts', display_name: `${preset.name} · ${list.voices.filter((voice) => voice.language === body.language && voice.file_uri).length + 1}`,
-      provider: preset.provider, creation_method: 'generated', is_selected: false, selected_version: 'original', file_uri: source.file_uri,
+      id: crypto.randomUUID(), language: body.language, type: 'tts', display_name: `${configuration.actor} · ${list.voices.filter((voice) => voice.language === body.language && voice.file_uri).length + 1}`,
+      provider: configuration.provider, creation_method: 'generated', is_selected: false, selected_version: 'original', file_uri: source.file_uri,
       optimized_file_uri: body.optimize ? source.file_uri : null,
-      parameters: { actor: preset.name, model: preset.model, speed: body.speed, _text: body.text, voice_settings: { stability: body.stability, similarity_boost: body.similarity }, date: new Date().toISOString() },
+      parameters: { configuration_name: body.configuration_name, actor: configuration.actor, model: configuration.model, speed: body.speed, _text: body.text, voice_settings: { stability: body.stability, similarity_boost: body.similarity }, date: new Date().toISOString() },
     }
     if (voice.optimized_file_uri) voice.optimized_voice_id = `${voice.id}-optimized`
     list.voices.push(voice)

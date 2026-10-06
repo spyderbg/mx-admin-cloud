@@ -55,7 +55,7 @@ export interface VoicePreset {
 export interface GenerateItemVoice {
   language: Language
   text: string
-  preset_id: string
+  configuration_name: string
   speed: number
   stability?: number
   similarity?: number

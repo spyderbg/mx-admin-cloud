@@ -32,6 +32,18 @@ test('selection sends a bodyless PUT to the generated main endpoint', async () =
   assert.equal(requests, 1)
 })
 
+test('generation sends the selected configuration identity with per-item settings', async () => {
+  const body = { language: 'bg', text: 'диван', configuration_name: 'elevenlabs_slow', speed: .7, optimize: false }
+  const response = { id: 'new-take', language: 'bg', type: 'tts' }
+  client.defaults.adapter = async (config) => {
+    assert.equal(config.method, 'post')
+    assert.equal(config.url, '/content/categories/C_AtHome/items/I_Sofa/voices/generate')
+    assert.deepEqual(JSON.parse(config.data), body)
+    return { data: response, status: 201, statusText: 'Created', headers: {}, config }
+  }
+  assert.deepEqual(await api.generateItemVoice('C_AtHome', 'I_Sofa', body), response)
+})
+
 test('selection encodes IDs and propagates backend rejection', async () => {
   const failure = new Error('Voice not found')
   client.defaults.adapter = async (config) => {

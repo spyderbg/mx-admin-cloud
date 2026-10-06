@@ -64,22 +64,18 @@
     </template>
 
     <VoiceDialog v-if="dialog === 'generate'" :title="copy.generate" :busy="!!busyKey" @close="closeDialog" @submit="generate">
-      <label class="ivs-field">{{ copy.language }}<select v-model="formLanguage" :disabled="!!busyKey"><option v-for="optionLanguage in SUPPORTED_LANGUAGES" :key="optionLanguage" :value="optionLanguage">{{ langLabel(optionLanguage, language) }}</option></select></label>
-      <p v-if="!capabilities.generate" class="ivs-notice">{{ copy.generationUnavailable }}</p>
-      <div v-if="formError" class="ivs-notice ivs-error" role="alert">{{ formError }}<button v-if="presetsFailed" type="button" class="ivs-button" @click="loadPresets">{{ copy.retry }}</button></div>
       <label class="ivs-field">{{ copy.text }}<input v-model="generationText" required :disabled="!!busyKey || !capabilities.generate" /></label>
-      <label class="ivs-field">{{ copy.provider }}<select :value="chosenPreset?.provider || ''" :disabled="!!busyKey || !availablePresets.length" @change="chooseProvider">
-        <option v-if="!availablePresets.length" value="">{{ copy.currentConfig }}</option><option v-for="provider in providers" :key="provider" :value="provider">{{ provider }}</option>
+      <label class="ivs-field">{{ copy.language }}<select v-model="formLanguage" :disabled="!!busyKey"><option v-for="optionLanguage in SUPPORTED_LANGUAGES" :key="optionLanguage" :value="optionLanguage">{{ langLabel(optionLanguage, language) }}</option></select></label>
+      <label class="ivs-field">{{ copy.ttsConfiguration }}<select v-model="chosenConfigurationName" :disabled="!!busyKey || configurationsLoading || !availableConfigurations.length">
+        <option v-if="!availableConfigurations.length" value="">{{ configurationsLoading ? copy.loading : copy.noConfigurations }}</option>
+        <option v-for="configuration in availableConfigurations" :key="configuration.config_name" :value="configuration.config_name">{{ configuration.config_name }} · {{ configuration.provider }}</option>
       </select></label>
-      <label class="ivs-field">{{ copy.baseVoice }}<select v-model="chosenPresetId" :disabled="!!busyKey || !availablePresets.length">
-        <option v-if="!availablePresets.length" value="">{{ presetsLoading ? copy.loading : copy.noPresets }}</option>
-        <option v-for="preset in providerPresets" :key="preset.id" :value="preset.id">{{ preset.name }}</option>
-      </select></label>
-      <label class="ivs-field">{{ copy.model }}<input :value="chosenPreset?.model || '—'" readonly /></label>
-      <fieldset class="ivs-settings" :disabled="!!busyKey || !chosenPreset || !capabilities.generate"><legend>{{ copy.settings }}</legend>
+      <p v-if="!capabilities.generate" class="ivs-notice">{{ copy.generationUnavailable }}</p>
+      <div v-if="formError" class="ivs-notice ivs-error" role="alert">{{ formError }}<button v-if="configurationsFailed" type="button" class="ivs-button" @click="loadConfigurations">{{ copy.retry }}</button></div>
+      <fieldset class="ivs-settings" :disabled="!!busyKey || !chosenConfiguration || !capabilities.generate"><legend>{{ copy.settings }}</legend>
         <label class="ivs-range"><span>{{ copy.speed }}<output>{{ speed.toFixed(1) }}×</output></span><input v-model.number="speed" :aria-label="copy.speed" type="range" min="0.5" max="2" step="0.1" /></label>
-        <label v-if="chosenPreset?.stability !== undefined" class="ivs-range"><span>{{ copy.stability }}<output>{{ Math.round(stability * 100) }}%</output></span><input v-model.number="stability" :aria-label="copy.stability" type="range" min="0" max="1" step="0.01" /></label>
-        <label v-if="chosenPreset?.similarity !== undefined" class="ivs-range"><span>{{ copy.similarity }}<output>{{ Math.round(similarity * 100) }}%</output></span><input v-model.number="similarity" :aria-label="copy.similarity" type="range" min="0" max="1" step="0.01" /></label>
+        <label v-if="chosenConfiguration?.stability !== undefined" class="ivs-range"><span>{{ copy.stability }}<output>{{ Math.round(stability * 100) }}%</output></span><input v-model.number="stability" :aria-label="copy.stability" type="range" min="0" max="1" step="0.01" /></label>
+        <label v-if="chosenConfiguration?.similarity !== undefined" class="ivs-range"><span>{{ copy.similarity }}<output>{{ Math.round(similarity * 100) }}%</output></span><input v-model.number="similarity" :aria-label="copy.similarity" type="range" min="0" max="1" step="0.01" /></label>
         <label class="ivs-checkbox"><span>{{ copy.autoOptimize }}</span><input v-model="autoOptimize" type="checkbox" :disabled="!capabilities.optimize" role="switch" /></label>
       </fieldset>
       <p class="ivs-notice">{{ copy.keepSelection }}</p>
@@ -99,7 +95,7 @@
       <div v-if="uploadFile" class="ivs-file"><i class="mdi mdi-file-music" aria-hidden="true"></i><div><strong>{{ uploadFile.name }}</strong><small>{{ copy.ready }}</small></div><button type="button" :disabled="!!busyKey" :aria-label="copy.remove" @click="setFile(null)"><i class="mdi mdi-close" aria-hidden="true"></i></button></div>
       <div v-if="uploadUrl" class="ivs-upload-preview"><strong>{{ copy.preview }}</strong><VoiceAudioPreview :src="uploadUrl" :label="uploadFile?.name || copy.preview" :active="activePlayer === 'upload-preview'" @play="onPlay('upload-preview')" /></div>
       <p class="ivs-notice">{{ uploadMode === 'replace' ? copy.replaceHint : capabilities.multiple_voices ? copy.keepSelection : '' }}</p>
-      <template #footer><button type="button" class="ivs-button" :disabled="!!busyKey" @click="closeDialog">{{ copy.cancel }}</button><button type="submit" class="ivs-button ivs-primary ivs-submit" :disabled="!canUpload"><i class="mdi" :class="busyKey ? 'mdi-loading mdi-spin' : 'mdi-upload'" aria-hidden="true"></i>{{ busyKey ? copy.saving : uploadMode === 'replace' ? copy.replace : copy.add }}</button></template>
+      <template #footer><button v-if="uploadMode === 'replace'" type="button" class="ivs-button" :disabled="!!busyKey" @click="closeDialog">{{ copy.cancel }}</button><button type="submit" class="ivs-button ivs-primary ivs-submit" :disabled="!canUpload"><i class="mdi" :class="busyKey ? 'mdi-loading mdi-spin' : 'mdi-upload'" aria-hidden="true"></i>{{ busyKey ? copy.saving : uploadMode === 'replace' ? copy.replace : copy.add }}</button></template>
     </VoiceDialog>
 
     <VoiceDialog v-if="dialog === 'delete' && deleteTarget" :title="copy.deleteVoice" :busy="!!busyKey" @close="closeDialog" @submit="deleteVoice">
@@ -115,9 +111,13 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { Voice, Language } from '../types/viewModels'
 import { SUPPORTED_LANGUAGES } from '../types/viewModels'
-import type { AudioVersion, ItemVoiceList, ItemVoiceRecord, VoicePreset } from '../types/itemVoices'
+import type { AudioVersion, ItemVoiceList, ItemVoiceRecord } from '../types/itemVoices'
 import { legacyVoiceCapabilities } from '../types/itemVoices'
-import { deleteItemVoice, generateItemVoice, listItemVoices, listVoicePresets, optimizeItemVoice, selectItemVoice, uploadItemVoice } from '../api/itemVoicesClient'
+import { deleteItemVoice, generateItemVoice, listItemVoices, optimizeItemVoice, selectItemVoice, uploadItemVoice } from '../api/itemVoicesClient'
+import { getServiceConfig, listServiceConfigs } from '../api/configurationClient'
+import type { ConfigurationFileResponse } from '../types/configurationSchemas'
+import { orderConfigurationFiles } from '../utils/configurationNavigation'
+import { ttsConfigurationOption } from '../utils/ttsConfigurations'
 import { invalidateItemDetail } from '../api/cache'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import { itemVoiceCopy } from '../utils/itemVoiceCopy'
@@ -173,7 +173,7 @@ const groups = computed(() => SUPPORTED_LANGUAGES.map((language) => {
 const voiceCount = computed(() => groups.value.reduce((count, group) => count + group.voices.length, 0))
 const identity = computed(() => `${props.categoryId}/${props.itemId}`)
 let loadController: AbortController | null = null
-let presetController: AbortController | null = null
+let configurationRequest = 0
 let operation = 0
 
 async function load(): Promise<boolean> {
@@ -198,13 +198,13 @@ async function load(): Promise<boolean> {
 
 watch(identity, () => {
   operation++
-  presetController?.abort()
+  configurationRequest++
   busyKey.value = ''
   closeDialog()
   data.value = null
   activePlayer.value = null
   expanded.value = new Set()
-  chosenPresets.value = {}
+  chosenConfigurationNames.value = {}
   void load()
 })
 // Also refresh after the existing summary cards regenerate, rename or replace audio.
@@ -223,7 +223,7 @@ const formError = ref('')
 const deleteTarget = ref<ItemVoiceRecord | null>(null)
 function closeDialog(): void {
   if (busyKey.value) return
-  presetController?.abort()
+  configurationRequest++
   dialog.value = null
   formError.value = ''
   activePlayer.value = null
@@ -282,51 +282,53 @@ function deleteVoice(): void {
   void mutate(`delete:${voice.id}`, () => deleteItemVoice(props.categoryId, props.itemId, voice.id), copy.value.deletedSuccess)
 }
 
-const availablePresets = ref<VoicePreset[]>([])
-const chosenPresets = ref<Partial<Record<Language, VoicePreset>>>({})
-const chosenPresetId = ref('')
-const chosenPreset = computed(() => availablePresets.value.find((preset) => preset.id === chosenPresetId.value))
-const providers = computed(() => [...new Set(availablePresets.value.map((preset) => preset.provider))])
-const providerPresets = computed(() => availablePresets.value.filter((preset) => preset.provider === chosenPreset.value?.provider))
-const presetsLoading = ref(false)
-const presetsFailed = ref(false)
+const configurationFiles = ref<ConfigurationFileResponse[]>([])
+const availableConfigurations = computed(() => configurationFiles.value
+  .map((file) => ttsConfigurationOption(file, formLanguage.value))
+  .filter((configuration) => configuration !== null))
+const chosenConfigurationNames = ref<Partial<Record<Language, string>>>({})
+const chosenConfigurationName = ref('')
+const chosenConfiguration = computed(() => availableConfigurations.value.find((configuration) => configuration.config_name === chosenConfigurationName.value))
+const configurationsLoading = ref(false)
+const configurationsFailed = ref(false)
 const generationText = ref('')
 const speed = ref(1)
 const stability = ref(.5)
 const similarity = ref(.75)
 const autoOptimize = ref(false)
-const canGenerate = computed(() => !busy.value && capabilities.value.generate && !!chosenPreset.value && !!generationText.value.trim() && !presetsLoading.value)
-watch(chosenPreset, (preset) => {
-  if (!preset) return
-  speed.value = preset.speed
-  stability.value = preset.stability ?? .5
-  similarity.value = preset.similarity ?? .75
-  chosenPresets.value = { ...chosenPresets.value, [formLanguage.value]: preset }
+const canGenerate = computed(() => !busy.value && capabilities.value.generate && !!chosenConfiguration.value && !!generationText.value.trim() && !configurationsLoading.value)
+watch(chosenConfiguration, (configuration) => {
+  if (!configuration) return
+  speed.value = configuration.speed
+  stability.value = configuration.stability ?? .5
+  similarity.value = configuration.similarity ?? .75
+  chosenConfigurationNames.value = { ...chosenConfigurationNames.value, [formLanguage.value]: configuration.config_name }
 })
-function chooseProvider(event: Event): void {
-  chosenPresetId.value = availablePresets.value.find((preset) => preset.provider === (event.target as HTMLSelectElement).value)?.id || ''
+function chooseConfiguration(): void {
+  const previous = chosenConfigurationNames.value[formLanguage.value] || chosenConfigurationName.value
+  chosenConfigurationName.value = availableConfigurations.value.find((configuration) => configuration.config_name === previous)?.config_name
+    || availableConfigurations.value.find((configuration) => configuration.enabled)?.config_name
+    || availableConfigurations.value[0]?.config_name || ''
 }
-async function loadPresets(): Promise<void> {
-  presetController?.abort()
-  const controller = new AbortController()
-  presetController = controller
-  availablePresets.value = []
-  chosenPresetId.value = ''
-  presetsFailed.value = false
+async function loadConfigurations(): Promise<void> {
+  const request = ++configurationRequest
+  configurationFiles.value = []
+  chosenConfigurationName.value = ''
+  configurationsFailed.value = false
   formError.value = ''
-  presetsLoading.value = false
-  if (!capabilities.value.presets) return
-  presetsLoading.value = true
+  configurationsLoading.value = true
   try {
-    const result = await listVoicePresets(props.categoryId, props.itemId, formLanguage.value, controller.signal)
-    if (controller.signal.aborted) return
-    availablePresets.value = result.filter((preset) => preset.language === formLanguage.value)
-    const previous = chosenPresets.value[formLanguage.value]?.id
-    chosenPresetId.value = availablePresets.value.find((preset) => preset.id === previous)?.id || availablePresets.value[0]?.id || ''
+    const summaries = orderConfigurationFiles(await listServiceConfigs('text_to_speech'))
+    if (request !== configurationRequest) return
+    const files = await Promise.all(summaries.filter((summary) => summary.valid_json)
+      .map((summary) => getServiceConfig('text_to_speech', summary.config_name)))
+    if (request !== configurationRequest) return
+    configurationFiles.value = files
+    chooseConfiguration()
   } catch {
-    if (!controller.signal.aborted) { presetsFailed.value = true; formError.value = copy.value.presetsError }
+    if (request === configurationRequest) { configurationsFailed.value = true; formError.value = copy.value.configurationsError }
   } finally {
-    if (presetController === controller) presetsLoading.value = false
+    if (request === configurationRequest) configurationsLoading.value = false
   }
 }
 function openGenerate(language: Language): void {
@@ -336,13 +338,13 @@ function openGenerate(language: Language): void {
   generationText.value = data.value?.name[language] || ''
   autoOptimize.value = false
   dialog.value = 'generate'
-  void loadPresets()
+  void loadConfigurations()
 }
 function generate(): void {
-  if (!canGenerate.value || !chosenPreset.value) return
-  const body = { language: formLanguage.value, text: generationText.value.trim(), preset_id: chosenPreset.value.id, speed: speed.value,
-    stability: chosenPreset.value.stability === undefined ? undefined : stability.value,
-    similarity: chosenPreset.value.similarity === undefined ? undefined : similarity.value,
+  if (!canGenerate.value || !chosenConfiguration.value) return
+  const body = { language: formLanguage.value, text: generationText.value.trim(), configuration_name: chosenConfiguration.value.config_name, speed: speed.value,
+    stability: chosenConfiguration.value.stability === undefined ? undefined : stability.value,
+    similarity: chosenConfiguration.value.similarity === undefined ? undefined : similarity.value,
     optimize: autoOptimize.value && capabilities.value.optimize }
   expanded.value = new Set([...expanded.value, formLanguage.value])
   void mutate('generate', () => generateItemVoice(props.categoryId, props.itemId, body), copy.value.generatedSuccess)
@@ -364,7 +366,7 @@ watch(formLanguage, () => {
   if (!uploadVoices.value.length) uploadMode.value = 'add'
   if (dialog.value === 'generate') {
     generationText.value = data.value?.name[formLanguage.value] || ''
-    void loadPresets()
+    chooseConfiguration()
   }
 }, { flush: 'sync' })
 function setFile(file: File | null): void {
@@ -456,7 +458,7 @@ void load()
 onBeforeUnmount(() => {
   operation++
   loadController?.abort()
-  presetController?.abort()
+  configurationRequest++
   if (uploadUrl.value) URL.revokeObjectURL(uploadUrl.value)
 })
 </script>

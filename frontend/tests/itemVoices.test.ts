@@ -4,6 +4,36 @@ import { selectedVoice, voiceAudioUri, validateAudioFile, voiceSource, audioFile
 import { legacyVoiceCapabilities, type ItemVoiceRecord } from '../src/types/itemVoices.ts'
 import { cacheBustedUri } from '../src/utils/cacheBustedUri.ts'
 import { langLabel } from '../src/utils/voiceLabels.ts'
+import { ttsConfigurationOption } from '../src/utils/ttsConfigurations.ts'
+import type { ConfigurationFileResponse } from '../src/types/configurationSchemas'
+
+test('TTS configuration selection uses language defaults and retains the configuration identity', () => {
+  const file: ConfigurationFileResponse = {
+    config_name: 'elevenlabs_slow', filename: 'elevenlabs_slow.json',
+    payload: { service_provider: { provider: 'elevenlabs', enabled: false, config: { generate: {
+      model: 'shared-model', speed: 1, languages: {
+        en: { actor: 'Milena' },
+        bg: { actor: 'Milena', model: 'bg-model', speed: .7, voice_settings: { stability: .6, similarity_boost: .7 } },
+      },
+    } } } },
+  }
+  assert.deepEqual(ttsConfigurationOption(file, 'bg'), {
+    config_name: 'elevenlabs_slow', provider: 'elevenlabs', actor: 'Milena', model: 'bg-model',
+    enabled: false, speed: .7, stability: .6, similarity: .7,
+  })
+  assert.equal(ttsConfigurationOption(file, 'en')?.model, 'shared-model')
+  assert.equal(ttsConfigurationOption(file, 'fr'), null)
+  assert.equal(file.payload.service_provider.enabled, false)
+})
+
+test('TTS options reject malformed configurations and handle provider speed defaults', () => {
+  const file: ConfigurationFileResponse = { config_name: 'speaktor', filename: 'speaktor.json', payload: {
+    service_provider: { provider: 'speaktor', enabled: true, config: { generate: { languages: { en: { voice_name: 'Sveta', speed_rate: .8 } } } } },
+  } }
+  assert.equal(ttsConfigurationOption(file, 'en')?.speed, .8)
+  assert.equal(ttsConfigurationOption(file, 'en')?.actor, 'Sveta')
+  assert.equal(ttsConfigurationOption({ ...file, payload: {} }, 'en'), null)
+})
 
 const voice = (overrides: Partial<ItemVoiceRecord> = {}): ItemVoiceRecord => ({
   id: 'en-1', language: 'en', type: 'tts', file_uri: '/content/en.mp3', ...overrides,

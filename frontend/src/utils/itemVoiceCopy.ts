@@ -1,6 +1,7 @@
 import type { Language } from '../types/viewModels'
 
 const en = {
+  ttsConfiguration: 'Text-to-speech configuration', noConfigurations: 'No configurations are available for this language.', configurationsError: 'Could not load text-to-speech configurations.',
   title: 'Voices', description: 'Choose one recording per language for this item.', languages: 'languages',
   voices: 'voices', voice: 'voice', collapse: 'Collapse all', expand: 'Expand all', inUse: 'In use',
   noSelection: 'No recording selected', generate: 'Generate Voice', add: 'Add Voice', baseVoice: 'Base voice',
@@ -38,7 +39,9 @@ const en = {
 }
 
 const es: typeof en = {
-  ...en, title: 'Voces', description: 'Elige una grabación por idioma para este elemento.', languages: 'idiomas', voices: 'voces', voice: 'voz',
+  ...en,
+  ttsConfiguration: 'Configuración de texto a voz', noConfigurations: 'No hay configuraciones para este idioma.', configurationsError: 'No se pudieron cargar las configuraciones de texto a voz.',
+  title: 'Voces', description: 'Elige una grabación por idioma para este elemento.', languages: 'idiomas', voices: 'voces', voice: 'voz',
   generation: 'Generación', viewDetails: 'detalles',
   copyJson: 'Copiar JSON', copied: 'Copiado', copyError: 'No se pudo copiar la información. Inténtalo de nuevo.',
   collapse: 'Contraer todo', expand: 'Expandir todo', inUse: 'En uso', noSelection: 'Sin grabación seleccionada', generate: 'Generar voz', add: 'Añadir voz',
@@ -63,7 +66,9 @@ const es: typeof en = {
 }
 
 const fr: typeof en = {
-  ...en, title: 'Voix', description: 'Choisissez un enregistrement par langue pour cet élément.', languages: 'langues', voices: 'voix', voice: 'voix',
+  ...en,
+  ttsConfiguration: 'Configuration de synthèse vocale', noConfigurations: 'Aucune configuration pour cette langue.', configurationsError: 'Impossible de charger les configurations de synthèse vocale.',
+  title: 'Voix', description: 'Choisissez un enregistrement par langue pour cet élément.', languages: 'langues', voices: 'voix', voice: 'voix',
   generation: 'Génération', viewDetails: 'détails',
   copyJson: 'Copier le JSON', copied: 'Copié', copyError: 'Impossible de copier les informations. Réessayez.',
   collapse: 'Tout réduire', expand: 'Tout développer', inUse: 'Utilisée', noSelection: 'Aucun enregistrement choisi', generate: 'Générer une voix', add: 'Ajouter une voix',
@@ -84,7 +89,9 @@ const fr: typeof en = {
 }
 
 const bg: typeof en = {
-  ...en, title: 'Гласове', description: 'Изберете един запис за всеки език на този елемент.', languages: 'езика', voices: 'гласа', voice: 'глас',
+  ...en,
+  ttsConfiguration: 'Конфигурация за синтез на реч', noConfigurations: 'Няма конфигурации за този език.', configurationsError: 'Конфигурациите за синтез на реч не могат да се заредят.',
+  title: 'Гласове', description: 'Изберете един запис за всеки език на този елемент.', languages: 'езика', voices: 'гласа', voice: 'глас',
   generation: 'Генериране', viewDetails: 'данни',
   copyJson: 'Копирай JSON', copied: 'Копирано', copyError: 'Информацията не може да бъде копирана. Опитайте отново.',
   collapse: 'Свий всички', expand: 'Разгъни всички', inUse: 'Използва се', noSelection: 'Няма избран запис', generate: 'Генерирай глас', add: 'Добави глас',
