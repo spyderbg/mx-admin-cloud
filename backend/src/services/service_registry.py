@@ -183,13 +183,15 @@ class ServiceRegistry:
                 .append("Service: ") \
                 .append(escape(service.name), style="bold green")
             console.print(title)
-            active_provider_names = self._active_provider_names(service)
-            console.print(
-                Text.assemble(
-                    "    Active providers: ",
-                    (escape(str(active_provider_names)), "yellow"),
-                )
-            )
+            active_configurations = [c.name for c in service.providers_snapshot() if c.name and c.is_active()]
+            used_providers = {c.provider for c in service.providers_snapshot() if c.provider and c.is_active()}
+            criteria = self.get_accept_criteria().get(service.name)
+            available = criteria.available_providers() if criteria and criteria.available_providers else []
+            for label, names in (
+                    ("Active configurations", active_configurations),
+                    ("Inactive providers", sorted(set(available) - used_providers)),
+            ):
+                console.print(Text.assemble(f"    {label}: ", (escape(str(names)), "yellow")))
 
             try:
                 service_dict = {
@@ -214,17 +216,6 @@ class ServiceRegistry:
 
         console.print("=" * 80, style="dim")
         console.print()
-
-    @staticmethod
-    def _active_provider_names(service: Service) -> list[str]:
-        """Return active provider names for dump output."""
-        active_names: list[str] = []
-        for provider in service.providers_snapshot():
-            if provider.is_active():
-                provider_name = provider.name
-                if provider_name:
-                    active_names.append(provider_name)
-        return active_names
 
     @staticmethod
     def _format_registry_attr(key: str, value: Any, base_dir: Path | None) -> str:

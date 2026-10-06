@@ -174,7 +174,7 @@ onBeforeUnmount(() => {
 .jdp-content { margin: 0; max-height: min(var(--jdp-content-height, 360px), 55vh); overflow: auto; }
 .jdp-row { display: flex; align-items: baseline; justify-content: space-between; gap: .75rem; font-size: .72rem; line-height: 1.5; }
 .jdp-row + .jdp-row { margin-top: .15rem; }
-.jdp-row dt { max-width: 45%; font-weight: 700; color: #0f766e; overflow-wrap: anywhere; }
+.jdp-row dt { flex: none; font-weight: 700; color: #0f766e; white-space: nowrap; }
 .jdp-row dd { flex: 1; min-width: 0; margin: 0; color: #374151; text-align: right; overflow-wrap: anywhere; }
 .jdp-empty { display: block; font-size: .72rem; color: #6b7280; }
 .jdp-error { display: block; margin-top: .65rem; font-size: .77rem; color: #b91c1c; }

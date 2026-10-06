@@ -462,7 +462,7 @@ src/
     │   │   ├── __init__.py
     │   │   ├── test_text_to_speech_service.py
     │   │   └── test_text_to_speech_service_integration.py
-    │   └── providers/            # openai_tts, elevenlabs_tts, speaktor_tts
+    │   └── providers/            # openai_tts, elevenlabs_tts, speaktor_tts, pyttsx3_tts
     ├── text_translation/         # Co-located service (routes + schemas live next to service.py)
     │   ├── __init__.py            # SERVICE_CLASS, SERVICE_NAME, SERVICE_ACCEPT_CRITERIA
     │   ├── models.py
@@ -558,6 +558,7 @@ config/
 │   ├── openai.json
 │   ├── elevenlabs.json
 │   ├── speaktor.json
+│   ├── pyttsx3.json
 │   └── static.json
 └── text_translation/
     ├── openai_en_es.json

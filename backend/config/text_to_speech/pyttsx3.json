@@ -1,0 +1,32 @@
+{
+  "service_provider": {
+    "service": "text_to_speech",
+    "provider": "pyttsx3",
+    "enabled": false,
+    "priority": 5,
+    "config": {
+      "generate": {
+        "rate": 150,
+        "volume": 1.0,
+        "languages": {
+          "en": {
+            "actor": "english",
+            "use_space": "no"
+          },
+          "fr": {
+            "actor": "french",
+            "use_space": "no"
+          },
+          "es": {
+            "actor": "spanish",
+            "use_space": "no"
+          },
+          "bg": {
+            "actor": "bulgarian",
+            "use_space": "no"
+          }
+        }
+      }
+    }
+  }
+}

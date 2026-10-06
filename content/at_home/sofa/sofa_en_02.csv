@@ -1,0 +1,2 @@
+creation_method,provider,parameters
+generated,elevenlabs,"{""_text"": ""sofa"", ""actor"": ""Milena"", ""configuration_name"": ""elevenlabs"", ""date"": ""2026-10-06T14:13:22.820123+00:00"", ""language"": ""en"", ""model"": ""eleven_multilingual_v2"", ""output_format"": ""mp3"", ""speaker_boost"": true, ""speed"": 1.0, ""use_space"": ""no"", ""voice_id"": ""M1ydWt7KnBCiuv4CnEDC"", ""voice_settings"": {""similarity_boost"": 0.75, ""stability"": 0.43}}"

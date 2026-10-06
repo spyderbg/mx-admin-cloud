@@ -31,8 +31,7 @@ export function voiceSelectionId(voice: ItemVoiceRecord, version: AudioVersion):
 }
 
 export function voiceTitle(voice: ItemVoiceRecord): string {
-  const actor = voice.parameters?.actor ?? voice.parameters?.voice
-  return voice.display_name || (typeof actor === 'string' ? actor : '') || voice.id
+  return audioFileName(voice.file_uri).replace(/\.[^.]+$/, '') || voice.id
 }
 
 export function voiceGenerationText(voice: ItemVoiceRecord): string {
