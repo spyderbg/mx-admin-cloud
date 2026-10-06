@@ -94,15 +94,31 @@ class FileSystemInternalApiMixin(ContentProvider):  # pylint: disable=abstract-m
         return str(detail) if detail else response.text
 
     @classmethod
-    def _generate_audio(cls, word: str, lang: str) -> bytes:
-        """Generate TTS audio via the internal /internal/generators/generate-word endpoint."""
+    def _generate_audio(
+            cls,
+            word: str,
+            lang: str,
+            configuration_name: str | None = None,
+            voice_settings: dict[str, float] | None = None,
+    ) -> bytes:
+        """Generate TTS audio via the internal /internal/generators/generate-word endpoint.
+
+        With *configuration_name* that configuration generates, enabled or not; otherwise
+        the active ones do. *voice_settings* (speed, stability, similarity) override the
+        configuration's own for this request.
+        """
         if not word or not word.strip():
             raise ValueError("Word must be non-empty for TTS.")
 
+        body: dict[str, object] = {"word": word.strip(), "lang": lang}
+        if configuration_name:
+            body["configuration_name"] = configuration_name
+        if voice_settings:
+            body["settings"] = voice_settings
         token = create_internal_token("tts-service", timedelta(seconds=30))
         response = httpx.post(
             f"{settings.API_BASE_URL}/internal/generators/generate-word",
-            json={"word": word.strip(), "lang": lang},
+            json=body,
             headers={"Authorization": f"Bearer {token}"},
             timeout=60.0,
         )

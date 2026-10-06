@@ -18,6 +18,8 @@ export interface GenerateRequest {
 export interface GenerateWordRequest {
     word: string
     lang: string
+    configuration_name?: string | null
+    settings?: VoiceSettingsOverride | null
 }
 
 /** Metadata for one configured TTS provider (GET /internal/generators). */
@@ -45,4 +47,11 @@ export interface TtsGenerateResult {
     error?: string | null
     normalized_path?: string | null
     normalization_error?: string | null
+}
+
+/** Voice settings for one generation, layered over the configuration's own. */
+export interface VoiceSettingsOverride {
+    speed?: number | null
+    stability?: number | null
+    similarity?: number | null
 }

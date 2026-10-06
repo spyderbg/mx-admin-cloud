@@ -113,7 +113,11 @@ export const itemVoiceHandlers = [
     }
     if (voice.optimized_file_uri) voice.optimized_voice_id = `${voice.id}-optimized`
     list.voices.push(voice)
-    return HttpResponse.json(voice, { status: 201 })
+    // Same shape as the backend: the refreshed listing plus what was produced.
+    return HttpResponse.json({
+      ...listResponse(list), voice_id: voice.id,
+      optimized_voice_ids: voice.optimized_voice_id ? [voice.optimized_voice_id] : [], warnings: [],
+    }, { status: 201 })
   }),
   http.post(base, async ({ params, request }) => {
     const list = findList(params)

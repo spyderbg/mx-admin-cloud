@@ -24,6 +24,7 @@ from src.services.content.models import (
     ContentError,
     ContentOperationError,
     CreateItem,
+    GenerateItemVoice,
 )
 from src.services.content.schemas import (
     ArchivedEntry,
@@ -308,6 +309,10 @@ class _StubProvider(ContentProvider):
             "file_uri": f"/content/{category_id}/{item_id}/{voice_id}.mp3",
         })
 
+    def generate_item_voice(self, category_id: str, item_id: str, request: Any) -> dict[str, Any]:
+        self._record("generate_item_voice", category_id, item_id, request)
+        return self._returns.get("generate_item_voice", {"item_id": item_id, "voice_id": f"{item_id}_en_01"})
+
     def add_category_voice(self, category_id: str, language: str, audio_data: bytes) -> dict[str, Any]:
         self._record("add_category_voice", category_id, language, audio_data)
         return self._returns.get("add_category_voice", {
@@ -457,6 +462,9 @@ class _ConcreteProvider(ContentProvider):
         return {}
 
     def regenerate_item_voice(self, category_id, item_id, voice_id):
+        return {}
+
+    def generate_item_voice(self, category_id, item_id, request):
         return {}
 
     def add_category_voice(self, category_id, language, audio_data):
@@ -783,6 +791,15 @@ def test_optimize_item_voice_delegates(tmp_path: Path) -> None:
     result = svc.optimize_item_voice("C_Foods", "I_Apple", "apple-v-en")
     assert result["source_voice_id"] == "apple-v-en"
     assert stub.calls["optimize_item_voice"] == [("C_Foods", "I_Apple", "apple-v-en")]
+
+
+def test_generate_item_voice_delegates(tmp_path: Path) -> None:
+    stub = _StubProvider(tmp_path)
+    svc = _make_service(tmp_path, [stub])
+    request = GenerateItemVoice(language="en", text="apple", configuration_name="elevenlabs", speed=0.9)
+    result = svc.generate_item_voice("C_Foods", "I_Apple", request)
+    assert result["voice_id"] == "I_Apple_en_01"
+    assert stub.calls["generate_item_voice"] == [("C_Foods", "I_Apple", request)]
 
 
 def test_update_category_details_delegates(tmp_path: Path) -> None:

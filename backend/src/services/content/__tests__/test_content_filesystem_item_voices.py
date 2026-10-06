@@ -13,11 +13,13 @@ import pytest
 from src.services.content.models import (
     CategoryNotFoundError,
     ContentOperationError,
+    GenerateItemVoice,
 )
 from src.services.content.providers.file_system import (
     FileSystemContentProvider,
     VoiceCreationMethod,
 )
+from src.services.content.providers.file_system.internal_api import _GeneratedAudioBytes
 from src.services.provider_strategy import ProviderSelectionStrategy
 from src.services.content.__tests__.content_fs_helpers import (
     patch_fs_settings,
@@ -604,3 +606,175 @@ def test_optimize_audio_file_raises_the_endpoint_detail(tmp_path: Path) -> None:
         "raw_path": str(tmp_path / "a.mp3"),
         "output_path": str(tmp_path / "b.mp3"),
     }
+
+
+# ---------------------------------------------------------------------------
+# generate_item_voice: a new take with a chosen configuration and settings
+# ---------------------------------------------------------------------------
+
+def _generate(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+        content_root: Path,
+        request: GenerateItemVoice,
+        audio: bytes | Exception = b"generated",
+        optimizers: list[str] | None = None,
+        failing: frozenset[str] = frozenset(),
+        languages: tuple[str, ...] = ("en",),
+):
+    """Run generate_item_voice for I_Apple with TTS and optimizers stubbed; return (result, TTS mock)."""
+    provider = make_fs_provider()
+    stub = {"side_effect": audio} if isinstance(audio, Exception) else {"return_value": audio}
+    optimize, _ = _fake_optimizer(failing)
+    with (
+        patch_fs_settings() as mock_settings,
+        patch.object(FileSystemContentProvider, "_generate_audio", **stub) as generate_audio,
+        patch.object(FileSystemContentProvider, "_active_voice_optimizers", return_value=optimizers or []),
+        patch.object(FileSystemContentProvider, "_optimize_audio_file", side_effect=optimize),
+        patch.object(
+            FileSystemContentProvider, "_voice_optimization_strategy",
+            return_value=ProviderSelectionStrategy.ALL_PROVIDERS,
+        ),
+    ):
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = list(languages)
+        return provider.generate_item_voice("C_Foods", "I_Apple", request), generate_audio
+
+
+def _request(**overrides) -> GenerateItemVoice:
+    return GenerateItemVoice(**{"language": "en", "text": "apple", "configuration_name": "elevenlabs", **overrides})
+
+
+def test_generate_item_voice_adds_a_variant_and_keeps_the_main_voice(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"original"})
+
+    result, _ = _generate(content_root, _request())
+
+    assert result.voice_id == "apple_en_02"
+    # The original main voice is first saved as a variant so it stays selectable, and stays in use.
+    assert _mp3s(item_path) == {"apple_en": b"original", "apple_en_01": b"original", "apple_en_02": b"generated"}
+    assert result.main_voice_ids == {"en": "apple_en_01"}
+    assert [v.id for v in result.variants] == ["apple_en_01", "apple_en_02"]
+    assert result.optimized_voice_ids == []
+    assert result.warnings == []
+
+
+def test_generate_item_voice_sends_the_text_configuration_and_settings(tmp_path: Path) -> None:
+    content_root, _ = _prepare_item_with_voices(tmp_path, {"apple_en": b"original"})
+
+    _, generate_audio = _generate(content_root, _request(
+        text="  red apple ", configuration_name="elevenlabs_slow", speed=0.8, stability=0.3,
+    ))
+
+    # Only the settings that were given override the configuration's own.
+    generate_audio.assert_called_once_with("red apple", "en", "elevenlabs_slow", {"speed": 0.8, "stability": 0.3})
+
+
+def test_generate_item_voice_records_the_configuration_and_text(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"original"})
+    audio = _GeneratedAudioBytes(b"generated", "elevenlabs", {"actor": "Milena", "speed": 0.8})
+
+    result, _ = _generate(content_root, _request(text="red apple", speed=0.8), audio=audio)
+
+    assert voice_metadata_normalized(item_path / "apple_en_02.csv") == {
+        "creation_method": "generated",
+        "provider": "elevenlabs",
+        "parameters": {"actor": "Milena", "speed": 0.8, "_text": "red apple", "configuration_name": "elevenlabs"},
+    }
+    assert result.variants[1].provider == "elevenlabs"
+
+
+def test_generate_item_voice_again_keeps_adding_takes(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"original"})
+
+    _generate(content_root, _request(), audio=b"take-two")
+    result, _ = _generate(content_root, _request(), audio=b"take-three")
+
+    assert result.voice_id == "apple_en_03"
+    assert _mp3s(item_path) == {
+        "apple_en": b"original", "apple_en_01": b"original", "apple_en_02": b"take-two", "apple_en_03": b"take-three",
+    }
+    assert result.main_voice_ids == {"en": "apple_en_01"}
+
+
+def test_generate_item_voice_for_a_language_without_recordings_becomes_its_voice(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"original"})
+
+    result, _ = _generate(content_root, _request(language="fr"), languages=("en", "fr"))
+
+    # Like a regenerated first take: with nothing to keep in use, it is the language's voice.
+    assert result.voice_id == "apple-v-fr"
+    assert _mp3s(item_path) == {"apple_en": b"original", "apple_fr": b"generated"}
+
+
+def test_generate_item_voice_with_optimize_adds_optimized_versions_of_the_new_take(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"original"})
+
+    result, _ = _generate(content_root, _request(optimize=True), optimizers=["ffmpeg_low", "pydub_optimized"])
+
+    assert result.voice_id == "apple_en_02"
+    assert result.optimized_voice_ids == ["apple_en_03", "apple_en_04"]
+    assert _mp3s(item_path) == {
+        "apple_en": b"original",
+        "apple_en_01": b"original",
+        "apple_en_02": b"generated",
+        "apple_en_03": b"ffmpeg_low:generated",
+        "apple_en_04": b"pydub_optimized:generated",
+    }
+    # Neither generating nor optimizing selects anything.
+    assert result.main_voice_ids == {"en": "apple_en_01"}
+    assert [v.id for v in result.variants] == ["apple_en_01", "apple_en_02", "apple_en_03", "apple_en_04"]
+    assert result.warnings == []
+
+
+def test_generate_item_voice_reports_a_failing_optimizer_and_keeps_the_others(tmp_path: Path) -> None:
+    content_root, _ = _prepare_item_with_voices(tmp_path, {"apple_en": b"original"})
+
+    result, _ = _generate(
+        content_root, _request(optimize=True),
+        optimizers=["ffmpeg_low", "pydub_optimized"], failing=frozenset({"ffmpeg_low"}),
+    )
+
+    assert result.optimized_voice_ids == ["apple_en_03"]
+    assert result.warnings == ["Voice optimization failed for ffmpeg_low: ffmpeg_low exploded"]
+
+
+def test_generate_item_voice_keeps_the_take_when_optimization_cannot_run(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"original"})
+
+    result, _ = _generate(content_root, _request(optimize=True), optimizers=[])
+
+    assert result.voice_id == "apple_en_02"
+    assert result.optimized_voice_ids == []
+    assert result.warnings == ["No active voice optimizers configured."]
+    assert _mp3s(item_path)["apple_en_02"] == b"generated"
+
+
+def test_generate_item_voice_without_optimize_never_runs_optimizers(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"original"})
+
+    result, _ = _generate(content_root, _request(optimize=False), optimizers=["ffmpeg_low"])
+
+    assert result.optimized_voice_ids == []
+    assert set(_mp3s(item_path)) == {"apple_en", "apple_en_01", "apple_en_02"}
+
+
+def test_generate_item_voice_failure_changes_nothing(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"original"})
+
+    with pytest.raises(ContentOperationError, match="Voice generation failed for en: not found"):
+        _generate(content_root, _request(), audio=RuntimeError("not found"))
+
+    assert _mp3s(item_path) == {"apple_en": b"original"}
+
+
+@pytest.mark.parametrize("overrides,message", [
+    ({"language": "de"}, "Unsupported language"),
+    ({"text": "   "}, "Text to synthesize is required"),
+    ({"configuration_name": " "}, "configuration is required"),
+])
+def test_generate_item_voice_rejects_invalid_requests(tmp_path: Path, overrides: dict, message: str) -> None:
+    content_root, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"original"})
+
+    with pytest.raises(ContentOperationError, match=message):
+        _generate(content_root, _request(**overrides))
+
+    assert _mp3s(item_path) == {"apple_en": b"original"}

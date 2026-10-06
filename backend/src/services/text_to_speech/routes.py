@@ -144,8 +144,12 @@ async def generate_single(
     description=(
             "Generate raw MP3 audio for a single word using the highest-priority active "
             "text to speech service and return the raw audio bytes. "
-            "Responds with HTTP 400 when the word is empty, HTTP 500 when generation "
-            "fails, and HTTP 503 when no active text to speech providers are configured."
+            "With 'configuration_name' that configuration generates instead, even when it is "
+            "disabled. 'settings' (speed, stability, similarity) override the configuration's "
+            "own voice settings for this request only. "
+            "Responds with HTTP 400 when the word is empty, HTTP 404 when the named "
+            "configuration does not exist, HTTP 500 when generation fails, and HTTP 503 when "
+            "no configuration is named and no active text to speech providers are configured."
     ),
     responses={
         200: {
@@ -153,6 +157,7 @@ async def generate_single(
             "description": "Raw MP3 audio bytes",
         },
         400: {"description": "Word is empty"},
+        404: {"description": "Named configuration not found"},
         500: {"description": "TTS generation failed"},
         503: {"description": "No active TTS providers configured"},
     },
@@ -170,11 +175,12 @@ async def generate_word(
         raise HTTPException(status_code=400, detail="Word must be non-empty.")
 
     service = get_typed_service(registry, text_to_speech.SERVICE_NAME, TextToSpeechService)
-    require_active_providers(
-        service,
-        service_name=text_to_speech.SERVICE_NAME,
-        detail="No active text to speech services configured.",
-    )
+    if body.configuration_name is None:
+        require_active_providers(
+            service,
+            service_name=text_to_speech.SERVICE_NAME,
+            detail="No active text to speech services configured.",
+        )
 
     lang_code = normalize_language_code(body.lang)
     lang_full = language_name(lang_code)
@@ -190,13 +196,19 @@ async def generate_word(
         source_type="inline",
         output_format="mp3",
         row_index=0,
+        overrides=body.settings.model_dump(exclude_none=True) if body.settings else {},
     )
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         try:
-            result = await service.generate(tts_request, client)
+            if body.configuration_name is None:
+                result = await service.generate(tts_request, client)
+            else:
+                result = await service.generate_with_configuration(tts_request, client, body.configuration_name)
         except NoActiveTTSProvidersError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except TTSProviderNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         except Exception as exc:  # pylint: disable=broad-exception-caught
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -204,7 +216,7 @@ async def generate_word(
         raise HTTPException(status_code=500, detail=result.error or "Text to speech generation failed.")
 
     audio_bytes = Path(result.raw_path).read_bytes()
-    generation_parameters = service.generation_parameters(result.provider, lang_code)
+    generation_parameters = service.generation_parameters(result.provider, tts_request)
     generation_parameters["output_format"] = tts_request.output_format
     encoded_parameters = base64.urlsafe_b64encode(
         json.dumps(generation_parameters, ensure_ascii=True, sort_keys=True).encode("utf-8"),

@@ -24,6 +24,8 @@ from src.services.content.models import (
     CreateCategory,
     CreateItem,
     DeleteArchivedCategory,
+    GenerateItemVoice,
+    GeneratedItemVoice,
     ItemDetail,
     ItemImages,
     ItemVoices,
@@ -34,6 +36,7 @@ from src.services.content.models import (
 )
 from src.services.content.routes import (
     get_content_service,
+    get_voice_configurations_available,
     get_voice_generation_available,
     get_voice_optimization_available,
 )
@@ -289,6 +292,9 @@ class StubContentProvider(ContentProvider):
             file_uri=f"/content/{category_id}/{item_id}/{voice_id}.mp3",
         ))
 
+    def generate_item_voice(self, category_id: str, item_id: str, request: GenerateItemVoice) -> GeneratedItemVoice:
+        return self._call("generate_item_voice", GeneratedItemVoice(item_id=item_id, voice_id=f"{item_id}_01"))
+
     def add_category_voice(self, category_id: str, language: str, audio_data: bytes) -> CategoryVoice:
         return self._call("add_category_voice", CategoryVoice(
             id=f"{category_id}-v-{language}",
@@ -344,6 +350,7 @@ def make_app(
         auth: bool = True,
         voice_generation_available: bool = True,
         voice_optimization_available: bool = True,
+        voice_configurations_available: bool = True,
 ) -> FastAPI:
     """A bare app with just the content router, its auth and service dependencies overridden."""
     app = FastAPI()
@@ -351,6 +358,7 @@ def make_app(
     # The real dependency reads app.state.registry, which this bare app never sets.
     app.dependency_overrides[get_voice_generation_available] = lambda: voice_generation_available
     app.dependency_overrides[get_voice_optimization_available] = lambda: voice_optimization_available
+    app.dependency_overrides[get_voice_configurations_available] = lambda: voice_configurations_available
     if auth:
         app.dependency_overrides[get_current_user] = lambda: {"username": "tester", "role": "admin"}
     if provider is not None and tmp_path is not None:

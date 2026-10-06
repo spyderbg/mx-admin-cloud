@@ -402,3 +402,55 @@ async def test_generate_word_strips_whitespace(client_active: AsyncClient) -> No
     )
     assert response.status_code == 200
     assert response.content == b"FAKEAUDIO"
+
+
+@pytest.mark.asyncio
+async def test_generate_word_with_a_disabled_configuration(client_no_active: AsyncClient) -> None:
+    response = await client_no_active.post(
+        "/internal/generators/generate-word",
+        json={"word": "apple", "lang": "en", "configuration_name": "stub"},
+    )
+    assert response.status_code == 200
+    assert response.headers["x-tts-provider"] == "stub"
+    assert response.content == b"FAKEAUDIO"
+
+
+@pytest.mark.asyncio
+async def test_generate_word_unknown_configuration_returns_404(client_active: AsyncClient) -> None:
+    response = await client_active.post(
+        "/internal/generators/generate-word",
+        json={"word": "apple", "lang": "en", "configuration_name": "missing"},
+    )
+    assert response.status_code == 404
+    assert "'missing' not found" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_generate_word_settings_override_the_configuration(client_active: AsyncClient) -> None:
+    response = await client_active.post(
+        "/internal/generators/generate-word",
+        json={
+            "word": "apple", "lang": "en", "configuration_name": "stub",
+            "settings": {"speed": 0.9, "stability": 0.4, "similarity": None},
+        },
+    )
+    assert response.status_code == 200
+    parameters = json.loads(base64.urlsafe_b64decode(response.headers["x-tts-parameters"]))
+    assert parameters == {
+        "enabled": True,
+        "model": "stub-model",
+        "output_format": "mp3",
+        "speed": 0.9,
+        "voice": "stub-voice",
+        "voice_settings": {"stability": 0.4},
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("settings_body", [{"speed": 0}, {"stability": 1.2}, {"similarity": -1}])
+async def test_generate_word_rejects_invalid_settings(client_active: AsyncClient, settings_body: dict) -> None:
+    response = await client_active.post(
+        "/internal/generators/generate-word",
+        json={"word": "apple", "lang": "en", "settings": settings_body},
+    )
+    assert response.status_code == 422

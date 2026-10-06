@@ -208,6 +208,21 @@ class UpdateItemBody(BaseModel):
     item_name: LocalizedString
 
 
+class GenerateItemVoiceBody(BaseModel):
+    """Request body for generating a new take of an item voice."""
+
+    language: str
+    text: str
+    # Text-to-speech configuration (config file name) to synthesize with, enabled or not.
+    configuration_name: str
+    # Voice settings layered over the configuration's own; omitted ones keep the configured value.
+    speed: float | None = Field(default=None, gt=0)
+    stability: float | None = Field(default=None, ge=0, le=1)
+    similarity: float | None = Field(default=None, ge=0, le=1)
+    # Also create optimized versions of the new take with the active voice optimizers.
+    optimize: bool = False
+
+
 # endregion
 
 # region Items Response models
@@ -248,7 +263,8 @@ class VoiceCapabilities(BaseModel):
 
     # POST /voices can add another recording for a language that already has one.
     multiple_voices: bool = False
-    # POST /voices/generate (per-request text, preset and settings) exists.
+    # POST /voices/generate (per-request text, configuration and settings) can run: at least
+    # one text-to-speech configuration exists.
     generate: bool = False
     # POST /voices/{voice_id}/optimize can run: at least one voice optimizer is active.
     optimize: bool = False
@@ -284,6 +300,17 @@ class OptimizeItemVoiceResponse(ItemVoicesResponse):
     # Ids of the variants written by this run, one per optimizer that succeeded.
     optimized_voice_ids: list[str] = []
     # One message per active optimizer that failed; the others' results are kept.
+    warnings: list[str] = []
+
+
+class GenerateItemVoiceResponse(ItemVoicesResponse):
+    """Response for POST /categories/{category_id}/items/{item_id}/voices/generate."""
+
+    # Id of the new take.
+    voice_id: str
+    # Ids of the optimized versions made from the new take, when optimization was requested.
+    optimized_voice_ids: list[str] = []
+    # Optimization problems; the new take is kept regardless.
     warnings: list[str] = []
 
 # endregion

@@ -120,6 +120,13 @@ class SpeaktorTTSProvider(TTSProvider):
 
         return headers, payload
 
+    def apply_generate_overrides(self, generate: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:
+        """Apply a per-request speed as Speaktor's "speed_rate"; other overrides as usual."""
+        merged = super().apply_generate_overrides(generate, {k: v for k, v in overrides.items() if k != "speed"})
+        if overrides.get("speed") is not None:
+            merged["speed_rate"] = overrides["speed"]
+        return merged
+
     @staticmethod
     def _apply_optional_params(payload: dict[str, Any], gen: dict[str, Any]) -> None:
         """Layer the optional speed_rate/emotion overrides into *payload*, if configured."""
@@ -149,7 +156,7 @@ class SpeaktorTTSProvider(TTSProvider):
     async def generate(self, request: TTSRequest, client: Any) -> GeneratedAudio:
         """Call the Speaktor TTS endpoint, download the audio URL, and write it to disk."""
         output_format = request.output_format
-        gen = self.resolve_language_generate(request.language_code)
+        gen = self.resolve_request_generate(request)
 
         voice_name = str(gen.get("voice_name") or gen.get("actor") or "").strip()
         if not voice_name:

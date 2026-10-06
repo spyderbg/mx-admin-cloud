@@ -10,6 +10,8 @@ import type {
   CreateCategoryResponse,
   CreateItemResponse,
   DeleteArchivedCategoryResponse,
+  GenerateItemVoiceBody,
+  GenerateItemVoiceResponse,
   ImageResponse,
   ItemImagesResponse,
   ItemListResponse,
@@ -201,6 +203,12 @@ export const itemsVoicesList = async (categoryId: string, itemId: string): Promi
 /** Add a voice to an item */
 export const itemsVoicesAdd = async (categoryId: string, itemId: string, formData: FormData): Promise<VoiceResponse> => {
   const r = await client.post<VoiceResponse>(`/content/categories/${categoryId}/items/${itemId}/voices`, formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+  return r.data
+}
+
+/** Generate a new voice for an item */
+export const itemsVoicesGenerate = async (categoryId: string, itemId: string, body: GenerateItemVoiceBody): Promise<GenerateItemVoiceResponse> => {
+  const r = await client.post<GenerateItemVoiceResponse>(`/content/categories/${categoryId}/items/${itemId}/voices/generate`, body)
   return r.data
 }
 

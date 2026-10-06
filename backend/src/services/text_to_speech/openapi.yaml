@@ -72,6 +72,15 @@ components:
         lang:
           type: string
           title: Lang
+        configuration_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Configuration Name
+        settings:
+          anyOf:
+          - $ref: '#/components/schemas/VoiceSettingsOverride'
+          - type: 'null'
       type: object
       required:
       - word
@@ -205,6 +214,32 @@ components:
       - msg
       - type
       title: ValidationError
+    VoiceSettingsOverride:
+      properties:
+        speed:
+          anyOf:
+          - type: number
+            exclusiveMinimum: 0.0
+          - type: 'null'
+          title: Speed
+        stability:
+          anyOf:
+          - type: number
+            maximum: 1.0
+            minimum: 0.0
+          - type: 'null'
+          title: Stability
+        similarity:
+          anyOf:
+          - type: number
+            maximum: 1.0
+            minimum: 0.0
+          - type: 'null'
+          title: Similarity
+      type: object
+      title: VoiceSettingsOverride
+      description: Voice settings for one generation, layered over the configuration's
+        own.
 
 paths:
 
@@ -236,9 +271,13 @@ paths:
       - internal-generators
       summary: Generate text to speech audio for a single word
       description: Generate raw MP3 audio for a single word using the highest-priority
-        active text to speech service and return the raw audio bytes. Responds with
-        HTTP 400 when the word is empty, HTTP 500 when generation fails, and HTTP 503
-        when no active text to speech providers are configured.
+        active text to speech service and return the raw audio bytes. With 'configuration_name'
+        that configuration generates instead, even when it is disabled. 'settings' (speed,
+        stability, similarity) override the configuration's own voice settings for this
+        request only. Responds with HTTP 400 when the word is empty, HTTP 404 when the
+        named configuration does not exist, HTTP 500 when generation fails, and HTTP
+        503 when no configuration is named and no active text to speech providers are
+        configured.
       operationId: generate_word_internal_generators_generate_word_post
       requestBody:
         content:
@@ -255,6 +294,8 @@ paths:
             audio/mpeg: {}
         '400':
           description: Word is empty
+        '404':
+          description: Named configuration not found
         '500':
           description: TTS generation failed
         '503':

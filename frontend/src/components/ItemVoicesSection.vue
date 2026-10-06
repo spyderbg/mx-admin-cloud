@@ -73,7 +73,7 @@
       <p v-if="!capabilities.generate" class="ivs-notice">{{ copy.generationUnavailable }}</p>
       <div v-if="formError" class="ivs-notice ivs-error" role="alert">{{ formError }}<button v-if="configurationsFailed" type="button" class="ivs-button" @click="loadConfigurations">{{ copy.retry }}</button></div>
       <fieldset class="ivs-settings" :disabled="!!busyKey || !chosenConfiguration || !capabilities.generate"><legend>{{ copy.settings }}</legend>
-        <label class="ivs-range"><span>{{ copy.speed }}<output>{{ speed.toFixed(1) }}×</output></span><input v-model.number="speed" :aria-label="copy.speed" type="range" min="0.5" max="2" step="0.1" /></label>
+        <label class="ivs-range"><span>{{ copy.speed }}<output>{{ speed.toFixed(2) }}×</output></span><input v-model.number="speed" :aria-label="copy.speed" type="range" :min="speedLimits.min" :max="speedLimits.max" step="0.05" /></label>
         <label v-if="chosenConfiguration?.stability !== undefined" class="ivs-range"><span>{{ copy.stability }}<output>{{ Math.round(stability * 100) }}%</output></span><input v-model.number="stability" :aria-label="copy.stability" type="range" min="0" max="1" step="0.01" /></label>
         <label v-if="chosenConfiguration?.similarity !== undefined" class="ivs-range"><span>{{ copy.similarity }}<output>{{ Math.round(similarity * 100) }}%</output></span><input v-model.number="similarity" :aria-label="copy.similarity" type="range" min="0" max="1" step="0.01" /></label>
         <label class="ivs-checkbox"><span>{{ copy.autoOptimize }}</span><input v-model="autoOptimize" type="checkbox" :disabled="!capabilities.optimize" role="switch" /></label>
@@ -112,12 +112,13 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { Voice, Language } from '../types/viewModels'
 import { SUPPORTED_LANGUAGES } from '../types/viewModels'
 import type { AudioVersion, ItemVoiceList, ItemVoiceRecord } from '../types/itemVoices'
+import type { GenerateItemVoiceResponse } from '../types/contentSchemas'
 import { legacyVoiceCapabilities } from '../types/itemVoices'
 import { deleteItemVoice, generateItemVoice, listItemVoices, optimizeItemVoice, selectItemVoice, uploadItemVoice } from '../api/itemVoicesClient'
 import { getServiceConfig, listServiceConfigs } from '../api/configurationClient'
 import type { ConfigurationFileResponse } from '../types/configurationSchemas'
 import { orderConfigurationFiles } from '../utils/configurationNavigation'
-import { ttsConfigurationOption } from '../utils/ttsConfigurations'
+import { clampSpeed, speedRange, ttsConfigurationOption } from '../utils/ttsConfigurations'
 import { invalidateItemDetail } from '../api/cache'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import { itemVoiceCopy } from '../utils/itemVoiceCopy'
@@ -231,7 +232,8 @@ function closeDialog(): void {
   setFile(null)
 }
 
-async function mutate(key: string, action: () => Promise<unknown>, success: string): Promise<void> {
+type ToastVariant = 'success' | 'error'
+async function mutate<T>(key: string, action: () => Promise<T>, success: string | ((result: T) => [string, ToastVariant])): Promise<void> {
   if (busy.value) return
   const id = ++operation
   const categoryId = props.categoryId
@@ -240,7 +242,7 @@ async function mutate(key: string, action: () => Promise<unknown>, success: stri
   formError.value = ''
   activePlayer.value = null
   try {
-    await action()
+    const result = await action()
     invalidateItemDetail(categoryId, itemId)
     if (operation !== id) return
     revision.value++
@@ -248,7 +250,8 @@ async function mutate(key: string, action: () => Promise<unknown>, success: stri
     if (operation !== id) return
     busyKey.value = ''
     closeDialog()
-    emit('toast', refreshed ? success : copy.value.refreshError, refreshed ? 'success' : 'error')
+    const [message, variant] = typeof success === 'string' ? [success, 'success' as const] : success(result)
+    emit('toast', refreshed ? message : copy.value.refreshError, refreshed ? variant : 'error')
     emit('changed')
   } catch (error) {
     if (operation !== id) return
@@ -293,13 +296,14 @@ const configurationsLoading = ref(false)
 const configurationsFailed = ref(false)
 const generationText = ref('')
 const speed = ref(1)
+const speedLimits = computed(() => speedRange(chosenConfiguration.value?.provider))
 const stability = ref(.5)
 const similarity = ref(.75)
 const autoOptimize = ref(false)
 const canGenerate = computed(() => !busy.value && capabilities.value.generate && !!chosenConfiguration.value && !!generationText.value.trim() && !configurationsLoading.value)
 watch(chosenConfiguration, (configuration) => {
   if (!configuration) return
-  speed.value = configuration.speed
+  speed.value = clampSpeed(configuration.speed, speedRange(configuration.provider))
   stability.value = configuration.stability ?? .5
   similarity.value = configuration.similarity ?? .75
   chosenConfigurationNames.value = { ...chosenConfigurationNames.value, [formLanguage.value]: configuration.config_name }
@@ -347,7 +351,12 @@ function generate(): void {
     similarity: chosenConfiguration.value.similarity === undefined ? undefined : similarity.value,
     optimize: autoOptimize.value && capabilities.value.optimize }
   expanded.value = new Set([...expanded.value, formLanguage.value])
-  void mutate('generate', () => generateItemVoice(props.categoryId, props.itemId, body), copy.value.generatedSuccess)
+  void mutate('generate', () => generateItemVoice(props.categoryId, props.itemId, body), generatedToast)
+}
+// The new take is kept even when optimizing it fails, so that is reported, not raised.
+function generatedToast(result: GenerateItemVoiceResponse): [string, ToastVariant] {
+  const warnings = result.warnings || []
+  return warnings.length ? [`${copy.value.generatedWithWarnings} ${warnings.join(' ')}`, 'error'] : [copy.value.generatedSuccess, 'success']
 }
 
 const uploadMode = ref<'add' | 'replace'>('add')

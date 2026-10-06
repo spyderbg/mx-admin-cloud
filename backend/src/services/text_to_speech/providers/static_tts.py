@@ -149,7 +149,7 @@ class StaticTTSProvider(TTSProvider):
 
     async def generate(self, request: TTSRequest, client: Any) -> GeneratedAudio:
         """Generate audio while always resolving voice settings from English config."""
-        gen = self.resolve_language_generate("en")
+        gen = self.apply_generate_overrides(self.resolve_language_generate("en"), request.overrides)
 
         actor = gen.get("actor") or ""
         if not actor:

@@ -129,10 +129,17 @@ class FileSystemContentProvider(
             voice_path: Path,
             audio_bytes: bytes,
             text: str,
+            configuration_name: str | None = None,
     ) -> None:
-        """Persist generated-voice settings together with the synthesized text."""
+        """Persist generated-voice settings together with the synthesized text.
+
+        *configuration_name* records the text-to-speech configuration that was explicitly
+        chosen for the voice, if any.
+        """
         parameters = dict(getattr(audio_bytes, "parameters", {}))
         parameters["_text"] = text.strip()
+        if configuration_name:
+            parameters["configuration_name"] = configuration_name
         cls._write_voice_metadata(
             voice_path,
             VoiceCreationMethod.GENERATED,

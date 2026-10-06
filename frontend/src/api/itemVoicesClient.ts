@@ -1,7 +1,8 @@
 import client from './client'
-import { itemsVoicesSetMain } from './contentClient'
+import { itemsVoicesGenerate, itemsVoicesSetMain } from './contentClient'
 import { normalizeItemVoices } from '../utils/itemVoices'
 import type { GenerateItemVoice, ItemVoiceList, ItemVoiceListResponse, ItemVoiceRecord, VoicePreset } from '../types/itemVoices'
+import type { GenerateItemVoiceResponse } from '../types/contentSchemas'
 import type { Language } from '../types/viewModels'
 
 const path = (categoryId: string, itemId: string): string =>
@@ -25,14 +26,15 @@ export async function deleteItemVoice(categoryId: string, itemId: string, voiceI
   return (await client.delete<ItemVoiceRecord>(`${path(categoryId, itemId)}/${encodeURIComponent(voiceId)}`)).data
 }
 
-// Proposed endpoints are called ONLY when the list response advertises their
-// capability. They are implemented by frontend MSW fixtures, not by the backend.
+// The presets endpoint is proposed: it is called ONLY when the list response advertises
+// its capability, and is implemented by frontend MSW fixtures, not by the backend.
 export async function listVoicePresets(categoryId: string, itemId: string, language: Language, signal?: AbortSignal): Promise<VoicePreset[]> {
   return (await client.get<VoicePreset[]>(`${path(categoryId, itemId)}/presets`, { params: { language }, signal })).data
 }
 
-export async function generateItemVoice(categoryId: string, itemId: string, body: GenerateItemVoice): Promise<ItemVoiceRecord> {
-  return (await client.post<ItemVoiceRecord>(`${path(categoryId, itemId)}/generate`, body)).data
+/** Adds a new take of the language's voice; the voice currently in use stays selected. */
+export async function generateItemVoice(categoryId: string, itemId: string, body: GenerateItemVoice): Promise<GenerateItemVoiceResponse> {
+  return itemsVoicesGenerate(encodeURIComponent(categoryId), encodeURIComponent(itemId), body)
 }
 
 export async function optimizeItemVoice(categoryId: string, itemId: string, voiceId: string): Promise<ItemVoiceRecord> {

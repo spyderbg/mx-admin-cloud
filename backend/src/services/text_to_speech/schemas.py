@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class GeneratorProviderInfo(BaseModel):
@@ -31,11 +31,22 @@ class GenerateRequest(BaseModel):
     request_id: str | None = None
 
 
+class VoiceSettingsOverride(BaseModel):
+    """Voice settings for one generation, layered over the configuration's own."""
+
+    speed: float | None = Field(default=None, gt=0)
+    stability: float | None = Field(default=None, ge=0, le=1)
+    similarity: float | None = Field(default=None, ge=0, le=1)
+
+
 class GenerateWordRequest(BaseModel):
     """Body for single-word TTS generation."""
 
     word: str
     lang: str
+    # Configuration to generate with, enabled or not. None tries the active ones by priority.
+    configuration_name: str | None = None
+    settings: VoiceSettingsOverride | None = None
 
 
 class TtsGenerateResult(BaseModel):

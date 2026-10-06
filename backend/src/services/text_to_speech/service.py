@@ -82,9 +82,32 @@ class TextToSpeechService(Service):
                 return provider
         raise TTSProviderNotFoundError(f"Provider '{provider_name}' not found or not active.")
 
-    def generation_parameters(self, provider_name: str, language_code: str) -> dict[str, Any]:
-        """Return the effective configured generation parameters for a provider and language."""
-        return self._resolve_active_provider(provider_name).resolve_language_generate(language_code)
+    def configured_provider(self, configuration_name: str) -> TTSProvider:
+        """Return the provider loaded from the configuration *configuration_name*, enabled or not.
+
+        Enabling a configuration decides which ones run when none is named; one picked by
+        name runs either way.
+        """
+        provider = self.get_provider(configuration_name)
+        if not isinstance(provider, TTSProvider):
+            raise TTSProviderNotFoundError(f"Text to speech configuration '{configuration_name}' not found.")
+        return provider
+
+    def generation_parameters(self, provider_name: str, request: TTSRequest) -> dict[str, Any]:
+        """Return the effective generation parameters a provider used for *request*.
+
+        That is its configuration for the request's language with the request's overrides applied.
+        """
+        return self.configured_provider(provider_name).resolve_request_generate(request)
+
+    async def generate_with_configuration(
+            self,
+            request: TTSRequest,
+            client: Any,
+            configuration_name: str,
+    ) -> GeneratedAudio:
+        """Generate audio with the configuration *configuration_name*, even a disabled one."""
+        return await self.configured_provider(configuration_name).generate(request, client)
 
     async def generate(
             self,

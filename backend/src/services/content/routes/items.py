@@ -17,12 +17,15 @@ from src.services.content.models import (
     CategoryConflictError,
     CategoryNotFoundError,
     ContentError,
+    GenerateItemVoice,
     InvalidCategoryNameError,
     ItemVoices,
 )
 from src.core.localization import LocalizedString
 from src.services.content.schemas import (
     CreateItemResponse,
+    GenerateItemVoiceBody,
+    GenerateItemVoiceResponse,
     ImageResponse,
     ItemImagesResponse,
     ItemListResponse,
@@ -43,11 +46,13 @@ from src.services.content.routes.common import (
     CATEGORY_ITEM_VOICE_MAIN,
     CATEGORY_ITEM_VOICE_OPTIMIZE,
     CATEGORY_ITEM_VOICES,
+    CATEGORY_ITEM_VOICES_GENERATE,
     CATEGORY_ITEM_VOICE_REGENERATE,
     ContentServiceDep,
     TAG_ITEMS,
     TAG_ITEMS_IMAGES,
     TAG_ITEMS_VOICES,
+    VoiceConfigurationsAvailableDep,
     VoiceGenerationAvailableDep,
     VoiceOptimizationAvailableDep,
     _create_item_response,
@@ -488,7 +493,8 @@ def items_images_set_main(
             "Returns one voice per language, the alternative recordings (variants) per language, "
             "and which variant is currently selected as each language's main voice. "
             "'capabilities' says which voice actions can run right now (for example, optimize "
-            "needs an active voice optimizer). Requires authentication."
+            "needs an active voice optimizer and generate a text to speech configuration). "
+            "Requires authentication."
     ),
 )
 def items_voices_list(
@@ -496,6 +502,7 @@ def items_voices_list(
         item_id: str,
         service: ContentServiceDep,
         optimization_available: VoiceOptimizationAvailableDep,
+        configurations_available: VoiceConfigurationsAvailableDep,
         _user: dict = Depends(get_current_user),
 ) -> ItemVoicesResponse:
     """List voices for an item."""
@@ -516,9 +523,9 @@ def items_voices_list(
     item_name = item.name if item else LocalizedString({})
     voices_result = service.item_voices(category_id, item_id)
     response = _item_voices_response(item_id, item_name, voices_result)
-    # POST /voices still refuses a second recording for a language, and there are no
-    # generate/presets endpoints, so only selection and (when an optimizer is active) optimization are on.
-    response.capabilities = VoiceCapabilities(optimize=optimization_available)
+    # POST /voices still refuses a second recording for a language and there is no presets
+    # endpoint; generation and optimization are on while a configuration / optimizer exists.
+    response.capabilities = VoiceCapabilities(optimize=optimization_available, generate=configurations_available)
     return response
 
 
@@ -559,6 +566,71 @@ def items_voices_add(
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return _voice_response(result, "add")
+
+
+@router.post(
+    CATEGORY_ITEM_VOICES_GENERATE,
+    response_model=GenerateItemVoiceResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=[TAG_ITEMS_VOICES],
+    summary="Generate a new voice for an item",
+    description=(
+            "Synthesize 'text' in 'language' with the text-to-speech configuration named by "
+            "'configuration_name' (enabled or not), layering 'speed', 'stability' and "
+            "'similarity' over the configuration's own settings for this request only. "
+            "Nothing is overwritten: the result is added as a new variant of that language and "
+            "the main voice stays as it is, so it can be listened to and chosen later with the "
+            "set-main endpoint. Only a language with no recording yet gets it as its main voice. "
+            "With 'optimize', every active voice optimizer (or the first that succeeds, per the "
+            "voice optimization strategy) then creates an optimized variant of it; optimization "
+            "problems are reported in 'warnings' and never undo the new voice. The response is "
+            "the refreshed voice listing plus the new voice's id. Requires authentication."
+    ),
+)
+def items_voices_generate(
+        category_id: str,
+        item_id: str,
+        body: GenerateItemVoiceBody,
+        service: ContentServiceDep,
+        _user: dict = Depends(get_current_user),
+) -> GenerateItemVoiceResponse:
+    """Add a voice synthesized with a chosen configuration and settings, keeping the main voice."""
+    try:
+        result = service.category_details_by_id(category_id)
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidCategoryNameError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+    item = next((i for i in result.items if i.id == item_id), None)
+    if item is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Item '{item_id}' not found in category '{category_id}'",
+        )
+    try:
+        generated = service.generate_item_voice(category_id, item_id, GenerateItemVoice(
+            language=body.language.strip(),
+            text=body.text,
+            configuration_name=body.configuration_name,
+            speed=body.speed,
+            stability=body.stability,
+            similarity=body.similarity,
+            optimize=body.optimize,
+        ))
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidCategoryNameError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return GenerateItemVoiceResponse(
+        **_item_voices_response(item_id, item.name, generated).model_dump(),
+        voice_id=generated.voice_id,
+        optimized_voice_ids=generated.optimized_voice_ids,
+        warnings=generated.warnings,
+    )
 
 
 @router.put(

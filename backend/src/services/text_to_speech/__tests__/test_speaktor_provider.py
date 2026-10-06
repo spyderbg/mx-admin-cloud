@@ -177,3 +177,22 @@ async def test_present_key_reaches_the_authorization_header(
 
     assert result.success is True
     assert client.calls[0]["headers"]["Authorization"] == "Bearer spk-test"
+
+
+@pytest.mark.asyncio
+async def test_speed_override_is_sent_as_speed_rate(
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SPEAKTOR_API_KEY", "spk-test")
+    config = _shipped_generate_config()
+    config["generate"]["response_mode"] = "raw"
+    provider = _make_provider(tmp_path, config)
+    client = _RecordingClient([httpx.Response(200, content=b"AUDIO")])
+    request = _request()
+    request.overrides = {"speed": 0.8}
+
+    await provider.generate(request, client)
+
+    assert client.calls[0]["json"]["speed_rate"] == 0.8
+    assert "speed" not in client.calls[0]["json"]

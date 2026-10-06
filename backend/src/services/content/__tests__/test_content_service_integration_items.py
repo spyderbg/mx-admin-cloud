@@ -21,6 +21,8 @@ from src.services.content.models import (
     CategoryVoice,
     ContentOperationError,
     CreateItem,
+    GenerateItemVoice,
+    GeneratedItemVoice,
     ItemDetail,
     ItemVoices,
     OptimizedItemVoice,
@@ -353,18 +355,21 @@ _VOICES_URL = "/api/v1/content/categories/foods/items/I_Foods/voices"
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("optimizers_active", [True, False])
-async def test_list_item_voices_advertises_what_can_run(tmp_resolved: Path, optimizers_active: bool) -> None:
-    app = make_app(StubContentProvider(tmp_resolved), tmp_resolved, voice_optimization_available=optimizers_active)
+@pytest.mark.parametrize("available", [True, False])
+async def test_list_item_voices_advertises_what_can_run(tmp_resolved: Path, available: bool) -> None:
+    app = make_app(
+        StubContentProvider(tmp_resolved), tmp_resolved,
+        voice_optimization_available=available, voice_configurations_available=available,
+    )
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         response = await c.get(_VOICES_URL)
     assert response.status_code == 200
-    # Only selection and (with an active optimizer) optimization exist: POST /voices still refuses a
-    # second recording, and there are no generate/presets endpoints.
+    # Selection always, generation with a TTS configuration and optimization with an active
+    # optimizer: POST /voices still refuses a second recording, and there is no presets endpoint.
     assert response.json()["capabilities"] == {
         "multiple_voices": False,
-        "generate": False,
-        "optimize": optimizers_active,
+        "generate": available,
+        "optimize": available,
         "select": True,
         "presets": False,
         "upload_formats": ["mp3"],
@@ -399,6 +404,124 @@ async def test_regenerate_item_voice_returns_the_new_take(tmp_resolved: Path) ->
     assert body["id"] == "apple_en_02"
     assert body["file_uri"] == "/content/foods/apple/apple_en_02.mp3"
     assert body["action"] == "regenerate"
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/content/categories/{category_id}/items/{item_id}/voices/generate
+# ---------------------------------------------------------------------------
+
+_VOICE_GENERATE_URL = "/api/v1/content/categories/foods/items/I_Foods/voices/generate"
+_GENERATE_BODY = {
+    "language": "en",
+    "text": "apple",
+    "configuration_name": "elevenlabs",
+    "speed": 0.9,
+    "stability": 0.4,
+    "similarity": 0.8,
+    "optimize": True,
+}
+
+
+@pytest.mark.asyncio
+async def test_generate_item_voice_returns_listing_and_the_new_voice(tmp_resolved: Path) -> None:
+    seen: list[tuple[str, str, GenerateItemVoice]] = []
+
+    class _TrackingProvider(StubContentProvider):
+        def generate_item_voice(self, category_id: str, item_id: str, request: GenerateItemVoice) -> GeneratedItemVoice:
+            seen.append((category_id, item_id, request))
+            return GeneratedItemVoice(
+                item_id=item_id,
+                voices=[CategoryVoice(id="apple-v-en", language="en", type="tts",
+                                      file_uri="/content/foods/apple/apple_en.mp3")],
+                variants=[
+                    CategoryVoice(id="apple_en_01", language="en", type="tts",
+                                  file_uri="/content/foods/apple/apple_en_01.mp3"),
+                    CategoryVoice(id="apple_en_02", language="en", type="tts", provider="elevenlabs",
+                                  file_uri="/content/foods/apple/apple_en_02.mp3",
+                                  parameters={"configuration_name": "elevenlabs", "speed": 0.9}),
+                    CategoryVoice(id="apple_en_03", language="en", type="tts",
+                                  file_uri="/content/foods/apple/apple_en_03.mp3",
+                                  parameters={"_optimizer": "ffmpeg_low", "_source": "apple_en_02"}),
+                ],
+                main_voice_ids={"en": "apple_en_01"},
+                voice_id="apple_en_02",
+                optimized_voice_ids=["apple_en_03"],
+                warnings=["Voice optimization failed for pydub_optimized: boom"],
+            )
+
+    app = make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.post(_VOICE_GENERATE_URL, json=_GENERATE_BODY)
+    assert response.status_code == 201
+    assert seen == [("foods", "I_Foods", GenerateItemVoice(
+        language="en", text="apple", configuration_name="elevenlabs",
+        speed=0.9, stability=0.4, similarity=0.8, optimize=True,
+    ))]
+    body = response.json()
+    assert body["item_id"] == "I_Foods"
+    assert body["name"] == {"en": "apple"}
+    assert [v["id"] for v in body["variants"]] == ["apple_en_01", "apple_en_02", "apple_en_03"]
+    # The main voice is left as it was: the new voice waits to be chosen.
+    assert body["main_voice_ids"] == {"en": "apple_en_01"}
+    assert body["voice_id"] == "apple_en_02"
+    assert body["optimized_voice_ids"] == ["apple_en_03"]
+    assert body["warnings"] == ["Voice optimization failed for pydub_optimized: boom"]
+
+
+@pytest.mark.asyncio
+async def test_generate_item_voice_settings_are_optional(tmp_resolved: Path) -> None:
+    seen: list[GenerateItemVoice] = []
+
+    class _TrackingProvider(StubContentProvider):
+        def generate_item_voice(self, category_id: str, item_id: str, request: GenerateItemVoice) -> GeneratedItemVoice:
+            seen.append(request)
+            return GeneratedItemVoice(item_id=item_id, voice_id="apple_en_02")
+
+    app = make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.post(_VOICE_GENERATE_URL, json={
+            "language": " en ", "text": "apple", "configuration_name": "openai",
+        })
+    assert response.status_code == 201
+    assert seen == [GenerateItemVoice(language="en", text="apple", configuration_name="openai")]
+    assert response.json()["optimized_voice_ids"] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("override", [
+    {"stability": 1.5}, {"similarity": -0.1}, {"speed": 0}, {"configuration_name": None}, {"text": None},
+])
+async def test_generate_item_voice_rejects_invalid_bodies(client: AsyncClient, override: dict[str, Any]) -> None:
+    body = {k: v for k, v in {**_GENERATE_BODY, **override}.items() if v is not None}
+    response = await client.post(_VOICE_GENERATE_URL, json=body)
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_generate_item_voice_unknown_item_returns_404(client: AsyncClient) -> None:
+    response = await client.post(
+        "/api/v1/content/categories/foods/items/I_Missing/voices/generate", json=_GENERATE_BODY,
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_generate_item_voice_generation_failure_returns_400(tmp_resolved: Path) -> None:
+    provider = StubContentProvider(tmp_resolved).raises(
+        "generate_item_voice",
+        ContentOperationError("Voice generation failed for en: Text to speech configuration 'nope' not found."),
+    )
+    app = make_app(provider, tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.post(_VOICE_GENERATE_URL, json=_GENERATE_BODY)
+    assert response.status_code == 400
+    assert "configuration 'nope' not found" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_generate_item_voice_requires_auth(client_no_auth: AsyncClient) -> None:
+    response = await client_no_auth.post(_VOICE_GENERATE_URL, json=_GENERATE_BODY)
+    assert response.status_code == 401
 
 
 # ---------------------------------------------------------------------------

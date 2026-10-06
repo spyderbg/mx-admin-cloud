@@ -46,6 +46,7 @@ CATEGORY_ITEM_IMAGES = "/categories/{category_id}/items/{item_id}/images"
 CATEGORY_ITEM_IMAGE = "/categories/{category_id}/items/{item_id}/images/{image_id}"
 CATEGORY_ITEM_IMAGE_MAIN = "/categories/{category_id}/items/{item_id}/images/{image_id}/main"
 CATEGORY_ITEM_VOICES = "/categories/{category_id}/items/{item_id}/voices"
+CATEGORY_ITEM_VOICES_GENERATE = "/categories/{category_id}/items/{item_id}/voices/generate"
 CATEGORY_ITEM_VOICE = "/categories/{category_id}/items/{item_id}/voices/{voice_id}"
 CATEGORY_ITEM_VOICE_MAIN = "/categories/{category_id}/items/{item_id}/voices/{voice_id}/main"
 CATEGORY_ITEM_VOICE_OPTIMIZE = "/categories/{category_id}/items/{item_id}/voices/{voice_id}/optimize"
@@ -143,6 +144,28 @@ def get_voice_generation_available(
 
 
 VoiceGenerationAvailableDep = Annotated[bool, Depends(get_voice_generation_available)]
+
+
+def get_voice_configurations_available(
+        registry: ServiceRegistry = Depends(get_registry),
+) -> bool:
+    """Return whether at least one text to speech configuration exists, enabled or not.
+
+    An item voice can be generated with any configuration picked by name, so the voices
+    list advertises generation whenever there is one to pick.
+    """
+    try:
+        service = get_typed_service(
+            registry=registry,
+            service_name=text_to_speech.SERVICE_NAME,
+            expected_type=TextToSpeechService,
+        )
+    except HTTPException:
+        return False
+    return bool(service.get_all_providers())
+
+
+VoiceConfigurationsAvailableDep = Annotated[bool, Depends(get_voice_configurations_available)]
 
 
 def get_voice_optimization_available(

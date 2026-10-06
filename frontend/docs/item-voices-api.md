@@ -1,6 +1,6 @@
 # Item Voices: frontend integration and remaining API support
 
-The language accordion/card layout and mobile dialogs are implemented in the frontend. Selection uses the generated `itemsVoicesSetMain` client. This integration changes no backend code or generated schemas.
+The language accordion/card layout and mobile dialogs are implemented in the frontend. Selection and generation use the generated `itemsVoicesSetMain` and `itemsVoicesGenerate` clients.
 
 ## Implemented voice selection
 
@@ -40,20 +40,34 @@ The frontend renders `variants`, marks selection using `main_voice_ids`, and avo
 | `POST /` | Multipart `language` + `audio`. Adds the first recording for a language; currently returns 409 if one already exists. |
 | `PUT /{voice_id}` | Multipart `audio`. Replaces a recording; empty placeholders return 404. |
 | `DELETE /{voice_id}` | Deletes/resets a recording. Existing summary controls retain this action. |
-| `POST /{voice_id}/regenerate` | Adds a new take: synthesizes the item's current text (using the active TTS configuration) into a new numbered variant and returns it. Nothing is overwritten. The current main voice stays as it is, and is first kept as a variant if it is not one already, so it can be chosen again. `voice_id` may be a per-language id or a variant id. Only a language with no recording yet gets the take as its main voice. The result is not in use until it is selected with `PUT /{voice_id}/main`. It takes only the item's text: per-request text, configuration and settings still need `POST /generate` below. |
+| `POST /{voice_id}/regenerate` | Adds a new take: synthesizes the item's current text (using the active TTS configuration) into a new numbered variant and returns it. Nothing is overwritten. The current main voice stays as it is, and is first kept as a variant if it is not one already, so it can be chosen again. `voice_id` may be a per-language id or a variant id. Only a language with no recording yet gets the take as its main voice. The result is not in use until it is selected with `PUT /{voice_id}/main`. It takes only the item's text: per-request text, configuration and settings use `POST /generate` below. |
 | `POST /{voice_id}/optimize` | Now implemented in the backend: returns the updated voice lists, `source_voice_id`, `optimized_voice_ids`, and warnings. Adapting the optimization UI from its inline preview contract to this response remains separate work. |
 
 Uploads remain restricted to MP3 unless the API advertises additional formats, because the existing implementation writes bytes to an `.mp3` filename. Listing multiple variants does not imply that the upload endpoint can append recordings.
 
-## Missing endpoints and extensions
+## Generating a voice
 
-The following paths are relative to the base path above. The Generate Voice dialog loads saved text-to-speech configurations through `GET /internal/configurations/text_to_speech` and their detail endpoints, filters them for the selected language, and uses their provider, model and settings defaults. Selecting a configuration does not change its saved settings or enabled state. Generation contracts are handwritten in `src/api/itemVoicesClient.ts` / `src/types/itemVoices.ts` and simulated in the frontend MSW preview.
+The Generate Voice dialog loads saved text-to-speech configurations through `GET /internal/configurations/text_to_speech` and their detail endpoints, filters them for the selected language, and uses their provider, model and settings defaults. Selecting a configuration does not change its saved settings or enabled state, and a disabled configuration can still be picked. The speed slider is limited to what the configuration's provider accepts (ElevenLabs and the static provider 0.7–1.2, OpenAI 0.25–4, others 0.5–2).
+
+`POST /generate` (status 201) adds a new take:
+
+```json
+{ "language": "en", "text": "bananas", "configuration_name": "elevenlabs", "speed": 0.9, "stability": 0.5, "similarity": 0.75, "optimize": true }
+```
+
+- The text is synthesized with the named configuration, enabled or not. `speed`, `stability` and `similarity` are optional and override the configuration's own settings for this request only; the saved configuration is never changed.
+- The take is added as a new numbered variant. The main voice is not changed (it is first kept as a variant if it is not one already), so the take is not selected until `PUT /{voice_id}/main`. Only a language with no recording yet gets the take as its main voice, the same rule as `regenerate`.
+- With `optimize`, the active voice optimizers run on the new take afterwards, following the voice optimization strategy. Optimizer failures are returned in `warnings` and the take is kept; the dialog shows them in an error toast.
+- The response is `ItemVoicesResponse` plus `voice_id` (the new take), `optimized_voice_ids` and `warnings`. The generation parameters, the synthesized text (`_text`) and `configuration_name` are recorded in the take's metadata, which the voice card's generation popup shows.
+
+## Remaining extensions
+
+The following paths are relative to the base path above.
 
 | Endpoint | Required behavior |
 | --- | --- |
-| `POST /generate` | Create a new saved candidate. Body: `language`, `text`, `configuration_name`, `speed`, optional `stability`/`similarity`, `optimize`. Preserve the current selection. |
 | Extend `POST /voices` | Append additional uploads for a language without overwriting the current recording; preserve the format or transcode it. |
-| `capabilities` on `GET /voices` | **Implemented** (only on the list response). Advertises `select: true`, `optimize` (true while a voice optimizer is active), `multiple_voices: false`, `generate: false`, `presets: false` and `upload_formats: ["mp3"]`. Flip `multiple_voices` and `generate` when the endpoints above exist. The configuration selector uses the existing configuration API and does not require the presets capability. |
+| `capabilities` on `GET /voices` | **Implemented** (only on the list response). Advertises `select: true`, `optimize` (true while a voice optimizer is active), `generate` (true while at least one text-to-speech configuration exists), `multiple_voices: false`, `presets: false` and `upload_formats: ["mp3"]`. Flip `multiple_voices` when the upload extension above exists. The configuration selector uses the existing configuration API and does not require the presets capability. |
 
 Existing internal generator endpoints are not substitutes for saved per-item candidates with per-request settings. The browser should not infer server filesystem paths from public audio URLs.
 

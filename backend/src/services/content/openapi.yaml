@@ -373,6 +373,106 @@ components:
       title: FileAction
       description: Action performed on a category/item file (image or voice), echoed
         back in the response.
+    GenerateItemVoiceBody:
+      properties:
+        language:
+          type: string
+          title: Language
+        text:
+          type: string
+          title: Text
+        configuration_name:
+          type: string
+          title: Configuration Name
+        speed:
+          anyOf:
+          - type: number
+            exclusiveMinimum: 0.0
+          - type: 'null'
+          title: Speed
+        stability:
+          anyOf:
+          - type: number
+            maximum: 1.0
+            minimum: 0.0
+          - type: 'null'
+          title: Stability
+        similarity:
+          anyOf:
+          - type: number
+            maximum: 1.0
+            minimum: 0.0
+          - type: 'null'
+          title: Similarity
+        optimize:
+          type: boolean
+          title: Optimize
+          default: false
+      type: object
+      required:
+      - language
+      - text
+      - configuration_name
+      title: GenerateItemVoiceBody
+      description: Request body for generating a new take of an item voice.
+    GenerateItemVoiceResponse:
+      properties:
+        item_id:
+          type: string
+          title: Item Id
+        name:
+          additionalProperties:
+            type: string
+          type: object
+          title: Name
+          description: 'Language-code → translation map (e.g. {"en": "dog", "fr":
+            "chien"})'
+        voices:
+          items:
+            $ref: '#/components/schemas/VoiceResponse'
+          type: array
+          title: Voices
+          default: []
+        variants:
+          items:
+            $ref: '#/components/schemas/VoiceResponse'
+          type: array
+          title: Variants
+          default: []
+        main_voice_ids:
+          additionalProperties:
+            anyOf:
+            - type: string
+            - type: 'null'
+          type: object
+          title: Main Voice Ids
+          default: {}
+        capabilities:
+          anyOf:
+          - $ref: '#/components/schemas/VoiceCapabilities'
+          - type: 'null'
+        voice_id:
+          type: string
+          title: Voice Id
+        optimized_voice_ids:
+          items:
+            type: string
+          type: array
+          title: Optimized Voice Ids
+          default: []
+        warnings:
+          items:
+            type: string
+          type: array
+          title: Warnings
+          default: []
+      type: object
+      required:
+      - item_id
+      - name
+      - voice_id
+      title: GenerateItemVoiceResponse
+      description: Response for POST /categories/{category_id}/items/{item_id}/voices/generate.
     HTTPValidationError:
       properties:
         detail:
@@ -1846,7 +1946,7 @@ paths:
         Returns one voice per language, the alternative recordings (variants) per language,
         and which variant is currently selected as each language's main voice. 'capabilities'
         says which voice actions can run right now (for example, optimize needs an active
-        voice optimizer). Requires authentication.
+        voice optimizer and generate a text to speech configuration). Requires authentication.
       operationId: items_voices_list_api_v1_content_categories__category_id__items__item_id__voices_get
       security:
       - OAuth2PasswordBearer: []
@@ -1912,6 +2012,57 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VoiceResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/content/categories/{category_id}/items/{item_id}/voices/generate:
+    post:
+      tags:
+      - Items Voices
+      summary: Generate a new voice for an item
+      description: 'Synthesize ''text'' in ''language'' with the text-to-speech configuration
+        named by ''configuration_name'' (enabled or not), layering ''speed'', ''stability''
+        and ''similarity'' over the configuration''s own settings for this request only.
+        Nothing is overwritten: the result is added as a new variant of that language
+        and the main voice stays as it is, so it can be listened to and chosen later
+        with the set-main endpoint. Only a language with no recording yet gets it as
+        its main voice. With ''optimize'', every active voice optimizer (or the first
+        that succeeds, per the voice optimization strategy) then creates an optimized
+        variant of it; optimization problems are reported in ''warnings'' and never
+        undo the new voice. The response is the refreshed voice listing plus the new
+        voice''s id. Requires authentication.'
+      operationId: items_voices_generate_api_v1_content_categories__category_id__items__item_id__voices_generate_post
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Item Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateItemVoiceBody'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateItemVoiceResponse'
         '422':
           description: Validation Error
           content:

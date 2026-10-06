@@ -173,3 +173,57 @@ async def test_generate_with_provider_name_returns_its_failure_without_fallback(
 
     assert not result.success
     assert other.calls == 0
+
+
+# ---------------------------------------------------------------------------
+# Generating with a named configuration and per-request overrides
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_generate_with_configuration_runs_a_disabled_configuration(tmp_path: Path) -> None:
+    active = _StubTTSProvider(tmp_path, "active")
+    disabled = _StubTTSProvider(tmp_path, "disabled", enabled=False)
+    service = _make_service(tmp_path, [active, disabled])
+
+    result = await service.generate_with_configuration(_make_request(), client=None, configuration_name="disabled")
+
+    assert result.provider == "disabled"
+    assert (active.calls, disabled.calls) == (0, 1)
+
+
+@pytest.mark.asyncio
+async def test_generate_with_configuration_unknown_name(tmp_path: Path) -> None:
+    service = _make_service(tmp_path, [_StubTTSProvider(tmp_path, "active")])
+
+    with pytest.raises(TTSProviderNotFoundError, match="'missing' not found"):
+        await service.generate_with_configuration(_make_request(), client=None, configuration_name="missing")
+
+
+def test_apply_generate_overrides_layers_speed_and_voice_settings(tmp_path: Path) -> None:
+    provider = _StubTTSProvider(tmp_path, "stub")
+    generate = {"speed": 1, "speaker_boost": True, "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}}
+
+    merged = provider.apply_generate_overrides(generate, {"speed": 0.8, "stability": 0.3})
+
+    assert merged == {
+        "speed": 0.8, "speaker_boost": True, "voice_settings": {"stability": 0.3, "similarity_boost": 0.75},
+    }
+    # The configuration itself is never changed.
+    assert generate["voice_settings"] == {"stability": 0.5, "similarity_boost": 0.75}
+
+
+def test_apply_generate_overrides_without_overrides_keeps_the_configuration(tmp_path: Path) -> None:
+    provider = _StubTTSProvider(tmp_path, "stub")
+
+    assert provider.apply_generate_overrides({"model": "m"}, {}) == {"model": "m"}
+    assert provider.apply_generate_overrides({"model": "m"}, {"similarity": 0.6}) == {
+        "model": "m", "voice_settings": {"similarity_boost": 0.6},
+    }
+
+
+def test_generation_parameters_include_the_request_overrides(tmp_path: Path) -> None:
+    service = _make_service(tmp_path, [_StubTTSProvider(tmp_path, "stub", enabled=False)])
+    request = _make_request()
+    request.overrides = {"speed": 1.1}
+
+    assert service.generation_parameters("stub", request) == {"enabled": False, "speed": 1.1}

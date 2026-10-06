@@ -4,7 +4,7 @@ import { selectedVoice, voiceAudioUri, validateAudioFile, voiceSource, audioFile
 import { legacyVoiceCapabilities, type ItemVoiceRecord } from '../src/types/itemVoices.ts'
 import { cacheBustedUri } from '../src/utils/cacheBustedUri.ts'
 import { langLabel } from '../src/utils/voiceLabels.ts'
-import { ttsConfigurationOption } from '../src/utils/ttsConfigurations.ts'
+import { clampSpeed, speedRange, ttsConfigurationOption } from '../src/utils/ttsConfigurations.ts'
 import type { ConfigurationFileResponse } from '../src/types/configurationSchemas'
 
 test('TTS configuration selection uses language defaults and retains the configuration identity', () => {
@@ -33,6 +33,17 @@ test('TTS options reject malformed configurations and handle provider speed defa
   assert.equal(ttsConfigurationOption(file, 'en')?.speed, .8)
   assert.equal(ttsConfigurationOption(file, 'en')?.actor, 'Sveta')
   assert.equal(ttsConfigurationOption({ ...file, payload: {} }, 'en'), null)
+})
+
+test('the speed slider stays within what the configuration\'s provider accepts', () => {
+  assert.deepEqual(speedRange('elevenlabs'), { min: .7, max: 1.2 })
+  assert.deepEqual(speedRange('static'), { min: .7, max: 1.2 })
+  assert.deepEqual(speedRange('openai'), { min: .25, max: 4 })
+  assert.deepEqual(speedRange('speaktor'), { min: .5, max: 2 })
+  assert.deepEqual(speedRange(undefined), { min: .5, max: 2 })
+  assert.equal(clampSpeed(.5, speedRange('elevenlabs')), .7)
+  assert.equal(clampSpeed(1.5, speedRange('elevenlabs')), 1.2)
+  assert.equal(clampSpeed(.9, speedRange('elevenlabs')), .9)
 })
 
 const voice = (overrides: Partial<ItemVoiceRecord> = {}): ItemVoiceRecord => ({

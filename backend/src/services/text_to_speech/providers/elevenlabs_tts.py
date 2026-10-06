@@ -58,7 +58,7 @@ class ElevenLabsTTSProvider(TTSProvider):
     async def generate(self, request: TTSRequest, client: Any) -> GeneratedAudio:
         """Call the ElevenLabs TTS endpoint and write the audio to disk."""
         output_format = request.output_format
-        gen = self.resolve_language_generate(request.language_code)
+        gen = self.resolve_request_generate(request)
 
         actor = gen.get("actor") or ""
         if not actor:

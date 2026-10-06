@@ -656,4 +656,7 @@ export const contentHandlers = [
 
   // Create optimized versions of an item voice
   http.post('/api/v1/content/categories/:category_id/items/:item_id/voices/:voice_id/optimize', () => HttpResponse.json({})),
+
+  // Generate a new voice for an item
+  http.post('/api/v1/content/categories/:category_id/items/:item_id/voices/generate', () => HttpResponse.json({}, { status: 201 })),
 ]

@@ -89,6 +89,24 @@ export interface DeleteArchivedCategoryResponse {
     message: string
 }
 
+/** Request body for generating a new take of an item voice. */
+export interface GenerateItemVoiceBody {
+    language: string
+    text: string
+    configuration_name: string
+    speed?: number | null
+    stability?: number | null
+    similarity?: number | null
+    optimize?: boolean
+}
+
+/** Response for POST /categories/{category_id}/items/{item_id}/voices/generate. */
+export interface GenerateItemVoiceResponse extends ItemVoicesResponse {
+    voice_id: string
+    optimized_voice_ids?: string[]
+    warnings?: string[]
+}
+
 /** Response for a single item image entry. */
 export interface ImageResponse {
     id: string

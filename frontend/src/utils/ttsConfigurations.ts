@@ -39,3 +39,21 @@ export function ttsConfigurationOption(file: ConfigurationFileResponse, language
     similarity: typeof voiceSettings.similarity_boost === 'number' ? voiceSettings.similarity_boost : undefined,
   }
 }
+
+export interface SpeedRange { min: number; max: number }
+
+// Speeds each provider's API accepts; values outside them fail the request. The static
+// provider synthesizes through ElevenLabs.
+const providerSpeedRanges: Record<string, SpeedRange> = {
+  elevenlabs: { min: .7, max: 1.2 },
+  static: { min: .7, max: 1.2 },
+  openai: { min: .25, max: 4 },
+}
+
+export function speedRange(provider: string | undefined): SpeedRange {
+  return providerSpeedRanges[provider ?? ''] ?? { min: .5, max: 2 }
+}
+
+export function clampSpeed(speed: number, range: SpeedRange): number {
+  return Math.min(range.max, Math.max(range.min, speed))
+}

@@ -34,7 +34,10 @@ test('selection sends a bodyless PUT to the generated main endpoint', async () =
 
 test('generation sends the selected configuration identity with per-item settings', async () => {
   const body = { language: 'bg', text: 'диван', configuration_name: 'elevenlabs_slow', speed: .7, optimize: false }
-  const response = { id: 'new-take', language: 'bg', type: 'tts' }
+  const response = {
+    item_id: 'I_Sofa', name: { bg: 'диван' }, voices: [], variants: [], main_voice_ids: { bg: 'sofa_bg_01' },
+    voice_id: 'sofa_bg_02', optimized_voice_ids: [], warnings: [],
+  }
   client.defaults.adapter = async (config) => {
     assert.equal(config.method, 'post')
     assert.equal(config.url, '/content/categories/C_AtHome/items/I_Sofa/voices/generate')
@@ -42,6 +45,14 @@ test('generation sends the selected configuration identity with per-item setting
     return { data: response, status: 201, statusText: 'Created', headers: {}, config }
   }
   assert.deepEqual(await api.generateItemVoice('C_AtHome', 'I_Sofa', body), response)
+})
+
+test('generation encodes the category and item IDs', async () => {
+  client.defaults.adapter = async (config) => {
+    assert.equal(config.url, '/content/categories/fruit%20%26%20veg/items/item%2F1/voices/generate')
+    return { data: {}, status: 201, statusText: 'Created', headers: {}, config }
+  }
+  await api.generateItemVoice('fruit & veg', 'item/1', { language: 'en', text: 'x', configuration_name: 'openai', speed: 1, optimize: false })
 })
 
 test('selection encodes IDs and propagates backend rejection', async () => {

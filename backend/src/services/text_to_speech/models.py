@@ -31,6 +31,9 @@ class TTSRequest:
     output_format: str = "mp3"  # requested audio format, e.g. "mp3"
     column_index: int | None = None  # column position (multi-column inputs)
     metadata: dict[str, Any] = field(default_factory=dict)  # extra pass-through data
+    # Per-request voice settings ("speed", "stability", "similarity") layered over the
+    # configuration's own; see TTSProvider.apply_generate_overrides.
+    overrides: dict[str, Any] = field(default_factory=dict)
 
 
 class TTSProvider(ServiceProvider, ABC):
@@ -76,6 +79,30 @@ class TTSProvider(ServiceProvider, ABC):
         if isinstance(overrides, dict):
             base.update(overrides)
         return base
+
+    def resolve_request_generate(self, request: TTSRequest) -> dict[str, Any]:
+        """Return the generate dict for the request's language with its per-request overrides applied."""
+        return self.apply_generate_overrides(self.resolve_language_generate(request.language_code), request.overrides)
+
+    def apply_generate_overrides(self, generate: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:
+        """Return *generate* with the per-request *overrides* layered over it.
+
+        "speed" replaces the configured speed; "stability" and "similarity" go into
+        "voice_settings" as "stability" and "similarity_boost". A provider that names a
+        setting differently overrides this.
+        """
+        merged = dict(generate)
+        if overrides.get("speed") is not None:
+            merged["speed"] = overrides["speed"]
+        voice_settings = {
+            key: overrides[name]
+            for name, key in (("stability", "stability"), ("similarity", "similarity_boost"))
+            if overrides.get(name) is not None
+        }
+        if voice_settings:
+            configured = merged.get("voice_settings")
+            merged["voice_settings"] = {**(configured if isinstance(configured, dict) else {}), **voice_settings}
+        return merged
 
     def build_prompt_text(self, request: TTSRequest) -> str:
         """Combine the configured prompt prefix with the request text."""

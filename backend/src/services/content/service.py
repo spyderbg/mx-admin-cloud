@@ -21,6 +21,8 @@ from src.services.content.models import (
     CreateCategory,
     CreateItem,
     DeleteArchivedCategory,
+    GenerateItemVoice,
+    GeneratedItemVoice,
     ItemDetail,
     ItemImages,
     ItemVoices,
@@ -333,6 +335,10 @@ class ContentService(Service):  # pylint: disable=too-many-public-methods
     def regenerate_item_voice(self, category_id: str, item_id: str, voice_id: str) -> CategoryVoice:
         """Re-synthesize an item voice from its current text via the active provider."""
         return self._first_success(lambda provider: provider.regenerate_item_voice(category_id, item_id, voice_id))
+
+    def generate_item_voice(self, category_id: str, item_id: str, request: GenerateItemVoice) -> GeneratedItemVoice:
+        """Synthesize a new take of an item voice with a chosen configuration via the active provider."""
+        return self._first_success(lambda provider: provider.generate_item_voice(category_id, item_id, request))
 
     # ------------------------------------------------------------------
 

@@ -170,6 +170,34 @@ class OptimizedItemVoice(ItemVoices):
 
 
 @dataclass
+class GenerateItemVoice:  # pylint: disable=too-many-instance-attributes
+    """A request to synthesize a new take of an item voice with a chosen text-to-speech configuration."""
+
+    language: str
+    text: str
+    #: Text-to-speech configuration to synthesize with, enabled or not.
+    configuration_name: str
+    #: Voice settings layered over the configuration's own; None keeps the configured value.
+    speed: float | None = None
+    stability: float | None = None
+    similarity: float | None = None
+    #: Also create optimized versions of the new take with the active voice optimizers.
+    optimize: bool = False
+
+
+@dataclass
+class GeneratedItemVoice(ItemVoices):
+    """Result of generating an item voice: the refreshed voice listing plus what was produced."""
+
+    #: Id of the new take.
+    voice_id: str = ""
+    #: Ids of the optimized versions made from the new take, when optimization was requested.
+    optimized_voice_ids: list[str] = field(default_factory=list)
+    #: Optimization problems; the new take is kept regardless.
+    warnings: list[str] = field(default_factory=list)
+
+
+@dataclass
 class CreateCategory:
     """Result of creating a new category."""
 
@@ -442,6 +470,14 @@ class ContentProvider(ServiceProvider, ABC):  # pylint: disable=too-many-public-
     @abstractmethod
     def regenerate_item_voice(self, category_id: str, item_id: str, voice_id: str) -> CategoryVoice:
         """Re-synthesize an item voice from its current text via the text-to-speech service."""
+
+    @abstractmethod
+    def generate_item_voice(self, category_id: str, item_id: str, request: GenerateItemVoice) -> GeneratedItemVoice:
+        """Synthesize a new take of an item voice from the request's text, configuration and settings.
+
+        The take is added next to the existing recordings and the language's main voice is
+        kept. Requested optimization runs on the new take; its failures are only warnings.
+        """
 
     @abstractmethod
     def category_id_by_name(self, category_name: str) -> str:

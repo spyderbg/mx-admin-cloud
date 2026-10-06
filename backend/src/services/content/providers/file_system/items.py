@@ -2,6 +2,8 @@
 removal, summaries), its images, and its voices.
 """
 
+# pylint: disable=too-many-lines
+
 from __future__ import annotations
 
 import contextlib
@@ -23,6 +25,8 @@ from src.services.content.models import (
     ContentOperationError,
     ContentProvider,
     CreateItem,
+    GenerateItemVoice,
+    GeneratedItemVoice,
     InvalidCategoryNameError,
     ItemDetail,
     ItemImages,
@@ -976,18 +980,7 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         except (ValueError, RuntimeError, httpx.HTTPError) as exc:
             raise ContentOperationError(f"Voice generation failed for {language}: {exc}") from exc
 
-        main, variants = self._split_item_voice_files(list(item_path.iterdir()), item_folder_name, language)
-        first_take = main is None and not variants
-        try:
-            if first_take:
-                voice_path = self._item_voice_path(item_path, item_folder_name, language)
-            else:
-                self._keep_main_voice_as_variant(item_path, item_folder_name, language)
-                voice_path = self._next_item_voice_variant_path(item_path, item_folder_name, language)
-            voice_path.write_bytes(audio_bytes)
-            self._write_generated_voice_metadata(voice_path, audio_bytes, word)
-        except OSError as exc:
-            raise ContentOperationError(f"Failed to save item voice: {exc}") from exc
+        voice_path, first_take = self._add_item_voice_take(item_path, item_folder_name, language, audio_bytes, word)
 
         provider, parameters = self._read_voice_metadata(voice_path)
         return CategoryVoice(
@@ -998,3 +991,89 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             provider=provider,
             parameters=parameters,
         )
+
+    def generate_item_voice(self, category_id: str, item_id: str, request: GenerateItemVoice) -> GeneratedItemVoice:
+        """Synthesize the request's text with its configuration and settings as a new take.
+
+        The take is stored like regenerate_item_voice's: next to the existing recordings,
+        none of which is overwritten, while the main voice stays in use. With
+        *request.optimize* the active voice optimizers then run on the new take; when they
+        fail, the take is kept and the failure reported in *warnings*.
+        """
+        category_name, category_path = self._validate_category_path(category_id)
+        item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
+
+        language = request.language
+        if language not in settings.SUPPORTED_LANGUAGES:
+            raise ContentOperationError(f"Unsupported language: {language}")
+        text = request.text.strip()
+        if not text:
+            raise ContentOperationError("Text to synthesize is required.")
+        configuration_name = request.configuration_name.strip()
+        if not configuration_name:
+            raise ContentOperationError("A text to speech configuration is required.")
+
+        voice_settings = {
+            name: value
+            for name, value in (("speed", request.speed), ("stability", request.stability),
+                                ("similarity", request.similarity))
+            if value is not None
+        }
+        try:
+            audio_bytes = self._generate_audio(text, language, configuration_name, voice_settings)
+        except (ValueError, RuntimeError, httpx.HTTPError) as exc:
+            raise ContentOperationError(f"Voice generation failed for {language}: {exc}") from exc
+
+        voice_path, first_take = self._add_item_voice_take(
+            item_path, item_folder_name, language, audio_bytes, text, configuration_name,
+        )
+        voice_id = f"{item_folder_name}-v-{language}" if first_take else voice_path.stem
+
+        optimized: OptimizedItemVoice | None = None
+        warnings: list[str] = []
+        if request.optimize:
+            try:
+                optimized = self.optimize_item_voice(category_id, item_id, voice_id)
+            except ContentError as exc:
+                warnings.append(str(exc))
+            else:
+                warnings = optimized.warnings
+        voices = optimized or self.item_voices(category_id, item_id)
+        return GeneratedItemVoice(
+            item_id=voices.item_id,
+            voices=voices.voices,
+            variants=voices.variants,
+            main_voice_ids=voices.main_voice_ids,
+            voice_id=voice_id,
+            optimized_voice_ids=optimized.optimized_voice_ids if optimized else [],
+            warnings=warnings,
+        )
+
+    def _add_item_voice_take(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+            self,
+            item_path: Path,
+            item_folder_name: str,
+            language: str,
+            audio_bytes: bytes,
+            text: str,
+            configuration_name: str | None = None,
+    ) -> tuple[Path, bool]:
+        """Store generated *audio_bytes* as a new take of *language*; return (its path, whether it is the first).
+
+        Nothing is overwritten: the take becomes a new variant, after the current main voice
+        is saved as one if it is not a variant's copy already, and the main voice stays in
+        use. Only a language with no recording yet gets its first take as the main voice.
+        """
+        main, variants = self._split_item_voice_files(list(item_path.iterdir()), item_folder_name, language)
+        first_take = main is None and not variants
+        try:
+            if first_take:
+                voice_path = self._item_voice_path(item_path, item_folder_name, language)
+            else:
+                self._keep_main_voice_as_variant(item_path, item_folder_name, language)
+                voice_path = self._next_item_voice_variant_path(item_path, item_folder_name, language)
+            voice_path.write_bytes(audio_bytes)
+            self._write_generated_voice_metadata(voice_path, audio_bytes, text, configuration_name)
+        except OSError as exc:
+            raise ContentOperationError(f"Failed to save item voice: {exc}") from exc
+        return voice_path, first_take

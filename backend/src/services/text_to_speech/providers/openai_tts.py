@@ -28,7 +28,7 @@ class OpenAITTSProvider(TTSProvider):
     async def generate(self, request: TTSRequest, client: Any) -> GeneratedAudio:
         """Call the OpenAI TTS endpoint and write the audio to disk."""
         output_format = request.output_format
-        gen = self.resolve_language_generate(request.language_code)
+        gen = self.resolve_request_generate(request)
 
         voice = gen.get("actor") or gen.get("voice") or ""
         if not voice:
@@ -66,6 +66,9 @@ class OpenAITTSProvider(TTSProvider):
         }
         if prompt:
             payload["instructions"] = prompt
+        speed = gen.get("speed")
+        if speed is not None:
+            payload["speed"] = float(speed)
 
         headers = {
             "Authorization": f"Bearer {api_key}",
