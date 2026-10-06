@@ -1,6 +1,7 @@
 <template>
-  <div ref="root" class="jdp" @mouseenter="show" @mouseleave="onMouseLeave" @focusin="show" @focusout="onFocusOut" @keydown.esc.prevent.stop="close">
-    <button ref="trigger" type="button" class="jdp-trigger" :aria-label="title" aria-haspopup="dialog" :aria-expanded="open" @click="show">
+  <div ref="root" class="jdp" @focusout="onFocusOut" @keydown.esc.prevent.stop="close">
+    <button ref="trigger" type="button" class="jdp-trigger" :aria-label="title" aria-haspopup="dialog" :aria-expanded="open"
+      @mouseenter="show" @mouseleave="onMouseLeave" @focus="show" @click="show">
       <slot>{{ title }}</slot>
     </button>
     <button type="button" class="jdp-copy" :aria-label="`${copyLabel}: ${title}`" :title="copyState === 'copied' ? copiedLabel : copyLabel"
@@ -8,7 +9,8 @@
       <i class="mdi" :class="copyState === 'copied' ? 'mdi-check' : 'mdi-content-copy'" aria-hidden="true"></i>
     </button>
     <span class="jdp-status" role="status">{{ copyState === 'copied' ? copiedLabel : copyState === 'error' ? copyErrorLabel : '' }}</span>
-    <div v-if="open" ref="popup" class="jdp-popup" :class="{ 'jdp-below': below }" :style="{ '--jdp-content-height': `${contentHeight}px` }" role="dialog" :aria-label="title">
+    <div v-if="open" ref="popup" class="jdp-popup" :class="{ 'jdp-below': below }" :style="{ '--jdp-content-height': `${contentHeight}px`, '--jdp-left': `${popupLeft}px`, '--jdp-arrow-left': `${arrowLeft}px` }" role="dialog" :aria-label="title"
+      @mouseenter="clearCloseTimer" @mouseleave="onMouseLeave">
       <dl v-if="entries.length" class="jdp-content" tabindex="0" :aria-label="title">
         <div v-for="[key, value] in entries" :key="key" class="jdp-row">
           <dt>{{ key }}</dt>
@@ -47,6 +49,8 @@ const trigger = ref<HTMLButtonElement | null>(null)
 const popup = ref<HTMLElement | null>(null)
 const below = ref(false)
 const contentHeight = ref(360)
+const popupLeft = ref(0)
+const arrowLeft = ref(0)
 const localOpen = ref(false)
 const open = computed({
   get: () => props.open ?? localOpen.value,
@@ -103,10 +107,15 @@ function formatValue(value: unknown): string {
 }
 
 function updatePosition(): void {
-  if (!open.value || !popup.value || !root.value) return
-  const anchor = getComputedStyle(root.value).position === 'static' ? popup.value.offsetParent : root.value
-  if (!(anchor instanceof HTMLElement)) return
-  const rect = anchor.getBoundingClientRect()
+  if (!open.value || !popup.value || !root.value || !trigger.value) return
+  const rect = trigger.value.getBoundingClientRect()
+  const center = rect.left + rect.width / 2
+  const width = popup.value.offsetWidth
+  const left = Math.max(16, Math.min(center - width / 2, document.documentElement.clientWidth - width - 16))
+  popupLeft.value = left - root.value.getBoundingClientRect().left
+  // Keep the arrow on the value even when the popup shifts away from a screen edge.
+  const borderWidth = parseFloat(getComputedStyle(popup.value).borderLeftWidth) || 0
+  arrowLeft.value = Math.max(12, Math.min(width - 12, center - left - borderWidth))
   const aboveSpace = rect.top - props.topInset - 8
   const belowSpace = window.innerHeight - rect.bottom - 24
   below.value = aboveSpace < 120 && belowSpace > aboveSpace
@@ -156,8 +165,8 @@ onBeforeUnmount(() => {
 .jdp-copy { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 20px; height: 24px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #596984; font: inherit; font-size: .85rem; cursor: pointer; }
 .jdp-copy:hover { color: #1757b9; background: #eef4ff; }
 .jdp-copy:disabled { opacity: .5; cursor: default; }
-.jdp-popup { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); z-index: 30; width: max-content; min-width: min(220px, calc(100vw - 96px)); max-width: min(320px, calc(100vw - 96px)); border: 1.5px solid #b8d4f0; border-radius: 10px; background: #f8fbff; box-shadow: 0 6px 16px #0f172a26; padding: .5rem .65rem; text-align: left; font-weight: 400; }
-.jdp-popup::before { content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 6px solid transparent; border-top-color: #b8d4f0; }
+.jdp-popup { position: absolute; bottom: calc(100% + 8px); left: var(--jdp-left, 0px); z-index: 30; width: max-content; min-width: min(220px, calc(100vw - 96px)); max-width: min(320px, calc(100vw - 96px)); border: 1.5px solid #b8d4f0; border-radius: 10px; background: #f8fbff; box-shadow: 0 6px 16px #0f172a26; padding: .5rem .65rem; text-align: left; font-weight: 400; }
+.jdp-popup::before { content: ''; position: absolute; top: 100%; left: var(--jdp-arrow-left, 50%); transform: translateX(-50%); border: 6px solid transparent; border-top-color: #b8d4f0; }
 .jdp-popup::after { content: ''; position: absolute; left: 0; right: 0; bottom: -9px; height: 9px; }
 .jdp-below { top: calc(100% + 8px); bottom: auto; }
 .jdp-below::before { top: auto; bottom: 100%; border-top-color: transparent; border-bottom-color: #b8d4f0; }

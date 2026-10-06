@@ -131,9 +131,8 @@ function onDrop(event: DragEvent): void {
 .iv-description-field + .iv-description-field { border-left: 1px solid #e5edf8; }
 .iv-description-field > :deep(dt) { min-width: 0; font-weight: 400; overflow-wrap: anywhere; }
 .iv-description-field > :deep(dd) { min-width: 0; margin: 0; }
-.iv-description-field :deep(.jdp) { position: static; width: 100%; }
+.iv-description-field :deep(.jdp) { width: 100%; }
 .iv-description-field :deep(.jdp-trigger) { color: #111a3d; font-size: .82rem; font-weight: 700; }
-.iv-description-field :deep(.jdp-popup) { left: 0; transform: none; }
 .iv-card-actions { display: flex; gap: .35rem; flex: none; }
 .iv-card-action { display: inline-flex; align-items: center; justify-content: center; width: 1.75rem; height: 1.75rem; padding: 0; border: 0; border-radius: 50%; color: #fff; font-size: .9rem; cursor: pointer; }
 .iv-card-action-edit { background: #2563eb; }
