@@ -98,12 +98,16 @@
       <template #footer><button v-if="uploadMode === 'replace'" type="button" class="ivs-button" :disabled="!!busyKey" @click="closeDialog">{{ copy.cancel }}</button><button type="submit" class="ivs-button ivs-primary ivs-submit" :disabled="!canUpload"><i class="mdi" :class="busyKey ? 'mdi-loading mdi-spin' : 'mdi-upload'" aria-hidden="true"></i>{{ busyKey ? copy.saving : uploadMode === 'replace' ? copy.replace : copy.add }}</button></template>
     </VoiceDialog>
 
-    <VoiceDialog v-if="dialog === 'delete' && deleteTarget" :title="copy.deleteVoice" :busy="!!busyKey" @close="closeDialog" @submit="deleteVoice">
-      <p class="ivs-delete-confirm">{{ copy.deleteConfirm.replace('{voice}', voiceTitle(deleteTarget)) }}</p>
-      <p v-if="formError" class="ivs-notice ivs-error" role="alert">{{ formError }}</p>
-      <p class="ivs-notice">{{ copy.deleteHelp }}</p>
-      <template #footer><button type="button" class="ivs-button" :disabled="!!busyKey" @click="closeDialog">{{ copy.cancel }}</button><button type="submit" class="ivs-button ivs-danger" :disabled="!!busyKey"><i class="mdi" :class="busyKey ? 'mdi-loading mdi-spin' : 'mdi-delete'" aria-hidden="true"></i>{{ busyKey ? copy.deleting : copy.deleteVoice }}</button></template>
-    </VoiceDialog>
+    <DeleteFileDialog
+      v-if="dialog === 'delete' && deleteTarget"
+      :title="copy.deleteVoice"
+      :message="copy.deleteConfirm.replace('{voice}', voiceTitle(deleteTarget))"
+      :error="formError"
+      :busy="!!busyKey"
+      :confirm-label="copy.deleteVoice"
+      @cancel="closeDialog"
+      @confirm="deleteVoice"
+    />
   </section>
 </template>
 
@@ -128,6 +132,7 @@ import { langFlag, langLabel } from '../utils/voiceLabels'
 import ItemVoiceCard from './ItemVoiceCard.vue'
 import MobileActionsMenu, { type MobileAction } from './MobileActionsMenu.vue'
 import VoiceDialog from './VoiceDialog.vue'
+import DeleteFileDialog from './DeleteFileDialog.vue'
 import VoiceAudioPreview from './VoiceAudioPreview.vue'
 
 const props = defineProps<{ categoryId: string; itemId: string; itemName: string; voices: Voice[]; externalPlayingId: string | null; disabled: boolean }>()
@@ -503,8 +508,6 @@ onBeforeUnmount(() => {
 .ivs-button:hover:not(:disabled) { background: #eef2ff; }
 .ivs-primary { background: #4f46e5; color: white; border-color: #4f46e5; }
 .ivs-primary:hover:not(:disabled) { background: #4338ca; }
-.ivs-danger { border-color: #ef4444; background: #ef4444; color: white; }
-.ivs-danger:hover:not(:disabled) { border-color: #dc2626; background: #dc2626; }
 .ivs-button:disabled { opacity: .5; cursor: default; }
 .ivs-button i { font-size: 1.1rem; }
 .ivs button { scroll-margin-top: 80px; }
@@ -552,7 +555,6 @@ onBeforeUnmount(() => {
 .ivs-file { display: flex; align-items: center; gap: .8rem; padding: .85rem; border-radius: 7px; background: #f1f7ff; margin-top: .8rem; }
 .ivs-file > i { font-size: 1.6rem; }
 .ivs-file > div { flex: 1; min-width: 0; font-size: .85rem; overflow-wrap: anywhere; }
-.ivs-delete-confirm { margin: 0 0 1rem; line-height: 1.5; }
 .ivs-upload-preview { margin: 1.2rem 0; font-size: .85rem; }
 .ivs-upload-preview > strong { display: block; margin-bottom: .6rem; }
 button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #a5b4fc; outline-offset: 2px; }

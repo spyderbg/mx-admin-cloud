@@ -110,30 +110,15 @@
   </Teleport>
 
   <!-- Delete / reset voice confirmation -->
-  <Teleport to="body">
-    <div v-if="showDeleteConfirm" class="cd-modal-overlay" @click.self="closeDeleteConfirm">
-      <div class="cd-modal-box">
-        <div class="cd-modal-header">
-          <h5 class="cd-modal-title">{{ deleteOrResetVoiceLabel(contentLanguage) }}</h5>
-          <button type="button" class="cd-modal-close" @click="closeDeleteConfirm">&times;</button>
-        </div>
-        <div class="cd-modal-body">
-          <template v-if="deleteTarget">
-            <p class="mb-2">
-              {{ deleteOrResetVoiceConfirmLabel(contentLanguage, deleteTarget.name, deleteTarget.language) }}
-            </p>
-            <p class="text-muted small mb-0">
-              {{ deleteOrResetVoiceHelpLabel(contentLanguage) }}
-            </p>
-          </template>
-        </div>
-        <div class="cd-modal-footer">
-          <button type="button" class="btn btn-secondary" @click="closeDeleteConfirm">{{ cancelLabel(contentLanguage) }}</button>
-          <button type="button" class="btn btn-danger" @click="confirmDelete">{{ deleteResetLabel(contentLanguage) }}</button>
-        </div>
-      </div>
-    </div>
-  </Teleport>
+  <DeleteFileDialog
+    v-if="showDeleteConfirm && deleteTarget"
+    :title="deleteOrResetVoiceLabel(contentLanguage)"
+    :message="deleteOrResetVoiceConfirmLabel(contentLanguage, deleteTarget.name, deleteTarget.language)"
+    :help="deleteOrResetVoiceHelpLabel(contentLanguage)"
+    :confirm-label="deleteResetLabel(contentLanguage)"
+    @cancel="closeDeleteConfirm"
+    @confirm="confirmDelete"
+  />
 
   <!-- Edit voice word (label) modal -->
   <Teleport to="body">
@@ -172,6 +157,7 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import ServerWord from './ServerWord.vue'
 import VoiceParametersTooltip from './VoiceParametersTooltip.vue'
+import DeleteFileDialog from './DeleteFileDialog.vue'
 import type { Voice } from '../types/viewModels'
 import { langFlag, langLabel } from '../utils/voiceLabels'
 import { useContentLanguage } from '../composables/useContentLanguage'

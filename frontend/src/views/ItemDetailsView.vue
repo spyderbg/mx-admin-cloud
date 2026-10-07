@@ -236,23 +236,16 @@
         </div>
       </div>
     </div>
-
-    <div v-if="deleteConfirmVisible" class="cd-modal-overlay" @click.self="cancelDelete">
-      <div class="cd-modal-box">
-        <div class="cd-modal-header">
-          <h5 class="cd-modal-title">Delete File</h5>
-          <button type="button" class="cd-modal-close" @click="cancelDelete">&times;</button>
-        </div>
-        <div class="cd-modal-body">
-          Are you sure you want to delete this file from "{{ category?.name }}"?
-        </div>
-        <div class="cd-modal-footer">
-          <button type="button" class="btn btn-secondary" @click="cancelDelete">Cancel</button>
-          <button type="button" class="btn btn-danger" @click="confirmDelete">Delete</button>
-        </div>
-      </div>
-    </div>
   </Teleport>
+
+  <DeleteFileDialog
+    v-if="deleteConfirmVisible"
+    :title="deleteImageLabel(contentLanguage)"
+    @cancel="cancelDelete"
+    @confirm="confirmDelete"
+  >
+    <template #message>{{ deleteImageMessage[0] }}<strong>{{ fileNameFromUri(rawItemImages[deleteFileIndex] || '') }}</strong>{{ deleteImageMessage[1] }}</template>
+  </DeleteFileDialog>
 
   <Teleport to="body">
     <div v-if="pendingNotice" class="id-toast">
@@ -391,6 +384,7 @@ import ViewBreadcrumb from '../components/ViewBreadcrumb.vue'
 import MobileActionsMenu, { type MobileAction } from '../components/MobileActionsMenu.vue'
 import VoiceCardsGrid, { type VoiceExtraAction } from '../components/VoiceCardsGrid.vue'
 import ItemVoicesSection from '../components/ItemVoicesSection.vue'
+import DeleteFileDialog from '../components/DeleteFileDialog.vue'
 import { resizeImageToMaxDimension } from '../utils/imageResize'
 import { imageIdFromUri } from '../utils/imageId'
 import { cacheBustedUri } from '../utils/cacheBustedUri'
@@ -404,6 +398,8 @@ import {
   currentImageLabel,
   descriptionLabel,
   deleteLabel,
+  deleteImageConfirmLabel,
+  deleteImageLabel,
   dropImageFileRequiredLabel,
   dropImageHereLabel,
   enterItemIdLabel,
@@ -842,6 +838,10 @@ const onReplaceFilePicked = async (e: Event): Promise<void> => {
 }
 const deleteConfirmVisible = ref(false)
 const deleteFileIndex = ref<number>(-1)
+const deleteImageMessage = computed(() => deleteImageConfirmLabel(
+  contentLanguage.value,
+  category.value ? localizedCategoryLabel(category.value, contentLanguage.value) : '',
+).split('{image}'))
 const imagePreview = ref<{ src: string; title: string } | null>(null)
 
 function openImagePreview(src: string, title: string): void {

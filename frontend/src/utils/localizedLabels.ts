@@ -744,6 +744,37 @@ export function uploadCategoryIconLabel(lang: Language): string {
   return labels[lang] ?? labels.en
 }
 
+/** Modal title for deleting a file; unknown `lang` falls back to English. */
+export function deleteFileLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Delete File',
+    es: 'Eliminar archivo',
+    fr: 'Supprimer le fichier',
+    bg: 'Изтриване на файл',
+  }
+  return labels[lang] ?? labels.en
+}
+
+export function deleteImageLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Delete image',
+    es: 'Eliminar imagen',
+    fr: 'Supprimer l’image',
+    bg: 'Изтриване на изображение',
+  }
+  return labels[lang] ?? labels.en
+}
+
+export function deleteImageConfirmLabel(lang: Language, category: string): string {
+  const labels: Record<Language, string> = {
+    en: `Are you sure you want to delete "{image}" from "${category}"?`,
+    es: `¿Seguro que quieres eliminar "{image}" de "${category}"?`,
+    fr: `Voulez-vous vraiment supprimer « {image} » de « ${category} » ?`,
+    bg: `Сигурни ли сте, че искате да изтриете „{image}“ от „${category}“?`,
+  }
+  return labels[lang] ?? labels.en
+}
+
 /** Modal title for deleting a category image; unknown `lang` falls back to English. */
 export function deleteCategoryImageLabel(lang: Language): string {
   const labels: Record<Language, string> = {
