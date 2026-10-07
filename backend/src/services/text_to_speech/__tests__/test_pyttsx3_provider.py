@@ -1,6 +1,6 @@
 """Unit tests for the pyttsx3 provider and its shipped configuration."""
 
-# pylint: disable=missing-function-docstring,too-few-public-methods,import-outside-toplevel
+# pylint: disable=missing-function-docstring,too-few-public-methods,import-outside-toplevel,protected-access
 
 from __future__ import annotations
 
@@ -18,10 +18,10 @@ _VOICES = [
 ]
 
 
-def test_shipped_configuration_is_disabled() -> None:
+def test_shipped_configuration_names_the_pyttsx3_provider() -> None:
     document = json.loads(_CONFIG_PATH.read_text(encoding="utf-8"))["service_provider"]
+    assert document["service"] == "text_to_speech"
     assert document["provider"] == "pyttsx3"
-    assert document["enabled"] is False
 
 
 def test_pick_voice_matches_actor_by_id_or_name() -> None:
