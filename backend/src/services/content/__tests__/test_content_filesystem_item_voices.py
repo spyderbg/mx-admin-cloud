@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from unittest.mock import patch
 
@@ -24,6 +25,7 @@ from src.services.provider_strategy import ProviderSelectionStrategy
 from src.services.content.__tests__.content_fs_helpers import (
     patch_fs_settings,
     make_fs_provider,
+    voice_metadata,
     voice_metadata_normalized,
     write_category_registry,
     write_item_registry,
@@ -778,3 +780,68 @@ def test_generate_item_voice_rejects_invalid_requests(tmp_path: Path, overrides:
         _generate(content_root, _request(**overrides))
 
     assert _mp3s(item_path) == {"apple_en": b"original"}
+
+
+def _sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def test_voice_sidecar_records_the_hash_of_the_voice_file(tmp_path: Path) -> None:
+    _, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"main-en"})
+    make_fs_provider()._write_voice_metadata(item_path / "apple_en.mp3", VoiceCreationMethod.UPLOADED, "custom")
+
+    assert voice_metadata(item_path / "apple_en.csv")["hash"] == _sha256(b"main-en")
+
+
+def test_main_voice_matches_the_variant_with_the_same_hash(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_voices(tmp_path, {
+        "apple_en": b"same", "apple_en_01": b"other", "apple_en_02": b"same",
+    })
+    provider = make_fs_provider()
+    for name in ("apple_en", "apple_en_01", "apple_en_02"):
+        provider._write_voice_metadata(item_path / f"{name}.mp3", VoiceCreationMethod.UPLOADED, "custom")
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        result = provider.item_voices("C_Foods", "I_Apple")
+
+    assert result.main_voice_ids == {"en": "apple_en_02"}
+
+
+def test_changed_voice_file_resets_its_sidecar_and_is_no_longer_the_main_copy(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"same", "apple_en_01": b"same"})
+    provider = make_fs_provider()
+    for name in ("apple_en", "apple_en_01"):
+        provider._write_voice_metadata(
+            item_path / f"{name}.mp3", VoiceCreationMethod.GENERATED, "openai", {"actor": "alloy"},
+        )
+    # The variant's recorded hash still equals the main's, but its MP3 was replaced outside the app.
+    (item_path / "apple_en_01.mp3").write_bytes(b"replaced")
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        result = provider.item_voices("C_Foods", "I_Apple")
+
+    assert result.main_voice_ids == {"en": None}
+    assert voice_metadata(item_path / "apple_en_01.csv") == {
+        "creation_method": "unknown", "provider": "custom", "parameters": "{}", "hash": _sha256(b"replaced"),
+    }
+    assert voice_metadata(item_path / "apple_en.csv")["creation_method"] == "generated"
+
+
+def test_sidecar_without_a_hash_gains_it_and_keeps_its_fields(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"same", "apple_en_01": b"same"})
+    for name in ("apple_en", "apple_en_01"):
+        (item_path / f"{name}.csv").write_text(
+            'creation_method,provider,parameters\nuploaded,custom,"{""a"": 1}"\n', encoding="utf-8",
+        )
+    provider = make_fs_provider()
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        result = provider.item_voices("C_Foods", "I_Apple")
+
+    assert result.main_voice_ids == {"en": "apple_en_01"}
+    assert voice_metadata(item_path / "apple_en.csv") == {
+        "creation_method": "uploaded", "provider": "custom", "parameters": '{"a": 1}', "hash": _sha256(b"same"),
+    }

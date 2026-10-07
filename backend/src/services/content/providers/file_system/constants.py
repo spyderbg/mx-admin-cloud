@@ -18,7 +18,7 @@ _CATEGORY_VOICE_MP3 = "{}_{}.mp3"
 # the root CSV registry rows that archive_category() deletes.
 _ARCHIVE_MANIFEST = "_category.json"
 
-_VOICE_METADATA_COLUMNS = ("creation_method", "provider", "parameters")
+_VOICE_METADATA_COLUMNS = ("creation_method", "provider", "parameters", "hash")
 
 
 class VoiceCreationMethod(str, Enum):
@@ -27,3 +27,4 @@ class VoiceCreationMethod(str, Enum):
     UPLOADED = "uploaded"
     GENERATED = "generated"
     OPTIMIZED = "optimized"
+    UNKNOWN = "unknown"

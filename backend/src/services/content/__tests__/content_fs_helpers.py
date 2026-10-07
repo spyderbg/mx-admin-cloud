@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import importlib
 import json
 import pkgutil
@@ -97,7 +98,9 @@ def without_date(parameters: dict[str, object]) -> dict[str, object]:
 
 def voice_metadata_normalized(path: Path) -> dict[str, object]:
     """Like voice_metadata(), but with 'parameters' parsed and its 'date' stamp
-    replaced by a presence check, so callers can assert the rest exactly."""
+    replaced by a presence check, and the 'hash' checked against the voice file and dropped,
+    so callers can assert the rest exactly."""
     row = voice_metadata(path)
+    assert row["hash"] == hashlib.sha256(path.with_suffix(".mp3").read_bytes()).hexdigest()
     parameters = json.loads(row["parameters"])
-    return {**row, "parameters": without_date(parameters)}
+    return {**{k: v for k, v in row.items() if k != "hash"}, "parameters": without_date(parameters)}

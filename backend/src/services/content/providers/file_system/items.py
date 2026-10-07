@@ -95,6 +95,34 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             return None
         return None
 
+    @classmethod
+    def _main_voice_source_id(cls, main_path: Path, variant_paths: list[Path]) -> str | None:
+        """Return the id of the variant *main_path* was copied from, or None if it matches none.
+
+        Voices carry the hash of their file in the metadata sidecar, so a variant is a
+        candidate when its recorded hash equals the main voice's. Only candidates are then
+        re-checked: both files are hashed again, and a sidecar whose hash no longer matches
+        its file is reset (see _verify_voice_hash) before the final comparison.
+        """
+        try:
+            main_hash = cls._stored_voice_hash(main_path)
+            if not main_hash:
+                main_hash = cls._verify_voice_hash(main_path)
+            candidates = [
+                v for v in variant_paths
+                if (cls._stored_voice_hash(v) or cls._verify_voice_hash(v)) == main_hash
+            ]
+            if not candidates:
+                return None
+            verified_main_hash = cls._verify_voice_hash(main_path)
+            for candidate in candidates:
+                if cls._verify_voice_hash(candidate) == verified_main_hash:
+                    return candidate.stem
+        except OSError:
+            # A file-vanishing mid-scan only costs the selection highlight, not the listing.
+            return None
+        return None
+
     @staticmethod
     def _first_available_item_image_index(item_path: Path, item_folder_name: str) -> int:
         """First 1-based index where no ``{item_folder_name}_{index:02d}.{ext}`` file exists yet."""
@@ -187,7 +215,7 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         main, variants = self._split_item_voice_files(list(item_path.iterdir()), item_folder_name, language)
         if main is None:
             return None
-        copied_from = self._main_copy_source_id(main, variants)
+        copied_from = self._main_voice_source_id(main, variants)
         source = next((v for v in variants if v.stem == copied_from), None)
         if source is not None:
             return source
@@ -589,7 +617,7 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             voices.append(to_voice(f"{item_folder_name}-v-{lang}", lang, main or next(iter(variant_paths), None)))
             variants.extend(to_voice(path.stem, lang, path) for path in variant_paths)
             if main is not None:
-                main_voice_ids[lang] = self._main_copy_source_id(main, variant_paths)
+                main_voice_ids[lang] = self._main_voice_source_id(main, variant_paths)
             else:
                 main_voice_ids[lang] = variant_paths[0].stem if variant_paths else None
         return ItemVoices(item_id=item_id, voices=voices, variants=variants, main_voice_ids=main_voice_ids)

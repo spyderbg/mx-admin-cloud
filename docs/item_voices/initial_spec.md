@@ -49,7 +49,7 @@ Per item and language, in `content/<category>/<folder>/`:
 | --- | --- |
 | `{folder}_{lang}.mp3` | **main voice**: what the app plays. It is a *byte-for-byte copy* of the chosen take. |
 | `{folder}_{lang}_{NN}.mp3` | a **take (variant)**. `NN` is a 2-digit, 1-based index; a new take uses the first free index. |
-| `<same stem>.csv` | metadata sidecar for that MP3: columns `creation_method` (`generated` / `uploaded` / `optimized`), `provider`, `parameters` (JSON: `_text`, `_optimizer`, `_source`, `date`, provider settings). |
+| `<same stem>.csv` | metadata sidecar for that MP3: columns `creation_method` (`generated` / `uploaded` / `optimized` / `unknown`), `provider`, `parameters` (JSON: `_text`, `_optimizer`, `_source`, `date`, provider settings), `hash` (SHA-256 of the MP3). A variant whose `hash` equals the main voice's is its source; both files are then re-hashed, and a sidecar whose `hash` no longer matches its file is reset to `unknown`, `custom`, `{}` with the new hash. |
 
 Identifiers used by the API:
 

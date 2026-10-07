@@ -1,2 +1,2 @@
-creation_method,provider,parameters
-generated,elevenlabs,"{""_text"": ""диван"", ""actor"": ""Milena"", ""date"": ""2026-10-05T04:31:37.710288+00:00"", ""language"": ""bg"", ""model"": ""eleven_multilingual_v2"", ""output_format"": ""mp3"", ""speaker_boost"": true, ""speed"": 0.7, ""use_space"": ""yes"", ""voice_id"": ""M1ydWt7KnBCiuv4CnEDC"", ""voice_settings"": {""similarity_boost"": 0.7, ""stability"": 0.6}}"
+creation_method,provider,parameters,hash
+generated,elevenlabs,"{""_text"": ""диван"", ""actor"": ""Milena"", ""date"": ""2026-10-05T04:31:37.710288+00:00"", ""language"": ""bg"", ""model"": ""eleven_multilingual_v2"", ""output_format"": ""mp3"", ""speaker_boost"": true, ""speed"": 0.7, ""use_space"": ""yes"", ""voice_id"": ""M1ydWt7KnBCiuv4CnEDC"", ""voice_settings"": {""similarity_boost"": 0.7, ""stability"": 0.6}}",3b0f5e70263117e6d32acb5ebf2c4eb442079fc4bc2e824cf29b32082044b52e

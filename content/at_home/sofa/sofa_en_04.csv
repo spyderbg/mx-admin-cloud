@@ -1,0 +1,2 @@
+creation_method,provider,parameters,hash
+generated,elevenlabs,"{""_text"": ""sofa"", ""actor"": ""Milena"", ""configuration_name"": ""elevenlabs"", ""date"": ""2026-10-07T04:18:04.756675+00:00"", ""language"": ""en"", ""model"": ""eleven_multilingual_v2"", ""output_format"": ""mp3"", ""speaker_boost"": true, ""speed"": 0.85, ""use_space"": ""no"", ""voice_id"": ""M1ydWt7KnBCiuv4CnEDC"", ""voice_settings"": {""similarity_boost"": 0.75, ""stability"": 0.5}}",7aa2abf1e9fcd29405f79b5fe507c67cf4c0ada5df143c99592af54acf7ca40a

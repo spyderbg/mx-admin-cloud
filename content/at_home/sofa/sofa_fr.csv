@@ -1,2 +1,2 @@
-creation_method,provider,parameters
-generated,elevenlabs,"{""_text"": ""canapé"", ""actor"": ""Charlotte"", ""date"": ""2026-10-05T04:31:35.493578+00:00"", ""language"": ""fr"", ""model"": ""eleven_multilingual_v2"", ""output_format"": ""mp3"", ""speaker_boost"": true, ""speed"": 1, ""use_space"": ""no"", ""voice_id"": ""XB0fDUnXU5powFXDhCwa"", ""voice_settings"": {""similarity_boost"": 0.75, ""stability"": 0.5}}"
+creation_method,provider,parameters,hash
+generated,elevenlabs,"{""_text"": ""canapé"", ""actor"": ""Charlotte"", ""date"": ""2026-10-05T04:31:35.493578+00:00"", ""language"": ""fr"", ""model"": ""eleven_multilingual_v2"", ""output_format"": ""mp3"", ""speaker_boost"": true, ""speed"": 1, ""use_space"": ""no"", ""voice_id"": ""XB0fDUnXU5powFXDhCwa"", ""voice_settings"": {""similarity_boost"": 0.75, ""stability"": 0.5}}",2063e70dee50dbd48ce897ff7cf53beca0d2a2e7c65cc8d874c2309f8950ef4e

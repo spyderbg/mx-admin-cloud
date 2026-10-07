@@ -109,7 +109,8 @@ class FileSystemContentProvider(
         """Persist how a voice was created in a one-row CSV next to its MP3.
 
         Stamps a "date" parameter with the write time, alongside whatever
-        the caller passed (e.g. "_text" for generated voices).
+        the caller passed (e.g. "_text" for generated voices). The "hash" column holds the
+        digest of the voice file as it is now, so the MP3 must already be written.
         """
         metadata_path = cls._voice_metadata_path(voice_path)
         all_parameters = dict(parameters or {})
@@ -121,7 +122,57 @@ class FileSystemContentProvider(
                 "creation_method": creation_method.value,
                 "provider": provider,
                 "parameters": json.dumps(all_parameters, ensure_ascii=False, sort_keys=True),
+                "hash": cls._file_digest(voice_path) if voice_path.is_file() else "",
             })
+
+    @classmethod
+    def _read_voice_row(cls, voice_path: Path) -> dict[str, str] | None:
+        """Return the sidecar row of *voice_path*, or None when it is missing, unreadable or empty."""
+        try:
+            with cls._voice_metadata_path(voice_path).open("r", encoding="utf-8", newline="") as file_handle:
+                return next(csv.DictReader(file_handle), None) or None
+        except (OSError, csv.Error):
+            return None
+
+    @classmethod
+    def _stored_voice_hash(cls, voice_path: Path) -> str:
+        """Return the hash recorded in *voice_path*'s sidecar, or "" when there is none."""
+        row = cls._read_voice_row(voice_path)
+        return ((row or {}).get("hash") or "").strip()
+
+    @classmethod
+    def _write_voice_row(cls, voice_path: Path, row: dict[str, str]) -> None:
+        """Replace *voice_path*'s sidecar with the one-row CSV *row*."""
+        with cls._voice_metadata_path(voice_path).open("w", encoding="utf-8", newline="") as file_handle:
+            writer = csv.DictWriter(file_handle, fieldnames=_VOICE_METADATA_COLUMNS)
+            writer.writeheader()
+            writer.writerow({column: row.get(column, "") for column in _VOICE_METADATA_COLUMNS})
+
+    @classmethod
+    def _verify_voice_hash(cls, voice_path: Path) -> str:
+        """Recalculate the hash of *voice_path*, repair its sidecar when it disagrees, and return the hash.
+
+        A voice without a sidecar has nothing to repair and gets none. A sidecar without a
+        hash (written before the column existed) only gains the hash.
+        A sidecar whose hash differs from the file's means the MP3 was changed behind the
+        application's back, so what the sidecar says about its origin no longer holds: it
+        is reset to an unknown creation method by a custom provider, with no parameters.
+        """
+        actual = cls._file_digest(voice_path)
+        row = cls._read_voice_row(voice_path)
+        stored = ((row or {}).get("hash") or "").strip()
+        if row is None or stored == actual:
+            return actual
+        if not stored:
+            cls._write_voice_row(voice_path, {**row, "hash": actual})
+        else:
+            cls._write_voice_row(voice_path, {
+                "creation_method": VoiceCreationMethod.UNKNOWN.value,
+                "provider": "custom",
+                "parameters": "{}",
+                "hash": actual,
+            })
+        return actual
 
     @classmethod
     def _write_generated_voice_metadata(
