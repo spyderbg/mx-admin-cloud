@@ -1,0 +1,2 @@
+creation_method,provider,parameters,hash
+generated,elevenlabs,"{""_text"": ""дивани"", ""actor"": ""Milena"", ""configuration_name"": ""elevenlabs"", ""date"": ""2026-10-07T09:18:39.154272+00:00"", ""language"": ""bg"", ""model"": ""eleven_multilingual_v2"", ""output_format"": ""mp3"", ""speaker_boost"": true, ""speed"": 1.1, ""use_space"": ""yes"", ""voice_id"": ""M1ydWt7KnBCiuv4CnEDC"", ""voice_settings"": {""similarity_boost"": 0.7, ""stability"": 0.6}}",6a1ef02d5dadc664a1688bcdf3b2cc0d42abf2d93582cff085b1b1e2ed6667fc

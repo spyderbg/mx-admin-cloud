@@ -957,11 +957,68 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             parameters=parameters,
         )
 
+    def _resolve_item_voice_file(
+            self,
+            item_path: Path,
+            item_folder_name: str,
+            voice_id: str,
+    ) -> tuple[str, Path] | None:
+        """Return the recording *voice_id* names, or None when this item has no such voice.
+
+        Accepts the per-language id (``{folder}-v-en``), the main stem (``{folder}_en``)
+        and a variant stem (``{folder}_en_01``). The per-language id names the voice in
+        use: the main file, or the first variant when the language has no main file yet.
+        The main stem names only the main file.
+        """
+        language = self._language_for_item_voice_ref(item_folder_name, voice_id)
+        if language is None:
+            return None
+        main, variants = self._split_item_voice_files(list(item_path.iterdir()), item_folder_name, language)
+        if voice_id == f"{item_folder_name}-v-{language}":
+            target = main or next(iter(variants), None)
+        elif voice_id == f"{item_folder_name}_{language}":
+            target = main
+        else:
+            target = next((variant for variant in variants if variant.stem == voice_id), None)
+        return (language, target) if target is not None else None
+
+    def _item_voice_paths_to_delete(
+            self,
+            item_path: Path,
+            item_folder_name: str,
+            language: str,
+            voice_path: Path,
+    ) -> list[Path]:
+        """Return *voice_path* and, when one exists, the other file of the same recording.
+
+        The main voice is a byte copy of the take in use. Deleting only one of the two
+        leaves that recording in place, so the item details view still plays it.
+        """
+        main, variants = self._split_item_voice_files(list(item_path.iterdir()), item_folder_name, language)
+        if main is None:
+            return [voice_path]
+        source_id = self._main_voice_source_id(main, variants)
+        if voice_path == main:
+            twin = next((variant for variant in variants if variant.stem == source_id), None)
+        elif source_id == voice_path.stem:
+            twin = main
+        else:
+            twin = None
+        if twin is None or twin == voice_path:
+            return [voice_path]
+        return [voice_path, twin]
+
     def delete_item_voice(self, category_id: str, item_id: str, voice_id: str) -> CategoryVoice:
+        """Delete one item recording and its metadata sidecar.
+
+        *voice_id* may be a per-language id, the main file's stem, or a variant stem.
+        A main voice that is a copy of the deleted take is removed with it; other takes
+        of the language are left as they are.
+        """
         category_name, category_path = self._validate_category_path(category_id)
         item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
 
-        found = self._find_item_voice_file(item_path, item_folder_name, voice_id)
+        found = self._resolve_item_voice_file(item_path, item_folder_name, voice_id)
         if found is None:
             raise CategoryNotFoundError(
                 f"Voice '{voice_id}' not found for item '{item_id}' in category '{category_name}'.",
@@ -969,9 +1026,11 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         language, voice_path = found
         file_uri = f"/content/{category_name}/{item_folder_name}/{voice_path.name}"
         provider, parameters = self._read_voice_metadata(voice_path)
+        paths = self._item_voice_paths_to_delete(item_path, item_folder_name, language, voice_path)
 
         try:
-            self._delete_voice_with_metadata(voice_path)
+            for path in paths:
+                self._delete_voice_with_metadata(path)
         except OSError as exc:
             raise ContentOperationError(f"Failed to delete item voice: {exc}") from exc
 

@@ -1,2 +1,2 @@
-creation_method,provider,parameters
-generated,elevenlabs,"{""_text"": ""lápiz"", ""actor"": ""Valentina"", ""language"": ""es"", ""model"": ""eleven_multilingual_v2"", ""output_format"": ""mp3"", ""speaker_boost"": true, ""speed"": 1.0, ""use_space"": ""no"", ""voice_id"": ""CQLNn2VcdhTOSAfK3xmF"", ""voice_settings"": {""similarity_boost"": 0.75, ""stability"": 0.5}}"
+creation_method,provider,parameters,hash
+generated,elevenlabs,"{""_text"": ""lápiz"", ""actor"": ""Valentina"", ""language"": ""es"", ""model"": ""eleven_multilingual_v2"", ""output_format"": ""mp3"", ""speaker_boost"": true, ""speed"": 1.0, ""use_space"": ""no"", ""voice_id"": ""CQLNn2VcdhTOSAfK3xmF"", ""voice_settings"": {""similarity_boost"": 0.75, ""stability"": 0.5}}",5915dde05473105137593e4df54b8bd8c199cfd8ee12ec58715fc5e96f7d3a1c

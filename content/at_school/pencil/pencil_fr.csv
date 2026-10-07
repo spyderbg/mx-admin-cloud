@@ -1,2 +1,2 @@
-creation_method,provider,parameters
-generated,elevenlabs,"{""_text"": ""crayon"", ""actor"": ""Charlotte"", ""language"": ""fr"", ""model"": ""eleven_multilingual_v2"", ""output_format"": ""mp3"", ""speaker_boost"": true, ""speed"": 1.0, ""use_space"": ""no"", ""voice_id"": ""XB0fDUnXU5powFXDhCwa"", ""voice_settings"": {""similarity_boost"": 0.75, ""stability"": 0.5}}"
+creation_method,provider,parameters,hash
+generated,elevenlabs,"{""_text"": ""crayon"", ""actor"": ""Charlotte"", ""language"": ""fr"", ""model"": ""eleven_multilingual_v2"", ""output_format"": ""mp3"", ""speaker_boost"": true, ""speed"": 1.0, ""use_space"": ""no"", ""voice_id"": ""XB0fDUnXU5powFXDhCwa"", ""voice_settings"": {""similarity_boost"": 0.75, ""stability"": 0.5}}",7b60ad7c853740d9374510945ea6883d957891828d4795b800903139c70c6277

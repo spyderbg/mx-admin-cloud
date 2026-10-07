@@ -845,3 +845,79 @@ def test_sidecar_without_a_hash_gains_it_and_keeps_its_fields(tmp_path: Path) ->
     assert voice_metadata(item_path / "apple_en.csv") == {
         "creation_method": "uploaded", "provider": "custom", "parameters": '{"a": 1}', "hash": _sha256(b"same"),
     }
+
+
+# ---------------------------------------------------------------------------
+# delete_item_voice
+# ---------------------------------------------------------------------------
+
+def test_delete_item_voice_removes_the_named_variant_and_its_sidecar(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_voices(tmp_path, {
+        "apple_en": b"main",
+        "apple_en_01": b"take-one",
+        "apple_en_02": b"main",
+    })
+    (item_path / "apple_en_01.csv").write_text(
+        "creation_method,provider,parameters,hash\nuploaded,custom,{},\n", encoding="utf-8",
+    )
+    provider = make_fs_provider()
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        deleted = provider.delete_item_voice("C_Foods", "I_Apple", "apple_en_01")
+
+    assert deleted.id == "apple_en_01"
+    assert deleted.language == "en"
+    assert not (item_path / "apple_en_01.mp3").exists()
+    assert not (item_path / "apple_en_01.csv").exists()
+    assert (item_path / "apple_en.mp3").read_bytes() == b"main"
+    assert (item_path / "apple_en_02.mp3").read_bytes() == b"main"
+
+
+def test_delete_item_voice_removes_the_main_copy_of_the_deleted_take(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_voices(tmp_path, {
+        "apple_en": b"chosen",
+        "apple_en_01": b"other",
+        "apple_en_02": b"chosen",
+    })
+    (item_path / "apple_en.csv").write_text("keep\n", encoding="utf-8")
+    (item_path / "apple_en_02.csv").write_text("keep\n", encoding="utf-8")
+    provider = make_fs_provider()
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        provider.delete_item_voice("C_Foods", "I_Apple", "apple_en_02")
+
+    assert not (item_path / "apple_en_02.mp3").exists()
+    assert not (item_path / "apple_en_02.csv").exists()
+    assert not (item_path / "apple_en.mp3").exists()
+    assert not (item_path / "apple_en.csv").exists()
+    assert (item_path / "apple_en_01.mp3").read_bytes() == b"other"
+
+
+@pytest.mark.parametrize("voice_id", ["apple-v-en", "apple_en"])
+def test_delete_item_voice_of_the_language_removes_its_identical_variant(tmp_path: Path, voice_id: str) -> None:
+    content_root, item_path = _prepare_item_with_voices(tmp_path, {
+        "apple_en": b"chosen",
+        "apple_en_01": b"chosen",
+        "apple_en_02": b"other",
+    })
+    provider = make_fs_provider()
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        provider.delete_item_voice("C_Foods", "I_Apple", voice_id)
+
+    assert not (item_path / "apple_en.mp3").exists()
+    assert not (item_path / "apple_en_01.mp3").exists()
+    assert (item_path / "apple_en_02.mp3").read_bytes() == b"other"
+
+
+def test_delete_item_voice_unknown_id(tmp_path: Path) -> None:
+    content_root, _ = _prepare_item_with_voices(tmp_path, {"apple_en": b"main", "apple_en_01": b"take"})
+    provider = make_fs_provider()
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        with pytest.raises(CategoryNotFoundError):
+            provider.delete_item_voice("C_Foods", "I_Apple", "apple_en_99")
