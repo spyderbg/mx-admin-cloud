@@ -60,15 +60,30 @@ def register(app: typer.Typer) -> None:
 
     @app.command("rename-category")
     def rename_category(
-            old_name: str = typer.Argument(..., help="Current category name"),
-            to_name: str = typer.Option(..., "--to", help="New category name"),
+            old_name: str = typer.Argument(..., help="Current category id (e.g. C_Foods) or English name (e.g. foods)"),
+            to_name: str = typer.Option(..., "--to", help="New category id"),
             url: str = typer.Option(None, "--url", help="Backend base URL"),
             token: str | None = typer.Option(None, "--token", help="Bearer token (else auth via CLI socket)"),
     ):
-        """Rename a category (folder + regenerate voices)."""
+        """Change a category's id; its localized names and description stay as they are."""
         def run(t: str):
-            result = patch(f"/content/categories/{old_name}", json={"name": to_name}, token=t, timeout=120)
-            print_json(result)
+            try:
+                category_id = _resolve_category_id(old_name, t)
+                if category_id is None:
+                    print_error("Category not found", old_name)
+                    raise typer.Exit(1)
+                # The endpoint requires the names and description, so resend the current ones.
+                details = get(f"/content/categories/{category_id}", token=t)
+                body = {
+                    "new_category_id": to_name,
+                    "category_name": details.get("name") or {},
+                    "description": details.get("description") or {},
+                }
+                result = patch(f"/content/categories/{category_id}", json=body, token=t, timeout=120)
+                print_json(result)
+            except requests.RequestException as e:
+                print_request_error(e)
+                raise typer.Exit(1)
 
         run_with_auth(url, token, run)
 
