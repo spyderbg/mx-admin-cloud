@@ -1,0 +1,2 @@
+creation_method,provider,parameters,hash
+generated,elevenlabs,"{""_text"": ""bouteille d'eau"", ""actor"": ""Charlotte"", ""configuration_name"": ""elevenlabs"", ""date"": ""2026-10-07T14:27:05.093942+00:00"", ""language"": ""fr"", ""model"": ""eleven_multilingual_v2"", ""output_format"": ""mp3"", ""speaker_boost"": true, ""speed"": 1.0, ""use_space"": ""no"", ""voice_id"": ""XB0fDUnXU5powFXDhCwa"", ""voice_settings"": {""similarity_boost"": 0.75, ""stability"": 0.5}}",cb635eff712262cc2ed2063f3ddb5df03183acdc96c7c958c0e85b60e67fbe92

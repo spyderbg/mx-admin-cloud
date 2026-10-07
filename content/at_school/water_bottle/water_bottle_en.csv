@@ -1,0 +1,2 @@
+creation_method,provider,parameters,hash
+generated,elevenlabs,"{""_text"": ""water bottle"", ""actor"": ""Milena"", ""configuration_name"": ""elevenlabs"", ""date"": ""2026-10-07T14:27:04.052366+00:00"", ""language"": ""en"", ""model"": ""eleven_multilingual_v2"", ""output_format"": ""mp3"", ""speaker_boost"": true, ""speed"": 1.0, ""use_space"": ""no"", ""voice_id"": ""M1ydWt7KnBCiuv4CnEDC"", ""voice_settings"": {""similarity_boost"": 0.75, ""stability"": 0.5}}",75cd5ba7e48e701eb196b7c33907332a8d2b11f651c7d750798af58644fda0e9
