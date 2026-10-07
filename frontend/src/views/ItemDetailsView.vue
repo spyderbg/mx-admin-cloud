@@ -107,51 +107,23 @@
       </div>
 
       <div v-if="hasFiles" class="id-image-grid">
-        <div
+        <ItemImageCard
           v-for="card in imageCards"
           :key="card.index"
-          class="id-image-card"
-          :class="{ 'id-image-card-main': card.isMain }"
-        >
-          <div
-            class="id-image-preview id-image-preview-trigger"
-            role="button"
-            tabindex="0"
-            :aria-label="`Open ${card.title} preview`"
-            @click="openImagePreview(card.src, card.title)"
-            @keydown.enter.prevent="openImagePreview(card.src, card.title)"
-            @keydown.space.prevent="openImagePreview(card.src, card.title)"
-          >
-            <img :src="card.src" :alt="card.title" class="id-image" />
-          </div>
-          <div class="id-image-meta">
-            <div class="id-meta-label">{{ generatorLabel(contentLanguage) }}</div>
-            <strong>{{ card.generator }}</strong>
-            <div class="id-meta-label id-meta-spaced">{{ promptLabel(contentLanguage) }}</div>
-            <p>{{ card.prompt }}</p>
-            <span class="id-mobile-image-file">{{ fileNameFromUri(rawItemImages[card.index]) }}</span>
-            <button
-              type="button"
-              class="id-release-btn"
-              :class="{ 'id-release-btn-active': card.isMain }"
-              :disabled="card.isMain || isSettingMainImage"
-              @click="onSelectImage(card.index)"
-            >
-              <i class="mdi" :class="card.isMain ? 'mdi-check' : 'mdi-image'"></i>
-              {{ card.isMain ? selectedLabel(contentLanguage) : selectImageLabel(contentLanguage) }}
-            </button>
-          </div>
-          <div class="file-actions" @click.stop>
-            <button type="button" class="btn-icon btn-icon-edit" title="Replace" aria-label="Replace image" @click.stop="onReplaceFile(card.index)">
-              <i class="mdi mdi-pencil"></i>
-            </button>
-            <button type="button" class="btn-icon btn-icon-delete" title="Delete" aria-label="Delete image" @click.stop="onDeleteFile(card.index)">
-              <i class="mdi mdi-delete"></i>
-            </button>
-          </div>
-        </div>
+          :src="card.src"
+          :title="card.title"
+          :generator="card.generator"
+          :prompt="card.prompt"
+          :file-name="fileNameFromUri(rawItemImages[card.index])"
+          :is-main="card.isMain"
+          :select-disabled="isSettingMainImage"
+          @preview="openImagePreview(card.src, card.title)"
+          @select="onSelectImage(card.index)"
+          @replace="onReplaceFile(card.index)"
+          @delete="onDeleteFile(card.index)"
+        />
         <div
-          class="id-image-card id-add-image-card"
+          class="id-add-image-card"
           :class="{ 'id-add-image-card-dragging': isImageDropActive, 'id-add-image-card-uploading': isAddingImage }"
           role="button"
           tabindex="0"
@@ -173,7 +145,7 @@
       </div>
       <div v-else class="file-empty">
         <div
-          class="id-image-card id-add-image-card"
+          class="id-add-image-card"
           :class="{ 'id-add-image-card-dragging': isImageDropActive, 'id-add-image-card-uploading': isAddingImage }"
           role="button"
           tabindex="0"
@@ -384,6 +356,7 @@ import ViewBreadcrumb from '../components/ViewBreadcrumb.vue'
 import MobileActionsMenu, { type MobileAction } from '../components/MobileActionsMenu.vue'
 import VoiceCardsGrid, { type VoiceExtraAction } from '../components/VoiceCardsGrid.vue'
 import ItemVoicesSection from '../components/ItemVoicesSection.vue'
+import ItemImageCard from '../components/ItemImageCard.vue'
 import DeleteFileDialog from '../components/DeleteFileDialog.vue'
 import { resizeImageToMaxDimension } from '../utils/imageResize'
 import { imageIdFromUri } from '../utils/imageId'
@@ -404,7 +377,6 @@ import {
   dropImageHereLabel,
   enterItemIdLabel,
   imagesLabel,
-  generatorLabel,
   imageVariantLabel,
   itemIdLabel,
   itemVoicesLabel,
@@ -414,14 +386,11 @@ import {
   newItemIdLabel,
   noActiveContentProviderLabel,
   noLabel,
-  promptLabel,
   regenerateAllVoicesLabel,
   regenerateAllVoicesConfirmParts,
   releaseAllImagesLabel,
   releaseItemLabel,
   saveLabel,
-  selectedLabel,
-  selectImageLabel,
   sourceFileLabel,
   uploadingImageLabel,
   yesLabel,
@@ -1164,8 +1133,7 @@ const imageActions = computed<MobileAction[]>(() => [
   min-width: 0;
 }
 .id-field-label,
-.id-section-kicker,
-.id-meta-label {
+.id-section-kicker {
   color: #6d7391;
   font-size: 0.78rem;
   font-weight: 700;
@@ -1244,35 +1212,21 @@ const imageActions = computed<MobileAction[]>(() => [
 .id-section-title span {
   margin-left: 0.35rem;
 }
-.id-mobile-image-file {
-  display: none;
-}
 .id-image-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1rem;
   margin-top: 1rem;
 }
-.id-image-card {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(10rem, 43%) minmax(0, 1fr);
-  gap: 1.25rem;
-  min-height: 12.8rem;
-  border: 1px solid #dfe5ef;
-  border-radius: 6px;
-  padding: 0.75rem;
-}
-.id-image-card-main {
-  border-color: #2f8f68;
-  box-shadow: inset 0 0 0 1px #2f8f68;
-}
 .id-add-image-card {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   min-height: 12.8rem;
   border: 2px dashed #b8c7e8;
+  border-radius: 6px;
+  padding: 0.75rem;
   background: #f8faff;
   color: #2855a6;
   cursor: pointer;
@@ -1315,14 +1269,6 @@ const imageActions = computed<MobileAction[]>(() => [
   font-size: 0.8rem;
   line-height: 1.35;
 }
-.id-image-preview {
-  position: relative;
-  min-width: 0;
-  aspect-ratio: 1 / 1;
-  overflow: hidden;
-  border-radius: 6px;
-  background: #f6f8fc;
-}
 .id-image-preview-trigger {
   cursor: zoom-in;
 }
@@ -1330,100 +1276,11 @@ const imageActions = computed<MobileAction[]>(() => [
   outline: 3px solid rgba(49, 87, 255, 0.45);
   outline-offset: 3px;
 }
-.id-image {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-.file-actions {
-  position: absolute;
-  top: 0.35rem;
-  right: 0.35rem;
-  display: flex;
-  gap: 0.35rem;
-  z-index: 2;
-  cursor: default;
-}
 .file-empty {
   margin-top: 1rem;
 }
 .file-empty .id-add-image-card {
   max-width: 34rem;
-}
-.btn-icon {
-  width: 1.75rem;
-  height: 1.75rem;
-  border: none;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  font-size: 0.9rem;
-  color: #fff;
-  padding: 0;
-}
-.btn-icon-edit {
-  background: #2563eb;
-}
-.btn-icon-edit:hover {
-  background: #1d4ed8;
-}
-.btn-icon-delete {
-  background: #ef4444;
-}
-.btn-icon-delete:hover {
-  background: #dc2626;
-}
-.id-image-meta {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  padding: 0.35rem 0 0.05rem;
-}
-.id-image-meta strong {
-  color: #111a3d;
-  font-size: 0.9rem;
-  margin-top: 0.5rem;
-}
-.id-meta-spaced {
-  margin-top: 1.05rem;
-}
-.id-image-meta p {
-  color: #111a3d;
-  font-size: 0.84rem;
-  line-height: 1.55;
-  margin: 0.45rem 0 0;
-}
-.id-release-btn {
-  align-self: center;
-  width: 100%;
-  max-width: 10.5rem;
-  min-width: 0;
-  min-height: 2.1rem;
-  border: 1px solid #2f8f68;
-  border-radius: 4px;
-  background: #fff;
-  color: #2f8f68;
-  font-size: 0.84rem;
-  font-weight: 700;
-  margin-top: auto;
-}
-.id-release-btn i {
-  font-size: 1rem;
-  margin-right: 0.35rem;
-}
-.id-release-btn:hover {
-  background: #eefaf5;
-}
-.id-release-btn-active,
-.id-release-btn-active:hover,
-.id-release-btn:disabled {
-  border-color: #cbd5e1;
-  background: #f1f5f9;
-  color: #64748b;
-  cursor: default;
 }
 .id-summary-voices-panel {
   align-self: start;
@@ -1477,60 +1334,14 @@ const imageActions = computed<MobileAction[]>(() => [
     gap: 0.5rem;
   }
   .id-image-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
     gap: 0.65rem;
-  }
-  .id-image-card {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    min-height: 0;
-    padding: 0.5rem;
-  }
-  .id-image-card-main::before {
-    position: absolute;
-    top: 0.4rem;
-    left: 0.4rem;
-    z-index: 2;
-    display: grid;
-    place-items: center;
-    width: 1.65rem;
-    height: 1.65rem;
-    border-radius: 50%;
-    background: #2f8f68;
-    color: #fff;
-    content: '✓';
-    font-weight: 700;
-  }
-  .id-image-meta {
-    flex: 1;
-    padding: 0;
-  }
-  .id-image-meta .id-meta-label,
-  .id-image-meta p {
-    display: none;
-  }
-  .id-image-meta strong {
-    margin: 0 0 0.2rem;
-    font-size: 0.82rem;
-  }
-  .id-mobile-image-file {
-    display: block;
-    overflow: hidden;
-    color: #64748b;
-    font-size: 0.75rem;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .id-release-btn {
-    max-width: none;
-    min-height: 2.35rem;
-    margin-top: 0.65rem;
   }
   .id-image-grid > .id-add-image-card {
     display: flex;
     grid-column: 1 / -1;
     min-height: 10rem;
+    padding: 0.5rem;
   }
 }
 .cd-modal-overlay {
