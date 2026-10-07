@@ -1528,7 +1528,9 @@ const imageActions = computed<MobileAction[]>(() => [
     margin-top: 0.65rem;
   }
   .id-image-grid > .id-add-image-card {
-    display: none;
+    display: flex;
+    grid-column: 1 / -1;
+    min-height: 10rem;
   }
 }
 .cd-modal-overlay {
