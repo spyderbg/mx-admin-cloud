@@ -118,7 +118,8 @@ import { deleteItemVoice, generateItemVoice, listItemVoices, optimizeItemVoice, 
 import { getServiceConfig, listServiceConfigs } from '../api/configurationClient'
 import type { ConfigurationFileResponse } from '../types/configurationSchemas'
 import { orderConfigurationFiles } from '../utils/configurationNavigation'
-import { clampSpeed, speedRange, ttsConfigurationOption } from '../utils/ttsConfigurations'
+import { speedRange, ttsConfigurationOption } from '../utils/ttsConfigurations'
+import { readVoiceGenerationPreferences, writeVoiceGenerationPreferences, voiceGenerationSettingsFor } from '../utils/voiceGenerationPreferences'
 import { invalidateItemDetail } from '../api/cache'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import { itemVoiceCopy } from '../utils/itemVoiceCopy'
@@ -205,7 +206,6 @@ watch(identity, () => {
   data.value = null
   activePlayer.value = null
   expanded.value = new Set()
-  chosenConfigurationNames.value = {}
   void load()
 })
 // Also refresh after the existing summary cards regenerate, rename or replace audio.
@@ -224,6 +224,7 @@ const formError = ref('')
 const deleteTarget = ref<ItemVoiceRecord | null>(null)
 function closeDialog(): void {
   if (busyKey.value) return
+  rememberGenerationSettings()
   configurationRequest++
   dialog.value = null
   formError.value = ''
@@ -289,7 +290,7 @@ const configurationFiles = ref<ConfigurationFileResponse[]>([])
 const availableConfigurations = computed(() => configurationFiles.value
   .map((file) => ttsConfigurationOption(file, formLanguage.value))
   .filter((configuration) => configuration !== null))
-const chosenConfigurationNames = ref<Partial<Record<Language, string>>>({})
+const generationPreferences = ref(readVoiceGenerationPreferences())
 const chosenConfigurationName = ref('')
 const chosenConfiguration = computed(() => availableConfigurations.value.find((configuration) => configuration.config_name === chosenConfigurationName.value))
 const configurationsLoading = ref(false)
@@ -302,14 +303,27 @@ const similarity = ref(.75)
 const autoOptimize = ref(false)
 const canGenerate = computed(() => !busy.value && capabilities.value.generate && !!chosenConfiguration.value && !!generationText.value.trim() && !configurationsLoading.value)
 watch(chosenConfiguration, (configuration) => {
-  if (!configuration) return
-  speed.value = clampSpeed(configuration.speed, speedRange(configuration.provider))
-  stability.value = configuration.stability ?? .5
-  similarity.value = configuration.similarity ?? .75
-  chosenConfigurationNames.value = { ...chosenConfigurationNames.value, [formLanguage.value]: configuration.config_name }
-})
+  if (!configuration || dialog.value !== 'generate') return
+  const settings = voiceGenerationSettingsFor(configuration, generationPreferences.value.settings[formLanguage.value])
+  speed.value = settings.speed
+  stability.value = settings.stability
+  similarity.value = settings.similarity
+  autoOptimize.value = settings.autoOptimize
+}, { flush: 'sync' })
+function rememberGenerationSettings(): void {
+  if (dialog.value !== 'generate' || configurationsLoading.value || !chosenConfiguration.value) return
+  generationPreferences.value = {
+    language: formLanguage.value,
+    settings: { ...generationPreferences.value.settings, [formLanguage.value]: {
+      configurationName: chosenConfigurationName.value, speed: speed.value,
+      stability: stability.value, similarity: similarity.value, autoOptimize: autoOptimize.value,
+    } },
+  }
+  writeVoiceGenerationPreferences(generationPreferences.value)
+}
+watch([formLanguage, chosenConfigurationName, speed, stability, similarity, autoOptimize, configurationsLoading], rememberGenerationSettings)
 function chooseConfiguration(): void {
-  const previous = chosenConfigurationNames.value[formLanguage.value] || chosenConfigurationName.value
+  const previous = generationPreferences.value.settings[formLanguage.value]?.configurationName || chosenConfigurationName.value
   chosenConfigurationName.value = availableConfigurations.value.find((configuration) => configuration.config_name === previous)?.config_name
     || availableConfigurations.value.find((configuration) => configuration.enabled)?.config_name
     || availableConfigurations.value[0]?.config_name || ''
@@ -338,9 +352,9 @@ async function loadConfigurations(): Promise<void> {
 function openGenerate(language: Language): void {
   if (busy.value) return
   activePlayer.value = null
-  formLanguage.value = language
-  generationText.value = data.value?.name[language] || ''
-  autoOptimize.value = false
+  formLanguage.value = generationPreferences.value.language ?? language
+  generationText.value = data.value?.name[formLanguage.value] || ''
+  autoOptimize.value = generationPreferences.value.settings[formLanguage.value]?.autoOptimize ?? false
   dialog.value = 'generate'
   void loadConfigurations()
 }
@@ -465,6 +479,7 @@ function dropInLanguage(event: DragEvent, language: Language): void {
 }
 void load()
 onBeforeUnmount(() => {
+  rememberGenerationSettings()
   operation++
   loadController?.abort()
   configurationRequest++

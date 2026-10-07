@@ -57,3 +57,8 @@ export function speedRange(provider: string | undefined): SpeedRange {
 export function clampSpeed(speed: number, range: SpeedRange): number {
   return Math.min(range.max, Math.max(range.min, speed))
 }
+
+/** The configuration a generation starts from when nobody picks one: the first enabled, else the first. */
+export function defaultTtsConfiguration(options: TtsConfigurationOption[]): TtsConfigurationOption | undefined {
+  return options.find((option) => option.enabled) ?? options[0]
+}

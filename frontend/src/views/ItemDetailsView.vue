@@ -382,8 +382,8 @@ import {
   itemsVoicesAdd,
   itemsVoicesUpdate,
   itemsVoicesDelete,
-  itemsVoicesRegenerate,
 } from '../api/contentClient'
+import { generateMainItemVoice } from '../api/itemVoicesClient'
 import { LocalizedString, SUPPORTED_LANGUAGES, type Language, type Voice } from '../types/viewModels'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import { useAudioPlayer } from '../composables/useAudioPlayer'
@@ -991,7 +991,7 @@ async function regenerateAllVoices(): Promise<void> {
     for (const voice of voices) {
       regeneratingVoiceId.value = voice.id
       try {
-        await itemsVoicesRegenerate(cat.id, currentItem.id, voice.id)
+        await generateMainItemVoice(cat.id, currentItem.id, voice.language, voice.name)
         voiceVersions.value = { ...voiceVersions.value, [voice.id]: (voiceVersions.value[voice.id] ?? 0) + 1 }
       } catch (err) {
         failures.push(`${voice.language.toUpperCase()} (${voice.id}): ${extractErrorMessage(err)}`)
@@ -1001,8 +1001,8 @@ async function regenerateAllVoices(): Promise<void> {
     await ensureItemDetail(cat.id, currentItem.id)
     showToast(
       failures.length
-        ? `Added new takes for ${voices.length - failures.length} of ${voices.length} voices. Failed: ${failures.join('; ')}`
-        : `New takes added for all ${voices.length} voices. Choose them in Voices to use them.`,
+        ? `Generated and selected new voices for ${voices.length - failures.length} of ${voices.length} voices. Failed: ${failures.join('; ')}`
+        : `New voices generated and selected for all ${voices.length} voices.`,
       failures.length ? 'error' : 'success',
     )
   } catch (err) {
@@ -1021,10 +1021,10 @@ async function regenerateVoice(voice: Voice): Promise<void> {
 
   regeneratingVoiceId.value = voice.id
   try {
-    await itemsVoicesRegenerate(cat.id, currentItem.id, voice.id)
+    await generateMainItemVoice(cat.id, currentItem.id, voice.language, voice.name)
     await refreshItem()
     voiceVersions.value = { ...voiceVersions.value, [voice.id]: (voiceVersions.value[voice.id] ?? 0) + 1 }
-    showToast(`New take added for ${voice.name} (${voice.language.toUpperCase()}). Choose it in Voices to use it.`, 'success')
+    showToast(`New voice generated and selected for ${voice.name} (${voice.language.toUpperCase()}).`, 'success')
   } catch (err) {
     showToast(extractErrorMessage(err), 'error')
   } finally {

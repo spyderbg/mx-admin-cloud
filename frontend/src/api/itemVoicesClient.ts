@@ -4,6 +4,9 @@ import { normalizeItemVoices } from '../utils/itemVoices'
 import type { GenerateItemVoice, ItemVoiceList, ItemVoiceListResponse, ItemVoiceRecord, VoicePreset } from '../types/itemVoices'
 import type { GenerateItemVoiceResponse } from '../types/contentSchemas'
 import type { Language } from '../types/viewModels'
+import { getServiceConfig, listServiceConfigs } from './configurationClient'
+import { orderConfigurationFiles } from '../utils/configurationNavigation'
+import { clampSpeed, defaultTtsConfiguration, speedRange, ttsConfigurationOption } from '../utils/ttsConfigurations'
 
 const path = (categoryId: string, itemId: string): string =>
   `/content/categories/${encodeURIComponent(categoryId)}/items/${encodeURIComponent(itemId)}/voices`
@@ -43,4 +46,30 @@ export async function optimizeItemVoice(categoryId: string, itemId: string, voic
 
 export async function selectItemVoice(categoryId: string, itemId: string, voiceId: string) {
   return itemsVoicesSetMain(encodeURIComponent(categoryId), encodeURIComponent(itemId), encodeURIComponent(voiceId))
+}
+
+/**
+ * Generates a new take of the language's voice with the default text-to-speech configuration
+ * and its own voice settings, then makes it the language's main voice. This is the generate
+ * dialog's flow without the dialog; the new take stays in the item's voices either way.
+ */
+export async function generateMainItemVoice(categoryId: string, itemId: string, language: Language, text: string): Promise<GenerateItemVoiceResponse> {
+  const summaries = orderConfigurationFiles(await listServiceConfigs('text_to_speech')).filter((summary) => summary.valid_json)
+  const files = await Promise.all(summaries.map((summary) => getServiceConfig('text_to_speech', summary.config_name)))
+  const configuration = defaultTtsConfiguration(files
+    .map((file) => ttsConfigurationOption(file, language))
+    .filter((option) => option !== null))
+  if (!configuration) throw new Error(`No text to speech configuration supports ${language.toUpperCase()}.`)
+
+  const generated = await generateItemVoice(categoryId, itemId, {
+    language,
+    text: text.trim(),
+    configuration_name: configuration.config_name,
+    speed: clampSpeed(configuration.speed, speedRange(configuration.provider)),
+    stability: configuration.stability,
+    similarity: configuration.similarity,
+    optimize: false,
+  })
+  await selectItemVoice(categoryId, itemId, generated.voice_id)
+  return generated
 }

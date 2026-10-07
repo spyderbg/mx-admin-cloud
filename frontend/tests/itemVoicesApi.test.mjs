@@ -5,12 +5,14 @@ import { createServer } from 'vite'
 let server
 let api
 let client
+let internalClient
 const storage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
 before(async () => {
   Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: () => null } })
   server = await createServer({ configFile: false, optimizeDeps: { noDiscovery: true, include: [] }, server: { middlewareMode: true, watch: null }, appType: 'custom' })
   api = await server.ssrLoadModule('/src/api/itemVoicesClient.ts')
   client = (await server.ssrLoadModule('/src/api/client.ts')).default
+  internalClient = (await server.ssrLoadModule('/src/api/internalClient.ts')).default
 })
 after(async () => {
   await server?.close()
@@ -91,4 +93,65 @@ test('list loads real backend variants and enables selection without proposed ca
   const list = await api.listItemVoices('C_Fruits', 'I_Bananas')
   assert.equal(list.capabilities.select, true)
   assert.deepEqual(list.voices.map(({ id, is_selected }) => [id, is_selected]), [['bananas_en_01', false], ['bananas_en_02', true]])
+})
+
+function ttsFile(name, provider, enabled, priority, generate) {
+  return { config_name: name, payload: { service_provider: { service: 'text_to_speech', provider, enabled, priority, config: { generate } } } }
+}
+const ttsSummary = (name, priority) => ({ config_name: name, filename: `${name}.json`, valid_json: true, priority })
+
+test('main voice generation uses the default configuration and selects the new voice', async () => {
+  const files = {
+    openai: ttsFile('openai', 'openai', false, 1, { languages: { en: { actor: 'alloy' } } }),
+    elevenlabs: ttsFile('elevenlabs', 'elevenlabs', true, 2, {
+      languages: { en: { actor: 'Milena', speed: 2, voice_settings: { stability: .4, similarity_boost: .8 } } },
+    }),
+  }
+  const calls = []
+  const adapter = async (config) => {
+    calls.push(`${config.method} ${config.url}`)
+    const respond = (data) => ({ data, status: 200, statusText: 'OK', headers: {}, config })
+    if (config.url === '/internal/configurations/text_to_speech') return respond([ttsSummary('openai', 1), ttsSummary('elevenlabs', 2)])
+    if (config.url.startsWith('/internal/configurations/text_to_speech/')) return respond(files[config.url.split('/').pop()])
+    if (config.url.endsWith('/voices/generate')) {
+      assert.deepEqual(JSON.parse(config.data), {
+        language: 'en', text: 'sofa', configuration_name: 'elevenlabs', speed: 1.2, stability: .4, similarity: .8, optimize: false,
+      })
+      return respond({ voice_id: 'sofa_en_03' })
+    }
+    return respond({})
+  }
+  client.defaults.adapter = adapter
+  internalClient.defaults.adapter = adapter
+  assert.deepEqual(await api.generateMainItemVoice('C_AtHome', 'I_Sofa', 'en', ' sofa '), { voice_id: 'sofa_en_03' })
+  assert.equal(calls.at(-1), 'put /content/categories/C_AtHome/items/I_Sofa/voices/sofa_en_03/main')
+})
+
+test('main voice generation does not select anything when generation fails', async () => {
+  const failure = new Error('generation failed')
+  const calls = []
+  const adapter = async (config) => {
+    calls.push(config.url)
+    const respond = (data) => ({ data, status: 200, statusText: 'OK', headers: {}, config })
+    if (config.url === '/internal/configurations/text_to_speech') return respond([ttsSummary('openai', 1)])
+    if (config.url.startsWith('/internal/configurations/text_to_speech/')) {
+      return respond(ttsFile('openai', 'openai', true, 1, { languages: { en: { actor: 'alloy' } } }))
+    }
+    throw failure
+  }
+  client.defaults.adapter = adapter
+  internalClient.defaults.adapter = adapter
+  await assert.rejects(api.generateMainItemVoice('C_AtHome', 'I_Sofa', 'en', 'sofa'), failure)
+  assert.ok(!calls.some((url) => url.endsWith('/main')))
+})
+
+test('main voice generation reports a language no configuration supports', async () => {
+  const adapter = async (config) => {
+    const respond = (data) => ({ data, status: 200, statusText: 'OK', headers: {}, config })
+    if (config.url === '/internal/configurations/text_to_speech') return respond([ttsSummary('openai', 1)])
+    return respond(ttsFile('openai', 'openai', true, 1, { languages: { en: { actor: 'alloy' } } }))
+  }
+  client.defaults.adapter = adapter
+  internalClient.defaults.adapter = adapter
+  await assert.rejects(api.generateMainItemVoice('C_AtHome', 'I_Sofa', 'bg', 'диван'), /No text to speech configuration supports BG/)
 })

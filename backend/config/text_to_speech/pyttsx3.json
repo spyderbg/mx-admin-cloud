@@ -2,7 +2,7 @@
   "service_provider": {
     "service": "text_to_speech",
     "provider": "pyttsx3",
-    "enabled": false,
+    "enabled": true,
     "priority": 5,
     "config": {
       "generate": {

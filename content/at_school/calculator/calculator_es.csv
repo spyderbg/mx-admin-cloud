@@ -1,2 +1,2 @@
-creation_method,provider,parameters
-generated,elevenlabs,"{""_text"": ""calculadora"", ""actor"": ""Valentina"", ""language"": ""es"", ""model"": ""eleven_multilingual_v2"", ""output_format"": ""mp3"", ""speaker_boost"": true, ""speed"": 1.0, ""use_space"": ""no"", ""voice_id"": ""CQLNn2VcdhTOSAfK3xmF"", ""voice_settings"": {""similarity_boost"": 0.75, ""stability"": 0.5}}"
+creation_method,provider,parameters,hash
+generated,elevenlabs,"{""_text"": ""calculadora"", ""actor"": ""Valentina"", ""language"": ""es"", ""model"": ""eleven_multilingual_v2"", ""output_format"": ""mp3"", ""speaker_boost"": true, ""speed"": 1.0, ""use_space"": ""no"", ""voice_id"": ""CQLNn2VcdhTOSAfK3xmF"", ""voice_settings"": {""similarity_boost"": 0.75, ""stability"": 0.5}}",0edc4f1e8b424bec6892957ac62de2e5cb4c7744bc271378a8ecea0f17f3bdbe

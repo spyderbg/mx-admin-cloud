@@ -432,10 +432,10 @@ export function regenerateAllVoicesLabel(lang: Language): string {
 
 export function regenerateAllVoicesConfirmParts(lang: Language): { beforeItemId: string; afterItemId: string } {
   const labels: Record<Language, { beforeItemId: string; afterItemId: string }> = {
-    en: { beforeItemId: 'Regenerate all voices for item ', afterItemId: '? A new take is added for each language; the current voice stays in use until you choose another in Voices.' },
-    es: { beforeItemId: '¿Regenerar todas las voces del elemento ', afterItemId: '? Se añade una nueva toma por idioma; la voz actual sigue en uso hasta que elijas otra en Voces.' },
-    fr: { beforeItemId: 'Régénérer toutes les voix de l’élément ', afterItemId: ' ? Une nouvelle prise est ajoutée pour chaque langue ; la voix actuelle reste utilisée jusqu’à ce que vous en choisissiez une autre dans Voix.' },
-    bg: { beforeItemId: 'Да се генерират ли отново всички гласове за елемент ', afterItemId: '? За всеки език се добавя нов вариант; текущият глас остава в употреба, докато не изберете друг в „Гласове“.' },
+    en: { beforeItemId: 'Regenerate all voices for item ', afterItemId: '? A new voice is generated for each language and becomes the main voice; the previous one is kept as a variant in Voices.' },
+    es: { beforeItemId: '¿Regenerar todas las voces del elemento ', afterItemId: '? Se genera una nueva voz por idioma y pasa a ser la voz principal; la anterior se conserva como variante en Voces.' },
+    fr: { beforeItemId: 'Régénérer toutes les voix de l’élément ', afterItemId: ' ? Une nouvelle voix est générée pour chaque langue et devient la voix principale ; la précédente est conservée comme variante dans Voix.' },
+    bg: { beforeItemId: 'Да се генерират ли отново всички гласове за елемент ', afterItemId: '? За всеки език се генерира нов глас и той става основен; предишният се запазва като вариант в „Гласове“.' },
   }
   return labels[lang] ?? labels.en
 }

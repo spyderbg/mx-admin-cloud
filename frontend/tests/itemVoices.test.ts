@@ -5,6 +5,7 @@ import { legacyVoiceCapabilities, type ItemVoiceRecord } from '../src/types/item
 import { cacheBustedUri } from '../src/utils/cacheBustedUri.ts'
 import { langLabel } from '../src/utils/voiceLabels.ts'
 import { clampSpeed, speedRange, ttsConfigurationOption } from '../src/utils/ttsConfigurations.ts'
+import { readVoiceGenerationPreferences, writeVoiceGenerationPreferences, voiceGenerationSettingsFor, type VoiceGenerationPreferences } from '../src/utils/voiceGenerationPreferences.ts'
 import type { ConfigurationFileResponse } from '../src/types/configurationSchemas'
 
 test('TTS configuration selection uses language defaults and retains the configuration identity', () => {
@@ -44,6 +45,41 @@ test('the speed slider stays within what the configuration\'s provider accepts',
   assert.equal(clampSpeed(.5, speedRange('elevenlabs')), .7)
   assert.equal(clampSpeed(1.5, speedRange('elevenlabs')), 1.2)
   assert.equal(clampSpeed(.9, speedRange('elevenlabs')), .9)
+})
+
+test('generation preferences survive reloads and retain independent settings for each language', () => {
+  let stored: string | null = null
+  const storage = { getItem: () => stored, setItem: (_key: string, value: string) => { stored = value } }
+  assert.deepEqual(readVoiceGenerationPreferences(storage), { settings: {} })
+  const preferences: VoiceGenerationPreferences = { language: 'bg', settings: {
+    en: { configurationName: 'openai', speed: 1.5, stability: .5, similarity: .75, autoOptimize: false },
+    bg: { configurationName: 'elevenlabs_slow', speed: .8, stability: .4, similarity: .9, autoOptimize: true },
+  } }
+  writeVoiceGenerationPreferences(preferences, storage)
+  assert.deepEqual(readVoiceGenerationPreferences(storage), preferences)
+})
+
+test('invalid or unavailable preference storage does not prevent generation', () => {
+  const storage = { getItem: () => '{broken', setItem: () => { throw new Error('storage blocked') } }
+  assert.deepEqual(readVoiceGenerationPreferences(storage), { settings: {} })
+  storage.getItem = () => JSON.stringify({ language: 'invalid', settings: {
+    en: { configurationName: 'openai', speed: 'fast', stability: .5, similarity: .75, autoOptimize: true },
+    bg: { configurationName: 'elevenlabs', speed: 1, stability: 2, similarity: .75, autoOptimize: true },
+  } })
+  assert.deepEqual(readVoiceGenerationPreferences(storage), { settings: {} })
+  storage.getItem = () => { throw new Error('storage blocked') }
+  assert.deepEqual(readVoiceGenerationPreferences(storage), { settings: {} })
+  assert.doesNotThrow(() => writeVoiceGenerationPreferences({ settings: {} }, storage))
+})
+
+test('restored settings follow provider speed limits and fall back when the configuration changes', () => {
+  const configuration = { config_name: 'elevenlabs', provider: 'elevenlabs', actor: 'Milena', model: 'model', enabled: true, speed: 1, stability: .6, similarity: .7 }
+  const saved = { configurationName: 'elevenlabs', speed: 1.8, stability: .3, similarity: .8, autoOptimize: true }
+  assert.deepEqual(voiceGenerationSettingsFor(configuration, saved), { ...saved, speed: 1.2 })
+  assert.deepEqual(voiceGenerationSettingsFor({ ...configuration, config_name: 'replacement' }, saved), {
+    configurationName: 'replacement', speed: 1, stability: .6, similarity: .7, autoOptimize: true,
+  })
+  assert.equal(voiceGenerationSettingsFor(configuration).autoOptimize, false)
 })
 
 const voice = (overrides: Partial<ItemVoiceRecord> = {}): ItemVoiceRecord => ({
