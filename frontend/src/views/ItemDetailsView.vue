@@ -244,7 +244,7 @@
     @cancel="cancelDelete"
     @confirm="confirmDelete"
   >
-    <template #message>{{ deleteImageMessage[0] }}<strong>{{ fileNameFromUri(rawItemImages[deleteFileIndex] || '') }}</strong>{{ deleteImageMessage[1] }}</template>
+    <template #message>{{ deleteImageConfirmLabel(contentLanguage) }}<br><br><strong>{{ imageIdFromUri(rawItemImages[deleteFileIndex] || '') }}</strong></template>
   </DeleteFileDialog>
 
   <Teleport to="body">
@@ -838,10 +838,6 @@ const onReplaceFilePicked = async (e: Event): Promise<void> => {
 }
 const deleteConfirmVisible = ref(false)
 const deleteFileIndex = ref<number>(-1)
-const deleteImageMessage = computed(() => deleteImageConfirmLabel(
-  contentLanguage.value,
-  category.value ? localizedCategoryLabel(category.value, contentLanguage.value) : '',
-).split('{image}'))
 const imagePreview = ref<{ src: string; title: string } | null>(null)
 
 function openImagePreview(src: string, title: string): void {

@@ -765,12 +765,12 @@ export function deleteImageLabel(lang: Language): string {
   return labels[lang] ?? labels.en
 }
 
-export function deleteImageConfirmLabel(lang: Language, category: string): string {
+export function deleteImageConfirmLabel(lang: Language): string {
   const labels: Record<Language, string> = {
-    en: `Are you sure you want to delete "{image}" from "${category}"?`,
-    es: `¿Seguro que quieres eliminar "{image}" de "${category}"?`,
-    fr: `Voulez-vous vraiment supprimer « {image} » de « ${category} » ?`,
-    bg: `Сигурни ли сте, че искате да изтриете „{image}“ от „${category}“?`,
+    en: 'Are you sure you want to delete this image?',
+    es: '¿Seguro que quieres eliminar esta imagen?',
+    fr: 'Voulez-vous vraiment supprimer cette image ?',
+    bg: 'Сигурни ли сте, че искате да изтриете това изображение?',
   }
   return labels[lang] ?? labels.en
 }

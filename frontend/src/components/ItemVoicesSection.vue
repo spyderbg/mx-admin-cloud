@@ -101,13 +101,14 @@
     <DeleteFileDialog
       v-if="dialog === 'delete' && deleteTarget"
       :title="copy.deleteVoice"
-      :message="copy.deleteConfirm.replace('{voice}', voiceTitle(deleteTarget))"
       :error="formError"
       :busy="!!busyKey"
       :confirm-label="copy.deleteVoice"
       @cancel="closeDialog"
       @confirm="deleteVoice"
-    />
+    >
+      <template #message>{{ copy.deleteConfirm }}<br><br><strong>{{ deleteTarget.id }}</strong></template>
+    </DeleteFileDialog>
   </section>
 </template>
 
