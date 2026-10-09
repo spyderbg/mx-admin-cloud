@@ -24,6 +24,7 @@ from src.services.content.models import (
 from src.core.localization import LocalizedString
 from src.services.content.schemas import (
     CreateItemResponse,
+    GenerateItemImageBody,
     GenerateItemVoiceBody,
     GenerateItemVoiceResponse,
     ImageResponse,
@@ -41,6 +42,7 @@ from src.services.content.routes.common import (
     CATEGORY_ITEMS,
     CATEGORY_ITEM_IMAGE,
     CATEGORY_ITEM_IMAGES,
+    CATEGORY_ITEM_IMAGES_GENERATE,
     CATEGORY_ITEM_IMAGE_MAIN,
     CATEGORY_ITEM_VOICE,
     CATEGORY_ITEM_VOICE_MAIN,
@@ -345,6 +347,43 @@ def items_images_add(
         ext = ".png"
     try:
         result = service.add_item_image(category_id, item_id, image_data, ext)
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidCategoryNameError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ContentError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return ImageResponse(id=result.id, file_uri=result.file_uri, action="add")
+
+
+@router.post(
+    CATEGORY_ITEM_IMAGES_GENERATE,
+    response_model=ImageResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=[TAG_ITEMS_IMAGES],
+    summary="Generate an image variant for an item from a text prompt",
+    description=(
+            "Generate an image from 'prompt' with the text to image configuration named by "
+            "'configuration_name' (which must be active) or, when omitted, the first active "
+            "configuration that succeeds, and add it to the item as a new image variant stored "
+            "at the next available index. Nothing is overwritten and the main image is not "
+            "changed; the first image of an item becomes its main image. Responds with HTTP 400 "
+            "when the prompt is empty or generation fails, including when no text to image "
+            "configuration is active. Requires authentication."
+    ),
+)
+def items_images_generate(
+        category_id: str,
+        item_id: str,
+        body: GenerateItemImageBody,
+        service: ContentServiceDep,
+        _user: dict = Depends(get_current_user),
+) -> ImageResponse:
+    """Generate an image from a prompt and add it to an item as a new variant."""
+    if not body.prompt.strip():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Prompt is required")
+    try:
+        result = service.generate_item_image(category_id, item_id, body.prompt, body.configuration_name)
     except CategoryNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except InvalidCategoryNameError as exc:

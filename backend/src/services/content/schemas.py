@@ -208,6 +208,15 @@ class UpdateItemBody(BaseModel):
     item_name: LocalizedString
 
 
+class GenerateItemImageBody(BaseModel):
+    """Request body for generating a new image variant of an item from a text prompt."""
+
+    prompt: str
+    # Text to image configuration (config file name) to generate with; it must be active.
+    # Omitted: the first active configuration that succeeds.
+    configuration_name: str | None = None
+
+
 class GenerateItemVoiceBody(BaseModel):
     """Request body for generating a new take of an item voice."""
 

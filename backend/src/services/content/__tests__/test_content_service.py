@@ -248,6 +248,19 @@ class _StubProvider(ContentProvider):
             "file_uri": f"/content/{category_id}/{item_id}/{item_id}_1{image_extension}",
         })
 
+    def generate_item_image(
+            self,
+            category_id: str,
+            item_id: str,
+            prompt: str,
+            configuration_name: str | None = None,
+    ) -> dict[str, Any]:
+        self._record("generate_item_image", category_id, item_id, prompt, configuration_name)
+        return self._returns.get("generate_item_image", {
+            "id": f"{item_id}_1",
+            "file_uri": f"/content/{category_id}/{item_id}/{item_id}_1.png",
+        })
+
     def update_item_image(
             self,
             category_id: str,
@@ -435,6 +448,9 @@ class _ConcreteProvider(ContentProvider):
         return {}
 
     def add_item_image(self, category_id, item_id, image_data, image_extension=".png"):
+        return {}
+
+    def generate_item_image(self, category_id, item_id, prompt, configuration_name=None):
         return {}
 
     def update_item_image(self, category_id, item_id, image_id, image_data, image_extension=".png"):

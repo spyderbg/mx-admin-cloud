@@ -190,12 +190,18 @@ class FileSystemInternalApiMixin(ContentProvider):  # pylint: disable=abstract-m
             raise RuntimeError(cls._extract_error_detail(response))
 
     @classmethod
-    def _generate_image(cls, prompt: str, filename_text: str | None = None) -> tuple[bytes, str]:
+    def _generate_image(
+            cls,
+            prompt: str,
+            filename_text: str | None = None,
+            configuration_name: str | None = None,
+    ) -> tuple[bytes, str]:
         """Generate an image via the internal /internal/image-generators/generate-image endpoint.
 
         Returns the raw bytes plus the file extension implied by the response
         content type, so whichever image provider is active (and however it
-        encodes the result) decides the format.
+        encodes the result) decides the format. *configuration_name* picks one active image
+        configuration; without it the first active one that succeeds is used.
         """
         if not prompt or not prompt.strip():
             raise ValueError("Prompt must be non-empty for image generation.")
@@ -203,7 +209,7 @@ class FileSystemInternalApiMixin(ContentProvider):  # pylint: disable=abstract-m
         token = create_internal_token("image-service", timedelta(seconds=30))
         response = httpx.post(
             f"{settings.API_BASE_URL}/internal/image-generators/generate-image",
-            json={"prompt": prompt.strip(), "filename_text": filename_text},
+            json={"prompt": prompt.strip(), "filename_text": filename_text, "provider": configuration_name},
             headers={"Authorization": f"Bearer {token}"},
             # Local render backends (e.g. ComfyUI) can legitimately take minutes.
             timeout=httpx.Timeout(600.0, connect=10.0),

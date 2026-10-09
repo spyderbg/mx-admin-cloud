@@ -3,6 +3,7 @@
 export interface GenerateImageBytesRequest {
     prompt: string
     filename_text?: string | null
+    provider?: string | null
 }
 
 /** Body for a single image generation request. */

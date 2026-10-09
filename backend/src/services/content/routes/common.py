@@ -43,6 +43,7 @@ CATEGORY_VOICE_REGENERATE = "/categories/{category_id}/voices/{voice_id}/regener
 CATEGORY_ITEMS = "/categories/{category_id}/items"
 CATEGORY_ITEM = "/categories/{category_id}/items/{item_id}"
 CATEGORY_ITEM_IMAGES = "/categories/{category_id}/items/{item_id}/images"
+CATEGORY_ITEM_IMAGES_GENERATE = "/categories/{category_id}/items/{item_id}/images/generate"
 CATEGORY_ITEM_IMAGE = "/categories/{category_id}/items/{item_id}/images/{image_id}"
 CATEGORY_ITEM_IMAGE_MAIN = "/categories/{category_id}/items/{item_id}/images/{image_id}/main"
 CATEGORY_ITEM_VOICES = "/categories/{category_id}/items/{item_id}/voices"

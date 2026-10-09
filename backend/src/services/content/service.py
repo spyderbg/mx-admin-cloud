@@ -285,6 +285,18 @@ class ContentService(Service):  # pylint: disable=too-many-public-methods
             lambda provider: provider.add_item_image(category_id, item_id, image_data, image_extension),
         )
 
+    def generate_item_image(
+            self,
+            category_id: str,
+            item_id: str,
+            prompt: str,
+            configuration_name: str | None = None,
+    ) -> CategoryImage:
+        """Generate an image from a prompt and add it to an item via the active provider."""
+        return self._first_success(
+            lambda provider: provider.generate_item_image(category_id, item_id, prompt, configuration_name),
+        )
+
     def update_item_image(
             self,
             category_id: str,

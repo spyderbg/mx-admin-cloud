@@ -373,6 +373,22 @@ components:
       title: FileAction
       description: Action performed on a category/item file (image or voice), echoed
         back in the response.
+    GenerateItemImageBody:
+      properties:
+        prompt:
+          type: string
+          title: Prompt
+        configuration_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Configuration Name
+      type: object
+      required:
+      - prompt
+      title: GenerateItemImageBody
+      description: Request body for generating a new image variant of an item from
+        a text prompt.
     GenerateItemVoiceBody:
       properties:
         language:
@@ -1788,6 +1804,53 @@ paths:
           multipart/form-data:
             schema:
               $ref: '#/components/schemas/Body_items_images_add_api_v1_content_categories__category_id__items__item_id__images_post'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/content/categories/{category_id}/items/{item_id}/images/generate:
+    post:
+      tags:
+      - Items Images
+      summary: Generate an image variant for an item from a text prompt
+      description: Generate an image from 'prompt' with the text to image configuration
+        named by 'configuration_name' (which must be active) or, when omitted, the first
+        active configuration that succeeds, and add it to the item as a new image variant
+        stored at the next available index. Nothing is overwritten and the main image
+        is not changed; the first image of an item becomes its main image. Responds
+        with HTTP 400 when the prompt is empty or generation fails, including when no
+        text to image configuration is active. Requires authentication.
+      operationId: items_images_generate_api_v1_content_categories__category_id__items__item_id__images_generate_post
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      - name: item_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Item Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateItemImageBody'
       responses:
         '201':
           description: Successful Response

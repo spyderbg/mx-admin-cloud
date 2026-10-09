@@ -665,6 +665,32 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             file_uri=f"/content/{category_name}/{item_folder_name}/{file_name}",
         )
 
+    def generate_item_image(
+            self,
+            category_id: str,
+            item_id: str,
+            prompt: str,
+            configuration_name: str | None = None,
+    ) -> CategoryImage:
+        """Generate an image from *prompt* and add it to the item like an uploaded one.
+
+        Nothing is overwritten: the image becomes the next variant (or the item's first image).
+        Generation problems, including no active text to image configuration, are reported as
+        ContentOperationError.
+        """
+        prompt = prompt.strip()
+        if not prompt:
+            raise ContentOperationError("A prompt is required to generate an image.")
+        category_name, category_path = self._validate_category_path(category_id)
+        item_folder_name, _ = self._resolve_item_path(category_path, category_name, item_id)
+        try:
+            image_data, extension = self._generate_image(
+                prompt, item_folder_name, (configuration_name or "").strip() or None,
+            )
+        except (ValueError, RuntimeError, httpx.HTTPError) as exc:
+            raise ContentOperationError(f"Image generation failed: {exc}") from exc
+        return self.add_item_image(category_id, item_id, image_data, extension)
+
     def update_item_image(
             self,
             category_id: str,

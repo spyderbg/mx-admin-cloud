@@ -659,4 +659,7 @@ export const contentHandlers = [
 
   // Generate a new voice for an item
   http.post('/api/v1/content/categories/:category_id/items/:item_id/voices/generate', () => HttpResponse.json({}, { status: 201 })),
+
+  // Generate an image variant for an item from a text prompt
+  http.post('/api/v1/content/categories/:category_id/items/:item_id/images/generate', () => HttpResponse.json({}, { status: 201 })),
 ]

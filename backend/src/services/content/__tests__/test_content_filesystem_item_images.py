@@ -5,13 +5,16 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
+import httpx
 import pytest
 
 from src.services.content.models import (
     CategoryNotFoundError,
     ContentOperationError,
 )
+from src.services.content.providers.file_system import FileSystemContentProvider
 from src.services.content.__tests__.content_fs_helpers import (
     patch_fs_settings,
     make_fs_provider,
@@ -358,3 +361,72 @@ def test_delete_item_image_last_remaining_is_allowed(tmp_path: Path) -> None:
 
     assert not list(item_path.glob("*.png"))
     assert not provider.item_images("C_Foods", "I_Apple").images
+
+
+# ---------------------------------------------------------------------------
+# generate_item_image
+# ---------------------------------------------------------------------------
+
+def _prepare_apple(tmp_path: Path) -> tuple[Path, Path]:
+    content_root = tmp_path / "content"
+    category_path = content_root / "foods"
+    write_category_registry(content_root, [("C_Foods", "Foods")])
+    write_item_registry(category_path, [("I_Apple", "Apple")])
+    return content_root, category_path / "apple"
+
+
+def test_generate_item_image_adds_the_generated_image_as_the_next_variant(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_apple(tmp_path)
+    (item_path / "apple.png").write_bytes(b"main")
+    (item_path / "apple_01.png").write_bytes(b"main")
+    provider = make_fs_provider()
+    with (
+        patch_fs_settings() as mock_settings,
+        patch.object(FileSystemContentProvider, "_generate_image", return_value=(b"generated", ".jpg")) as generate,
+    ):
+        mock_settings.content_path = content_root
+        result = provider.generate_item_image("C_Foods", "I_Apple", "  a red apple  ", " comfyui ")
+
+    generate.assert_called_once_with("a red apple", "apple", "comfyui")
+    assert result.id == "apple_02"
+    assert (item_path / "apple_02.jpg").read_bytes() == b"generated"
+    assert (item_path / "apple.png").read_bytes() == b"main"
+
+
+def test_generate_item_image_without_configuration_uses_the_default(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_apple(tmp_path)
+    provider = make_fs_provider()
+    with (
+        patch_fs_settings() as mock_settings,
+        patch.object(FileSystemContentProvider, "_generate_image", return_value=(b"generated", ".png")) as generate,
+    ):
+        mock_settings.content_path = content_root
+        result = provider.generate_item_image("C_Foods", "I_Apple", "apple")
+
+    generate.assert_called_once_with("apple", "apple", None)
+    assert (item_path / f"{result.id}.png").read_bytes() == b"generated"
+
+
+@pytest.mark.parametrize("error", [RuntimeError("No active text to image services configured."), httpx.ConnectError("down")])
+def test_generate_item_image_reports_generation_failures_and_changes_nothing(tmp_path: Path, error: Exception) -> None:
+    content_root, item_path = _prepare_apple(tmp_path)
+    before = sorted(item_path.iterdir())
+    provider = make_fs_provider()
+    with (
+        patch_fs_settings() as mock_settings,
+        patch.object(FileSystemContentProvider, "_generate_image", side_effect=error),
+    ):
+        mock_settings.content_path = content_root
+        with pytest.raises(ContentOperationError, match="Image generation failed"):
+            provider.generate_item_image("C_Foods", "I_Apple", "apple")
+
+    assert sorted(item_path.iterdir()) == before
+
+
+def test_generate_item_image_requires_a_prompt(tmp_path: Path) -> None:
+    content_root, _ = _prepare_apple(tmp_path)
+    provider = make_fs_provider()
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        with pytest.raises(ContentOperationError, match="prompt"):
+            provider.generate_item_image("C_Foods", "I_Apple", "   ")

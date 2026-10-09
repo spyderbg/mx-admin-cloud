@@ -79,6 +79,13 @@
     </section>
 
     <input ref="addFileInputRef" type="file" accept="image/*" class="d-none" aria-hidden="true" tabindex="-1" @change="onAddFilePicked" />
+    <GenerateImageDialog
+      v-if="showGenerateImage"
+      :busy="isGeneratingImage"
+      :error="generateImageError"
+      @close="showGenerateImage = false"
+      @submit="generateImage"
+    />
     <input ref="replaceFileInputRef" type="file" accept="image/*" class="d-none" aria-hidden="true" tabindex="-1" @change="onReplaceFilePicked" />
 
     <section class="id-panel">
@@ -339,6 +346,7 @@ import {
 } from '../api/cache'
 import {
   itemsImagesAdd,
+  itemsImagesGenerate,
   itemsImagesUpdate,
   itemsImagesDelete,
   itemsImagesSetMain,
@@ -356,6 +364,7 @@ import ViewBreadcrumb from '../components/ViewBreadcrumb.vue'
 import MobileActionsMenu, { type MobileAction } from '../components/MobileActionsMenu.vue'
 import VoiceCardsGrid, { type VoiceExtraAction } from '../components/VoiceCardsGrid.vue'
 import ItemVoicesSection from '../components/ItemVoicesSection.vue'
+import GenerateImageDialog from '../components/GenerateImageDialog.vue'
 import ItemImageCard from '../components/ItemImageCard.vue'
 import DeleteFileDialog from '../components/DeleteFileDialog.vue'
 import { resizeImageToMaxDimension } from '../utils/imageResize'
@@ -364,6 +373,7 @@ import { cacheBustedUri } from '../utils/cacheBustedUri'
 import cameraPlaceholderUrl from '../assets/images/samples/camera-placeholder.svg'
 import {
   addImageLabel,
+  generateImageLabel,
   breadcrumbCategoriesLabel,
   archiveTypeToConfirmLabel,
   cancelLabel,
@@ -655,6 +665,36 @@ const uploadNewImage = async (file: File): Promise<void> => {
     showToast(extractErrorMessage(err), 'error')
   } finally {
     isAddingImage.value = false
+  }
+}
+
+const showGenerateImage = ref(false)
+const isGeneratingImage = ref(false)
+const generateImageError = ref('')
+
+const openGenerateImage = (): void => {
+  if (isAddingImage.value || isGeneratingImage.value) return
+  generateImageError.value = ''
+  showGenerateImage.value = true
+}
+
+const generateImage = async (prompt: string, configurationName: string | null): Promise<void> => {
+  if (isGeneratingImage.value) return
+  const cat = category.value
+  const currentItem = item.value
+  if (!cat || !currentItem) return
+
+  isGeneratingImage.value = true
+  generateImageError.value = ''
+  try {
+    await itemsImagesGenerate(cat.id, currentItem.id, { prompt, configuration_name: configurationName })
+    showGenerateImage.value = false
+    await refreshItem()
+    showToast(generateImageLabel('generated', contentLanguage.value), 'success')
+  } catch (err) {
+    generateImageError.value = extractErrorMessage(err)
+  } finally {
+    isGeneratingImage.value = false
   }
 }
 
@@ -1041,6 +1081,7 @@ const itemActions = computed<MobileAction[]>(() => [
 
 const imageActions = computed<MobileAction[]>(() => [
   { label: addImageLabel(contentLanguage.value), icon: 'mdi-plus', tone: 'primary', onClick: onAddFile },
+  { label: generateImageLabel('generate', contentLanguage.value), icon: 'mdi-auto-fix', tone: 'regenerate', disabled: isAddingImage.value || isGeneratingImage.value, onClick: openGenerateImage },
   ...(hasFiles.value
     ? [{ label: releaseAllImagesLabel(contentLanguage.value), icon: 'mdi-upload', tone: 'success' as const, onClick: onReleaseAllItemImages }]
     : []),

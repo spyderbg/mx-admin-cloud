@@ -419,6 +419,16 @@ class ContentProvider(ServiceProvider, ABC):  # pylint: disable=too-many-public-
         """Return voice files for a specific item."""
 
     @abstractmethod
+    def generate_item_image(
+            self,
+            category_id: str,
+            item_id: str,
+            prompt: str,
+            configuration_name: str | None = None,
+    ) -> CategoryImage:
+        """Generate an image from *prompt* with a text to image configuration and add it as a new variant."""
+
+    @abstractmethod
     def add_item_image(
             self,
             category_id: str,

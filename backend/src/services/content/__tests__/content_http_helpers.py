@@ -232,6 +232,18 @@ class StubContentProvider(ContentProvider):
             file_uri=f"/content/{category_id}/{item_id}/{item_id}_1{image_extension}",
         ))
 
+    def generate_item_image(
+            self,
+            category_id: str,
+            item_id: str,
+            prompt: str,
+            configuration_name: str | None = None,
+    ) -> CategoryImage:
+        return self._call("generate_item_image", CategoryImage(
+            id=f"{item_id}_1",
+            file_uri=f"/content/{category_id}/{item_id}/{item_id}_1.png",
+        ))
+
     def update_item_image(
             self,
             category_id: str,

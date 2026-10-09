@@ -38,6 +38,8 @@ class GenerateImageBytesRequest(BaseModel):
 
     prompt: str
     filename_text: str | None = None
+    # Name of the (active) image configuration to generate with; omitted: first active one that succeeds.
+    provider: str | None = None
 
 
 class ImageGenerateResult(BaseModel):

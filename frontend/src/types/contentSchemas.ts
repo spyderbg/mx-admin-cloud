@@ -89,6 +89,12 @@ export interface DeleteArchivedCategoryResponse {
     message: string
 }
 
+/** Request body for generating a new image variant of an item from a text prompt. */
+export interface GenerateItemImageBody {
+    prompt: string
+    configuration_name?: string | null
+}
+
 /** Request body for generating a new take of an item voice. */
 export interface GenerateItemVoiceBody {
     language: string

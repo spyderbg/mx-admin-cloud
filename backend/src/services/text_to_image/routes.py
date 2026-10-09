@@ -239,10 +239,11 @@ async def generate_single(
     status_code=status.HTTP_200_OK,
     summary="Generate an image and return the raw bytes",
     description=(
-            "Generate an image for a prompt using the highest-priority active image "
-            "service and return the raw image bytes. "
-            "Responds with HTTP 400 when the prompt is empty, HTTP 500 when generation "
-            "fails, and HTTP 503 when no active image providers are configured."
+            "Generate an image for a prompt and return the raw image bytes, using the image "
+            "configuration named by 'provider' or, without it, the first active one that succeeds. "
+            "Responds with HTTP 400 when the prompt is empty, HTTP 404 when 'provider' is not an "
+            "active configuration, HTTP 500 when generation fails, and HTTP 503 when no active "
+            "image providers are configured."
     ),
     responses={
         200: {
@@ -250,6 +251,7 @@ async def generate_single(
             "description": "Raw image bytes",
         },
         400: {"description": "Prompt is empty"},
+        404: {"description": "Named image configuration not found or not active"},
         500: {"description": "Image generation failed"},
         503: {"description": "No active image providers configured"},
     },
@@ -277,7 +279,7 @@ async def generate_image(
         "image_generation_started",
         LogLevel.INFO,
         endpoint="generate_image",
-        provider=None,
+        provider=body.provider,
         request_id=request_id,
         prompt=_prompt_preview(prompt),
     )
@@ -289,9 +291,11 @@ async def generate_image(
 
     async with httpx.AsyncClient(timeout=_CLIENT_TIMEOUT) as client:
         try:
-            result = await service.generate(image_request, client)
+            result = await service.generate(image_request, client, provider_name=body.provider)
         except NoActiveImageProvidersError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except ImageProviderNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         except AllProvidersFailedError as exc:
             # Every provider was tried (and logged its own call); keep the per-request summary record.
             await emit_event(

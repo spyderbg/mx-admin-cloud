@@ -10,6 +10,7 @@ import type {
   CreateCategoryResponse,
   CreateItemResponse,
   DeleteArchivedCategoryResponse,
+  GenerateItemImageBody,
   GenerateItemVoiceBody,
   GenerateItemVoiceResponse,
   ImageResponse,
@@ -173,6 +174,12 @@ export const itemsImagesList = async (categoryId: string, itemId: string): Promi
 /** Add an image file variant to an item */
 export const itemsImagesAdd = async (categoryId: string, itemId: string, formData: FormData): Promise<ImageResponse> => {
   const r = await client.post<ImageResponse>(`/content/categories/${categoryId}/items/${itemId}/images`, formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+  return r.data
+}
+
+/** Generate an image variant for an item from a text prompt */
+export const itemsImagesGenerate = async (categoryId: string, itemId: string, body: GenerateItemImageBody): Promise<ImageResponse> => {
+  const r = await client.post<ImageResponse>(`/content/categories/${categoryId}/items/${itemId}/images/generate`, body)
   return r.data
 }
 

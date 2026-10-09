@@ -17,6 +17,7 @@ from httpx import ASGITransport, AsyncClient
 
 from src.services.content.models import (
     CategoryConflictError,
+    CategoryImage,
     CategoryNotFoundError,
     CategoryVoice,
     ContentOperationError,
@@ -671,3 +672,64 @@ async def test_optimize_item_voice_without_optimizers_returns_400(tmp_resolved: 
 async def test_optimize_item_voice_requires_auth(client_no_auth: AsyncClient) -> None:
     response = await client_no_auth.post(_VOICE_OPTIMIZE_URL)
     assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/content/categories/{category_id}/items/{item_id}/images/generate
+# ---------------------------------------------------------------------------
+
+_IMAGE_GENERATE_URL = "/api/v1/content/categories/C_Foods/items/I_Apple/images/generate"
+
+
+@pytest.mark.asyncio
+async def test_generate_item_image_returns_the_new_variant(tmp_resolved: Path) -> None:
+    seen: list[tuple[str, str, str, str | None]] = []
+
+    class _TrackingProvider(StubContentProvider):
+        def generate_item_image(self, category_id: str, item_id: str, prompt: str,
+                                configuration_name: str | None = None) -> CategoryImage:
+            seen.append((category_id, item_id, prompt, configuration_name))
+            return CategoryImage(id="apple_02", file_uri="/content/foods/apple/apple_02.png")
+
+    app = make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.post(_IMAGE_GENERATE_URL, json={"prompt": "a red apple", "configuration_name": "comfyui"})
+        without_configuration = await c.post(_IMAGE_GENERATE_URL, json={"prompt": "a green pear"})
+
+    assert response.status_code == 201
+    assert response.json() == {"id": "apple_02", "file_uri": "/content/foods/apple/apple_02.png", "action": "add"}
+    assert without_configuration.status_code == 201
+    assert seen == [
+        ("C_Foods", "I_Apple", "a red apple", "comfyui"),
+        ("C_Foods", "I_Apple", "a green pear", None),
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("body", [{"prompt": "   "}, {"prompt": ""}])
+async def test_generate_item_image_rejects_an_empty_prompt(client: AsyncClient, body: dict[str, Any]) -> None:
+    response = await client.post(_IMAGE_GENERATE_URL, json=body)
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_generate_item_image_requires_a_prompt_field(client: AsyncClient) -> None:
+    response = await client.post(_IMAGE_GENERATE_URL, json={})
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("error", "status_code"), [
+    (CategoryNotFoundError("Item 'I_Apple' not found"), 404),
+    (ContentOperationError("Image generation failed: No active image providers configured."), 400),
+])
+async def test_generate_item_image_maps_errors(tmp_resolved: Path, error: Exception, status_code: int) -> None:
+    class _FailingProvider(StubContentProvider):
+        def generate_item_image(self, category_id: str, item_id: str, prompt: str,
+                                configuration_name: str | None = None) -> CategoryImage:
+            raise error
+
+    app = make_app(_FailingProvider(tmp_resolved), tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.post(_IMAGE_GENERATE_URL, json={"prompt": "apple"})
+    assert response.status_code == status_code

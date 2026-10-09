@@ -1239,3 +1239,46 @@ export function itemCreatedWithWarningsLabel(lang: Language, word: string): stri
   }
   return labels[lang] ?? labels.en
 }
+
+const generateImageLabels = {
+  generate: { en: 'Generate Image', es: 'Generar imagen', fr: 'Générer une image', bg: 'Генерирай изображение' },
+  prompt: { en: 'Prompt', es: 'Descripción', fr: 'Description', bg: 'Описание' },
+  promptPlaceholder: {
+    en: 'Describe the image to generate',
+    es: 'Describe la imagen que quieres generar',
+    fr: 'Décrivez l’image à générer',
+    bg: 'Опишете изображението, което да се генерира',
+  },
+  configuration: {
+    en: 'Text-to-image configuration',
+    es: 'Configuración de texto a imagen',
+    fr: 'Configuration texte-vers-image',
+    bg: 'Конфигурация текст към изображение',
+  },
+  automatic: {
+    en: 'Automatic (first available)',
+    es: 'Automática (la primera disponible)',
+    fr: 'Automatique (la première disponible)',
+    bg: 'Автоматично (първата налична)',
+  },
+  generating: { en: 'Generating…', es: 'Generando…', fr: 'Génération…', bg: 'Генериране…' },
+  generated: { en: 'Image generated.', es: 'Imagen generada.', fr: 'Image générée.', bg: 'Изображението е генерирано.' },
+  none: {
+    en: 'No text-to-image configuration is enabled. Enable one in Configuration to generate images.',
+    es: 'No hay ninguna configuración de texto a imagen activa. Activa una en Configuración para generar imágenes.',
+    fr: 'Aucune configuration texte-vers-image n’est activée. Activez-en une dans Configuration pour générer des images.',
+    bg: 'Няма включена конфигурация текст към изображение. Включете една в Конфигурация, за да генерирате изображения.',
+  },
+  loadError: {
+    en: 'Could not load the text-to-image configurations.',
+    es: 'No se pudieron cargar las configuraciones de texto a imagen.',
+    fr: 'Impossible de charger les configurations texte-vers-image.',
+    bg: 'Конфигурациите текст към изображение не могат да се заредят.',
+  },
+  cancel: { en: 'Cancel', es: 'Cancelar', fr: 'Annuler', bg: 'Отказ' },
+} satisfies Record<string, Record<Language, string>>
+
+/** Text for the generate-image dialog; unknown `lang` falls back to English. */
+export function generateImageLabel(key: keyof typeof generateImageLabels, lang: Language): string {
+  return generateImageLabels[key][lang] ?? generateImageLabels[key].en
+}

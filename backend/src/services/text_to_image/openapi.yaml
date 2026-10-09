@@ -22,6 +22,11 @@ components:
           - type: string
           - type: 'null'
           title: Filename Text
+        provider:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Provider
       type: object
       required:
       - prompt
@@ -257,10 +262,11 @@ paths:
       tags:
       - internal-image-generators
       summary: Generate an image and return the raw bytes
-      description: Generate an image for a prompt using the highest-priority active
-        image service and return the raw image bytes. Responds with HTTP 400 when the
-        prompt is empty, HTTP 500 when generation fails, and HTTP 503 when no active
-        image providers are configured.
+      description: Generate an image for a prompt and return the raw image bytes, using
+        the image configuration named by 'provider' or, without it, the first active
+        one that succeeds. Responds with HTTP 400 when the prompt is empty, HTTP 404
+        when 'provider' is not an active configuration, HTTP 500 when generation fails,
+        and HTTP 503 when no active image providers are configured.
       operationId: generate_image_internal_image_generators_generate_image_post
       requestBody:
         content:
@@ -277,6 +283,8 @@ paths:
             image/png: {}
         '400':
           description: Prompt is empty
+        '404':
+          description: Named image configuration not found or not active
         '500':
           description: Image generation failed
         '503':
