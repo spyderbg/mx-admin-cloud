@@ -168,7 +168,7 @@ content/<category>/
 ├── <item>/                          # named after the item id: I_WaterBottle -> water_bottle
 │   ├── <item>.png                   # main image (a copy of one variant)
 │   ├── <item>_01.png, <item>_02.jpg # image variants
-│   └── <item>_en.mp3, <item>_en_01.mp3, <item>_en.csv, ...  # voices, voice variants, metadata sidecars
+│   └── <item>_en.mp3, <item>_en_01.mp3, <item>_en_01_<optimizer>.mp3, <item>_en.csv, ...  # voices, voice variants, optimized variants (named after their source and the optimizer configuration), metadata sidecars
 ├── items_ids.csv, items_<lang>.csv  # row-aligned registry: id, then the name per language
 └── <category>.png, <category>_en.mp3, ...   # category icon and voices
 

@@ -95,7 +95,7 @@
       <div v-if="uploadFile" class="ivs-file"><i class="mdi mdi-file-music" aria-hidden="true"></i><div><strong>{{ uploadFile.name }}</strong><small>{{ copy.ready }}</small></div><button type="button" :disabled="!!busyKey" :aria-label="copy.remove" @click="setFile(null)"><i class="mdi mdi-close" aria-hidden="true"></i></button></div>
       <div v-if="uploadUrl" class="ivs-upload-preview"><strong>{{ copy.preview }}</strong><VoiceAudioPreview :src="uploadUrl" :label="uploadFile?.name || copy.preview" :active="activePlayer === 'upload-preview'" @play="onPlay('upload-preview')" /></div>
       <p class="ivs-notice">{{ uploadMode === 'replace' ? copy.replaceHint : capabilities.multiple_voices ? copy.keepSelection : '' }}</p>
-      <template #footer><button v-if="uploadMode === 'replace'" type="button" class="ivs-button" :disabled="!!busyKey" @click="closeDialog">{{ copy.cancel }}</button><button type="submit" class="ivs-button ivs-primary ivs-submit" :disabled="!canUpload"><i class="mdi" :class="busyKey ? 'mdi-loading mdi-spin' : 'mdi-upload'" aria-hidden="true"></i>{{ busyKey ? copy.saving : uploadMode === 'replace' ? copy.replace : copy.add }}</button></template>
+      <template #footer><button type="submit" class="ivs-button ivs-primary ivs-submit" :disabled="!canUpload"><i class="mdi" :class="busyKey ? 'mdi-loading mdi-spin' : 'mdi-upload'" aria-hidden="true"></i>{{ busyKey ? copy.saving : uploadMode === 'replace' ? copy.replace : copy.add }}</button></template>
     </VoiceDialog>
 
     <DeleteFileDialog
@@ -116,9 +116,10 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { Voice, Language } from '../types/viewModels'
 import { SUPPORTED_LANGUAGES } from '../types/viewModels'
-import type { AudioVersion, ItemVoiceList, ItemVoiceRecord } from '../types/itemVoices'
+import type { ItemVoiceList, ItemVoiceRecord } from '../types/itemVoices'
 import type { GenerateItemVoiceResponse } from '../types/contentSchemas'
 import { legacyVoiceCapabilities } from '../types/itemVoices'
+import { serviceConfigurationFiles } from '../api/configurationCache'
 import { deleteItemVoice, generateItemVoice, listItemVoices, optimizeItemVoice, selectItemVoice, uploadItemVoice } from '../api/itemVoicesClient'
 import { getServiceConfig, listServiceConfigs } from '../api/configurationClient'
 import type { ConfigurationFileResponse } from '../types/configurationSchemas'
@@ -128,7 +129,7 @@ import { readVoiceGenerationPreferences, writeVoiceGenerationPreferences, voiceG
 import { invalidateItemDetail } from '../api/cache'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import { itemVoiceCopy } from '../utils/itemVoiceCopy'
-import { selectedVoice, validateAudioFile, voiceErrorMessage, voiceTitle, voiceSelectionId } from '../utils/itemVoices'
+import { selectedVoice, validateAudioFile, voiceErrorMessage, voiceTitle } from '../utils/itemVoices'
 import { langFlag, langLabel } from '../utils/voiceLabels'
 import ItemVoiceCard from './ItemVoiceCard.vue'
 import MobileActionsMenu, { type MobileAction } from './MobileActionsMenu.vue'
@@ -214,6 +215,11 @@ watch(identity, () => {
   expanded.value = new Set()
   void load()
 })
+// What the voices can do (optimize, generate) follows the optimizer and text-to-speech
+// configurations, so reload when either is saved, enabled or disabled while this page is open.
+watch(() => [serviceConfigurationFiles.value.voice_optimization, serviceConfigurationFiles.value.text_to_speech], () => {
+  if (!busyKey.value) void load()
+})
 // Also refresh after the existing summary cards regenerate, rename or replace audio.
 watch(() => props.voices, () => { if (!busyKey.value) { activePlayer.value = null; revision.value++; void load() } })
 watch(() => props.externalPlayingId, (id) => { if (id) activePlayer.value = null })
@@ -273,9 +279,8 @@ function optimize(voice: ItemVoiceRecord): void {
   if (!capabilities.value.optimize) return
   void mutate(`optimize:${voice.id}`, () => optimizeItemVoice(props.categoryId, props.itemId, voice.id), copy.value.optimizedSuccess)
 }
-function select(voice: ItemVoiceRecord, version: AudioVersion): void {
-  const voiceId = voiceSelectionId(voice, version)
-  if (!capabilities.value.select || !voiceId) return
+function select(voice: ItemVoiceRecord, voiceId: string): void {
+  if (!capabilities.value.select) return
   const success = copy.value.selectedSuccess
     .replace('{voice}', voiceTitle(voice))
     .replace('{language}', langLabel(voice.language, language.value))

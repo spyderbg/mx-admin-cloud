@@ -37,9 +37,13 @@ function getList(categoryId: string, itemId: string): ItemVoiceList | undefined 
     // Mock audio is intentionally reused; the UI explicitly labels this simulation.
     english.optimized_file_uri = `${english.file_uri}?preview=optimized`
     english.optimized_voice_id = `${english.id}-optimized`
+    english.optimized_versions = [
+      { id: `${english.id}-optimized`, file_uri: english.optimized_file_uri, optimizer: 'ffmpeg' },
+      { id: `${english.id}-optimized-2`, file_uri: `${english.file_uri}?preview=optimized-2`, optimizer: 'auphonic' },
+    ]
     english.selected_version = 'optimized'
-    voices.push({ ...english, id: `${english.id}-take-2`, display_name: 'Milena · Take 2', optimized_file_uri: null, optimized_voice_id: null, is_selected: false, selected_version: 'original', parameters: { ...english.parameters, speed: .9 } })
-    voices.push({ ...english, id: `${english.id}-manual`, display_name: 'Manual recording', provider: 'custom', creation_method: 'uploaded', optimized_file_uri: null, optimized_voice_id: null, is_selected: false, selected_version: 'original', parameters: { date: '2026-09-28T09:00:00Z' } })
+    voices.push({ ...english, id: `${english.id}-take-2`, display_name: 'Milena · Take 2', optimized_file_uri: null, optimized_voice_id: null, optimized_versions: undefined, is_selected: false, selected_version: 'original', parameters: { ...english.parameters, speed: .9 } })
+    voices.push({ ...english, id: `${english.id}-manual`, display_name: 'Manual recording', provider: 'custom', creation_method: 'uploaded', optimized_file_uri: null, optimized_voice_id: null, optimized_versions: undefined, is_selected: false, selected_version: 'original', parameters: { date: '2026-09-28T09:00:00Z' } })
   }
   const list = { item_id: itemId, name, voices, capabilities }
   records.set(key, list)
@@ -56,7 +60,7 @@ function listResponse(list: ItemVoiceList): ItemVoiceListResponse {
     variants: list.voices,
     main_voice_ids: Object.fromEntries(SUPPORTED_LANGUAGES.map((language) => {
       const voice = selected.find((entry) => entry.language === language)
-      return [language, voice ? (voice.selected_version === 'optimized' ? voice.optimized_voice_id : voice.id) || null : null]
+      return [language, voice ? (voice.selected_version === 'optimized' ? voice.selected_optimized_id ?? voice.optimized_voice_id : voice.id) || null : null]
     })),
   }
 }
@@ -147,9 +151,10 @@ export const itemVoiceHandlers = [
   }),
   http.put(`${base}/:voice_id/main`, ({ params }) => {
     const list = findList(params)
-    const voice = list?.voices.find((entry) => entry.id === params.voice_id || entry.optimized_voice_id === params.voice_id)
+    const voice = list?.voices.find((entry) => entry.id === params.voice_id || entry.optimized_voice_id === params.voice_id || entry.optimized_versions?.some((item) => item.id === params.voice_id))
     if (!list || !voice?.file_uri) return error('Voice not found.', 404)
-    const version = params.voice_id === voice.optimized_voice_id ? 'optimized' : 'original'
+    const version = params.voice_id === voice.id ? 'original' : 'optimized'
+    if (version === 'optimized') voice.selected_optimized_id = String(params.voice_id)
     if (version === 'optimized' && !voice.optimized_file_uri) return error('No optimized audio available.')
     list.voices.filter((entry) => entry.language === voice.language).forEach((entry) => { entry.is_selected = entry.id === voice.id })
     voice.selected_version = version

@@ -369,17 +369,18 @@ def test_optimize_item_voice_keeps_the_original_and_adds_one_variant_per_optimiz
 
     # The main voice was no copy of any variant, so it is kept as a variant first.
     assert (item_path / "apple_en_01.mp3").read_bytes() == b"original"
-    assert (item_path / "apple_en_02.mp3").read_bytes() == b"ffmpeg_low:original"
-    assert (item_path / "apple_en_03.mp3").read_bytes() == b"pydub_optimized:original"
+    # Optimized files are named after their source and the optimizer configuration.
+    assert (item_path / "apple_en_01_ffmpeg_low.mp3").read_bytes() == b"ffmpeg_low:original"
+    assert (item_path / "apple_en_01_pydub_optimized.mp3").read_bytes() == b"pydub_optimized:original"
     # Optimizing never changes the main voice.
     assert (item_path / "apple_en.mp3").read_bytes() == b"original"
     assert [c[1] for c in calls] == [(item_path / "apple_en_01.mp3").resolve()] * 2
     assert result.source_voice_id == "apple_en_01"
-    assert result.optimized_voice_ids == ["apple_en_02", "apple_en_03"]
+    assert result.optimized_voice_ids == ["apple_en_01_ffmpeg_low", "apple_en_01_pydub_optimized"]
     assert result.warnings == []
-    assert [v.id for v in result.variants] == ["apple_en_01", "apple_en_02", "apple_en_03"]
+    assert [v.id for v in result.variants] == ["apple_en_01", "apple_en_01_ffmpeg_low", "apple_en_01_pydub_optimized"]
     assert result.main_voice_ids == {"en": "apple_en_01"}
-    assert voice_metadata_normalized(item_path / "apple_en_02.csv") == {
+    assert voice_metadata_normalized(item_path / "apple_en_01_ffmpeg_low.csv") == {
         "creation_method": "optimized",
         "provider": "openai",
         "parameters": {"_text": "apple", "_optimizer": "ffmpeg_low", "_source": "apple_en_01"},
@@ -391,16 +392,36 @@ def test_optimize_item_voice_keeps_the_original_and_adds_one_variant_per_optimiz
 def test_optimize_item_voice_again_replaces_the_previous_output(tmp_path: Path) -> None:
     content_root, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"original"})
     _optimize(content_root, "apple-v-en", ["ffmpeg_low"])
-    (item_path / "apple_en_02.mp3").write_bytes(b"stale")
+    (item_path / "apple_en_01_ffmpeg_low.mp3").write_bytes(b"stale")
 
     result, _ = _optimize(content_root, "apple-v-en", ["ffmpeg_low"])
 
     assert result.source_voice_id == "apple_en_01"
-    assert result.optimized_voice_ids == ["apple_en_02"]
-    assert (item_path / "apple_en_02.mp3").read_bytes() == b"ffmpeg_low:original"
+    assert result.optimized_voice_ids == ["apple_en_01_ffmpeg_low"]
+    assert (item_path / "apple_en_01_ffmpeg_low.mp3").read_bytes() == b"ffmpeg_low:original"
     assert sorted(f.name for f in item_path.glob("apple_en*.mp3")) == [
-        "apple_en.mp3", "apple_en_01.mp3", "apple_en_02.mp3",
+        "apple_en.mp3", "apple_en_01.mp3", "apple_en_01_ffmpeg_low.mp3",
     ]
+
+
+def test_optimize_item_voice_renames_output_stored_under_a_take_number(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"original", "apple_en_01": b"original"})
+    provider = make_fs_provider()
+    (item_path / "apple_en_02.mp3").write_bytes(b"old")
+    with patch_fs_settings():
+        provider._write_voice_metadata(
+            item_path / "apple_en_02.mp3", VoiceCreationMethod.OPTIMIZED, "openai",
+            {"_optimizer": "ffmpeg_low", "_source": "apple_en_01"},
+        )
+
+    result, _ = _optimize(content_root, "apple-v-en", ["ffmpeg_low"])
+
+    assert result.optimized_voice_ids == ["apple_en_01_ffmpeg_low"]
+    assert (item_path / "apple_en_01_ffmpeg_low.mp3").read_bytes() == b"ffmpeg_low:original"
+    assert sorted(f.name for f in item_path.glob("apple_en*.mp3")) == [
+        "apple_en.mp3", "apple_en_01.mp3", "apple_en_01_ffmpeg_low.mp3",
+    ]
+    assert not (item_path / "apple_en_02.csv").exists()
 
 
 def test_optimize_item_voice_uses_the_variant_the_main_voice_was_copied_from(tmp_path: Path) -> None:
@@ -413,20 +434,20 @@ def test_optimize_item_voice_uses_the_variant_the_main_voice_was_copied_from(tmp
     result, _ = _optimize(content_root, "apple-v-en", ["ffmpeg_low"])
 
     assert result.source_voice_id == "apple_en_02"
-    assert (item_path / "apple_en_03.mp3").read_bytes() == b"ffmpeg_low:second"
-    assert not (item_path / "apple_en_04.mp3").exists()
+    assert (item_path / "apple_en_02_ffmpeg_low.mp3").read_bytes() == b"ffmpeg_low:second"
+    assert not (item_path / "apple_en_03.mp3").exists()
 
 
 def test_optimize_item_voice_of_an_optimized_version_starts_from_its_original(tmp_path: Path) -> None:
     content_root, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"original"})
     _optimize(content_root, "apple-v-en", ["ffmpeg_low"])
 
-    result, calls = _optimize(content_root, "apple_en_02", ["ffmpeg_low", "ffmpeg_high"])
+    result, calls = _optimize(content_root, "apple_en_01_ffmpeg_low", ["ffmpeg_low", "ffmpeg_high"])
 
     assert result.source_voice_id == "apple_en_01"
     assert {c[1] for c in calls} == {(item_path / "apple_en_01.mp3").resolve()}
-    assert result.optimized_voice_ids == ["apple_en_02", "apple_en_03"]
-    assert (item_path / "apple_en_03.mp3").read_bytes() == b"ffmpeg_high:original"
+    assert result.optimized_voice_ids == ["apple_en_01_ffmpeg_low", "apple_en_01_ffmpeg_high"]
+    assert (item_path / "apple_en_01_ffmpeg_high.mp3").read_bytes() == b"ffmpeg_high:original"
 
 
 def test_optimize_item_voice_after_selecting_an_optimized_main_keeps_one_original(tmp_path: Path) -> None:
@@ -436,14 +457,14 @@ def test_optimize_item_voice_after_selecting_an_optimized_main_keeps_one_origina
     with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en"]
-        selected = provider.set_main_item_voice("C_Foods", "I_Apple", "apple_en_02")
-    assert selected.main_voice_ids == {"en": "apple_en_02"}
+        selected = provider.set_main_item_voice("C_Foods", "I_Apple", "apple_en_01_ffmpeg_low")
+    assert selected.main_voice_ids == {"en": "apple_en_01_ffmpeg_low"}
 
     result, _ = _optimize(content_root, "apple-v-en", ["ffmpeg_low"])
 
     # The main is now a copy of the optimized variant: no second "original" is made from it.
     assert result.source_voice_id == "apple_en_01"
-    assert sorted(f.name for f in item_path.glob("apple_en_*.mp3")) == ["apple_en_01.mp3", "apple_en_02.mp3"]
+    assert sorted(f.name for f in item_path.glob("apple_en_*.mp3")) == ["apple_en_01.mp3", "apple_en_01_ffmpeg_low.mp3"]
 
 
 def test_optimize_item_voice_without_main_uses_the_first_variant(tmp_path: Path) -> None:
@@ -452,7 +473,7 @@ def test_optimize_item_voice_without_main_uses_the_first_variant(tmp_path: Path)
     result, _ = _optimize(content_root, "apple-v-en", ["ffmpeg_low"])
 
     assert result.source_voice_id == "apple_en_01"
-    assert (item_path / "apple_en_03.mp3").read_bytes() == b"ffmpeg_low:first"
+    assert (item_path / "apple_en_01_ffmpeg_low.mp3").read_bytes() == b"ffmpeg_low:first"
     assert not (item_path / "apple_en.mp3").exists()
 
 
@@ -461,8 +482,8 @@ def test_optimize_item_voice_reports_a_failing_optimizer_and_keeps_the_others(tm
 
     result, _ = _optimize(content_root, "apple-v-en", ["ffmpeg_low", "pydub_optimized"], frozenset({"ffmpeg_low"}))
 
-    assert result.optimized_voice_ids == ["apple_en_02"]
-    assert (item_path / "apple_en_02.mp3").read_bytes() == b"pydub_optimized:original"
+    assert result.optimized_voice_ids == ["apple_en_01_pydub_optimized"]
+    assert (item_path / "apple_en_01_pydub_optimized.mp3").read_bytes() == b"pydub_optimized:original"
     assert result.warnings == ["Voice optimization failed for ffmpeg_low: ffmpeg_low exploded"]
     assert not list(item_path.glob(".*"))
 
@@ -476,9 +497,9 @@ def test_optimize_item_voice_first_success_stops_after_the_first_optimizer_that_
     )
 
     assert [optimizer for optimizer, _, _ in calls] == ["ffmpeg_low"]
-    assert result.optimized_voice_ids == ["apple_en_02"]
-    assert (item_path / "apple_en_02.mp3").read_bytes() == b"ffmpeg_low:original"
-    assert not (item_path / "apple_en_03.mp3").exists()
+    assert result.optimized_voice_ids == ["apple_en_01_ffmpeg_low"]
+    assert (item_path / "apple_en_01_ffmpeg_low.mp3").read_bytes() == b"ffmpeg_low:original"
+    assert not (item_path / "apple_en_01_pydub_optimized.mp3").exists()
 
 
 def test_optimize_item_voice_first_success_falls_back_past_a_failing_optimizer(tmp_path: Path) -> None:
@@ -490,8 +511,8 @@ def test_optimize_item_voice_first_success_falls_back_past_a_failing_optimizer(t
     )
 
     assert [optimizer for optimizer, _, _ in calls] == ["ffmpeg_low", "pydub_optimized"]
-    assert result.optimized_voice_ids == ["apple_en_02"]
-    assert (item_path / "apple_en_02.mp3").read_bytes() == b"pydub_optimized:original"
+    assert result.optimized_voice_ids == ["apple_en_01_pydub_optimized"]
+    assert (item_path / "apple_en_01_pydub_optimized.mp3").read_bytes() == b"pydub_optimized:original"
     assert result.warnings == ["Voice optimization failed for ffmpeg_low: ffmpeg_low exploded"]
 
 
@@ -713,17 +734,17 @@ def test_generate_item_voice_with_optimize_adds_optimized_versions_of_the_new_ta
     result, _ = _generate(content_root, _request(optimize=True), optimizers=["ffmpeg_low", "pydub_optimized"])
 
     assert result.voice_id == "apple_en_02"
-    assert result.optimized_voice_ids == ["apple_en_03", "apple_en_04"]
+    assert result.optimized_voice_ids == ["apple_en_02_ffmpeg_low", "apple_en_02_pydub_optimized"]
     assert _mp3s(item_path) == {
         "apple_en": b"original",
         "apple_en_01": b"original",
         "apple_en_02": b"generated",
-        "apple_en_03": b"ffmpeg_low:generated",
-        "apple_en_04": b"pydub_optimized:generated",
+        "apple_en_02_ffmpeg_low": b"ffmpeg_low:generated",
+        "apple_en_02_pydub_optimized": b"pydub_optimized:generated",
     }
     # Neither generating nor optimizing selects anything.
     assert result.main_voice_ids == {"en": "apple_en_01"}
-    assert [v.id for v in result.variants] == ["apple_en_01", "apple_en_02", "apple_en_03", "apple_en_04"]
+    assert [v.id for v in result.variants] == ["apple_en_01", "apple_en_02", "apple_en_02_ffmpeg_low", "apple_en_02_pydub_optimized"]
     assert result.warnings == []
 
 
@@ -735,7 +756,7 @@ def test_generate_item_voice_reports_a_failing_optimizer_and_keeps_the_others(tm
         optimizers=["ffmpeg_low", "pydub_optimized"], failing=frozenset({"ffmpeg_low"}),
     )
 
-    assert result.optimized_voice_ids == ["apple_en_03"]
+    assert result.optimized_voice_ids == ["apple_en_02_pydub_optimized"]
     assert result.warnings == ["Voice optimization failed for ffmpeg_low: ffmpeg_low exploded"]
 
 

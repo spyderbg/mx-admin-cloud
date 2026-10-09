@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { selectedVoice, voiceAudioUri, validateAudioFile, voiceSource, audioFileName, normalizeItemVoices, voiceSelectionId, voiceGenerationText } from '../src/utils/itemVoices.ts'
+import { selectedVoice, voiceAudioUri, validateAudioFile, voiceSource, audioFileName, normalizeItemVoices, optimizedVersions, formatFileSize, audioBitrateKbps, fetchAudioSize, voiceSelectionId, voiceGenerationText } from '../src/utils/itemVoices.ts'
 import { legacyVoiceCapabilities, type ItemVoiceRecord } from '../src/types/itemVoices.ts'
 import { cacheBustedUri } from '../src/utils/cacheBustedUri.ts'
 import { langLabel } from '../src/utils/voiceLabels.ts'
@@ -165,16 +165,49 @@ test('standalone main recordings remain selected alongside alternatives, without
   assert.equal(normalized.capabilities?.multiple_voices, undefined)
 })
 
-test('selection respects language mappings and keeps optimized variants addressable by their actual ID', () => {
-  const optimized = voice({ id: 'en-optimized', parameters: { _source: 'en-1', _optimizer: 'ffmpeg' } })
+test('optimized variants fold into the recording they were made from and stay addressable by their own ID', () => {
+  const optimized = (id: string, optimizer: string) => voice({ id, file_uri: `/content/${id}.mp3`, parameters: { _source: 'en-1', _optimizer: optimizer } })
   const normalized = normalizeItemVoices({
     item_id: 'item', name: {}, voices: [],
-    variants: [voice(), optimized, voice({ id: 'es-1', language: 'es' })],
-    main_voice_ids: { en: optimized.id, es: 'es-1' },
+    variants: [voice(), optimized('en-ffmpeg', 'ffmpeg'), optimized('en-auphonic', 'auphonic'), voice({ id: 'es-1', language: 'es' })],
+    main_voice_ids: { en: 'en-auphonic', es: 'es-1' },
   })
-  assert.deepEqual(normalized.voices.filter((entry) => entry.is_selected).map((entry) => entry.id), ['en-optimized', 'es-1'])
-  assert.equal(voiceSelectionId(normalized.voices[1], 'original'), 'en-optimized')
+  assert.deepEqual(normalized.voices.map((entry) => entry.id), ['en-1', 'es-1'])
+  const [english] = normalized.voices
+  assert.deepEqual(optimizedVersions(english).map(({ id, optimizer }) => [id, optimizer]), [['en-ffmpeg', 'ffmpeg'], ['en-auphonic', 'auphonic']])
+  assert.deepEqual([english.is_selected, english.selected_version, english.selected_optimized_id], [true, 'optimized', 'en-auphonic'])
+  assert.equal(voiceSelectionId(english, 'original'), 'en-1')
+  assert.equal(voiceSelectionId(english, 'optimized'), 'en-ffmpeg')
+  assert.equal(voiceSelectionId(english, 'optimized', 'en-auphonic'), 'en-auphonic')
+  assert.equal(voiceSelectionId(english, 'optimized', 'unknown'), undefined)
+  assert.equal(voiceAudioUri(english, 'optimized'), '/content/en-ffmpeg.mp3')
+})
+
+test('an optimized variant whose source recording is gone remains a card of its own', () => {
+  const orphan = voice({ id: 'en-orphan', parameters: { _source: 'deleted', _optimizer: 'ffmpeg' } })
+  const normalized = normalizeItemVoices({ item_id: 'item', name: {}, voices: [], variants: [orphan], main_voice_ids: { en: 'en-orphan' } })
+  assert.deepEqual(normalized.voices.map(({ id, is_selected }) => [id, is_selected]), [['en-orphan', true]])
+  assert.deepEqual(optimizedVersions(normalized.voices[0]), [])
+})
+
+test('a single optimized file can come from the legacy optimized_file_uri fields', () => {
   assert.equal(voiceSelectionId(voice({ optimized_file_uri: '/optimized.mp3' }), 'optimized'), undefined)
   assert.equal(voiceSelectionId(voice({ optimized_file_uri: '/optimized.mp3', optimized_voice_id: 'optimized-id' }), 'optimized'), 'optimized-id')
   assert.equal(voiceSelectionId(voice({ file_uri: null }), 'original'), undefined)
+  assert.deepEqual(optimizedVersions(voice()), [])
+})
+
+test('file info chips derive size and average bitrate from the file', () => {
+  assert.equal(formatFileSize(250_880), '245 KB')
+  assert.equal(formatFileSize(10), '1 KB')
+  assert.equal(formatFileSize(3 * 1024 * 1024), '3.0 MB')
+  assert.equal(audioBitrateKbps(24_000, 1), 192)
+  assert.equal(audioBitrateKbps(0, 1), null)
+  assert.equal(audioBitrateKbps(24_000, 0), null)
+})
+
+test('sizes of blob and data URLs are not requested', async () => {
+  assert.equal(await fetchAudioSize('blob:http://localhost/1'), null)
+  assert.equal(await fetchAudioSize('data:audio/wav;base64,AAAA'), null)
+  assert.equal(await fetchAudioSize(''), null)
 })

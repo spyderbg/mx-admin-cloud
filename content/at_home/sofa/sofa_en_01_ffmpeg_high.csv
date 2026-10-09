@@ -1,0 +1,2 @@
+creation_method,provider,parameters,hash
+optimized,elevenlabs,"{""_optimizer"": ""ffmpeg_high"", ""_source"": ""sofa_en_01"", ""_text"": ""sofa"", ""actor"": ""Milena"", ""date"": ""2026-10-09T11:12:00.070092+00:00"", ""language"": ""en"", ""model"": ""eleven_multilingual_v2"", ""output_format"": ""mp3"", ""speaker_boost"": true, ""speed"": 1, ""use_space"": ""no"", ""voice_id"": ""M1ydWt7KnBCiuv4CnEDC"", ""voice_settings"": {""similarity_boost"": 0.75, ""stability"": 0.5}}",0cca663f9bfe519decfe7d63de178de58bedac6c26b0441c3e1d75c987867fb0

@@ -20,7 +20,7 @@ import { useContentLanguage } from '../composables/useContentLanguage'
 import { itemVoiceCopy } from '../utils/itemVoiceCopy'
 
 const props = defineProps<{ src: string; label: string; active: boolean }>()
-const emit = defineEmits<{ play: [] }>()
+const emit = defineEmits<{ play: []; duration: [seconds: number] }>()
 const language = useContentLanguage()
 const copy = computed(() => itemVoiceCopy[language.value])
 const audio = ref<HTMLAudioElement | null>(null)
@@ -36,6 +36,7 @@ function formatTime(value: number): string {
 }
 function readDuration(): void {
   duration.value = Number.isFinite(audio.value?.duration) ? audio.value!.duration : 0
+  if (duration.value) emit('duration', duration.value)
 }
 function stop(): void {
   playAttempt++
@@ -69,11 +70,11 @@ onBeforeUnmount(stop)
 <style scoped>
 .vap { min-width: 0; }
 .vap-controls { display: flex; align-items: center; gap: .8rem; min-height: 3rem; }
-.vap-play { display: grid; place-items: center; width: 44px; height: 44px; flex: 0 0 44px; border: 0; border-radius: 50%; background: #4f46e5; color: white; font-size: 1.7rem; cursor: pointer; }
-.vap-play:hover { background: #3730a3; }
+.vap-play { display: grid; place-items: center; width: 44px; height: 44px; flex: 0 0 44px; border: 0; border-radius: 50%; background: var(--vap-accent, #4f46e5); color: white; font-size: 1.7rem; cursor: pointer; }
+.vap-play:hover { background: var(--vap-accent-hover, #3730a3); }
 .vap-play:disabled { background: #cbd5e1; cursor: default; }
 .vap-play:focus-visible { outline: 3px solid #a5b4fc; outline-offset: 3px; }
-.vap-timeline { min-width: 0; width: 100%; height: 32px; accent-color: #4f46e5; cursor: pointer; }
+.vap-timeline { min-width: 0; width: 100%; height: 32px; accent-color: var(--vap-accent, #4f46e5); cursor: pointer; }
 .vap-time { flex: none; font-size: .75rem; color: #475569; font-variant-numeric: tabular-nums; }
 .vap-error { color: #b91c1c; font-size: .78rem; margin: .4rem 0 0; }
 </style>

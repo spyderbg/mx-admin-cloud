@@ -2,6 +2,13 @@ import type { Language } from './viewModels'
 
 export type AudioVersion = 'original' | 'optimized'
 
+/** One optimized rendition of a recording; a recording can have one per voice optimizer. */
+export interface OptimizedVoiceVersion {
+  id: string
+  file_uri: string
+  optimizer?: string
+}
+
 /** Optional additions to the existing voices response. See docs/item-voices-api.md. */
 export interface ItemVoiceRecord {
   id: string
@@ -10,6 +17,10 @@ export interface ItemVoiceRecord {
   file_uri?: string | null
   optimized_file_uri?: string | null
   optimized_voice_id?: string | null
+  /** All optimized renditions. Falls back to optimized_file_uri / optimized_voice_id when absent. */
+  optimized_versions?: OptimizedVoiceVersion[]
+  /** Which optimized rendition is the item's recording, when selected_version is 'optimized'. */
+  selected_optimized_id?: string
   display_name?: string
   creation_method?: 'generated' | 'uploaded' | 'unknown'
   provider?: string

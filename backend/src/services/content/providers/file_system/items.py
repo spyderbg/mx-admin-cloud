@@ -135,6 +135,19 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         return 1
 
     @staticmethod
+    def _item_voice_file_pattern(item_folder_name: str, language: str) -> re.Pattern[str]:
+        """Match the main voice file and every variant file of one language of an item.
+
+        A variant carries its take number (``{name}_en_01.mp3``); an optimized variant adds the
+        optimizer configuration it came from (``{name}_en_01_ffmpeg_high.mp3``). Group 1 is the
+        variant suffix and is empty for the main voice.
+        """
+        return re.compile(
+            r"^" + re.escape(item_folder_name) + r"_" + re.escape(language) + r"(_\d+(?:_[^./\\]+)?)?\.mp3$",
+            re.IGNORECASE,
+        )
+
+    @staticmethod
     def _item_voice_path(item_path: Path, item_folder_name: str, language: str) -> Path:
         return item_path / _CATEGORY_VOICE_MP3.format(item_folder_name, language)
 
@@ -155,12 +168,10 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         """Return (main, variants) among *files* for one language of an item.
 
         The main voice is stored with no index suffix (``{name}_en.mp3``) and each variant
-        with one (``{name}_en_01.mp3``), mirroring how item images are laid out.
+        with one (``{name}_en_01.mp3``), mirroring how item images are laid out. An optimized
+        variant is named after its source and the optimizer (``{name}_en_01_ffmpeg_high.mp3``).
         """
-        pattern = re.compile(
-            r"^" + re.escape(item_folder_name) + r"_" + re.escape(language) + r"(_\d+)?\.mp3$",
-            re.IGNORECASE,
-        )
+        pattern = FileSystemItemsMixin._item_voice_file_pattern(item_folder_name, language)
         main: Path | None = None
         variants: list[Path] = []
         for f in sorted(files):
@@ -178,12 +189,12 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         """Return the language *voice_id* belongs to, or None if it names no voice of this item.
 
         Accepts the per-language id (``{name}-v-en``), the main voice's stem (``{name}_en``)
-        and a variant's stem (``{name}_en_01``).
+        and a variant's stem (``{name}_en_01``, or ``{name}_en_01_ffmpeg_high`` once optimized).
         """
         for lang in settings.SUPPORTED_LANGUAGES:
             if voice_id in (f"{item_folder_name}-v-{lang}", f"{item_folder_name}_{lang}"):
                 return lang
-            if re.fullmatch(re.escape(f"{item_folder_name}_{lang}") + r"_\d+", voice_id):
+            if re.fullmatch(re.escape(f"{item_folder_name}_{lang}") + r"_\d+(?:_[^./\\]+)?", voice_id):
                 return lang
         return None
 
@@ -241,10 +252,7 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         lang = cls._language_for_item_voice_id(item_folder_name, voice_id)
         if lang is None:
             return None
-        pattern = re.compile(
-            r"^" + re.escape(item_folder_name) + r"_" + re.escape(lang) + r"(_\d+)?\.mp3$",
-            re.IGNORECASE,
-        )
+        pattern = cls._item_voice_file_pattern(item_folder_name, lang)
         match = next(
             (f for f in sorted(item_path.iterdir()) if f.is_file() and pattern.match(f.name)),
             None,
@@ -892,13 +900,29 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             source_id: str,
             optimizer: str,
     ) -> Path:
-        """Return the variant *optimizer* previously produced from *source_id*, else a new variant path."""
+        """Return where *optimizer*'s output for *source_id* lives: ``{source_id}_{optimizer}.mp3``.
+
+        The optimizer is the name of its configuration, so each recording has at most one
+        optimized file per configuration and re-running an optimizer overwrites it. Output of
+        earlier versions went to the next free take number; such a file is renamed to the
+        new name first, so it is overwritten instead of left behind as a duplicate.
+        """
+        target = item_path / f"{source_id}_{re.sub(r'[^A-Za-z0-9_-]', '-', optimizer)}.mp3"
+        if target.exists():
+            return target
         _, variants = self._split_item_voice_files(list(item_path.iterdir()), item_folder_name, language)
         for variant in variants:
             _, parameters = self._read_voice_metadata(variant)
             if parameters.get("_optimizer") == optimizer and parameters.get("_source") == source_id:
-                return variant
-        return self._next_item_voice_variant_path(item_path, item_folder_name, language)
+                try:
+                    variant.rename(target)
+                    legacy_metadata = self._voice_metadata_path(variant)
+                    if legacy_metadata.is_file():
+                        legacy_metadata.rename(self._voice_metadata_path(target))
+                except OSError as exc:
+                    raise ContentOperationError(f"Failed to rename optimized voice '{variant.stem}': {exc}") from exc
+                break
+        return target
 
     def add_item_voice(self, category_id: str, item_id: str, language: str, audio_data: bytes) -> CategoryVoice:
         category_name, category_path = self._validate_category_path(category_id)

@@ -2,8 +2,8 @@
   "service_provider": {
     "service": "voice_optimization",
     "provider": "pydub",
-    "enabled": false,
-    "priority": 2,
+    "enabled": true,
+    "priority": 3,
     "config": {
       "sample_rate": 22050,
       "mono": true,

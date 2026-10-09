@@ -1,6 +1,7 @@
 import type { Language } from '../types/viewModels'
 
 const en = {
+  noOptimizedFiles: 'No optimized files', optimizedHint: 'Optimized is a compressed version of the same audio with a lower bit rate.', optimizedPosition: 'Optimized file {n} of {total}',
   ttsConfiguration: 'Text-to-speech configuration', noConfigurations: 'No configurations are available for this language.', configurationsError: 'Could not load text-to-speech configurations.',
   title: 'Voices', description: 'Choose one recording per language for this item.', languages: 'languages',
   voices: 'voices', voice: 'voice', collapse: 'Collapse all', expand: 'Expand all', inUse: 'In use',
@@ -21,8 +22,7 @@ const en = {
   unavailable: 'Not available yet', legacy: 'Some voice actions are not available yet. Available actions are enabled on each recording.',
   addUnavailable: 'This language already has audio. Adding another take is not available yet. Use Replace audio to update it.',
   generationUnavailable: 'Generating a voice needs a text-to-speech configuration.',
-  optimizeUnavailable: 'Saving an optimized version is not available yet.', selectUnavailable: 'Changing the active recording is not available yet.',
-  noOptimized: 'Optimize this recording to preview an optimized version.',
+  optimizeUnavailable: 'No voice optimizer is enabled. Enable one in Configuration to optimize recordings.', selectUnavailable: 'Changing the active recording is not available yet.',
   newRecording: 'New recording for', settings: 'Voice settings', autoOptimize: 'Optimize after generation',
   keepSelection: 'Your current voice stays selected. Choose the new recording when you are ready.',
   noPresets: 'No base voices are available for this language.', presetsError: 'Could not load base voices.',
@@ -41,6 +41,7 @@ const en = {
 
 const es: typeof en = {
   ...en,
+  noOptimizedFiles: 'Sin archivos optimizados', optimizedHint: 'Optimizada es una versión comprimida del mismo audio con menor tasa de bits.', optimizedPosition: 'Archivo optimizado {n} de {total}',
   ttsConfiguration: 'Configuración de texto a voz', noConfigurations: 'No hay configuraciones para este idioma.', configurationsError: 'No se pudieron cargar las configuraciones de texto a voz.',
   title: 'Voces', description: 'Elige una grabación por idioma para este elemento.', languages: 'idiomas', voices: 'voces', voice: 'voz',
   voiceLabel: 'Voz', viewSettings: 'ajustes', noVoiceSettings: 'No hay ajustes de voz registrados.',
@@ -56,7 +57,7 @@ const es: typeof en = {
   loading: 'Cargando voces…', loadError: 'No se pudieron cargar las voces.', retry: 'Reintentar', unavailable: 'Aún no disponible',
   legacy: 'Algunas acciones de voz aún no están disponibles. Las acciones disponibles están habilitadas en cada grabación.',
   addUnavailable: 'Este idioma ya tiene audio. Aún no se pueden añadir más tomas. Usa Reemplazar audio.', generationUnavailable: 'Para generar una voz se necesita una configuración de texto a voz.',
-  optimizeUnavailable: 'Aún no se puede guardar una versión optimizada.', selectUnavailable: 'Aún no se puede cambiar la grabación activa.', noOptimized: 'Optimiza esta grabación para previsualizarla.',
+  optimizeUnavailable: 'No hay ningún optimizador de voz activo. Activa uno en Configuración para optimizar grabaciones.', selectUnavailable: 'Aún no se puede cambiar la grabación activa.',
   newRecording: 'Nueva grabación para', settings: 'Ajustes de voz', autoOptimize: 'Optimizar después de generar', keepSelection: 'La voz actual sigue seleccionada. Elige la nueva cuando esté lista.',
   noPresets: 'No hay voces base para este idioma.', presetsError: 'No se pudieron cargar las voces base.', language: 'Idioma', mode: 'Modo', addNew: 'Añadir nueva', replaceExisting: 'Reemplazar existente',
   replaceTarget: 'Voz a reemplazar', dropHere: 'Suelta el audio aquí', preview: 'Vista previa', ready: 'Listo para subir', remove: 'Quitar archivo',
@@ -68,6 +69,7 @@ const es: typeof en = {
 
 const fr: typeof en = {
   ...en,
+  noOptimizedFiles: 'Aucun fichier optimisé', optimizedHint: 'Optimisé est une version compressée du même audio avec un débit plus faible.', optimizedPosition: 'Fichier optimisé {n} sur {total}',
   ttsConfiguration: 'Configuration de synthèse vocale', noConfigurations: 'Aucune configuration pour cette langue.', configurationsError: 'Impossible de charger les configurations de synthèse vocale.',
   title: 'Voix', description: 'Choisissez un enregistrement par langue pour cet élément.', languages: 'langues', voices: 'voix', voice: 'voix',
   voiceLabel: 'Voix', viewSettings: 'réglages', noVoiceSettings: 'Aucun réglage de voix enregistré.',
@@ -81,7 +83,7 @@ const fr: typeof en = {
   dropHint: 'Déposez dans une langue pour ajouter, sur une voix pour remplacer.', empty: 'Aucun enregistrement. Générez une voix ou importez un audio.', loading: 'Chargement des voix…', loadError: 'Impossible de charger les voix.', retry: 'Réessayer', unavailable: 'Pas encore disponible',
   legacy: 'Certaines actions vocales ne sont pas encore disponibles. Les actions disponibles sont activées sur chaque enregistrement.',
   addUnavailable: 'Cette langue a déjà un audio. Les prises supplémentaires ne sont pas encore disponibles. Utilisez Remplacer l’audio.', generationUnavailable: 'La génération d’une voix nécessite une configuration de synthèse vocale.',
-  optimizeUnavailable: 'L’enregistrement d’une version optimisée n’est pas encore disponible.', selectUnavailable: 'Le changement de voix active n’est pas encore disponible.', noOptimized: 'Optimisez cet enregistrement pour écouter la version optimisée.',
+  optimizeUnavailable: 'Aucun optimiseur de voix n’est activé. Activez-en un dans Configuration pour optimiser les enregistrements.', selectUnavailable: 'Le changement de voix active n’est pas encore disponible.',
   newRecording: 'Nouvel enregistrement pour', settings: 'Réglages de la voix', autoOptimize: 'Optimiser après la génération', keepSelection: 'La voix actuelle reste sélectionnée. Choisissez la nouvelle quand vous le souhaitez.', noPresets: 'Aucune voix de base pour cette langue.', presetsError: 'Impossible de charger les voix de base.',
   language: 'Langue', mode: 'Mode', addNew: 'Ajouter', replaceExisting: 'Remplacer', replaceTarget: 'Voix à remplacer', dropHere: 'Déposer l’audio ici', preview: 'Aperçu', ready: 'Prêt à importer', remove: 'Retirer le fichier',
   replaceHint: 'Le remplacement modifie cet enregistrement et, s’il est sélectionné, l’audio de l’élément.', cancel: 'Annuler', close: 'Fermer', upload: 'Ajouter un audio', saving: 'Enregistrement…', generating: 'Génération…', optimizing: 'Optimisation…', saved: 'Audio enregistré.', generatedSuccess: 'Nouvel enregistrement généré.', generatedWithWarnings: 'Nouvel enregistrement généré, mais son optimisation a échoué :',
@@ -91,6 +93,7 @@ const fr: typeof en = {
 
 const bg: typeof en = {
   ...en,
+  noOptimizedFiles: 'Няма оптимизирани файлове', optimizedHint: 'Оптимизираният е компресирана версия на същото аудио с по-нисък битрейт.', optimizedPosition: 'Оптимизиран файл {n} от {total}',
   ttsConfiguration: 'Конфигурация за синтез на реч', noConfigurations: 'Няма конфигурации за този език.', configurationsError: 'Конфигурациите за синтез на реч не могат да се заредят.',
   title: 'Гласове', description: 'Изберете един запис за всеки език на този елемент.', languages: 'езика', voices: 'гласа', voice: 'глас',
   voiceLabel: 'Глас', viewSettings: 'настройки', noVoiceSettings: 'Няма записани настройки на гласа.',
@@ -104,7 +107,7 @@ const bg: typeof en = {
   dropHint: 'Пуснете в език за добавяне или върху глас за замяна.', empty: 'Все още няма записи. Генерирайте глас или качете аудио за този език.', loading: 'Зареждане на гласове…', loadError: 'Гласовете не могат да се заредят.', retry: 'Опитай отново', unavailable: 'Все още не е налично',
   legacy: 'Някои действия за гласовете все още не са налични. Достъпните действия са активирани за всеки запис.',
   addUnavailable: 'Този език вече има аудио. Добавянето на втори запис още не е налично. Използвайте Замени аудио.', generationUnavailable: 'За генериране на глас е нужна конфигурация за синтез на реч.',
-  optimizeUnavailable: 'Запазването на оптимизирана версия още не е налично.', selectUnavailable: 'Смяната на активния запис още не е налична.', noOptimized: 'Оптимизирайте записа, за да чуете оптимизираната версия.',
+  optimizeUnavailable: 'Няма включен оптимизатор на глас. Включете един в Конфигурация, за да оптимизирате записи.', selectUnavailable: 'Смяната на активния запис още не е налична.',
   newRecording: 'Нов запис за', settings: 'Настройки на гласа', autoOptimize: 'Оптимизирай след генериране', keepSelection: 'Текущият глас остава избран. Изберете новия, когато сте готови.', noPresets: 'Няма базови гласове за този език.', presetsError: 'Базовите гласове не могат да се заредят.',
   language: 'Език', mode: 'Режим', addNew: 'Добави нов', replaceExisting: 'Замени съществуващ', replaceTarget: 'Глас за замяна', dropHere: 'Пуснете аудио тук', preview: 'Преглед', ready: 'Готов за качване', remove: 'Премахни файла',
   replaceHint: 'Замяната променя този запис. Ако е избран, аудиото на елемента също се променя.', cancel: 'Отказ', close: 'Затвори', upload: 'Добави аудио', saving: 'Запазване…', generating: 'Генериране…', optimizing: 'Оптимизиране…', saved: 'Аудиото е запазено.', generatedSuccess: 'Новият запис е генериран.', generatedWithWarnings: 'Новият запис е генериран, но оптимизирането му е неуспешно:',
