@@ -1013,7 +1013,7 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             language: str,
             voice_path: Path,
     ) -> list[Path]:
-        """Return *voice_path* and, when one exists, the other file of the same recording.
+        """Return *voice_path*, the other file of the same recording and the recording's optimized files.
 
         The main voice is a byte copy of the take in use. Deleting only one of the two
         leaves that recording in place, so the item details view still plays it.
@@ -1022,15 +1022,23 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         if main is None:
             return [voice_path]
         source_id = self._main_voice_source_id(main, variants)
+        paths = [voice_path]
         if voice_path == main:
             twin = next((variant for variant in variants if variant.stem == source_id), None)
+            if twin is not None:
+                paths.append(twin)
         elif source_id == voice_path.stem:
-            twin = main
-        else:
-            twin = None
-        if twin is None or twin == voice_path:
-            return [voice_path]
-        return [voice_path, twin]
+            paths.append(main)
+        # A recording's optimized files are made from it and go with it.
+        deleted_ids = {path.stem for path in paths}
+        for variant in variants:
+            _, parameters = self._read_voice_metadata(variant)
+            if variant not in paths and parameters.get("_optimizer") and parameters.get("_source") in deleted_ids:
+                paths.append(variant)
+        # A main voice that is a copy of a deleted optimized file would otherwise be left behind.
+        if main not in paths and source_id in {path.stem for path in paths}:
+            paths.append(main)
+        return paths
 
     def delete_item_voice(self, category_id: str, item_id: str, voice_id: str) -> CategoryVoice:
         """Delete one item recording and its metadata sidecar.

@@ -1,2 +1,0 @@
-creation_method,provider,parameters,hash
-generated,elevenlabs,"{""_text"": ""sofa"", ""actor"": ""Milena"", ""date"": ""2026-10-05T04:31:34.508622+00:00"", ""language"": ""en"", ""model"": ""eleven_multilingual_v2"", ""output_format"": ""mp3"", ""speaker_boost"": true, ""speed"": 1, ""use_space"": ""no"", ""voice_id"": ""M1ydWt7KnBCiuv4CnEDC"", ""voice_settings"": {""similarity_boost"": 0.75, ""stability"": 0.5}}",85cffc27ece93b2850ba976fe8ad84caf9b484f2338425f2ea39d422b65258c7

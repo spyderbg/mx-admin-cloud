@@ -934,6 +934,33 @@ def test_delete_item_voice_of_the_language_removes_its_identical_variant(tmp_pat
     assert (item_path / "apple_en_02.mp3").read_bytes() == b"other"
 
 
+def test_delete_item_voice_removes_its_optimized_files_and_keeps_other_takes(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_voices(tmp_path, {
+        "apple_en": b"ffmpeg_low:one",  # the main voice is a copy of an optimized file
+        "apple_en_01": b"one",
+        "apple_en_01_ffmpeg_low": b"ffmpeg_low:one",
+        "apple_en_01_pydub_optimized": b"pydub_optimized:one",
+        "apple_en_02": b"two",
+        "apple_en_02_ffmpeg_low": b"ffmpeg_low:two",
+    })
+    provider = make_fs_provider()
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        for stem, source, optimizer in (
+                ("apple_en_01_ffmpeg_low", "apple_en_01", "ffmpeg_low"),
+                ("apple_en_01_pydub_optimized", "apple_en_01", "pydub_optimized"),
+                ("apple_en_02_ffmpeg_low", "apple_en_02", "ffmpeg_low"),
+        ):
+            provider._write_voice_metadata(
+                item_path / f"{stem}.mp3", VoiceCreationMethod.OPTIMIZED, "openai",
+                {"_optimizer": optimizer, "_source": source},
+            )
+        provider.delete_item_voice("C_Foods", "I_Apple", "apple_en_01")
+
+    assert _mp3s(item_path) == {"apple_en_02": b"two", "apple_en_02_ffmpeg_low": b"ffmpeg_low:two"}
+
+
 def test_delete_item_voice_unknown_id(tmp_path: Path) -> None:
     content_root, _ = _prepare_item_with_voices(tmp_path, {"apple_en": b"main", "apple_en_01": b"take"})
     provider = make_fs_provider()
