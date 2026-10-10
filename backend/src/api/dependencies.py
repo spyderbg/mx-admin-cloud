@@ -43,6 +43,23 @@ def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
     return current_user
 
 
+# Requests that only read; every other method changes something.
+READ_ONLY_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+def require_write_access(request: Request, current_user: dict = Depends(get_current_user)) -> dict:
+    """Dependency that lets every signed-in user read but only admins (and internal services) change data.
+
+    Viewers, including the ones Google sign-in registers automatically, are read-only.
+    """
+    if request.method not in READ_ONLY_METHODS and current_user.get("role") not in ("admin", "internal"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Viewers have read-only access.",
+        )
+    return current_user
+
+
 def require_internal(current_user: dict = Depends(get_current_user)) -> dict:
     """Dependency for internal endpoints — allows role 'internal' or 'admin'."""
     if current_user.get("role") not in ("internal", "admin"):

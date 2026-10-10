@@ -2,6 +2,7 @@ import { http, HttpResponse } from 'msw'
 import { mockCategories } from '../data/mockData'
 import type { Voice } from '../types/viewModels'
 import { itemIdFromEnglishWord } from '../utils/itemIds'
+import { MOCK_TOKEN } from './mockToken'
 
 interface ArchivedEntry {
   base_name: string
@@ -130,7 +131,9 @@ const findCategoryAndItem = (categoryId: string, itemId: string): [CategoryRecor
 }
 
 export const contentHandlers = [
-  http.post('/api/v1/login', () => HttpResponse.json({ access_token: 'debug-token' })),
+  http.post('/api/v1/login', () => HttpResponse.json({ access_token: MOCK_TOKEN })),
+  // No real Google client id exists in the preview, so only password login is offered.
+  http.get('/api/v1/auth/config', () => HttpResponse.json({ google_enabled: false, google_client_id: null })),
 
   // List all content categories
   http.get('/api/v1/content/categories', ({ request }) => {

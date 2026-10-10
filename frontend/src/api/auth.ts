@@ -5,16 +5,36 @@ interface LoginResponse {
   [key: string]: unknown
 }
 
+/** Sign-in options the backend allows; read before logging in. */
+export interface AuthConfig {
+  google_enabled: boolean
+  google_client_id?: string | null
+}
+
+const storeToken = (data: LoginResponse): LoginResponse => {
+  if (data.access_token) {
+    localStorage.setItem('token', data.access_token)
+  }
+  return data
+}
+
 export const login = async (username: string, password: string): Promise<LoginResponse> => {
   const params = new URLSearchParams()
   params.append('username', username)
   params.append('password', password)
 
   const response = await client.post<LoginResponse>('/login', params)
-  if (response.data.access_token) {
-    localStorage.setItem('token', response.data.access_token)
-  }
-  return response.data
+  return storeToken(response.data)
+}
+
+export const getAuthConfig = async (): Promise<AuthConfig> => {
+  return (await client.get<AuthConfig>('/auth/config')).data
+}
+
+/** Exchange the ID token Google returned to the browser for this app's access token. */
+export const loginWithGoogle = async (credential: string): Promise<LoginResponse> => {
+  const response = await client.post<LoginResponse>('/login/google', { credential })
+  return storeToken(response.data)
 }
 
 export const getStatus = async (): Promise<unknown> => {

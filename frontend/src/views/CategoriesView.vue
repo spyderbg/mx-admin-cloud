@@ -32,7 +32,7 @@
             />
             <i class="mdi mdi-view-grid text-muted" style="font-size: 1.4rem;"></i>
           </div>
-          <button class="btn btn-primary btn-sm" @click="openAddItemModal">
+          <button v-if="canEdit" class="btn btn-primary btn-sm" @click="openAddItemModal">
             <i class="mdi mdi-plus mr-1"></i>{{ addNewItemLabel(contentLanguage) }}
           </button>
         </div>
@@ -99,11 +99,13 @@ import {
   loadingCategoriesLabel,
 } from '../utils/localizedLabels'
 import { toPascalCaseWords } from '../utils/pascalCaseWords'
+import { hasWriteAccess } from '../utils/permissions'
 
 const route = useRoute()
 const router = useRouter()
 
 const contentLanguage = useContentLanguage()
+const canEdit = hasWriteAccess()
 
 const GRID_COLUMNS_CONFIG_KEY = 'categories.itemsGrid.columns'
 const MIN_GRID_COLUMNS = 1

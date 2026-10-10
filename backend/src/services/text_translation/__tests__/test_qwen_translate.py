@@ -19,7 +19,7 @@ from src.services.text_translation.providers.qwen_translate import QwenTextTrans
 from src.services.text_translation.service import TextTranslationProviderFactory
 
 _CONFIG_DIR = Path(__file__).resolve().parents[4] / "config" / "text_translation"
-_MODEL = "/home/spyder/llm/models/Qwen3.8-27B-GGUF/Qwen3.8-27B-Q4_K_M.gguf"
+_MODEL = "Qwen3.8-27B-Q4_K_M.gguf"
 _BASE_URL = "http://82.103.77.45:8080/v1/"
 
 

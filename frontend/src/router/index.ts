@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { hasWriteAccess } from '../utils/permissions'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -40,13 +41,13 @@ const router = createRouter({
           path: 'configuration',
           name: 'configuration',
           component: () => import('../views/ConfigurationsView.vue'),
-          meta: { navigation: 'configuration' },
+          meta: { navigation: 'configuration', requiresWriteAccess: true },
         },
         {
           path: 'configuration/:serviceName',
           name: 'service-configuration',
           component: () => import('../views/ServiceConfigurationView.vue'),
-          meta: { navigation: 'configuration' },
+          meta: { navigation: 'configuration', requiresWriteAccess: true },
         },
       ],
     },
@@ -57,6 +58,9 @@ router.beforeEach((to, _from, next) => {
   const isAuthenticated = !!localStorage.getItem('token')
   if (to.meta.requiresAuth && !isAuthenticated) {
     next({ name: 'login' })
+  } else if (to.meta.requiresWriteAccess && !hasWriteAccess()) {
+    // Viewers cannot change configurations, so they never reach the configuration pages.
+    next({ name: 'dashboard' })
   } else {
     next()
   }

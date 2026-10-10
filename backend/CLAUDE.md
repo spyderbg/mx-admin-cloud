@@ -182,10 +182,18 @@ and the files inside it that carry the old folder name.
 ### Authentication
 
 - **Frontend** → HTTP login → long-lived JWT (30 min) → `Authorization: Bearer <token>`
+- **Frontend, Google** → Google Identity Services ID token → `POST /api/v1/login/google` → same JWT. Only when
+  `GOOGLE_AUTH_ENABLED` and `GOOGLE_CLIENT_ID` are set (`GET /api/v1/auth/config` tells the login page); the token's
+  verified email is matched with a username, and an unknown email is registered as a `viewer` (`src/security/google.py`,
+  `UsersDb.get_or_register_email_user`).
 - **CLI** → Unix socket (`/tmp/kiddo-backend.sock`) → short-lived JWT (30 sec) → subsequent HTTP calls.
   - `cli-login` and all `users` commands **strictly** require the Unix socket.
 - **Internal services** → JWT with role `internal` or `admin`.
-- **User roles**: `admin` (full access), `viewer` (read-only).
+- **User roles**: `admin` (full access), `viewer` (may not change anything: `require_write_access` on the content
+  router and `POST /operation` answers 403 to anything but `GET`/`HEAD`/`OPTIONS`; internal and user routes need
+  `admin`). Any new mutating route must depend on `require_write_access` (or `require_admin`/`require_internal`), since
+  anyone with a Google account can become a viewer; `src/api/__tests__/test_viewer_access.py` fails for one that does
+  not (add it to `OPEN_TO_VIEWERS` only if it changes nothing).
 
 ---
 
@@ -209,6 +217,8 @@ ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 CLI_TOKEN_EXPIRE_SECONDS=30
 DEFAULT_ADMIN_PASSWORD=
+GOOGLE_AUTH_ENABLED=false   # "Log in with Google"; also needs GOOGLE_CLIENT_ID
+GOOGLE_CLIENT_ID=           # OAuth web client id; authorize the frontend origin in Google Cloud
 
 # Paths (absolute or relative to backend/)
 CONFIG_DIR=config

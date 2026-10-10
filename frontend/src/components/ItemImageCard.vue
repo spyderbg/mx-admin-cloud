@@ -18,17 +18,18 @@
       <p>{{ prompt }}</p>
       <span class="id-mobile-image-file">{{ fileName }}</span>
       <button
+        v-if="!readonly || isMain"
         type="button"
         class="id-release-btn"
         :class="{ 'id-release-btn-active': isMain }"
-        :disabled="isMain || selectDisabled"
+        :disabled="isMain || selectDisabled || readonly"
         @click="emit('select')"
       >
         <i class="mdi" :class="isMain ? 'mdi-check' : 'mdi-image'"></i>
         {{ isMain ? selectedLabel(contentLanguage) : selectImageLabel(contentLanguage) }}
       </button>
     </div>
-    <div class="file-actions" @click.stop>
+    <div v-if="!readonly" class="file-actions" @click.stop>
       <button type="button" class="btn-icon btn-icon-edit" title="Replace" aria-label="Replace image" @click.stop="emit('replace')">
         <i class="mdi mdi-pencil"></i>
       </button>
@@ -53,6 +54,8 @@ defineProps<{
   isMain: boolean
   /** Disables selecting while another image is being set as main. */
   selectDisabled?: boolean
+  /** Only preview: no select, replace or delete; the main image keeps its "Selected" mark. */
+  readonly?: boolean
 }>()
 
 const emit = defineEmits<{

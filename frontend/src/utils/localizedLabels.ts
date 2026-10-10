@@ -276,6 +276,17 @@ export function addImageLabel(lang: Language): string {
   return labels[lang] ?? labels.en
 }
 
+/** Empty state of an item's images for viewers, who cannot add one; unknown `lang` falls back to English. */
+export function noImagesLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'No images yet.',
+    es: 'Todavía no hay imágenes.',
+    fr: 'Aucune image pour le moment.',
+    bg: 'Все още няма изображения.',
+  }
+  return labels[lang] ?? labels.en
+}
+
 /** Instructions for adding an image through the drag-and-drop card. */
 export function dropImageHereLabel(lang: Language): string {
   const labels: Record<Language, string> = {

@@ -4,7 +4,7 @@
          when there are no categories yet — the state where it matters most. -->
     <div class="page-header d-flex justify-content-between align-items-center">
       <h3 class="page-title mb-0">{{ pageTitle }}</h3>
-      <button class="btn btn-primary btn-sm" @click="showAddCategory = true">
+      <button v-if="canEdit" class="btn btn-primary btn-sm" @click="showAddCategory = true">
         <i class="mdi mdi-plus mr-1"></i>{{ addNewCategoryLabel(contentLanguage) }}
       </button>
     </div>
@@ -35,7 +35,8 @@
       </div>
     </div>
 
-    <section v-if="archivedCategories.length" class="archived-section">
+    <!-- Archived categories exist only to be restored or deleted, which viewers cannot do. -->
+    <section v-if="canEdit && archivedCategories.length" class="archived-section">
       <button
         type="button"
         class="archived-toggle"
@@ -227,6 +228,7 @@ import {
 import { toPascalCaseWords } from '../utils/pascalCaseWords'
 import cameraPlaceholderUrl from '../assets/images/samples/camera-placeholder.svg'
 import CollectionCard from '../components/CollectionCard.vue'
+import { hasWriteAccess } from '../utils/permissions'
 
 
 const router = useRouter()
@@ -279,6 +281,7 @@ async function onCategoryCreated(folderName: string, message: string): Promise<v
   if (created) await router.push(`/categories/${created.id}`)
 }
 
+const canEdit = hasWriteAccess()
 const archivedCategories = computed(() => sharedArchivedCategories.value)
 const archivedExpanded = ref(false)
 const restoringFolder = ref('')

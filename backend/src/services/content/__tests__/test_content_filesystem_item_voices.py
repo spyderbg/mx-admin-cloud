@@ -744,7 +744,12 @@ def test_generate_item_voice_with_optimize_adds_optimized_versions_of_the_new_ta
     }
     # Neither generating nor optimizing selects anything.
     assert result.main_voice_ids == {"en": "apple_en_01"}
-    assert [v.id for v in result.variants] == ["apple_en_01", "apple_en_02", "apple_en_02_ffmpeg_low", "apple_en_02_pydub_optimized"]
+    assert [v.id for v in result.variants] == [
+        "apple_en_01",
+        "apple_en_02",
+        "apple_en_02_ffmpeg_low",
+        "apple_en_02_pydub_optimized",
+    ]
     assert result.warnings == []
 
 

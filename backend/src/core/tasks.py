@@ -7,7 +7,7 @@ from typing import Any
 from src.core.config import settings
 
 # Keys whose values must not be exposed in API responses
-_SENSITIVE_KEYS = {"SECRET_KEY", "OPENAI_API_KEY", "ELEVENLABS_API_KEY", "SPEAKTOR_API_KEY"}
+_SENSITIVE_KEYS = {"SECRET_KEY", "DEFAULT_ADMIN_PASSWORD", "OPENAI_API_KEY", "ELEVENLABS_API_KEY", "SPEAKTOR_API_KEY"}
 
 
 def _env_from_settings() -> dict[str, Any]:

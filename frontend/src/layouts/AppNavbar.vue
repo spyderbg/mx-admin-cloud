@@ -64,7 +64,7 @@
             </template>
           </div>
         </li>
-        <li ref="configDropdown" class="nav-item dropdown config-dropdown">
+        <li v-if="canEdit" ref="configDropdown" class="nav-item dropdown config-dropdown">
           <a
             class="nav-link dropdown-toggle px-2 d-flex align-items-center"
             href="#"
@@ -181,6 +181,7 @@ import {
 import type { Language } from '../types/viewModels'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import { useCurrentUser } from '../composables/useCurrentUser'
+import { hasWriteAccess } from '../utils/permissions'
 import {
   allCategoriesLabel,
   breadcrumbCategoriesLabel,
@@ -228,6 +229,8 @@ const emit = defineEmits<{
 const route = useRoute()
 const router = useRouter()
 const user = useCurrentUser()
+// Configurations are admin-only, so viewers get no Configuration menu.
+const canEdit = hasWriteAccess()
 const areBackendRequestsMocked = import.meta.env.VITE_MOCK_DATA === 'true'
 
 const languages: Language[] = ['en', 'es', 'fr', 'bg']

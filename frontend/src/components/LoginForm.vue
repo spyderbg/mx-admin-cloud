@@ -50,28 +50,32 @@
         </div>
         <a href="#" class="text-small forgot-password text-black">Forgot Password</a>
       </div>
-      <div class="form-group">
-        <button type="button" class="btn btn-block g-login" disabled title="Not configured">
-          <img class="mr-3" :src="iconGoogle" alt="" width="18" height="19" />
-          Log in with Google
-        </button>
+      <div v-if="googleClientId" class="form-group">
+        <div ref="googleButton" class="google-button" aria-label="Log in with Google"></div>
       </div>
     </form>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { AxiosError } from 'axios'
-import { login } from '../api/auth'
-import iconGoogle from '../assets/images/file-icons/icon-google.svg'
+import { getAuthConfig, login, loginWithGoogle } from '../api/auth'
+import { loadGoogleIdentity, type GoogleCredentialResponse } from '../utils/googleIdentity'
 
 const username = ref<string>('')
 const password = ref<string>('')
 const error = ref<string>('')
 const keepSignedIn = ref<boolean>(true)
+const googleClientId = ref<string>('')
+const googleButton = ref<HTMLElement | null>(null)
 const router = useRouter()
+
+const failureMessage = (err: unknown, fallback: string): string => {
+  const axiosErr = err as AxiosError<{ detail?: string }>
+  return axiosErr.response?.data?.detail || fallback
+}
 
 const handleLogin = async (): Promise<void> => {
   error.value = ''
@@ -79,15 +83,57 @@ const handleLogin = async (): Promise<void> => {
     await login(username.value, password.value)
     router.push('/')
   } catch (err: unknown) {
-    const axiosErr = err as AxiosError<{ detail?: string }>
-    error.value = axiosErr.response?.data?.detail || 'Invalid credentials'
+    error.value = failureMessage(err, 'Invalid credentials')
   }
 }
+
+const handleGoogleCredential = async ({ credential }: GoogleCredentialResponse): Promise<void> => {
+  error.value = ''
+  try {
+    await loginWithGoogle(credential)
+    router.push('/')
+  } catch (err: unknown) {
+    error.value = failureMessage(err, 'Google sign-in failed')
+  }
+}
+
+// The Google button appears only when the backend allows Google sign-in; password login
+// keeps working whether or not the options or Google's script can be loaded.
+onMounted(async () => {
+  let clientId: string | null | undefined
+  try {
+    const config = await getAuthConfig()
+    clientId = config.google_enabled ? config.google_client_id : null
+  } catch {
+    return
+  }
+  if (!clientId) return
+  googleClientId.value = clientId
+  try {
+    const accounts = await loadGoogleIdentity()
+    await nextTick()
+    if (!googleButton.value) return
+    accounts.initialize({ client_id: clientId, callback: handleGoogleCredential, ux_mode: 'popup', context: 'signin' })
+    accounts.renderButton(googleButton.value, {
+      type: 'standard', theme: 'outline', size: 'large', text: 'signin_with', shape: 'rectangular',
+      logo_alignment: 'left', width: Math.max(200, Math.min(400, googleButton.value.clientWidth)),
+    })
+  } catch {
+    googleClientId.value = ''
+    error.value = 'Google sign-in could not be loaded. Log in with your username and password.'
+  }
+})
 </script>
 
 <style scoped>
 .input-icon {
   font-size: 0.9rem;
   color: #9ca3af;
+}
+
+.google-button {
+  display: flex;
+  justify-content: center;
+  min-height: 44px;
 }
 </style>

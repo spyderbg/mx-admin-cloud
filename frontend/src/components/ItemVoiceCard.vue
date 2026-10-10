@@ -5,7 +5,7 @@
       <div class="iv-card-heading">
         <div class="iv-card-title"><h3>{{ title }}</h3><span v-if="selected" class="iv-badge">{{ copy.inUse }}</span></div>
       </div>
-      <div class="iv-card-actions">
+      <div v-if="!readonly" class="iv-card-actions">
         <button type="button" class="iv-card-action iv-card-action-edit" :disabled="busy" :title="copy.replace" :aria-label="`${copy.replace}: ${title}`" @click="$emit('replace')">
           <i class="mdi mdi-pencil" aria-hidden="true"></i>
         </button>
@@ -64,7 +64,7 @@
 
       <div v-if="!versions.length" class="iv-empty-optimized">
         <p><i class="mdi mdi-information" aria-hidden="true"></i><span>{{ copy.optimizedHint }}</span></p>
-        <p v-if="source === 'generated' && !capabilities.optimize" class="iv-warning" role="status">
+        <p v-if="source === 'generated' && !capabilities.optimize && !readonly" class="iv-warning" role="status">
           <i class="mdi mdi-alert-circle-outline" aria-hidden="true"></i><span>{{ copy.optimizeUnavailable }}</span>
         </p>
       </div>
@@ -83,14 +83,14 @@
         </div>
       </div>
 
-      <button v-if="source === 'generated' && !versions.length && capabilities.optimize" type="button" class="iv-button iv-optimize" :disabled="busy"
+      <button v-if="source === 'generated' && !versions.length && capabilities.optimize && !readonly" type="button" class="iv-button iv-optimize" :disabled="busy"
         @click="$emit('optimize')">
         <i :class="optimizing ? 'mdi mdi-loading mdi-spin' : 'mdi mdi-auto-fix'" aria-hidden="true"></i>
         {{ optimizing ? copy.optimizing : copy.optimize }}
       </button>
     </section>
 
-    <div class="iv-card-footer">
+    <div v-if="!readonly" class="iv-card-footer">
       <button type="button" class="iv-button iv-select" :class="{ 'iv-is-selected': selectedVersion }"
         :disabled="busy || selectedVersion || !canSelect" :title="!selectedVersion && !canSelect ? copy.selectUnavailable : undefined"
         @click="select">
@@ -113,7 +113,8 @@ import VoiceParametersTooltip from './VoiceParametersTooltip.vue'
 import VoiceGenerationDetails from './VoiceGenerationDetails.vue'
 import JsonDetailsPopup from './JsonDetailsPopup.vue'
 
-const props = defineProps<{ voice: ItemVoiceRecord; capabilities: VoiceCapabilities; selected: boolean; busy: boolean; optimizing: boolean; active: boolean; revision: number }>()
+// `readonly` leaves only listening: no replace, delete, optimize, select or drop-to-replace.
+const props = defineProps<{ voice: ItemVoiceRecord; capabilities: VoiceCapabilities; selected: boolean; busy: boolean; optimizing: boolean; active: boolean; revision: number; readonly?: boolean }>()
 const emit = defineEmits<{ play: []; replace: []; delete: []; drop: [files: FileList]; optimize: []; select: [voiceId: string] }>()
 const language = useContentLanguage()
 const copy = computed(() => itemVoiceCopy[language.value])
@@ -196,7 +197,7 @@ const created = computed(() => {
 })
 const dragging = ref(false)
 function onDragOver(event: DragEvent): void {
-  if (props.busy || !event.dataTransfer?.types.includes('Files')) return
+  if (props.readonly || props.busy || !event.dataTransfer?.types.includes('Files')) return
   event.dataTransfer.dropEffect = 'copy'
   dragging.value = true
 }
@@ -205,7 +206,7 @@ function onDragLeave(event: DragEvent): void {
 }
 function onDrop(event: DragEvent): void {
   dragging.value = false
-  if (!props.busy && event.dataTransfer?.files.length) emit('drop', event.dataTransfer.files)
+  if (!props.readonly && !props.busy && event.dataTransfer?.files.length) emit('drop', event.dataTransfer.files)
 }
 </script>
 

@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     CLI_TOKEN_EXPIRE_SECONDS: int = 30
     AUTH_DISABLED: bool = True
+    # "Log in with Google": allowed only when enabled AND an OAuth web client id (Google Cloud
+    # console, with the frontend's origin as an authorized JavaScript origin) is set.
+    GOOGLE_AUTH_ENABLED: bool = False
+    GOOGLE_CLIENT_ID: str | None = None
 
     # Database settings
     DB_PATH: str = "data/users.db"
@@ -78,6 +82,11 @@ class Settings(BaseSettings):
 
     # Internal API base URL used for service-to-service calls (e.g. pipeline → translate endpoint)
     API_BASE_URL: str = "http://127.0.0.1:8000"
+
+    @property
+    def google_auth_allowed(self) -> bool:
+        """Return whether users may log in with Google: enabled and a client id is configured."""
+        return self.GOOGLE_AUTH_ENABLED and bool((self.GOOGLE_CLIENT_ID or "").strip())
 
     # --- Resolved path properties ---
     # Each property: absolute env-var path used as-is; relative path resolved against BASE_DIR.

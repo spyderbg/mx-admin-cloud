@@ -149,6 +149,8 @@ Key settings (see `backend/src/core/config.py`). Use `backend/.env` or the proce
 | `DEFAULT_ADMIN_PASSWORD` | Initial `admin` password on first DB init |
 | `DEBUG_MODE` | Relaxes some admin/UDS checks when true (local dev only) |
 | `AUTH_DISABLED` | If true, skip auth checks |
+| `GOOGLE_AUTH_ENABLED` | Allow "Log in with Google" on the login page (default `false`); also needs `GOOGLE_CLIENT_ID` |
+| `GOOGLE_CLIENT_ID` | Google OAuth web client id; the frontend's origin must be one of its authorized JavaScript origins |
 
 The `qwen_translate` provider uses the OpenAI-compatible Chat Completions API for
 Qwen3.8 27B (self-hosted). Its configurations are

@@ -26,6 +26,8 @@ services:
       - COMFYUI_API_KEY=${COMFYUI_API_KEY}
       - SECRET_KEY=${SECRET_KEY}
       - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD}
+      - GOOGLE_AUTH_ENABLED=${GOOGLE_AUTH_ENABLED:-false}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - CONFIG_DIR=/app/config
       - OUTPUT_DIR=/app/tts-output
 
@@ -72,6 +74,8 @@ services:
       - COMFYUI_API_KEY=${COMFYUI_API_KEY}
       - SECRET_KEY=${SECRET_KEY}
       - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD}
+      - GOOGLE_AUTH_ENABLED=${GOOGLE_AUTH_ENABLED:-false}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - CONFIG_DIR=/app/config
       - OUTPUT_DIR=/app/tts-output
     command: ["uvicorn", "src.main:app", "--uds", "/tmp/kiddo-backend.sock"]

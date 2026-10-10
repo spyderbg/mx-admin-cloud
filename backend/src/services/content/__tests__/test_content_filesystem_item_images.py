@@ -407,7 +407,10 @@ def test_generate_item_image_without_configuration_uses_the_default(tmp_path: Pa
     assert (item_path / f"{result.id}.png").read_bytes() == b"generated"
 
 
-@pytest.mark.parametrize("error", [RuntimeError("No active text to image services configured."), httpx.ConnectError("down")])
+@pytest.mark.parametrize(
+    "error",
+    [RuntimeError("No active text to image services configured."), httpx.ConnectError("down")],
+)
 def test_generate_item_image_reports_generation_failures_and_changes_nothing(tmp_path: Path, error: Exception) -> None:
     content_root, item_path = _prepare_apple(tmp_path)
     before = sorted(item_path.iterdir())

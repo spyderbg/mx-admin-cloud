@@ -36,12 +36,13 @@
           </header>
           <div v-show="expanded.has(group.language)" :id="`voices-${group.language}`" class="ivs-group-body">
             <div class="ivs-cards">
-              <ItemVoiceCard v-for="voice in group.voices" :key="voice.id" :voice="voice" :capabilities="capabilities"
+              <ItemVoiceCard v-for="voice in group.voices" :key="voice.id" :voice="voice" :capabilities="capabilities" :readonly="!canEdit"
                 :selected="group.selected?.id === voice.id" :busy="busy" :optimizing="busyKey === `optimize:${voice.id}`"
                 :active="activePlayer === voice.id" :revision="revision" @play="onPlay(voice.id)"
                 @replace="openUpload(group.language, voice.id)" @drop="openUpload(group.language, voice.id, $event)"
                 @delete="openDelete(voice)" @optimize="optimize(voice)" @select="select(voice, $event)" />
               <button
+                v-if="canEdit"
                 type="button"
                 class="ivs-add-card"
                 :class="{ 'ivs-drop-active': dragLanguage === group.language }"
@@ -131,6 +132,7 @@ import { useContentLanguage } from '../composables/useContentLanguage'
 import { itemVoiceCopy } from '../utils/itemVoiceCopy'
 import { selectedVoice, validateAudioFile, voiceErrorMessage, voiceTitle } from '../utils/itemVoices'
 import { langFlag, langLabel } from '../utils/voiceLabels'
+import { hasWriteAccess } from '../utils/permissions'
 import ItemVoiceCard from './ItemVoiceCard.vue'
 import MobileActionsMenu, { type MobileAction } from './MobileActionsMenu.vue'
 import VoiceDialog from './VoiceDialog.vue'
@@ -151,21 +153,25 @@ const formats = computed(() => capabilities.value.upload_formats.length ? capabi
 const formatsLabel = computed(() => formats.value.map((format) => format.toUpperCase()).join(', '))
 const acceptedFormats = computed(() => formats.value.map((format) => `.${format}`).join(','))
 const expanded = ref(new Set<Language>())
+// Viewers may only listen, so they get no add or generate action.
+const canEdit = hasWriteAccess()
 const voiceActions = computed<MobileAction[]>(() => [
-  {
-    label: copy.value.add,
-    icon: 'mdi-plus',
-    tone: 'primary',
-    disabled: busy.value,
-    onClick: () => openUpload(language.value),
-  },
-  {
-    label: copy.value.generate,
-    icon: 'mdi-auto-fix',
-    tone: 'regenerate',
-    disabled: busy.value,
-    onClick: () => openGenerate(language.value),
-  },
+  ...(canEdit ? [
+    {
+      label: copy.value.add,
+      icon: 'mdi-plus',
+      tone: 'primary' as const,
+      disabled: busy.value,
+      onClick: () => openUpload(language.value),
+    },
+    {
+      label: copy.value.generate,
+      icon: 'mdi-auto-fix',
+      tone: 'regenerate' as const,
+      disabled: busy.value,
+      onClick: () => openGenerate(language.value),
+    },
+  ] : []),
   {
     label: expanded.value.size ? copy.value.collapse : copy.value.expand,
     icon: expanded.value.size ? 'mdi-chevron-up' : 'mdi-chevron-down',

@@ -141,6 +141,18 @@ PYTHONPATH="$PWD/src" .venv/bin/python -m pytest src/api/internal/__tests__ -v
 
 - **HTTP login:** `POST /api/v1/login` with `application/x-www-form-urlencoded` body `username` and `password` (default
   `admin` / value of `DEFAULT_ADMIN_PASSWORD`). Returns `access_token`; use as `Authorization: Bearer <token>`.
+- **Google login:** when `GOOGLE_AUTH_ENABLED` is true and `GOOGLE_CLIENT_ID` is set, `GET /api/v1/auth/config`
+  (public) tells the login page to render Google's sign-in button, and `POST /api/v1/login/google` with
+  `{"credential": "<Google ID token>"}` returns `access_token` like the HTTP login. The ID token's signature, expiry and
+  audience (`GOOGLE_CLIENT_ID`) are verified, and its verified email is matched with a username (case-insensitive);
+  the token carries that user's role. An email with no user yet is registered automatically as a `viewer` (with a
+  random password, so it can sign in only through Google). Promote one with `users update <email> --role admin`.
+  Disabled: 403; invalid token: 401; Google unreachable: 503.
+- **Roles:** `admin` can do everything; `viewer` is read-only and may not change anything: every content API request
+  other than `GET`/`HEAD`/`OPTIONS`, and `POST /operation`, answers 403 for it (`require_write_access`), and the
+  internal and user-management endpoints need `admin` anyway. Only signing in and `POST /list-files` (which reads) stay
+  open; `src/api/__tests__/test_viewer_access.py` sends a viewer to every other changing endpoint and expects 403. The
+  frontend hides the editing controls and the configuration pages from viewers.
 - **CLI login:** `POST /api/v1/cli-login` is allowed only when the request is made over the backend’s Unix socket (e.g.
   by the CLI). Returns a short-lived token.
 - **Internal auth:** Internal endpoints require a JWT with role `"internal"` or `"admin"`. An internal token is
@@ -151,6 +163,7 @@ Env (see `src/core/config.py`):
 
 - `SECRET_KEY`, `ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES`, `CLI_TOKEN_EXPIRE_SECONDS` — JWT settings
 - `AUTH_DISABLED` — if true, auth checks are skipped
+- `GOOGLE_AUTH_ENABLED`, `GOOGLE_CLIENT_ID` — allow "Log in with Google" (both are required; off by default)
 - `DEBUG_MODE` — if true, `/api/v1/users` skips Unix socket + admin dependency checks
 - `CONTENT_DIR` — content data path
 - `ARCHIVE_DIR` — directory for archived (removed) categories. If empty, remove deletes categories permanently instead
@@ -185,7 +198,7 @@ Base URL for all routes below: `/api/v1`. Protected routes require `Authorizatio
 |--------|------------------------------------------------|------|------------------------------------------------------------------------------------------|
 | `GET`  | [/ping](src/api/v1/routes_common.py#L11)       | No   | Health check; returns PONG with backend platform info.                                   |
 | `GET`  | [/status](src/api/v1/routes_common.py#L16)     | Yes  | Service status.                                                                          |
-| `POST` | [/operation](src/api/v1/routes_common.py#L21)  | Yes  | Perform a service operation. Query param: `name`.                                        |
+| `POST` | [/operation](src/api/v1/routes_common.py#L21)  | Yes (not viewers) | Perform a service operation. Query param: `name`.                           |
 | `POST` | [/list-files](src/api/v1/routes_common.py#L30) | Yes  | List files in the configured directory. Body: `{"depth": int}` (depth < 1 treated as 1). |
 
 ### Content

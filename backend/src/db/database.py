@@ -3,6 +3,7 @@
 import hashlib
 import logging
 import os
+import secrets
 import sqlite3
 from pathlib import Path
 
@@ -144,6 +145,45 @@ class UsersDb:
             ).fetchone()
         finally:
             conn.close()
+
+    @staticmethod
+    def get_user_by_email(email: str) -> dict | None:
+        """Return the user whose username is *email*, ignoring case, or None.
+
+        Logging in with Google maps the account's email onto an existing user this way.
+        """
+        conn = UsersDb.get_db()
+        try:
+            row = conn.execute(
+                "SELECT username, role FROM users WHERE username = ? COLLATE NOCASE ORDER BY id LIMIT 1",
+                (email.strip(),),
+            ).fetchone()
+        finally:
+            conn.close()
+        return {"username": row["username"], "role": row["role"]} if row else None
+
+    @staticmethod
+    def get_or_register_email_user(email: str, role: str) -> tuple[dict, bool]:
+        """Return (the user for *email*, whether it was just registered), creating it with *role* if absent.
+
+        An existing user is matched as get_user_by_email does and keeps its role. A new one is
+        named after the email and gets a random password nobody knows, so it can sign in only
+        through the provider that verified the email. Two sign-ins registering the same email
+        at once end up with the one user.
+        """
+        user = UsersDb.get_user_by_email(email)
+        if user:
+            return user, False
+        try:
+            UsersDb.create_user(email.strip().lower(), role, UsersDb.hash_password(secrets.token_urlsafe(32)))
+            registered = True
+        except sqlite3.IntegrityError:
+            # Registered by a concurrent sign-in in the meantime.
+            registered = False
+        user = UsersDb.get_user_by_email(email)
+        if user is None:
+            raise sqlite3.DatabaseError(f"Could not register a user for {email}.")
+        return user, registered
 
     @staticmethod
     def get_user_role(username: str) -> str | None:

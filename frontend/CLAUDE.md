@@ -46,6 +46,12 @@ No state management library (no Pinia/Vuex) — data flows via props.
 Auth guard checks `localStorage.getItem('token')`. Token is written by `src/api/auth.ts` on successful login (POST
 `/api/v1/login` with `application/x-www-form-urlencoded`).
 
+Viewers are read-only. `hasWriteAccess()` (`src/utils/permissions.ts`) reads the role from the token; only `admin` (and
+`internal`) may edit. Components hide every editing control behind it (`v-if="canEdit"`, or the `readonly` prop of
+`VoiceCardsGrid`, `ItemImageCard` and `ItemVoiceCard`), and routes with `meta.requiresWriteAccess` (the configuration
+pages) send viewers to the dashboard. Gate any new editing control the same way; the backend refuses viewers anyway.
+Mock mode signs in with `MOCK_TOKEN` (`src/mocks/mockToken.ts`), an unsigned admin token.
+
 ### Data Layer
 
 The API contract is **generated from the backend** by `scripts/generate_ts_schemas.py` (Pydantic models →

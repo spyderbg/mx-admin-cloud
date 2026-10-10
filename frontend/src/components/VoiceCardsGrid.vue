@@ -10,7 +10,7 @@
       @dragleave.prevent="onVoiceDragLeave($event, voice)"
       @drop.prevent="onVoiceDrop($event, voice)"
     >
-      <div class="voice-card-top-actions">
+      <div v-if="!readonly" class="voice-card-top-actions">
         <button
           v-for="action in extraActions"
           :key="action.title"
@@ -46,7 +46,7 @@
         <i :class="'flag-icon flag-icon-' + langFlag(voice.language)"></i>
       </div>
       <ServerWord
-        v-if="renameVoice"
+        v-if="renameVoice && !readonly"
         :text="voice.name"
         text-tag="div"
         text-class="voice-card-name"
@@ -201,6 +201,8 @@ const props = defineProps<{
   renameVoice?: (voice: Voice, name: string) => void
   /** Rendered before the built-in upload/delete icons; omit for none. */
   extraActions?: VoiceExtraAction[]
+  /** Only play voices: no upload, delete, rename, extra actions or drop-to-upload. */
+  readonly?: boolean
 }>()
 
 const contentLanguage = useContentLanguage()
@@ -251,10 +253,12 @@ function onFileSelected(e: Event): void {
 const dragOverVoiceId = ref<string | null>(null)
 
 function onVoiceDragEnter(voice: Voice): void {
+  if (props.readonly) return
   dragOverVoiceId.value = voice.id
 }
 
 function onVoiceDragOver(voice: Voice): void {
+  if (props.readonly) return
   dragOverVoiceId.value = voice.id
 }
 
@@ -268,6 +272,7 @@ function onVoiceDragLeave(event: DragEvent, voice: Voice): void {
 
 function onVoiceDrop(event: DragEvent, voice: Voice): void {
   dragOverVoiceId.value = null
+  if (props.readonly) return
   const file = Array.from(event.dataTransfer?.files ?? []).find((entry) => entry.type.startsWith('audio/'))
   if (!file) return
   void props.uploadVoice(voice, file, !props.hasAudio(voice))

@@ -3,7 +3,7 @@
     "service": "voice_optimization",
     "provider": "ffmpeg",
     "enabled": true,
-    "priority": 1,
+    "priority": 2,
     "config": {
       "sample_rate": 22050,
       "mono": true,

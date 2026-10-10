@@ -8,13 +8,13 @@
           <div class="id-field-label">{{ itemIdLabel(contentLanguage) }}</div>
           <div class="id-value-row">
             <h3 class="id-item-id">{{ item.id }}</h3>
-            <button type="button" class="id-edit-btn" title="Edit item id" aria-label="Edit item id" @click="onEditItemId">
+            <button v-if="canEdit" type="button" class="id-edit-btn" title="Edit item id" aria-label="Edit item id" @click="onEditItemId">
               <i class="mdi mdi-pencil"></i>
             </button>
           </div>
         </div>
 
-        <div class="id-summary-actions">
+        <div v-if="canEdit" class="id-summary-actions">
           <div class="id-summary-buttons">
             <button
               v-for="action in itemActions"
@@ -73,6 +73,7 @@
             :delete-voice="deleteVoiceCard"
             :rename-voice="renameVoiceHandler"
             :extra-actions="voiceCardActions"
+            :readonly="!canEdit"
           />
         </div>
       </div>
@@ -94,7 +95,7 @@
           {{ imagesLabel(contentLanguage) }}
           <span>({{ itemImages.length }})</span>
         </h4>
-        <div class="id-summary-actions">
+        <div v-if="canEdit" class="id-summary-actions">
           <div class="id-summary-buttons">
             <button
               v-for="action in imageActions"
@@ -124,12 +125,14 @@
           :file-name="fileNameFromUri(rawItemImages[card.index])"
           :is-main="card.isMain"
           :select-disabled="isSettingMainImage"
+          :readonly="!canEdit"
           @preview="openImagePreview(card.src, card.title)"
           @select="onSelectImage(card.index)"
           @replace="onReplaceFile(card.index)"
           @delete="onDeleteFile(card.index)"
         />
         <div
+          v-if="canEdit"
           class="id-add-image-card"
           :class="{ 'id-add-image-card-dragging': isImageDropActive, 'id-add-image-card-uploading': isAddingImage }"
           role="button"
@@ -151,7 +154,9 @@
         </div>
       </div>
       <div v-else class="file-empty">
+        <p v-if="!canEdit" class="text-muted mb-0">{{ noImagesLabel(contentLanguage) }}</p>
         <div
+          v-else
           class="id-add-image-card"
           :class="{ 'id-add-image-card-dragging': isImageDropActive, 'id-add-image-card-uploading': isAddingImage }"
           role="button"
@@ -360,6 +365,7 @@ import { generateMainItemVoice } from '../api/itemVoicesClient'
 import { LocalizedString, SUPPORTED_LANGUAGES, type Language, type Voice } from '../types/viewModels'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import { useAudioPlayer } from '../composables/useAudioPlayer'
+import { hasWriteAccess } from '../utils/permissions'
 import ViewBreadcrumb from '../components/ViewBreadcrumb.vue'
 import MobileActionsMenu, { type MobileAction } from '../components/MobileActionsMenu.vue'
 import VoiceCardsGrid, { type VoiceExtraAction } from '../components/VoiceCardsGrid.vue'
@@ -373,6 +379,7 @@ import { cacheBustedUri } from '../utils/cacheBustedUri'
 import cameraPlaceholderUrl from '../assets/images/samples/camera-placeholder.svg'
 import {
   addImageLabel,
+  noImagesLabel,
   generateImageLabel,
   breadcrumbCategoriesLabel,
   archiveTypeToConfirmLabel,
@@ -411,6 +418,7 @@ const route = useRoute()
 const router = useRouter()
 
 const contentLanguage = useContentLanguage()
+const canEdit = hasWriteAccess()
 
 onMounted(async () => {
   await ensureCategoriesLoaded()

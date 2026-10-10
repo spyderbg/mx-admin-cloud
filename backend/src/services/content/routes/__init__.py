@@ -9,8 +9,9 @@ included first so every route keeps its original registration order. static_file
 the /content file mount the app serves the content directory through.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from src.api.dependencies import require_write_access
 from src.core.config import settings
 from src.services.content.routes import categories, items
 from src.services.content.routes.common import (
@@ -21,7 +22,8 @@ from src.services.content.routes.common import (
 )
 from src.services.content.routes.static_files import ContentStaticFiles
 
-router = APIRouter(prefix=f"{settings.API_V1_STR}/content")
+# Any signed-in user can read content; only admins can change it.
+router = APIRouter(prefix=f"{settings.API_V1_STR}/content", dependencies=[Depends(require_write_access)])
 router.include_router(categories.router)
 router.include_router(items.router)
 

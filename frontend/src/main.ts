@@ -8,10 +8,11 @@ import './assets/css/shared/style.css'
 import './assets/css/demo_1/style.css'
 import App from './App.vue'
 import router from './router'
+import { decodeJwtPayload } from './utils/jwt'
 
 async function main() {
   if (import.meta.env.VITE_MOCK_DATA === 'true') {
-    const { worker } = await import('./mocks/browser')
+    const [{ worker }, { MOCK_TOKEN }] = await Promise.all([import('./mocks/browser'), import('./mocks/mockToken')])
     await worker.start({
       onUnhandledRequest(request, print) {
         if (new URL(request.url).pathname.startsWith('/api/')) {
@@ -19,8 +20,9 @@ async function main() {
         }
       },
     })
-    if (!localStorage.getItem('token')) {
-      localStorage.setItem('token', 'debug-token')
+    // Also replaces the role-less 'debug-token' earlier previews stored.
+    if (!decodeJwtPayload(localStorage.getItem('token') ?? '')) {
+      localStorage.setItem('token', MOCK_TOKEN)
     }
   }
 

@@ -5,7 +5,7 @@
         <div class="id-field-label">{{ categoryIdLabel(contentLanguage) }}</div>
         <div class="id-value-row">
           <h3 class="id-item-id">{{ category.id }}</h3>
-          <button type="button" class="id-edit-btn" :title="renameCategoryLabel(contentLanguage)" :aria-label="renameCategoryLabel(contentLanguage)" @click="openRenameModal">
+          <button v-if="canEdit" type="button" class="id-edit-btn" :title="renameCategoryLabel(contentLanguage)" :aria-label="renameCategoryLabel(contentLanguage)" @click="openRenameModal">
             <i class="mdi mdi-pencil"></i>
           </button>
         </div>
@@ -27,7 +27,7 @@
             alt="Category icon"
             class="id-summary-image"
           />
-          <div class="category-icon-actions" @click.stop>
+          <div v-if="canEdit" class="category-icon-actions" @click.stop>
             <button
               type="button"
               class="btn-icon btn-icon-regenerate"
@@ -64,7 +64,7 @@
     </div>
 
     <div class="id-summary-details">
-      <div class="id-summary-actions id-summary-actions-only">
+      <div v-if="canEdit" class="id-summary-actions id-summary-actions-only">
         <div class="id-release-group">
           <button
             type="button"
@@ -90,6 +90,7 @@
           :delete-voice="deleteVoiceHandler"
           :rename-voice="renameVoiceHandler"
           :extra-actions="voiceCardActions"
+          :readonly="!canEdit"
         />
       </div>
     </div>
@@ -292,6 +293,7 @@ import {
 import { resizeImageToMaxDimension } from '../utils/imageResize'
 import { cacheBustedUri } from '../utils/cacheBustedUri'
 import { useAudioPlayer } from '../composables/useAudioPlayer'
+import { hasWriteAccess } from '../utils/permissions'
 
 const props = defineProps<{
   category: CategoryFull
@@ -300,6 +302,7 @@ const props = defineProps<{
 }>()
 
 const contentLanguage = useContentLanguage()
+const canEdit = hasWriteAccess()
 const categoryLabel = computed(() => localizedCategoryLabel(props.category, contentLanguage.value))
 
 const emit = defineEmits<{
