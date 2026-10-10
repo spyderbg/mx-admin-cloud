@@ -271,7 +271,7 @@ class VoiceCapabilities(BaseModel):
     """Which voice actions the API can perform right now, so a client only offers the working ones."""
 
     # POST /voices can add another recording for a language that already has one.
-    multiple_voices: bool = False
+    multiple_voices: bool = True
     # POST /voices/generate (per-request text, configuration and settings) can run: at least
     # one text-to-speech configuration exists.
     generate: bool = False

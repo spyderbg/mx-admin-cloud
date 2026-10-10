@@ -366,9 +366,9 @@ async def test_list_item_voices_advertises_what_can_run(tmp_resolved: Path, avai
         response = await c.get(_VOICES_URL)
     assert response.status_code == 200
     # Selection always, generation with a TTS configuration and optimization with an active
-    # optimizer: POST /voices still refuses a second recording, and there is no presets endpoint.
+    # optimizer: POST /voices can add multiple recordings, and there is no presets endpoint.
     assert response.json()["capabilities"] == {
-        "multiple_voices": False,
+        "multiple_voices": True,
         "generate": available,
         "optimize": available,
         "select": True,
@@ -384,6 +384,40 @@ async def test_set_main_response_carries_no_capabilities(tmp_resolved: Path) -> 
         set_main = await c.put(_VOICE_MAIN_URL)
     assert set_main.status_code == 200
     assert set_main.json()["capabilities"] is None
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/content/categories/{category_id}/items/{item_id}/voices
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_add_item_voice_uploads_audio(tmp_resolved: Path) -> None:
+    calls = []
+
+    class _AddVoiceProvider(StubContentProvider):
+        def add_item_voice(self, category_id: str, item_id: str, language: str, audio_data: bytes) -> CategoryVoice:
+            calls.append((category_id, item_id, language, audio_data))
+            return CategoryVoice(
+                id="apple_en_02",
+                language=language,
+                type="tts",
+                file_uri="/content/foods/apple/apple_en_02.mp3",
+                provider="custom",
+            )
+
+    app = make_app(_AddVoiceProvider(tmp_resolved), tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.post(
+            _VOICES_URL,
+            data={"language": "en"},
+            files={"audio": ("voice.mp3", b"audio-bytes", "audio/mpeg")},
+        )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["id"] == "apple_en_02"
+    assert body["language"] == "en"
+    assert body["action"] == "add"
+    assert calls == [("foods", "I_Foods", "en", b"audio-bytes")]
 
 
 # ---------------------------------------------------------------------------

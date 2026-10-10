@@ -863,7 +863,7 @@ components:
         multiple_voices:
           type: boolean
           title: Multiple Voices
-          default: false
+          default: true
         generate:
           type: boolean
           title: Generate
@@ -2044,8 +2044,8 @@ paths:
       - Items Voices
       summary: Add a voice to an item
       description: Add a new voice file to the specified content item for the given
-        language. Fails with 409 if the item already has a voice for that language;
-        use the update endpoint to replace it. Requires authentication.
+        language. If the item already has audio for that language, the new recording
+        is added as a new variant and the current voice stays selected. Requires authentication.
       operationId: items_voices_add_api_v1_content_categories__category_id__items__item_id__voices_post
       security:
       - OAuth2PasswordBearer: []

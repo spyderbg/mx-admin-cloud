@@ -951,18 +951,41 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         return target
 
     def add_item_voice(self, category_id: str, item_id: str, language: str, audio_data: bytes) -> CategoryVoice:
+        """Add a voice recording for an item in the given language.
+
+        If the item has no voice for this language yet, the recording becomes its main voice.
+        If a voice already exists, the current main voice is preserved as a variant and the
+        new audio is stored as the next variant take without changing the selected main voice.
+
+        Args:
+            category_id (str): The category identifier.
+            item_id (str): The item identifier.
+            language (str): The language code of the recording.
+            audio_data (bytes): Raw audio file bytes.
+
+        Returns:
+            CategoryVoice: Representing the added voice.
+
+        Raises:
+            ContentOperationError: If the language is unsupported or saving fails.
+            CategoryNotFoundError: If the category or item does not exist.
+        """
         category_name, category_path = self._validate_category_path(category_id)
         item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
 
         if language not in settings.SUPPORTED_LANGUAGES:
             raise ContentOperationError(f"Unsupported language: {language}")
 
-        voice_id = f"{item_folder_name}-v-{language}"
-        if self._find_item_voice_file(item_path, item_folder_name, voice_id) is not None:
-            raise CategoryConflictError(f"Voice for language '{language}' already exists for item '{item_id}'.")
-
-        voice_path = self._item_voice_path(item_path, item_folder_name, language)
+        main, variants = self._split_item_voice_files(list(item_path.iterdir()), item_folder_name, language)
+        first_take = main is None and not variants
         try:
+            if first_take:
+                voice_path = self._item_voice_path(item_path, item_folder_name, language)
+                voice_id = f"{item_folder_name}-v-{language}"
+            else:
+                self._keep_main_voice_as_variant(item_path, item_folder_name, language)
+                voice_path = self._next_item_voice_variant_path(item_path, item_folder_name, language)
+                voice_id = voice_path.stem
             with open(voice_path, "wb") as fh:
                 fh.write(audio_data)
             self._write_voice_metadata(voice_path, VoiceCreationMethod.UPLOADED, provider="custom")

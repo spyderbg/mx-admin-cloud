@@ -562,9 +562,13 @@ def items_voices_list(
     item_name = item.name if item else LocalizedString({})
     voices_result = service.item_voices(category_id, item_id)
     response = _item_voices_response(item_id, item_name, voices_result)
-    # POST /voices still refuses a second recording for a language and there is no presets
-    # endpoint; generation and optimization are on while a configuration / optimizer exists.
-    response.capabilities = VoiceCapabilities(optimize=optimization_available, generate=configurations_available)
+    # POST /voices can add another recording for a language that already has one;
+    # generation and optimization are on while a configuration / optimizer exists.
+    response.capabilities = VoiceCapabilities(
+        multiple_voices=True,
+        optimize=optimization_available,
+        generate=configurations_available,
+    )
     return response
 
 
@@ -576,8 +580,8 @@ def items_voices_list(
     summary="Add a voice to an item",
     description=(
             "Add a new voice file to the specified content item for the given language. "
-            "Fails with 409 if the item already has a voice for that language; use the update endpoint "
-            "to replace it. Requires authentication."
+            "If the item already has audio for that language, the new recording is added as a "
+            "new variant and the current voice stays selected. Requires authentication."
     ),
 )
 def items_voices_add(

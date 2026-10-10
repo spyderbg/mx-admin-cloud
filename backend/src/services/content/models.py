@@ -467,7 +467,7 @@ class ContentProvider(ServiceProvider, ABC):  # pylint: disable=too-many-public-
 
     @abstractmethod
     def add_item_voice(self, category_id: str, item_id: str, language: str, audio_data: bytes) -> CategoryVoice:
-        """Add the audio file for an item voice in the given language, if it doesn't have one yet."""
+        """Add an audio file for an item voice in the given language as a new take or variant."""
 
     @abstractmethod
     def update_item_voice(self, category_id: str, item_id: str, voice_id: str, audio_data: bytes) -> CategoryVoice:

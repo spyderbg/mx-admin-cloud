@@ -1,6 +1,6 @@
 """Unit tests for FileSystemContentProvider — item voice variants, the main voice, and voice optimization."""
 
-# pylint: disable=missing-function-docstring,protected-access
+# pylint: disable=missing-function-docstring,protected-access,too-many-lines
 
 from __future__ import annotations
 
@@ -196,6 +196,91 @@ def test_set_main_item_voice_not_found(tmp_path: Path, voice_id: str) -> None:
         mock_settings.SUPPORTED_LANGUAGES = ["en"]
         with pytest.raises(CategoryNotFoundError):
             provider.set_main_item_voice("C_Foods", "I_Apple", voice_id)
+
+
+# ---------------------------------------------------------------------------
+# add_item_voice: first take is main; subsequent takes become variants
+# ---------------------------------------------------------------------------
+
+def test_add_item_voice_creates_first_take_as_main(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_voices(tmp_path, {})
+    provider = make_fs_provider()
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        result = provider.add_item_voice("C_Foods", "I_Apple", "en", b"first-audio")
+
+    assert result.id == "apple-v-en"
+    assert result.file_uri == "/content/foods/apple/apple_en.mp3"
+    assert _mp3s(item_path) == {"apple_en": b"first-audio"}
+    assert voice_metadata_normalized(item_path / "apple_en.csv") == {
+        "creation_method": "uploaded",
+        "provider": "custom",
+        "parameters": {},
+    }
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        voices = provider.item_voices("C_Foods", "I_Apple")
+    assert voices.voices[0].file_uri == "/content/foods/apple/apple_en.mp3"
+    assert voices.variants == []
+
+
+def test_add_item_voice_saves_original_main_as_variant_then_adds_new_take(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"original"})
+    provider = make_fs_provider()
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        result = provider.add_item_voice("C_Foods", "I_Apple", "en", b"second-audio")
+
+    assert result.id == "apple_en_02"
+    assert result.file_uri == "/content/foods/apple/apple_en_02.mp3"
+    assert _mp3s(item_path) == {
+        "apple_en": b"original",
+        "apple_en_01": b"original",
+        "apple_en_02": b"second-audio",
+    }
+    assert voice_metadata_normalized(item_path / "apple_en_02.csv") == {
+        "creation_method": "uploaded",
+        "provider": "custom",
+        "parameters": {},
+    }
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        voices = provider.item_voices("C_Foods", "I_Apple")
+    # The main voice is still the original recording; the new take waits to be chosen.
+    assert voices.main_voice_ids == {"en": "apple_en_01"}
+    assert [v.id for v in voices.variants] == ["apple_en_01", "apple_en_02"]
+
+
+def test_add_item_voice_again_keeps_adding_takes(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"original"})
+    provider = make_fs_provider()
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        provider.add_item_voice("C_Foods", "I_Apple", "en", b"take-two")
+        result = provider.add_item_voice("C_Foods", "I_Apple", "en", b"take-three")
+
+    assert result.id == "apple_en_03"
+    assert _mp3s(item_path) == {
+        "apple_en": b"original",
+        "apple_en_01": b"original",
+        "apple_en_02": b"take-two",
+        "apple_en_03": b"take-three",
+    }
+
+
+def test_add_item_voice_unsupported_language_raises(tmp_path: Path) -> None:
+    content_root, _ = _prepare_item_with_voices(tmp_path, {})
+    provider = make_fs_provider()
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        mock_settings.SUPPORTED_LANGUAGES = ["en"]
+        with pytest.raises(ContentOperationError, match="Unsupported language"):
+            provider.add_item_voice("C_Foods", "I_Apple", "de", b"audio")
 
 
 # ---------------------------------------------------------------------------
