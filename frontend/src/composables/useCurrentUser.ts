@@ -1,10 +1,6 @@
 import type { User } from '../types'
 import { decodeJwtPayload } from '../utils/jwt'
 
-function capitalize(value: string): string {
-  return value.charAt(0).toUpperCase() + value.slice(1)
-}
-
 function initialsFrom(name: string): string {
   const parts = name.split(/[^a-zA-Z0-9]+/).filter(Boolean)
   const letters = parts.length > 1 ? parts[0][0] + parts[1][0] : name.slice(0, 2)
@@ -26,7 +22,7 @@ export function useCurrentUser(): User {
   const token = localStorage.getItem('token')
   const payload = token ? decodeJwtPayload(token) : null
   const name = payload?.sub ?? 'Unknown'
-  const role = payload?.role ? capitalize(payload.role) : ''
+  const role = payload?.role ? payload.role.toLowerCase() : ''
 
   return {
     name,

@@ -7,6 +7,7 @@ let auth
 let client
 let permissions
 let mockToken
+let currentUser
 let stored
 const storage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
 before(async () => {
@@ -19,6 +20,7 @@ before(async () => {
   client = (await server.ssrLoadModule('/src/api/client.ts')).default
   permissions = await server.ssrLoadModule('/src/utils/permissions.ts')
   mockToken = await server.ssrLoadModule('/src/mocks/mockToken.ts')
+  currentUser = await server.ssrLoadModule('/src/composables/useCurrentUser.ts')
 })
 beforeEach(() => { stored = new Map() })
 after(async () => {
@@ -81,4 +83,12 @@ test('write access is read from the stored token by default', () => {
 
 test('the mock-mode token keeps the editing controls', () => {
   assert.equal(permissions.hasWriteAccess(mockToken.MOCK_TOKEN), true)
+})
+
+test('current user privileges/role is displayed in lower case', () => {
+  stored.set('token', tokenFor({ sub: 'guest', role: 'Viewer' }))
+  assert.equal(currentUser.useCurrentUser().role, 'viewer')
+
+  stored.set('token', tokenFor({ sub: 'admin', role: 'ADMIN' }))
+  assert.equal(currentUser.useCurrentUser().role, 'admin')
 })
