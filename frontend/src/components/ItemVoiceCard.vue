@@ -33,14 +33,16 @@
           </VoiceParametersTooltip>
         </dd>
       </div>
-      <VoiceGenerationDetails v-if="source !== 'uploaded'" class="iv-description-field" :parameters="voice.parameters"
+      <VoiceGenerationDetails v-if="!customVoice" class="iv-description-field" :parameters="voice.parameters"
         :open="informationPopup === 'generation'" @update:open="updateInformationPopup('generation', $event)" />
-    </dl>
-
-    <dl v-if="source === 'uploaded'" class="iv-meta">
-      <div><dt>{{ copy.file }}</dt><dd>{{ voice.parameters?.filename || audioFileName(voice.file_uri) }}</dd></div>
-      <div><dt>{{ copy.source }}</dt><dd>{{ copy.uploaded }}</dd></div>
-      <div v-if="created"><dt>{{ copy.created }}</dt><dd>{{ created }}</dd></div>
+      <div v-else class="iv-description-field iv-voice">
+        <dt>{{ copy.voiceLabel }}:</dt>
+        <dd>
+          <JsonDetailsPopup :title="copy.voiceDetails" :data="voiceDetails" :open="informationPopup === 'details'" :top-inset="72"
+            :copy-label="copy.copyJson" :copied-label="copy.copied" :copy-error-label="copy.copyError" :empty-label="copy.noVoiceDetails"
+            @update:open="updateInformationPopup('details', $event)">{{ copy.viewDetails }}</JsonDetailsPopup>
+        </dd>
+      </div>
     </dl>
 
     <section class="iv-panel" :class="panelClass('original')" :aria-label="`${title}: ${copy.original}`"
@@ -53,7 +55,7 @@
         @play="onPlay('original')" @duration="durations[voice.file_uri || ''] = $event" />
     </section>
 
-    <section v-if="source === 'generated' || versions.length" class="iv-panel" :class="panelClass('optimized')"
+    <section v-if="offersOptimize || versions.length" class="iv-panel" :class="panelClass('optimized')"
       :aria-label="`${title}: ${copy.optimized}`" @pointerdown="version = 'optimized'" @focusin="version = 'optimized'">
       <div class="iv-panel-head">
         <h4>{{ copy.optimized }}</h4>
@@ -64,7 +66,7 @@
 
       <div v-if="!versions.length" class="iv-empty-optimized">
         <p><i class="mdi mdi-information" aria-hidden="true"></i><span>{{ copy.optimizedHint }}</span></p>
-        <p v-if="source === 'generated' && !capabilities.optimize && !readonly" class="iv-warning" role="status">
+        <p v-if="offersOptimize && !capabilities.optimize && !readonly" class="iv-warning" role="status">
           <i class="mdi mdi-alert-circle-outline" aria-hidden="true"></i><span>{{ copy.optimizeUnavailable }}</span>
         </p>
       </div>
@@ -83,7 +85,7 @@
         </div>
       </div>
 
-      <button v-if="source === 'generated' && !versions.length && capabilities.optimize && !readonly" type="button" class="iv-button iv-optimize" :disabled="busy"
+      <button v-if="offersOptimize && !versions.length && capabilities.optimize && !readonly" type="button" class="iv-button iv-optimize" :disabled="busy"
         @click="$emit('optimize')">
         <i :class="optimizing ? 'mdi mdi-loading mdi-spin' : 'mdi mdi-auto-fix'" aria-hidden="true"></i>
         {{ optimizing ? copy.optimizing : copy.optimize }}
@@ -120,6 +122,14 @@ const language = useContentLanguage()
 const copy = computed(() => itemVoiceCopy[language.value])
 const title = computed(() => voiceTitle(props.voice))
 const source = computed(() => voiceSource(props.voice))
+// A custom provider stores an uploaded or untracked file, not generated voice settings.
+const customVoice = computed(() => source.value === 'uploaded' || props.voice.provider === 'custom')
+const offersOptimize = computed(() => source.value === 'generated' || customVoice.value)
+const sourceLabel = computed(() => {
+  if (source.value === 'uploaded') return copy.value.uploaded
+  if (source.value === 'generated') return copy.value.generated
+  return copy.value.unknown
+})
 const generationText = computed(() => source.value === 'generated' ? voiceGenerationText(props.voice) : '')
 const versions = computed(() => optimizedVersions(props.voice))
 // Which rendition "Use for item" applies to, and which optimized file the carousel shows.
@@ -184,7 +194,7 @@ watch(versions, (list) => {
   if (!list.length && version.value === 'optimized') version.value = 'original'
   if (optimizedIndex.value >= list.length) optimizedIndex.value = Math.max(0, list.length - 1)
 })
-type InformationPopup = 'text' | 'provider' | 'generation'
+type InformationPopup = 'text' | 'provider' | 'generation' | 'details'
 const informationPopup = ref<InformationPopup | null>(null)
 function updateInformationPopup(popup: InformationPopup, open: boolean): void {
   if (open) informationPopup.value = popup
@@ -195,6 +205,11 @@ const created = computed(() => {
   if (typeof date !== 'string' || !Number.isFinite(Date.parse(date))) return ''
   return new Intl.DateTimeFormat(language.value, { dateStyle: 'medium' }).format(new Date(date))
 })
+const voiceDetails = computed<Record<string, unknown>>(() => ({
+  [copy.value.file]: props.voice.parameters?.filename || audioFileName(props.voice.file_uri),
+  [copy.value.source]: sourceLabel.value,
+  [copy.value.created]: created.value,
+}))
 const dragging = ref(false)
 function onDragOver(event: DragEvent): void {
   if (props.readonly || props.busy || !event.dataTransfer?.types.includes('Files')) return
@@ -254,10 +269,6 @@ function onDrop(event: DragEvent): void {
 .iv-dot::after { content: ''; position: absolute; inset: 7px; border-radius: 50%; background: #c3cbd8; transition: background-color .15s, transform .15s; }
 .iv-dot-current::after { background: var(--vap-accent); transform: scale(1.15); }
 .iv-optimize { flex: 0 0 auto; align-self: stretch; }
-.iv-meta { margin: .35rem 0 0; font-size: .77rem; display: grid; gap: .4rem; }
-.iv-meta > div { display: grid; grid-template-columns: minmax(4rem, .8fr) minmax(0, 1.4fr); gap: .5rem; align-items: baseline; }
-.iv-meta dt { font-weight: 400; color: #596984; }
-.iv-meta dd { margin: 0; overflow-wrap: anywhere; }
 .iv-card-footer { display: flex; margin-top: auto; padding-top: .35rem; }
 .iv-button { display: inline-flex; justify-content: center; align-items: center; gap: .35rem; border: 1px solid #818cf8; border-radius: 6px; background: white; color: #4f46e5; font-size: .77rem; font-weight: 600; min-height: 36px; padding: .45rem .65rem; flex: 1 1 auto; cursor: pointer; }
 .iv-select { background: #4f46e5; color: white; }

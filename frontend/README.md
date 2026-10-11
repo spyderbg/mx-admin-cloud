@@ -187,7 +187,11 @@ Displayed for a specific image within a category:
   rather than in this grid, holding a *copy* of one of the variants: selecting a card copies it over the main image and
   leaves every variant in place. The card named by the response's `main_image_id` -- the variant the main image was copied
   from -- is highlighted, labelled **Selected**, and has its select button disabled. Upload/replace/delete use the existing item image endpoints; release controls are visual/pending placeholders.
-- **Voices table** -- grouped by language, with generator/type, normal and optimized file-name columns, play controls, waveform-style previews, and release/edit/delete action buttons. Upload/delete use the existing item voice endpoints; release/add-voice controls are visual/pending placeholders.
+- **Voices** -- cards grouped by language. Each card has boxed details, an Original player, and an
+  Optimize section (a compressed copy, or a prompt to create one when an optimizer is enabled).
+  Generated cards show spoken text, provider, and voice settings. A custom or uploaded recording
+  opens file, source, and created date from a details link in the Voice box, and still offers Optimize.
+  Select, replace, delete, and upload use the item voice endpoints.
 - **Delete item** -- outlined red button next to **Release item** in the summary panel. By default its confirmation modal
   shows the "cannot be undone" warning and requires the item id to be typed before the action is enabled. Set
   `VITE_DELETE_ITEM_CONFIRMATION_MODE=simple` at build time for a Yes/No confirmation instead. On success the view drops the
