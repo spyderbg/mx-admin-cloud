@@ -55,7 +55,7 @@
         @play="onPlay('original')" @duration="durations[voice.file_uri || ''] = $event" />
     </section>
 
-    <section v-if="offersOptimize || versions.length" class="iv-panel" :class="panelClass('optimized')"
+    <section class="iv-panel" :class="panelClass('optimized')"
       :aria-label="`${title}: ${copy.optimized}`" @pointerdown="version = 'optimized'" @focusin="version = 'optimized'">
       <div class="iv-panel-head">
         <h4>{{ copy.optimized }}</h4>
@@ -66,7 +66,7 @@
 
       <div v-if="!versions.length" class="iv-empty-optimized">
         <p><i class="mdi mdi-information" aria-hidden="true"></i><span>{{ copy.optimizedHint }}</span></p>
-        <p v-if="offersOptimize && !capabilities.optimize && !readonly" class="iv-warning" role="status">
+        <p v-if="!capabilities.optimize && !readonly" class="iv-warning" role="status">
           <i class="mdi mdi-alert-circle-outline" aria-hidden="true"></i><span>{{ copy.optimizeUnavailable }}</span>
         </p>
       </div>
@@ -85,7 +85,7 @@
         </div>
       </div>
 
-      <button v-if="offersOptimize && !versions.length && capabilities.optimize && !readonly" type="button" class="iv-button iv-optimize" :disabled="busy"
+      <button v-if="!versions.length && capabilities.optimize && !readonly" type="button" class="iv-button iv-optimize" :disabled="busy"
         @click="$emit('optimize')">
         <i :class="optimizing ? 'mdi mdi-loading mdi-spin' : 'mdi mdi-auto-fix'" aria-hidden="true"></i>
         {{ optimizing ? copy.optimizing : copy.optimize }}
@@ -124,7 +124,6 @@ const title = computed(() => voiceTitle(props.voice))
 const source = computed(() => voiceSource(props.voice))
 // A custom provider stores an uploaded or untracked file, not generated voice settings.
 const customVoice = computed(() => source.value === 'uploaded' || props.voice.provider === 'custom')
-const offersOptimize = computed(() => source.value === 'generated' || customVoice.value)
 const sourceLabel = computed(() => {
   if (source.value === 'uploaded') return copy.value.uploaded
   if (source.value === 'generated') return copy.value.generated
@@ -226,7 +225,7 @@ function onDrop(event: DragEvent): void {
 </script>
 
 <style scoped>
-.iv-card { min-width: 0; display: flex; flex-direction: column; gap: .95rem; padding: 1rem; border: 1px solid #b8d4f0; border-radius: 10px; background: #f8fbff; }
+.iv-card { container-type: inline-size; min-width: 0; display: flex; flex-direction: column; gap: .95rem; padding: 1rem; border: 1px solid #b8d4f0; border-radius: 10px; background: #f8fbff; }
 .iv-card-selected { border: 2px solid #2f8f68; padding: calc(1rem - 1px); }
 .iv-card-drag { background: #e0e7ff; outline: 2px dashed #4f46e5; outline-offset: -5px; }
 .iv-card-header { display: flex; align-items: flex-start; gap: .4rem; }
@@ -275,11 +274,14 @@ function onDrop(event: DragEvent): void {
 .iv-is-selected, .iv-is-selected:disabled { background: #e1f2eb; border-color: #e1f2eb; color: #24704f; opacity: 1; }
 .iv-button:disabled:not(.iv-is-selected), .iv-card-action:disabled { opacity: .5; cursor: default; }
 button:focus-visible { outline: 3px solid #a5b4fc; outline-offset: 2px; }
+/* Three columns need about 110px each; below that the details stack, whatever the screen width. */
+@container (max-width: 360px) {
+  .iv-card-meta { grid-auto-flow: row; grid-template-columns: minmax(0, 1fr); grid-template-rows: none; row-gap: .2rem; }
+  .iv-description-field + .iv-description-field { border-left: 0; border-top: 1px solid #e5edf8; }
+}
 @media (max-width: 575px) {
   .iv-card { padding: .8rem; gap: .8rem; }
   .iv-card-selected { padding: calc(.8rem - 1px); }
-  .iv-card-meta { grid-auto-flow: row; grid-template-columns: minmax(0, 1fr); grid-template-rows: none; row-gap: .2rem; }
-  .iv-description-field + .iv-description-field { border-left: 0; border-top: 1px solid #e5edf8; }
   .iv-card-action { width: 2.75rem; height: 2.75rem; }
   .iv-button { min-height: 44px; }
 }
