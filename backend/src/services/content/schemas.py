@@ -36,6 +36,11 @@ class ImageResponse(BaseModel):
     id: str
     file_uri: str | None = None
     action: FileAction | None = None
+    # How an item image was made, from its metadata sidecar: the text to image configuration
+    # for a generated image ("custom" for an uploaded one, "unknown" when nothing is recorded)
+    # and its generation settings, with the prompt as "_prompt".
+    provider: str = "unknown"
+    parameters: dict[str, Any] = Field(default_factory=dict)
 
 
 class VoiceResponse(BaseModel):

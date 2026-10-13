@@ -58,6 +58,7 @@ from src.services.content.routes.common import (
     VoiceGenerationAvailableDep,
     VoiceOptimizationAvailableDep,
     _create_item_response,
+    _image_response,
     _read_image_upload,
     _voice_response,
 )
@@ -309,7 +310,7 @@ def items_images_list(
     return ItemImagesResponse(
         item_id=item_id,
         name=item_name,
-        images=[ImageResponse(id=img.id, file_uri=img.file_uri) for img in images_result.images],
+        images=[_image_response(img) for img in images_result.images],
         thumbnail_uri=images_result.thumbnail_uri,
         main_image_id=images_result.main_image_id,
     )
@@ -353,7 +354,7 @@ def items_images_add(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return ImageResponse(id=result.id, file_uri=result.file_uri, action="add")
+    return _image_response(result, action="add")
 
 
 @router.post(
@@ -390,7 +391,7 @@ def items_images_generate(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return ImageResponse(id=result.id, file_uri=result.file_uri, action="add")
+    return _image_response(result, action="add")
 
 
 @router.put(
@@ -432,7 +433,7 @@ def items_images_update(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return ImageResponse(id=result.id, file_uri=result.file_uri, action="update")
+    return _image_response(result, action="update")
 
 
 @router.delete(
@@ -463,7 +464,7 @@ def items_images_delete(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return ImageResponse(id=result.id, file_uri=result.file_uri, action="delete")
+    return _image_response(result, action="delete")
 
 
 @router.put(
@@ -511,7 +512,7 @@ def items_images_set_main(
     return ItemImagesResponse(
         item_id=item_id,
         name=item_name,
-        images=[ImageResponse(id=img.id, file_uri=img.file_uri) for img in images_result.images],
+        images=[_image_response(img) for img in images_result.images],
         thumbnail_uri=images_result.thumbnail_uri,
         main_image_id=images_result.main_image_id,
     )

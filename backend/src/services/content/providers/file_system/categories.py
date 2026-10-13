@@ -34,7 +34,7 @@ from src.services.content.models import (
     UpdateCategory,
 )
 from src.services.content.providers.file_system.constants import (
-    VoiceCreationMethod,
+    CreationMethod,
     _ARCHIVE_MANIFEST,
     _CATEGORIES_IDS,
     _CATEGORIES_LANG_CSV,
@@ -312,7 +312,7 @@ class FileSystemCategoriesMixin(ContentProvider):  # pylint: disable=abstract-me
         for lang in settings.SUPPORTED_LANGUAGES:
             voice_file = category_path / _CATEGORY_VOICE_MP3.format(category_name, lang)
             has_file = voice_file.exists() and voice_file.is_file()
-            provider, parameters = self._read_voice_metadata(voice_file) if has_file else ("unknown", {})
+            provider, parameters = self._read_metadata(voice_file) if has_file else ("unknown", {})
             voices.append(CategoryVoice(
                 id=f"{category_name}-v-{lang}",
                 language=lang,
@@ -487,11 +487,11 @@ class FileSystemCategoriesMixin(ContentProvider):  # pylint: disable=abstract-me
         try:
             with open(voice_path, "wb") as fh:
                 fh.write(audio_data)
-            self._write_voice_metadata(voice_path, VoiceCreationMethod.UPLOADED, provider="custom")
+            self._write_metadata(voice_path, CreationMethod.UPLOADED, provider="custom")
         except OSError as exc:
             raise ContentOperationError(f"Failed to save category voice: {exc}") from exc
 
-        provider, parameters = self._read_voice_metadata(voice_path)
+        provider, parameters = self._read_metadata(voice_path)
         return CategoryVoice(
             id=f"{category_name}-v-{language}",
             language=language,
@@ -512,11 +512,11 @@ class FileSystemCategoriesMixin(ContentProvider):  # pylint: disable=abstract-me
         try:
             with open(voice_path, "wb") as fh:
                 fh.write(audio_data)
-            self._write_voice_metadata(voice_path, VoiceCreationMethod.UPLOADED, provider="custom")
+            self._write_metadata(voice_path, CreationMethod.UPLOADED, provider="custom")
         except OSError as exc:
             raise ContentOperationError(f"Failed to update category voice: {exc}") from exc
 
-        provider, parameters = self._read_voice_metadata(voice_path)
+        provider, parameters = self._read_metadata(voice_path)
         return CategoryVoice(
             id=voice_id,
             language=language,
@@ -534,10 +534,10 @@ class FileSystemCategoriesMixin(ContentProvider):  # pylint: disable=abstract-me
             raise CategoryNotFoundError(f"Voice '{voice_id}' not found in category '{category_name}'.")
         language, voice_path = found
         file_uri = f"/content/{category_name}/{voice_path.name}"
-        provider, parameters = self._read_voice_metadata(voice_path)
+        provider, parameters = self._read_metadata(voice_path)
 
         try:
-            self._delete_voice_with_metadata(voice_path)
+            self._delete_with_metadata(voice_path)
         except OSError as exc:
             raise ContentOperationError(f"Failed to delete category voice: {exc}") from exc
 
@@ -572,7 +572,7 @@ class FileSystemCategoriesMixin(ContentProvider):  # pylint: disable=abstract-me
         except OSError as exc:
             raise ContentOperationError(f"Failed to save category voice: {exc}") from exc
 
-        provider, parameters = self._read_voice_metadata(voice_path)
+        provider, parameters = self._read_metadata(voice_path)
         return CategoryVoice(
             id=voice_id,
             language=language,
@@ -674,9 +674,9 @@ class FileSystemCategoriesMixin(ContentProvider):  # pylint: disable=abstract-me
             if old_voice.is_file():
                 new_voice = category_path / _CATEGORY_VOICE_MP3.format(new_name, lang)
                 old_voice.rename(new_voice)
-                old_metadata = cls._voice_metadata_path(old_voice)
+                old_metadata = cls._metadata_path(old_voice)
                 if old_metadata.is_file():
-                    old_metadata.rename(cls._voice_metadata_path(new_voice))
+                    old_metadata.rename(cls._metadata_path(new_voice))
 
         image_pattern = re.compile(r"^" + re.escape(old_name) + r"(_\d+)?\.(png|jpg|jpeg)$", re.IGNORECASE)
         for f in list(category_path.iterdir()):

@@ -35,7 +35,7 @@ from src.services.content.models import (
     RemoveItem,
 )
 from src.services.content.providers.file_system.constants import (
-    VoiceCreationMethod,
+    CreationMethod,
     _CATEGORY_VOICE_MP3,
     _IMAGE_EXTENSIONS,
     _ITEMS_IDS,
@@ -102,21 +102,21 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         Voices carry the hash of their file in the metadata sidecar, so a variant is a
         candidate when its recorded hash equals the main voice's. Only candidates are then
         re-checked: both files are hashed again, and a sidecar whose hash no longer matches
-        its file is reset (see _verify_voice_hash) before the final comparison.
+        its file is reset (see _verify_hash) before the final comparison.
         """
         try:
-            main_hash = cls._stored_voice_hash(main_path)
+            main_hash = cls._stored_hash(main_path)
             if not main_hash:
-                main_hash = cls._verify_voice_hash(main_path)
+                main_hash = cls._verify_hash(main_path)
             candidates = [
                 v for v in variant_paths
-                if (cls._stored_voice_hash(v) or cls._verify_voice_hash(v)) == main_hash
+                if (cls._stored_hash(v) or cls._verify_hash(v)) == main_hash
             ]
             if not candidates:
                 return None
-            verified_main_hash = cls._verify_voice_hash(main_path)
+            verified_main_hash = cls._verify_hash(main_path)
             for candidate in candidates:
-                if cls._verify_voice_hash(candidate) == verified_main_hash:
+                if cls._verify_hash(candidate) == verified_main_hash:
                     return candidate.stem
         except OSError:
             # A file-vanishing mid-scan only costs the selection highlight, not the listing.
@@ -206,14 +206,14 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             index += 1
         return candidate
 
-    def _copy_voice_with_metadata(self, source: Path, target: Path) -> None:
-        """Copy an MP3 and its metadata sidecar; drop the target's sidecar when the source has none."""
+    def _copy_with_metadata(self, source: Path, target: Path) -> None:
+        """Copy a voice or image file and its metadata sidecar; drop the target's sidecar when the source has none."""
         shutil.copyfile(source, target)
-        source_metadata = self._voice_metadata_path(source)
+        source_metadata = self._metadata_path(source)
         if source_metadata.is_file():
-            shutil.copyfile(source_metadata, self._voice_metadata_path(target))
+            shutil.copyfile(source_metadata, self._metadata_path(target))
         else:
-            self._voice_metadata_path(target).unlink(missing_ok=True)
+            self._metadata_path(target).unlink(missing_ok=True)
 
     def _keep_main_voice_as_variant(self, item_path: Path, item_folder_name: str, language: str) -> Path | None:
         """Return the variant the language's main voice was copied from, keeping the main as one if none matches.
@@ -232,7 +232,7 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             return source
         source = self._next_item_voice_variant_path(item_path, item_folder_name, language)
         try:
-            self._copy_voice_with_metadata(main, source)
+            self._copy_with_metadata(main, source)
         except OSError as exc:
             raise ContentOperationError(f"Failed to keep the original voice: {exc}") from exc
         return source
@@ -258,6 +258,38 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             None,
         )
         return (lang, match) if match else None
+
+    def _write_item_image(
+            self,
+            image_path: Path,
+            image_data: bytes,
+            creation_method: CreationMethod = CreationMethod.UPLOADED,
+            provider: str = "custom",
+            parameters: dict[str, object] | None = None,
+    ) -> None:
+        """Write an item image and its metadata sidecar (``{image}.csv``), like a voice and its sidecar.
+
+        By default the image is recorded as uploaded by the "custom" provider, as an uploaded
+        voice is; a generated image passes its text to image configuration and settings.
+        """
+        self._write_image_bytes(image_path, image_data)
+        try:
+            self._write_metadata(image_path, creation_method, provider, parameters)
+        except OSError as exc:
+            raise ContentOperationError(f"Failed to write the metadata of '{image_path.name}': {exc}") from exc
+
+    def _item_image(self, image_path: Path, file_uri: str) -> CategoryImage:
+        """Return the CategoryImage for *image_path*, with how its metadata sidecar says it was made.
+
+        A sidecar whose hash the image no longer matches (the file was changed behind the
+        application's back) is reset first (see _verify_hash), so a replaced image never
+        shows the prompt of the one it replaced.
+        """
+        if self._read_metadata_row(image_path) is not None:
+            with contextlib.suppress(OSError):  # an unverifiable sidecar is shown as recorded
+                self._verify_hash(image_path)
+        provider, parameters = self._read_metadata(image_path)
+        return CategoryImage(id=image_path.stem, file_uri=file_uri, provider=provider, parameters=parameters)
 
     def _item_thumbnail_and_count(
             self,
@@ -390,8 +422,8 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
                 # The item's first image is its main image, stored with no index suffix
                 # (e.g. "apple.png"), copied into "_01" so the item starts with a
                 # variant to edit/replace without touching the main image (see add_item_image).
-                self._write_image_bytes(item_path / f"{folder_name}{ext}", image_data)
-                self._write_image_bytes(item_path / f"{folder_name}_01{ext}", image_data)
+                self._write_item_image(item_path / f"{folder_name}{ext}", image_data)
+                self._write_item_image(item_path / f"{folder_name}_01{ext}", image_data)
 
             targets = [(category_path / _ITEMS_IDS, item_id)] + [
                 (category_path / _ITEMS_LANG_CSV.format(lang), words_by_lang[lang])
@@ -489,8 +521,8 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
     def _rename_item_folder(category_path: Path, old_name: str, new_name: str) -> None:
         """Move an item's folder to *new_name* and rename the files inside that carry the old name.
 
-        Item files are named after their folder ("apple.png", "apple_01.png", "apple_en.mp3",
-        "apple_en.csv", ...) and the main image/voice lookups depend on that, so the files have
+        Item files are named after their folder ("apple.png", "apple_01.png", "apple_01.csv",
+        "apple_en.mp3", "apple_en.csv", ...) and the main image/voice lookups depend on that, so the files have
         to follow the folder. All or nothing: on failure whatever was renamed is put back.
         """
         old_path = category_path / old_name
@@ -551,7 +583,8 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         variants (see set_main_item_image), *main_image_id* names the variant it was
         copied from, so callers can show which one is currently selected. If no dedicated
         main image exists yet (legacy data), the first variant is used as the thumbnail
-        and stays listed.
+        and stays listed. Each image carries what its metadata sidecar records about how it
+        was made (see _item_image).
         """
         category_name = self._folder_name_for_id(category_id)
         category_path = self._category_path(category_name)
@@ -574,7 +607,7 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
                             main_path = f
                             main_uri = file_uri
                             continue
-                        images.append(CategoryImage(id=f.stem, file_uri=file_uri))
+                        images.append(self._item_image(f, file_uri))
                         variant_paths.append(f)
         if main_path is None:
             return ItemImages(
@@ -607,7 +640,7 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         files = sorted(item_folder.iterdir()) if item_folder and item_folder.is_dir() else []
 
         def to_voice(voice_id: str, lang: str, path: Path | None) -> CategoryVoice:
-            provider, parameters = self._read_voice_metadata(path) if path else ("unknown", {})
+            provider, parameters = self._read_metadata(path) if path else ("unknown", {})
             return CategoryVoice(
                 id=voice_id,
                 language=lang,
@@ -637,6 +670,19 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             image_data: bytes,
             image_extension: str = ".png",
     ) -> CategoryImage:
+        return self._add_item_image(category_id, item_id, image_data, image_extension)
+
+    def _add_item_image(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+            self,
+            category_id: str,
+            item_id: str,
+            image_data: bytes,
+            image_extension: str = ".png",
+            creation_method: CreationMethod = CreationMethod.UPLOADED,
+            provider: str = "custom",
+            parameters: dict[str, object] | None = None,
+    ) -> CategoryImage:
+        """Store *image_data* as the item's next image variant, or its first image, recording how it was made."""
         category_name, category_path = self._validate_category_path(category_id)
         item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
 
@@ -650,19 +696,24 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             idx = self._first_available_item_image_index(item_path, item_folder_name)
             file_name = f"{item_folder_name}_{idx:02d}{ext}"
             image_path = item_path / file_name
-            self._write_image_bytes(image_path, image_data)
+            self._write_item_image(image_path, image_data, creation_method, provider, parameters)
         else:
             # No image yet: this one becomes the main image, stored with no index suffix,
             # copied into "_01" so the item starts with a variant to edit/replace
             # without touching the main image.
             file_name = f"{item_folder_name}{ext}"
             image_path = item_path / file_name
-            self._write_image_bytes(image_path, image_data)
-            self._write_image_bytes(item_path / f"{item_folder_name}_01{ext}", image_data)
+            self._write_item_image(image_path, image_data, creation_method, provider, parameters)
+            self._write_item_image(
+                item_path / f"{item_folder_name}_01{ext}", image_data, creation_method, provider, parameters,
+            )
 
+        recorded_provider, recorded_parameters = self._read_metadata(image_path)
         return CategoryImage(
             id=image_path.stem,
             file_uri=f"/content/{category_name}/{item_folder_name}/{file_name}",
+            provider=recorded_provider,
+            parameters=recorded_parameters,
         )
 
     def generate_item_image(
@@ -675,21 +726,30 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         """Generate an image from *prompt* and add it to the item like an uploaded one.
 
         Nothing is overwritten: the image becomes the next variant (or the item's first image).
+        Its metadata sidecar records the text to image configuration that generated it as the
+        provider, and that configuration's settings with the prompt ("_prompt") and, when one
+        was chosen explicitly, "configuration_name" as the parameters, as a generated voice's does.
         Generation problems, including no active text to image configuration, are reported as
         ContentOperationError.
         """
         prompt = prompt.strip()
         if not prompt:
             raise ContentOperationError("A prompt is required to generate an image.")
+        configuration_name = (configuration_name or "").strip() or None
         category_name, category_path = self._validate_category_path(category_id)
         item_folder_name, _ = self._resolve_item_path(category_path, category_name, item_id)
         try:
-            image_data, extension = self._generate_image(
-                prompt, item_folder_name, (configuration_name or "").strip() or None,
-            )
+            image_data, extension = self._generate_image(prompt, item_folder_name, configuration_name)
         except (ValueError, RuntimeError, httpx.HTTPError) as exc:
             raise ContentOperationError(f"Image generation failed: {exc}") from exc
-        return self.add_item_image(category_id, item_id, image_data, extension)
+        parameters = dict(getattr(image_data, "parameters", {}))
+        parameters["_prompt"] = prompt
+        if configuration_name:
+            parameters["configuration_name"] = configuration_name
+        return self._add_item_image(
+            category_id, item_id, image_data, extension,
+            CreationMethod.GENERATED, getattr(image_data, "provider", "unknown"), parameters,
+        )
 
     def update_item_image(
             self,
@@ -718,11 +778,15 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
                 raise ContentOperationError(
                     f"Failed to remove previous item image '{existing}': {exc}",
                 ) from exc
-        self._write_image_bytes(new_path, image_data)
+        # The sidecar is named after the stem, so it is the old image's one being replaced.
+        self._write_item_image(new_path, image_data)
 
+        provider, parameters = self._read_metadata(new_path)
         return CategoryImage(
             id=new_path.stem,
             file_uri=f"/content/{category_name}/{item_folder_name}/{new_path.name}",
+            provider=provider,
+            parameters=parameters,
         )
 
     def delete_item_image(self, category_id: str, item_id: str, image_id: str) -> CategoryImage:
@@ -741,20 +805,21 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         ]
 
         file_uri = f"/content/{category_name}/{item_folder_name}/{existing.name}"
+        provider, parameters = self._read_metadata(existing)
         was_main = existing.stem == item_folder_name
         try:
-            existing.unlink()
+            self._delete_with_metadata(existing)
             if was_main and remaining:
                 # The main image (no index suffix) was removed and other variants remain:
                 # re-point it at the lowest-indexed one by copying it, the same way
                 # set_main_item_image does, so that variant stays in the item. If nothing
                 # remains, the item is simply left with no images.
                 promoted = min(remaining, key=lambda f: f.name)
-                shutil.copyfile(promoted, item_path / f"{item_folder_name}{promoted.suffix}")
+                self._copy_with_metadata(promoted, item_path / f"{item_folder_name}{promoted.suffix}")
         except OSError as exc:
             raise ContentOperationError(f"Failed to delete item image: {exc}") from exc
 
-        return CategoryImage(id=image_id, file_uri=file_uri)
+        return CategoryImage(id=image_id, file_uri=file_uri, provider=provider, parameters=parameters)
 
     def set_main_item_image(self, category_id: str, item_id: str, image_id: str) -> ItemImages:
         category_name, category_path = self._validate_category_path(category_id)
@@ -771,8 +836,8 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
 
         # The main image is the one stored with no index suffix (e.g. "apple.png"), while
         # every other variant is indexed ("apple_01.png", "apple_02.png", ...). Making
-        # *target* the main image COPIES it over the main file: the variant itself stays
-        # exactly where it is, so the item keeps every image it had.
+        # *target* the main image COPIES it, with its metadata sidecar, over the main file:
+        # the variant itself stays exactly where it is, so the item keeps every image it had.
         main_path = self._find_item_image_by_id(item_path, item_folder_name)
         try:
             # The copy carries the source's extension, so a main image stored under a
@@ -780,7 +845,7 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             # unindexed file — item_images would then pick whichever sorted first.
             if main_path is not None and main_path.suffix != target.suffix:
                 main_path.unlink()
-            shutil.copyfile(target, item_path / f"{item_folder_name}{target.suffix}")
+            self._copy_with_metadata(target, item_path / f"{item_folder_name}{target.suffix}")
         except OSError as exc:
             raise ContentOperationError(f"Failed to set main image for item '{item_id}': {exc}") from exc
 
@@ -818,7 +883,7 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         self._keep_main_voice_as_variant(item_path, item_folder_name, language)
         main_path = main_path or self._item_voice_path(item_path, item_folder_name, language)
         try:
-            self._copy_voice_with_metadata(target, main_path)
+            self._copy_with_metadata(target, main_path)
         except OSError as exc:
             raise ContentOperationError(f"Failed to set main voice for item '{item_id}': {exc}") from exc
 
@@ -849,7 +914,7 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         strategy = self._voice_optimization_strategy()
 
         source = self._original_item_voice(item_path, item_folder_name, language, voice_id)
-        source_provider, source_parameters = self._read_voice_metadata(source)
+        source_provider, source_parameters = self._read_metadata(source)
         source_parameters.pop("date", None)
 
         optimized_ids: list[str] = []
@@ -862,9 +927,9 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             try:
                 self._optimize_audio_file(optimizer, source.resolve(), partial.resolve())
                 partial.replace(target)
-                self._write_voice_metadata(
+                self._write_metadata(
                     target,
-                    VoiceCreationMethod.OPTIMIZED,
+                    CreationMethod.OPTIMIZED,
                     source_provider,
                     {**source_parameters, "_optimizer": optimizer, "_source": source.stem},
                 )
@@ -908,7 +973,7 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         if source is None:
             raise CategoryNotFoundError(f"Voice '{voice_id}' has no audio to optimize.")
 
-        _, parameters = self._read_voice_metadata(source)
+        _, parameters = self._read_metadata(source)
         if parameters.get("_optimizer"):
             original = next((v for v in variants if v.stem == parameters.get("_source")), None)
             if original is None:
@@ -938,13 +1003,13 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             return target
         _, variants = self._split_item_voice_files(list(item_path.iterdir()), item_folder_name, language)
         for variant in variants:
-            _, parameters = self._read_voice_metadata(variant)
+            _, parameters = self._read_metadata(variant)
             if parameters.get("_optimizer") == optimizer and parameters.get("_source") == source_id:
                 try:
                     variant.rename(target)
-                    legacy_metadata = self._voice_metadata_path(variant)
+                    legacy_metadata = self._metadata_path(variant)
                     if legacy_metadata.is_file():
-                        legacy_metadata.rename(self._voice_metadata_path(target))
+                        legacy_metadata.rename(self._metadata_path(target))
                 except OSError as exc:
                     raise ContentOperationError(f"Failed to rename optimized voice '{variant.stem}': {exc}") from exc
                 break
@@ -988,11 +1053,11 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
                 voice_id = voice_path.stem
             with open(voice_path, "wb") as fh:
                 fh.write(audio_data)
-            self._write_voice_metadata(voice_path, VoiceCreationMethod.UPLOADED, provider="custom")
+            self._write_metadata(voice_path, CreationMethod.UPLOADED, provider="custom")
         except OSError as exc:
             raise ContentOperationError(f"Failed to save item voice: {exc}") from exc
 
-        provider, parameters = self._read_voice_metadata(voice_path)
+        provider, parameters = self._read_metadata(voice_path)
         return CategoryVoice(
             id=voice_id,
             language=language,
@@ -1016,11 +1081,11 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         try:
             with open(voice_path, "wb") as fh:
                 fh.write(audio_data)
-            self._write_voice_metadata(voice_path, VoiceCreationMethod.UPLOADED, provider="custom")
+            self._write_metadata(voice_path, CreationMethod.UPLOADED, provider="custom")
         except OSError as exc:
             raise ContentOperationError(f"Failed to update item voice: {exc}") from exc
 
-        provider, parameters = self._read_voice_metadata(voice_path)
+        provider, parameters = self._read_metadata(voice_path)
         return CategoryVoice(
             id=voice_id,
             language=language,
@@ -1081,7 +1146,7 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         # A recording's optimized files are made from it and go with it.
         deleted_ids = {path.stem for path in paths}
         for variant in variants:
-            _, parameters = self._read_voice_metadata(variant)
+            _, parameters = self._read_metadata(variant)
             if variant not in paths and parameters.get("_optimizer") and parameters.get("_source") in deleted_ids:
                 paths.append(variant)
         # A main voice that is a copy of a deleted optimized file would otherwise be left behind.
@@ -1106,12 +1171,12 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             )
         language, voice_path = found
         file_uri = f"/content/{category_name}/{item_folder_name}/{voice_path.name}"
-        provider, parameters = self._read_voice_metadata(voice_path)
+        provider, parameters = self._read_metadata(voice_path)
         paths = self._item_voice_paths_to_delete(item_path, item_folder_name, language, voice_path)
 
         try:
             for path in paths:
-                self._delete_voice_with_metadata(path)
+                self._delete_with_metadata(path)
         except OSError as exc:
             raise ContentOperationError(f"Failed to delete item voice: {exc}") from exc
 
@@ -1150,7 +1215,7 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
 
         voice_path, first_take = self._add_item_voice_take(item_path, item_folder_name, language, audio_bytes, word)
 
-        provider, parameters = self._read_voice_metadata(voice_path)
+        provider, parameters = self._read_metadata(voice_path)
         return CategoryVoice(
             id=f"{item_folder_name}-v-{language}" if first_take else voice_path.stem,
             language=language,

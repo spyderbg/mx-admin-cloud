@@ -320,17 +320,6 @@ export function dropImageFileRequiredLabel(lang: Language): string {
   return labels[lang] ?? labels.en
 }
 
-/** Label for the image generator metadata field. */
-export function generatorLabel(lang: Language): string {
-  const labels: Record<Language, string> = {
-    en: 'Generator',
-    es: 'Generador',
-    fr: 'Générateur',
-    bg: 'Генератор',
-  }
-  return labels[lang] ?? labels.en
-}
-
 /** Label for the image-generation prompt metadata field. */
 export function promptLabel(lang: Language): string {
   const labels: Record<Language, string> = {
@@ -1292,4 +1281,35 @@ const generateImageLabels = {
 /** Text for the generate-image dialog; unknown `lang` falls back to English. */
 export function generateImageLabel(key: keyof typeof generateImageLabels, lang: Language): string {
   return generateImageLabels[key][lang] ?? generateImageLabels[key].en
+}
+
+const imageCardLabels = {
+  provider: { en: 'Provider', es: 'Proveedor', fr: 'Fournisseur', bg: 'Доставчик' },
+  copyPrompt: { en: 'Copy prompt', es: 'Copiar indicación', fr: 'Copier l’invite', bg: 'Копирай подканата' },
+  copied: { en: 'Copied', es: 'Copiado', fr: 'Copié', bg: 'Копирано' },
+  copyError: {
+    en: 'Could not copy the prompt. Please try again.',
+    es: 'No se pudo copiar la indicación. Inténtalo de nuevo.',
+    fr: 'Impossible de copier l’invite. Réessayez.',
+    bg: 'Подканата не може да бъде копирана. Опитайте отново.',
+  },
+  showMore: { en: 'Show more', es: 'Mostrar más', fr: 'Afficher plus', bg: 'Покажи повече' },
+  showLess: { en: 'Show less', es: 'Mostrar menos', fr: 'Afficher moins', bg: 'Покажи по-малко' },
+  uploaded: {
+    en: 'Uploaded image, no prompt.',
+    es: 'Imagen subida, sin indicación.',
+    fr: 'Image importée, sans invite.',
+    bg: 'Качено изображение, без подкана.',
+  },
+  noPrompt: {
+    en: 'No prompt recorded.',
+    es: 'No hay indicación registrada.',
+    fr: 'Aucune invite enregistrée.',
+    bg: 'Няма записана подкана.',
+  },
+} satisfies Record<string, Record<Language, string>>
+
+/** Text for an item image card's generation details; unknown `lang` falls back to English. */
+export function imageCardLabel(key: keyof typeof imageCardLabels, lang: Language): string {
+  return imageCardLabels[key][lang] ?? imageCardLabels[key].en
 }

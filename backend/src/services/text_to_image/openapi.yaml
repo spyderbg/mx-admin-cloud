@@ -264,9 +264,11 @@ paths:
       summary: Generate an image and return the raw bytes
       description: Generate an image for a prompt and return the raw image bytes, using
         the image configuration named by 'provider' or, without it, the first active
-        one that succeeds. Responds with HTTP 400 when the prompt is empty, HTTP 404
-        when 'provider' is not an active configuration, HTTP 500 when generation fails,
-        and HTTP 503 when no active image providers are configured.
+        one that succeeds. The 'X-Image-Provider' header names the configuration that
+        generated the image and 'X-Image-Parameters' carries its generation settings
+        as base64-encoded JSON. Responds with HTTP 400 when the prompt is empty, HTTP
+        404 when 'provider' is not an active configuration, HTTP 500 when generation
+        fails, and HTTP 503 when no active image providers are configured.
       operationId: generate_image_internal_image_generators_generate_image_post
       requestBody:
         content:

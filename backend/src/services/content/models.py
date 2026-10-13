@@ -95,10 +95,17 @@ class ItemDetail:
 
 @dataclass
 class CategoryImage:
-    """A single image file belonging to a category or item."""
+    """A single image file belonging to a category or item.
+
+    *provider* and *parameters* tell how an item image was made, from its metadata sidecar:
+    the text to image configuration and its settings (with the prompt as "_prompt") for a
+    generated image, "custom" for an uploaded one, and "unknown" when nothing is recorded.
+    """
 
     id: str = ""
     file_uri: str | None = None
+    provider: str = "unknown"
+    parameters: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass

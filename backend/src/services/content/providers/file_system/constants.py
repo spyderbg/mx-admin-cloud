@@ -18,11 +18,11 @@ _CATEGORY_VOICE_MP3 = "{}_{}.mp3"
 # the root CSV registry rows that archive_category() deletes.
 _ARCHIVE_MANIFEST = "_category.json"
 
-_VOICE_METADATA_COLUMNS = ("creation_method", "provider", "parameters", "hash")
+_METADATA_COLUMNS = ("creation_method", "provider", "parameters", "hash")
 
 
-class VoiceCreationMethod(str, Enum):
-    """Supported voice provenance values stored in metadata sidecars."""
+class CreationMethod(str, Enum):
+    """How a voice or item image came to be, as recorded in its metadata sidecar."""
 
     UPLOADED = "uploaded"
     GENERATED = "generated"

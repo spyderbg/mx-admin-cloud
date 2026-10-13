@@ -26,8 +26,17 @@ def _extension_for_content_type(content_type: str | None) -> str:
     return ".png"
 
 
-class _GeneratedAudioBytes(bytes):
-    """Audio payload carrying the provider reported by the internal TTS API."""
+def _decode_parameters_header(value: str) -> dict[str, object]:
+    """Decode generation parameters sent as base64-encoded JSON; {} when absent or malformed."""
+    try:
+        parameters = json.loads(base64.urlsafe_b64decode(value).decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return {}
+    return parameters if isinstance(parameters, dict) else {}
+
+
+class _GeneratedBytes(bytes):
+    """Generated audio or image payload carrying the provider and parameters the internal API reported."""
 
     provider: str
     parameters: dict[str, object]
@@ -124,17 +133,10 @@ class FileSystemInternalApiMixin(ContentProvider):  # pylint: disable=abstract-m
         )
         if response.is_error:
             raise RuntimeError(cls._extract_error_detail(response))
-        encoded_parameters = response.headers.get("X-TTS-Parameters", "")
-        try:
-            parameters = json.loads(base64.urlsafe_b64decode(encoded_parameters).decode("utf-8"))
-        except (ValueError, UnicodeDecodeError):
-            parameters = {}
-        if not isinstance(parameters, dict):
-            parameters = {}
-        return _GeneratedAudioBytes(
+        return _GeneratedBytes(
             response.content,
             response.headers.get("X-TTS-Provider", "unknown"),
-            parameters,
+            _decode_parameters_header(response.headers.get("X-TTS-Parameters", "")),
         )
 
     @classmethod
@@ -200,8 +202,10 @@ class FileSystemInternalApiMixin(ContentProvider):  # pylint: disable=abstract-m
 
         Returns the raw bytes plus the file extension implied by the response
         content type, so whichever image provider is active (and however it
-        encodes the result) decides the format. *configuration_name* picks one active image
-        configuration; without it the first active one that succeeds is used.
+        encodes the result) decides the format. The bytes carry the configuration that
+        generated them as ``provider`` and its generation settings as ``parameters``.
+        *configuration_name* picks one active image configuration; without it the first
+        active one that succeeds is used.
         """
         if not prompt or not prompt.strip():
             raise ValueError("Prompt must be non-empty for image generation.")
@@ -216,4 +220,9 @@ class FileSystemInternalApiMixin(ContentProvider):  # pylint: disable=abstract-m
         )
         if response.is_error:
             raise RuntimeError(cls._extract_error_detail(response))
-        return response.content, _extension_for_content_type(response.headers.get("content-type"))
+        image = _GeneratedBytes(
+            response.content,
+            response.headers.get("X-Image-Provider", "unknown"),
+            _decode_parameters_header(response.headers.get("X-Image-Parameters", "")),
+        )
+        return image, _extension_for_content_type(response.headers.get("content-type"))

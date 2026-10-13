@@ -32,12 +32,22 @@ export interface Voice {
     optimizedFileUri?: string
 }
 
+/** How an item image was made, as recorded in its metadata sidecar. */
+export interface ImageMetadata {
+    /** Text-to-image configuration that generated it, "custom" when uploaded, "unknown" when not recorded. */
+    provider: string
+    /** Generation settings; a generated image's prompt is `_prompt`. */
+    parameters: Record<string, unknown>
+}
+
 export interface Item {
     id: string
     name: string
     /** Localized item names returned in the category summary. */
     localizedName?: LocalizedString
     images: string[]
+    /** How each entry of `images` was made, keyed by image id (the file name stem). */
+    imageMetadata?: Record<string, ImageMetadata>
     voices: Voice[]
     thumbnailUri: string
     /**

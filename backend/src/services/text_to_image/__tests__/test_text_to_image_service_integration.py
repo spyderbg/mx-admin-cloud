@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import base64
+import json
 from pathlib import Path
 from typing import Any
 
@@ -331,6 +333,20 @@ async def test_generate_image_success(client_active: AsyncClient) -> None:
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/png"
     assert response.content == b"FAKEIMAGE"
+
+
+@pytest.mark.asyncio
+async def test_generate_image_reports_the_configuration_and_its_settings(client_active: AsyncClient) -> None:
+    response = await client_active.post(
+        "/internal/image-generators/generate-image",
+        json={"prompt": "a friendly cat"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["X-Image-Provider"] == "stub"
+    parameters = json.loads(base64.urlsafe_b64decode(response.headers["X-Image-Parameters"]))
+    # The inline workflow stays out, as it does in the list response.
+    assert parameters == {"model": "stub-model", "size": "1024x1024", "quality": "low", "output_format": "png"}
 
 
 @pytest.mark.asyncio

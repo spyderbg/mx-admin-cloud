@@ -723,7 +723,12 @@ async def test_generate_item_image_returns_the_new_variant(tmp_resolved: Path) -
         def generate_item_image(self, category_id: str, item_id: str, prompt: str,
                                 configuration_name: str | None = None) -> CategoryImage:
             seen.append((category_id, item_id, prompt, configuration_name))
-            return CategoryImage(id="apple_02", file_uri="/content/foods/apple/apple_02.png")
+            return CategoryImage(
+                id="apple_02",
+                file_uri="/content/foods/apple/apple_02.png",
+                provider="comfyui",
+                parameters={"_prompt": prompt, "steps": 20},
+            )
 
     app = make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
@@ -731,7 +736,13 @@ async def test_generate_item_image_returns_the_new_variant(tmp_resolved: Path) -
         without_configuration = await c.post(_IMAGE_GENERATE_URL, json={"prompt": "a green pear"})
 
     assert response.status_code == 201
-    assert response.json() == {"id": "apple_02", "file_uri": "/content/foods/apple/apple_02.png", "action": "add"}
+    assert response.json() == {
+        "id": "apple_02",
+        "file_uri": "/content/foods/apple/apple_02.png",
+        "action": "add",
+        "provider": "comfyui",
+        "parameters": {"_prompt": "a red apple", "steps": 20},
+    }
     assert without_configuration.status_code == 201
     assert seen == [
         ("C_Foods", "I_Apple", "a red apple", "comfyui"),

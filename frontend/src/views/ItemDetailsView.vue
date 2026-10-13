@@ -120,8 +120,8 @@
           :key="card.index"
           :src="card.src"
           :title="card.title"
-          :generator="card.generator"
-          :prompt="card.prompt"
+          :heading="card.heading"
+          :metadata="card.metadata"
           :file-name="fileNameFromUri(rawItemImages[card.index])"
           :is-main="card.isMain"
           :select-disabled="isSettingMainImage"
@@ -530,10 +530,11 @@ const imageCards = computed(() =>
       index,
       isMain,
       title: `${breadcrumbItem.value} image ${index + 1}`,
-      generator: isMain
+      heading: isMain
         ? mainItemImageLabel(contentLanguage.value)
         : imageVariantLabel(contentLanguage.value, index + 1),
-      prompt: `${sourceFileLabel(contentLanguage.value)}: ${fileNameFromUri(rawUri)}`,
+      // The configuration and prompt recorded when the image was generated, if any.
+      metadata: item.value?.imageMetadata?.[imageIdFromUri(rawUri)],
     }
   }),
 )

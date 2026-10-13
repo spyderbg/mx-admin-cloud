@@ -512,6 +512,14 @@ components:
           anyOf:
           - $ref: '#/components/schemas/FileAction'
           - type: 'null'
+        provider:
+          type: string
+          title: Provider
+          default: unknown
+        parameters:
+          additionalProperties: true
+          type: object
+          title: Parameters
       type: object
       required:
       - id

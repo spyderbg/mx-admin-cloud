@@ -1,6 +1,6 @@
 import { ref, shallowRef } from 'vue'
 import type { AxiosError } from 'axios'
-import type { ArchivedCategory, CategoryFull, Item, Voice } from '../types/viewModels'
+import type { ArchivedCategory, CategoryFull, ImageMetadata, Item, Voice } from '../types/viewModels'
 import { LocalizedString } from '../types/viewModels'
 import {
   categoriesList,
@@ -10,7 +10,7 @@ import {
   itemsImagesList,
   itemsVoicesList,
 } from './contentClient'
-import type { ItemImagesResponse, ItemSummary } from '../types/contentSchemas'
+import type { ImageResponse, ItemImagesResponse, ItemSummary } from '../types/contentSchemas'
 
 // ---------------------------------------------------------------------------
 // In-flight promise deduplication
@@ -135,6 +135,13 @@ const normalizeImages = (raw: unknown, fallback: string[]): string[] => {
   }
   return fallback
 }
+
+/** How each item image was made, keyed by image id. */
+const normalizeImageMetadata = (images: ImageResponse[] | undefined): Record<string, ImageMetadata> =>
+  Object.fromEntries((images ?? []).map((image) => [image.id, {
+    provider: image.provider || 'unknown',
+    parameters: image.parameters && typeof image.parameters === 'object' ? image.parameters : {},
+  }]))
 
 /** Preserve an explicitly returned null thumbnail; only use a fallback when the
  * response predates the thumbnail field entirely. */
@@ -459,6 +466,7 @@ export const ensureItemDetail = async (
             ? new LocalizedString(itemNamesDict)
             : items[itemIdx].localizedName,
           images,
+          imageMetadata: normalizeImageMetadata(imagesResponse.images),
           voices,
           thumbnailUri,
           mainImageId: imagesResponse.main_image_id ?? undefined,
@@ -520,6 +528,7 @@ export const updateCachedItemImages = (
       ? new LocalizedString(nameDict)
       : cachedItem.localizedName,
     images,
+    imageMetadata: normalizeImageMetadata(response.images),
     thumbnailUri,
     mainImageId: response.main_image_id ?? undefined,
     // `itemsImagesSetMain` returns variants plus a separate main thumbnail; retain

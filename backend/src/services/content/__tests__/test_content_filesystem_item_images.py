@@ -4,6 +4,9 @@
 
 from __future__ import annotations
 
+import csv
+import hashlib
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -14,7 +17,8 @@ from src.services.content.models import (
     CategoryNotFoundError,
     ContentOperationError,
 )
-from src.services.content.providers.file_system import FileSystemContentProvider
+from src.services.content.providers.file_system import CreationMethod, FileSystemContentProvider
+from src.services.content.providers.file_system.internal_api import _GeneratedBytes
 from src.services.content.__tests__.content_fs_helpers import (
     patch_fs_settings,
     make_fs_provider,
@@ -433,3 +437,156 @@ def test_generate_item_image_requires_a_prompt(tmp_path: Path) -> None:
         mock_settings.content_path = content_root
         with pytest.raises(ContentOperationError, match="prompt"):
             provider.generate_item_image("C_Foods", "I_Apple", "   ")
+
+
+# ---------------------------------------------------------------------------
+# Image metadata sidecars ({image}.csv), kept like the voices' ones
+# ---------------------------------------------------------------------------
+
+_GENERATED = _GeneratedBytes(b"generated", "comfyui", {"model": "sdxl", "steps": 20, "output_format": "png"})
+
+
+def _sidecar(image_path: Path) -> dict[str, str]:
+    with image_path.with_suffix(".csv").open(encoding="utf-8", newline="") as file_handle:
+        return next(csv.DictReader(file_handle))
+
+
+def _generate(provider: FileSystemContentProvider, prompt: str = "a red apple",
+              configuration_name: str | None = None, extension: str = ".png"):
+    with patch.object(FileSystemContentProvider, "_generate_image", return_value=(_GENERATED, extension)):
+        return provider.generate_item_image("C_Foods", "I_Apple", prompt, configuration_name)
+
+
+def test_generate_item_image_records_the_prompt_and_configuration_in_a_sidecar(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_images(tmp_path, {"apple": b"main", "apple_01": b"main"})
+    provider = make_fs_provider()
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        result = _generate(provider, "  a red apple  ", "comfyui")
+
+    row = _sidecar(item_path / "apple_02.png")
+    parameters = json.loads(row["parameters"])
+    assert (row["creation_method"], row["provider"]) == ("generated", "comfyui")
+    assert row["hash"] == hashlib.sha256(b"generated").hexdigest()
+    assert parameters.pop("date")
+    assert parameters == {
+        "model": "sdxl", "steps": 20, "output_format": "png",
+        "_prompt": "a red apple", "configuration_name": "comfyui",
+    }
+    assert result.provider == "comfyui"
+    assert result.parameters["_prompt"] == "a red apple"
+    assert not (item_path / "apple.csv").exists()  # the main image is left as it was
+
+
+def test_generate_item_image_first_image_records_the_main_image_and_its_variant(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_images(tmp_path, {})
+    provider = make_fs_provider()
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        result = _generate(provider)
+
+    assert result.id == "apple"
+    for name in ("apple.png", "apple_01.png"):
+        row = _sidecar(item_path / name)
+        assert (row["creation_method"], row["provider"]) == ("generated", "comfyui")
+        # No configuration was chosen, so none is recorded as chosen.
+        assert "configuration_name" not in json.loads(row["parameters"])
+
+
+def test_add_item_image_records_an_upload_by_the_custom_provider(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_images(tmp_path, {"apple": b"main", "apple_01": b"main"})
+    provider = make_fs_provider()
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        result = provider.add_item_image("C_Foods", "I_Apple", b"uploaded", ".png")
+
+    row = _sidecar(item_path / "apple_02.png")
+    assert (row["creation_method"], row["provider"]) == ("uploaded", "custom")
+    assert list(json.loads(row["parameters"])) == ["date"]
+    assert row["hash"] == hashlib.sha256(b"uploaded").hexdigest()
+    assert result.provider == "custom"
+
+
+def test_item_images_lists_each_variant_with_its_recorded_metadata(tmp_path: Path) -> None:
+    content_root, _ = _prepare_item_with_images(tmp_path, {"apple": b"main", "apple_01": b"main"})
+    provider = make_fs_provider()
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        _generate(provider, "a red apple", "comfyui")
+        provider.add_item_image("C_Foods", "I_Apple", b"uploaded", ".png")
+        result = provider.item_images("C_Foods", "I_Apple")
+
+    by_id = {image.id: image for image in result.images}
+    assert (by_id["apple_01"].provider, by_id["apple_01"].parameters) == ("unknown", {})
+    assert by_id["apple_02"].provider == "comfyui"
+    assert by_id["apple_02"].parameters["_prompt"] == "a red apple"
+    assert by_id["apple_03"].provider == "custom"
+
+
+def test_item_images_resets_the_metadata_of_an_image_changed_on_disk(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_images(tmp_path, {"apple": b"main", "apple_01": b"main"})
+    provider = make_fs_provider()
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        _generate(provider)
+        (item_path / "apple_02.png").write_bytes(b"edited elsewhere")
+        result = provider.item_images("C_Foods", "I_Apple")
+
+    image = next(image for image in result.images if image.id == "apple_02")
+    assert (image.provider, image.parameters) == ("custom", {})
+    row = _sidecar(item_path / "apple_02.png")
+    assert row["creation_method"] == "unknown"
+    assert row["hash"] == hashlib.sha256(b"edited elsewhere").hexdigest()
+
+
+def test_set_main_item_image_copies_the_variant_metadata_with_it(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_images(tmp_path, {"apple": b"main"})
+    provider = make_fs_provider()
+    provider._write_metadata(item_path / "apple.png", CreationMethod.UPLOADED, "custom")
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        _generate(provider)
+        provider.set_main_item_image("C_Foods", "I_Apple", "apple_01")
+
+    assert (item_path / "apple.csv").read_text() == (item_path / "apple_01.csv").read_text()
+
+
+def test_set_main_item_image_drops_the_main_metadata_when_the_variant_has_none(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_images(tmp_path, {"apple": b"main", "apple_01": b"legacy"})
+    provider = make_fs_provider()
+    provider._write_metadata(item_path / "apple.png", CreationMethod.UPLOADED, "custom")
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        provider.set_main_item_image("C_Foods", "I_Apple", "apple_01")
+
+    assert not (item_path / "apple.csv").exists()
+
+
+def test_delete_item_image_removes_its_metadata_and_a_promoted_main_takes_the_variants(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_images(tmp_path, {"apple": b"main"})
+    provider = make_fs_provider()
+    provider._write_metadata(item_path / "apple.png", CreationMethod.UPLOADED, "custom")
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        _generate(provider)
+        provider.delete_item_image("C_Foods", "I_Apple", "apple")
+        assert (item_path / "apple.csv").read_text() == (item_path / "apple_01.csv").read_text()
+        deleted = provider.delete_item_image("C_Foods", "I_Apple", "apple_01")
+
+    assert not (item_path / "apple_01.csv").exists()
+    assert (item_path / "apple.csv").exists()  # the main image keeps its own copy
+    assert deleted.provider == "comfyui"
+
+
+def test_update_item_image_records_the_replacement_as_an_upload(tmp_path: Path) -> None:
+    content_root, item_path = _prepare_item_with_images(tmp_path, {"apple": b"main", "apple_01": b"main"})
+    provider = make_fs_provider()
+    with patch_fs_settings() as mock_settings:
+        mock_settings.content_path = content_root
+        _generate(provider, extension=".jpg")
+        result = provider.update_item_image("C_Foods", "I_Apple", "apple_02", b"replacement", ".png")
+
+    row = _sidecar(item_path / "apple_02.png")
+    assert (row["creation_method"], row["provider"]) == ("uploaded", "custom")
+    assert "_prompt" not in json.loads(row["parameters"])
+    assert result.provider == "custom"

@@ -274,8 +274,15 @@ function onDrop(event: DragEvent): void {
 .iv-is-selected, .iv-is-selected:disabled { background: #e1f2eb; border-color: #e1f2eb; color: #24704f; opacity: 1; }
 .iv-button:disabled:not(.iv-is-selected), .iv-card-action:disabled { opacity: .5; cursor: default; }
 button:focus-visible { outline: 3px solid #a5b4fc; outline-offset: 2px; }
-/* Three columns need about 110px each; below that the details stack, whatever the screen width. */
-@container (max-width: 360px) {
+/* Narrow cards: size the columns to their content so short values leave room for long ones. */
+@container (max-width: 340px) {
+  .iv-card-meta { grid-auto-columns: minmax(0, auto); }
+  .iv-description-field { padding-inline: .4rem; font-size: .7rem; }
+  .iv-description-field :deep(.jdp-trigger) { font-size: .76rem; }
+  .iv-description-field :deep(.jdp-copy) { width: 16px; }
+}
+/* Measured on the card's content width. Three columns of about 90px still read; only below that the details stack. */
+@container (max-width: 260px) {
   .iv-card-meta { grid-auto-flow: row; grid-template-columns: minmax(0, 1fr); grid-template-rows: none; row-gap: .2rem; }
   .iv-description-field + .iv-description-field { border-left: 0; border-top: 1px solid #e5edf8; }
 }

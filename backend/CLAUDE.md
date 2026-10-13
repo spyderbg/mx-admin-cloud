@@ -168,12 +168,20 @@ content/<category>/
 ├── <item>/                          # named after the item id: I_WaterBottle -> water_bottle
 │   ├── <item>.png                   # main image (a copy of one variant)
 │   ├── <item>_01.png, <item>_02.jpg # image variants
+│   ├── <item>.csv, <item>_01.csv    # image metadata sidecars: generated images record the text to image configuration (provider), its settings and the "_prompt"
 │   └── <item>_en.mp3, <item>_en_01.mp3, <item>_en_01_<optimizer>.mp3, <item>_en.csv, ...  # voices, voice variants, optimized variants (named after their source and the optimizer configuration), metadata sidecars
 ├── items_ids.csv, items_<lang>.csv  # row-aligned registry: id, then the name per language
 └── <category>.png, <category>_en.mp3, ...   # category icon and voices
 
 archive/<category>_<unix_timestamp>/   # Deleted categories
 ```
+
+Images and voices share one metadata sidecar format: a one-row `<file stem>.csv` with `creation_method`
+(`generated`, `uploaded`, `optimized`, `unknown`), `provider` (the configuration that generated the file, `custom`
+for an upload), `parameters` (JSON, stamped with a `date`) and the file's `hash`. A sidecar is copied with its file
+when that becomes the main image/voice and deleted with it; one whose hash no longer matches its file is reset to
+`unknown` (`_verify_hash`). The text to image service reports the configuration and its settings in the
+`X-Image-Provider` / `X-Image-Parameters` headers, like text to speech does with `X-TTS-*`.
 
 An item's folder is derived from its **id only** (`_folder_name_from_item_id`), never from its names:
 editing an item's English word leaves the folder alone, while changing its id renames the folder

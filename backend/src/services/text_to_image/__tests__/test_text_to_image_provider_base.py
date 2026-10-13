@@ -289,3 +289,33 @@ async def test_provider_name_is_sanitised_for_the_output_path(
     assert result.success is True
     assert result.raw_path.parent.name == "runtime-upload"
     assert result.raw_path.exists()
+
+
+def test_generation_parameters_resolve_the_request_over_the_generate_config(tmp_path: Path) -> None:
+    provider = _ScriptedProvider(
+        tmp_path,
+        [],
+        config={
+            "generate": {
+                "model": "test-model",
+                "size": "1024x1024",
+                "steps": 20,
+                "prompt_prefix": "flat icon:",
+                "negative_prompt": "",
+                "workflow": {"3": {"class_type": "KSampler"}},
+                "headers": {"Authorization": "Bearer secret"},
+            },
+        },
+    )
+
+    parameters = provider.generation_parameters(_request(size="512x512", quality="high", seed=7))
+
+    assert parameters == {
+        "model": "test-model",
+        "size": "512x512",
+        "quality": "high",
+        "seed": 7,
+        "steps": 20,
+        "prompt_prefix": "flat icon:",
+        "negative_prompt": "",
+    }

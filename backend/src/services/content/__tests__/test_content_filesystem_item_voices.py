@@ -18,9 +18,9 @@ from src.services.content.models import (
 )
 from src.services.content.providers.file_system import (
     FileSystemContentProvider,
-    VoiceCreationMethod,
+    CreationMethod,
 )
-from src.services.content.providers.file_system.internal_api import _GeneratedAudioBytes
+from src.services.content.providers.file_system.internal_api import _GeneratedBytes
 from src.services.provider_strategy import ProviderSelectionStrategy
 from src.services.content.__tests__.content_fs_helpers import (
     patch_fs_settings,
@@ -95,9 +95,9 @@ def test_set_main_item_voice_copies_the_variant_and_its_metadata_over_the_main_v
     with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en"]
-        provider._write_voice_metadata(item_path / "apple_en.mp3", VoiceCreationMethod.UPLOADED, "custom")
-        provider._write_voice_metadata(
-            item_path / "apple_en_02.mp3", VoiceCreationMethod.GENERATED, "openai", {"actor": "alloy"},
+        provider._write_metadata(item_path / "apple_en.mp3", CreationMethod.UPLOADED, "custom")
+        provider._write_metadata(
+            item_path / "apple_en_02.mp3", CreationMethod.GENERATED, "openai", {"actor": "alloy"},
         )
         result = provider.set_main_item_voice("C_Foods", "I_Apple", "apple_en_02")
 
@@ -120,7 +120,7 @@ def test_set_main_item_voice_drops_stale_metadata_when_the_variant_has_none(tmp_
     with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en"]
-        provider._write_voice_metadata(item_path / "apple_en.mp3", VoiceCreationMethod.UPLOADED, "custom")
+        provider._write_metadata(item_path / "apple_en.mp3", CreationMethod.UPLOADED, "custom")
         provider.set_main_item_voice("C_Foods", "I_Apple", "apple_en_01")
 
     assert (item_path / "apple_en.mp3").read_bytes() == b"first-en"
@@ -446,8 +446,8 @@ def test_optimize_item_voice_keeps_the_original_and_adds_one_variant_per_optimiz
     content_root, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"original"})
     provider = make_fs_provider()
     with patch_fs_settings():
-        provider._write_voice_metadata(
-            item_path / "apple_en.mp3", VoiceCreationMethod.GENERATED, "openai", {"_text": "apple"},
+        provider._write_metadata(
+            item_path / "apple_en.mp3", CreationMethod.GENERATED, "openai", {"_text": "apple"},
         )
 
     result, calls = _optimize(content_root, "apple-v-en", ["ffmpeg_low", "pydub_optimized"])
@@ -494,8 +494,8 @@ def test_optimize_item_voice_renames_output_stored_under_a_take_number(tmp_path:
     provider = make_fs_provider()
     (item_path / "apple_en_02.mp3").write_bytes(b"old")
     with patch_fs_settings():
-        provider._write_voice_metadata(
-            item_path / "apple_en_02.mp3", VoiceCreationMethod.OPTIMIZED, "openai",
+        provider._write_metadata(
+            item_path / "apple_en_02.mp3", CreationMethod.OPTIMIZED, "openai",
             {"_optimizer": "ffmpeg_low", "_source": "apple_en_01"},
         )
 
@@ -778,7 +778,7 @@ def test_generate_item_voice_sends_the_text_configuration_and_settings(tmp_path:
 
 def test_generate_item_voice_records_the_configuration_and_text(tmp_path: Path) -> None:
     content_root, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"original"})
-    audio = _GeneratedAudioBytes(b"generated", "elevenlabs", {"actor": "Milena", "speed": 0.8})
+    audio = _GeneratedBytes(b"generated", "elevenlabs", {"actor": "Milena", "speed": 0.8})
 
     result, _ = _generate(content_root, _request(text="red apple", speed=0.8), audio=audio)
 
@@ -899,7 +899,7 @@ def _sha256(data: bytes) -> str:
 
 def test_voice_sidecar_records_the_hash_of_the_voice_file(tmp_path: Path) -> None:
     _, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"main-en"})
-    make_fs_provider()._write_voice_metadata(item_path / "apple_en.mp3", VoiceCreationMethod.UPLOADED, "custom")
+    make_fs_provider()._write_metadata(item_path / "apple_en.mp3", CreationMethod.UPLOADED, "custom")
 
     assert voice_metadata(item_path / "apple_en.csv")["hash"] == _sha256(b"main-en")
 
@@ -910,7 +910,7 @@ def test_main_voice_matches_the_variant_with_the_same_hash(tmp_path: Path) -> No
     })
     provider = make_fs_provider()
     for name in ("apple_en", "apple_en_01", "apple_en_02"):
-        provider._write_voice_metadata(item_path / f"{name}.mp3", VoiceCreationMethod.UPLOADED, "custom")
+        provider._write_metadata(item_path / f"{name}.mp3", CreationMethod.UPLOADED, "custom")
     with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en"]
@@ -923,8 +923,8 @@ def test_changed_voice_file_resets_its_sidecar_and_is_no_longer_the_main_copy(tm
     content_root, item_path = _prepare_item_with_voices(tmp_path, {"apple_en": b"same", "apple_en_01": b"same"})
     provider = make_fs_provider()
     for name in ("apple_en", "apple_en_01"):
-        provider._write_voice_metadata(
-            item_path / f"{name}.mp3", VoiceCreationMethod.GENERATED, "openai", {"actor": "alloy"},
+        provider._write_metadata(
+            item_path / f"{name}.mp3", CreationMethod.GENERATED, "openai", {"actor": "alloy"},
         )
     # The variant's recorded hash still equals the main's, but its MP3 was replaced outside the app.
     (item_path / "apple_en_01.mp3").write_bytes(b"replaced")
@@ -1042,8 +1042,8 @@ def test_delete_item_voice_removes_its_optimized_files_and_keeps_other_takes(tmp
                 ("apple_en_01_pydub_optimized", "apple_en_01", "pydub_optimized"),
                 ("apple_en_02_ffmpeg_low", "apple_en_02", "ffmpeg_low"),
         ):
-            provider._write_voice_metadata(
-                item_path / f"{stem}.mp3", VoiceCreationMethod.OPTIMIZED, "openai",
+            provider._write_metadata(
+                item_path / f"{stem}.mp3", CreationMethod.OPTIMIZED, "openai",
                 {"_optimizer": optimizer, "_source": source},
             )
         provider.delete_item_voice("C_Foods", "I_Apple", "apple_en_01")

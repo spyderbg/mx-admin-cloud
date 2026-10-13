@@ -43,6 +43,9 @@ _EXTENSION_TO_MIME = {
 
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
+# ``generate`` keys left out of the parameters recorded for a generated image.
+_UNRECORDED_GENERATE_KEYS = frozenset({"workflow", "headers"})
+
 
 @dataclass(slots=True)
 class ImageRequest:  # pylint: disable=too-many-instance-attributes
@@ -221,6 +224,24 @@ class TextToImageProvider(ServiceProvider, ABC):
         stem_source = request.filename_text.strip() or request.prompt.strip()[:60]
         stem = settings.slugify_filename(stem_source, fallback=request.request_id)
         return output_dir / f"{stem}.{extension.lstrip('.')}"
+
+    def generation_parameters(self, request: ImageRequest) -> dict[str, Any]:
+        """Return the settings this provider generates *request* with, for recording next to the image.
+
+        That is its ``generate`` config with the request's own values resolved over it, minus
+        the inline ComfyUI ``workflow`` (too large to record; the list endpoint omits it too)
+        and ``headers`` (they can carry credentials).
+        """
+        parameters = {k: v for k, v in self.generate_config.items() if k not in _UNRECORDED_GENERATE_KEYS}
+        resolved = {
+            "model": self.resolve_model(request),
+            "size": self.resolve_size(request),
+            "quality": self.resolve_quality(request),
+            "negative_prompt": self.resolve_negative_prompt(request),
+            "seed": request.seed,
+        }
+        parameters.update({key: value for key, value in resolved.items() if value not in (None, "")})
+        return parameters
 
     def estimate_cost(self, request: ImageRequest) -> float | None:
         """Estimate the USD cost of one image for *request*."""

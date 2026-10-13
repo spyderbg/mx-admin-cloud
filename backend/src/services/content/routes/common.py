@@ -16,8 +16,8 @@ from fastapi import (
 from src.api.dependencies import get_registry
 from src.api.service_resolver import get_typed_service, require_active_providers
 from src.services import content, text_to_speech, voice_optimization
-from src.services.content.models import CategoryVoice, CreateItem
-from src.services.content.schemas import CreateItemResponse, VoiceResponse
+from src.services.content.models import CategoryImage, CategoryVoice, CreateItem
+from src.services.content.schemas import CreateItemResponse, ImageResponse, VoiceResponse
 from src.services.content.service import ContentService
 from src.services.service_registry import ServiceRegistry
 from src.services.text_to_speech.service import TextToSpeechService
@@ -73,6 +73,17 @@ def _read_image_upload(image: UploadFile | None) -> tuple[bytes | None, str]:
     if ext not in (".png", ".jpg", ".jpeg"):
         ext = ".png"
     return image_data, ext
+
+
+def _image_response(image: CategoryImage, action: str | None = None) -> ImageResponse:
+    """Build an ImageResponse from a provider-returned CategoryImage, echoing generation metadata."""
+    return ImageResponse(
+        id=image.id,
+        file_uri=image.file_uri,
+        action=action,
+        provider=image.provider,
+        parameters=image.parameters,
+    )
 
 
 def _voice_response(voice: CategoryVoice, action: str | None = None) -> VoiceResponse:

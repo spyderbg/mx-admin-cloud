@@ -1,6 +1,6 @@
 import { http, HttpResponse } from 'msw'
 import { mockCategories } from '../data/mockData'
-import type { Voice } from '../types/viewModels'
+import type { ImageMetadata, Voice } from '../types/viewModels'
 import { itemIdFromEnglishWord } from '../utils/itemIds'
 import { MOCK_TOKEN } from './mockToken'
 
@@ -117,6 +117,32 @@ const itemMainImageId = (item: ItemRecord): string | null => {
   if (!item.thumbnailUri || item.images.length === 0) return null
   // Not selected yet: as on the backend, a fresh item's main image is a copy of "_01".
   return itemImageId(item, 0)
+}
+
+// How each item image was made, keyed by file URI — the backend's per-image metadata sidecar.
+const imageMetadata = new Map<string, ImageMetadata>()
+
+const imageMetadataFor = (uri: string): ImageMetadata =>
+  imageMetadata.get(uri) ?? { provider: 'unknown', parameters: {} }
+
+const uploadedImageMetadata = (): ImageMetadata =>
+  ({ provider: 'custom', parameters: { date: new Date().toISOString() } })
+
+/** Store a new item image like the backend: an item's first image becomes its main image, copied into "_01". */
+const addMockItemImage = (category: CategoryRecord, item: ItemRecord, metadata: ImageMetadata) => {
+  if (!item.thumbnailUri && item.images.length === 0) {
+    item.thumbnailUri = `/content/${category.id}/${item.id}/${item.id}.png`
+    const firstVariant = `/content/${category.id}/${item.id}/${itemImageId(item, 0)}.png`
+    item.images = [firstVariant]
+    imageMetadata.set(item.thumbnailUri, metadata)
+    imageMetadata.set(firstVariant, metadata)
+    return { id: item.id, file_uri: item.thumbnailUri, action: 'add', ...metadata }
+  }
+  const id = itemImageId(item, item.images.length)
+  const uri = `/content/${category.id}/${item.id}/${id}.png`
+  item.images.push(uri)
+  imageMetadata.set(uri, metadata)
+  return { id, file_uri: uri, action: 'add', ...metadata }
 }
 
 /** Image-variant count, matching the backend's category-summary images_count. */
@@ -474,7 +500,7 @@ export const contentHandlers = [
     return HttpResponse.json({
       item_id: item.id,
       name: itemLocalizedName(item),
-      images: item.images.map((uri, index) => ({ id: itemImageId(item, index), file_uri: uri })),
+      images: item.images.map((uri, index) => ({ id: itemImageId(item, index), file_uri: uri, ...imageMetadataFor(uri) })),
       thumbnail_uri: item.thumbnailUri ?? null,
       main_image_id: itemMainImageId(item),
     })
@@ -486,17 +512,7 @@ export const contentHandlers = [
     if (!found) return new HttpResponse(null, { status: 404 })
     const [category, item] = found
     await request.formData()
-    if (!item.thumbnailUri && item.images.length === 0) {
-      // No image yet: this one becomes the main image, copied into the first variant.
-      item.thumbnailUri = `/content/${category.id}/${item.id}/${item.id}.png`
-      const firstVariant = `/content/${category.id}/${item.id}/${itemImageId(item, 0)}.png`
-      item.images = [firstVariant]
-      return HttpResponse.json({ id: item.id, file_uri: item.thumbnailUri, action: 'add' }, { status: 201 })
-    }
-    const id = itemImageId(item, item.images.length)
-    const uri = `/content/${category.id}/${item.id}/${id}.png`
-    item.images.push(uri)
-    return HttpResponse.json({ id, file_uri: uri, action: 'add' }, { status: 201 })
+    return HttpResponse.json(addMockItemImage(category, item, uploadedImageMetadata()), { status: 201 })
   }),
 
   // Replace a specific image file variant
@@ -509,7 +525,9 @@ export const contentHandlers = [
     await request.formData()
     const uri = `/content/${category.id}/${item.id}/${String(params.image_id)}.png`
     item.images[index] = uri
-    return HttpResponse.json({ id: String(params.image_id), file_uri: uri, action: 'update' })
+    const metadata = uploadedImageMetadata()
+    imageMetadata.set(uri, metadata)
+    return HttpResponse.json({ id: String(params.image_id), file_uri: uri, action: 'update', ...metadata })
   }),
 
   // Delete a variant from an item (the main image isn't part of this list, so it's
@@ -664,5 +682,23 @@ export const contentHandlers = [
   http.post('/api/v1/content/categories/:category_id/items/:item_id/voices/generate', () => HttpResponse.json({}, { status: 201 })),
 
   // Generate an image variant for an item from a text prompt
-  http.post('/api/v1/content/categories/:category_id/items/:item_id/images/generate', () => HttpResponse.json({}, { status: 201 })),
+  http.post('/api/v1/content/categories/:category_id/items/:item_id/images/generate', async ({ params, request }) => {
+    const found = findCategoryAndItem(String(params.category_id), String(params.item_id))
+    if (!found) return new HttpResponse(null, { status: 404 })
+    const [category, item] = found
+    const body = await request.json() as { prompt?: string; configuration_name?: string | null }
+    const prompt = body.prompt?.trim()
+    if (!prompt) return HttpResponse.json({ detail: 'Prompt is required' }, { status: 400 })
+    const configurationName = body.configuration_name?.trim() || null
+    // Recorded like the backend's sidecar: the configuration's settings plus the prompt.
+    const metadata: ImageMetadata = {
+      provider: configurationName ?? 'openai',
+      parameters: {
+        model: 'gpt-image-1-mini', size: '1024x1024', quality: 'low', output_format: 'png',
+        _prompt: prompt, date: new Date().toISOString(),
+        ...(configurationName ? { configuration_name: configurationName } : {}),
+      },
+    }
+    return HttpResponse.json(addMockItemImage(category, item, metadata), { status: 201 })
+  }),
 ]

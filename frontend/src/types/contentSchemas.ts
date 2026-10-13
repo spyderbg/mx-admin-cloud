@@ -118,6 +118,8 @@ export interface ImageResponse {
     id: string
     file_uri?: string | null
     action?: FileAction | null
+    provider?: string
+    parameters?: Record<string, any>
 }
 
 /** Response for GET /categories/{name}/items/{item_id}/images. */

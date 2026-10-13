@@ -21,7 +21,7 @@ from src.services.content.models import (
 from src.core.localization import LocalizedString
 from src.services.content.providers.file_system import (
     FileSystemContentProvider,
-    VoiceCreationMethod,
+    CreationMethod,
     _extension_for_content_type,
 )
 from src.services.content.__tests__.content_fs_helpers import (
@@ -876,18 +876,18 @@ def test_regenerate_category_voice_missing_category_folder(tmp_path: Path) -> No
 
 def test_read_voice_metadata_missing_sidecar_returns_unknown(tmp_path: Path) -> None:
     provider = make_fs_provider()
-    assert provider._read_voice_metadata(tmp_path / "foods_en.mp3") == ("unknown", {})
+    assert provider._read_metadata(tmp_path / "foods_en.mp3") == ("unknown", {})
 
 
 def test_read_voice_metadata_reads_provider_and_parameters(tmp_path: Path) -> None:
     voice_path = tmp_path / "foods_en.mp3"
     voice_path.write_bytes(b"audio")
-    FileSystemContentProvider._write_voice_metadata(
-        voice_path, VoiceCreationMethod.GENERATED, "openai", {"actor": "alloy"},
+    FileSystemContentProvider._write_metadata(
+        voice_path, CreationMethod.GENERATED, "openai", {"actor": "alloy"},
     )
 
     provider = make_fs_provider()
-    read_provider, parameters = provider._read_voice_metadata(voice_path)
+    read_provider, parameters = provider._read_metadata(voice_path)
     assert read_provider == "openai"
     assert without_date(parameters) == {"actor": "alloy"}
 
@@ -895,19 +895,19 @@ def test_read_voice_metadata_reads_provider_and_parameters(tmp_path: Path) -> No
 def test_read_voice_metadata_blank_provider_and_invalid_json_fall_back_to_defaults(tmp_path: Path) -> None:
     voice_path = tmp_path / "foods_en.mp3"
     voice_path.write_bytes(b"audio")
-    metadata_path = FileSystemContentProvider._voice_metadata_path(voice_path)
+    metadata_path = FileSystemContentProvider._metadata_path(voice_path)
     metadata_path.write_text("creation_method,provider,parameters\nuploaded,,not-json\n", encoding="utf-8")
 
     provider = make_fs_provider()
-    assert provider._read_voice_metadata(voice_path) == ("unknown", {})
+    assert provider._read_metadata(voice_path) == ("unknown", {})
 
 
 def test_collect_voices_surfaces_provider_and_parameters(tmp_path: Path) -> None:
     content_root, category_path = _prepare_category(tmp_path)
     voice_path = category_path / "foods_en.mp3"
     voice_path.write_bytes(b"audio")
-    FileSystemContentProvider._write_voice_metadata(
-        voice_path, VoiceCreationMethod.GENERATED, "speaktor", {"voice": "en-US-1"},
+    FileSystemContentProvider._write_metadata(
+        voice_path, CreationMethod.GENERATED, "speaktor", {"voice": "en-US-1"},
     )
 
     provider = make_fs_provider()

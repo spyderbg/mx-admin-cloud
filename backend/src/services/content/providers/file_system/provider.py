@@ -16,14 +16,14 @@ from src.core.config import settings
 from src.services.content.models import CategoryConflictError, CategoryNotFoundError, ContentOperationError
 from src.services.content.service import ContentProviderFactory
 from src.services.content.providers.file_system.constants import (
-    VoiceCreationMethod,
+    CreationMethod,
     _CATEGORIES_IDS,
     _CATEGORIES_LANG_CSV,
     _DESCRIPTIONS_LANG_CSV,
     _IMAGE_EXTENSIONS,
     _ITEMS_IDS,
     _ITEMS_LANG_CSV,
-    _VOICE_METADATA_COLUMNS,
+    _METADATA_COLUMNS,
 )
 from src.services.content.providers.file_system.categories import FileSystemCategoriesMixin
 from src.services.content.providers.file_system.internal_api import FileSystemInternalApiMixin
@@ -41,7 +41,7 @@ class FileSystemContentProvider(
     """Manage content categories and items under the local content directory.
 
     This class holds what categories and items share — content/archive roots, safe names,
-    the CSV registry files, id -> folder lookups, and the image-file and voice-metadata
+    the CSV registry files, id -> folder lookups, and the image-file and metadata-sidecar
     helpers — and combines the category, item and internal-API methods from
     categories.py, items.py and internal_api.py.
     """
@@ -94,80 +94,80 @@ class FileSystemContentProvider(
         return settings.archive_path
 
     @staticmethod
-    def _voice_metadata_path(voice_path: Path) -> Path:
-        """Return the CSV sidecar path belonging to an MP3 voice file."""
-        return voice_path.with_suffix(".csv")
+    def _metadata_path(media_path: Path) -> Path:
+        """Return the CSV sidecar path belonging to a voice (MP3) or item image file."""
+        return media_path.with_suffix(".csv")
 
     @classmethod
-    def _write_voice_metadata(
+    def _write_metadata(
             cls,
-            voice_path: Path,
-            creation_method: VoiceCreationMethod,
+            media_path: Path,
+            creation_method: CreationMethod,
             provider: str = "",
             parameters: dict[str, object] | None = None,
     ) -> None:
-        """Persist how a voice was created in a one-row CSV next to its MP3.
+        """Persist how a voice or image was created in a one-row CSV next to its file.
 
-        Stamps a "date" parameter with the write time, alongside whatever
-        the caller passed (e.g. "_text" for generated voices). The "hash" column holds the
-        digest of the voice file as it is now, so the MP3 must already be written.
+        Stamps a "date" parameter with the write time, alongside whatever the caller passed
+        (e.g. "_text" for generated voices, "_prompt" for generated images). The "hash"
+        column holds the digest of the file as it is now, so the file must already be written.
         """
-        metadata_path = cls._voice_metadata_path(voice_path)
+        metadata_path = cls._metadata_path(media_path)
         all_parameters = dict(parameters or {})
         all_parameters["date"] = datetime.now(timezone.utc).isoformat()
         with metadata_path.open("w", encoding="utf-8", newline="") as file_handle:
-            writer = csv.DictWriter(file_handle, fieldnames=_VOICE_METADATA_COLUMNS)
+            writer = csv.DictWriter(file_handle, fieldnames=_METADATA_COLUMNS)
             writer.writeheader()
             writer.writerow({
                 "creation_method": creation_method.value,
                 "provider": provider,
                 "parameters": json.dumps(all_parameters, ensure_ascii=False, sort_keys=True),
-                "hash": cls._file_digest(voice_path) if voice_path.is_file() else "",
+                "hash": cls._file_digest(media_path) if media_path.is_file() else "",
             })
 
     @classmethod
-    def _read_voice_row(cls, voice_path: Path) -> dict[str, str] | None:
-        """Return the sidecar row of *voice_path*, or None when it is missing, unreadable or empty."""
+    def _read_metadata_row(cls, media_path: Path) -> dict[str, str] | None:
+        """Return the sidecar row of *media_path*, or None when it is missing, unreadable or empty."""
         try:
-            with cls._voice_metadata_path(voice_path).open("r", encoding="utf-8", newline="") as file_handle:
+            with cls._metadata_path(media_path).open("r", encoding="utf-8", newline="") as file_handle:
                 return next(csv.DictReader(file_handle), None) or None
         except (OSError, csv.Error):
             return None
 
     @classmethod
-    def _stored_voice_hash(cls, voice_path: Path) -> str:
-        """Return the hash recorded in *voice_path*'s sidecar, or "" when there is none."""
-        row = cls._read_voice_row(voice_path)
+    def _stored_hash(cls, media_path: Path) -> str:
+        """Return the hash recorded in *media_path*'s sidecar, or "" when there is none."""
+        row = cls._read_metadata_row(media_path)
         return ((row or {}).get("hash") or "").strip()
 
     @classmethod
-    def _write_voice_row(cls, voice_path: Path, row: dict[str, str]) -> None:
-        """Replace *voice_path*'s sidecar with the one-row CSV *row*."""
-        with cls._voice_metadata_path(voice_path).open("w", encoding="utf-8", newline="") as file_handle:
-            writer = csv.DictWriter(file_handle, fieldnames=_VOICE_METADATA_COLUMNS)
+    def _write_metadata_row(cls, media_path: Path, row: dict[str, str]) -> None:
+        """Replace *media_path*'s sidecar with the one-row CSV *row*."""
+        with cls._metadata_path(media_path).open("w", encoding="utf-8", newline="") as file_handle:
+            writer = csv.DictWriter(file_handle, fieldnames=_METADATA_COLUMNS)
             writer.writeheader()
-            writer.writerow({column: row.get(column, "") for column in _VOICE_METADATA_COLUMNS})
+            writer.writerow({column: row.get(column, "") for column in _METADATA_COLUMNS})
 
     @classmethod
-    def _verify_voice_hash(cls, voice_path: Path) -> str:
-        """Recalculate the hash of *voice_path*, repair its sidecar when it disagrees, and return the hash.
+    def _verify_hash(cls, media_path: Path) -> str:
+        """Recalculate the hash of *media_path*, repair its sidecar when it disagrees, and return the hash.
 
-        A voice without a sidecar has nothing to repair and gets none. A sidecar without a
+        A file without a sidecar has nothing to repair and gets none. A sidecar without a
         hash (written before the column existed) only gains the hash.
-        A sidecar whose hash differs from the file's means the MP3 was changed behind the
+        A sidecar whose hash differs from the file's means the file was changed behind the
         application's back, so what the sidecar says about its origin no longer holds: it
         is reset to an unknown creation method by a custom provider, with no parameters.
         """
-        actual = cls._file_digest(voice_path)
-        row = cls._read_voice_row(voice_path)
+        actual = cls._file_digest(media_path)
+        row = cls._read_metadata_row(media_path)
         stored = ((row or {}).get("hash") or "").strip()
         if row is None or stored == actual:
             return actual
         if not stored:
-            cls._write_voice_row(voice_path, {**row, "hash": actual})
+            cls._write_metadata_row(media_path, {**row, "hash": actual})
         else:
-            cls._write_voice_row(voice_path, {
-                "creation_method": VoiceCreationMethod.UNKNOWN.value,
+            cls._write_metadata_row(media_path, {
+                "creation_method": CreationMethod.UNKNOWN.value,
                 "provider": "custom",
                 "parameters": "{}",
                 "hash": actual,
@@ -191,21 +191,21 @@ class FileSystemContentProvider(
         parameters["_text"] = text.strip()
         if configuration_name:
             parameters["configuration_name"] = configuration_name
-        cls._write_voice_metadata(
+        cls._write_metadata(
             voice_path,
-            VoiceCreationMethod.GENERATED,
+            CreationMethod.GENERATED,
             getattr(audio_bytes, "provider", "unknown"),
             parameters,
         )
 
     @classmethod
-    def _read_voice_metadata(cls, voice_path: Path) -> tuple[str, dict[str, object]]:
-        """Return (provider, parameters) recorded for *voice_path*'s CSV sidecar.
+    def _read_metadata(cls, media_path: Path) -> tuple[str, dict[str, object]]:
+        """Return (provider, parameters) recorded in *media_path*'s CSV sidecar.
 
         Falls back to ("unknown", {}) when the sidecar is missing, unreadable, or the
         provider/parameters columns are empty or not valid JSON.
         """
-        metadata_path = cls._voice_metadata_path(voice_path)
+        metadata_path = cls._metadata_path(media_path)
         try:
             with metadata_path.open("r", encoding="utf-8", newline="") as file_handle:
                 row = next(csv.DictReader(file_handle), None)
@@ -224,9 +224,9 @@ class FileSystemContentProvider(
         return provider, parameters
 
     @classmethod
-    def _delete_voice_with_metadata(cls, voice_path: Path) -> None:
-        voice_path.unlink()
-        cls._voice_metadata_path(voice_path).unlink(missing_ok=True)
+    def _delete_with_metadata(cls, media_path: Path) -> None:
+        media_path.unlink()
+        cls._metadata_path(media_path).unlink(missing_ok=True)
 
     @staticmethod
     def _is_safe_category_name(name: str) -> bool:

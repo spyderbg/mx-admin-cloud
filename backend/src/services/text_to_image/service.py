@@ -82,6 +82,13 @@ class TextToImageService(Service):
                 return provider
         raise ImageProviderNotFoundError(f"Provider '{provider_name}' not found or not active.")
 
+    def generation_parameters(self, provider_name: str, request: ImageRequest) -> dict[str, Any]:
+        """Return the settings the provider named *provider_name* generates *request* with."""
+        provider = next((p for p in self._providers if p.name == provider_name), None)
+        if provider is None:
+            raise ImageProviderNotFoundError(f"Provider '{provider_name}' not found.")
+        return provider.generation_parameters(request)
+
     async def generate(
             self,
             request: ImageRequest,

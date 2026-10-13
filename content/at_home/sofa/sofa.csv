@@ -1,0 +1,2 @@
+creation_method,provider,parameters,hash
+generated,openai,"{""_prompt"": ""Photo realistic image of a sofa on transparent background. Center it vertically and horizontally."", ""configuration_name"": ""openai"", ""date"": ""2026-10-13T13:59:20.379211+00:00"", ""model"": ""gpt-image-1-mini"", ""output_format"": ""png"", ""prompt_prefix"": """", ""prompt_suffix"": """", ""quality"": ""low"", ""size"": ""1024x1024""}",f452f5c6894a06a276513a2c69030854e87a1e78929597ba1445afabcbd7e4d0

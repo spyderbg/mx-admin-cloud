@@ -6,6 +6,8 @@ All endpoints require a JWT with the role ``internal`` or ``admin``.
 
 from __future__ import annotations
 
+import base64
+import json
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -241,6 +243,8 @@ async def generate_single(
     description=(
             "Generate an image for a prompt and return the raw image bytes, using the image "
             "configuration named by 'provider' or, without it, the first active one that succeeds. "
+            "The 'X-Image-Provider' header names the configuration that generated the image and "
+            "'X-Image-Parameters' carries its generation settings as base64-encoded JSON. "
             "Responds with HTTP 400 when the prompt is empty, HTTP 404 when 'provider' is not an "
             "active configuration, HTTP 500 when generation fails, and HTTP 503 when no active "
             "image providers are configured."
@@ -315,4 +319,16 @@ async def generate_image(
         raise HTTPException(status_code=500, detail=result.error or "Image generation failed.")
 
     image_bytes = Path(result.raw_path).read_bytes()
-    return Response(content=image_bytes, media_type=media_type_for_extension(result.raw_extension))
+    generation_parameters = service.generation_parameters(result.provider, image_request)
+    generation_parameters["output_format"] = result.raw_extension
+    encoded_parameters = base64.urlsafe_b64encode(
+        json.dumps(generation_parameters, ensure_ascii=True, sort_keys=True).encode("utf-8"),
+    ).decode("ascii")
+    return Response(
+        content=image_bytes,
+        media_type=media_type_for_extension(result.raw_extension),
+        headers={
+            "X-Image-Provider": result.provider,
+            "X-Image-Parameters": encoded_parameters,
+        },
+    )
