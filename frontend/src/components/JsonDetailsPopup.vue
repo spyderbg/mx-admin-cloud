@@ -33,6 +33,8 @@ const props = withDefaults(defineProps<{
   copyLabel?: string
   copiedLabel?: string
   copyErrorLabel?: string
+  /** Copied as is instead of the data as JSON, for a value that is plain text. */
+  copyText?: string
   emptyLabel?: string
   topInset?: number
 }>(), {
@@ -128,7 +130,7 @@ async function copyJson(): Promise<void> {
   clearTimeout(copyTimer)
   copyState.value = 'pending'
   try {
-    await navigator.clipboard.writeText(JSON.stringify(props.data, null, 2))
+    await navigator.clipboard.writeText(props.copyText ?? JSON.stringify(props.data, null, 2))
     copyState.value = 'copied'
     copyTimer = setTimeout(() => { copyState.value = 'idle' }, 2000)
   } catch {

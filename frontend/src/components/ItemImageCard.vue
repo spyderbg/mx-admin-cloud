@@ -34,7 +34,7 @@
         <dt class="id-meta-label">{{ promptLabel(contentLanguage) }}</dt>
         <dd v-if="prompt" class="id-image-prompt">
           <JsonDetailsPopup :title="promptLabel(contentLanguage)" :data="{ prompt }" :open="informationPopup === 'prompt'" :top-inset="72"
-            :copy-label="voiceCopy.copyJson" :copied-label="voiceCopy.copied" :copy-error-label="voiceCopy.copyError" :empty-label="voiceCopy.noDetails"
+            :copy-text="prompt" :copy-label="label('copyPrompt')" :copied-label="voiceCopy.copied" :copy-error-label="voiceCopy.copyError" :empty-label="voiceCopy.noDetails"
             @update:open="updateInformationPopup('prompt', $event)">{{ prompt }}</JsonDetailsPopup>
         </dd>
         <dd v-else class="id-image-muted" :title="provider === 'custom' ? label('uploaded') : label('noPrompt')">{{ provider === 'custom' ? label('uploaded') : label('noPrompt') }}</dd>
