@@ -11,17 +11,6 @@
         </button>
       </div>
     </header>
-    <div
-      class="id-image-preview id-image-preview-trigger"
-      role="button"
-      tabindex="0"
-      :aria-label="`Open ${title} preview`"
-      @click="emit('preview')"
-      @keydown.enter.prevent="emit('preview')"
-      @keydown.space.prevent="emit('preview')"
-    >
-      <img :src="src" :alt="title" class="id-image" />
-    </div>
     <dl class="id-image-details">
       <div class="id-image-detail">
         <dt class="id-meta-label">{{ label('provider') }}</dt>
@@ -40,6 +29,17 @@
         <dd v-else class="id-image-muted" :title="provider === 'custom' ? label('uploaded') : label('noPrompt')">{{ provider === 'custom' ? label('uploaded') : label('noPrompt') }}</dd>
       </div>
     </dl>
+    <div
+      class="id-image-preview id-image-preview-trigger"
+      role="button"
+      tabindex="0"
+      :aria-label="`Open ${title} preview`"
+      @click="emit('preview')"
+      @keydown.enter.prevent="emit('preview')"
+      @keydown.space.prevent="emit('preview')"
+    >
+      <img :src="src" :alt="title" class="id-image" />
+    </div>
     <button
       v-if="!readonly || isMain"
       type="button"
