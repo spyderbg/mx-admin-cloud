@@ -1,0 +1,2 @@
+creation_method,provider,parameters,hash
+generated,elevenlabs,"{""_text"": ""remote control"", ""actor"": ""Milena"", ""date"": ""2026-10-15T14:39:01.692249+00:00"", ""language"": ""en"", ""model"": ""eleven_multilingual_v2"", ""output_format"": ""mp3"", ""speaker_boost"": true, ""speed"": 1, ""use_space"": ""no"", ""voice_id"": ""M1ydWt7KnBCiuv4CnEDC"", ""voice_settings"": {""similarity_boost"": 0.75, ""stability"": 0.5}}",be54b5581e9f97c32ee790f23f9facda7409825982c13409277df86f705cb3eb

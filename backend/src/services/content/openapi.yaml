@@ -95,6 +95,14 @@ components:
             contentMediaType: application/octet-stream
           - type: 'null'
           title: Image
+        generate_voices:
+          type: boolean
+          title: Generate Voices
+          default: true
+        generate_image:
+          type: boolean
+          title: Generate Image
+          default: false
       type: object
       required:
       - item
@@ -324,6 +332,16 @@ components:
             type: string
           type: array
           title: Voice Warnings
+        image_generated:
+          type: boolean
+          title: Image Generated
+          default: false
+        image_warnings:
+          items:
+            type: string
+          type: array
+          title: Image Warnings
+          default: []
         message:
           type: string
           title: Message
@@ -1600,9 +1618,11 @@ paths:
       summary: Create a new item in a category
       description: Create a content item from its English name. The name is translated
         into every supported language first; if translation fails the item is not created.
-        The image is optional. Voices are generated for every language when an active
-        text to speech provider exists; voice problems never block creation and are
-        reported in 'voice_warnings'. Requires authentication.
+        The image is optional; without an upload, 'generate_image' (default false) generates
+        one from the name, and problems are reported in 'image_warnings'. Voices are
+        generated for every language when 'generate_voices' (default true) is set and
+        an active text to speech provider exists; voice problems never block creation
+        and are reported in 'voice_warnings'. Requires authentication.
       operationId: items_create_api_v1_content_categories__category_id__items_post
       security:
       - OAuth2PasswordBearer: []

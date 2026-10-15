@@ -42,6 +42,28 @@
             </div>
           </div>
 
+          <div class="form-group mb-3">
+            <div class="form-check mt-0">
+              <label class="form-check-label">
+                <input v-model="generateVoices" type="checkbox" class="form-check-input" :disabled="creating" />
+                {{ generateVoicesLabel(contentLanguage) }}
+                <i class="input-helper"></i>
+              </label>
+            </div>
+            <div class="form-check mt-0">
+              <label class="form-check-label">
+                <input
+                  v-model="generateImage"
+                  type="checkbox"
+                  class="form-check-input"
+                  :disabled="creating || Boolean(file)"
+                />
+                {{ generateItemImageLabel(contentLanguage) }}
+                <i class="input-helper"></i>
+              </label>
+            </div>
+          </div>
+
           <div class="alert alert-info mb-0 py-2">
             <small>
               <i class="mdi mdi-information-outline mr-1"></i>
@@ -81,6 +103,8 @@ import {
   createLabel,
   creatingLabel,
   enterItemNameLabel,
+  generateItemImageLabel,
+  generateVoicesLabel,
   imageFileOptionalLabel,
   itemAlreadyExistsLabel,
   itemGenerationNoticeLabel,
@@ -106,6 +130,8 @@ const contentLanguage = useContentLanguage()
 const word = ref('')
 const file = ref<File | null>(null)
 const previewUrl = ref('')
+const generateVoices = ref(true)
+const generateImage = ref(false)
 const creating = ref(false)
 const errorMessage = ref('')
 const nameInput = ref<HTMLInputElement | null>(null)
@@ -145,6 +171,8 @@ watch(
     clearFile()
     if (!visible) return
     word.value = ''
+    generateVoices.value = true
+    generateImage.value = false
     errorMessage.value = ''
     creating.value = false
     await nextTick()
@@ -192,7 +220,10 @@ async function confirm(): Promise<void> {
     formData.append('item', trimmed)
     // Only append the image when one was chosen; an empty part would arrive as an empty upload.
     if (file.value) formData.append('image', await resizeImageToMaxDimension(file.value))
-    // Runs translation and, when a generator is active, TTS for every language server-side,
+    formData.append('generate_voices', String(generateVoices.value))
+    // An uploaded image wins: generating one on top would be redundant, so the box is disabled then.
+    formData.append('generate_image', String(generateImage.value && !file.value))
+    // Runs translation and, as chosen, TTS for every language and image generation server-side,
     // so this request can take tens of seconds — the modal stays open and locked meanwhile.
     const result = await itemsCreate(props.categoryId, formData)
     emit('created', result, trimmed)

@@ -110,6 +110,7 @@ class StubContentProvider(ContentProvider):
             image_data: bytes | None = None,
             image_extension: str = ".png",
             generate_voices: bool = True,
+            generate_image: bool = False,
     ) -> CreateItem:
         return self._call("create_item", CreateItem(
             category=category_id,

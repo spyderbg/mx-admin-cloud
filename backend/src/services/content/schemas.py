@@ -251,6 +251,8 @@ class CreateItemResponse(BaseModel):
     item_id: str
     voices_generated: list[str]
     voice_warnings: list[str]
+    image_generated: bool = False
+    image_warnings: list[str] = []
     message: str
 
 

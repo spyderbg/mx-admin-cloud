@@ -1,0 +1,2 @@
+creation_method,provider,parameters,hash
+generated,elevenlabs,"{""_text"": ""дистанционно"", ""actor"": ""Milena"", ""date"": ""2026-10-15T14:39:04.603193+00:00"", ""language"": ""bg"", ""model"": ""eleven_multilingual_v2"", ""output_format"": ""mp3"", ""speaker_boost"": true, ""speed"": 0.7, ""use_space"": ""yes"", ""voice_id"": ""M1ydWt7KnBCiuv4CnEDC"", ""voice_settings"": {""similarity_boost"": 0.7, ""stability"": 0.6}}",1dca0bf8d6adda563f96ccf18236c8d4f02b603548ac70bacf00b752dfe79a32

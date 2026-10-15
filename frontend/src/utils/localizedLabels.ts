@@ -1196,6 +1196,28 @@ export function itemGenerationNoticeLabel(lang: Language): string {
   return labels[lang] ?? labels.en
 }
 
+/** Add-item popup checkbox: generate the voices for every language; unknown `lang` falls back to English. */
+export function generateVoicesLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Generate the voices',
+    es: 'Generar las voces',
+    fr: 'Générer les voix',
+    bg: 'Генериране на гласовете',
+  }
+  return labels[lang] ?? labels.en
+}
+
+/** Add-item popup checkbox: generate the item image; unknown `lang` falls back to English. */
+export function generateItemImageLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Generate the image',
+    es: 'Generar la imagen',
+    fr: "Générer l'image",
+    bg: 'Генериране на изображението',
+  }
+  return labels[lang] ?? labels.en
+}
+
 /** Validation message for a duplicate item name; unknown `lang` falls back to English. */
 export function itemAlreadyExistsLabel(lang: Language): string {
   const labels: Record<Language, string> = {

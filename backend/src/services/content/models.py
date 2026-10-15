@@ -223,6 +223,8 @@ class CreateItem:  # pylint: disable=too-many-instance-attributes
     item_id: str = ""
     voices_generated: list[str] = field(default_factory=list)
     voice_warnings: list[str] = field(default_factory=list)
+    image_generated: bool = False
+    image_warnings: list[str] = field(default_factory=list)
     message: str = ""
 
 
@@ -392,12 +394,15 @@ class ContentProvider(ServiceProvider, ABC):  # pylint: disable=too-many-public-
             image_data: bytes | None = None,
             image_extension: str = ".png",
             generate_voices: bool = True,
+            generate_image: bool = False,
     ) -> CreateItem:
         """Create an item with translations, an optional image, and best-effort voices.
 
         A translation failure must abort creation without leaving files or registry rows
         behind. Voices are generated only when *generate_voices* is true and never fail
-        the operation; problems are reported in ``CreateItem.voice_warnings``.
+        the operation; problems are reported in ``CreateItem.voice_warnings``. When *generate_image*
+        is true and no *image_data* was given, an image is generated best-effort the same way
+        (``CreateItem.image_warnings``).
         """
 
     @abstractmethod

@@ -277,21 +277,21 @@ function openAddItemModal(): void {
 }
 
 // AddItemModal.vue performs the request and reports errors inline; this only refreshes
-// the cache and reports the outcome. Voice problems never block creation, so they arrive
-// as warnings on a successful response.
+// the cache and reports the outcome. Voice and image generation problems never block creation,
+// so they arrive as warnings on a successful response.
 async function onItemCreated(result: CreateItemResponse, word: string): Promise<void> {
   showAddItem.value = false
   const categoryId = category.value?.id
-  const hasVoiceWarnings = result.voice_warnings.length > 0
+  const warnings = [...result.voice_warnings, ...(result.image_warnings ?? [])]
 
   invalidateCategoriesCache()
   await ensureCategoriesLoaded()
 
-  if (hasVoiceWarnings) {
+  if (warnings.length > 0) {
     // Stay on the category page: the toast lives in this view and would vanish on navigation,
-    // and the warning is the only place the user learns that voices are missing.
+    // and the warning is the only place the user learns that voices or the image are missing.
     showToast(
-      `${itemCreatedWithWarningsLabel(contentLanguage.value, word)} ${result.voice_warnings.join(' ')}`,
+      `${itemCreatedWithWarningsLabel(contentLanguage.value, word)} ${warnings.join(' ')}`,
       'warning',
       8000,
     )

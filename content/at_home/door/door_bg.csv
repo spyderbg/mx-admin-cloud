@@ -1,0 +1,2 @@
+creation_method,provider,parameters,hash
+generated,elevenlabs,"{""_text"": ""врата"", ""actor"": ""Milena"", ""date"": ""2026-10-15T14:25:48.962867+00:00"", ""language"": ""bg"", ""model"": ""eleven_multilingual_v2"", ""output_format"": ""mp3"", ""speaker_boost"": true, ""speed"": 0.7, ""use_space"": ""yes"", ""voice_id"": ""M1ydWt7KnBCiuv4CnEDC"", ""voice_settings"": {""similarity_boost"": 0.7, ""stability"": 0.6}}",07208de1b6857739663ac89d3a7170482314c1a5a6346040e31aa05fb0217c75

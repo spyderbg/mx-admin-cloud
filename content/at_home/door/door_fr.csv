@@ -1,0 +1,2 @@
+creation_method,provider,parameters,hash
+generated,elevenlabs,"{""_text"": ""porte"", ""actor"": ""Charlotte"", ""date"": ""2026-10-15T14:25:47.063887+00:00"", ""language"": ""fr"", ""model"": ""eleven_multilingual_v2"", ""output_format"": ""mp3"", ""speaker_boost"": true, ""speed"": 1, ""use_space"": ""no"", ""voice_id"": ""XB0fDUnXU5powFXDhCwa"", ""voice_settings"": {""similarity_boost"": 0.75, ""stability"": 0.5}}",219d9e05d66865b7413c6b4a25db71f63fb71091650457f44a7fe55ab44c2a1e

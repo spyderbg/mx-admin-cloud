@@ -153,7 +153,7 @@
           </div>
         </div>
       </div>
-      <div v-else class="file-empty">
+      <div v-else class="file-empty id-image-grid">
         <p v-if="!canEdit" class="text-muted mb-0">{{ noImagesLabel(contentLanguage) }}</p>
         <div
           v-else
@@ -1273,26 +1273,29 @@ const imageActions = computed<MobileAction[]>(() => [
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 12.8rem;
-  border: 2px dashed #b8c7e8;
-  border-radius: 6px;
-  padding: 0.75rem;
-  background: #f8faff;
-  color: #2855a6;
+  min-width: 0;
+  min-height: 13rem;
+  border: 1px dashed #93baf2;
+  border-radius: 10px;
+  padding: 1rem;
+  background: #f8fbff;
+  color: #334155;
   cursor: pointer;
-  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 .id-add-image-card:hover,
 .id-add-image-card:focus {
-  border-color: #2563eb;
-  background: #eef4ff;
-  color: #1d4ed8;
+  border-color: #4f46e5;
+  background: #f1f6ff;
   outline: none;
 }
+.id-add-image-card:focus-visible {
+  outline: 3px solid #a5b4fc;
+  outline-offset: 2px;
+}
 .id-add-image-card-dragging {
-  border-color: #2563eb;
-  background: #dbeafe;
-  color: #1d4ed8;
+  border-color: #4f46e5;
+  background: #e0e7ff;
 }
 .id-add-image-card-uploading {
   cursor: progress;
@@ -1302,22 +1305,23 @@ const imageActions = computed<MobileAction[]>(() => [
   display: flex;
   flex-direction: column;
   align-items: center;
-  max-width: 15rem;
-  padding: 1rem;
+  gap: 0.55rem;
   text-align: center;
 }
 .id-add-image-card-content > i {
-  margin-bottom: 0.55rem;
-  font-size: 2.25rem;
+  color: #4f46e5;
+  font-size: 2rem;
+  line-height: 1;
 }
 .id-add-image-card-content > strong {
-  font-size: 0.95rem;
+  color: #173d86;
+  font-size: 1rem;
 }
 .id-add-image-card-content > span {
-  margin-top: 0.35rem;
-  color: #64748b;
+  max-width: 16rem;
+  color: #63708c;
   font-size: 0.8rem;
-  line-height: 1.35;
+  line-height: 1.45;
 }
 .id-image-preview-trigger {
   cursor: zoom-in;
@@ -1328,9 +1332,6 @@ const imageActions = computed<MobileAction[]>(() => [
 }
 .file-empty {
   margin-top: 1rem;
-}
-.file-empty .id-add-image-card {
-  max-width: 34rem;
 }
 .id-summary-voices-panel {
   align-self: start;

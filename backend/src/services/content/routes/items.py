@@ -125,9 +125,11 @@ def items_list(
             "Create a content item from its English name. "
             "The name is translated into every supported language first; if translation fails "
             "the item is not created. "
-            "The image is optional. "
-            "Voices are generated for every language when an active text to speech provider "
-            "exists; voice problems never block creation and are reported in 'voice_warnings'. "
+            "The image is optional; without an upload, 'generate_image' (default false) generates one "
+            "from the name, and problems are reported in 'image_warnings'. "
+            "Voices are generated for every language when 'generate_voices' (default true) is set "
+            "and an active text to speech provider exists; voice problems never block creation and "
+            "are reported in 'voice_warnings'. "
             "Requires authentication."
     ),
 )
@@ -137,6 +139,8 @@ def items_create(
         voice_generation_available: VoiceGenerationAvailableDep,
         item: str = Form(...),
         image: UploadFile | None = File(None),
+        generate_voices: bool = Form(True),
+        generate_image: bool = Form(False),
         _user: dict = Depends(get_current_user),
 ) -> CreateItemResponse:
     """Create an item with translations, an optional image, and best-effort voices."""
@@ -150,7 +154,8 @@ def items_create(
             word,
             image_data,
             ext,
-            generate_voices=voice_generation_available,
+            generate_voices=generate_voices and voice_generation_available,
+            generate_image=generate_image,
         )
     except CategoryNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
@@ -158,7 +163,8 @@ def items_create(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return _create_item_response(result, voice_generation_available)
+    # Declining voices is not a missing generator, so it must not raise the no-generator warning.
+    return _create_item_response(result, voice_generation_available or not generate_voices)
 
 
 @router.get(

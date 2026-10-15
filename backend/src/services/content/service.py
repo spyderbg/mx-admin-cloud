@@ -247,6 +247,7 @@ class ContentService(Service):  # pylint: disable=too-many-public-methods
             image_data: bytes | None = None,
             image_extension: str = ".png",
             generate_voices: bool = True,
+            generate_image: bool = False,
     ) -> CreateItem:
         """Create a content item via the active provider, keyed by category id."""
         return self._first_success(lambda provider: provider.create_item(
@@ -255,6 +256,7 @@ class ContentService(Service):  # pylint: disable=too-many-public-methods
             image_data,
             image_extension,
             generate_voices=generate_voices,
+            generate_image=generate_image,
         ))
 
     def update_item(self, category_id: str, item_id: str, item_name: LocalizedString) -> ItemDetail:

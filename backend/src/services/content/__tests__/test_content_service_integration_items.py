@@ -61,7 +61,10 @@ async def test_items_create_without_image_returns_201(tmp_resolved: Path) -> Non
     seen: list[tuple[str, str, bytes | None, str, bool]] = []
 
     class _TrackingProvider(StubContentProvider):
-        def create_item(self, category_id, english_word, image_data=None, image_extension=".png", generate_voices=True):
+        def create_item(
+                self, category_id, english_word, image_data=None, image_extension=".png",
+                generate_voices=True, generate_image=False,
+        ):
             seen.append((category_id, english_word, image_data, image_extension, generate_voices))
             return CreateItem(category="foods", item=english_word, folder="apple", image_id="I_Apple",
                               item_id="I_Apple")
@@ -78,7 +81,10 @@ async def test_items_create_picks_image_extension(tmp_resolved: Path) -> None:
     seen: list[tuple[bytes | None, str]] = []
 
     class _TrackingProvider(StubContentProvider):
-        def create_item(self, category_id, english_word, image_data=None, image_extension=".png", generate_voices=True):
+        def create_item(
+                self, category_id, english_word, image_data=None, image_extension=".png",
+                generate_voices=True, generate_image=False,
+        ):
             seen.append((image_data, image_extension))
             return CreateItem(category="foods", item=english_word, folder="apple", image_id="I_Apple",
                               item_id="I_Apple")
@@ -94,7 +100,10 @@ async def test_items_create_defaults_unknown_extension_to_png(tmp_resolved: Path
     seen: list[str] = []
 
     class _TrackingProvider(StubContentProvider):
-        def create_item(self, category_id, english_word, image_data=None, image_extension=".png", generate_voices=True):
+        def create_item(
+                self, category_id, english_word, image_data=None, image_extension=".png",
+                generate_voices=True, generate_image=False,
+        ):
             seen.append(image_extension)
             return CreateItem(category="foods", item=english_word, folder="apple", image_id="I_Apple",
                               item_id="I_Apple")
@@ -110,7 +119,10 @@ async def test_items_create_skips_voices_when_no_active_generators(tmp_resolved:
     seen_flags: list[bool] = []
 
     class _TrackingProvider(StubContentProvider):
-        def create_item(self, category_id, english_word, image_data=None, image_extension=".png", generate_voices=True):
+        def create_item(
+                self, category_id, english_word, image_data=None, image_extension=".png",
+                generate_voices=True, generate_image=False,
+        ):
             seen_flags.append(generate_voices)
             return CreateItem(category="foods", item=english_word, folder="apple", image_id="I_Apple",
                               item_id="I_Apple")
@@ -123,6 +135,32 @@ async def test_items_create_skips_voices_when_no_active_generators(tmp_resolved:
     body = response.json()
     assert body["voices_generated"] == []
     assert any("No active voice generators" in warning for warning in body["voice_warnings"])
+
+
+@pytest.mark.asyncio
+async def test_items_create_forwards_the_generation_choices(tmp_resolved: Path) -> None:
+    seen: list[tuple[bool, bool]] = []
+
+    class _TrackingProvider(StubContentProvider):
+        def create_item(
+                self, category_id, english_word, image_data=None, image_extension=".png",
+                generate_voices=True, generate_image=False,
+        ):
+            seen.append((generate_voices, generate_image))
+            return CreateItem(category="foods", item=english_word, folder="apple", image_id="I_Apple",
+                              item_id="I_Apple", image_generated=True)
+
+    app = make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.post(
+            _ITEMS_URL, data={"item": "apple", "generate_voices": "false", "generate_image": "true"},
+        )
+    assert response.status_code == 201
+    assert seen == [(False, True)]
+    body = response.json()
+    assert body["image_generated"] is True
+    # Declining voices is not a missing generator, so no warning is raised for it.
+    assert body["voice_warnings"] == []
 
 
 @pytest.mark.asyncio

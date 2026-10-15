@@ -104,8 +104,11 @@ class _StubProvider(ContentProvider):
             image_data: bytes | None = None,
             image_extension: str = ".png",
             generate_voices: bool = True,
+            generate_image: bool = False,
     ) -> CreateItem:
-        self._record("create_item", category_id, english_word, image_data, image_extension, generate_voices)
+        self._record(
+            "create_item", category_id, english_word, image_data, image_extension, generate_voices, generate_image,
+        )
         return self._returns.get("create_item", CreateItem(
             category=category_id,
             item=english_word,
@@ -399,7 +402,10 @@ class _ConcreteProvider(ContentProvider):
     def create_category(self, category_name):
         return {}
 
-    def create_item(self, category_id, english_word, image_data=None, image_extension=".png", generate_voices=True):
+    def create_item(
+            self, category_id, english_word, image_data=None, image_extension=".png",
+            generate_voices=True, generate_image=False,
+    ):
         return {}
 
     def update_item_name(self, category_id, item_id, item_name):
@@ -754,9 +760,11 @@ def test_create_category_delegates(tmp_path: Path) -> None:
 def test_create_item_by_id_delegates_without_name_lookup(tmp_path: Path) -> None:
     stub = _StubProvider(tmp_path)
     svc = _make_service(tmp_path, [stub])
-    result = svc.create_item_by_id("C_Foods", "apple", b"\x89PNG", ".png", generate_voices=False)
+    result = svc.create_item_by_id(
+        "C_Foods", "apple", b"\x89PNG", ".png", generate_voices=False, generate_image=True,
+    )
     assert result.item == "apple"
-    assert stub.calls["create_item"] == [("C_Foods", "apple", b"\x89PNG", ".png", False)]
+    assert stub.calls["create_item"] == [("C_Foods", "apple", b"\x89PNG", ".png", False, True)]
     assert "category_id_by_name" not in stub.calls
 
 

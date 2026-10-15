@@ -390,6 +390,19 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
                 generated.append(lang)
         return generated, warnings
 
+    @staticmethod
+    def _item_word_to_image_prompt(english_word: str) -> str:
+        """Derive a short, child-friendly image prompt from an item's English name."""
+        return f"Simple, friendly illustration for children: {english_word.strip()}"
+
+    def _generate_new_item_image(self, category_id: str, item_id: str, english_word: str) -> tuple[bool, list[str]]:
+        """Best-effort image for a freshly created item; a failure is a warning, never an error."""
+        try:
+            self.generate_item_image(category_id, item_id, self._item_word_to_image_prompt(english_word))
+        except ContentError as exc:
+            return False, [str(exc)]
+        return True, []
+
     def create_item(  # pylint: disable=too-many-locals
             self,
             category_id: str,
@@ -397,6 +410,7 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             image_data: bytes | None = None,
             image_extension: str = ".png",
             generate_voices: bool = True,
+            generate_image: bool = False,
     ) -> CreateItem:
         if not english_word or not english_word.strip():
             raise ContentOperationError("Item word is required")
@@ -452,9 +466,14 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         if generate_voices:
             voices_generated, voice_warnings = self._generate_item_voices(item_path, folder_name, words_by_lang)
 
+        wants_image = generate_image and not image_data
+        image_generated, image_warnings = (
+            self._generate_new_item_image(category_id, item_id, english_word) if wants_image else (False, [])
+        )
+
         message = f"Item '{english_word}' created."
-        if generate_voices and not voices_generated:
-            message += " Voices were not generated."
+        message += " Voices were not generated." if generate_voices and not voices_generated else ""
+        message += " The image was not generated." if wants_image and not image_generated else ""
 
         return CreateItem(
             category=category_name,
@@ -464,6 +483,8 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             item_id=item_id,
             voices_generated=voices_generated,
             voice_warnings=voice_warnings,
+            image_generated=image_generated,
+            image_warnings=image_warnings,
             message=message,
         )
 

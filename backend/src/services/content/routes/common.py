@@ -112,6 +112,8 @@ def _create_item_response(result: CreateItem, voice_generation_available: bool) 
         item_id=result.item_id,
         voices_generated=list(result.voices_generated),
         voice_warnings=warnings,
+        image_generated=result.image_generated,
+        image_warnings=list(result.image_warnings),
         message=result.message,
     )
 
