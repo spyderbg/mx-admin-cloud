@@ -5,12 +5,12 @@
 
 | Field | Value |
 | --- | --- |
-| Current phase | **Between Phase 1 (verified, operator-approved) and Phase 2 (not started)** — v5 adoption complete |
-| State | **awaiting-approval** (to start v5 Phase 2) |
-| Execution policy | Supervised, phase by phase. No autonomous phased execution. Operator instructions 2026-10-16: "Do not start Phase 2 yet" (v4) and "Do not start Phase 2" (v5) |
-| Code base | Branch `agents`, `HEAD` = `e2ddd9c`. All Phase 0–1, v4- and v5-adoption changes are **uncommitted** (D-10), as are the operator-added `agents_prompt_v4.md` and `agents_prompt_v5.md`. `agents` is `dev` + 3 commits, and `dev` is `main` + 2 |
-| Last updated | 2026-10-16 |
-| Active writers / locks | None running. The lock mechanism is designed (architecture §10–§11) and demonstrated in Phase 2 / implemented in Phase 3 |
+| Current phase | **Phase 2 — New Feature Coordinator Design and Minimal Skeleton: implemented and tested** |
+| State | **awaiting-approval** (Phase 2 review; Phase 3 not started) |
+| Execution policy | Supervised, phase by phase. No autonomous phased execution. Phase 2 authorized 2026-10-16 ("Proceed with Phase 2 ONLY … Stop after Phase 2. Do NOT start Phase 3 automatically") |
+| Code base | Branch `agents`, `HEAD` = `12183e0` (the operator committed Phases 0–1 + v4/v5 docs; not pushed, 2 ahead of `origin/agents`). All Phase 2 work is **uncommitted** (list below) |
+| Last updated | 2026-10-17 |
+| Active writers / locks | None running. `flock` locks and claims are implemented and tested in Phase 2 (mock runners only); the real state directory `~/.local/state/mx-admin-agents/` exists and holds no features or claims |
 
 ## Phase overview
 
@@ -18,7 +18,7 @@
 | --- | --- | --- | --- |
 | 0 | Inspect and Baseline (historical, v3) | **verified** | Approved by the operator (2026-10-16, v5 instruction); not to be rerun |
 | 1 | Documentation Foundation (v3 scope, preserved) | **verified** | Approved by the operator 2026-10-16 (twice); v4 and v5 handoff gates re-run and passing (below) |
-| 2 | **New Feature Coordinator Design and Minimal Skeleton** (incl. remote Qwen provider configuration, mocked) | not-started | Awaiting separate operator authorization; plan below |
+| 2 | **New Feature Coordinator Design and Minimal Skeleton** (incl. remote Qwen provider configuration, mocked) | **awaiting-approval** | Exit gate met with evidence (record below); stop for operator review |
 | 3 | Role Launchers, Scoped Write Enforcement, Concurrent Shared Checkout (+ remote Qwen adapter mock tests) | not-started | — |
 | 4 | Feature Task Issue Coordination and Dependencies | not-started | Live GitHub writes only with approval |
 | 5 | First End-to-End Feature (vertical slice) | not-started | Needs a feature approval and D-4/D-11 |
@@ -26,6 +26,69 @@
 | 7 | Budget-Aware Optional Continuous Feature Delivery | not-started | Needs separate authorization |
 
 > **Superseded by v4 (historical v3 phase titles):** v3 Phase 2 was "Existing Automation Audit and Minimal Extensions" of `mxfix`/`mxissues`; v3 Phase 3 was "Agent Profiles and Scope Enforcement" with per-task worktrees; v3 Phase 4 was "GitHub Issue Coordination" extending `mxissues`; v3 Phases 5–7 assumed per-task PRs. All of these are replaced by the v4 titles above.
+
+## Phase 2 — record (awaiting approval, 2026-10-17)
+
+**Authorized** 2026-10-16 ("Proceed with Phase 2 ONLY"); started on `12183e0`, interrupted once by a usage limit and resumed without repeating work. **Design and evidence: [`feature-workflow.md`](feature-workflow.md).**
+
+### Exit gate (v5 Phase 2)
+
+| Criterion | Result **[V]** |
+| --- | --- |
+| Mock feature with Backend/CLI/Frontend tasks on one branch under the one-PR policy | **Met.** `python scripts/feature.py demo` and `test_mock_feature_end_to_end_meets_the_phase2_exit_gate` show: only `dev` and `feature/items-export` exist; 3 serialized single-role commits; 4 tasks verified, including the Backend contract task created when the CLI requested a missing API (CLI blocked, Frontend continued, CLI resumed after the contract was verified on the shared HEAD); 1 PR, with a second refused; a second backend writer rejected; the foreign `mx-auto` issue untouched; the feature ends in `review`, not `done` |
+| Remote Qwen provider configuration and its offline/error behavior documented and mocked; no live connection | **Met.** [feature-workflow §9.3–§9.4](feature-workflow.md#93-remote-qwen-profile-exact-v5-values); the default transport refuses every request. **No request was sent to the remote server** |
+| No dependent calls to the independent bug systems | **Met.** An AST import scan of the package; `git status` empty for `scripts/mxfix` and `scripts/mxissues`; feature-tracker writes to foreign issues are refused |
+| Safety and approval model documented | **Met.** [feature-workflow §14](feature-workflow.md#14-safety-and-approval-model) |
+| All Phase 2 tests pass; Phase 1 gates still pass | **Met.** `pytest -p no:cacheprovider scripts/tests`: **204 passed** (30 Phase 1 + 174 coordinator), stable over 5 repeated coordinator runs; `check_docs_agents.py`: **6/6**; pylint 10.00/10 for the package and its tests |
+
+### Implemented components
+
+| Requirement | Where | Tests |
+| --- | --- | --- |
+| Feature and task state models | `model.py`, `store.py` | `test_fc_model.py` (27) |
+| Task dependencies with blocking/resuming | `model.py` (`validate_dag`, `refresh_readiness`, `invalidate_dependents`), `workflow.request_contract` | `test_fc_model.py`, `test_fc_workflow.py` |
+| Role-based locking, atomic task claiming | `locks.py`, `claims.py` | `test_fc_claims.py` (14), including multiprocess races |
+| Filesystem write-scope validation | `paths.py` | `test_fc_paths.py` (34) |
+| Git operation serialization | `gitops.py` | `test_fc_gitops.py` (12), including 3 processes committing in parallel |
+| Mock Claude Code / Codex / OpenAI-compatible Qwen runners | `runners.py`, `providers.py` | `test_fc_runners_issues.py` (18), `test_fc_config_providers.py` (31) |
+| Mock GitHub issue coordination | `issues.py` | `test_fc_runners_issues.py` |
+| Dry-run CLI | `cli.py`, `scripts/feature.py` | `test_cli_demo_and_dry_run_commands`, `test_doctor_apply_creates_the_state_directory_and_proves_flock` |
+| Crash and lock recovery | `claims.recover`, `locks.ProcessIdentity` | SIGKILL, zombie, PID-reuse, boot-ID and stale-flag tests in `test_fc_claims.py` and `test_fc_statedir_locks.py` (16) |
+| One feature, one branch, one PR | `workflow.py`, `demo.py` | `test_fc_workflow.py` (22) |
+
+### Files (all uncommitted)
+
+| Status | Path |
+| --- | --- |
+| new | `scripts/feature.py` |
+| new | `scripts/feature_coordinator/{__init__,errors,config,providers,paths,statedir,locks,model,store,claims,gitops,issues,runners,workflow,demo,cli}.py` |
+| new | `scripts/tests/feature_coordinator/{conftest,fc_helpers}.py` and `test_fc_{model,config_providers,paths,statedir_locks,claims,gitops,runners_issues,workflow}.py` |
+| new | `docs_agents/coordination/feature-workflow.md`, `docs_agents/coordination/project-config.example.yaml` |
+| modified | `docs_agents/coordination/phase-status.md` (this record), `docs_agents/README.md` (navigation; an approval-required path, updated as plan step P2-7), `docs_agents/automation/README.md` (tools, tests, open items) |
+| outside Git | `~/.local/state/mx-admin-agents/` (empty state directory; mode 0700; created by `feature.py doctor --apply`) |
+
+Unchanged **[V]**: `backend/`, `cli/`, `frontend/`, `content/`, `data/`, `scripts/mxfix/`, `scripts/mxissues/`, `.env`, root instruction files, authentication and debug defaults. No commit, push, Issue, label or PR was created.
+
+### Deviations from the Phase 2 plan
+
+- The planned `state.py` is split into `statedir.py` (location and suitability) and `store.py` (records). `claims.py`, `workflow.py`, `demo.py` and `errors.py` were added.
+- A minimal OpenAI-compatible tool loop exists in `runners.py`, but with mock transports only and **no HTTP client** (the plan said "no HTTP client yet"; this is still true).
+- Found and fixed while testing:
+  - a task could be stranded `in-progress` when a commit was refused or the branch moved between the gates and verification;
+  - integration did not wait for quiescence;
+  - the `frontend-tests` gate covered only `test:voices` (`test:content` and `test:auth` added);
+  - `backend-lint` lacked the documented `PYTHONPATH=src`, and `cli-lint` was missing.
+
+### Remaining limitations
+
+See [feature-workflow §15](feature-workflow.md#15-limitations-of-the-phase-2-skeleton). In short:
+
+- runners are mocks, and there is no OS containment yet;
+- the live model transport is disabled, and streaming, partial tool calls and `apply-patch` are not implemented;
+- there is no live GitHub adapter, push or PR;
+- gate commands are simulated in tests (`backend-tests` would write into `content/`, B-7);
+- tokens are estimated (bytes / 3);
+- heartbeats are recorded but not monitored.
 
 ## v5 adoption (2026-10-16)
 
@@ -68,6 +131,7 @@ D-1 and D-2 hold their **actual operator approval**, which v5 §0.4 asks to reco
 | Filesystem of the existing parent `~/.local/state` | **ext4**, local NVMe, `rw,relatime`; directory mode `0700`, owned by the operator |
 | Suitability for `flock(2)` | Suitable: a local native filesystem with full `flock` support. Unlike the checkout's `fuseblk` mount, there is no FUSE layer |
 | Still required before relying on `flock` | Coordinator start-up check (reject network/FUSE filesystems, create the directory with mode `0700`) and a two-process contention self-test, demonstrated by Phase 2 tests |
+| **Phase 2 result (2026-10-17)** | `feature.py doctor --apply` created `~/.local/state/mx-admin-agents/` (ext4, `0700`) and passed the two-process `flock` self-test **[V]** |
 
 ### Remote Qwen facts established (no live request was made)
 
@@ -217,7 +281,7 @@ No application code (`backend/`, `cli/`, `frontend/`) changed. No content, DB, `
 
 ## Issues / PRs
 
-- Created: **none**. No GitHub Issue, label, PR or push in any phase so far.
+- Created: **none**. No GitHub Issue, label, PR or push in any phase so far (Phase 2 used the mock tracker only).
 - Pre-existing open issues (untouched): #9 "S3 content provider", #10 "Database content provider" on `spyderbg/mx-admin-cloud`.
 
 ## Approved decisions
@@ -258,11 +322,12 @@ See the tables above and [architecture §12](../architecture/README.md#12-decisi
 | D-4 | Feature base branch | **Confirm `dev`.** D-11 already makes `dev` the bootstrap integration target. Features reach `main` only via a human-reviewed `dev→main` PR | Phase 5 |
 | D-5 | Priority of the security remediation (SEC-1..SEC-6, SEC-11, SEC-12) | Open Backend-owned feature/security tasks **before** any unattended or parallel write-capable run; confirm U-1 on the deploy host without sharing values | Before Phase 3 parallel runs |
 | D-9 | `backend/docs/openapi.yaml` (stale, 50/91 operations) | Regenerate it as a Backend task, or mark it superseded by `docs_agents/backend/**/openapi.yaml` (README edit needs approval) | Optional |
-| D-10 | When and how to commit the bootstrap work | A prerequisite for the D-11 PR. Three reviewed commits on `agents`: (1) Phase 0–1 docs, (2) Phase 1 docs tooling + tests, (3) v4/v5 adoption docs + the v4/v5 prompt files. Review the literal Qwen address in `agents_prompt_v5.md` before the files leave this private repository (v5 §10.1.1) | Before the D-11 PR; recommended before Phase 2 code |
+| D-10 | ~~When and how to commit the bootstrap work~~ **Settled by the operator:** one commit `12183e0` on `agents` (not pushed). Still review the literal Qwen address in `agents_prompt_v5.md` before the files leave this private repository (v5 §10.1.1). New: how to commit the Phase 2 work (recommended: one reviewed commit on `agents`, coordinator + tests + docs) | Before the D-11 PR |
 | D-15 | Transport for the remote Qwen endpoint (plain HTTP today) | Secure it (TLS reverse proxy, HTTPS with certificate verification, or a WireGuard/Tailscale tunnel), **or** record an explicit plain-HTTP exception after a network security assessment. Until decided, **no source code or repository context is sent** | Before any live Qwen use with code (Phase 3 at the earliest) |
 | D-16 | Disclosure policy for the remote model | Approve which code/context categories may be sent; never `.env`, production data, tokens or whole repositories | Same as D-15 |
-| D-17 | Local runner for the remote Qwen model | A runner on this host that speaks Chat Completions, assembles tool calls, and implements `apply-patch`/`multi-find-replace`/`find-replace` locally within Automation's paths. Shortlist candidates in Phase 2 (read-only, no network calls), validate with mocks in Phase 3; until then Automation uses an approved default runner or Qwen read-only | Phase 3 |
+| D-17 | Local runner for the remote Qwen model | **Phase 2 shortlist:** (1) the coordinator's own Chat Completions tool loop (implemented against mocks; recommended), (2) Codex with a custom provider via `-c` [U], (3) OpenCode with a custom provider [U]. Validate the choice with a mock server in Phase 3; until then Automation is read-only (`advisory`) or uses an approved default runner | Phase 3 |
 | D-18 | Qwen API authentication | Whether the server requires `AGENT_QWEN_API_KEY`; if yes, provision it via a private secret store only | Before any live request |
+| D-19 | Gate set for the integration barrier | Phase 2 defaults to `contract-check` + `docs-check`. Recommended for Phase 5: the full catalog ([feature-workflow §11](feature-workflow.md#11-gate-catalog-existing-generic-checks)) once B-7 is fixed; decide whether the lint gates block: on the unchanged baseline `backend-lint` exits 8 (10.00/10, one `R0915`) and `cli-lint` exits 28 (9.62/10, 34 messages) per Phase 0 B3/B4 | Phase 5 |
 
 ## Blockers and constraints
 
@@ -273,7 +338,7 @@ See the tables above and [architecture §12](../architecture/README.md#12-decisi
 | B-3 | *(narrowed under v4)* `GITHUB_PAT`/`GITLAB_TOKEN` absent; `gh` lacks `project` scopes | **No longer blocks the feature workflow**: the v4 adapter can use the authenticated `gh` (scope `repo` **[V]**) and needs no Projects v2. It still affects only the separate bug workflow | Live feature Issue/PR writes still need operator approval (Phase 4/5) |
 | B-4 | Docker and Playwright unavailable | e2e not runnable; the integration barrier lacks browser e2e | Use a host with Docker, or approve installing Playwright for native mode |
 | B-5 | GitHub→GitLab mirror failing (3/5 runs) | Out of scope for agents | Operator |
-| B-6 | Runner capabilities unverified: Claude Code/Codex permission flags, and overriding the repo's `bypassPermissions` default from the launcher | Phase 3 containment depends on them | Phase 2 read-only capability probe (`--help`, no paid runs), then Phase 3 negative tests |
+| B-6 | *(narrowed in Phase 2)* The flags exist **[V]** (`--setting-sources user,local` skips the repo's `bypassPermissions` project settings; `codex exec --sandbox workspace-write`), but their enforcement is unproven | Phase 3 containment depends on them | Phase 3 negative tests with real, approved runner invocations |
 | B-7 | Backend test writes into the real `content/` (F-5) | Under a role sandbox it will fail (correctly); unsandboxed it touches protected paths | Backend task before Phase 3 parallel gates or Phase 5 |
 | B-8 | Bootstrap work not on any feature base | Phase 5 cannot start from `dev` with the tooling | D-11 approved (PR into `dev`); still needs D-10 (commit) and then the human-reviewed PR |
 | B-9 | Remote Qwen endpoint is plain HTTP | No source code may be sent; live validation with code is blocked | D-15 (+ D-16) |
@@ -367,6 +432,19 @@ Execution remains **sequential and supervised** until Phase 3 proves enforcement
 
 ### Phase 3 — Role Launchers, Scoped Write Enforcement, Concurrent Shared Checkout
 
+**Recommended implementation plan (refined after Phase 2; not started):**
+
+| Step | Role | Work |
+| --- | --- | --- |
+| P3-0 | operator | Approve Phase 2; decide D-5 and D-17; schedule the Backend fix for B-7 (backend tests must not write into `content/`) |
+| P3-1 | automation | **Launch profiles:** real `claude` / `codex` adapters that execute the planned invocations from [feature-workflow §9.1](feature-workflow.md#91-runners-phase-2-mocks-only). Settings files are generated into the state directory, never the repo; per-role tool allowlists; `--setting-sources user,local`; `codex exec --sandbox workspace-write -C <repo>`. Paid runs only with approval |
+| P3-2 | automation | **OS containment** with `bwrap` (Landlock as the fallback): the checkout read-only, the role roots read-write, `.git` read-only (Git metadata is mutated only by `GitCoordinator`), a private `/tmp`, no access to the state directory. Negative tests for writes outside the role roots, symlinks, traversal, generated outputs and `.git` |
+| P3-3 | automation | **Worker lifecycle:** one process per claim holding its flocks; a heartbeat and checkpoint; cancellation; `feature.py launch\|stop\|resume\|recover`, dry run by default and `--apply` to act |
+| P3-4 | automation | **Real gates:** interpreter resolution (repo `.venv`), timeouts, logs captured into the state directory; D-19 for lint gates |
+| P3-5 | automation | **Git service under load:** Backend + Frontend writing concurrently in a disposable clone (or an approved test branch), never the live checkout; a branch switch is rejected while writers are active; no foreign capture |
+| P3-6 | automation | **Remote Qwen adapter:** a stdlib HTTP client behind `ChatTransport`, tested against a **loopback fake server** first: streaming chunks, partial tool-call assembly, timeouts, cancellation, retries, invalid responses, redaction. Then the capability-validation sequence. A live smoke test only after D-15, D-16, D-18 and approval |
+| P3-7 | coordination | `docs_agents/coordination/agent-ownership.md` and the launch/stop/resume guide; the Phase 3 record |
+
 - Launch profiles per role.
 - OS containment with `bwrap` (verified usable unprivileged **[V]**), or Landlock: checkout read-only, role roots read-write, `.git` read-only, private `/tmp`, per-role ports.
 - Runner permission settings (B-6).
@@ -450,14 +528,15 @@ Execution remains **sequential and supervised** until Phase 3 proves enforcement
 
 ## Exact next action
 
-1. Operator reviews the v5 adoption: [architecture §11.11–§12](../architecture/README.md#1111-remote-openai-compatible-qwen-integration-contract-v5-101) and the amended Phase 2 plan above.
-2. **No decision blocks the start of Phase 2** (D-12 and D-13 are approved). Recommended first: D-10 (commit the bootstrap work) and D-4 (confirm `dev`). D-15…D-18 are needed only before any live Qwen use.
-3. Operator instructs `Proceed to Phase 2` (supervised).
+1. Operator reviews the Phase 2 record above, [`feature-workflow.md`](feature-workflow.md) and the uncommitted files (`git status`), and runs `python scripts/feature.py demo` if desired.
+2. Operator decides how to commit the Phase 2 work (D-10 follow-up). Nothing has been committed, pushed or opened.
+3. Before Phase 3 write-capable runs: D-5 (security priority) and the Backend fix for B-7. Before any live Qwen request: D-15, D-16 and D-18. For Phase 3 itself: confirm D-17 (recommended: the coordinator's own tool loop).
+4. Operator explicitly authorizes Phase 3 (supervised). **Phase 3 has not been started.**
 
 ## Resume checklist (for the next session)
 
-- Re-read this file, `docs/multiple_agents/agents_prompt_v5.md`, then architecture §1, §10, §11 (including §11.11) and §12.
-- Run `python scripts/check_docs_agents.py` (expect 6/6) and `python -m pytest -p no:cacheprovider scripts/tests` (expect 30 passed, plus any Phase 2 tests).
+- Re-read this file, `docs/multiple_agents/agents_prompt_v5.md`, [`feature-workflow.md`](feature-workflow.md), then architecture §1, §10, §11 (including §11.11) and §12.
+- Run `python scripts/check_docs_agents.py` (expect 6/6), `.venv/bin/python -m pytest -p no:cacheprovider scripts/tests` (expect 204 passed) and `python scripts/feature.py config` (expect "identical").
 - Confirm `git status --porcelain -- scripts/mxfix scripts/mxissues` is empty.
 - Do not modify `content/`, `data/`, `backend/data/`, `.env`, root instruction files, `mxfix`/`mxissues`, or application code without explicit approval. Do not create Issues, PRs, commits or pushes without approval.
 - Do not send any request (and never source code) to the remote Qwen endpoint before D-15, D-16 and D-18 are decided and a live test is approved. Never write its literal address or any key into tracked files.

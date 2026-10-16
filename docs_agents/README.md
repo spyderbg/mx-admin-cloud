@@ -32,12 +32,11 @@ The `scripts/mxfix/` and `scripts/mxissues/` bug workflow is a **separate system
 | Backend services | [`configuration`](backend/services/configuration/README.md) · [`content`](backend/services/content/README.md) · [`evaluation`](backend/services/evaluation/README.md) · [`logging`](backend/services/logging/README.md) · [`text_to_image`](backend/services/text_to_image/README.md) · [`text_to_speech`](backend/services/text_to_speech/README.md) · [`text_translation`](backend/services/text_translation/README.md) · [`voice_optimization`](backend/services/voice_optimization/README.md) — each with a generated `openapi.yaml` |
 | CLI | [`cli/README.md`](cli/README.md) — user guide |
 | Frontend | [`frontend/README.md`](frontend/README.md) — structure, data layer, cache layers, tests |
-| Automation | [`automation/README.md`](automation/README.md) — generic tools by side effect, the independent bug workflow (observe only), tests |
-| Coordination | [`coordination/phase-status.md`](coordination/phase-status.md) — phase state, v4 adoption, decisions, blockers, Phase 2–7 plan · [`coordination/cli-coverage.md`](coordination/cli-coverage.md) — API-to-CLI capability matrix |
+| Automation | [`automation/README.md`](automation/README.md) — generic tools by side effect (incl. the feature coordinator CLI), the independent bug workflow (observe only), tests |
+| Coordination | [`coordination/phase-status.md`](coordination/phase-status.md) — phase state, v4 adoption, decisions, blockers, Phase 2–7 plan · [`coordination/feature-workflow.md`](coordination/feature-workflow.md) — the feature coordinator: data model, state machines, locks, Git protocol, providers incl. remote Qwen, safety model (Phase 2) · [`coordination/project-config.example.yaml`](coordination/project-config.example.yaml) — the documented coordinator configuration · [`coordination/cli-coverage.md`](coordination/cli-coverage.md) — API-to-CLI capability matrix |
 
-Planned later per the v4 layout (not created as placeholders):
+Planned later per the v4 layout (not created as placeholders; the Phase 2 pages above now exist):
 
-- Phase 2: `coordination/feature-workflow.md`, the schema proposal, `coordination/project-config.example.yaml`.
 - Phase 3: `coordination/agent-ownership.md` and the launch/stop/resume operations guide.
 - Phase 4: `coordination/{README.md,task-lifecycle.md,templates/}`.
 - Generic tests: `automation/testing.md`.
@@ -63,5 +62,6 @@ Existing agent-tool configuration (rules, prompts, plans) lives in `.claude/`, `
 ```bash
 python scripts/check_docs_agents.py                     # all checks (read-only)
 python scripts/export_openapi.py --docs-agents --check  # contract drift only
-python -m pytest -p no:cacheprovider scripts/tests      # tests of the docs tooling
+python -m pytest -p no:cacheprovider scripts/tests      # tests of the docs tooling and the feature coordinator
+python scripts/feature.py config                        # the example configuration equals the built-in one
 ```

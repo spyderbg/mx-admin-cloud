@@ -24,6 +24,7 @@
 | `scripts/generate_mockdata.py` | `content/` → `frontend/src/data/mockData.ts` | Writes a Frontend-owned file; reads real content | Frontend role |
 | `scripts/validate_build.py`, `validate_tests.py`, `validate_frontend_build.py`, `validate.sh` | Compile + pylint; pytest + frontend tests; type-check + build | **Create venvs and run `pip install` / `npm install`** in shared environments | Only with operator approval; feature gates call the component commands instead (see [backend](../backend/README.md#running-backend-checks), [frontend](../frontend/README.md#commands-all-exist-in-frontendpackagejson)) |
 | `scripts/testenv.py doctor\|seed\|up\|down\|reset\|logs\|status\|shell\|e2e`, `scripts/testenvlib/**` | Isolated `.testenv/` sandbox (dummy credentials), Docker or native stack, Playwright e2e | Creates/destroys `.testenv/`, starts processes and containers | Automation role; Docker is not installed on the current host (B-4) |
+| `scripts/feature.py`, `scripts/feature_coordinator/**` (Phase 2) | The feature coordinator and its dry-run CLI: `doctor [--apply]`, `config`, `providers`, `plan`, `status`, `demo` ([feature-workflow](../coordination/feature-workflow.md)) | None, except `doctor --apply`, which creates the private state directory `~/.local/state/mx-admin-agents/`; `demo` works in a temporary directory. No Git mutation of the real checkout, no GitHub or model calls | Any role (read-only commands); operator for `--apply` |
 | `scripts/app.sh`, `deploy.sh`, `setup*.py/sh`, `cli.sh`, `sync_repo.py` | Local run, deployment, setup, CLI install, repo sync | Start/stop services, install packages, deploy | **Explicit task-specific approval** (v4 §3); `deploy.sh` is a protected deployment script |
 
 ## Independent bug workflow (observe only; never part of the feature system)
@@ -40,7 +41,7 @@ Phase 0 described how these tools behave ([discovery §9](../discovery/README.md
 | Suite | Command (repo root) | Status |
 | --- | --- | --- |
 | Docs tooling (`openapi_docs.py`, `check_docs_agents.py`) — added in Phase 1 | `.venv/bin/python -m pytest -p no:cacheprovider scripts/tests` | 30 passed **[V]** |
-| Feature coordinator (v4 Phase 2) | planned under `scripts/tests/feature_coordinator/` | not started |
+| Feature coordinator (v5 Phase 2): model, config/providers (remote Qwen mocked), paths, state dir and locks, claims and recovery, Git serialization, runners and tracker, workflow | same command (`scripts/tests/feature_coordinator/`, temporary repositories and state dirs only) | **174 passed** **[V]** (full `scripts/tests`: 204 passed, 2026-10-17) |
 | `testenv*`, generators, validators | — | **No tests exist** **[V]**; candidates for generic tests (`testing.md`) |
 | `mxissues`, `mxfix` | — | No tests exist; **out of scope under v4** (independent system) |
 
@@ -59,5 +60,6 @@ None of these files reference `mxfix` or `mxissues` **[V]**.
 
 ## Open items for the automation role
 
-- **v4 Phase 2 (not started):** the feature-coordinator skeleton, proposed in `scripts/feature_coordinator/` (D-13), with `flock` locks and local state (D-3, D-12) and a serialized Git mutation path. Plan: [phase-status](../coordination/phase-status.md#phase-2--new-feature-coordinator-design-and-minimal-skeleton-revised-implementation-plan). Reusable precedent: the content registry's `threading.RLock` + `fcntl.flock` idiom (`backend/src/services/content/providers/file_system/registry.py`; follow the idiom, do not import it).
+- **v5 Phase 2 (implemented, awaiting approval):** the feature coordinator in `scripts/feature_coordinator/` (D-13) with `flock` locks and local state (D-3, D-12), a serialized Git mutation path, mock runners, a mock tracker and a mocked remote-Qwen runner. Design and evidence: [feature-workflow](../coordination/feature-workflow.md); status: [phase-status](../coordination/phase-status.md). It follows the content registry's `fcntl.flock` idiom without importing backend code.
+- **Phase 3:** real launchers and OS containment, the live Chat Completions client (mock server first), the D-17 runner.
 - **Phase 6:** a TS↔OpenAPI drift check. The TypeScript generators have no `--check` mode of their own.
