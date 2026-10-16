@@ -1,2 +1,2 @@
-creation_method,provider,parameters
-generated,elevenlabs,"{""_text"": ""bananas"", ""actor"": ""Milena"", ""date"": ""2026-09-28T05:02:45.743412+00:00"", ""language"": ""en"", ""model"": ""eleven_multilingual_v2"", ""output_format"": ""mp3"", ""speaker_boost"": true, ""speed"": 1.0, ""use_space"": ""no"", ""voice_id"": ""M1ydWt7KnBCiuv4CnEDC"", ""voice_settings"": {""similarity_boost"": 0.75, ""stability"": 0.5}}"
+creation_method,provider,parameters,hash
+generated,elevenlabs,"{""_text"": ""bananas"", ""actor"": ""Milena"", ""date"": ""2026-09-28T05:02:45.743412+00:00"", ""language"": ""en"", ""model"": ""eleven_multilingual_v2"", ""output_format"": ""mp3"", ""speaker_boost"": true, ""speed"": 1.0, ""use_space"": ""no"", ""voice_id"": ""M1ydWt7KnBCiuv4CnEDC"", ""voice_settings"": {""similarity_boost"": 0.75, ""stability"": 0.5}}",752772fdaa6ff2a37814b99f98154ad7a60cb65acb4e503b3bb82b1f690931ab
