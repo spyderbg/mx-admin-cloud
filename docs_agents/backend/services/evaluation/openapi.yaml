@@ -1,0 +1,175 @@
+# GENERATED FILE - do not edit by hand.
+# Source: the runtime FastAPI schema (app.openapi()) of backend/src/main.py, split by the
+# module that defines each endpoint (see scripts/openapi_docs.py).
+# Regenerate: python scripts/export_openapi.py --docs-agents
+# Verify:     python scripts/export_openapi.py --docs-agents --check
+openapi: 3.1.0
+info:
+  title: mx-admin backend evaluation service HTTP API
+  version: 0.1.0
+  description: 'Operations whose endpoint functions are defined in: src.services.evaluation.routes.'
+paths:
+  /internal/evaluators/:
+    get:
+      tags:
+      - internal-evaluators
+      summary: List STT evaluator configurations
+      description: Return all configured STT evaluators (derived from text to speech
+        generator and provider configs) with their activation state and config path.
+        Entries are sorted by priority (ascending).
+      operationId: list_evaluators_internal_evaluators__get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  additionalProperties: true
+                  type: object
+                type: array
+                title: Response List Evaluators Internal Evaluators  Get
+      security:
+      - OAuth2PasswordBearer: []
+  /internal/evaluators/evaluate:
+    post:
+      tags:
+      - internal-evaluators
+      summary: Evaluate generated audio against expected text
+      description: Run STT transcription on the generated audio, score it against
+        the expected text using Levenshtein-based metrics (character, word, and pronunciation
+        accuracy), persist the scores to the JSON and SQLite stores, and return the
+        evaluation result including the rolling average score.
+      operationId: evaluate_internal_evaluators_evaluate_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvaluateRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Evaluate Internal Evaluators Evaluate Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+components:
+  securitySchemes:
+    OAuth2PasswordBearer:
+      type: oauth2
+      flows:
+        password:
+          scopes: {}
+          tokenUrl: /api/v1/login
+  schemas:
+    EvaluateRequest:
+      properties:
+        provider:
+          type: string
+          title: Provider
+        request_id:
+          type: string
+          title: Request Id
+        expected_text:
+          type: string
+          title: Expected Text
+        language_code:
+          type: string
+          title: Language Code
+        language_name:
+          type: string
+          title: Language Name
+        filename_text:
+          type: string
+          title: Filename Text
+        output_format:
+          type: string
+          title: Output Format
+        raw_path:
+          type: string
+          title: Raw Path
+        raw_extension:
+          type: string
+          title: Raw Extension
+        latency_seconds:
+          type: number
+          title: Latency Seconds
+        normalized_path:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Normalized Path
+        normalization_error:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Normalization Error
+        evaluate_config:
+          additionalProperties: true
+          type: object
+          title: Evaluate Config
+        output_dir:
+          type: string
+          title: Output Dir
+      type: object
+      required:
+      - provider
+      - request_id
+      - expected_text
+      - language_code
+      - language_name
+      - filename_text
+      - output_format
+      - raw_path
+      - raw_extension
+      - latency_seconds
+      - evaluate_config
+      - output_dir
+      title: EvaluateRequest
+      description: Body for a single evaluation request.
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError

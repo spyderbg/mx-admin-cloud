@@ -1,0 +1,133 @@
+# GENERATED FILE - do not edit by hand.
+# Source: the runtime FastAPI schema (app.openapi()) of backend/src/main.py, split by the
+# module that defines each endpoint (see scripts/openapi_docs.py).
+# Regenerate: python scripts/export_openapi.py --docs-agents
+# Verify:     python scripts/export_openapi.py --docs-agents --check
+openapi: 3.1.0
+info:
+  title: mx-admin backend voice_optimization service HTTP API
+  version: 0.1.0
+  description: 'Operations whose endpoint functions are defined in: src.services.voice_optimization.routes.'
+paths:
+  /internal/optimizers/:
+    get:
+      tags:
+      - internal-optimizers
+      summary: List audio optimizer configurations
+      description: Return all configured audio post-processing optimizers with their
+        service type, activation state, priority, and config path. Entries are sorted
+        by priority (ascending).
+      operationId: list_optimizers_internal_optimizers__get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  additionalProperties: true
+                  type: object
+                type: array
+                title: Response List Optimizers Internal Optimizers  Get
+      security:
+      - OAuth2PasswordBearer: []
+  /internal/optimizers/{optimizer}/optimize:
+    post:
+      tags:
+      - internal-optimizers
+      summary: Optimize a single audio file
+      description: Run the optimizer identified by the 'optimizer' path parameter
+        on the raw audio file at 'raw_path' and write the post-processed audio to
+        'output_path'. Responds with HTTP 404 when the optimizer is unknown or inactive,
+        HTTP 400 when the raw file does not exist, and HTTP 500 when optimization
+        fails.
+      operationId: optimize_single_internal_optimizers__optimizer__optimize_post
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: optimizer
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Optimizer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OptimizeRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Optimize Single Internal Optimizers  Optimizer  Optimize
+                  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+components:
+  securitySchemes:
+    OAuth2PasswordBearer:
+      type: oauth2
+      flows:
+        password:
+          scopes: {}
+          tokenUrl: /api/v1/login
+  schemas:
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    OptimizeRequest:
+      properties:
+        raw_path:
+          type: string
+          title: Raw Path
+        output_path:
+          type: string
+          title: Output Path
+      type: object
+      required:
+      - raw_path
+      - output_path
+      title: OptimizeRequest
+      description: Body for a single optimization request.
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError

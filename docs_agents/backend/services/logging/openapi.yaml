@@ -1,0 +1,537 @@
+# GENERATED FILE - do not edit by hand.
+# Source: the runtime FastAPI schema (app.openapi()) of backend/src/main.py, split by the
+# module that defines each endpoint (see scripts/openapi_docs.py).
+# Regenerate: python scripts/export_openapi.py --docs-agents
+# Verify:     python scripts/export_openapi.py --docs-agents --check
+openapi: 3.1.0
+info:
+  title: mx-admin backend logging service HTTP API
+  version: 0.1.0
+  description: 'Operations whose endpoint functions are defined in: src.services.logging.routes.'
+paths:
+  /internal/loggers/:
+    get:
+      tags:
+      - internal-loggers
+      summary: List logging service providers
+      description: Return the logging service providers that the emit endpoint routes
+        through. By default only enabled providers are returned. Pass 'all=true' to
+        include every configured provider regardless of state.
+      operationId: list_loggers_internal_loggers__get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: all_loggers
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: All Loggers
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ServiceProviderInfo'
+                title: Response List Loggers Internal Loggers  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /internal/loggers/emit:
+    post:
+      tags:
+      - internal-loggers
+      summary: Emit a structured log message
+      description: Post a structured log message and broadcast it to every active
+        logging provider. The 'level' and 'event' fields mirror structlog semantics.
+      operationId: emit_log_internal_loggers_emit_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /internal/loggers/logging/log/api-request:
+    post:
+      tags:
+      - internal-loggers
+      summary: Emit an API request log message
+      description: Post a structured log message to the 'requests' logger. The 'level'
+        and 'event' fields mirror structlog semantics. Responds with HTTP 404 when
+        the 'requests' logger is missing or disabled.
+      operationId: log_api_request_internal_loggers_logging_log_api_request_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogApiRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /internal/loggers/logging/log/payment:
+    post:
+      tags:
+      - internal-loggers
+      summary: Emit a payment log message
+      description: Post a structured log message to the 'payment' logger. The 'level'
+        and 'event' fields mirror structlog semantics. Responds with HTTP 404 when
+        the 'payment' logger is missing or disabled.
+      operationId: log_payment_request_internal_loggers_logging_log_payment_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /internal/loggers/logging/log/provider:
+    post:
+      tags:
+      - internal-loggers
+      summary: Log a TTS/STT provider request
+      description: Record a provider request (model, actor, latency, ...) through
+        the 'requests' logger channel as a 'provider_request' event. Responds with
+        HTTP 404 when the 'requests' logger is missing or disabled.
+      operationId: log_provider_request_internal_loggers_logging_log_provider_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogProviderRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /internal/loggers/logging/log/service:
+    post:
+      tags:
+      - internal-loggers
+      summary: Emit a service log message
+      description: Post a structured log message to the 'service' logger. The 'level'
+        and 'event' fields mirror structlog semantics. Responds with HTTP 404 when
+        the 'service' logger is missing or disabled.
+      operationId: log_service_request_internal_loggers_logging_log_service_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogServiceRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /internal/loggers/reset:
+    post:
+      tags:
+      - internal-loggers
+      summary: Reset active logger providers
+      description: Trigger reset on all active logging providers. For file-backed
+        providers this truncates active log files. Returns the list of reset files.
+      operationId: reset_loggers_internal_loggers_reset_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResetLogsResponse'
+      security:
+      - OAuth2PasswordBearer: []
+  /internal/loggers/{logger_name}/log:
+    post:
+      tags:
+      - internal-loggers
+      summary: Emit a log message to a specific logger
+      description: Post a structured log message to the logger identified by the 'logger_name'
+        path parameter. The 'level' and 'event' fields mirror structlog semantics.
+        Responds with HTTP 404 when the named logger is missing or disabled.
+      operationId: log_by_logger_name_internal_loggers__logger_name__log_post
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: logger_name
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Logger Name
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+components:
+  securitySchemes:
+    OAuth2PasswordBearer:
+      type: oauth2
+      flows:
+        password:
+          scopes: {}
+          tokenUrl: /api/v1/login
+  schemas:
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    LogApiRequest:
+      properties:
+        level:
+          $ref: '#/components/schemas/LogLevel'
+          description: Log level, defaults to 'info'
+          default: info
+        event:
+          type: string
+          title: Event
+          description: Log event
+        fields:
+          additionalProperties: true
+          type: object
+          title: Fields
+        api_path:
+          type: string
+          title: Api Path
+          description: HTTP path
+        api_method:
+          type: string
+          title: Api Method
+          description: HTTP method
+        api_status:
+          type: integer
+          title: Api Status
+          description: HTTP status code
+        api_duration:
+          type: number
+          title: Api Duration
+          description: Request duration in seconds
+      type: object
+      required:
+      - event
+      - api_path
+      - api_method
+      - api_status
+      - api_duration
+      title: LogApiRequest
+      description: Body for "POST /internal/loggers/logging/log/api-request".
+    LogLevel:
+      type: string
+      enum:
+      - trace
+      - debug
+      - info
+      - warning
+      - error
+      - critical
+      - fatal
+      title: LogLevel
+      description: Provider-independent levels accepted by the internal logging service.
+    LogProviderRequest:
+      properties:
+        provider:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Provider
+        model:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model
+        actor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Actor
+        voice_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Voice Id
+        language:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Language
+        input:
+          anyOf:
+          - {}
+          - type: 'null'
+          title: Input
+        response_duration:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Response Duration
+        request_kind:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Request Kind
+          description: Request family, e.g. 'tts' or 'image'
+        size:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Size
+          description: Requested output size, e.g. '1024x1024'
+        quality:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Quality
+          description: Requested output quality tier
+        cost_estimate:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Cost Estimate
+          description: Estimated cost in USD
+        status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
+          description: '''success'' or ''error'''
+        error:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error
+          description: Failure reason when status is 'error'
+        attempts:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Attempts
+          description: Provider attempts made, retries included
+      type: object
+      title: LogProviderRequest
+      description: 'Body for "POST /internal/loggers/log/provider".
+
+
+        The trailing fields are optional extras used by image generation
+
+        ("request_kind=''image''"); omitting them keeps TTS/translation records
+
+        byte-identical because "to_request_emit_fields()" excludes "None".'
+    LogRequest:
+      properties:
+        level:
+          $ref: '#/components/schemas/LogLevel'
+          description: Log level, defaults to 'info'
+          default: info
+        event:
+          type: string
+          title: Event
+          description: Log event
+        fields:
+          additionalProperties: true
+          type: object
+          title: Fields
+      type: object
+      required:
+      - event
+      title: LogRequest
+      description: Base body for "POST /internal/loggers/emit" and "POST /internal/loggers/log/api-request".
+    LogServiceRequest:
+      properties:
+        level:
+          $ref: '#/components/schemas/LogLevel'
+          description: Log level, defaults to 'info'
+          default: info
+        event:
+          type: string
+          title: Event
+          description: Log event
+        fields:
+          additionalProperties: true
+          type: object
+          title: Fields
+        service:
+          type: string
+          title: Service
+          description: Service name
+      type: object
+      required:
+      - event
+      - service
+      title: LogServiceRequest
+      description: Body for "POST /internal/loggers/log/service".
+    ResetLogsResponse:
+      properties:
+        status:
+          type: string
+          title: Status
+        reset_files:
+          items:
+            type: string
+          type: array
+          title: Reset Files
+      type: object
+      required:
+      - status
+      title: ResetLogsResponse
+      description: Acknowledgement payload for reset endpoint with affected files.
+    ServiceProviderInfo:
+      properties:
+        name:
+          type: string
+          title: Name
+          description: Human-readable name
+        service:
+          type: string
+          title: Service
+          description: Service name
+        provider:
+          type: string
+          title: Provider
+          description: Provider name
+        provider_category:
+          type: string
+          title: Provider Category
+          description: Category of the provider
+        enabled:
+          type: boolean
+          title: Enabled
+          description: Whether the provider is enabled
+        priority:
+          type: integer
+          title: Priority
+          description: Priority of the provider
+      type: object
+      required:
+      - name
+      - service
+      - provider
+      - provider_category
+      - enabled
+      - priority
+      title: ServiceProviderInfo
+      description: Metadata for one configured service provider.
+    StatusResponse:
+      properties:
+        status:
+          type: string
+          title: Status
+      type: object
+      required:
+      - status
+      title: StatusResponse
+      description: Generic acknowledgement returned by fire-and-forget logging endpoints.
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
