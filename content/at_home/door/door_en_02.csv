@@ -1,0 +1,2 @@
+creation_method,provider,parameters,hash
+generated,elevenlabs,"{""_text"": ""door"", ""actor"": ""Milena"", ""configuration_name"": ""elevenlabs"", ""date"": ""2026-10-16T08:40:58.060510+00:00"", ""language"": ""en"", ""model"": ""eleven_multilingual_v2"", ""output_format"": ""mp3"", ""speaker_boost"": true, ""speed"": 1.0, ""use_space"": ""no"", ""voice_id"": ""M1ydWt7KnBCiuv4CnEDC"", ""voice_settings"": {""similarity_boost"": 0.75, ""stability"": 0.5}}",ea324c5941532eda67d42447d007ed47e38ce38ecb9d1d7b2e0c6dbd61b2a765

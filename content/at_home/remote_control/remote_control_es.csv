@@ -1,2 +1,0 @@
-creation_method,provider,parameters,hash
-generated,elevenlabs,"{""_text"": ""control remoto"", ""actor"": ""Valentina"", ""date"": ""2026-10-15T14:39:03.628709+00:00"", ""language"": ""es"", ""model"": ""eleven_multilingual_v2"", ""output_format"": ""mp3"", ""speaker_boost"": true, ""speed"": 1, ""use_space"": ""no"", ""voice_id"": ""CQLNn2VcdhTOSAfK3xmF"", ""voice_settings"": {""similarity_boost"": 0.75, ""stability"": 0.5}}",7758900c0eeddb65f82c4b069f471c0559e4efb98f4efecc53622c0d6c064e79
