@@ -131,12 +131,20 @@ def register(app: typer.Typer) -> None:
             category: str = typer.Option(..., "--category", help="Category id (e.g. C_Foods) or name (e.g. foods)"),
             item: str = typer.Option(..., "--item", help="English word for the item"),
             image_path: Path | None = typer.Option(None, "--image", help="Path to image file (optional)", path_type=Path),
+            generate_voices: bool = typer.Option(False, "--generate-voices", help="Generate a voice per language"),
+            generate_image: bool = typer.Option(
+                False, "--generate-image", help="Generate the image from the item name (not with --image)",
+            ),
             url: str = typer.Option(None, "--url", help="Backend base URL"),
             token: str | None = typer.Option(None, "--token", help="Bearer token (else auth via CLI socket)"),
     ):
         """Create a new content item (calls backend API)."""
         if image_path is not None and (not image_path.exists() or not image_path.is_file()):
             print_error("Image file not found", str(image_path))
+            raise typer.Exit(1)
+        if image_path is not None and generate_image:
+            # The backend refuses this too; checking here saves the round trip.
+            print_error("Choose one image source", "--image and --generate-image cannot be combined")
             raise typer.Exit(1)
 
         def run(t: str):
@@ -145,14 +153,20 @@ def register(app: typer.Typer) -> None:
                 if category_id is None:
                     print_error("Category not found", category)
                     raise typer.Exit(1)
-                data = {"item": item}
+                data = {
+                    "item": item,
+                    "generate_voices": str(generate_voices).lower(),
+                    "generate_image": str(generate_image).lower(),
+                }
                 path = f"/content/categories/{category_id}/items"
+                # Image generation can take minutes on a local render backend (the backend allows 600 s).
+                timeout = 720 if generate_image else 120
                 if image_path is None:
-                    result = post(path, data=data, token=t, timeout=120)
+                    result = post(path, data=data, token=t, timeout=timeout)
                 else:
                     with open(image_path, "rb") as f:
                         files = {"image": (image_path.name, f, "application/octet-stream")}
-                        result = post(path, data=data, files=files, token=t, timeout=120)
+                        result = post(path, data=data, files=files, token=t, timeout=timeout)
                 print_json(result)
             except requests.RequestException as e:
                 print_request_error(e)

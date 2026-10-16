@@ -16,6 +16,7 @@ from src.core.config import settings
 from src.services.content.routes import categories, items
 from src.services.content.routes.common import (
     get_content_service,
+    get_image_generation_available,
     get_voice_configurations_available,
     get_voice_generation_available,
     get_voice_optimization_available,
@@ -31,6 +32,7 @@ __all__ = [
     "router",
     "ContentStaticFiles",
     "get_content_service",
+    "get_image_generation_available",
     "get_voice_configurations_available",
     "get_voice_generation_available",
     "get_voice_optimization_available",

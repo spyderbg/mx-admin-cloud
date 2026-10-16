@@ -36,11 +36,15 @@ from src.services.content.models import (
 from src.services.content.providers.file_system.constants import (
     CreationMethod,
     _ARCHIVE_MANIFEST,
-    _CATEGORIES_IDS,
-    _CATEGORIES_LANG_CSV,
     _CATEGORY_VOICE_MP3,
-    _DESCRIPTIONS_LANG_CSV,
     _IMAGE_EXTENSIONS,
+)
+from src.services.content.providers.file_system.registry import (
+    CATEGORIES,
+    RegistryCommitPending,
+    read_registry,
+    registry_lock,
+    write_registry,
 )
 
 
@@ -143,47 +147,44 @@ class FileSystemCategoriesMixin(ContentProvider):  # pylint: disable=abstract-me
         """Add *category_id* to the root CSV registry and return its row index.
 
         Reuses an existing row when the id is already registered, so re-creating a
-        previously removed category cannot leave two rows with the same id — which
-        _category_row_index() would resolve to the first of them.
+        previously removed category cannot leave two rows with the same id. Only non-blank
+        values are written, in any language that has a file (configured or not).
         """
         root = self._content_root()
-        ids = self._read_csv_rows_aligned(root / _CATEGORIES_IDS)
-        if category_id in ids:
-            index = ids.index(category_id)
-        else:
-            index = len(ids)
-            self._set_csv_row_aligned(root / _CATEGORIES_IDS, index, category_id)
-
-        for lang in settings.SUPPORTED_LANGUAGES:
-            label = names.get(lang, "")
-            if label:
-                self._set_csv_row_aligned(root / _CATEGORIES_LANG_CSV.format(lang), index, label)
-            description = (descriptions or {}).get(lang, "")
-            if description:
-                self._set_csv_row_aligned(root / _DESCRIPTIONS_LANG_CSV.format(lang), index, description)
+        with registry_lock(root, CATEGORIES):
+            registry = read_registry(root, CATEGORIES)
+            index = registry.index_of(category_id)
+            if index is None:
+                index = registry.append(category_id)
+            for column, values in (("names", names), ("descriptions", descriptions or {})):
+                for lang, value in values.items():
+                    if value and lang in registry.columns[column]:
+                        registry.columns[column][lang][index] = value.strip()
+            write_registry(root, CATEGORIES, registry)
         return index
 
     def _unregister_category_rows(self, category_id: str) -> None:
-        """Remove *category_id*'s row from the root id, name and description CSVs."""
+        """Remove *category_id*'s row from every category registry file."""
         root = self._content_root()
-        ids = self._read_csv_rows_aligned(root / _CATEGORIES_IDS)
-        if category_id not in ids:
-            return
-        index = ids.index(category_id)
-        for lang in settings.SUPPORTED_LANGUAGES:
-            self._remove_csv_row_aligned(root / _CATEGORIES_LANG_CSV.format(lang), index)
-            self._remove_csv_row_aligned(root / _DESCRIPTIONS_LANG_CSV.format(lang), index)
-        self._remove_csv_row_aligned(root / _CATEGORIES_IDS, index)
+        with registry_lock(root, CATEGORIES):
+            registry = read_registry(root, CATEGORIES)
+            index = registry.index_of(category_id)
+            if index is None:
+                return
+            registry.remove(index)
+            write_registry(root, CATEGORIES, registry)
 
-    def _write_archive_manifest(self, category_path: Path, category_id: str) -> None:
-        """Persist the category's registry rows into the folder about to be archived."""
-        folder_name = category_path.name
-        _, names_by_folder = self._load_category_localized_names()
+    @staticmethod
+    def _write_archive_manifest(category_path: Path, category_id: str, values: dict[str, dict[str, str]]) -> None:
+        """Persist the category's registry row (*values*: names and descriptions by language) into its folder.
+
+        Every language is kept, configured or not, so a restore brings all of them back.
+        """
         manifest = {
             "id": category_id,
-            "folder": folder_name,
-            "names": names_by_folder.get(folder_name.lower(), {}),
-            "descriptions": self._load_category_localized_descriptions(folder_name),
+            "folder": category_path.name,
+            "names": values.get("names", {}),
+            "descriptions": values.get("descriptions", {}),
         }
         try:
             with open(category_path / _ARCHIVE_MANIFEST, "w", encoding="utf-8") as fh:
@@ -323,6 +324,15 @@ class FileSystemCategoriesMixin(ContentProvider):  # pylint: disable=abstract-me
             ))
         return voices
 
+    @staticmethod
+    def _make_category_folder(category_path: Path) -> None:
+        """Create the folder of a new category; it must not exist yet."""
+        try:
+            category_path.mkdir(parents=True, exist_ok=False)
+        except FileExistsError as exc:
+            # A concurrent request created it since the caller checked; the folder is theirs.
+            raise CategoryConflictError(f"Category already exists: {category_path.name}") from exc
+
     def create_category(self, category_name: str) -> CreateCategory:
         category_name = self._normalize_category_name(category_name)
         if not self._is_safe_category_name(category_name):
@@ -331,7 +341,7 @@ class FileSystemCategoriesMixin(ContentProvider):  # pylint: disable=abstract-me
         if category_path.exists() and category_path.is_dir():
             raise CategoryConflictError(f"Category already exists: {category_name}")
 
-        category_path.mkdir(parents=True, exist_ok=True)
+        self._make_category_folder(category_path)
         # PascalCase to match the registry convention ('at_school' -> 'C_AtSchool'), so the id
         # round-trips through _folder_name_from_category_id() and cannot collide with an
         # existing row for the same folder under different casing.
@@ -380,11 +390,12 @@ class FileSystemCategoriesMixin(ContentProvider):  # pylint: disable=abstract-me
                 {lang: labels_by_lang.get(lang) or fallback_label for lang in settings.SUPPORTED_LANGUAGES},
                 {lang: descriptions_by_lang.get(lang) or description_en for lang in settings.SUPPORTED_LANGUAGES},
             )
+        except RegistryCommitPending:
+            raise  # the category is registered; its folder must stay
         except Exception:
-            # Creation failed partway through: leave no trace (no orphaned folder, no
-            # partial/registry row) rather than a half-created category.
+            # Creation failed partway through: leave no orphaned folder. The registry is
+            # written last and all or nothing, so it holds no partial row to remove.
             shutil.rmtree(category_path, ignore_errors=True)
-            self._unregister_category_rows(category_id)
             raise
 
         return CreateCategory(category=category_name, message=f"Category '{category_name}' created.")
@@ -591,15 +602,28 @@ class FileSystemCategoriesMixin(ContentProvider):  # pylint: disable=abstract-me
         archive_root.mkdir(parents=True, exist_ok=True)
         archive_folder_name = f"{category_name}_{int(time.time())}"
         dest = archive_root / archive_folder_name
-        # Written before the move so the manifest travels with the folder.
-        self._write_archive_manifest(category_path, category_id)
-        try:
-            shutil.move(str(category_path), str(dest))
-        except (OSError, shutil.Error) as exc:
-            (category_path / _ARCHIVE_MANIFEST).unlink(missing_ok=True)
-            raise ContentOperationError(f"Failed to archive category: {exc}") from exc
-
-        self._unregister_category_rows(category_id)
+        root = self._content_root()
+        with registry_lock(root, CATEGORIES):
+            registry = read_registry(root, CATEGORIES)
+            index = registry.index_of(category_id)
+            # Written before the move so the manifest travels with the folder.
+            self._write_archive_manifest(category_path, category_id, registry.row(index) if index is not None else {})
+            try:
+                shutil.move(str(category_path), str(dest))
+            except (OSError, shutil.Error) as exc:
+                (category_path / _ARCHIVE_MANIFEST).unlink(missing_ok=True)
+                raise ContentOperationError(f"Failed to archive category: {exc}") from exc
+            if index is not None:
+                registry.remove(index)
+                try:
+                    write_registry(root, CATEGORIES, registry)
+                except RegistryCommitPending:
+                    pass  # the row is gone; the folder belongs in the archive
+                except Exception:
+                    # Still registered, so the category must stay in content.
+                    shutil.move(str(dest), str(category_path))
+                    (category_path / _ARCHIVE_MANIFEST).unlink(missing_ok=True)
+                    raise
         return ArchiveCategory(
             archived=True,
             name=category_name,
@@ -618,16 +642,17 @@ class FileSystemCategoriesMixin(ContentProvider):  # pylint: disable=abstract-me
             description: LocalizedString,
     ) -> UpdateCategory:
         folder_name = self._folder_name_for_id(category_id)
-        index = self._category_row_index(category_id)
         root = self._content_root()
-
-        for lang, value in category_name.to_dict().items():
-            if lang in settings.SUPPORTED_LANGUAGES:
-                self._write_csv_row_at_index(root / _CATEGORIES_LANG_CSV.format(lang), index, value)
-
-        for lang, value in description.to_dict().items():
-            if lang in settings.SUPPORTED_LANGUAGES:
-                self._write_csv_row_at_index(root / _DESCRIPTIONS_LANG_CSV.format(lang), index, value)
+        with registry_lock(root, CATEGORIES):
+            registry = read_registry(root, CATEGORIES)
+            index = registry.index_of(category_id)
+            if index is None:
+                raise CategoryNotFoundError(f"Category id '{category_id}' is not found in categories_ids.csv.")
+            for column, values in (("names", category_name), ("descriptions", description)):
+                for lang, value in values.to_dict().items():
+                    if lang in settings.SUPPORTED_LANGUAGES:
+                        registry.columns[column][lang][index] = (value or "").strip()
+            write_registry(root, CATEGORIES, registry)
 
         return UpdateCategory(
             category=folder_name,
@@ -638,7 +663,6 @@ class FileSystemCategoriesMixin(ContentProvider):  # pylint: disable=abstract-me
         if not self._is_safe_category_name(new_category_id):
             raise InvalidCategoryNameError(new_category_id)
 
-        index = self._category_row_index(category_id)
         folder_name, category_path = self._validate_category_path(category_id)
 
         new_folder_name = self._folder_name_from_category_id(new_category_id)
@@ -649,17 +673,34 @@ class FileSystemCategoriesMixin(ContentProvider):  # pylint: disable=abstract-me
                 message=f"Category id '{category_id}' unchanged.",
             )
 
-        new_category_path = self._category_path(new_folder_name)
-        if new_folder_name != folder_name:
-            if new_category_path.exists():
-                raise CategoryConflictError(f"Category already exists: {new_folder_name}")
+        root = self._content_root()
+        with registry_lock(root, CATEGORIES):
+            registry = read_registry(root, CATEGORIES)
+            index = registry.index_of(category_id)
+            if index is None:
+                raise CategoryNotFoundError(f"Category id '{category_id}' is not found in categories_ids.csv.")
+            if registry.index_of(new_category_id) is not None:
+                raise CategoryConflictError(f"Category id already exists: {new_category_id}")
+            new_category_path = self._category_path(new_folder_name)
+            moved = new_folder_name != folder_name
+            if moved:
+                if new_category_path.exists():
+                    raise CategoryConflictError(f"Category already exists: {new_folder_name}")
+                try:
+                    shutil.move(str(category_path), str(new_category_path))
+                    self._rename_category_content_files(new_category_path, folder_name, new_folder_name)
+                except (OSError, shutil.Error) as exc:
+                    raise ContentOperationError(f"Failed to rename category folder: {exc}") from exc
+            registry.ids[index] = new_category_id
             try:
-                shutil.move(str(category_path), str(new_category_path))
-                self._rename_category_content_files(new_category_path, folder_name, new_folder_name)
-            except (OSError, shutil.Error) as exc:
-                raise ContentOperationError(f"Failed to rename category folder: {exc}") from exc
-
-        self._write_csv_row_at_index(self._content_root() / _CATEGORIES_IDS, index, new_category_id)
+                write_registry(root, CATEGORIES, registry)
+            except RegistryCommitPending:
+                raise  # the new id is registered; the folder belongs where it is now
+            except Exception:
+                if moved:
+                    self._rename_category_content_files(new_category_path, new_folder_name, folder_name)
+                    shutil.move(str(new_category_path), str(category_path))
+                raise
 
         return UpdateCategory(
             category=new_folder_name,
@@ -693,16 +734,33 @@ class FileSystemCategoriesMixin(ContentProvider):  # pylint: disable=abstract-me
             raise CategoryNotFoundError(category_name)
         if settings.ARCHIVE_DIR and settings.ARCHIVE_DIR.strip():
             return self.archive_category(category_id)
-        try:
-            shutil.rmtree(category_path)
-            self._unregister_category_rows(category_id)
-            return ArchiveCategory(
-                removed=True,
-                name=category_name,
-                message=f"Category '{category_name}' was permanently deleted (ARCHIVE_DIR not set).",
-            )
-        except (OSError, shutil.Error) as exc:
-            raise ContentOperationError(f"Failed to delete category: {exc}") from exc
+        root = self._content_root()
+        # Moved aside first (a single rename), so a failed registry write can put it back intact.
+        # The dot prefix hides it from the category list while it is being deleted.
+        doomed_path = root / f".{category_name}.deleting"
+        with registry_lock(root, CATEGORIES):
+            registry = read_registry(root, CATEGORIES)
+            index = registry.index_of(category_id)
+            shutil.rmtree(doomed_path, ignore_errors=True)  # left over from an earlier failed delete
+            try:
+                category_path.rename(doomed_path)
+            except OSError as exc:
+                raise ContentOperationError(f"Failed to delete category: {exc}") from exc
+            if index is not None:
+                registry.remove(index)
+                try:
+                    write_registry(root, CATEGORIES, registry)
+                except RegistryCommitPending:
+                    pass  # the row is gone; finish deleting the folder below
+                except Exception:
+                    doomed_path.rename(category_path)
+                    raise
+        shutil.rmtree(doomed_path, ignore_errors=True)
+        return ArchiveCategory(
+            removed=True,
+            name=category_name,
+            message=f"Category '{category_name}' was permanently deleted (ARCHIVE_DIR not set).",
+        )
 
     def restore_category(self, name: str) -> RestoreCategory:
         requested = (name or "").strip()
@@ -733,7 +791,14 @@ class FileSystemCategoriesMixin(ContentProvider):  # pylint: disable=abstract-me
         manifest = self._read_archive_manifest(content_dest, base_name)
         names = manifest["names"] if isinstance(manifest["names"], dict) else {}
         descriptions = manifest["descriptions"] if isinstance(manifest["descriptions"], dict) else {}
-        self._register_category_rows(str(manifest["id"]), names, descriptions)
+        try:
+            self._register_category_rows(str(manifest["id"]), names, descriptions)
+        except RegistryCommitPending:
+            pass  # registered; the folder belongs in content
+        except Exception:
+            # Not registered, so the snapshot goes back to the archive untouched.
+            shutil.move(str(content_dest), str(archive_path))
+            raise
         (content_dest / _ARCHIVE_MANIFEST).unlink(missing_ok=True)
 
         return RestoreCategory(

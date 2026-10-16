@@ -221,7 +221,7 @@ async function confirm(): Promise<void> {
     // Only append the image when one was chosen; an empty part would arrive as an empty upload.
     if (file.value) formData.append('image', await resizeImageToMaxDimension(file.value))
     formData.append('generate_voices', String(generateVoices.value))
-    // An uploaded image wins: generating one on top would be redundant, so the box is disabled then.
+    // The backend refuses an upload together with generate_image; the box is disabled once a file is chosen.
     formData.append('generate_image', String(generateImage.value && !file.value))
     // Runs translation and, as chosen, TTS for every language and image generation server-side,
     // so this request can take tens of seconds — the modal stays open and locked meanwhile.

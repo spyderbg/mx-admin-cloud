@@ -51,7 +51,8 @@ class StaticTTSProvider(TTSProvider):
         if not word or not root.is_dir():
             return None
 
-        for category_dir in sorted(p for p in root.iterdir() if p.is_dir()):
+        # Hidden folders are categories being deleted, not content.
+        for category_dir in sorted(p for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")):
             words = cls._read_column(category_dir / f"items_{language_code}.csv")
             ids = cls._read_column(category_dir / "items_ids.csv")
             for index, candidate in enumerate(words):

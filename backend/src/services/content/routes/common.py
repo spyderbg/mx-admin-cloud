@@ -15,11 +15,12 @@ from fastapi import (
 
 from src.api.dependencies import get_registry
 from src.api.service_resolver import get_typed_service, require_active_providers
-from src.services import content, text_to_speech, voice_optimization
+from src.services import content, text_to_image, text_to_speech, voice_optimization
 from src.services.content.models import CategoryImage, CategoryVoice, CreateItem
 from src.services.content.schemas import CreateItemResponse, ImageResponse, VoiceResponse
 from src.services.content.service import ContentService
 from src.services.service_registry import ServiceRegistry
+from src.services.text_to_image.service import TextToImageService
 from src.services.text_to_speech.service import TextToSpeechService
 from src.services.voice_optimization.service import VoiceOptimizationService
 
@@ -54,6 +55,7 @@ CATEGORY_ITEM_VOICE_OPTIMIZE = "/categories/{category_id}/items/{item_id}/voices
 CATEGORY_ITEM_VOICE_REGENERATE = "/categories/{category_id}/items/{item_id}/voices/{voice_id}/regenerate"
 
 NO_VOICE_GENERATORS_WARNING = "No active voice generators configured; voices were not generated."
+NO_IMAGE_GENERATORS_WARNING = "No active image generators configured; the image was not generated."
 
 
 def _read_image_upload(image: UploadFile | None) -> tuple[bytes | None, str]:
@@ -99,21 +101,24 @@ def _voice_response(voice: CategoryVoice, action: str | None = None) -> VoiceRes
     )
 
 
-def _create_item_response(result: CreateItem, voice_generation_available: bool) -> CreateItemResponse:
-    """Build the create-item response, reporting skipped voice generation as a warning."""
-    warnings = list(result.voice_warnings)
-    if not voice_generation_available:
-        warnings.append(NO_VOICE_GENERATORS_WARNING)
+def _create_item_response(
+        result: CreateItem,
+        voices_unavailable: bool = False,
+        image_unavailable: bool = False,
+) -> CreateItemResponse:
+    """Build the create-item response; a step asked for with no active generator is reported as a warning."""
+    voice_warnings = [*result.voices.warnings, *([NO_VOICE_GENERATORS_WARNING] if voices_unavailable else [])]
+    image_warnings = [*result.image.warnings, *([NO_IMAGE_GENERATORS_WARNING] if image_unavailable else [])]
     return CreateItemResponse(
         category=result.category,
         item=result.item,
         folder=result.folder,
         image_id=result.image_id,
         item_id=result.item_id,
-        voices_generated=list(result.voices_generated),
-        voice_warnings=warnings,
-        image_generated=result.image_generated,
-        image_warnings=list(result.image_warnings),
+        voices_generated=list(result.voices.generated),
+        voice_warnings=voice_warnings,
+        image_generated=bool(result.image.generated),
+        image_warnings=image_warnings,
         message=result.message,
     )
 
@@ -138,6 +143,15 @@ def get_content_service(
 ContentServiceDep = Annotated[ContentService, Depends(get_content_service)]
 
 
+def _has_active_providers(registry: ServiceRegistry, service_name: str, expected_type: type) -> bool:
+    """Return whether *service_name* is registered and has at least one active provider."""
+    try:
+        service = get_typed_service(registry=registry, service_name=service_name, expected_type=expected_type)
+    except HTTPException:
+        return False
+    return bool(service.get_active_providers())
+
+
 def get_voice_generation_available(
         registry: ServiceRegistry = Depends(get_registry),
 ) -> bool:
@@ -146,18 +160,21 @@ def get_voice_generation_available(
     Item creation generates voices only when this is true. A missing or unconfigured
     text to speech service simply means no voices, never a failed request.
     """
-    try:
-        service = get_typed_service(
-            registry=registry,
-            service_name=text_to_speech.SERVICE_NAME,
-            expected_type=TextToSpeechService,
-        )
-    except HTTPException:
-        return False
-    return bool(service.get_active_providers())
+    return _has_active_providers(registry, text_to_speech.SERVICE_NAME, TextToSpeechService)
+
+
+def get_image_generation_available(
+        registry: ServiceRegistry = Depends(get_registry),
+) -> bool:
+    """Return whether at least one text to image provider is active.
+
+    The image counterpart of get_voice_generation_available(), with the same meaning.
+    """
+    return _has_active_providers(registry, text_to_image.SERVICE_NAME, TextToImageService)
 
 
 VoiceGenerationAvailableDep = Annotated[bool, Depends(get_voice_generation_available)]
+ImageGenerationAvailableDep = Annotated[bool, Depends(get_image_generation_available)]
 
 
 def get_voice_configurations_available(

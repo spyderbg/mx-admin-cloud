@@ -282,7 +282,7 @@ function openAddItemModal(): void {
 async function onItemCreated(result: CreateItemResponse, word: string): Promise<void> {
   showAddItem.value = false
   const categoryId = category.value?.id
-  const warnings = [...result.voice_warnings, ...(result.image_warnings ?? [])]
+  const warnings = [...result.voice_warnings, ...result.image_warnings]
 
   invalidateCategoriesCache()
   await ensureCategoriesLoaded()

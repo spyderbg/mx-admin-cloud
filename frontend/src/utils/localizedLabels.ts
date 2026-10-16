@@ -1188,10 +1188,10 @@ export function removeImageLabel(lang: Language): string {
 /** Notice that item creation runs translation and, when a generator is active, TTS. */
 export function itemGenerationNoticeLabel(lang: Language): string {
   const labels: Record<Language, string> = {
-    en: 'Translations for all languages will be generated, and voices when a voice generator is active. This can take a while.',
-    es: 'Se generarán traducciones para todos los idiomas y, si hay un generador de voz activo, también las voces. Puede tardar un poco.',
-    fr: 'Les traductions pour toutes les langues seront générées, ainsi que les voix si un générateur vocal est actif. Cela peut prendre un moment.',
-    bg: 'Ще бъдат генерирани преводи за всички езици, а при активен генератор на глас – и гласове. Това може да отнеме известно време.',
+    en: 'Translations for all languages will be generated, plus the voices and the image if selected and a generator is active. This can take a while.',
+    es: 'Se generarán traducciones para todos los idiomas y, si se seleccionan y hay un generador activo, también las voces y la imagen. Puede tardar un poco.',
+    fr: 'Les traductions pour toutes les langues seront générées, ainsi que les voix et l’image si elles sont sélectionnées et qu’un générateur est actif. Cela peut prendre un moment.',
+    bg: 'Ще бъдат генерирани преводи за всички езици, а ако са избрани и има активен генератор – и гласовете и изображението. Това може да отнеме известно време.',
   }
   return labels[lang] ?? labels.en
 }

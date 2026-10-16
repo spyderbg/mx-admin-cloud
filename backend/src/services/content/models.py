@@ -213,18 +213,34 @@ class CreateCategory:
 
 
 @dataclass
-class CreateItem:  # pylint: disable=too-many-instance-attributes
-    """Result of creating a new item, including any voice generation warnings."""
+class GenerationOutcome:
+    """What one optional generation step of item creation produced: its voices or its image.
+
+    Generation is best effort: whatever could not be made is reported in *warnings* and never
+    fails the creation of the item itself.
+    """
+
+    requested: bool = False
+    generated: list[str] = field(default_factory=list)  # voice languages, or image ids
+    warnings: list[str] = field(default_factory=list)
+
+    @property
+    def missing(self) -> bool:
+        """Whether the step was asked for and produced nothing."""
+        return self.requested and not self.generated
+
+
+@dataclass
+class CreateItem:
+    """Result of creating a new item, including what its voice and image generation produced."""
 
     category: str = ""
     item: str = ""
     folder: str = ""
     image_id: str = ""  # Legacy alias of item_id, kept for CLI JSON compatibility.
     item_id: str = ""
-    voices_generated: list[str] = field(default_factory=list)
-    voice_warnings: list[str] = field(default_factory=list)
-    image_generated: bool = False
-    image_warnings: list[str] = field(default_factory=list)
+    voices: GenerationOutcome = field(default_factory=GenerationOutcome)
+    image: GenerationOutcome = field(default_factory=GenerationOutcome)
     message: str = ""
 
 
@@ -393,16 +409,16 @@ class ContentProvider(ServiceProvider, ABC):  # pylint: disable=too-many-public-
             english_word: str,
             image_data: bytes | None = None,
             image_extension: str = ".png",
-            generate_voices: bool = True,
+            generate_voices: bool = False,
             generate_image: bool = False,
     ) -> CreateItem:
-        """Create an item with translations, an optional image, and best-effort voices.
+        """Create an item with translations, an optional image, and optionally generated voices and image.
 
         A translation failure must abort creation without leaving files or registry rows
-        behind. Voices are generated only when *generate_voices* is true and never fail
-        the operation; problems are reported in ``CreateItem.voice_warnings``. When *generate_image*
-        is true and no *image_data* was given, an image is generated best-effort the same way
-        (``CreateItem.image_warnings``).
+        behind. Voices (*generate_voices*) and the image (*generate_image*) are each generated
+        only when asked for, after the item exists, and best effort: problems never fail the
+        operation and are reported in ``CreateItem.voices`` / ``CreateItem.image``. Asking to
+        generate an image while uploading one (*image_data*) is a ContentOperationError.
         """
 
     @abstractmethod

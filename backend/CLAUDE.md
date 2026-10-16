@@ -187,11 +187,16 @@ An item's folder is derived from its **id only** (`_folder_name_from_item_id`), 
 editing an item's English word leaves the folder alone, while changing its id renames the folder
 and the files inside it that carry the old folder name.
 
-The item registry (`items_ids.csv` + `items_<lang>.csv`) is only read and written through
-`providers/file_system/item_registry.py`: under a per-category file lock (`.items_registry.lock`, shared by the HTTP
-and Unix-socket backend processes), with blank rows kept so rows stay aligned, and all files replaced at once
-(staged `.items_*.csv.tmp` files plus a `.items_registry.commit` marker, completed or discarded on the next access).
-Never append to or rewrite one of these files on its own.
+Both row-aligned registries — the category registry in the content root (`categories_ids.csv`,
+`categories_<lang>.csv`, `descriptions_<lang>.csv`) and each category's item registry (`items_ids.csv`,
+`items_<lang>.csv`) — are only read and written through `providers/file_system/registry.py` (`CATEGORIES` / `ITEMS`):
+under a file lock next to the files (`.<name>_registry.lock`, shared by the HTTP and Unix-socket backend processes;
+take the category lock before an item lock, never the reverse), with blank rows kept so rows stay aligned, every
+language file on disk kept aligned even when the language is not configured (e.g. `descriptions_it.csv`), and all
+files replaced at once (staged `.<file>.tmp` files plus a `.<name>_registry.commit` marker, completed or discarded on
+the next access). Never append to or rewrite one of these files on its own. Deleting a category or item first renames
+its folder to a hidden `.<name>.deleting`, so a failed registry write can put it back. Metadata sidecars are written
+to a hidden temp file and renamed into place.
 
 ### Authentication
 

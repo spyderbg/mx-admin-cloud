@@ -55,6 +55,7 @@ from src.services.content.routes.common import (
     TAG_ITEMS_IMAGES,
     TAG_ITEMS_VOICES,
     VoiceConfigurationsAvailableDep,
+    ImageGenerationAvailableDep,
     VoiceGenerationAvailableDep,
     VoiceOptimizationAvailableDep,
     _create_item_response,
@@ -125,11 +126,12 @@ def items_list(
             "Create a content item from its English name. "
             "The name is translated into every supported language first; if translation fails "
             "the item is not created. "
-            "The image is optional; without an upload, 'generate_image' (default false) generates one "
-            "from the name, and problems are reported in 'image_warnings'. "
-            "Voices are generated for every language when 'generate_voices' (default true) is set "
-            "and an active text to speech provider exists; voice problems never block creation and "
-            "are reported in 'voice_warnings'. "
+            "The image upload is optional. "
+            "'generate_voices' (one voice per language) and 'generate_image' (an image from the name) "
+            "are both off by default and work the same way: each runs after the item is created, "
+            "only when an active generator exists, and its problems never block creation but are "
+            "reported in 'voice_warnings' / 'image_warnings'. "
+            "Uploading an image and asking to generate one is a 400. "
             "Requires authentication."
     ),
 )
@@ -137,17 +139,23 @@ def items_create(
         category_id: str,
         service: ContentServiceDep,
         voice_generation_available: VoiceGenerationAvailableDep,
+        image_generation_available: ImageGenerationAvailableDep,
         item: str = Form(...),
         image: UploadFile | None = File(None),
-        generate_voices: bool = Form(True),
+        generate_voices: bool = Form(False),
         generate_image: bool = Form(False),
         _user: dict = Depends(get_current_user),
 ) -> CreateItemResponse:
-    """Create an item with translations, an optional image, and best-effort voices."""
+    """Create an item with translations, an optional image, and optionally generated voices and image."""
     word = item.strip()
     if not word:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Item name is required")
     image_data, ext = _read_image_upload(image)
+    if image_data and generate_image:
+        # Checked here too: with no active image generator the provider never sees generate_image.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Upload an image or generate one, not both.",
+        )
     try:
         result = service.create_item_by_id(
             category_id,
@@ -155,7 +163,7 @@ def items_create(
             image_data,
             ext,
             generate_voices=generate_voices and voice_generation_available,
-            generate_image=generate_image,
+            generate_image=generate_image and image_generation_available,
         )
     except CategoryNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
@@ -163,8 +171,11 @@ def items_create(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ContentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    # Declining voices is not a missing generator, so it must not raise the no-generator warning.
-    return _create_item_response(result, voice_generation_available or not generate_voices)
+    return _create_item_response(
+        result,
+        voices_unavailable=generate_voices and not voice_generation_available,
+        image_unavailable=generate_image and not image_generation_available,
+    )
 
 
 @router.get(

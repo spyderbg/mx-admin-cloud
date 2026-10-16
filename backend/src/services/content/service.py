@@ -246,7 +246,7 @@ class ContentService(Service):  # pylint: disable=too-many-public-methods
             english_word: str,
             image_data: bytes | None = None,
             image_extension: str = ".png",
-            generate_voices: bool = True,
+            generate_voices: bool = False,
             generate_image: bool = False,
     ) -> CreateItem:
         """Create a content item via the active provider, keyed by category id."""

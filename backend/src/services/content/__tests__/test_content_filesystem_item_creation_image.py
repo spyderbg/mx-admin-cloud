@@ -7,6 +7,9 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
+from src.services.content.models import ContentOperationError
 from src.services.content.providers.file_system import FileSystemContentProvider
 from src.services.content.__tests__.content_fs_helpers import (
     make_fs_provider,
@@ -38,12 +41,13 @@ def test_create_item_generates_an_image_when_asked(tmp_path: Path) -> None:
     ):
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
-        result = provider.create_item("C_Foods", "apple", generate_voices=False, generate_image=True)
+        result = provider.create_item("C_Foods", "apple", generate_image=True)
 
     assert generate.call_count == 1
     assert "apple" in generate.call_args.args[0]
-    assert result.image_generated is True
-    assert not result.image_warnings
+    assert len(result.image.generated) == 1
+    assert not result.image.warnings
+    assert result.message == "Item 'apple' created."
     assert (category_path / "apple" / "apple.png").read_bytes() == b"generated"
 
 
@@ -57,27 +61,28 @@ def test_create_item_image_failure_is_a_warning_not_an_error(tmp_path: Path) -> 
     ):
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
-        result = provider.create_item("C_Foods", "apple", generate_voices=False, generate_image=True)
+        result = provider.create_item("C_Foods", "apple", generate_image=True)
 
-    assert result.image_generated is False
-    assert any("no GPU" in warning for warning in result.image_warnings)
+    assert not result.image.generated
+    assert any("no GPU" in warning for warning in result.image.warnings)
     assert "The image was not generated." in result.message
     assert (category_path / "apple").is_dir()
 
 
-def test_create_item_uploaded_image_wins_over_generation(tmp_path: Path) -> None:
-    content_root, _ = _prepare_category(tmp_path)
+def test_create_item_refuses_to_upload_and_generate_an_image(tmp_path: Path) -> None:
+    content_root, category_path = _prepare_category(tmp_path)
     provider = make_fs_provider()
     with (
         patch_fs_settings() as mock_settings,
-        patch.object(FileSystemContentProvider, "_translate_word", side_effect=_fake_translate),
+        patch.object(FileSystemContentProvider, "_translate_word", side_effect=_fake_translate) as translate,
         patch.object(FileSystemContentProvider, "_generate_image", return_value=(b"generated", ".png")) as generate,
     ):
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
-        result = provider.create_item(
-            "C_Foods", "apple", b"\x89PNG", ".png", generate_voices=False, generate_image=True,
-        )
+        with pytest.raises(ContentOperationError, match="Upload an image or generate one, not both"):
+            provider.create_item("C_Foods", "apple", b"\x89PNG", ".png", generate_image=True)
 
+    assert translate.call_count == 0
     assert generate.call_count == 0
-    assert result.image_generated is False
+    assert not (category_path / "apple").exists()
+    assert not (category_path / "items_ids.csv").exists()

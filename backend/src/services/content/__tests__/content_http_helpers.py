@@ -23,6 +23,7 @@ from src.services.content.models import (
     ContentProvider,
     CreateCategory,
     CreateItem,
+    GenerationOutcome,
     DeleteArchivedCategory,
     GenerateItemVoice,
     GeneratedItemVoice,
@@ -36,6 +37,7 @@ from src.services.content.models import (
 )
 from src.services.content.routes import (
     get_content_service,
+    get_image_generation_available,
     get_voice_configurations_available,
     get_voice_generation_available,
     get_voice_optimization_available,
@@ -109,7 +111,7 @@ class StubContentProvider(ContentProvider):
             english_word: str,
             image_data: bytes | None = None,
             image_extension: str = ".png",
-            generate_voices: bool = True,
+            generate_voices: bool = False,
             generate_image: bool = False,
     ) -> CreateItem:
         return self._call("create_item", CreateItem(
@@ -118,7 +120,10 @@ class StubContentProvider(ContentProvider):
             folder=english_word.lower(),
             image_id=f"I_{english_word.title()}",
             item_id=f"I_{english_word.title()}",
-            voices_generated=["en"] if generate_voices else [],
+            voices=GenerationOutcome(requested=generate_voices, generated=["en"] if generate_voices else []),
+            image=GenerationOutcome(
+                requested=generate_image, generated=[f"{english_word.lower()}_01"] if generate_image else [],
+            ),
             message="created",
         ))
 
@@ -362,6 +367,7 @@ def make_app(
         *,
         auth: bool = True,
         voice_generation_available: bool = True,
+        image_generation_available: bool = True,
         voice_optimization_available: bool = True,
         voice_configurations_available: bool = True,
 ) -> FastAPI:
@@ -370,6 +376,7 @@ def make_app(
     app.include_router(content_routes.router)
     # The real dependency reads app.state.registry, which this bare app never sets.
     app.dependency_overrides[get_voice_generation_available] = lambda: voice_generation_available
+    app.dependency_overrides[get_image_generation_available] = lambda: image_generation_available
     app.dependency_overrides[get_voice_optimization_available] = lambda: voice_optimization_available
     app.dependency_overrides[get_voice_configurations_available] = lambda: voice_configurations_available
     if auth:

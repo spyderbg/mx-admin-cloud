@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import base64
+import csv
 import json
 from pathlib import Path
 from unittest.mock import patch
@@ -23,7 +24,7 @@ from src.services.content.providers.file_system import (
     FileSystemContentProvider,
     CreationMethod,
     _extension_for_content_type,
-    item_registry,
+    registry,
 )
 from src.services.content.__tests__.content_fs_helpers import (
     patch_fs_settings,
@@ -60,7 +61,11 @@ def _fake_translate(
 
 
 def _csv_rows(path: Path) -> list[str]:
-    return FileSystemContentProvider._read_csv_column(path)
+    """Non-blank first-column values of a registry file; [] when it does not exist."""
+    if not path.exists():
+        return []
+    with path.open(newline="", encoding="utf-8") as fh:
+        return [row[0].strip() for row in csv.reader(fh) if row and row[0].strip()]
 
 
 def test_create_item_success_with_image(tmp_path: Path) -> None:
@@ -73,13 +78,13 @@ def test_create_item_success_with_image(tmp_path: Path) -> None:
     ):
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
-        result = provider.create_item("C_Foods", "  apple ", b"\x89PNG", ".png")
+        result = provider.create_item("C_Foods", "  apple ", b"\x89PNG", ".png", generate_voices=True)
 
     assert result.item_id == "I_Apple"
     assert result.image_id == "I_Apple"
     assert result.folder == "apple"
-    assert result.voices_generated == ["en", "fr"]
-    assert not result.voice_warnings
+    assert result.voices.generated == ["en", "fr"]
+    assert not result.voices.warnings
     assert result.message == "Item 'apple' created."
     item_path = category_path / "apple"
     assert (item_path / "apple.png").read_bytes() == b"\x89PNG"
@@ -140,13 +145,13 @@ def test_create_item_success_without_image(tmp_path: Path) -> None:
     ):
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
-        result = provider.create_item("C_Foods", "apple")
+        result = provider.create_item("C_Foods", "apple", generate_voices=True)
         details = provider.category_details("C_Foods")
 
     item_path = category_path / "apple"
     assert item_path.is_dir()
     assert not [f for f in item_path.iterdir() if f.suffix in (".png", ".jpg", ".jpeg")]
-    assert result.voices_generated == ["en", "fr"]
+    assert result.voices.generated == ["en", "fr"]
     item = next(entry for entry in details.items if entry.id == "I_Apple")
     assert item.images_count == 0
     assert item.thumbnail_uri == ""
@@ -203,11 +208,11 @@ def test_create_item_tts_failure_still_creates_item(tmp_path: Path) -> None:
     ):
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
-        result = provider.create_item("C_Foods", "apple", b"\x89PNG")
+        result = provider.create_item("C_Foods", "apple", b"\x89PNG", generate_voices=True)
 
     assert result.item_id == "I_Apple"
-    assert not result.voices_generated
-    assert result.voice_warnings == [
+    assert not result.voices.generated
+    assert result.voices.warnings == [
         "Voice generation failed for en: boom",
         "Voice generation failed for fr: boom",
     ]
@@ -234,10 +239,10 @@ def test_create_item_partial_tts_failure(tmp_path: Path) -> None:
     ):
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
-        result = provider.create_item("C_Foods", "apple")
+        result = provider.create_item("C_Foods", "apple", generate_voices=True)
 
-    assert result.voices_generated == ["en"]
-    assert result.voice_warnings == ["Voice generation failed for fr: fr voice unavailable"]
+    assert result.voices.generated == ["en"]
+    assert result.voices.warnings == ["Voice generation failed for fr: fr voice unavailable"]
     assert (category_path / "apple" / "apple_en.mp3").exists()
     assert not (category_path / "apple" / "apple_fr.mp3").exists()
 
@@ -256,14 +261,14 @@ def test_create_item_stops_after_no_active_tts_providers(tmp_path: Path) -> None
     ):
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
-        result = provider.create_item("C_Foods", "apple")
+        result = provider.create_item("C_Foods", "apple", generate_voices=True)
 
     assert audio_mock.call_count == 1
-    assert not result.voices_generated
-    assert len(result.voice_warnings) == 1
+    assert not result.voices.generated
+    assert len(result.voices.warnings) == 1
 
 
-def test_create_item_generate_voices_false_skips_tts(tmp_path: Path) -> None:
+def test_create_item_generates_no_voices_unless_asked(tmp_path: Path) -> None:
     content_root, category_path = _prepare_category(tmp_path)
     provider = make_fs_provider()
     with (
@@ -273,11 +278,12 @@ def test_create_item_generate_voices_false_skips_tts(tmp_path: Path) -> None:
     ):
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
-        result = provider.create_item("C_Foods", "apple", generate_voices=False)
+        result = provider.create_item("C_Foods", "apple")
 
     assert audio_mock.call_count == 0
-    assert not result.voices_generated
-    assert not result.voice_warnings
+    assert result.voices.requested is False
+    assert not result.voices.generated
+    assert not result.voices.warnings
     assert result.message == "Item 'apple' created."
     assert not list((category_path / "apple").glob("*.mp3"))
 
@@ -321,7 +327,7 @@ def test_create_item_rolls_back_on_disk_failure(tmp_path: Path) -> None:
     content_root, category_path = _prepare_category(tmp_path)
     (category_path / "items_ids.csv").write_text("I_Pear\n", encoding="utf-8")
     (category_path / "items_en.csv").write_text("pear\n", encoding="utf-8")
-    real_write_staged = item_registry._write_staged
+    real_write_staged = registry._write_staged
     staged: list[Path] = []
 
     def write_staged_until_disk_is_full(path: Path, rows: list[str]) -> None:
@@ -336,11 +342,11 @@ def test_create_item_rolls_back_on_disk_failure(tmp_path: Path) -> None:
         patch_fs_settings() as mock_settings,
         patch.object(FileSystemContentProvider, "_translate_word", side_effect=_fake_translate),
         patch.object(FileSystemContentProvider, "_generate_audio", return_value=b"audio") as audio_mock,
-        patch.object(item_registry, "_write_staged", side_effect=write_staged_until_disk_is_full),
+        patch.object(registry, "_write_staged", side_effect=write_staged_until_disk_is_full),
     ):
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
-        with pytest.raises(ContentOperationError, match="Failed to write the item registry"):
+        with pytest.raises(ContentOperationError, match="Failed to write the items registry"):
             provider.create_item("C_Foods", "apple", b"\x89PNG")
 
     assert not (category_path / "apple").exists()
@@ -568,7 +574,7 @@ def test_update_item_id_restores_folder_when_id_row_cannot_be_written(tmp_path: 
     with (
         patch_fs_settings() as mock_settings,
         patch(
-            "src.services.content.providers.file_system.items.write_item_registry",
+            "src.services.content.providers.file_system.items.write_registry",
             side_effect=ContentOperationError("read-only"),
         ),
     ):

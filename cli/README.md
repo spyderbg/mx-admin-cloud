@@ -63,7 +63,7 @@ Run `kiddo-cli --help`, `kiddo-cli common --help`, `kiddo-cli content --help`, `
 | [`content remove-category <name>`](cli/src/kiddo_cli/commands/content_commands.py#L75) | Remove a category (archive if `ARCHIVE_DIR` is set, else delete permanently). Accepts a folder name (`foods`) or an id (`C_Foods`). |
 | [`content restore-category <name>`](cli/src/kiddo_cli/commands/content_commands.py#L62) | Restore a category from archive (name or archive folder like `foods_1738...`). |
 | [`content category-details <name>`](cli/src/kiddo_cli/commands/content_commands.py#L88) | Show category details. |
-| [`content create-item --category <c> --item <word>`](cli/src/kiddo_cli/commands/content_commands.py#L114) | Create an item in a category. `--category` accepts an id (`C_Foods`) or name (`foods`); `--image` is optional. |
+| [`content create-item --category <c> --item <word>`](cli/src/kiddo_cli/commands/content_commands.py#L114) | Create an item in a category. `--category` accepts an id (`C_Foods`) or name (`foods`); `--image` is optional. Nothing is generated unless asked: `--generate-voices` generates a voice per language, `--generate-image` generates the image from the item name (not combinable with `--image`). Problems with either never block creation and are reported as `voice_warnings` / `image_warnings`. |
 
 ### Generate (backend voice generation via HTTP)
 
@@ -148,6 +148,7 @@ kiddo-cli content remove-category creatures
 kiddo-cli content restore-category creatures
 kiddo-cli content category-details foods
 kiddo-cli content create-item --category foods --item "apple pie" --image ./pic.png
+kiddo-cli content create-item --category foods --item "pear" --generate-voices --generate-image
 
 # Generate
 kiddo-cli generate run -l bg -f mp3 words.txt

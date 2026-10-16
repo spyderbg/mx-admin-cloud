@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,15 +18,18 @@ from src.services.content.models import CategoryConflictError, CategoryNotFoundE
 from src.services.content.service import ContentProviderFactory
 from src.services.content.providers.file_system.constants import (
     CreationMethod,
-    _CATEGORIES_IDS,
-    _CATEGORIES_LANG_CSV,
-    _DESCRIPTIONS_LANG_CSV,
     _IMAGE_EXTENSIONS,
     _METADATA_COLUMNS,
 )
 from src.services.content.providers.file_system.categories import FileSystemCategoriesMixin
 from src.services.content.providers.file_system.internal_api import FileSystemInternalApiMixin
-from src.services.content.providers.file_system.item_registry import item_registry_lock, read_item_registry
+from src.services.content.providers.file_system.registry import (
+    CATEGORIES,
+    ITEMS,
+    Registry,
+    read_registry,
+    registry_lock,
+)
 from src.services.content.providers.file_system.items import FileSystemItemsMixin
 
 
@@ -111,18 +115,14 @@ class FileSystemContentProvider(
         (e.g. "_text" for generated voices, "_prompt" for generated images). The "hash"
         column holds the digest of the file as it is now, so the file must already be written.
         """
-        metadata_path = cls._metadata_path(media_path)
         all_parameters = dict(parameters or {})
         all_parameters["date"] = datetime.now(timezone.utc).isoformat()
-        with metadata_path.open("w", encoding="utf-8", newline="") as file_handle:
-            writer = csv.DictWriter(file_handle, fieldnames=_METADATA_COLUMNS)
-            writer.writeheader()
-            writer.writerow({
-                "creation_method": creation_method.value,
-                "provider": provider,
-                "parameters": json.dumps(all_parameters, ensure_ascii=False, sort_keys=True),
-                "hash": cls._file_digest(media_path) if media_path.is_file() else "",
-            })
+        cls._write_metadata_row(media_path, {
+            "creation_method": creation_method.value,
+            "provider": provider,
+            "parameters": json.dumps(all_parameters, ensure_ascii=False, sort_keys=True),
+            "hash": cls._file_digest(media_path) if media_path.is_file() else "",
+        })
 
     @classmethod
     def _read_metadata_row(cls, media_path: Path) -> dict[str, str] | None:
@@ -141,11 +141,22 @@ class FileSystemContentProvider(
 
     @classmethod
     def _write_metadata_row(cls, media_path: Path, row: dict[str, str]) -> None:
-        """Replace *media_path*'s sidecar with the one-row CSV *row*."""
-        with cls._metadata_path(media_path).open("w", encoding="utf-8", newline="") as file_handle:
-            writer = csv.DictWriter(file_handle, fieldnames=_METADATA_COLUMNS)
-            writer.writeheader()
-            writer.writerow({column: row.get(column, "") for column in _METADATA_COLUMNS})
+        """Replace *media_path*'s sidecar with the one-row CSV *row*.
+
+        Written to a hidden temp file and renamed over the sidecar, so a reader or a crash never
+        sees half a sidecar: it is the old one or the new one.
+        """
+        metadata_path = cls._metadata_path(media_path)
+        staged = metadata_path.with_name(f".{metadata_path.name}.tmp")
+        try:
+            with staged.open("w", encoding="utf-8", newline="") as file_handle:
+                writer = csv.DictWriter(file_handle, fieldnames=_METADATA_COLUMNS)
+                writer.writeheader()
+                writer.writerow({column: row.get(column, "") for column in _METADATA_COLUMNS})
+            os.replace(staged, metadata_path)
+        except BaseException:
+            staged.unlink(missing_ok=True)
+            raise
 
     @classmethod
     def _verify_hash(cls, media_path: Path) -> str:
@@ -243,45 +254,6 @@ class FileSystemContentProvider(
         return re.sub(r"[\s-]+", "_", (name or "").strip()).lower()
 
     @staticmethod
-    def _read_csv_rows_aligned(file_path: Path) -> list[str]:
-        """Return first-column values, keeping blank rows so row indexes stay aligned.
-
-        Unlike _read_csv_column(), blanks are preserved. The root category registry
-        addresses every language CSV by row index, so dropping a blank row here would
-        silently shift every category below it onto the wrong name or description.
-        """
-        try:
-            with open(file_path, newline="", encoding="utf-8") as fh:
-                return [(r[0].strip() if r else "") for r in csv.reader(fh)]
-        except (OSError, csv.Error):
-            return []
-
-    @classmethod
-    def _set_csv_row_aligned(cls, file_path: Path, index: int, value: str) -> None:
-        """Write *value* at *index*, padding with blank rows and preserving existing ones."""
-        rows = cls._read_csv_rows_aligned(file_path)
-        while len(rows) <= index:
-            rows.append("")
-        rows[index] = value
-        cls._write_csv_rows(file_path, rows)
-
-    @classmethod
-    def _remove_csv_row_aligned(cls, file_path: Path, index: int) -> None:
-        """Remove the row at *index*, shifting later rows up and preserving blanks."""
-        rows = cls._read_csv_rows_aligned(file_path)
-        if 0 <= index < len(rows):
-            del rows[index]
-            cls._write_csv_rows(file_path, rows)
-
-    @staticmethod
-    def _write_csv_rows(file_path: Path, rows: list[str]) -> None:
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(file_path, "w", newline="", encoding="utf-8") as fh:
-            writer = csv.writer(fh, lineterminator="\n")
-            for row in rows:
-                writer.writerow([row])
-
-    @staticmethod
     def _normalize_image_extension(image_extension: str) -> str:
         """Ensure a leading dot and fall back to ".png" for an unsupported extension."""
         ext = image_extension if image_extension.startswith(".") else f".{image_extension}"
@@ -344,39 +316,28 @@ class FileSystemContentProvider(
                 return folder
         raise CategoryNotFoundError(f"Category id '{category_id}' is not found in categories_ids.csv.")
 
+    def _read_category_registry(self) -> Registry:
+        """The category registry (content root), read under its lock."""
+        root = self._content_root()
+        with registry_lock(root, CATEGORIES):
+            return read_registry(root, CATEGORIES)
+
     def _load_category_localized_names(self) -> tuple[dict[str, str], dict[str, dict[str, str]]]:
-        """Return (ids_by_folder, names_by_folder) built from root CSVs.
+        """Return (ids_by_folder, names_by_folder) built from the category registry.
 
         Folder keys are derived from each category's id (see _folder_name_from_category_id),
         matching the on-disk folder name — not from the mutable English display name, which
-        can be updated independently of the id/folder (see update_category_id).
+        can be updated independently of the id/folder (see update_category_id). Names cover
+        the configured languages; a blank name is left out.
         """
-        root = self._content_root()
-        try:
-            with open(root / _CATEGORIES_IDS, newline="", encoding="utf-8") as fh:
-                id_entries = [r[0].strip() for r in csv.reader(fh) if r and r[0].strip()]
-        except (OSError, csv.Error):
-            return {}, {}
-
-        folder_keys: list[str] = [self._folder_name_from_category_id(cid) for cid in id_entries]
-
+        registry = self._read_category_registry()
         ids_by_folder: dict[str, str] = {}
         names_by_folder: dict[str, dict[str, str]] = {}
-        for fk, cid in zip(folder_keys, id_entries):
-            if fk:
-                ids_by_folder[fk] = cid
-                names_by_folder[fk] = {}
-
-        for lang in settings.SUPPORTED_LANGUAGES:
-            try:
-                with open(root / _CATEGORIES_LANG_CSV.format(lang), newline="", encoding="utf-8") as fh:
-                    lang_names = [r[0].strip() for r in csv.reader(fh) if r and r[0].strip()]
-                for i, fk in enumerate(folder_keys):
-                    if fk and i < len(lang_names):
-                        names_by_folder[fk][lang] = lang_names[i]
-            except (OSError, csv.Error):
-                pass
-
+        for index, category_id in enumerate(registry.ids):
+            folder = self._folder_name_from_category_id(category_id) if category_id else ""
+            if folder:
+                ids_by_folder[folder] = category_id
+                names_by_folder[folder] = registry.row(index, settings.SUPPORTED_LANGUAGES)["names"]
         return ids_by_folder, names_by_folder
 
     def _category_label_for_language(self, category_name: str, language: str) -> str:
@@ -390,39 +351,12 @@ class FileSystemContentProvider(
         return ""
 
     def _load_category_localized_descriptions(self, category_name: str) -> dict[str, str]:
-        """Return per-language descriptions for *category_name* (a folder name) from descriptions_{lang}.csv.
-
-        Descriptions share row position with the category's entry in categories_ids.csv,
-        the same convention used by _load_category_localized_names.
-        """
-        root = self._content_root()
-        try:
-            with open(root / _CATEGORIES_IDS, newline="", encoding="utf-8") as fh:
-                id_entries = [r[0].strip() for r in csv.reader(fh) if r and r[0].strip()]
-        except (OSError, csv.Error):
-            return {}
-
-        index = next(
-            (
-                i for i, cid in enumerate(id_entries)
-                if self._folder_name_from_category_id(cid) == category_name.lower()
-            ),
-            None,
-        )
-        if index is None:
-            return {}
-
-        descriptions: dict[str, str] = {}
-        for lang in settings.SUPPORTED_LANGUAGES:
-            desc_path = root / _DESCRIPTIONS_LANG_CSV.format(lang)
-            try:
-                with open(desc_path, newline="", encoding="utf-8") as fh:
-                    rows = [r[0].strip() for r in csv.reader(fh) if r]
-                if index < len(rows):
-                    descriptions[lang] = rows[index]
-            except (OSError, csv.Error):
-                pass
-        return descriptions
+        """Return the configured-language descriptions of *category_name* (a folder name); blanks are left out."""
+        registry = self._read_category_registry()
+        for index, category_id in enumerate(registry.ids):
+            if category_id and self._folder_name_from_category_id(category_id) == category_name.lower():
+                return registry.row(index, settings.SUPPORTED_LANGUAGES)["descriptions"]
+        return {}
 
     def _read_item_csv_data(
             self,
@@ -434,48 +368,19 @@ class FileSystemContentProvider(
         and a blank name stays in place as "". An unreadable file raises ContentOperationError
         rather than reading as empty, which would hide the item or misalign its names.
         """
-        with item_registry_lock(category_path):
-            registry = read_item_registry(category_path)
+        with registry_lock(category_path, ITEMS):
+            registry = read_registry(category_path, ITEMS)
         rows = [index for index, item_id in enumerate(registry.ids) if item_id]
         item_ids = [registry.ids[index] for index in rows]
-        items_by_lang = {lang: [names[index] for index in rows] for lang, names in registry.names.items()}
+        items_by_lang = {
+            lang: [names[index] for index in rows]
+            for lang, names in registry.names.items() if lang in settings.SUPPORTED_LANGUAGES
+        }
         return item_ids, items_by_lang
 
     def _registered_item_ids(self, category_path: Path) -> list[str]:
         """The category's registered item ids, in registry order."""
         return self._read_item_csv_data(category_path)[0]
-
-    def _category_row_index(self, category_id: str) -> int:
-        """Return the CSV row index registered for *category_id* in categories_ids.csv."""
-        id_entries = self._read_csv_column(self._content_root() / _CATEGORIES_IDS)
-        try:
-            return id_entries.index(category_id)
-        except ValueError:
-            raise CategoryNotFoundError(
-                f"Category id '{category_id}' is not found in categories_ids.csv.",
-            ) from None
-
-    @staticmethod
-    def _read_csv_column(file_path: Path) -> list[str]:
-        """Return non-blank first-column values from a single-column CSV file."""
-        try:
-            with open(file_path, newline="", encoding="utf-8") as fh:
-                return [r[0].strip() for r in csv.reader(fh) if r and r[0].strip()]
-        except (OSError, csv.Error):
-            return []
-
-    @classmethod
-    def _write_csv_row_at_index(cls, file_path: Path, index: int, value: str) -> None:
-        """Overwrite the row at *index* in a single-column CSV file, padding with blanks as needed."""
-        rows = cls._read_csv_column(file_path)
-        while len(rows) <= index:
-            rows.append("")
-        rows[index] = value
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(file_path, "w", newline="", encoding="utf-8") as fh:
-            writer = csv.writer(fh, lineterminator="\n")
-            for row in rows:
-                writer.writerow([row])
 
     def _item_folder_for_id(self, category_path: Path, item_id: str) -> str | None:
         """Return the filesystem folder name for the given item_id, or None if it isn't registered.

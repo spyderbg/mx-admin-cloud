@@ -27,6 +27,7 @@ from src.services.content.models import (
     CreateItem,
     GenerateItemVoice,
     GeneratedItemVoice,
+    GenerationOutcome,
     InvalidCategoryNameError,
     ItemDetail,
     ItemImages,
@@ -39,11 +40,12 @@ from src.services.content.providers.file_system.constants import (
     _CATEGORY_VOICE_MP3,
     _IMAGE_EXTENSIONS,
 )
-from src.services.content.providers.file_system.item_registry import (
-    ItemRegistryCommitPending,
-    item_registry_lock,
-    read_item_registry,
-    write_item_registry,
+from src.services.content.providers.file_system.registry import (
+    ITEMS,
+    RegistryCommitPending,
+    read_registry,
+    registry_lock,
+    write_registry,
 )
 from src.services.provider_strategy import ProviderSelectionStrategy
 
@@ -370,15 +372,14 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             item_path: Path,
             folder_name: str,
             words_by_lang: dict[str, str],
-    ) -> tuple[list[str], list[str]]:
+    ) -> GenerationOutcome:
         """Generate one voice file per supported language, best effort.
 
-        Returns (languages generated, warnings). Never raises: a failing language is
-        reported and the remaining languages are still attempted, except when the TTS
-        service reports that no provider is active, which would fail for every language.
+        Never raises: a failing language is reported and the remaining languages are still
+        attempted, except when the TTS service reports that no provider is active, which
+        would fail for every language.
         """
-        generated: list[str] = []
-        warnings: list[str] = []
+        outcome = GenerationOutcome(requested=True)
         for lang in settings.SUPPORTED_LANGUAGES:
             word = words_by_lang.get(lang) or words_by_lang["en"]
             try:
@@ -387,27 +388,33 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
                 voice_path.write_bytes(audio_bytes)
                 self._write_generated_voice_metadata(voice_path, audio_bytes, word)
             except (ValueError, RuntimeError, httpx.HTTPError) as exc:
-                warnings.append(f"Voice generation failed for {lang}: {exc}")
+                outcome.warnings.append(f"Voice generation failed for {lang}: {exc}")
                 if "no active text to speech" in str(exc).lower():
                     break
             except OSError as exc:
-                warnings.append(f"Voice file write failed for {lang}: {exc}")
+                outcome.warnings.append(f"Voice file write failed for {lang}: {exc}")
             else:
-                generated.append(lang)
-        return generated, warnings
+                outcome.generated.append(lang)
+        return outcome
 
     @staticmethod
     def _item_word_to_image_prompt(english_word: str) -> str:
         """Derive a short, child-friendly image prompt from an item's English name."""
         return f"Simple, friendly illustration for children: {english_word.strip()}"
 
-    def _generate_new_item_image(self, category_id: str, item_id: str, english_word: str) -> tuple[bool, list[str]]:
-        """Best-effort image for a freshly created item; a failure is a warning, never an error."""
+    def _generate_new_item_image(self, category_id: str, item_id: str, english_word: str) -> GenerationOutcome:
+        """Generate the image of a freshly created item from its name, best effort.
+
+        Never raises: a failure, including no active text to image configuration, is reported.
+        """
+        outcome = GenerationOutcome(requested=True)
         try:
-            self.generate_item_image(category_id, item_id, self._item_word_to_image_prompt(english_word))
+            image = self.generate_item_image(category_id, item_id, self._item_word_to_image_prompt(english_word))
         except ContentError as exc:
-            return False, [str(exc)]
-        return True, []
+            outcome.warnings.append(str(exc))
+        else:
+            outcome.generated.append(image.id)
+        return outcome
 
     def create_item(  # pylint: disable=too-many-locals
             self,
@@ -415,11 +422,13 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             english_word: str,
             image_data: bytes | None = None,
             image_extension: str = ".png",
-            generate_voices: bool = True,
+            generate_voices: bool = False,
             generate_image: bool = False,
     ) -> CreateItem:
         if not english_word or not english_word.strip():
             raise ContentOperationError("Item word is required")
+        if image_data and generate_image:
+            raise ContentOperationError("Upload an image or generate one, not both.")
         english_word = english_word.strip()
 
         item_id = self._english_word_to_image_id(english_word)
@@ -434,10 +443,13 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         words_by_lang = self._translate_item_word(english_word, category_name)
 
         try:
-            item_path.mkdir(parents=True, exist_ok=False)
+            # No parents: a category archived or renamed meanwhile must not be recreated here.
+            item_path.mkdir(exist_ok=False)
         except FileExistsError as exc:
             # A concurrent request created it since _validate_item_path(); the folder is theirs.
             raise CategoryConflictError(f"Item folder already exists: {folder_name}") from exc
+        except FileNotFoundError as exc:
+            raise CategoryNotFoundError(f"Category '{category_name}': directory is missing.") from exc
         except OSError as exc:
             raise ContentOperationError(f"Failed to write item files: {exc}") from exc
         try:
@@ -449,13 +461,13 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
                 self._write_item_image(item_path / f"{folder_name}{ext}", image_data)
                 self._write_item_image(item_path / f"{folder_name}_01{ext}", image_data)
 
-            with item_registry_lock(category_path):
-                registry = read_item_registry(category_path)
+            with registry_lock(category_path, ITEMS):
+                registry = read_registry(category_path, ITEMS)
                 if registry.index_of(item_id) is not None:
                     raise CategoryConflictError(f"Item id already exists: {item_id}")
-                registry.append(item_id, words_by_lang)
-                write_item_registry(category_path, registry)
-        except ItemRegistryCommitPending:
+                registry.append(item_id, names=words_by_lang)
+                write_registry(category_path, ITEMS, registry)
+        except RegistryCommitPending:
             raise  # the item is registered; its folder must stay
         except Exception as exc:
             # Leave no trace: the registry write is all or nothing, so only the folder remains.
@@ -464,19 +476,19 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
                 raise
             raise ContentOperationError(f"Failed to write item files: {exc}") from exc
 
-        voices_generated: list[str] = []
-        voice_warnings: list[str] = []
-        if generate_voices:
-            voices_generated, voice_warnings = self._generate_item_voices(item_path, folder_name, words_by_lang)
-
-        wants_image = generate_image and not image_data
-        image_generated, image_warnings = (
-            self._generate_new_item_image(category_id, item_id, english_word) if wants_image else (False, [])
+        # Both run only once the item exists, and neither can fail its creation.
+        voices = (
+            self._generate_item_voices(item_path, folder_name, words_by_lang) if generate_voices
+            else GenerationOutcome()
+        )
+        image = (
+            self._generate_new_item_image(category_id, item_id, english_word) if generate_image
+            else GenerationOutcome()
         )
 
         message = f"Item '{english_word}' created."
-        message += " Voices were not generated." if generate_voices and not voices_generated else ""
-        message += " The image was not generated." if wants_image and not image_generated else ""
+        message += " Voices were not generated." if voices.missing else ""
+        message += " The image was not generated." if image.missing else ""
 
         return CreateItem(
             category=category_name,
@@ -484,10 +496,8 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             folder=folder_name,
             image_id=item_id,
             item_id=item_id,
-            voices_generated=voices_generated,
-            voice_warnings=voice_warnings,
-            image_generated=image_generated,
-            image_warnings=image_warnings,
+            voices=voices,
+            image=image,
             message=message,
         )
 
@@ -500,15 +510,15 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         category_name, category_path = self._validate_category_path(category_id)
         self._resolve_item_path(category_path, category_name, item_id)
 
-        with item_registry_lock(category_path):
-            registry = read_item_registry(category_path)
+        with registry_lock(category_path, ITEMS):
+            registry = read_registry(category_path, ITEMS)
             index = registry.index_of(item_id)
             if index is None:
                 raise CategoryNotFoundError(f"Item '{item_id}' not found in category '{category_name}'.")
             for lang, value in item_name.to_dict().items():
-                if lang in registry.names:
+                if lang in settings.SUPPORTED_LANGUAGES:
                     registry.names[lang][index] = (value or "").strip()
-            write_item_registry(category_path, registry)
+            write_registry(category_path, ITEMS, registry)
 
         return self._item_detail(category_path, category_name, item_id)
 
@@ -525,9 +535,9 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
 
     def _change_item_id(self, category_path: Path, category_name: str, item_id: str, new_item_id: str) -> None:
         """Register *item_id* as *new_item_id* and move its folder along; all or nothing."""
-        with item_registry_lock(category_path):
+        with registry_lock(category_path, ITEMS):
             old_folder, _ = self._resolve_item_path(category_path, category_name, item_id)
-            registry = read_item_registry(category_path)
+            registry = read_registry(category_path, ITEMS)
             index = registry.index_of(item_id)
             if index is None:
                 raise CategoryNotFoundError(f"Item '{item_id}' not found in category '{category_name}'.")
@@ -546,8 +556,8 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
                 self._rename_item_folder(category_path, old_folder, new_folder)
             registry.ids[index] = new_item_id
             try:
-                write_item_registry(category_path, registry)
-            except ItemRegistryCommitPending:
+                write_registry(category_path, ITEMS, registry)
+            except RegistryCommitPending:
                 raise  # the new id is registered; the folder belongs where it is now
             except Exception:
                 if moved:
@@ -597,9 +607,9 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
 
     def remove_item(self, category_id: str, item_id: str) -> RemoveItem:
         category_name, category_path = self._validate_category_path(category_id)
-        with item_registry_lock(category_path):
+        with registry_lock(category_path, ITEMS):
             item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
-            registry = read_item_registry(category_path)
+            registry = read_registry(category_path, ITEMS)
             index = registry.index_of(item_id)
             if index is None:
                 raise CategoryNotFoundError(f"Item '{item_id}' not found in category '{category_name}'.")
@@ -614,8 +624,8 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
                 raise ContentOperationError(f"Failed to delete item: {exc}") from exc
             registry.remove(index)
             try:
-                write_item_registry(category_path, registry)
-            except ItemRegistryCommitPending:
+                write_registry(category_path, ITEMS, registry)
+            except RegistryCommitPending:
                 pass  # the row is gone; finish deleting the folder below
             except Exception:
                 doomed_path.rename(item_path)

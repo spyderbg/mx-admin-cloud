@@ -18,6 +18,7 @@ from src.services.content.models import (
 )
 from src.core.localization import LocalizedString
 from src.services.content.providers.file_system import (
+    CreationMethod,
     FileSystemContentProvider,
 )
 from src.services.content.__tests__.content_fs_helpers import (
@@ -709,3 +710,24 @@ def test_add_category_image_writes_file(tmp_path: Path) -> None:
 
     assert result.id == "foods_01"
     assert (content_root / "foods" / "foods_01.png").read_bytes() == b"fake-png"
+
+
+# ---------------------------------------------------------------------------
+# metadata sidecars
+# ---------------------------------------------------------------------------
+
+def test_a_failed_metadata_write_leaves_the_previous_sidecar_intact(tmp_path: Path) -> None:
+    voice = tmp_path / "apple_en.mp3"
+    voice.write_bytes(b"audio")
+    FileSystemContentProvider._write_metadata(voice, CreationMethod.UPLOADED, provider="custom")
+    before = (tmp_path / "apple_en.csv").read_text(encoding="utf-8")
+
+    with (
+        patch("csv.DictWriter.writerow", side_effect=OSError("disk full")),
+        pytest.raises(OSError, match="disk full"),
+    ):
+        FileSystemContentProvider._write_metadata(voice, CreationMethod.GENERATED, provider="openai")
+
+    assert (tmp_path / "apple_en.csv").read_text(encoding="utf-8") == before
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["apple_en.csv", "apple_en.mp3"]
+    assert FileSystemContentProvider._read_metadata(voice)[0] == "custom"

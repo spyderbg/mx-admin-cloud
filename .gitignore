@@ -52,7 +52,8 @@ test_environment/e2e/playwright-report/
 # `git add -A` would otherwise stage straight into a fix commit inside a worktree.
 .mxfix*
 
-# Item registry lock and staged writes (backend/.../file_system/item_registry.py); transient.
-content/**/.items_registry.*
-content/**/.items_*.csv.tmp
+# Registry locks, staged CSV writes (backend/.../file_system/registry.py, metadata sidecars) and
+# folders being deleted; all transient.
+content/**/.*_registry.*
+content/**/.*.csv.tmp
 content/**/.*.deleting/

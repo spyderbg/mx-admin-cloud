@@ -595,7 +595,7 @@ export const contentHandlers = [
     return HttpResponse.json({ ...toVoiceResponse(voice), action: 'delete' })
   }),
 
-  // Create a new item in a category (translations + optional image; voices are backend-decided)
+  // Create a new item in a category (translations, an optional image, and opt-in voice/image generation)
   http.post('/api/v1/content/categories/:category_id/items', async ({ params, request }) => {
     const category = findCategoryById(String(params.category_id))
     if (!category) return HttpResponse.json({ detail: 'Category not found' }, { status: 404 })
@@ -607,7 +607,13 @@ export const contentHandlers = [
       return HttpResponse.json({ detail: `Item id already exists: ${itemId}` }, { status: 409 })
     }
     const image = form.get('image')
-    const imageUrl = image instanceof File && image.size > 0 ? URL.createObjectURL(image) : ''
+    const uploaded = image instanceof File && image.size > 0
+    const generateVoices = form.get('generate_voices') === 'true'
+    const generateImage = form.get('generate_image') === 'true'
+    if (uploaded && generateImage) {
+      return HttpResponse.json({ detail: 'Upload an image or generate one, not both.' }, { status: 400 })
+    }
+    const imageUrl = uploaded ? URL.createObjectURL(image) : ''
     const folder = slugify(word)
     category.items.push({
       id: itemId,
@@ -624,7 +630,7 @@ export const contentHandlers = [
         parameters: {},
       })),
     })
-    // Mock mode has no TTS service, so it reports the same warning the backend does.
+    // Mock mode has no voice or image generators, so a requested step gets the backend's warning.
     return HttpResponse.json(
       {
         category: slugify(category.name['en'] ?? ''),
@@ -633,8 +639,10 @@ export const contentHandlers = [
         image_id: itemId,
         item_id: itemId,
         voices_generated: [],
-        voice_warnings: ['No active voice generators configured; voices were not generated.'],
-        message: `Item '${word}' created. Voices were not generated.`,
+        voice_warnings: generateVoices ? ['No active voice generators configured; voices were not generated.'] : [],
+        image_generated: false,
+        image_warnings: generateImage ? ['No active image generators configured; the image was not generated.'] : [],
+        message: `Item '${word}' created.`,
       },
       { status: 201 },
     )

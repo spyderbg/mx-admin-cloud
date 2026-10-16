@@ -78,8 +78,8 @@ export interface CreateItemResponse {
     item_id: string
     voices_generated: string[]
     voice_warnings: string[]
-    image_generated?: boolean
-    image_warnings?: string[]
+    image_generated: boolean
+    image_warnings: string[]
     message: string
 }
 

@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import csv
+import logging
 from pathlib import Path
 from typing import Any
 
 from src.core.config import settings
 from src.services.text_translation.models import TextTranslationServiceProvider, TranslateTextRequest
+
+logger = logging.getLogger(__name__)
+
+_ITEM_IDS_FILE = "items_ids.csv"
 
 
 class StaticTextTranslate(TextTranslationServiceProvider):
@@ -48,7 +53,8 @@ class StaticTextTranslate(TextTranslationServiceProvider):
             return
 
         for category_dir in sorted(root.iterdir()):
-            if not category_dir.is_dir():
+            # Hidden folders are categories being deleted, not content.
+            if not category_dir.is_dir() or category_dir.name.startswith("."):
                 continue
 
             lang_words = self._load_category_csvs(category_dir)
@@ -70,15 +76,22 @@ class StaticTextTranslate(TextTranslationServiceProvider):
         return root if root and root.is_dir() else None
 
     def _load_category_csvs(self, category_dir: Path) -> dict[str, list[str]]:
-        """Load all images_*.csv files from a category directory."""
+        """Load the items_<lang>.csv files of a category directory, one word per row.
+
+        Blank rows are kept as "" so row N stays row N in every language (a blank name is a
+        missing translation, not a missing row). items_ids.csv holds ids, not words, and an
+        unreadable file is skipped rather than failing the whole translator.
+        """
         lang_words: dict[str, list[str]] = {}
         for csv_path in sorted(category_dir.glob("items_*.csv")):
+            if csv_path.name == _ITEM_IDS_FILE:
+                continue
             lang_code = csv_path.stem.split("_", 1)[-1].lower()
-            with csv_path.open("r", encoding="utf-8", newline="") as fh:
-                reader = csv.reader(fh)
-                lang_words[lang_code] = [
-                    row[0].strip() for row in reader if row and row[0].strip()
-                ]
+            try:
+                with csv_path.open("r", encoding="utf-8", newline="") as fh:
+                    lang_words[lang_code] = [(row[0].strip() if row else "") for row in csv.reader(fh)]
+            except (OSError, csv.Error, UnicodeDecodeError) as exc:
+                logger.warning("Skipping unreadable translation file %s: %s", csv_path, exc)
         return lang_words
 
     def _update_lookup_from_category(self, lang_words: dict[str, list[str]]) -> None:
@@ -87,12 +100,14 @@ class StaticTextTranslate(TextTranslationServiceProvider):
         for src_lang in lang_codes:
             src_dict = self._lookup.setdefault(src_lang, {})
             for idx, word in enumerate(lang_words[src_lang]):
+                if not word:
+                    continue
                 target_map = src_dict.setdefault(word.lower(), {})
                 for tgt_lang in lang_codes:
                     if tgt_lang == src_lang:
                         continue
                     tgt_words = lang_words[tgt_lang]
-                    if idx < len(tgt_words):
+                    if idx < len(tgt_words) and tgt_words[idx]:
                         target_map[tgt_lang] = tgt_words[idx]
 
     def supports(self, input_lang_code: str, target_lang_code: str) -> bool:

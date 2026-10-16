@@ -103,7 +103,7 @@ class _StubProvider(ContentProvider):
             english_word: str,
             image_data: bytes | None = None,
             image_extension: str = ".png",
-            generate_voices: bool = True,
+            generate_voices: bool = False,
             generate_image: bool = False,
     ) -> CreateItem:
         self._record(
@@ -404,7 +404,7 @@ class _ConcreteProvider(ContentProvider):
 
     def create_item(
             self, category_id, english_word, image_data=None, image_extension=".png",
-            generate_voices=True, generate_image=False,
+            generate_voices=False, generate_image=False,
     ):
         return {}
 
@@ -940,7 +940,7 @@ def test_create_category_response() -> None:
 def test_create_item_response() -> None:
     resp = CreateItemResponse(
         category="foods", item="apple", folder="apple", image_id="I_Apple", item_id="I_Apple",
-        voices_generated=["en"], voice_warnings=[], message="created",
+        voices_generated=["en"], voice_warnings=[], image_generated=False, image_warnings=[], message="created",
     )
     assert resp.image_id == "I_Apple"
 

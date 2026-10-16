@@ -24,6 +24,7 @@ from src.services.content.models import (
     CreateItem,
     GenerateItemVoice,
     GeneratedItemVoice,
+    GenerationOutcome,
     ItemDetail,
     ItemVoices,
     OptimizedItemVoice,
@@ -51,8 +52,11 @@ async def test_items_create_with_image_returns_201(client: AsyncClient) -> None:
     assert body["item_id"] == "I_Apple"
     assert body["image_id"] == "I_Apple"
     assert body["item"] == "apple"
-    assert body["voices_generated"] == ["en"]
+    # Generating voices and the image are both opt-in.
+    assert body["voices_generated"] == []
     assert body["voice_warnings"] == []
+    assert body["image_generated"] is False
+    assert body["image_warnings"] == []
     assert body["message"] == "created"
 
 
@@ -63,7 +67,7 @@ async def test_items_create_without_image_returns_201(tmp_resolved: Path) -> Non
     class _TrackingProvider(StubContentProvider):
         def create_item(
                 self, category_id, english_word, image_data=None, image_extension=".png",
-                generate_voices=True, generate_image=False,
+                generate_voices=False, generate_image=False,
         ):
             seen.append((category_id, english_word, image_data, image_extension, generate_voices))
             return CreateItem(category="foods", item=english_word, folder="apple", image_id="I_Apple",
@@ -73,7 +77,7 @@ async def test_items_create_without_image_returns_201(tmp_resolved: Path) -> Non
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         response = await c.post(_ITEMS_URL, data={"item": "  apple  "})
     assert response.status_code == 201
-    assert seen == [("C_Foods", "apple", None, ".png", True)]
+    assert seen == [("C_Foods", "apple", None, ".png", False)]
 
 
 @pytest.mark.asyncio
@@ -83,7 +87,7 @@ async def test_items_create_picks_image_extension(tmp_resolved: Path) -> None:
     class _TrackingProvider(StubContentProvider):
         def create_item(
                 self, category_id, english_word, image_data=None, image_extension=".png",
-                generate_voices=True, generate_image=False,
+                generate_voices=False, generate_image=False,
         ):
             seen.append((image_data, image_extension))
             return CreateItem(category="foods", item=english_word, folder="apple", image_id="I_Apple",
@@ -102,7 +106,7 @@ async def test_items_create_defaults_unknown_extension_to_png(tmp_resolved: Path
     class _TrackingProvider(StubContentProvider):
         def create_item(
                 self, category_id, english_word, image_data=None, image_extension=".png",
-                generate_voices=True, generate_image=False,
+                generate_voices=False, generate_image=False,
         ):
             seen.append(image_extension)
             return CreateItem(category="foods", item=english_word, folder="apple", image_id="I_Apple",
@@ -121,7 +125,7 @@ async def test_items_create_skips_voices_when_no_active_generators(tmp_resolved:
     class _TrackingProvider(StubContentProvider):
         def create_item(
                 self, category_id, english_word, image_data=None, image_extension=".png",
-                generate_voices=True, generate_image=False,
+                generate_voices=False, generate_image=False,
         ):
             seen_flags.append(generate_voices)
             return CreateItem(category="foods", item=english_word, folder="apple", image_id="I_Apple",
@@ -129,7 +133,7 @@ async def test_items_create_skips_voices_when_no_active_generators(tmp_resolved:
 
     app = make_app(_TrackingProvider(tmp_resolved), tmp_resolved, voice_generation_available=False)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        response = await c.post(_ITEMS_URL, data={"item": "apple"})
+        response = await c.post(_ITEMS_URL, data={"item": "apple", "generate_voices": "true"})
     assert response.status_code == 201
     assert seen_flags == [False]
     body = response.json()
@@ -144,11 +148,11 @@ async def test_items_create_forwards_the_generation_choices(tmp_resolved: Path) 
     class _TrackingProvider(StubContentProvider):
         def create_item(
                 self, category_id, english_word, image_data=None, image_extension=".png",
-                generate_voices=True, generate_image=False,
+                generate_voices=False, generate_image=False,
         ):
             seen.append((generate_voices, generate_image))
             return CreateItem(category="foods", item=english_word, folder="apple", image_id="I_Apple",
-                              item_id="I_Apple", image_generated=True)
+                              item_id="I_Apple", image=GenerationOutcome(requested=True, generated=["apple_01"]))
 
     app = make_app(_TrackingProvider(tmp_resolved), tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
@@ -164,10 +168,53 @@ async def test_items_create_forwards_the_generation_choices(tmp_resolved: Path) 
 
 
 @pytest.mark.asyncio
+async def test_items_create_skips_the_image_when_no_active_generators(tmp_resolved: Path) -> None:
+    seen_flags: list[bool] = []
+
+    class _TrackingProvider(StubContentProvider):
+        def create_item(
+                self, category_id, english_word, image_data=None, image_extension=".png",
+                generate_voices=False, generate_image=False,
+        ):
+            seen_flags.append(generate_image)
+            return CreateItem(category="foods", item=english_word, folder="apple", image_id="I_Apple",
+                              item_id="I_Apple")
+
+    app = make_app(_TrackingProvider(tmp_resolved), tmp_resolved, image_generation_available=False)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.post(_ITEMS_URL, data={"item": "apple", "generate_image": "true"})
+    assert response.status_code == 201
+    assert seen_flags == [False]
+    body = response.json()
+    assert body["image_generated"] is False
+    assert any("No active image generators" in warning for warning in body["image_warnings"])
+    assert body["voice_warnings"] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("image_generation_available", [True, False])
+async def test_items_create_rejects_uploading_and_generating_an_image(
+        tmp_resolved: Path, image_generation_available: bool,
+) -> None:
+    # The request is refused before the provider is reached.
+    provider = StubContentProvider(tmp_resolved).raises("create_item", AssertionError("create_item was called"))
+    app = make_app(provider, tmp_resolved, image_generation_available=image_generation_available)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        response = await c.post(
+            _ITEMS_URL,
+            files={"image": ("apple.png", PNG_BYTES, "image/png")},
+            data={"item": "apple", "generate_image": "true"},
+        )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Upload an image or generate one, not both."
+
+
+@pytest.mark.asyncio
 async def test_items_create_reports_provider_voice_warnings(tmp_resolved: Path) -> None:
     provider = StubContentProvider(tmp_resolved).returns("create_item", CreateItem(
         category="foods", item="apple", folder="apple", image_id="I_Apple", item_id="I_Apple",
-        voices_generated=["en"], voice_warnings=["Voice generation failed for fr: boom"], message="created",
+        voices=GenerationOutcome(requested=True, generated=["en"], warnings=["Voice generation failed for fr: boom"]),
+        message="created",
     ))
     app = make_app(provider, tmp_resolved)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
