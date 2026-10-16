@@ -21,12 +21,11 @@ from src.services.content.providers.file_system.constants import (
     _CATEGORIES_LANG_CSV,
     _DESCRIPTIONS_LANG_CSV,
     _IMAGE_EXTENSIONS,
-    _ITEMS_IDS,
-    _ITEMS_LANG_CSV,
     _METADATA_COLUMNS,
 )
 from src.services.content.providers.file_system.categories import FileSystemCategoriesMixin
 from src.services.content.providers.file_system.internal_api import FileSystemInternalApiMixin
+from src.services.content.providers.file_system.item_registry import item_registry_lock, read_item_registry
 from src.services.content.providers.file_system.items import FileSystemItemsMixin
 
 
@@ -85,7 +84,7 @@ class FileSystemContentProvider(
         item_path = category_path / folder_name
         if item_path.exists():
             raise CategoryConflictError(f"Item folder already exists: {folder_name}")
-        if item_id in self._read_csv_column(category_path / _ITEMS_IDS):
+        if item_id in self._registered_item_ids(category_path):
             raise CategoryConflictError(f"Item id already exists: {item_id}")
         return item_path
 
@@ -242,20 +241,6 @@ class FileSystemContentProvider(
         a folder created as 'AtSchool' would never be found again ('at_school').
         """
         return re.sub(r"[\s-]+", "_", (name or "").strip()).lower()
-
-    @staticmethod
-    def _append_csv_line(file_path: Path, line: str) -> None:
-        """Append one row to a single-column CSV file, creating the file if needed."""
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        needs_newline = False
-        if file_path.exists() and file_path.stat().st_size > 0:
-            with open(file_path, "rb") as fh:
-                fh.seek(-1, 2)
-                needs_newline = fh.read(1) != b"\n"
-        with open(file_path, "a", newline="", encoding="utf-8") as fh:
-            if needs_newline:
-                fh.write("\n")
-            csv.writer(fh, lineterminator="\n").writerow([line.strip()])
 
     @staticmethod
     def _read_csv_rows_aligned(file_path: Path) -> list[str]:
@@ -443,27 +428,22 @@ class FileSystemContentProvider(
             self,
             category_path: Path,
     ) -> tuple[list[str], dict[str, list[str]]]:
-        """Read item IDs and per-language names from the category CSV files."""
-        item_ids: list[str] = []
-        ids_path = category_path / _ITEMS_IDS
-        if ids_path.exists():
-            try:
-                with open(ids_path, newline="", encoding="utf-8") as fh:
-                    item_ids = [r[0].strip() for r in csv.reader(fh) if r and r[0].strip()]
-            except (OSError, csv.Error):
-                pass
+        """Read item IDs and per-language names from the category CSV files.
 
-        items_by_lang: dict[str, list[str]] = {}
-        for lang in settings.SUPPORTED_LANGUAGES:
-            csv_path = category_path / _ITEMS_LANG_CSV.format(lang)
-            if csv_path.exists():
-                try:
-                    with open(csv_path, newline="", encoding="utf-8") as fh:
-                        items_by_lang[lang] = [r[0].strip() for r in csv.reader(fh) if r and r[0].strip()]
-                except (OSError, csv.Error):
-                    items_by_lang[lang] = []
-
+        The lists stay row-aligned: rows without an id are dropped from every list together,
+        and a blank name stays in place as "". An unreadable file raises ContentOperationError
+        rather than reading as empty, which would hide the item or misalign its names.
+        """
+        with item_registry_lock(category_path):
+            registry = read_item_registry(category_path)
+        rows = [index for index, item_id in enumerate(registry.ids) if item_id]
+        item_ids = [registry.ids[index] for index in rows]
+        items_by_lang = {lang: [names[index] for index in rows] for lang, names in registry.names.items()}
         return item_ids, items_by_lang
+
+    def _registered_item_ids(self, category_path: Path) -> list[str]:
+        """The category's registered item ids, in registry order."""
+        return self._read_item_csv_data(category_path)[0]
 
     def _category_row_index(self, category_id: str) -> int:
         """Return the CSV row index registered for *category_id* in categories_ids.csv."""
@@ -497,25 +477,13 @@ class FileSystemContentProvider(
             for row in rows:
                 writer.writerow([row])
 
-    @classmethod
-    def _delete_csv_row_at_index(cls, file_path: Path, index: int) -> None:
-        """Remove the row at *index* from a single-column CSV file, shifting later rows up."""
-        rows = cls._read_csv_column(file_path)
-        if 0 <= index < len(rows):
-            del rows[index]
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(file_path, "w", newline="", encoding="utf-8") as fh:
-            writer = csv.writer(fh, lineterminator="\n")
-            for row in rows:
-                writer.writerow([row])
-
     def _item_folder_for_id(self, category_path: Path, item_id: str) -> str | None:
         """Return the filesystem folder name for the given item_id, or None if it isn't registered.
 
         The folder comes from the id alone; the item's names are never consulted, so
         editing them can't orphan the folder.
         """
-        if item_id not in self._read_csv_column(category_path / _ITEMS_IDS):
+        if item_id not in self._registered_item_ids(category_path):
             return None
         return self._folder_name_from_item_id(item_id) or None
 

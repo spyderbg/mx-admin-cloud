@@ -23,6 +23,7 @@ from src.services.content.providers.file_system import (
     FileSystemContentProvider,
     CreationMethod,
     _extension_for_content_type,
+    item_registry,
 )
 from src.services.content.__tests__.content_fs_helpers import (
     patch_fs_settings,
@@ -320,22 +321,34 @@ def test_create_item_rolls_back_on_disk_failure(tmp_path: Path) -> None:
     content_root, category_path = _prepare_category(tmp_path)
     (category_path / "items_ids.csv").write_text("I_Pear\n", encoding="utf-8")
     (category_path / "items_en.csv").write_text("pear\n", encoding="utf-8")
-    # A directory where items_fr.csv should be makes that append fail after ids/en were written.
-    (category_path / "items_fr.csv").mkdir()
+    real_write_staged = item_registry._write_staged
+    staged: list[Path] = []
+
+    def write_staged_until_disk_is_full(path: Path, rows: list[str]) -> None:
+        # Fail after ids is staged, so a non-atomic write would already have changed it.
+        staged.append(path)
+        if len(staged) == 2:
+            raise OSError("disk full")
+        real_write_staged(path, rows)
+
     provider = make_fs_provider()
     with (
         patch_fs_settings() as mock_settings,
         patch.object(FileSystemContentProvider, "_translate_word", side_effect=_fake_translate),
         patch.object(FileSystemContentProvider, "_generate_audio", return_value=b"audio") as audio_mock,
+        patch.object(item_registry, "_write_staged", side_effect=write_staged_until_disk_is_full),
     ):
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en", "fr"]
-        with pytest.raises(ContentOperationError, match="Failed to write item files"):
+        with pytest.raises(ContentOperationError, match="Failed to write the item registry"):
             provider.create_item("C_Foods", "apple", b"\x89PNG")
 
     assert not (category_path / "apple").exists()
     assert _csv_rows(category_path / "items_ids.csv") == ["I_Pear"]
     assert _csv_rows(category_path / "items_en.csv") == ["pear"]
+    assert not (category_path / "items_fr.csv").exists()
+    assert not list(category_path.glob(".items_*.csv.tmp"))
+    assert not (category_path / ".items_registry.commit").exists()
     assert audio_mock.call_count == 0
 
 
@@ -362,15 +375,6 @@ def test_create_item_missing_category_folder(tmp_path: Path) -> None:
         with pytest.raises(CategoryNotFoundError):
             provider.create_item("C_Foods", "apple")
     assert not (content_root / "foods").exists()
-
-
-def test_append_csv_line_quotes_and_terminates_rows(tmp_path: Path) -> None:
-    path = tmp_path / "items_en.csv"
-    path.write_text("apple", encoding="utf-8")  # no trailing newline
-    FileSystemContentProvider._append_csv_line(path, "hot, chocolate")
-    FileSystemContentProvider._append_csv_line(path, "pear")
-    assert path.read_text(encoding="utf-8") == 'apple\n"hot, chocolate"\npear\n'
-    assert FileSystemContentProvider._read_csv_column(path) == ["apple", "hot, chocolate", "pear"]
 
 
 # ---------------------------------------------------------------------------
@@ -563,11 +567,14 @@ def test_update_item_id_restores_folder_when_id_row_cannot_be_written(tmp_path: 
     provider = make_fs_provider()
     with (
         patch_fs_settings() as mock_settings,
-        patch.object(FileSystemContentProvider, "_write_csv_row_at_index", side_effect=OSError("read-only")),
+        patch(
+            "src.services.content.providers.file_system.items.write_item_registry",
+            side_effect=ContentOperationError("read-only"),
+        ),
     ):
         mock_settings.content_path = content_root
         mock_settings.SUPPORTED_LANGUAGES = ["en"]
-        with pytest.raises(OSError, match="read-only"):
+        with pytest.raises(ContentOperationError, match="read-only"):
             provider.update_item_id("C_Foods", "I_Apple", "I_GreenApple")
 
     assert _csv_rows(category_path / "items_ids.csv") == ["I_Apple"]

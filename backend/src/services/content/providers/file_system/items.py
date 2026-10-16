@@ -38,8 +38,12 @@ from src.services.content.providers.file_system.constants import (
     CreationMethod,
     _CATEGORY_VOICE_MP3,
     _IMAGE_EXTENSIONS,
-    _ITEMS_IDS,
-    _ITEMS_LANG_CSV,
+)
+from src.services.content.providers.file_system.item_registry import (
+    ItemRegistryCommitPending,
+    item_registry_lock,
+    read_item_registry,
+    write_item_registry,
 )
 from src.services.provider_strategy import ProviderSelectionStrategy
 
@@ -334,7 +338,9 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             thumbnail_uri, images_count = self._item_thumbnail_and_count(category_path, category_name, iid)
             items.append(ItemDetail(
                 id=iid,
-                name=LocalizedString({lang: names[i] for lang, names in items_by_lang.items() if i < len(names)}),
+                name=LocalizedString({
+                    lang: names[i] for lang, names in items_by_lang.items() if i < len(names) and names[i]
+                }),
                 thumbnail_uri=thumbnail_uri,
                 images_count=images_count,
             ))
@@ -427,10 +433,14 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         # Translate before touching the disk: a failing translator must not create the item.
         words_by_lang = self._translate_item_word(english_word, category_name)
 
-        # (path, index of the appended row, whether the file existed before the append)
-        appended: list[tuple[Path, int, bool]] = []
         try:
             item_path.mkdir(parents=True, exist_ok=False)
+        except FileExistsError as exc:
+            # A concurrent request created it since _validate_item_path(); the folder is theirs.
+            raise CategoryConflictError(f"Item folder already exists: {folder_name}") from exc
+        except OSError as exc:
+            raise ContentOperationError(f"Failed to write item files: {exc}") from exc
+        try:
             if image_data:
                 ext = self._normalize_image_extension(image_extension)
                 # The item's first image is its main image, stored with no index suffix
@@ -439,24 +449,17 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
                 self._write_item_image(item_path / f"{folder_name}{ext}", image_data)
                 self._write_item_image(item_path / f"{folder_name}_01{ext}", image_data)
 
-            targets = [(category_path / _ITEMS_IDS, item_id)] + [
-                (category_path / _ITEMS_LANG_CSV.format(lang), words_by_lang[lang])
-                for lang in settings.SUPPORTED_LANGUAGES
-            ]
-            for path, value in targets:
-                existed = path.exists()
-                row_index = len(self._read_csv_column(path))
-                self._append_csv_line(path, value)
-                appended.append((path, row_index, existed))
+            with item_registry_lock(category_path):
+                registry = read_item_registry(category_path)
+                if registry.index_of(item_id) is not None:
+                    raise CategoryConflictError(f"Item id already exists: {item_id}")
+                registry.append(item_id, words_by_lang)
+                write_item_registry(category_path, registry)
+        except ItemRegistryCommitPending:
+            raise  # the item is registered; its folder must stay
         except Exception as exc:
-            # Leave no trace: no orphaned folder and no partial registry rows, which would
-            # misalign the per-language CSV files for every item after this one.
+            # Leave no trace: the registry write is all or nothing, so only the folder remains.
             shutil.rmtree(item_path, ignore_errors=True)
-            for path, row_index, existed in appended:
-                if existed:
-                    self._delete_csv_row_at_index(path, row_index)
-                else:
-                    path.unlink(missing_ok=True)
             if isinstance(exc, ContentError):
                 raise
             raise ContentOperationError(f"Failed to write item files: {exc}") from exc
@@ -497,10 +500,15 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
         category_name, category_path = self._validate_category_path(category_id)
         self._resolve_item_path(category_path, category_name, item_id)
 
-        index = self._read_csv_column(category_path / _ITEMS_IDS).index(item_id)
-        for lang, value in item_name.to_dict().items():
-            if lang in settings.SUPPORTED_LANGUAGES:
-                self._write_csv_row_at_index(category_path / _ITEMS_LANG_CSV.format(lang), index, value)
+        with item_registry_lock(category_path):
+            registry = read_item_registry(category_path)
+            index = registry.index_of(item_id)
+            if index is None:
+                raise CategoryNotFoundError(f"Item '{item_id}' not found in category '{category_name}'.")
+            for lang, value in item_name.to_dict().items():
+                if lang in registry.names:
+                    registry.names[lang][index] = (value or "").strip()
+            write_item_registry(category_path, registry)
 
         return self._item_detail(category_path, category_name, item_id)
 
@@ -511,12 +519,19 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
             )
 
         category_name, category_path = self._validate_category_path(category_id)
-        old_folder, _ = self._resolve_item_path(category_path, category_name, item_id)
-
-        ids_path = category_path / _ITEMS_IDS
-        item_ids = self._read_csv_column(ids_path)
         if new_item_id != item_id:
-            if new_item_id in item_ids:
+            self._change_item_id(category_path, category_name, item_id, new_item_id)
+        return self._item_detail(category_path, category_name, new_item_id)
+
+    def _change_item_id(self, category_path: Path, category_name: str, item_id: str, new_item_id: str) -> None:
+        """Register *item_id* as *new_item_id* and move its folder along; all or nothing."""
+        with item_registry_lock(category_path):
+            old_folder, _ = self._resolve_item_path(category_path, category_name, item_id)
+            registry = read_item_registry(category_path)
+            index = registry.index_of(item_id)
+            if index is None:
+                raise CategoryNotFoundError(f"Item '{item_id}' not found in category '{category_name}'.")
+            if registry.index_of(new_item_id) is not None:
                 raise CategoryConflictError(f"Item id already exists: {new_item_id}")
 
             # The folder is named after the id, so it moves with it. Two different ids can
@@ -529,14 +544,15 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
                 if (category_path / new_folder).exists():
                     raise CategoryConflictError(f"Item folder already exists: {new_folder}")
                 self._rename_item_folder(category_path, old_folder, new_folder)
+            registry.ids[index] = new_item_id
             try:
-                self._write_csv_row_at_index(ids_path, item_ids.index(item_id), new_item_id)
+                write_item_registry(category_path, registry)
+            except ItemRegistryCommitPending:
+                raise  # the new id is registered; the folder belongs where it is now
             except Exception:
                 if moved:
                     self._rename_item_folder(category_path, new_folder, old_folder)
                 raise
-
-        return self._item_detail(category_path, category_name, new_item_id)
 
     @staticmethod
     def _rename_item_folder(category_path: Path, old_name: str, new_name: str) -> None:
@@ -581,18 +597,31 @@ class FileSystemItemsMixin(ContentProvider):  # pylint: disable=abstract-method
 
     def remove_item(self, category_id: str, item_id: str) -> RemoveItem:
         category_name, category_path = self._validate_category_path(category_id)
-        _, item_path = self._resolve_item_path(category_path, category_name, item_id)
+        with item_registry_lock(category_path):
+            item_folder_name, item_path = self._resolve_item_path(category_path, category_name, item_id)
+            registry = read_item_registry(category_path)
+            index = registry.index_of(item_id)
+            if index is None:
+                raise CategoryNotFoundError(f"Item '{item_id}' not found in category '{category_name}'.")
+            # Move the folder aside first (a single rename), so a failed registry write can put
+            # it back intact instead of leaving a registered item whose files are half deleted.
+            # The dot prefix hides it from item counts while it is being deleted.
+            doomed_path = category_path / f".{item_folder_name}.deleting"
+            shutil.rmtree(doomed_path, ignore_errors=True)  # left over from an earlier failed delete
+            try:
+                item_path.rename(doomed_path)
+            except OSError as exc:
+                raise ContentOperationError(f"Failed to delete item: {exc}") from exc
+            registry.remove(index)
+            try:
+                write_item_registry(category_path, registry)
+            except ItemRegistryCommitPending:
+                pass  # the row is gone; finish deleting the folder below
+            except Exception:
+                doomed_path.rename(item_path)
+                raise
 
-        index = self._read_csv_column(category_path / _ITEMS_IDS).index(item_id)
-        try:
-            shutil.rmtree(item_path)
-        except (OSError, shutil.Error) as exc:
-            raise ContentOperationError(f"Failed to delete item: {exc}") from exc
-
-        self._delete_csv_row_at_index(category_path / _ITEMS_IDS, index)
-        for lang in settings.SUPPORTED_LANGUAGES:
-            self._delete_csv_row_at_index(category_path / _ITEMS_LANG_CSV.format(lang), index)
-
+        shutil.rmtree(doomed_path, ignore_errors=True)
         return RemoveItem(category=category_name, item=item_id)
 
     def item_images(self, category_id: str, item_id: str) -> ItemImages:

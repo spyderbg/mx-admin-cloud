@@ -187,6 +187,12 @@ An item's folder is derived from its **id only** (`_folder_name_from_item_id`), 
 editing an item's English word leaves the folder alone, while changing its id renames the folder
 and the files inside it that carry the old folder name.
 
+The item registry (`items_ids.csv` + `items_<lang>.csv`) is only read and written through
+`providers/file_system/item_registry.py`: under a per-category file lock (`.items_registry.lock`, shared by the HTTP
+and Unix-socket backend processes), with blank rows kept so rows stay aligned, and all files replaced at once
+(staged `.items_*.csv.tmp` files plus a `.items_registry.commit` marker, completed or discarded on the next access).
+Never append to or rewrite one of these files on its own.
+
 ### Authentication
 
 - **Frontend** → HTTP login → long-lived JWT (30 min) → `Authorization: Bearer <token>`
