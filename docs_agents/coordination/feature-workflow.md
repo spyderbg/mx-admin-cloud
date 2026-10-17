@@ -1,13 +1,13 @@
-# Feature Workflow — Coordinator Design (v5, Phases 2–3)
+# Feature Workflow — Coordinator Design (v5, Phases 2–4)
 
-> Owner role: **coordination**. Status: Phase 2 design **approved** (2026-10-17); Phase 3 additions (§17–§18) **awaiting operator approval**. Companion pages: [agent-ownership.md](agent-ownership.md) (write enforcement and evidence), [operations.md](operations.md) (launch/stop/resume/recover), [backend-task-b7.md](backend-task-b7.md).
+> Owner role: **coordination**. Status: Phase 2 design and Phase 3 additions (§17–§18) **approved** (2026-10-17); Phase 4 additions (§10, §19) **awaiting operator approval**. Companion pages: [agent-ownership.md](agent-ownership.md) (write enforcement and evidence), [operations.md](operations.md) (launch/stop/resume/recover, GitHub commands), [github-integration.md](github-integration.md) and [task-lifecycle.md](task-lifecycle.md) (Phase 4), [backend-task-b7.md](backend-task-b7.md).
 > Governing assignment: [`agents_prompt_v5.md`](../../docs/multiple_agents/agents_prompt_v5.md) §11 Phase 2. Design baseline: [architecture §11](../architecture/README.md#11-v4-feature-development-architecture-design-baseline-for-phases-27), remote Qwen contract [§11.11](../architecture/README.md#1111-remote-openai-compatible-qwen-integration-contract-v5-101), decisions [§12](../architecture/README.md#12-decision-register). Progress: [`phase-status.md`](phase-status.md).
 >
 > Evidence tags: **[V]** verified by execution (a test or command named here), **[S]** verified by reading source, **[U]** unverified.
 
 The feature coordinator is a small, **stdlib-only** Python package that runs one feature at a time on this Linux host, on **one shared checkout** and **one `feature/<slug>` branch**. Role agents edit disjoint paths in parallel; a single Git coordinator lands their commits one at a time; exactly **one PR** is opened per feature, after all gates pass and only with operator approval.
 
-Phase 2 delivered the design and a skeleton with mock runners, a mock issue tracker and a disabled live model transport. Phase 3 adds real Claude Code and Codex launchers contained by **bubblewrap**, process supervision (heartbeat, stop, timeout, safe termination, recovery), **sandboxed** gates with timeouts, logs and D-19 lint baselines, and a loopback-only HTTP transport for the remote Qwen model (§17). Nothing pushes, opens Issues or PRs, or sends a request to the remote Qwen server.
+Phase 2 delivered the design and a skeleton with mock runners, a mock issue tracker and a disabled live model transport. Phase 3 adds real Claude Code and Codex launchers contained by **bubblewrap**, process supervision (heartbeat, stop, timeout, safe termination, recovery), **sandboxed** gates with timeouts, logs and D-19 lint baselines, and a loopback-only HTTP transport for the remote Qwen model (§17). Phase 4 adds **real GitHub Issue coordination**: a `gh`-based adapter, owned parent and component Issues with versioned ownership markers, idempotent and recoverable synchronization, validated operator commands, and the complete dependency lifecycle (§19). Nothing pushes or opens a PR, GitHub writes are limited to test features, and no request is sent to the remote Qwen server.
 
 ## 1. Boundaries
 
@@ -18,11 +18,11 @@ Phase 2 delivered the design and a skeleton with mock runners, a mock issue trac
 | Generic scripts | Called as subprocess gates (`export_openapi.py --docs-agents --check`, `check_docs_agents.py`). Generators are owned by the destination's role (§6) | §11 |
 | Runtime state | Outside Git, under `$XDG_STATE_HOME/mx-admin-agents/` (D-12); never committed | §5 |
 | Remote Qwen | Inference only, over an OpenAI-compatible Chat Completions API. Agents, tools, files and Git stay local. **No request was sent in Phase 2** | §9 |
-| GitHub | Interface plus in-memory/JSON mock only. A live adapter is Phase 4 and needs approval | §8 |
+| GitHub | Phase 4: a separate adapter over the authenticated `gh` CLI (`github_api.py`) and a synchronizer (`issue_sync.py`); `feature:*` labels only; Issues are the visible record, never locks or state; writes limited to test features (`github.write_scope`); no PR creation | [github-integration.md](github-integration.md) |
 
 ## 2. Package map
 
-`scripts/feature_coordinator/` (D-13), entry point `scripts/feature.py`. About 6,200 lines including docstrings; Python 3.12 standard library, plus PyYAML only for loading the YAML example **[V]**. Phase 3 modules are marked ³.
+`scripts/feature_coordinator/` (D-13), entry point `scripts/feature.py`. Python 3.12 standard library, plus PyYAML only for loading the YAML example, and the installed GitHub CLI (`gh`) as an external program for live Issue operations **[V]**. Phase 3 modules are marked ³, Phase 4 modules ⁴. `issues.py` was rewritten in Phase 4 (tracker types, ownership markers, the mock tracker).
 
 | Module | Responsibility |
 | --- | --- |
@@ -46,7 +46,11 @@ Phase 2 delivered the design and a skeleton with mock runners, a mock issue trac
 | `launchers.py`³ | Real Claude Code and Codex launchers, the flag probe, `RealCliRunner` |
 | `gates.py`³, `lint_baseline.py`³ | Sandboxed gate runner (offline, read-only, timeouts, logs, unsafe-gate refusal); baseline-aware Pylint gates (D-19) |
 | `http_transport.py`³, `capabilities.py`³ | Loopback-only Chat Completions transport (streaming, partial tool calls, cancellation); capability validation |
-| `operations.py`³ | Containment self-test, real runner wiring |
+| `operations.py`³ | Containment self-test, real runner wiring, tracker selection (`make_tracker`)⁴ |
+| `github_api.py`⁴ | The real GitHub adapter: `gh api --include` transport, retries, rate limits, pacing, pagination, response validation, sanitized errors |
+| `issue_sync.py`⁴ | Local state ⇄ Issues: create/adopt, managed block, labels, open/closed, progress comments, outbox, validated commands, reconciliation, test cleanup |
+| `escalation.py`⁴ | Human holds (`needs-human`) and releases |
+| `live_test.py`⁴, `github_commands.py`⁴ | The Phase 4 acceptance scenario; the `github`, `hold` and `release` commands |
 
 ## 3. Configuration
 
@@ -333,16 +337,13 @@ Plumbing runs no hooks. Commit trailers record `Feature:`, `Feature-Task:` and `
 
 The demo uses a loopback mock endpoint (`127.0.0.1`, never contacted; the transport is an in-memory script).
 
-## 10. Issues and the single PR (mock tracker)
+## 10. Issues and the single PR
 
-**Labels** form a namespace disjoint from the bug workflow's:
+> **Superseded by Phase 4:** the Phase 2 tracker wrote Issues directly inside state transactions and used an unversioned `<!-- feature-coordinator key=… -->` marker. Phase 4 replaces both: the workflow changes the local state first and an `IssueSync` converges the Issues afterwards, outside every coordinator lock, with a versioned ownership marker. Full design: [github-integration.md](github-integration.md).
 
-- `feature:parent`, `feature:blocked`, `feature:review`;
-- role labels `feature:backend`, `feature:cli`, `feature:frontend`, `feature:automation`, `feature:coordination`.
+**Labels** form a namespace disjoint from the bug workflow's: `feature:parent`, `feature:test`, the role labels `feature:backend`, `feature:cli`, `feature:frontend`, `feature:automation`, `feature:coordination`, and the state labels `feature:in-progress`, `feature:blocked`, `feature:review`, `feature:verified`. Any label outside `feature:*` is refused, and an Issue carrying `mx-auto`, `source::*` or `severity::*` is never modified.
 
-The tracker refuses any label outside `feature:*` and refuses to modify, comment on or close an issue that carries `mx-auto`, `source::*` or `severity::*`.
-
-**Deduplication:** each issue carries a hidden marker `<!-- feature-coordinator key=… -->` (`feature:<id>` or `task:<id>`). `ensure_issue` returns the open issue with that key, and the JSON-backed mock survives a restart.
+**Ownership and deduplication:** each Issue carries `<!-- feature-coordinator:v1 coordinator=… feature=… task=… purpose=… key=… -->`. Before creating, the synchronizer searches for the key; after a crash it adopts the Issue it already created (§19, [github-integration §5, §8](github-integration.md#5-ownership-verification)).
 
 **Pull requests:**
 
@@ -382,6 +383,8 @@ The tracker refuses any label outside `feature:*` and refuses to modify, comment
 | `demo` | Runs the complete mock feature in a temporary repository |
 | `runners`, `sandbox-check [--apply]`, `gate`, `lint-report` | Phase 3 inspection and sandboxed gates ([operations.md](operations.md)) |
 | `plan --apply`, `activate`, `launch`, `stop`, `recover`, `integrate` | Phase 3 feature operations; dry runs unless `--apply` ([operations.md](operations.md)) |
+| `hold`, `release` | Phase 4 human escalation (`needs-human`) |
+| `github status \| labels \| sync \| reconcile \| inspect \| owned \| deps \| test-lifecycle \| cleanup-test` | Phase 4 GitHub Issue coordination ([operations §7](operations.md#7-github-issues-phase-4)); global `--tracker local\|github` |
 
 ## 13. One feature, one branch, one PR — lifecycle and approval points
 
@@ -407,7 +410,9 @@ The tracker refuses any label outside `feature:*` and refuses to modify, comment
 | Edit protected paths, the bug workflow, `.env`, data/content | Nobody | Policy has no override |
 | Commit | Only `GitCoordinator` | `git.lock`, manifest, hashes, compare-and-swap |
 | Create or switch the branch | Only `GitCoordinator` | Exclusive `project.lock` (no writer active), clean tree |
-| Push, Issues, PR | Coordinator **after operator approval** (Phase 4/5) | Phases 2–3: local/mock tracker and dry-run push plan only |
+| Issues and labels | Coordinator (`IssueSync`) **after operator approval** | Phase 4: only `feature:*` labels; only owned Issues (§19); only test features (`github.write_scope`); `--apply` required |
+| Issue comments as commands | Operators in `github.command_authors` with ≥ write permission | Only `/feature hold` / `/feature release`; never a grant of paths, tools or shell |
+| Push, PR | Coordinator **after operator approval** (Phase 5) | Phase 4: dry-run push plan; `create_pull_request` refused by the GitHub adapter |
 | Merge | Humans only | Never automated |
 | Send a request to the remote Qwen model | Automation role | D-15 (transport) and D-18 (auth) decided, a live test approved; the Phase 3 transport reaches loopback test servers only |
 | Send source code to the remote model | — | Additionally D-16 (a disclosure policy) |
@@ -419,7 +424,7 @@ The tracker refuses any label outside `feature:*` and refuses to modify, comment
 
 - **Real agents run only through `feature.py launch --apply`**, contained by bubblewrap. Residual risks are in [agent-ownership §5](agent-ownership.md#5-residual-risks-operator-decisions-in-phase-status): readable runner credentials, network for Claude Code, protected-name creation inside a role's own root (rejected at commit), and unverified OAuth refresh.
 - **No live remote model.** The HTTP transport reaches loopback servers only; capability validation has run only against the local fake server. `apply-patch` is declared by the profile but refused by the client.
-- **No live GitHub adapter**, push or PR (Phase 4/5). The JSON tracker is local.
+- **GitHub:** the live adapter exists (Phase 4) but writes only test features; no push or PR yet (Phase 5). Body updates are last-writer-wins, and relationships are Issue references, not GitHub sub-issues ([github-integration §14](github-integration.md#14-limitations)).
 - **`backend-tests` is blocked** until [B-7](backend-task-b7.md). Gates run against the working tree of the shared checkout; evidence is bound to the HEAD at verification time, and integration requires a clean tree.
 - **Tokens are estimated, not counted** (bytes / 3) until a live validation can compare with the server.
 - **Heartbeats** are written every `heartbeat_interval_seconds`; a stale but alive worker is reported, never killed automatically.
@@ -553,3 +558,16 @@ The transport is a minimal native Chat Completions client and the tool loop stay
 python scripts/feature.py sandbox-check --apply                   # the containment matrix (disposable repository)
 python scripts/feature.py runners                                 # installed CLIs and planned command lines
 ```
+
+## 19. Phase 4 — GitHub Issue coordination and task dependencies
+
+| Area | Design | Where |
+| --- | --- | --- |
+| Adapter | `gh api --include` per request (existing login, no token handling), validated responses, bounded retries, rate limits, pacing | `github_api.py`, [github-integration §2–§3, §9](github-integration.md#2-architecture) |
+| Ownership | Versioned marker + coordinator account + exact number and database ID; foreign and unmarked Issues are never written | `issues.verify_ownership`, [github-integration §5](github-integration.md#5-ownership-verification) |
+| Authority | Local state first; Issues derived afterwards outside every coordinator lock; GitHub → local only through validated `/feature hold\|release` | `workflow.sync_issues`, `issue_sync.py`, [github-integration §7](github-integration.md#7-synchronization) |
+| Idempotency | Persisted `pending_create`, history cursors and outbox entries; key search and operation markers before every re-send | [github-integration §8](github-integration.md#8-idempotency-and-recovery) |
+| Dependencies | Create or reuse one Backend contract task; block only consumers; probe = evidence only; unblock only on verified evidence; re-block on invalidation; human holds survive | [task-lifecycle §3](task-lifecycle.md#3-dependency-lifecycle) |
+| Fixes to Phase 2 behavior | `reopen_task` now re-blocks **ready** dependents too, not only verified ones; a task can no longer be verified while a dependency is unverified (e.g. re-opened during its run) | `workflow.reopen_task`, `_finish`, `verify_task` |
+
+Exit-gate evidence, live Issue numbers and test results: [phase-status](phase-status.md).

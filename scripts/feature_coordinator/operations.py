@@ -23,7 +23,7 @@ from .config import ProjectConfig
 from .demo import init_demo_repo
 from .gates import SandboxedGateRunner
 from .http_transport import HttpChatTransport
-from .issues import MockIssueTracker
+from .issues import MockIssueTracker, TrackerClient
 from .launchers import RealCliRunner
 from .paths import PathPolicy
 from .providers import CliRunnerProfile, OpenAICompatibleProfile
@@ -215,10 +215,25 @@ def build_runners(config: ProjectConfig, env: Mapping[str, str] | None = None) -
     return runners
 
 
+TRACKERS = ("local", "github")
+
+
+def make_tracker(kind: str, config: ProjectConfig, state_dir: Path) -> TrackerClient:
+    """`local`: the JSON tracker in the state directory. `github`: the real GitHub adapter
+    (the authenticated `gh` CLI; writes limited by `github.write_scope`)."""
+    if kind == "github":
+        from .github_api import GitHubClient  # pylint: disable=import-outside-toplevel
+        return GitHubClient.from_config(config.github)
+    if kind != "local":
+        raise ValueError(f"unknown tracker {kind!r}; choose one of {TRACKERS}")
+    return MockIssueTracker(state_dir / "tracker.json")
+
+
 def build_coordinator(config: ProjectConfig, repo: Path, state_dir: Path, *,
-                      runners: Mapping[str, Runner] | None = None) -> FeatureCoordinator:
-    """A coordinator with real runners, sandboxed gates and the local (JSON) tracker."""
+                      runners: Mapping[str, Runner] | None = None,
+                      tracker: TrackerClient | None = None) -> FeatureCoordinator:
+    """A coordinator with real runners, sandboxed gates and the given tracker (default: local JSON)."""
     store = StateStore(state_dir)
-    return FeatureCoordinator(config, repo, store, tracker=MockIssueTracker(state_dir / "tracker.json"),
+    return FeatureCoordinator(config, repo, store, tracker=tracker or make_tracker("local", config, state_dir),
                               runners=runners or build_runners(config),
                               gate_runner=SandboxedGateRunner(config, state_dir / "logs"))

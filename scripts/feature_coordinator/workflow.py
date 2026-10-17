@@ -14,8 +14,17 @@
                  render the single PR candidate (review)
     open_pull_request()  operator-approved only; creates the feature's one PR
     complete()   done only with merge evidence
+    probe_dependency()  run a provider task's gates at the branch HEAD and report whether its
+                 contract is available (evidence only: it never unblocks anything)
+    hold_task() / release_task()  human escalation (needs-human), see escalation.py
 
 Only one feature may be active per checkout; others wait in `planned`.
+
+Issue tracking (Phase 4). The coordinator never calls the tracker inside a state
+transaction. Each operation changes the local state first (authoritative), then — outside
+every coordinator lock — asks the IssueSync to converge the Issues (issue_sync.py). A tracker
+failure is recorded as a `tracker-sync-deferred` event and leaves the local state intact;
+`feature.py github sync` (or the next operation) completes the synchronization.
 """
 
 from __future__ import annotations
@@ -38,8 +47,12 @@ from .errors import (
     UnstableFileError,
     WritersActiveError,
 )
+from .escalation import hold_task as _hold_task
+from .escalation import release_task as _release_task
+from .github_api import sanitize
 from .gitops import CommitRequest, GitCoordinator, file_digest
-from .issues import BLOCKED_LABEL, PARENT_LABEL, REVIEW_LABEL, ROLE_LABELS, IssueTracker, PullRequest
+from .issue_sync import IssueSync, SyncReport, enqueue_comment
+from .issues import PullRequest, TrackerClient
 from .model import (
     Evidence,
     Feature,
@@ -53,6 +66,7 @@ from .model import (
     refresh_readiness,
     transition_feature,
     transition_task,
+    unmet_dependencies,
     utc_now,
     validate_dag,
 )
@@ -93,6 +107,7 @@ class FeatureSpec:
     tasks: tuple[TaskSpec, ...]
     acceptance: tuple[str, ...] = ()
     base_branch: str | None = None
+    test: bool = False  # a coordinator test feature (its Issues carry `feature:test`)
 
     @classmethod
     def from_mapping(cls, data: Mapping[str, Any]) -> "FeatureSpec":
@@ -105,7 +120,8 @@ class FeatureSpec:
             for t in data.get("tasks", ())
         )
         return cls(slug=str(data["slug"]), title=str(data["title"]), tasks=tasks,
-                   acceptance=tuple(data.get("acceptance", ())), base_branch=data.get("base_branch"))
+                   acceptance=tuple(data.get("acceptance", ())), base_branch=data.get("base_branch"),
+                   test=bool(data.get("test", False)))
 
 
 @dataclass
@@ -123,9 +139,10 @@ class TaskRun:
 class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
     """Coordinates one shared checkout."""
 
-    def __init__(self, config: ProjectConfig, repo_root: Path, store: StateStore, *, tracker: IssueTracker,
+    def __init__(self, config: ProjectConfig, repo_root: Path, store: StateStore, *, tracker: TrackerClient,  # pylint: disable=too-many-arguments
                  runners: Mapping[str, Runner], gate_runner: GateRunner | None = None,
-                 author: tuple[str, str] | None = None) -> None:
+                 author: tuple[str, str] | None = None, sync: IssueSync | None = None,
+                 auto_sync: bool = True) -> None:
         self.config = config
         self.root = Path(repo_root)
         self.store = store
@@ -137,6 +154,27 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
         self.policy = PathPolicy(self.root, config)
         self.claims = ClaimManager(store)
         self.git = GitCoordinator(self.root, store.locks, self.policy, tmp_dir=store.root / "tmp")
+        self.sync = sync or IssueSync(store, tracker, config)
+        self.auto_sync = auto_sync
+        self.last_sync: SyncReport | None = None
+
+    # -- issue tracking (always outside coordinator locks) ------------------------
+
+    def sync_issues(self, feature_id: str) -> SyncReport | None:
+        """Converge the feature's Issues now (if auto-sync is on). Failures are recorded, not raised:
+        the local state stays authoritative and a later sync completes the work."""
+        if not self.auto_sync:
+            return None
+        try:
+            report = self.sync.sync(feature_id, apply=True)
+        except CoordinatorError as exc:
+            self._event("tracker-sync-deferred", feature=feature_id, error=sanitize(str(exc)))
+            return None
+        if report.deferred or report.protected:
+            self._event("tracker-sync-deferred", feature=feature_id, error="; ".join(report.deferred),
+                        protected=report.protected)
+        self.last_sync = report
+        return report
 
     # -- planning --------------------------------------------------------------
 
@@ -164,7 +202,7 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
             raise GitOperationError(f"branch {branch!r} already exists; a feature owns exactly one new branch")
         feature = Feature(id=feature_id, slug=spec.slug, title=spec.title, branch=branch,
                           base_branch=spec.base_branch or self.config.base_branch, acceptance=spec.acceptance,
-                          task_ids=list(tasks))
+                          task_ids=list(tasks), test=spec.test)
         with self.store.transaction():
             try:
                 self.store.load_feature(feature_id)
@@ -172,36 +210,13 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
                 pass
             else:
                 raise CoordinatorError(f"feature {feature_id!r} already exists")
-            parent = self.tracker.ensure_issue(f"feature:{feature_id}", spec.title,
-                                               self._feature_body(feature, tasks), [PARENT_LABEL])
-            feature.issue_number = parent.number
             for task in tasks.values():
-                issue = self.tracker.ensure_issue(f"task:{task.id}", f"[{task.role}] {task.title}",
-                                                  self._task_body(task), [ROLE_LABELS[task.role]])
-                task.issue_number = issue.number
-            for task in tasks.values():
-                for dep in task.depends_on:
-                    self.tracker.link_dependency(task.issue_number, tasks[dep].issue_number)
                 self.store.save_task(task)
             self.store.save_feature(feature)
             self.store.append_event("feature-planned", feature=feature_id, tasks=list(tasks))
-        return feature
-
-    @staticmethod
-    def _feature_body(feature: Feature, tasks: Mapping[str, Task]) -> str:
-        lines = [f"Feature `{feature.id}` on branch `{feature.branch}` (base `{feature.base_branch}`).", "",
-                 "Acceptance criteria:", *[f"- {a}" for a in feature.acceptance or ("(to be defined)",)], "",
-                 "Component tasks:", *[f"- `{t.id}` ({t.role}): {t.title}" for t in tasks.values()], "",
-                 "One shared branch; exactly one final PR after all gates pass."]
-        return "\n".join(lines)
-
-    @staticmethod
-    def _task_body(task: Task) -> str:
-        lines = [f"Task `{task.id}` for role **{task.role}**.", "",
-                 "Acceptance criteria:", *[f"- {a}" for a in task.acceptance or ("(to be defined)",)],
-                 f"Required gates: {', '.join(task.required_gates) or 'none'}",
-                 f"Depends on: {', '.join(task.depends_on) or 'nothing'}"]
-        return "\n".join(lines)
+        # The parent Issue and one Issue per task are created by the sync, outside the lock.
+        self.sync_issues(feature_id)
+        return self.store.load_feature(feature_id)
 
     # -- activation --------------------------------------------------------------
 
@@ -222,22 +237,13 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
                 if task.state is TaskState.PROPOSED:
                     transition_task(task, TaskState.READY, "feature activated")
             refresh_readiness(tasks)
-            self._sync_task_labels(tasks)
             for task in tasks.values():
                 self.store.save_task(task)
             self.store.save_feature(feature)
             self.store.append_event("feature-activated", feature=feature_id, branch=feature.branch,
                                     base_sha=feature.base_sha)
-        return feature
-
-    def _sync_task_labels(self, tasks: Mapping[str, Task]) -> None:
-        for task in tasks.values():
-            if task.issue_number is None:
-                continue
-            if task.state is TaskState.BLOCKED:
-                self.tracker.set_labels(task.issue_number, add=[BLOCKED_LABEL])
-            else:
-                self.tracker.set_labels(task.issue_number, remove=[BLOCKED_LABEL])
+        self.sync_issues(feature_id)
+        return self.store.load_feature(feature_id)
 
     # -- running tasks -----------------------------------------------------------
 
@@ -285,7 +291,7 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
                 cancelled=lambda: self._cancel_requested(task_id, claim.token))
             request = RunRequest(task_id, task.role, prompt or self._task_prompt(task), workspace, context=context)
             run = TaskRun(task_id, TaskState.IN_PROGRESS, self.runners[task.role].run(request))
-            return self._after_run(feature, task, head, run)
+            result = self._after_run(feature, task, head, run)
         finally:
             # Only a task still in-progress is affected: it goes back to ready for a later claim.
             self.claims.release(claim, yield_task=True)
@@ -293,6 +299,9 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
                 flag = self.store.get_flag(CANCEL_FLAG.format(task=task_id))
                 if flag and flag.get("token") == claim.token:
                     self.store.set_flag(CANCEL_FLAG.format(task=task_id), None)
+        # After the role slot is released: the Issues never delay another writer.
+        self.sync_issues(feature.id)
+        return result
 
     def _after_run(self, feature: Feature, task: Task, head: str, run: TaskRun) -> TaskRun:  # pylint: disable=too-many-return-statements
         """Turn the runner outcome into a task state: defer, fail, commit and verify."""
@@ -386,21 +395,26 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
                                         result=state.value, reason=reason, commit=run.commit)
                 run.state = task.state
                 return run
+            tasks = self.store.load_tasks(feature)
             if state is TaskState.VERIFIED:
                 if run.evidence is None or run.evidence.head_sha != self._head(feature):
                     self.store.save_task(task)
                     return None
-                transition_task(task, state, reason, evidence=run.evidence, expected_head=run.evidence.head_sha)
+                unmet = unmet_dependencies(task, tasks)
+                if unmet:
+                    # A dependency was re-opened during the run: never verify against an unverified contract.
+                    state, reason = TaskState.BLOCKED, f"waiting for {', '.join(unmet)}"
+                    transition_task(task, state, reason)
+                else:
+                    transition_task(task, state, reason, evidence=run.evidence, expected_head=run.evidence.head_sha)
             else:
                 transition_task(task, state, reason)
             self.store.save_task(task)
-            tasks = self.store.load_tasks(feature)
             tasks[task_id] = task
             changed = refresh_readiness(tasks)
             for changed_id in changed:
                 self.store.save_task(tasks[changed_id])
             run.unblocked = [t for t in changed if tasks[t].state is TaskState.READY]
-            self._sync_task_labels(tasks)
             self.store.append_event("task-finished", task=task_id, state=state.value, reason=reason, commit=run.commit)
         run.state = state
         return run
@@ -414,19 +428,23 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
         with self.store.transaction():
             task = self.store.load_task(task_id)
             feature = self.store.load_feature(task.feature_id)
+            tasks = self.store.load_tasks(feature)
+            unmet = unmet_dependencies(task, tasks)
+            if unmet:
+                raise EvidenceError(f"task {task_id!r} cannot be verified while {unmet} are not verified")
             transition_task(task, TaskState.VERIFIED, "evidence recorded", evidence=evidence,
                             expected_head=self._head(feature))
             self.store.save_task(task)
-            tasks = self.store.load_tasks(feature)
             tasks[task_id] = task
             unblocked = refresh_readiness(tasks)
             for changed in unblocked:
                 self.store.save_task(tasks[changed])
-            self._sync_task_labels(tasks)
+        self.sync_issues(feature.id)
         return unblocked
 
     def reopen_task(self, task_id: str, reason: str) -> list[str]:
-        """Re-open a verified task (e.g. its contract must change); verified dependents re-verify."""
+        """Re-open a verified task (e.g. its contract must change). Every dependent that relied
+        on it is blocked again: verified ones must re-verify, ready ones wait for it again."""
         with self.store.transaction():
             task = self.store.load_task(task_id)
             feature = self.store.load_feature(task.feature_id)
@@ -434,9 +452,12 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
             tasks = self.store.load_tasks(feature)
             tasks[task_id] = task
             blocked = invalidate_dependents(task_id, tasks)
-            for changed in (task_id, *blocked):
-                self.store.save_task(tasks[changed])
-            self._sync_task_labels(tasks)
+            changed = refresh_readiness(tasks)
+            blocked += [t for t in changed if tasks[t].state is TaskState.BLOCKED and t not in blocked]
+            for changed_id in sorted({task_id, *blocked, *changed}):
+                self.store.save_task(tasks[changed_id])
+            self.store.append_event("task-reopened", task=task_id, reason=reason, blocked=blocked)
+        self.sync_issues(feature.id)
         return blocked
 
     # -- cross-role dependencies ------------------------------------------------
@@ -454,13 +475,10 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
             tasks = self.store.load_tasks(feature)
             backend = tasks.get(contract_id)
             if backend is None:
+                # One Backend task (and, via the sync, one Issue) per contract key, however often it is requested.
                 backend = Task(id=contract_id, feature_id=feature.id, role="backend", title=title,
                                acceptance=(contract,), required_gates=CONTRACT_GATES, provides_contract=True,
                                state=TaskState.READY)
-                issue = self.tracker.ensure_issue(f"task:{contract_id}", f"[backend] {title}",
-                                                  self._task_body(backend) + f"\n\nRequested contract:\n{contract}",
-                                                  [ROLE_LABELS["backend"]])
-                backend.issue_number = issue.number
                 feature.task_ids.append(contract_id)
                 tasks[contract_id] = backend
                 self.store.save_task(backend)
@@ -469,15 +487,53 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
                 consumer.depends_on = (*consumer.depends_on, contract_id)
                 tasks[consumer_id] = consumer
                 validate_dag(tasks)  # rejects a cycle before anything is saved for the consumer
-                if consumer.issue_number is not None and backend.issue_number is not None:
-                    self.tracker.link_dependency(consumer.issue_number, backend.issue_number)
             if backend.state is not TaskState.VERIFIED:
                 # Only this consumer step waits; an in-progress worker keeps its claim until it yields.
                 transition_task(consumer, TaskState.BLOCKED, f"waiting for {contract_id}")
             self.store.save_task(consumer)
-            self._sync_task_labels({consumer_id: consumer})
             self.store.append_event("contract-requested", consumer=consumer_id, contract_task=contract_id)
-        return backend
+        self.sync_issues(feature.id)
+        return self.store.load_task(contract_id)
+
+    def probe_dependency(self, provider_id: str) -> tuple[bool, Evidence]:
+        """Run the provider task's required gates at the feature-branch HEAD and report whether
+        its contract is available. Evidence only: a passing probe does NOT verify the provider
+        or unblock consumers (that needs the provider's own verified run); a failing probe is
+        recorded and announced on the provider's and the consumers' Issues."""
+        task = self.store.load_task(provider_id)
+        feature = self.store.load_feature(task.feature_id)
+        evidence = self.gate_evidence(feature, task.required_gates)
+        available = all(g.passed for g in evidence.gates) and bool(evidence.gates)
+        with self.store.transaction():
+            tasks = self.store.load_tasks(feature)
+            consumers = [t.id for t in tasks.values() if provider_id in t.depends_on]
+            gates = ", ".join(f"`{g.gate}` {g.status} (exit {g.exit_code})" for g in evidence.gates) or "no gates"
+            if available:
+                verdict = ("the contract checks pass at this HEAD, but the provider task is "
+                           f"**{tasks[provider_id].state.value}**: consumers stay blocked until it is verified")
+            else:
+                verdict = "the dependency is **unavailable**: consumers stay blocked"
+            body = (f"Dependency probe for {{{{issue:{provider_id}}}}} `{provider_id}` at feature-branch HEAD "
+                    f"`{evidence.head_sha[:12]}`: {gates}. Result: {verdict}. Waiting: "
+                    + (", ".join(f"{{{{issue:{c}}}}} `{c}`" for c in consumers) or "nothing") + ".")
+            for record_id in (provider_id, *consumers):
+                enqueue_comment(self.store, record_id, body)
+            self.store.append_event("dependency-probe", task=provider_id, head=evidence.head_sha, available=available,
+                                    gates=[g.to_dict() for g in evidence.gates], consumers=consumers)
+        self.sync_issues(feature.id)
+        return available, evidence
+
+    def hold_task(self, task_id: str, *, reason: str, actor: str = "operator") -> Task:
+        """Hold a task for a human decision (needs-human); only an explicit release resumes it."""
+        task = _hold_task(self.store, task_id, reason=reason, actor=actor)
+        self.sync_issues(task.feature_id)
+        return task
+
+    def release_task(self, task_id: str, *, actor: str = "operator") -> Task:
+        """Release a human hold; the task is ready, or blocked again if its dependencies are unmet."""
+        task, _changed = _release_task(self.store, task_id, actor=actor)
+        self.sync_issues(task.feature_id)
+        return task
 
     # -- integration and the single PR -------------------------------------------
 
@@ -486,8 +542,11 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
 
         Runs as a quiescent barrier: project.lock EXCLUSIVE, so no scoped writer is active and
         no new claim can start while the combined gates run."""
-        with self.store.locks.project(shared=False, busy_error=WritersActiveError).acquire():
-            return self._integrate(feature_id, gates)
+        try:
+            with self.store.locks.project(shared=False, busy_error=WritersActiveError).acquire():
+                return self._integrate(feature_id, gates)
+        finally:
+            self.sync_issues(feature_id)
 
     def _integrate(self, feature_id: str, gates: Sequence[str]) -> Feature:
         feature = self.store.load_feature(feature_id)
@@ -518,8 +577,10 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
 
     def _render_pr(self, feature: Feature, tasks: Mapping[str, Task], evidence: Evidence) -> PullRequestCandidate:
         changed = self.git.changed_paths(feature.base_sha, evidence.head_sha)
-        lines = [f"Feature `{feature.id}`: {feature.title}", "", f"Parent issue: #{feature.issue_number}", "",
-                 "## Component tasks", *[f"- `{t.id}` ({t.role}) — issue #{t.issue_number}, commits "
+        def issue(number: int | None) -> str:
+            return f"#{number}" if number else "(Issue not synchronized yet)"
+        lines = [f"Feature `{feature.id}`: {feature.title}", "", f"Parent issue: {issue(feature.issue_number)}", "",
+                 "## Component tasks", *[f"- `{t.id}` ({t.role}) — issue {issue(t.issue_number)}, commits "
                                         f"{', '.join(c[:12] for c in t.commits) or 'none'}" for t in tasks.values()],
                  "", "## Acceptance criteria", *[f"- {a}" for a in feature.acceptance or ("(see parent issue)",)],
                  "", "## Changed paths", *[f"- `{p}`" for p in changed], "",
@@ -534,23 +595,35 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
         """Create the feature's single PR. Requires operator approval and the review state."""
         if not approved:
             raise PullRequestPolicyError("creating the PR requires explicit operator approval")
+        feature = self._pr_candidate(feature_id)
+        candidate = feature.pull_request
+        assert candidate is not None
+        existing = [p for p in self.tracker.list_pull_requests(candidate.head) if p.state == "open"]
+        if existing:
+            raise PullRequestPolicyError(f"{candidate.head!r} already has an open PR (#{existing[0].number})")
+        # Outside the state lock; the tracker itself refuses a second PR for the same head.
+        pr = self.tracker.create_pull_request(candidate.head, candidate.base, candidate.title, candidate.body)
         with self.store.transaction():
             feature = self.store.load_feature(feature_id)
-            if feature.state is not FeatureState.REVIEW or feature.pull_request is None:
-                raise PullRequestPolicyError(f"feature {feature_id!r} has no reviewed PR candidate")
-            if feature.pull_request.url:
-                raise PullRequestPolicyError(f"feature {feature_id!r} already has its PR: {feature.pull_request.url}")
-            if self._head(feature) != feature.pull_request.head_sha:
-                raise PullRequestPolicyError("the branch moved after integration; integrate again")
-            candidate = feature.pull_request
-            pr = self.tracker.create_pull_request(candidate.head, candidate.base, candidate.title, candidate.body)
-            candidate.url = f"pr#{pr.number}"
-            candidate.ci_state = "pending"
-            if feature.issue_number is not None:
-                self.tracker.set_labels(feature.issue_number, add=[REVIEW_LABEL])
+            if feature.pull_request is None or feature.pull_request.url:
+                raise PullRequestPolicyError(f"feature {feature_id!r} changed while its PR was being created")
+            feature.pull_request.url = f"pr#{pr.number}"
+            feature.pull_request.ci_state = "pending"
             self.store.save_feature(feature)
             self.store.append_event("pull-request-opened", feature=feature_id, pr=pr.number)
+        self.sync_issues(feature_id)
         return pr
+
+    def _pr_candidate(self, feature_id: str) -> Feature:
+        """The feature, if its single PR may be opened now (review state, unchanged HEAD, no PR yet)."""
+        feature = self.store.load_feature(feature_id)
+        if feature.state is not FeatureState.REVIEW or feature.pull_request is None:
+            raise PullRequestPolicyError(f"feature {feature_id!r} has no reviewed PR candidate")
+        if feature.pull_request.url:
+            raise PullRequestPolicyError(f"feature {feature_id!r} already has its PR: {feature.pull_request.url}")
+        if self._head(feature) != feature.pull_request.head_sha:
+            raise PullRequestPolicyError("the branch moved after integration; integrate again")
+        return feature
 
     def complete(self, feature_id: str, *, merged_sha: str) -> Feature:
         """Mark the feature done — only with merge evidence for its single PR."""
@@ -559,11 +632,7 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
             if feature.pull_request is None or not feature.pull_request.url:
                 raise EvidenceError("done requires the feature PR to exist and be merged")
             transition_feature(feature, FeatureState.DONE, "PR merged after human review", merged_sha=merged_sha)
-            for task in self.store.load_tasks(feature).values():
-                if task.issue_number is not None:
-                    self.tracker.close(task.issue_number)
-            if feature.issue_number is not None:
-                self.tracker.close(feature.issue_number)
             self.store.save_feature(feature)
             self.store.append_event("feature-done", feature=feature_id, merged=merged_sha)
-        return feature
+        self.sync_issues(feature_id)  # a done feature's Issues are closed by the sync
+        return self.store.load_feature(feature_id)

@@ -3,6 +3,8 @@
 Layout under the state directory:
 
     features/<feature-id>.json   tasks/<task-id>.json   claims/<task-id>.json
+    github/<record-id>.json      (Issue mapping and sync cursors of a feature or task, Phase 4)
+    outbox/<op-id>.json          (pending coordinator comments with persisted operation IDs)
     events.jsonl (append-only audit trail)   locks/*.lock (flock files)   tmp/
 
 Every write is atomic (temp file in the same directory, fsync, rename, fsync of the
@@ -133,6 +135,27 @@ class StateStore:
     def load_tasks(self, feature: Feature) -> dict[str, Task]:
         """All tasks of *feature*, keyed by ID."""
         return {task_id: self.load_task(task_id) for task_id in feature.task_ids}
+
+    # -- GitHub sync records (see issue_sync.py) -------------------------------
+
+    def save_record(self, kind: str, record: Any) -> None:
+        """Persist a revision-checked record of *kind* ('github' or 'outbox'; inside a transaction)."""
+        if kind not in ("github", "outbox"):
+            raise StateDirError(f"unknown record kind {kind!r}")
+        self._write(kind, record)
+
+    def load_record(self, kind: str, record_id: str) -> dict[str, Any] | None:
+        """The raw record, or None."""
+        return self._read(kind, record_id)
+
+    def list_records(self, kind: str) -> list[dict[str, Any]]:
+        """All records of *kind*, sorted by file name."""
+        records = []
+        for path in sorted((self.root / kind).glob("*.json")):
+            data = self._read(kind, path.stem)
+            if data is not None:
+                records.append(data)
+        return records
 
     # -- claims (plain dicts; see claims.py) ---------------------------------
 

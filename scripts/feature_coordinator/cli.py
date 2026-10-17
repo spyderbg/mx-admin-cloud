@@ -1,8 +1,9 @@
-"""`python scripts/feature.py` — the feature coordinator's CLI (Phases 2–3).
+"""`python scripts/feature.py` — the feature coordinator's CLI (Phases 2–4).
 
 Global options: --repo PATH (default: this checkout), --state-dir PATH (default: the D-12
-state directory), --project-config FILE (default: the built-in configuration).
-Every command that changes something is a DRY RUN unless --apply is given.
+state directory), --project-config FILE (default: the built-in configuration),
+--tracker local|github (default: `local` for feature operations, `github` for the `github`
+commands). Every command that changes something is a DRY RUN unless --apply is given.
 
 Inspection:
     doctor [--apply]        state directory checks; --apply creates it and runs the flock self-test
@@ -24,8 +25,13 @@ Feature operations (on --repo / --state-dir):
     stop TASK               ask the running worker to stop; the task returns to ready
     recover [--apply]       reclaim tasks of dead workers; report unresponsive ones
     integrate FEATURE [--apply]           the quiescent integration barrier → PR candidate
+    hold TASK --reason R [--apply] / release TASK [--apply]
+                            human escalation (needs-human); only a release resumes the task
+GitHub Issues (Phase 4; see `feature.py github --help`):
+    github status | labels | sync | reconcile | inspect | owned | deps | test-lifecycle | cleanup-test
 
-No command pushes, opens Issues or PRs, or sends anything to the remote Qwen server.
+No command pushes or opens a pull request, and nothing is sent to the remote Qwen server.
+GitHub Issue writes need --apply and stay within github.write_scope (test features only in Phase 4).
 """
 
 from __future__ import annotations
@@ -146,8 +152,10 @@ def cmd_plan(args: argparse.Namespace, config: ProjectConfig) -> int:
     if not getattr(args, "apply", False):
         _print("dry run — nothing was written (pass --apply to record the feature)")
         return 0
-    from .operations import build_coordinator  # pylint: disable=import-outside-toplevel
-    feature = build_coordinator(config, Path(args.repo), _ensure_state(args, config)).plan(spec)
+    from .operations import build_coordinator, make_tracker  # pylint: disable=import-outside-toplevel
+    state_dir = _ensure_state(args, config)
+    feature = build_coordinator(config, Path(args.repo), state_dir,
+                                tracker=make_tracker(args.tracker or "local", config, state_dir)).plan(spec)
     _print(f"recorded feature {feature.id} ({feature.state.value}) with {len(feature.task_ids)} task(s)")
     return 0
 
@@ -200,6 +208,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--repo", default=str(REPO_ROOT), help="the checkout to operate on")
     parser.add_argument("--state-dir", default=None, help="coordinator state directory (default: D-12 location)")
     parser.add_argument("--project-config", default=None, help="project configuration YAML (default: built-in)")
+    parser.add_argument("--tracker", choices=("local", "github"), default=None,
+                        help="issue tracker: the local JSON tracker or real GitHub Issues "
+                             "(default: local; `github` for the github commands)")
     sub = parser.add_subparsers(dest="command", required=True)
     doctor = sub.add_parser("doctor", help="check (and with --apply, create) the state directory")
     doctor.add_argument("--apply", action="store_true", help="create the directory and run the flock self-test")
@@ -215,6 +226,8 @@ def build_parser() -> argparse.ArgumentParser:
     plan.set_defaults(func=cmd_plan)
     from .commands import register  # pylint: disable=import-outside-toplevel
     register(sub)
+    from .github_commands import register as register_github  # pylint: disable=import-outside-toplevel
+    register_github(sub)
     sub.add_parser("status", help="show coordinator state (read-only)").set_defaults(func=cmd_status)
     sub.add_parser("demo", help="run the mock end-to-end feature in a temporary repository").set_defaults(func=cmd_demo)
     return parser

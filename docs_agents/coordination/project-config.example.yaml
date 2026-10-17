@@ -178,3 +178,26 @@ runtime:
     backend: ["python -m pytest:*", "python -m pylint:*", "python -m compileall:*"]
     cli: ["python -m pytest:*", "python -m pylint:*", "kiddo-cli --help:*"]
     coordination: ["python scripts/check_docs_agents.py:*"]
+
+# GitHub Issues adapter (Phase 4). No credentials here: the adapter calls the installed
+# GitHub CLI (`gh api`), which uses its existing login. Issues and labels are the human-
+# visible record only; the local state stays authoritative for claims, locks and permissions.
+github:
+  repository: spyderbg/mx-admin-cloud
+  coordinator_id: mx-admin-cloud.feature-coordinator   # written into every owned Issue's marker
+  transport: gh-cli                      # fixed: the authenticated GitHub CLI
+  gh_executable: gh
+  hostname: github.com
+  write_scope: test-features-only        # Phase 4 ceiling; "all-features" needs operator approval (Phase 5)
+  test_title_prefix: "[Feature Coordinator Test] "
+  command_authors: [spyderbg]            # only these logins may issue /feature commands in comments
+  command_min_permission: write          # ... and only with at least this repository permission
+  request_timeout_seconds: 30
+  max_retries: 3                         # bounded; exponential backoff
+  backoff_base_seconds: 1.0
+  max_backoff_seconds: 30.0
+  max_rate_limit_wait_seconds: 120.0     # a longer rate-limit wait defers the sync instead
+  min_write_interval_seconds: 1.0        # pacing between write requests (secondary rate limits)
+  sync_lock_timeout_seconds: 120.0       # github-sync.lock only; never a coordinator, role or Git lock
+  create_settle_seconds: 5.0             # re-search window after an interrupted Issue creation
+  max_pages: 20                          # 100 items per page; more pages is an error, never a silent cut

@@ -23,6 +23,7 @@ from feature_coordinator.errors import (
     WritersActiveError,
 )
 from feature_coordinator.gitops import CommitRequest, file_digest
+from feature_coordinator.issues import OwnershipMarker
 from feature_coordinator.locks import LockSet
 from feature_coordinator.model import FeatureState, TaskState
 from feature_coordinator.workflow import FeatureCoordinator, FeatureSpec, TaskSpec
@@ -121,7 +122,8 @@ def test_contract_requests_are_deduplicated(coord: FeatureCoordinator) -> None:
     second = coord.request_contract("items-export.cmd", key="endpoint", title="dup", contract="dup")
     other = coord.request_contract("items-export.view", key="endpoint", title="dup", contract="dup")
     assert first.id == second.id == other.id
-    issues = [i for i in coord.tracker.issues.values() if i.key == f"task:{first.id}"]  # type: ignore[attr-defined]
+    issues = [i for i in coord.tracker.list_issues()
+              if (m := OwnershipMarker.parse(i.body)) is not None and m.key == f"items-export/{first.id}"]
     assert len(issues) == 1
     assert coord.store.load_task("items-export.cmd").depends_on == (first.id,)
 
@@ -183,7 +185,7 @@ def test_single_pr_needs_approval_and_done_needs_a_merge(coord: FeatureCoordinat
         coord.complete(feature_id, merged_sha="")
     done = coord.complete(feature_id, merged_sha="d" * 40)
     assert done.state is FeatureState.DONE
-    assert all(i.state == "closed" for i in coord.tracker.issues.values())  # type: ignore[attr-defined]
+    assert all(i.state == "closed" for i in coord.tracker.list_issues())  # type: ignore[attr-defined]
 
 
 def test_pr_is_refused_when_the_branch_moved_after_integration(coord: FeatureCoordinator, repo: Path) -> None:

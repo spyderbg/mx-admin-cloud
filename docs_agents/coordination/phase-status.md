@@ -5,12 +5,12 @@
 
 | Field | Value |
 | --- | --- |
-| Current phase | **Phase 3 — Role Launchers, Scoped Write Enforcement and Concurrent Shared Checkout: implemented and tested** |
-| State | **awaiting-approval** (Phase 3 review; Phase 4 not started) |
-| Execution policy | Supervised, phase by phase. No autonomous phased execution. Phase 2 approved 2026-10-17; Phase 3 authorized 2026-10-17 ("Proceed with Phase 3 only … Stop after Phase 3 and request approval") |
-| Code base | Branch `agents`, `HEAD` = `8454e63` (the operator committed the Phase 2 work on top of `12183e0`; not pushed, 3 ahead of `origin/agents`). All Phase 3 work is **uncommitted** (list below) |
+| Current phase | **Phase 4 — Real GitHub Issue Coordination and Task Dependencies: implemented and verified against real GitHub** |
+| State | **awaiting-approval** (Phase 4 review; Phase 5 not started) |
+| Execution policy | Supervised, phase by phase. No autonomous phased execution. Phases 0–3 approved (Phase 3 on 2026-10-17); Phase 4 authorized 2026-10-17 ("Proceed with Phase 4 ONLY"), including **real** GitHub Issue operations on `spyderbg/mx-admin-cloud` for coordinator-owned test Issues and their `feature:*` labels — no PRs, no commit or push |
+| Code base | Branch `agents`, `HEAD` = `b3f3691` (the operator committed the Phase 3 work). All Phase 4 work is **uncommitted** (list below) |
 | Last updated | 2026-10-17 |
-| Active writers / locks | None running. The real state directory `~/.local/state/mx-admin-agents/` holds no features or claims (only gate logs from the read-only Phase 3 gate runs) |
+| Active writers / locks | None running. The real state directory holds only `github-tests/fc-p4-20261017033506/` (the live test's disposable repository, state and `report.json`) and earlier gate logs; no feature in the main state, no claims |
 
 ## Phase overview
 
@@ -19,15 +19,135 @@
 | 0 | Inspect and Baseline (historical, v3) | **verified** | Approved by the operator (2026-10-16, v5 instruction); not to be rerun |
 | 1 | Documentation Foundation (v3 scope, preserved) | **verified** | Approved by the operator 2026-10-16 (twice); v4 and v5 handoff gates re-run and passing (below) |
 | 2 | New Feature Coordinator Design and Minimal Skeleton (incl. remote Qwen provider configuration, mocked) | **verified** | Approved by the operator 2026-10-17; committed as `8454e63` |
-| 3 | **Role Launchers, Scoped Write Enforcement, Concurrent Shared Checkout** (+ remote Qwen adapter tests against a local fake server) | **awaiting-approval** | Exit gate met with evidence (record below); stop for operator review |
-| 4 | Feature Task Issue Coordination and Dependencies | not-started | Live GitHub writes only with approval |
+| 3 | Role Launchers, Scoped Write Enforcement, Concurrent Shared Checkout (+ remote Qwen adapter tests against a local fake server) | **verified** | Approved by the operator (2026-10-17, Phase 4 instruction); committed as `b3f3691` |
+| 4 | **Feature Task Issue Coordination and Dependencies — real GitHub** | **awaiting-approval** | All 22 exit gates met with evidence (record below), including a live run on `spyderbg/mx-admin-cloud` (Issues #11–#14, closed after verification); stop for operator review |
 | 5 | First End-to-End Feature (vertical slice) | not-started | Needs a feature approval and D-11 (D-4 approved: `dev`) |
 | 6 | CI, API Drift and Final PR Quality Gates | not-started | Constrained by B-2 |
 | 7 | Budget-Aware Optional Continuous Feature Delivery | not-started | Needs separate authorization |
 
 > **Superseded by v4 (historical v3 phase titles):** v3 Phase 2 was "Existing Automation Audit and Minimal Extensions" of `mxfix`/`mxissues`; v3 Phase 3 was "Agent Profiles and Scope Enforcement" with per-task worktrees; v3 Phase 4 was "GitHub Issue Coordination" extending `mxissues`; v3 Phases 5–7 assumed per-task PRs. All of these are replaced by the v4 titles above.
 
-## Phase 3 — record (awaiting approval, 2026-10-17)
+## Phase 4 — record (awaiting approval, 2026-10-17)
+
+**Authorized** 2026-10-17 ("Proceed with Phase 4 ONLY: REAL GITHUB ISSUE COORDINATION AND TASK DEPENDENCIES"), with Phases 0–3 approved and the earlier credential exposure reported resolved by the operator. **Real** GitHub Issue operations were authorized on `spyderbg/mx-admin-cloud` for coordinator-owned test Issues and their `feature:*` labels only; no PRs, commits or pushes. Started on `b3f3691`.
+**Design:** [github-integration.md](github-integration.md) · **Lifecycle:** [task-lifecycle.md](task-lifecycle.md) · **Formats:** [templates/](templates/README.md) · **Commands:** [operations §7](operations.md#7-github-issues-phase-4) · [feature-workflow §19](feature-workflow.md#19-phase-4--github-issue-coordination-and-task-dependencies).
+
+### Exit gate (Phase 4 assignment §16)
+
+| # | Criterion | Result **[V]** |
+| --- | --- | --- |
+| 1 | Real GitHub adapter implemented | **Met.** `github_api.py` (`gh api --include` transport, retrying and validating client) and `issue_sync.py`. No mock was used for the integration test |
+| 2 | GitHub authentication verified | **Met.** `feature.py github status`: `gh` 2.86.0, authenticated as `spyderbg`, repository private and not archived, Issues enabled, permissions admin/maintain/push/triage/pull, issues, labels and pulls endpoints OK, rate limit 4995/5000 |
+| 3 | A real parent feature Issue is created | **Met.** [#11](https://github.com/spyderbg/mx-admin-cloud/issues/11) |
+| 4 | Real component Issues are created | **Met.** [#12](https://github.com/spyderbg/mx-admin-cloud/issues/12) Backend, [#13](https://github.com/spyderbg/mx-admin-cloud/issues/13) CLI, [#14](https://github.com/spyderbg/mx-admin-cloud/issues/14) Frontend |
+| 5 | Parent–child relationships recorded | **Met.** Parent task list and dependency graph reference #12–#14; each component names "parent Issue #11" (check C) |
+| 6 | Real labels and comments updated | **Met.** Nine `feature:*` labels created; state labels followed every transition; 30 coordinator comments, each with an operation marker (checks H, K, K2, K3) |
+| 7 | Duplicate Issue creation prevented | **Met.** A crash was injected right after GitHub created #14; the restarted synchronizer **adopted** #14 instead of creating another (A1–A3). Exactly four owned Issues, one per key (M); a repeated sync sent no write (L) |
+| 8 | Missing Backend dependency blocks consumers | **Met.** Both consumers reuse one Backend task (D/E); the real sandboxed `contract-check` failed → dependency unavailable (F); CLI and Frontend blocked (G); `feature:blocked` and comments on #13/#14 (H) |
+| 9 | Verified Backend dependency unblocks consumers | **Met.** Backend run → serialized commit `60ac4ce` → real sandboxed `contract-check` and `backend-tests` passed at the branch HEAD → verified → CLI ready (I, J); GitHub updated (K) |
+| 10 | Independent tasks remain runnable | **Met.** The Backend task stayed `ready` while consumers were blocked (G); `test_blocked_consumer_does_not_freeze_unrelated_work` |
+| 11 | Atomic claiming prevents duplicate execution | **Met.** A duplicate claim and a second Backend writer were rejected (I1); multiprocess races in `test_fc_claims.py` |
+| 12 | Restart and reconciliation preserve Issue IDs | **Met.** A new process ran `feature.py github reconcile --apply`: no drift, orphan, duplicate or write; numbers {parent 11, backend 12, cli 13, web 14} unchanged (N, O, P) |
+| 13 | GitHub synchronization failures are recoverable | **Met.** Live crash recovery (A1–A3); unit tests for uncertain writes, 5xx, 429 and secondary rate limits, timeouts, crashes after comments, mid-sync unavailability and concurrent sync processes |
+| 14 | Existing unrelated Issues remain unchanged | **Met.** All 10 pre-existing Issues/PRs compared before/after (Q), and independently against the snapshot taken at the start of this session: identical `updated_at`, state, labels and comment counts |
+| 15 | `mxfix`/`mxissues` remain independent | **Met.** AST import scan; `git status` of both trees empty (Q4); their labels and Issue #8 untouched |
+| 16 | Exactly one final PR candidate per feature | **Met.** One candidate `feature/fc-p4-20261017033506` → `dev` at `9671c4e`; a second integration refused (R) |
+| 17 | No real PR created | **Met.** The adapter refused `open_pull_request` before any request; no PR for the branch; the repository's PR set is unchanged (R, Q3) |
+| 18 | All mandatory local tests pass | **Met.** `scripts/tests`: **368 passed, 12 opt-in skipped** |
+| 19 | Real GitHub integration tests pass | **Met.** `FC_GITHUB_LIVE=1 … test_fc_github_live.py`: **8 passed** (256 s); the scenario report records **41/41** checks |
+| 20 | Documentation and quality checks pass | **Met.** `check_docs_agents.py` 6/6; Pylint 10.00/10 for the package and the tests; `feature.py config` identical; the containment self-test PASSED |
+| 21 | Live test Issues closed or reported | **Met.** #11–#14 each got a final verification comment and were closed as completed; a repeated cleanup sent no write. They remain in GitHub for audit |
+| 22 | External actions documented with numbers and URLs | **Met.** The next table |
+
+### Live GitHub actions (all as `spyderbg` through `gh`, 2026-10-17 03:35–03:39 UTC)
+
+| Action | Detail |
+| --- | --- |
+| Test feature | `fc-p4-20261017033506`; tasks `fc-p4-20261017033506.contract-items-export` (backend), `….cli`, `….web` (frontend) |
+| Labels created (missing only) | `feature:backend`, `feature:blocked`, `feature:cli`, `feature:frontend`, `feature:in-progress`, `feature:parent`, `feature:review`, `feature:test`, `feature:verified` |
+| Issues created | [#11](https://github.com/spyderbg/mx-admin-cloud/issues/11) "[Feature Coordinator Test] Items export (Phase 4 dependency lifecycle test)"; [#12](https://github.com/spyderbg/mx-admin-cloud/issues/12) "[backend] Items export API contract"; [#13](https://github.com/spyderbg/mx-admin-cloud/issues/13) "[cli] CLI command for items export"; [#14](https://github.com/spyderbg/mx-admin-cloud/issues/14) "[frontend] Frontend export button" (all prefixed "[Feature Coordinator Test]", labeled `feature:test`) |
+| Coordinator comments | 30 (#11: 3, #12: 7, #13: 9, #14: 11), including the final verification comment on each |
+| Simulated operator actions (after `inspect` confirmed ownership) | On #12: added `feature:verified`, closed it. On #13: removed `feature:blocked`; commented `/feature release …cli` (rejected: a dependency block). On #14: `/feature hold …web waiting for a UX review` (accepted), later `/feature release …web` (accepted). The coordinator restored the labels and reopened #12 |
+| Closed | #12, #13, #14, then #11, as completed, after verification |
+| Volume | The scenario's client sent 322 requests (103 writes); the restart process and the read-only checks sent more. No rate limit was hit |
+| Not done | No pull request, no push, no label edited or deleted, no other Issue touched, no Projects v2 |
+
+Evidence on disk: `~/.local/state/mx-admin-agents/github-tests/fc-p4-20261017033506/report.json` (every check with its detail), `state/events.jsonl` (each sync, command and transition), `state/logs/` (the sandboxed gate logs) and `repo/` (the disposable repository with its single feature branch).
+
+### Implemented components
+
+| Requirement (assignment) | Where | Tests |
+| --- | --- | --- |
+| Real GitHub adapter (gh/REST), capability checks (§3) | `github_api.py`; `feature.py github status` | `test_fc_github_client.py` (27): fake `gh` executable and scripted transport |
+| Issue management: create, retrieve, search, labels, bodies, comments, dependency references, state sync, close, recovery, duplicates (§4) | `issue_sync.py`, `issues.py` | `test_fc_issue_sync.py` (51) |
+| Versioned ownership marker, ownership by marker + account + exact identity (§2, §4) | `issues.OwnershipMarker`, `verify_ownership` | `test_ownership_needs_every_proof` (9 cases), `test_forged_and_foreign_issues_are_never_adopted_or_modified` |
+| Feature/task structure (§5) | `model.Feature` (+ `test`), `Task`, `IssueLink` | [task-lifecycle §1](task-lifecycle.md#1-records) |
+| Dependency lifecycle (§6) | `workflow.request_contract`, `probe_dependency`, `reopen_task`, `_finish`, `verify_task`; `escalation.py` | dependency tests in `test_fc_issue_sync.py`, `test_fc_workflow.py` |
+| Bidirectional sync with a command policy, idempotency, outbox, bounded retries (§7) | `issue_sync.py`, `github_api.py` | crash-recovery, command and failure tests |
+| Concurrency (§8) | Sync outside coordinator locks; `github-sync.lock` | `test_no_coordinator_lock_is_held_during_tracker_requests`, `test_concurrent_sync_processes_never_create_duplicates`, `test_sync_runs_while_a_worker_holds_its_claim_and_one_sync_at_a_time` |
+| One-PR policy without remote PRs (§9) | `GitHubClient.create_pull_request` refuses; `open_pull_request` restructured | `test_the_live_adapter_never_creates_a_pull_request`, existing one-PR tests |
+| Real GitHub integration tests (§10, §12) | `live_test.py`, `test_fc_github_live.py` (opt-in) | 8 live tests; a rehearsal against the local tracker in the regular suite |
+| Cleanup (§11) | `IssueSync.cleanup_test_feature`; `feature.py github cleanup-test` | `test_cleanup_only_touches_owned_test_issues_and_is_repeatable` |
+| CLI (§14) | `github_commands.py`; global `--tracker` | `test_cli_local_tracker_commands` |
+
+### Tests executed and observed results
+
+| Command | Result **[V]** |
+| --- | --- |
+| `.venv/bin/python -m pytest -p no:cacheprovider scripts/tests` (baseline before any change) | 290 passed, 4 skipped |
+| same, final | **368 passed, 12 skipped** (4 Phase 3 opt-in host tests, 8 opt-in live GitHub tests) |
+| `… scripts/tests/feature_coordinator` | 338 passed, 12 skipped |
+| `FC_GITHUB_LIVE=1 FC_GITHUB_LIVE_DIR=~/.local/state/mx-admin-agents/github-tests … test_fc_github_live.py -v` | **8 passed** in 256 s; scenario 41/41 checks |
+| `feature.py --tracker local github test-lifecycle --apply` (rehearsal before going live) | PASSED (39 checks; no GitHub contact). Its first attempt failed only steps N–P because the rehearsal's tracker file was not where the restart process looked; fixed in the command before the live run |
+| `python scripts/check_docs_agents.py` | 6/6 |
+| `pylint --rcfile=.pylintrc scripts/feature_coordinator scripts/feature.py` / tests (with `PYTHONPATH=scripts:scripts/tests/feature_coordinator`) | 10.00/10 / 10.00/10 |
+| `feature.py config` · `feature.py demo` · `feature.py sandbox-check --apply` · `export_openapi.py --docs-agents --check` | identical · 1 PR, all verified, foreign issue untouched · PASSED · 91/91 up to date |
+| `git status` of `backend/ cli/ frontend/ content/ data/ .env docker/ scripts/deploy.sh scripts/mxfix scripts/mxissues` | empty |
+
+Not run: backend pytest and the frontend build/tests. No application source changed (B-7 still blocks `backend-tests` on the real checkout).
+
+### Observation from the live run
+
+During step T, the coordinator also reported **drift on the parent #11**, which the test did not edit. Every version in #11's edit history (GraphQL `userContentEdits`) shows `[x] #12` only together with "**verified**", so the coordinator's own writes were consistent. The change was made by GitHub without an edit-history entry. The likely cause is GitHub's task-list behavior — closing a referenced Issue (#12, in step T) checks its box in the parent — but that cause is **[U]**. The synchronizer detected the change and restored the block from the local state, which is the intended behavior. Recorded in [github-integration §14](github-integration.md#14-limitations).
+
+### Fixes and deviations
+
+- **Dependency correctness (Phase 2 behavior changed):** `reopen_task` now also re-blocks *ready* dependents (it blocked only verified ones), and a task can no longer be verified while a dependency is unverified.
+- **The workflow no longer calls the tracker inside state transactions.** Phase 2 did, which would have held `coordinator.lock` during network requests; the sync now runs afterwards.
+- **`issues.py` rewritten:** the unversioned Phase 2 marker `<!-- feature-coordinator key=… -->` was replaced by the versioned ownership marker, and the mock implements the live protocol. Two Phase 2 tests changed only how they read the mock (`test_contract_requests_are_deduplicated`, `test_single_pr_needs_approval_and_done_needs_a_merge`); their assertions are unchanged.
+- **Stale-command check:** first written against the local clock; changed before the live run to compare GitHub comment IDs for holds that came from GitHub, which removes clock-skew risk.
+
+### Files (all uncommitted)
+
+| Status | Path |
+| --- | --- |
+| new | `scripts/feature_coordinator/{github_api,issue_sync,escalation,live_test,github_commands}.py` |
+| modified | `scripts/feature_coordinator/{__init__,cli,commands,config,errors,issues,locks,model,operations,store,workflow}.py` |
+| new | `scripts/tests/feature_coordinator/{fc_fake_gh,test_fc_github_client,test_fc_issue_sync,test_fc_github_live}.py` |
+| modified | `scripts/tests/feature_coordinator/test_fc_workflow.py` (two mock reads, see above) |
+| new | `docs_agents/coordination/{github-integration,task-lifecycle}.md`, `docs_agents/coordination/templates/{README,feature-issue,component-task-issue,progress-comment,command-comments,handoff,pull-request}.md` |
+| modified | `docs_agents/coordination/{feature-workflow,operations,phase-status,project-config.example.yaml}`, `docs_agents/README.md` (navigation; listed for update by the Phase 4 instruction), `docs_agents/automation/README.md` |
+| outside Git | `~/.local/state/mx-admin-agents/github-tests/fc-p4-20261017033506/` (live test evidence) |
+
+Unchanged **[V]**: `backend/`, `cli/`, `frontend/`, `content/`, `data/`, `scripts/mxfix/`, `scripts/mxissues/`, `.env`, `docker/`, `scripts/deploy.sh`, root instruction files, `docs_agents/architecture/`, `AUTH_DISABLED`/`DEBUG_MODE`. No request to the remote Qwen server; D-15, D-16 and D-18 unchanged.
+
+### Remaining limitations
+
+[github-integration §14](github-integration.md#14-limitations): body updates are last-writer-wins (GitHub has no conditional update); key search depends on the fixed label surviving until a pending creation is recorded; relationships are Issue references, not GitHub sub-issues; coordinator and operator share one account; PRs refused and writes limited to test features until Phase 5 decisions (D-24, D-25).
+
+### Recommended Phase 5 plan (not started)
+
+| Step | Role | Work |
+| --- | --- | --- |
+| P5-0 | operator | Approve Phase 4; commit it (D-10); decide D-24 (write scope), D-25 (push + one PR), D-20/D-21 (supervised runs), D-23 (gates); land [B-7](backend-task-b7.md); complete the D-11 bootstrap PR into `dev` so the coordinator exists on the base branch |
+| P5-1 | operator + coordination | Choose one small **new** feature that spans Backend, CLI and Frontend (not a bug repair); write its spec (tasks, acceptance criteria, contract, gates) |
+| P5-2 | coordination | `plan --apply --tracker github` (real parent and component Issues), `activate` (one `feature/<slug>` from `dev`) |
+| P5-3 | backend (Claude Code) | Implement the API with tests, regenerate the service OpenAPI; verified by `contract-check` + `backend-tests` on the shared branch |
+| P5-4 | cli (Claude Code), frontend (Codex) | Launched in parallel once the contract is verified (or on independent parts earlier); Frontend regenerates the TS types (destination ownership) |
+| P5-5 | coordination | Serialized commits, quiescent integration with the agreed gate set, one PR candidate; with D-25: push and open **one** PR to `dev`; no merge |
+| P5-6 | coordination | Record evidence, Issue and PR links in this file; stop for approval |
+
+## Phase 3 — record (approved 2026-10-17; committed as `b3f3691`)
 
 **Authorized** 2026-10-17 ("Proceed with Phase 3 only"), with D-4, D-5, D-17 and D-19 approved. Started on `8454e63`. **Design:** [feature-workflow §17–§18](feature-workflow.md#17-phase-3--runtime-design) · **Enforcement and evidence:** [agent-ownership.md](agent-ownership.md) · **Operations:** [operations.md](operations.md) · **Backend fix:** [backend-task-b7.md](backend-task-b7.md).
 
@@ -77,6 +197,8 @@ During development, a smoke probe deliberately read the runner credential file *
 - Recommended: rotate the token (`claude auth logout`, then log in again).
 
 This finding is residual risk 1 in [agent-ownership §5](agent-ownership.md#5-residual-risks-operator-decisions-in-phase-status) (D-20).
+
+**Update (2026-10-17, Phase 4 instruction):** the operator reports the exposure **resolved**. Phase 4 read no credential file and printed no token (`gh auth status` output was shown with its token line redacted; the adapter never calls `gh auth token`).
 
 ### Files (all uncommitted)
 
@@ -358,8 +480,10 @@ No application code (`backend/`, `cli/`, `frontend/`) changed. No content, DB, `
 
 ## Issues / PRs
 
-- Created: **none**. No GitHub Issue, label, PR or push in any phase so far (Phases 2–3 used the mock or local JSON tracker only).
-- Pre-existing open issues (untouched): #9 "S3 content provider", #10 "Database content provider" on `spyderbg/mx-admin-cloud`.
+- **Created (Phase 4 live test, coordinator-owned, `feature:test`, all closed as completed after verification, kept for audit):** [#11](https://github.com/spyderbg/mx-admin-cloud/issues/11) parent · [#12](https://github.com/spyderbg/mx-admin-cloud/issues/12) Backend · [#13](https://github.com/spyderbg/mx-admin-cloud/issues/13) CLI · [#14](https://github.com/spyderbg/mx-admin-cloud/issues/14) Frontend. Details in the Phase 4 record.
+- **Labels created:** `feature:backend`, `feature:blocked`, `feature:cli`, `feature:frontend`, `feature:in-progress`, `feature:parent`, `feature:review`, `feature:test`, `feature:verified`. No existing label was changed or deleted.
+- **PRs:** none created in any phase. **Pushes:** none.
+- Pre-existing Issues/PRs #1–#10 (including open #9 "S3 content provider", #10 "Database content provider", and the bug workflow's #8): **unchanged** (`updated_at`, state, labels and comment counts compared before and after) **[V]**.
 
 ## Approved decisions
 
@@ -406,13 +530,17 @@ See the tables above and [architecture §12](../architecture/README.md#12-decisi
 | ID | Decision | Recommendation | Needed by |
 | --- | --- | --- | --- |
 | D-9 | `backend/docs/openapi.yaml` (stale, 50/91 operations) | Regenerate it as a Backend task, or mark it superseded by `docs_agents/backend/**/openapi.yaml` (README edit needs approval) | Optional |
-| D-10 | ~~Commit the bootstrap and Phase 2 work~~ **Settled by the operator:** `12183e0` and `8454e63` on `agents` (not pushed). Still review the literal Qwen address in `agents_prompt_v5.md` before the files leave this private repository (v5 §10.1.1). New: how to commit the Phase 3 work (recommended: one reviewed commit on `agents`) | Before the D-11 PR |
+| D-10 | ~~Commit the bootstrap, Phase 2 and Phase 3 work~~ **Settled by the operator:** `12183e0`, `8454e63`, `b3f3691` on `agents` (not pushed). Still review the literal Qwen address in `agents_prompt_v5.md` before the files leave this private repository (v5 §10.1.1). New: how to commit the Phase 4 work (recommended: one reviewed commit on `agents`) | Before the D-11 PR |
 | D-15 | Transport for the remote Qwen endpoint (plain HTTP today) | Secure it (TLS reverse proxy, HTTPS with certificate verification, or a WireGuard/Tailscale tunnel), **or** record an explicit plain-HTTP exception after a network security assessment. Until decided, **no source code or repository context is sent** | Before any live Qwen use with code (Phase 3 at the earliest) |
 | D-16 | Disclosure policy for the remote model | Approve which code/context categories may be sent; never `.env`, production data, tokens or whole repositories | Same as D-15 |
 | D-18 | Qwen API authentication | Whether the server requires `AGENT_QWEN_API_KEY`; if yes, provision it via a private secret store only | Before any live request |
 | D-20 | Runner credentials inside the sandbox | The CLIs need their credentials, bound read-only, so commands an agent runs can read them (residual risk 1). Options: (a) accept with the current mitigations (deny rules, Bash allowlist, Codex offline commands); (b) credential brokering, e.g. a Claude Code `apiKeyHelper` or an API key in a helper outside the sandbox, and short-lived tokens. **Recommended: (b) before unattended runs (Phase 7); (a) acceptable for supervised Phase 5.** Also: rotate the Claude token exposed in this session (security note above) | Before Phase 5 |
 | D-21 | Network policy for runner sandboxes | Claude Code's sandbox shares the host network (its API is needed), so allowlisted Bash commands could reach the network. Options: (a) keep the Bash allowlist only; (b) a network namespace with an allowlisting egress proxy; (c) enable Claude Code's own sandboxed Bash, nested like Codex [U]. **Recommended: (a) for supervised Phase 5, then (b)** | Before unattended runs |
 | D-22 | Update `docs_agents/architecture/README.md` §11.4/§11.6 with the Phase 3 results (approval-required path) | Mark runner permissions and OS containment **verified** and link [agent-ownership.md](agent-ownership.md) | Optional, any time |
+| D-24 | GitHub write scope for Phase 5 | `github.write_scope` is `test-features-only`. Recommended: switch to `all-features` only together with the Phase 5 feature approval (one config line) | Phase 5 |
+| D-25 | Push and the single real PR | Recommended for Phase 5: allow the Git coordinator's non-force push of `feature/<slug>` and set `LIVE_PULL_REQUESTS_ENABLED` for **one** PR per feature, each with explicit operator approval; never merge | Phase 5 |
+| D-26 | Separate GitHub identity for the coordinator | The coordinator and the operator share the `spyderbg` account; coordinator comments are told apart by their operation marker. Recommended: a dedicated bot account or GitHub App, limited to Issues, labels, and later one PR | Before unattended runs (Phase 7); optional for Phase 5 |
+| D-27 | Phase 4 test artifacts | Keep the closed test Issues #11–#14 and the nine `feature:*` labels for audit (recommended); the local test directory `~/.local/state/mx-admin-agents/github-tests/` may be deleted at any time | Optional |
 | D-23 | Integration gate set for Phase 5 | The default is `contract-check` + `docs-check`. Recommended: the full catalog ([feature-workflow §11](feature-workflow.md#11-gate-catalog-existing-generic-checks)), with lint gates in D-19 baseline mode and `backend-tests` once B-7 is fixed | Phase 5 |
 
 ## Blockers and constraints
@@ -421,7 +549,7 @@ See the tables above and [architecture §12](../architecture/README.md#12-decisi
 | --- | --- | --- | --- |
 | B-1 | No OpenAPI validator installed | Specs validated structurally only | Approve a dev-only validator in `scripts/requirements.txt` |
 | B-2 | Branch protection/rulesets unavailable (private repo, current plan); no CI test workflow | "No merge without CI/review" is not server-enforced; PR CI evidence will be local-only unless CI is added | Operator choice (plan, visibility, or a procedural gate) plus Phase 6 CI with an approved `.github/` scope |
-| B-3 | *(narrowed under v4)* `GITHUB_PAT`/`GITLAB_TOKEN` absent; `gh` lacks `project` scopes | **No longer blocks the feature workflow**: the v4 adapter can use the authenticated `gh` (scope `repo` **[V]**) and needs no Projects v2. It still affects only the separate bug workflow | Live feature Issue/PR writes still need operator approval (Phase 4/5) |
+| B-3 | *(resolved for the feature workflow in Phase 4)* `GITHUB_PAT`/`GITLAB_TOKEN` absent; `gh` lacks `project` scopes | **Does not block the feature workflow:** the Phase 4 adapter runs over the authenticated `gh` (verified live; no Projects v2). It still affects only the separate bug workflow | PR creation (Phase 5) needs D-25 |
 | B-4 | Docker and Playwright unavailable | e2e not runnable; the integration barrier lacks browser e2e | Use a host with Docker, or approve installing Playwright for native mode |
 | B-5 | GitHub→GitLab mirror failing (3/5 runs) | Out of scope for agents | Operator |
 | B-6 | ~~Runner permission and sandbox flags unproven~~ **Resolved in Phase 3** **[V]**: flags probed on the installed CLIs, OS containment tested, live smoke runs observed ([agent-ownership §4](agent-ownership.md#4-real-runner-verification-2026-10-17)) | — | — |
@@ -561,7 +689,7 @@ Execution remains **sequential and supervised** until Phase 3 proves enforcement
 - Deliver `docs_agents/coordination/{task-lifecycle.md,templates/}`.
 - **Exit gate:** a missing API creates or reuses one Backend issue; the CLI step waits while unrelated tasks continue; the CLI resumes after a verified Backend contract on the shared feature branch; no per-issue PRs.
 
-**Recommended implementation plan (after Phase 3; not started):**
+**Implementation plan — executed 2026-10-17 with a real GitHub exercise (see the Phase 4 record above).** The operator replaced the mock-only option with an authorized live test on `spyderbg/mx-admin-cloud`.
 
 | Step | Role | Work |
 | --- | --- | --- |
@@ -625,16 +753,15 @@ Execution remains **sequential and supervised** until Phase 3 proves enforcement
 
 ## Exact next action
 
-1. Operator reviews the Phase 3 record above, [agent-ownership.md](agent-ownership.md), [operations.md](operations.md) and the uncommitted files (`git status`). Optionally run `python scripts/feature.py sandbox-check --apply` and `python scripts/feature.py runners`.
-2. **Rotate the Claude Code token** exposed in this session (security note), and decide D-20 and D-21 for supervised runs.
-3. Decide how to commit the Phase 3 work (D-10 follow-up). Nothing has been committed, pushed or opened.
-4. Schedule [Backend task B-7](backend-task-b7.md), and optionally D-22.
-5. Operator explicitly authorizes Phase 4 (supervised). **Phase 4 has not been started.**
+1. Operator reviews the Phase 4 record above, [github-integration.md](github-integration.md), [task-lifecycle.md](task-lifecycle.md), [templates/](templates/README.md), the test Issues [#11](https://github.com/spyderbg/mx-admin-cloud/issues/11)–[#14](https://github.com/spyderbg/mx-admin-cloud/issues/14) and the uncommitted files (`git status`). Optionally re-run `python scripts/feature.py github status` and `python scripts/feature.py --tracker local github test-lifecycle --apply` (rehearsal, no GitHub writes).
+2. Decide how to commit the Phase 4 work (D-10 follow-up). Nothing has been committed, pushed or opened as a PR.
+3. Decide D-24–D-27 (and D-20, D-21, D-23 for Phase 5); schedule [Backend task B-7](backend-task-b7.md) before Phase 5.
+4. Approve a concrete **new feature** for Phase 5 (Backend + CLI + Frontend), then explicitly authorize Phase 5. **Phase 5 has not been started.**
 
 ## Resume checklist (for the next session)
 
 - Re-read this file, `docs/multiple_agents/agents_prompt_v5.md`, [`feature-workflow.md`](feature-workflow.md), [`agent-ownership.md`](agent-ownership.md), [`operations.md`](operations.md), then architecture §1, §10, §11 (including §11.11) and §12.
-- Run `python scripts/check_docs_agents.py` (expect 6/6), `.venv/bin/python -m pytest -p no:cacheprovider scripts/tests` (expect 290 passed, 4 opt-in skipped), `python scripts/feature.py config` (expect "identical") and `python scripts/feature.py sandbox-check --apply` (expect PASSED).
+- Run `python scripts/check_docs_agents.py` (expect 6/6), `.venv/bin/python -m pytest -p no:cacheprovider scripts/tests` (expect 368 passed, 12 opt-in skipped), `python scripts/feature.py config` (expect "identical"), `python scripts/feature.py sandbox-check --apply` (expect PASSED) and `python scripts/feature.py github status` (expect OK; read-only).
 - Confirm `git status --porcelain -- scripts/mxfix scripts/mxissues` is empty.
-- Do not modify `content/`, `data/`, `backend/data/`, `.env`, root instruction files, `mxfix`/`mxissues`, or application code without explicit approval. Do not create Issues, PRs, commits or pushes without approval.
+- Do not modify `content/`, `data/`, `backend/data/`, `.env`, root instruction files, `mxfix`/`mxissues`, or application code without explicit approval. Do not create Issues (beyond an approved scope), PRs, commits or pushes without approval. Re-read [github-integration.md](github-integration.md) before any live GitHub operation.
 - Do not send any request (and never source code) to the remote Qwen endpoint before D-15, D-16 and D-18 are decided and a live test is approved. Never write its literal address or any key into tracked files.

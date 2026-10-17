@@ -1,8 +1,8 @@
-# Coordinator Operations — Launch, Stop, Resume, Recover (Phase 3)
+# Coordinator Operations — Launch, Stop, Resume, Recover, GitHub Issues (Phases 3–4)
 
-> Owner role: **coordination**. Status: **Phase 3 deliverable, awaiting operator approval** (2026-10-17).
+> Owner role: **coordination**. Status: Phase 3 sections **approved** (2026-10-17); §7 (GitHub Issues) is a **Phase 4 deliverable awaiting operator approval**.
 > Entry point: `python scripts/feature.py` (use the repository's `.venv` Python). Every command that changes something is a **dry run unless `--apply`** is given.
-> Global options: `--repo PATH` (default: this checkout), `--state-dir PATH` (default: `~/.local/state/mx-admin-agents/`), `--project-config FILE` (default: built-in configuration).
+> Global options: `--repo PATH` (default: this checkout), `--state-dir PATH` (default: `~/.local/state/mx-admin-agents/`), `--project-config FILE` (default: built-in configuration), `--tracker local|github` (default: `local` for feature operations, `github` for the `github` commands).
 
 ## 1. Before anything runs
 
@@ -92,3 +92,35 @@ Enabling the remote server needs, in order:
 ```bash
 FC_HOST_RUNNER_CHECKS=1 .venv/bin/python -m pytest -p no:cacheprovider scripts/tests/feature_coordinator/test_fc_launchers.py -k real_login
 ```
+
+## 7. GitHub Issues (Phase 4)
+
+Design and policies: [github-integration.md](github-integration.md). Dependency rules: [task-lifecycle.md](task-lifecycle.md).
+
+| Command | What it does | Writes |
+| --- | --- | --- |
+| `feature.py github status` | Verifies `gh`, authentication, repository access, Issues enabled, permissions, endpoints and rate limit; names exactly what is missing (exit 1) | none |
+| `feature.py github labels [--apply]` | Creates missing `feature:*` labels; never edits an existing label | labels |
+| `feature.py github sync FEATURE [--apply] [--json]` | Local state → the feature's Issues (create or adopt, managed block, labels, open/closed, progress comments, outbox) and validated `/feature` commands → local state. Without `--apply`: reads GitHub and lists what it would do | Issues of that feature |
+| `feature.py github reconcile [FEATURE…] [--apply] [--json]` | After a restart: sync each feature, then report drift, duplicates and orphans (owned Issues with no local record; never modified) | as `sync` |
+| `feature.py github inspect NUMBER` | Ownership verdict for one Issue (marker, author, identity, foreign labels); untrusted text is sanitized for display | none |
+| `feature.py github owned [--feature F]` | Issues carrying this coordinator's marker, created by the coordinator account | none |
+| `feature.py github deps FEATURE [--remote]` | The dependency graph: states, Issue numbers, unmet dependencies (`--remote`: current labels on GitHub) | none |
+| `feature.py github test-lifecycle [--apply] [--workdir DIR] [--no-cleanup]` | The Phase 4 acceptance scenario: 4 test Issues, a disposable repository, no PR ([github-integration §12](github-integration.md#12-live-acceptance-test)) | 4 new test Issues |
+| `feature.py github cleanup-test FEATURE [--apply] --state-dir <work>/<feature>/state` | Final verification comment and close for a **test** feature's Issues; refuses anything not owned or not labeled `feature:test`; repeatable | those Issues |
+| `feature.py hold TASK --reason TEXT [--apply]` / `release TASK [--apply]` | Human escalation (`needs-human`); a release re-checks dependencies | local state, then a sync |
+
+Operating rules:
+
+- Feature operations (`plan`, `activate`, `launch`, `integrate`, `hold`, `release`) use the local JSON tracker unless `--tracker github` is given; with it, each operation syncs the Issues **after** its state change and outside every coordinator lock. A failed sync is recorded (`tracker-sync-deferred` event) and finished by `github sync FEATURE --apply`.
+- Phase 4 write scope: only features planned with `test: true` may be written to GitHub (`github.write_scope: test-features-only`). Widening it is an operator decision.
+- No command creates a pull request.
+- If `github status` reports a missing capability, stop the live operation and fix it (for example `gh auth login`); there is no fallback to the local tracker.
+
+| Situation | What to do |
+| --- | --- |
+| A sync was interrupted (crash, network) | Run `github sync FEATURE --apply` again: pending creations and comments are found by key/operation ID before anything is re-sent |
+| `protected` in a report | The Issue failed ownership verification (marker removed, wrong author, deleted, mapped elsewhere); it is untouched. Inspect it with `github inspect NUMBER` and decide manually |
+| `duplicates` in a report | Two owned Issues carry one key; the oldest is used. Close the other one by hand after checking it |
+| `drift` in a report | A human changed labels, the managed block or the open/closed state; the local state was re-applied. Use `/feature hold`/`release` or `feature.py` commands to change task state |
+| Rate limited | The sync waits up to `max_rate_limit_wait_seconds`, otherwise it is deferred; run it again later |

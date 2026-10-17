@@ -16,6 +16,11 @@ and a leading `**/` (any depth, e.g. `**/.env`).
 Phase 3 adds the runtime section (OS containment, timeouts, heartbeats, per-role command
 allowlists for Claude Code), baseline-aware lint gates (D-19) and the list of gates that
 are unsafe to run against a real checkout (B-7).
+
+Phase 4 adds the `github` section: the repository, the coordinator identity written into
+every Issue it owns, the write scope (test features only during Phase 4), the operators
+whose Issue-comment commands are accepted, and retry/rate-limit bounds. It holds no
+credentials: the adapter uses the existing `gh` login.
 """
 
 from __future__ import annotations
@@ -89,6 +94,44 @@ class RuntimeConfig:  # pylint: disable=too-many-instance-attributes
 
 CONTAINMENT_MODES = ("bwrap",)  # write-capable runs are never unconfined
 
+GITHUB_TRANSPORTS = ("gh-cli",)
+# Phase 4 ceiling: only features marked `test` may be written to GitHub. Widening the scope to
+# real features is an operator decision (Phase 5).
+GITHUB_WRITE_SCOPES = ("test-features-only", "all-features")
+COMMAND_PERMISSIONS = ("admin", "maintain", "write")
+_REPO_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}$")
+_LOGIN_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$")
+_COORDINATOR_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{2,63}$")
+
+
+@dataclass(frozen=True)
+class GitHubConfig:  # pylint: disable=too-many-instance-attributes
+    """The GitHub Issues adapter (Phase 4). No credentials: `gh` uses its existing login."""
+
+    repository: str = "spyderbg/mx-admin-cloud"
+    coordinator_id: str = "mx-admin-cloud.feature-coordinator"
+    transport: str = "gh-cli"
+    gh_executable: str = "gh"
+    hostname: str = "github.com"
+    write_scope: str = "test-features-only"
+    test_title_prefix: str = "[Feature Coordinator Test] "
+    command_authors: tuple[str, ...] = ("spyderbg",)
+    command_min_permission: str = "write"
+    request_timeout_seconds: float = 30.0
+    max_retries: int = 3
+    backoff_base_seconds: float = 1.0
+    max_backoff_seconds: float = 30.0
+    max_rate_limit_wait_seconds: float = 120.0
+    min_write_interval_seconds: float = 1.0
+    sync_lock_timeout_seconds: float = 120.0
+    create_settle_seconds: float = 5.0
+    max_pages: int = 20
+
+    @property
+    def owner(self) -> str:
+        """The repository owner (user or organization)."""
+        return self.repository.split("/", 1)[0]
+
 
 @dataclass(frozen=True)
 class ProjectConfig:  # pylint: disable=too-many-instance-attributes
@@ -108,6 +151,7 @@ class ProjectConfig:  # pylint: disable=too-many-instance-attributes
     lint_gates: Mapping[str, LintGate] = field(default_factory=dict)
     unsafe_gates: Mapping[str, str] = field(default_factory=dict)
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
+    github: GitHubConfig = field(default_factory=GitHubConfig)
     extra: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -212,6 +256,7 @@ def validate(config: ProjectConfig) -> None:
         if not argv or not all(isinstance(arg, str) and arg for arg in argv):
             raise ConfigError(f"gate {name!r} must be a non-empty argv list of strings")
     _validate_gates_and_runtime(config)
+    _validate_github(config.github)
     if not config.allowed_state_filesystems or any(fs.startswith("fuse") for fs in config.allowed_state_filesystems):
         raise ConfigError("allowed_state_filesystems must be non-empty and must not include FUSE filesystems")
 
@@ -251,6 +296,34 @@ def _validate_runtime(config: ProjectConfig) -> None:
     unknown_roles = set(runtime.role_commands) - set(config.roles)
     if unknown_roles:
         raise ConfigError(f"runtime.role_commands names unknown roles: {sorted(unknown_roles)}")
+
+
+def _validate_github(github: GitHubConfig) -> None:
+    if not _REPO_RE.fullmatch(github.repository):
+        raise ConfigError(f"github.repository must be 'owner/name', got {github.repository!r}")
+    if not _COORDINATOR_ID_RE.fullmatch(github.coordinator_id):
+        raise ConfigError("github.coordinator_id must be 3-64 characters: lowercase letters, digits, '.', '_', '-'")
+    if github.transport not in GITHUB_TRANSPORTS:
+        raise ConfigError(f"github.transport must be one of {GITHUB_TRANSPORTS}")
+    if github.write_scope not in GITHUB_WRITE_SCOPES:
+        raise ConfigError(f"github.write_scope must be one of {GITHUB_WRITE_SCOPES}")
+    if github.command_min_permission not in COMMAND_PERMISSIONS:
+        raise ConfigError(f"github.command_min_permission must be one of {COMMAND_PERMISSIONS}")
+    bad = [login for login in github.command_authors if not _LOGIN_RE.fullmatch(login)]
+    if bad:
+        raise ConfigError(f"github.command_authors has invalid logins: {bad}")
+    if not re.fullmatch(r"[A-Za-z0-9.-]{1,253}", github.hostname):
+        raise ConfigError("github.hostname must be a plain host name")
+    if not github.gh_executable or "\x00" in github.gh_executable:
+        raise ConfigError("github.gh_executable must be a program name or path")
+    for name in ("request_timeout_seconds", "backoff_base_seconds", "max_backoff_seconds",
+                 "max_rate_limit_wait_seconds", "sync_lock_timeout_seconds"):
+        if getattr(github, name) <= 0:
+            raise ConfigError(f"github.{name} must be positive")
+    if github.min_write_interval_seconds < 0 or github.create_settle_seconds < 0:
+        raise ConfigError("github.min_write_interval_seconds and create_settle_seconds must not be negative")
+    if not 0 <= github.max_retries <= 10 or not 1 <= github.max_pages <= 100:
+        raise ConfigError("github.max_retries must be 0..10 and github.max_pages 1..100")
 
 
 # ---------------------------------------------------------------------------
@@ -399,6 +472,7 @@ def config_from_mapping(data: Mapping[str, Any]) -> ProjectConfig:
                     for name, spec in dict(data.get("lint_gates", {})).items()},
         unsafe_gates={str(k): str(v) for k, v in dict(data.get("unsafe_gates", {})).items()},
         runtime=_runtime_from_mapping(dict(data.get("runtime", {}))),
+        github=_github_from_mapping(dict(data.get("github", {}))),
         repository=str(_require(data, "repository")),
         base_branch=str(_require(feature, "base_branch")),
         branch_pattern=str(_require(feature, "branch_pattern")),
@@ -434,6 +508,20 @@ def _runtime_from_mapping(data: Mapping[str, Any]) -> RuntimeConfig:
         else:
             values[key] = type(default)(raw)
     return RuntimeConfig(**values)
+
+
+def _github_from_mapping(data: Mapping[str, Any]) -> GitHubConfig:
+    defaults = GitHubConfig()
+    known = set(GitHubConfig.__dataclass_fields__)  # pylint: disable=no-member
+    unknown = set(data) - known
+    if unknown:
+        raise ConfigError(f"unknown github keys: {sorted(unknown)} (tokens and endpoints never belong here)")
+    values: dict[str, Any] = {}
+    for key in known & set(data):
+        default = getattr(defaults, key)
+        raw = data[key]
+        values[key] = tuple(str(v) for v in raw) if isinstance(default, tuple) else type(default)(raw)
+    return GitHubConfig(**values)
 
 
 def load_config(path: Path) -> ProjectConfig:

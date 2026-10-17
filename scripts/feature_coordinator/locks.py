@@ -168,3 +168,9 @@ class LockSet:
     def git(self) -> FileLock:
         """Every Git mutation."""
         return FileLock(self.dir / "git.lock")
+
+    def github_sync(self) -> FileLock:
+        """One GitHub synchronization at a time (prevents racing Issue creation). It is NOT
+        part of the lock order above: no worker holds it, and a sync holds no other lock
+        while it waits on the network (state transactions inside a sync are short)."""
+        return FileLock(self.dir / "github-sync.lock")
