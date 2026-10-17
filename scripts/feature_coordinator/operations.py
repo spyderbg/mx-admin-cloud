@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -23,6 +24,7 @@ from .config import ProjectConfig
 from .demo import init_demo_repo
 from .gates import SandboxedGateRunner
 from .http_transport import HttpChatTransport
+from .issue_sync import IssueSync
 from .issues import MockIssueTracker, TrackerClient
 from .launchers import RealCliRunner
 from .paths import PathPolicy
@@ -229,11 +231,74 @@ def make_tracker(kind: str, config: ProjectConfig, state_dir: Path) -> TrackerCl
     return MockIssueTracker(state_dir / "tracker.json")
 
 
-def build_coordinator(config: ProjectConfig, repo: Path, state_dir: Path, *,
+def make_board(kind: str, config: ProjectConfig, state_dir: Path, tracker: TrackerClient) -> Any:
+    """The project board client for the tracker *kind*, or None when `github.project` is disabled.
+    `github`: GraphQL through the same GitHubClient (one pacing and rate-limit budget);
+    `local`: a JSON board next to the local tracker, created already set up (like the real one)."""
+    if not config.github.project.enabled:
+        return None
+    if kind == "github":
+        from .github_projects import ProjectsClient  # pylint: disable=import-outside-toplevel
+        return ProjectsClient(tracker)  # type: ignore[arg-type]
+    from .projects_local import LocalProjectBoard  # pylint: disable=import-outside-toplevel
+    return LocalProjectBoard.for_config(config.github.project, lambda: tracker.list_issues(state="all"),
+                                        repository=config.github.repository, path=state_dir / "project-board.json",
+                                        configured=True)
+
+
+class DetachedPublisher:
+    """Shows a running task's state on GitHub without the worker making a GitHub request: it
+    starts `feature.py github sync FEATURE --apply` as a separate process (no inherited file
+    descriptors, so none of the worker's flocks; its own session) and never waits for it.
+    Finished children are reaped on the next call; the output goes to <state>/logs/."""
+
+    def __init__(self, argv_prefix: list[str], log_dir: Path) -> None:
+        self.argv_prefix = list(argv_prefix)
+        self.log_dir = log_dir
+        self.procs: list[subprocess.Popen] = []
+
+    @classmethod
+    def for_cli(cls, repo: Path, state_dir: Path, tracker_kind: str,
+                project_config: str | None = None) -> "DetachedPublisher":
+        """A publisher that runs this checkout's feature.py with the same repository, state
+        directory, tracker and configuration."""
+        argv = [sys.executable, str(Path(__file__).resolve().parents[1] / "feature.py"), "--repo", str(repo),
+                "--state-dir", str(state_dir), "--tracker", tracker_kind]
+        if project_config:
+            argv += ["--project-config", str(project_config)]
+        return cls(argv, state_dir / "logs")
+
+    def __call__(self, feature_id: str) -> None:
+        self.reap()
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        with open(self.log_dir / f"publish-{feature_id}.log", "a", encoding="utf-8") as log:
+            self.procs.append(subprocess.Popen(  # pylint: disable=consider-using-with
+                [*self.argv_prefix, "github", "sync", feature_id, "--apply"], stdin=subprocess.DEVNULL,
+                stdout=log, stderr=subprocess.STDOUT, close_fds=True, start_new_session=True))
+
+    def reap(self) -> None:
+        """Forget children that have exited."""
+        self.procs = [p for p in self.procs if p.poll() is None]
+
+    def wait(self, timeout: float = 120.0) -> list[int]:
+        """Wait for every child (tests and the live check); returns their exit codes."""
+        codes = [p.wait(timeout=timeout) for p in self.procs]
+        self.procs = []
+        return codes
+
+
+def build_coordinator(config: ProjectConfig, repo: Path, state_dir: Path, *,  # pylint: disable=too-many-arguments
                       runners: Mapping[str, Runner] | None = None,
-                      tracker: TrackerClient | None = None) -> FeatureCoordinator:
-    """A coordinator with real runners, sandboxed gates and the given tracker (default: local JSON)."""
+                      tracker: TrackerClient | None = None, tracker_kind: str = "local",
+                      publisher: Any = None) -> FeatureCoordinator:
+    """A coordinator with real runners, sandboxed gates, the given tracker (default: local JSON)
+    and — when `github.project` is enabled — the project board of the same kind."""
+    from .project_sync import ProjectSync  # pylint: disable=import-outside-toplevel
     store = StateStore(state_dir)
-    return FeatureCoordinator(config, repo, store, tracker=tracker or make_tracker("local", config, state_dir),
-                              runners=runners or build_runners(config),
-                              gate_runner=SandboxedGateRunner(config, state_dir / "logs"))
+    tracker = tracker or make_tracker(tracker_kind, config, state_dir)
+    sync = IssueSync(store, tracker, config)
+    client = make_board(tracker_kind, config, state_dir, tracker)
+    board = ProjectSync(store, client, sync, config) if client is not None else None
+    return FeatureCoordinator(config, repo, store, tracker=tracker, runners=runners or build_runners(config),
+                              gate_runner=SandboxedGateRunner(config, state_dir / "logs"), sync=sync, board=board,
+                              publisher=publisher)

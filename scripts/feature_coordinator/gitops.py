@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import subprocess
 import tempfile
 import time
@@ -81,6 +82,15 @@ class CommitResult:
     moved_over: tuple[str, ...] = field(default_factory=tuple)
 
 
+def branch_contains(repo: Path, branch: str, sha: str, *, env: Mapping[str, str] | None = None) -> bool:
+    """True when commit *sha* is an ancestor of (or equal to) refs/heads/<branch> in *repo*."""
+    if not re.fullmatch(r"[0-9a-f]{7,40}", sha):
+        return False
+    result = subprocess.run(["git", "-C", str(repo), "merge-base", "--is-ancestor", sha, f"refs/heads/{branch}"],
+                            capture_output=True, text=True, env=None if env is None else dict(env), check=False)
+    return result.returncode == 0
+
+
 class GitCoordinator:
     """Serialized Git mutations for one checkout."""
 
@@ -125,6 +135,10 @@ class GitCoordinator:
     def rev_parse(self, ref: str) -> str:
         """Full SHA of *ref*."""
         return self._git("rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}").strip()
+
+    def contains(self, branch: str, sha: str) -> bool:
+        """True when commit *sha* is on *branch* (read-only; no lock needed)."""
+        return branch_contains(self.root, branch, sha, env=self._env())
 
     def branch_exists(self, branch: str) -> bool:
         """True if refs/heads/<branch> exists."""

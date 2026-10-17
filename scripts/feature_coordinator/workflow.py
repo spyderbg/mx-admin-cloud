@@ -25,6 +25,13 @@ transaction. Each operation changes the local state first (authoritative), then 
 every coordinator lock — asks the IssueSync to converge the Issues (issue_sync.py). A tracker
 failure is recorded as a `tracker-sync-deferred` event and leaves the local state intact;
 `feature.py github sync` (or the next operation) completes the synchronization.
+
+Project board (Phase 4 extension). With a ProjectSync (`board`), every such sync also
+converges the feature's GitHub Projects items (project_sync.py), and `plan` authorizes the new
+feature for the board. While a task runs, its worker holds its role slot, so it never talks
+to GitHub itself: an optional `publisher` (operations.DetachedPublisher) starts a separate
+process, which holds no coordinator lock, to show "In Progress" when the agent starts and
+"Review" when its commit is being verified. The board is never read as input.
 """
 
 from __future__ import annotations
@@ -52,6 +59,7 @@ from .escalation import release_task as _release_task
 from .github_api import sanitize
 from .gitops import CommitRequest, GitCoordinator, file_digest
 from .issue_sync import IssueSync, SyncReport, enqueue_comment
+from .project_sync import BoardReport, ProjectSync
 from .issues import PullRequest, TrackerClient
 from .model import (
     Evidence,
@@ -142,7 +150,8 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
     def __init__(self, config: ProjectConfig, repo_root: Path, store: StateStore, *, tracker: TrackerClient,  # pylint: disable=too-many-arguments
                  runners: Mapping[str, Runner], gate_runner: GateRunner | None = None,
                  author: tuple[str, str] | None = None, sync: IssueSync | None = None,
-                 auto_sync: bool = True) -> None:
+                 auto_sync: bool = True, board: ProjectSync | None = None,
+                 publisher: Callable[[str], None] | None = None) -> None:
         self.config = config
         self.root = Path(repo_root)
         self.store = store
@@ -157,6 +166,11 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
         self.sync = sync or IssueSync(store, tracker, config)
         self.auto_sync = auto_sync
         self.last_sync: SyncReport | None = None
+        self.board = board
+        if board is not None and board.revision_check is None:
+            board.revision_check = lambda feature, sha: self.git.contains(feature.branch, sha)
+        self.publisher = publisher
+        self.last_board_sync: BoardReport | None = None
 
     # -- issue tracking (always outside coordinator locks) ------------------------
 
@@ -174,7 +188,34 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
             self._event("tracker-sync-deferred", feature=feature_id, error="; ".join(report.deferred),
                         protected=report.protected)
         self.last_sync = report
+        self.sync_board(feature_id)
         return report
+
+    def sync_board(self, feature_id: str) -> BoardReport | None:
+        """Converge the feature's project board items (if a board is configured). Like the Issue
+        sync: outside every coordinator lock, failures recorded and completed later."""
+        if self.board is None or not self.auto_sync:
+            return None
+        try:
+            report = self.board.sync(feature_id, apply=True)
+        except CoordinatorError as exc:
+            self._event("tracker-sync-deferred", feature=feature_id, board=True, error=sanitize(str(exc)))
+            return None
+        if report.deferred or report.protected:
+            self._event("tracker-sync-deferred", feature=feature_id, board=True, error="; ".join(report.deferred),
+                        protected=report.protected)
+        self.last_board_sync = report
+        return report
+
+    def _publish(self, feature_id: str) -> None:
+        """Show a running task's state on GitHub from ANOTHER process (the worker holds its role
+        slot, so it never makes GitHub requests itself). Never raises; never waits."""
+        if self.publisher is None or not self.auto_sync:
+            return
+        try:
+            self.publisher(feature_id)
+        except (OSError, CoordinatorError) as exc:
+            self._event("tracker-sync-deferred", feature=feature_id, publisher=True, error=sanitize(str(exc)))
 
     # -- planning --------------------------------------------------------------
 
@@ -214,6 +255,8 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
                 self.store.save_task(task)
             self.store.save_feature(feature)
             self.store.append_event("feature-planned", feature=feature_id, tasks=list(tasks))
+        if self.board is not None:
+            self.board.authorize(feature_id, actor="plan")  # new features appear on the board automatically
         # The parent Issue and one Issue per task are created by the sync, outside the lock.
         self.sync_issues(feature_id)
         return self.store.load_feature(feature_id)
@@ -283,6 +326,7 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
             raise GitOperationError(f"the shared checkout is not on {feature.branch!r}")
         head = self._head(feature)
         claim = self.claims.claim(task_id, role=task.role, branch=feature.branch, head_sha=head)
+        self._publish(feature.id)  # "In Progress" on the board while the agent runs (another process)
         try:
             workspace = ScopedWorkspace(self.policy, task.role, grants=task.grants)
             context = run_context(
@@ -291,7 +335,12 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
                 cancelled=lambda: self._cancel_requested(task_id, claim.token))
             request = RunRequest(task_id, task.role, prompt or self._task_prompt(task), workspace, context=context)
             run = TaskRun(task_id, TaskState.IN_PROGRESS, self.runners[task.role].run(request))
-            result = self._after_run(feature, task, head, run)
+
+            def verifying(commit: str | None) -> None:
+                # Implementation complete, awaiting verification: the board shows "Review".
+                self.claims.heartbeat(claim, {"phase": "verifying", "commit": commit or ""})
+                self._publish(feature.id)
+            result = self._after_run(feature, task, head, run, verifying)
         finally:
             # Only a task still in-progress is affected: it goes back to ready for a later claim.
             self.claims.release(claim, yield_task=True)
@@ -303,7 +352,8 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
         self.sync_issues(feature.id)
         return result
 
-    def _after_run(self, feature: Feature, task: Task, head: str, run: TaskRun) -> TaskRun:  # pylint: disable=too-many-return-statements
+    def _after_run(self, feature: Feature, task: Task, head: str, run: TaskRun,  # pylint: disable=too-many-return-statements,too-many-arguments
+                   verifying: Callable[[str | None], None] | None = None) -> TaskRun:
         """Turn the runner outcome into a task state: defer, fail, commit and verify."""
         result = run.runner
         if result.status == "unavailable":
@@ -323,6 +373,8 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
             return self._finish(task.id, TaskState.NEEDS_HUMAN, f"commit conflicts with the branch: {exc}", run)
         except (ScopeViolationError, GitOperationError) as exc:
             return self._finish(task.id, TaskState.FAILED, f"commit refused: {exc}", run)
+        if verifying is not None:
+            verifying(run.commit)
         return self._verify(feature, task, run)
 
     @staticmethod

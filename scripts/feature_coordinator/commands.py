@@ -149,10 +149,11 @@ def cmd_lint_report(args: argparse.Namespace, config: ProjectConfig) -> int:
 # -- feature operations ----------------------------------------------------------------------
 
 def _coordinator(args: argparse.Namespace, config: ProjectConfig):
-    from .operations import build_coordinator, make_tracker  # pylint: disable=import-outside-toplevel
+    from .operations import DetachedPublisher, build_coordinator  # pylint: disable=import-outside-toplevel
     state_dir = _state(args, config)
-    return build_coordinator(config, Path(args.repo), state_dir,
-                             tracker=make_tracker(getattr(args, "tracker", None) or "local", config, state_dir))
+    kind = getattr(args, "tracker", None) or "local"
+    publisher = DetachedPublisher.for_cli(Path(args.repo), state_dir, kind, getattr(args, "project_config", None))
+    return build_coordinator(config, Path(args.repo), state_dir, tracker_kind=kind, publisher=publisher)
 
 
 def cmd_activate(args: argparse.Namespace, config: ProjectConfig) -> int:

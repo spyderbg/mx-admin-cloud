@@ -115,6 +115,7 @@ class RemoteIssue:  # pylint: disable=too-many-instance-attributes
     updated_at: str = ""
     comments: int = 0
     state_reason: str | None = None
+    node_id: str = ""            # GraphQL global ID (adding the Issue to a project needs it)
 
 
 @dataclass(frozen=True)
@@ -438,7 +439,7 @@ class MockIssueTracker:  # pylint: disable=too-many-public-methods,too-many-inst
                            state=rec["state"], labels=tuple(rec["labels"]), author=rec["author"],
                            url=f"mock://issues/{rec['number']}", is_pull_request=rec.get("is_pull_request", False),
                            updated_at=rec["updated_at"], comments=len(rec["comments"]),
-                           state_reason=rec.get("state_reason"))
+                           state_reason=rec.get("state_reason"), node_id=f"I_mock{rec['id']}")
 
     def _guard(self, rec: dict[str, Any]) -> None:
         if is_foreign(rec["labels"]):

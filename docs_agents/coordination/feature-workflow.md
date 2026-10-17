@@ -1,13 +1,13 @@
-# Feature Workflow — Coordinator Design (v5, Phases 2–4)
+# Feature Workflow — Coordinator Design (v5, Phases 2–4 and the Phase 4 extension)
 
-> Owner role: **coordination**. Status: Phase 2 design and Phase 3 additions (§17–§18) **approved** (2026-10-17); Phase 4 additions (§10, §19) **awaiting operator approval**. Companion pages: [agent-ownership.md](agent-ownership.md) (write enforcement and evidence), [operations.md](operations.md) (launch/stop/resume/recover, GitHub commands), [github-integration.md](github-integration.md) and [task-lifecycle.md](task-lifecycle.md) (Phase 4), [backend-task-b7.md](backend-task-b7.md).
+> Owner role: **coordination**. Status: Phase 2 design and Phase 3 additions (§17–§18) **approved** (2026-10-17); Phase 4 additions (§10, §19) and the Phase 4 extension (§20, GitHub Projects board) **approved** (2026-10-17). Companion pages: [agent-ownership.md](agent-ownership.md) (write enforcement and evidence), [operations.md](operations.md) (launch/stop/resume/recover, GitHub commands), [github-integration.md](github-integration.md) and [task-lifecycle.md](task-lifecycle.md) (Phase 4), [github-projects.md](github-projects.md) (Phase 4 extension), [backend-task-b7.md](backend-task-b7.md).
 > Governing assignment: [`agents_prompt_v5.md`](../../docs/multiple_agents/agents_prompt_v5.md) §11 Phase 2. Design baseline: [architecture §11](../architecture/README.md#11-v4-feature-development-architecture-design-baseline-for-phases-27), remote Qwen contract [§11.11](../architecture/README.md#1111-remote-openai-compatible-qwen-integration-contract-v5-101), decisions [§12](../architecture/README.md#12-decision-register). Progress: [`phase-status.md`](phase-status.md).
 >
 > Evidence tags: **[V]** verified by execution (a test or command named here), **[S]** verified by reading source, **[U]** unverified.
 
 The feature coordinator is a small, **stdlib-only** Python package that runs one feature at a time on this Linux host, on **one shared checkout** and **one `feature/<slug>` branch**. Role agents edit disjoint paths in parallel; a single Git coordinator lands their commits one at a time; exactly **one PR** is opened per feature, after all gates pass and only with operator approval.
 
-Phase 2 delivered the design and a skeleton with mock runners, a mock issue tracker and a disabled live model transport. Phase 3 adds real Claude Code and Codex launchers contained by **bubblewrap**, process supervision (heartbeat, stop, timeout, safe termination, recovery), **sandboxed** gates with timeouts, logs and D-19 lint baselines, and a loopback-only HTTP transport for the remote Qwen model (§17). Phase 4 adds **real GitHub Issue coordination**: a `gh`-based adapter, owned parent and component Issues with versioned ownership markers, idempotent and recoverable synchronization, validated operator commands, and the complete dependency lifecycle (§19). Nothing pushes or opens a PR, GitHub writes are limited to test features, and no request is sent to the remote Qwen server.
+Phase 2 delivered the design and a skeleton with mock runners, a mock issue tracker and a disabled live model transport. Phase 3 adds real Claude Code and Codex launchers contained by **bubblewrap**, process supervision (heartbeat, stop, timeout, safe termination, recovery), **sandboxed** gates with timeouts, logs and D-19 lint baselines, and a loopback-only HTTP transport for the remote Qwen model (§17). Phase 4 adds **real GitHub Issue coordination**: a `gh`-based adapter, owned parent and component Issues with versioned ownership markers, idempotent and recoverable synchronization, validated operator commands, and the complete dependency lifecycle (§19). The Phase 4 extension adds a **GitHub Projects board** (Project #2) that shows every coordinator Issue's state, derived from the local state and never read as input (§20). Nothing pushes or opens a PR, GitHub writes are limited to test features, and no request is sent to the remote Qwen server.
 
 ## 1. Boundaries
 
@@ -18,11 +18,11 @@ Phase 2 delivered the design and a skeleton with mock runners, a mock issue trac
 | Generic scripts | Called as subprocess gates (`export_openapi.py --docs-agents --check`, `check_docs_agents.py`). Generators are owned by the destination's role (§6) | §11 |
 | Runtime state | Outside Git, under `$XDG_STATE_HOME/mx-admin-agents/` (D-12); never committed | §5 |
 | Remote Qwen | Inference only, over an OpenAI-compatible Chat Completions API. Agents, tools, files and Git stay local. **No request was sent in Phase 2** | §9 |
-| GitHub | Phase 4: a separate adapter over the authenticated `gh` CLI (`github_api.py`) and a synchronizer (`issue_sync.py`); `feature:*` labels only; Issues are the visible record, never locks or state; writes limited to test features (`github.write_scope`); no PR creation | [github-integration.md](github-integration.md) |
+| GitHub | Phase 4: a separate adapter over the authenticated `gh` CLI (`github_api.py`) and a synchronizer (`issue_sync.py`); `feature:*` labels only; Issues are the visible record, never locks or state; writes limited to test features (`github.write_scope`); no PR creation. Phase 4 extension: the Projects board (Project #2) as a picture of that state; Project #1 is never written | [github-integration.md](github-integration.md), [github-projects.md](github-projects.md) |
 
 ## 2. Package map
 
-`scripts/feature_coordinator/` (D-13), entry point `scripts/feature.py`. Python 3.12 standard library, plus PyYAML only for loading the YAML example, and the installed GitHub CLI (`gh`) as an external program for live Issue operations **[V]**. Phase 3 modules are marked ³, Phase 4 modules ⁴. `issues.py` was rewritten in Phase 4 (tracker types, ownership markers, the mock tracker).
+`scripts/feature_coordinator/` (D-13), entry point `scripts/feature.py`. Python 3.12 standard library, plus PyYAML only for loading the YAML example, and the installed GitHub CLI (`gh`) as an external program for live Issue operations **[V]**. Phase 3 modules are marked ³, Phase 4 modules ⁴, Phase 4 extension modules ⁴ˣ. `issues.py` was rewritten in Phase 4 (tracker types, ownership markers, the mock tracker).
 
 | Module | Responsibility |
 | --- | --- |
@@ -51,6 +51,8 @@ Phase 2 delivered the design and a skeleton with mock runners, a mock issue trac
 | `issue_sync.py`⁴ | Local state ⇄ Issues: create/adopt, managed block, labels, open/closed, progress comments, outbox, validated commands, reconciliation, test cleanup |
 | `escalation.py`⁴ | Human holds (`needs-human`) and releases |
 | `live_test.py`⁴, `github_commands.py`⁴ | The Phase 4 acceptance scenario; the `github`, `hold` and `release` commands |
+| `github_projects.py`⁴ˣ, `projects_local.py`⁴ˣ | Projects (v2) GraphQL client with the write guard; the local JSON board |
+| `project_sync.py`⁴ˣ, `project_commands.py`⁴ˣ, `live_projects.py`⁴ˣ | Board synchronization (status mapping, items, recovery); `feature.py github project …`; the live Projects test |
 
 ## 3. Configuration
 
@@ -385,6 +387,7 @@ The demo uses a loopback mock endpoint (`127.0.0.1`, never contacted; the transp
 | `plan --apply`, `activate`, `launch`, `stop`, `recover`, `integrate` | Phase 3 feature operations; dry runs unless `--apply` ([operations.md](operations.md)) |
 | `hold`, `release` | Phase 4 human escalation (`needs-human`) |
 | `github status \| labels \| sync \| reconcile \| inspect \| owned \| deps \| test-lifecycle \| cleanup-test` | Phase 4 GitHub Issue coordination ([operations §7](operations.md#7-github-issues-phase-4)); global `--tracker local\|github` |
+| `github project inspect \| validate \| setup \| associate \| sync \| reconcile \| active \| task \| test` | The Projects board (Phase 4 extension, [operations §8](operations.md#8-github-projects-board-phase-4-extension)) |
 
 ## 13. One feature, one branch, one PR — lifecycle and approval points
 
@@ -571,3 +574,16 @@ python scripts/feature.py runners                                 # installed CL
 | Fixes to Phase 2 behavior | `reopen_task` now re-blocks **ready** dependents too, not only verified ones; a task can no longer be verified while a dependency is unverified (e.g. re-opened during its run) | `workflow.reopen_task`, `_finish`, `verify_task` |
 
 Exit-gate evidence, live Issue numbers and test results: [phase-status](phase-status.md).
+
+## 20. Phase 4 extension — GitHub Projects board
+
+| Area | Design | Where |
+| --- | --- | --- |
+| Role of the board | A picture of the local state: GitHub Issues stay the tasks, the board shows their state. It is never a lock, a claim, a state source, a permission or an approval | [github-projects.md](github-projects.md) |
+| Target | `github.project` (owner, number, node ID; protected numbers). mx-admin-cloud: Project #2 `PVT_kwHOACEIPc4BndH-`; Project #1 (mxissues) protected. The generic default is disabled | `config.GitHubProjectConfig`, `MX_ADMIN_CLOUD_PROJECT` |
+| Status mapping | Derived from the existing task and feature state machines; Review = commit landed and gates running (claim checkpoint `verifying`) or feature review; Done only with evidence on the feature branch (tasks) or merge evidence (feature) | `ProjectSync.board_status`, [github-projects §3](github-projects.md#3-status-mapping-from-the-existing-state-machines) |
+| Synchronization | After every Issue sync, outside every coordinator lock; `run_task` shows In Progress and Review through a detached `feature.py github sync` process that holds no worker lock | `workflow.sync_board`, `operations.DetachedPublisher` |
+| Ownership and protection | Feature authorization (`plan` or `associate`); the Issue ownership proof; item content verified; a write guard bound to the configured project; protected projects refused by node ID | `project_sync.py`, `github_projects.BoardGuard` |
+| Idempotency and recovery | `pending_add` + adoption by the Issue's project items; read-back after writes; drift restored | [github-projects §7](github-projects.md#7-recovery-and-reconciliation) |
+
+Exit-gate evidence, the live item IDs and test results: [phase-status](phase-status.md).

@@ -201,3 +201,37 @@ github:
   sync_lock_timeout_seconds: 120.0       # github-sync.lock only; never a coordinator, role or Git lock
   create_settle_seconds: 5.0             # re-search window after an interrupted Issue creation
   max_pages: 20                          # 100 items per page; more pages is an error, never a silent cut
+  # GitHub Projects (v2) board (Phase 4 extension; docs_agents/coordination/github-projects.md).
+  # A projection only: the board never claims, locks, starts or approves anything, and a card
+  # moved by a person is restored on the next sync. Needs the gh login's `project` scope.
+  project:
+    enabled: true
+    owner: spyderbg
+    owner_type: user                     # user | organization
+    number: 2                            # "mx-admin-cloud automation"
+    node_id: PVT_kwHOACEIPc4BndH-        # the project's GraphQL ID: owner, number AND node ID must match
+    title: mx-admin-cloud automation     # informational; a different title is only reported
+    protected_numbers: [1]               # "mx-admin-cloud issues" (mxissues bug workflow): never written
+    status_field: Status
+    status_names:                        # board columns, in order (the keys have fixed meanings)
+      backlog: Backlog
+      ready: Ready
+      in_progress: In Progress
+      blocked: Blocked
+      review: Review
+      done: Done
+    status_reuse: {Todo: backlog}        # GitHub's default "Todo" option becomes Backlog (option ID kept)
+    agent_field: Agent
+    agent_names:
+      coordination: Coordination
+      backend: Backend
+      cli: CLI
+      frontend: Frontend
+      automation: Automation
+      full-project: Full Project
+    feature_id_field: Feature ID
+    blocked_reason_field: Blocked Reason
+    board_view: Kanban                   # a board grouped by Status (GitHub's default "View N" board is reused)
+    active_view: Active Tasks            # open Issues in Ready, In Progress, Blocked, Review (D-29)
+    item_settle_seconds: 2.0             # after adding an item, before setting fields (project workflows)
+    max_field_attempts: 2                # field writes re-applied when a read-back differs

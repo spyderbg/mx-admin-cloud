@@ -2,6 +2,8 @@
 
 > **Status:** **v5 is the authoritative specification** (adopted 2026-10-16; [`docs/multiple_agents/agents_prompt_v5.md`](../../docs/multiple_agents/agents_prompt_v5.md)). v5 supersedes v4 ([`agents_prompt_v4.md`](../../docs/multiple_agents/agents_prompt_v4.md), adopted earlier the same day) and v3 where they conflict. All v4 feature-workflow decisions carry over unchanged. v5 changes the Qwen topology to a **remote** OpenAI-compatible endpoint (§11.11) and fixes its context accounting.
 >
+> **Implementation status (2026-10-17, D-22):** Phases 2–4 and the Phase 4 GitHub Projects extension are **implemented and approved**. §11.4, §11.6 and §11.9 carry the verified results, and the register (§12) the decisions taken since. The evidence is in [`../coordination/phase-status.md`](../coordination/phase-status.md); the implemented design is in [`feature-workflow.md`](../coordination/feature-workflow.md), [`agent-ownership.md`](../coordination/agent-ownership.md), [`github-integration.md`](../coordination/github-integration.md) and [`github-projects.md`](../coordination/github-projects.md).
+>
 > Sections 2–6 describe the verified application (Phase 0/1 evidence at commit `e2ddd9c`) and remain valid. Statements that a later version replaces are **kept and marked "Superseded by v4" / "Superseded by v5"** rather than deleted. The design is in §11 and the decision register in §12. Evidence tags: **[V]** executed, **[S]** source-read, **[U]** unverified — see [`../discovery/README.md`](../discovery/README.md). Contract decision: [`api-contracts.md`](api-contracts.md).
 
 ## 1. Components and role ownership (v4)
@@ -230,6 +232,8 @@ The Qwen model is served by a **separate remote inference server** (v5 §3.1, §
 This is a **design baseline**, not an implementation. Phase 2 turns it into `docs_agents/coordination/feature-workflow.md`, a schema proposal and a tested skeleton. Items marked **[U]** must be verified before they are relied on.
 
 > **v5:** this design carries over **unchanged** from v4 (v5 change-summary item 4). Only the provider/runner wiring changed: §11.2 and §11.4 were updated, and §11.11 (remote Qwen integration contract) is new.
+>
+> **Implemented (2026-10-17):** Phase 2 built the coordinator ([feature-workflow.md](../coordination/feature-workflow.md)); Phase 3 the real launchers, bubblewrap containment and the worker lifecycle ([agent-ownership.md](../coordination/agent-ownership.md), [operations.md](../coordination/operations.md)); Phase 4 the GitHub Issues adapter and dependency lifecycle ([github-integration.md](../coordination/github-integration.md), [task-lifecycle.md](../coordination/task-lifecycle.md)); the Phase 4 extension a GitHub Projects (v2) board ([github-projects.md](../coordination/github-projects.md)). Where those pages are more specific than this baseline, they govern.
 
 ### 11.1 Two separate systems, one repository
 
@@ -288,9 +292,9 @@ Permissions belong to the **role**; the runner and model are pluggable per role 
 
 | Role | Default runner | Installed on this host | Must be verified before use (Phase 2/3) |
 | --- | --- | --- | --- |
-| backend, cli | Claude Code | `claude` 2.1.302 **[V]** | Non-interactive mode, permission/tool restriction flags, and how to override the repo's `.claude/settings.json` (`defaultMode: bypassPermissions`) **from the launcher without editing that root file** **[U]** |
-| frontend | Codex | `codex` 0.163.0 **[V]** | `exec` mode, sandbox modes and per-path restriction (its `workspace-write` sandbox covers the whole working root, so role confinement must come from the OS sandbox) **[U]** |
-| automation | configurable; **preferred: remote Qwen** (`Qwen3.6-35B-A3B-Q4_K_M.gguf`) through an OpenAI-compatible Chat Completions API | **No local runner for it is selected yet** **[U]** | A **local** runner that drives Chat Completions and executes tools on this host, plus every item of the v5 capability validation (§11.11). An OpenAI-compatible text endpoint alone is **not** a coding agent. The Claude Code executable must not be assumed to use this endpoint |
+| backend, cli | Claude Code | `claude` 2.1.302 **[V]** | Non-interactive mode, permission/tool restriction flags, and how to override the repo's `.claude/settings.json` (`defaultMode: bypassPermissions`) **from the launcher without editing that root file**. **Verified in Phase 3 [V]:** every required flag exists, bypass flags can never be emitted, the launcher's settings live in the state directory ([agent-ownership §4](../coordination/agent-ownership.md#4-real-runner-verification-2026-10-17)) |
+| frontend | Codex | `codex` 0.163.0 **[V]** | `exec` mode, sandbox modes and per-path restriction (its `workspace-write` sandbox covers the whole working root, so role confinement must come from the OS sandbox). **Verified in Phase 3 [V]:** Codex runs nested inside the bubblewrap role sandbox, which provides the role confinement ([agent-ownership §4](../coordination/agent-ownership.md#4-real-runner-verification-2026-10-17)) |
+| automation | configurable; **preferred: remote Qwen** (`Qwen3.6-35B-A3B-Q4_K_M.gguf`) through an OpenAI-compatible Chat Completions API | D-17 (approved): a minimal native tool loop with a loopback-only HTTP transport, tested against a local fake server (Phase 3) **[V]**; never run against the real server **[U]** | A **local** runner that drives Chat Completions and executes tools on this host, plus every item of the v5 capability validation (§11.11). An OpenAI-compatible text endpoint alone is **not** a coding agent. The Claude Code executable must not be assumed to use this endpoint. Live use waits for D-15, D-16 and D-18 |
 | coordination | configurable (v5 example: Claude Code) | — | — |
 
 > **Superseded by v5:** v4 described Qwen as an optional *local* runner on the agent host. Under v5, Qwen is **remote-only**: the model runs on a separate inference server, and the agent and tool-executing process stays local.
@@ -309,9 +313,9 @@ Fallback runners are allowed only within the configured cost, privacy and access
 
 | Layer | Mechanism | Status on this host |
 | --- | --- | --- |
-| 1. OS sandbox per runner (containment) | `bwrap` mount namespace: whole checkout bound **read-only**, role roots bound read-write, `.git` read-only, protected paths never writable, private `/tmp` | `bwrap` works unprivileged **[V]** (`kernel.apparmor_restrict_unprivileged_userns=1` with a working AppArmor profile); the Landlock LSM is active as an alternative **[V]** |
-| 2. Runner permissions | Claude Code permission settings / Codex sandbox flags set by the launcher | to verify **[U]** |
-| 3. Commit gate | Git coordinator validates each path in the manifest: normalized, symlink-resolved, inside the caller's roots, not protected, hash-stable | Phase 2 skeleton, Phase 3 enforcement |
+| 1. OS sandbox per runner (containment) | `bwrap` mount namespace: whole checkout bound **read-only**, role roots bound read-write, `.git` read-only, protected paths never writable, private `/tmp` | `bwrap` works unprivileged **[V]** (`kernel.apparmor_restrict_unprivileged_userns=1` with a working AppArmor profile); the Landlock LSM is active as an alternative **[V]**. **Implemented in Phase 3 [V]:** the containment matrix (19 write targets × 5 roles, 0 mismatches), private HOME, cleared environment; fails closed without `bwrap` ([agent-ownership.md](../coordination/agent-ownership.md)) |
+| 2. Runner permissions | Claude Code permission settings / Codex sandbox flags set by the launcher | **Verified in Phase 3 [V]** (probed on the installed CLIs; live smoke runs observed). Residual risk: runner credentials are bound read-only into the runner sandbox (D-20) |
+| 3. Commit gate | Git coordinator validates each path in the manifest: normalized, symlink-resolved, inside the caller's roots, not protected, hash-stable | Phase 2 skeleton, **Phase 3 enforcement [V]** (concurrent single-role commits, no foreign capture, clean `git fsck`) |
 | 4. PR/CI gate | Changed-path re-verification across the whole feature diff | Phase 6 |
 
 Generated files follow **destination ownership** (Frontend runs `generate_ts_*.py`). Negative tests (traversal, symlink, rename and generated-output writes outside the role) are mandatory before parallel writers are enabled (Phase 3 gate).
@@ -352,6 +356,13 @@ The Phase 1 tooling is the contract gate. TS regeneration is a Frontend task. Co
 - **No Issue or PR writes until the operator approves the scope and credentials exist.** Dry-run and mock trackers come first.
 - If GitHub is unavailable, work is preserved and a **local PR candidate** is reported. No links are invented.
 - Current constraints: the `gh` token lacks `project` scopes (not needed); branch protection is unavailable on the current plan (B-2).
+
+> **Implemented in Phase 4 and its extension (approved 2026-10-17):**
+>
+> - **Issues** ([github-integration.md](../coordination/github-integration.md)): a separate adapter over the authenticated `gh` (`github_api.py`, `issue_sync.py`); versioned ownership markers; `feature:*` labels; dependency references; crash-safe, idempotent synchronization outside every coordinator lock. Live-tested with Issues #11–#14. Writes are limited to test features (`github.write_scope: test-features-only`) and pull requests are refused, until D-24 and D-25.
+> - **"No Projects v2 is required" is superseded by the Phase 4 extension** ([github-projects.md](../coordination/github-projects.md)): the existing **Project #2** "mx-admin-cloud automation" shows each coordinator-owned Issue as a card (Status, Agent, Feature ID, Blocked Reason; views Kanban and Active Tasks). The board is a **projection only**: it is never read as input and never becomes the authority for locks, claims, permissions or approvals; a card moved by a person is restored on the next sync. Project #1 (the bug workflow's board) is protected and never written. Live-tested with Issues #15–#16.
+> - The `gh` login **has** the `project` scope since 2026-10-17. Project #2's built-in workflows "Auto-close issue" and "Item closed" are switched off (D-28).
+> - Because the coordinator shares the operator's account (D-26), neither GitHub comments nor board edits ever authorize a sensitive operation.
 
 ### 11.10 Recovery and safety defaults
 
@@ -478,6 +489,16 @@ Facts for that assessment **[V]** (addresses deliberately not repeated):
 | D-12 | Location of coordinator state and lock files | **Approved 2026-10-16:** outside Git, under `$XDG_STATE_HOME/mx-admin-agents/`. Filesystem verified suitable (local ext4) **[V]**; the `flock` contention self-test runs before first reliance (§10) |
 | D-13 | Coordinator package | **Approved 2026-10-16:** `scripts/feature_coordinator/` with entry point `scripts/feature.py` (automation-owned; no imports from `mxfix`/`mxissues`/backend) |
 | D-14 | Automation model | **Approved 2026-10-16:** Qwen is **not local**. It runs on a remote inference server behind an OpenAI-compatible Chat Completions API, using the exact operator profile (§11.11). Declared capabilities are unvalidated |
+| D-4 | Feature base branch | **Approved 2026-10-17:** `dev` is the base for future `feature/*` branches |
+| D-5 | Security remediation priority / authentication and debug defaults | **Approved 2026-10-17:** preserve the existing development authentication and debug defaults; unattended or parallel agent execution must use isolation and security controls (bubblewrap containment, Phase 3) |
+| D-17 | Local runner for the remote Qwen model | **Approved 2026-10-17:** a minimal native OpenAI-compatible adapter and a narrowly scoped tool loop (implemented in Phase 3, tested against a local fake server only); no source code to the real server until the transport, disclosure, authentication and capability validation are approved |
+| D-19 | Lint gates | **Approved 2026-10-17:** baseline-aware; existing findings reported, new findings block |
+| D-10 | Committing the work | **Settled for Phases 0–3** by the operator (`12183e0`, `8454e63`, `b3f3691` on `agents`, not pushed). **2026-10-17:** a reviewed commit plan for Phase 4 and the Projects extension was requested; nothing is committed or pushed without approval ([phase-status](../coordination/phase-status.md)) |
+| D-22 | Update this page and the docs index | **Approved 2026-10-17:** done in this revision (implementation status, §11.4, §11.6, §11.9, this register) |
+| D-28 | Project #2 built-in workflows | **Approved 2026-10-17:** the board must not close Issues or overwrite coordinator-managed states; "Auto-close issue" and "Item closed" are disabled (verified through the API and by a behavior check) |
+| D-29 | Historical test Issues and the board | **Approved 2026-10-17:** Issues #11–#14 stay off Project #2; #15–#16 stay in GitHub for audit; the Active Tasks view shows open Issues only, so finished test tasks do not appear |
+
+> **Superseded (2026-10-17):** D-4, D-5 and D-17 were listed as open below. They were approved with the Phase 3 authorization and are kept in the open table only as history.
 
 > **Superseded by v5:** D-14 was previously worded "Automation runner (local Qwen)". The remote topology replaces that wording.
 
@@ -485,11 +506,12 @@ Facts for that assessment **[V]** (addresses deliberately not repeated):
 
 | ID | Decision | Recommendation / notes |
 | --- | --- | --- |
-| D-4 | Feature base branch | D-11 makes `dev` the integration target for the bootstrap work. Please confirm `dev` explicitly as the base for `feature/*` branches |
-| D-5 | Priority of security remediation (SEC-1..6, SEC-11, SEC-12) | Before any parallel or unattended write-capable run |
+| D-4 | Feature base branch | *(approved 2026-10-17, see above)* D-11 makes `dev` the integration target for the bootstrap work. Please confirm `dev` explicitly as the base for `feature/*` branches |
+| D-5 | Priority of security remediation (SEC-1..6, SEC-11, SEC-12) | *(defaults decision approved 2026-10-17, see above; the SEC remediation itself remains open)* Before any parallel or unattended write-capable run |
 | D-9 | Stale `backend/docs/openapi.yaml` | Regenerate (Backend task) or mark superseded |
-| D-10 | When and how to commit the bootstrap work | A prerequisite for the D-11 PR. Recommended: three reviewed commits on `agents` (Phase 0–1 docs; docs tooling + tests; v4/v5 adoption docs + the v4/v5 prompt files). Nothing is committed yet |
+| D-10 | When and how to commit the bootstrap work | *(settled for Phases 0–3, see above)* A prerequisite for the D-11 PR. Recommended: three reviewed commits on `agents` (Phase 0–1 docs; docs tooling + tests; v4/v5 adoption docs + the v4/v5 prompt files). Nothing is committed yet |
 | D-15 | **Transport for the remote Qwen endpoint** (currently plain HTTP) | Secure it (TLS reverse proxy, HTTPS with certificate verification, or WireGuard/Tailscale), **or** grant an explicit, documented plain-HTTP exception after a network security assessment. Until then, no source code or repository context is sent (v5 §10.1.1) |
 | D-16 | **Disclosure policy for the remote model** | Which code/context categories may be sent; never `.env`, production data, tokens or whole repositories (v5 §10.1) |
-| D-17 | **Local runner for the remote Qwen model** | A runner on this host that speaks Chat Completions, assembles tool calls and implements the client-side `apply-patch` / `multi-find-replace` / `find-replace` tools within Automation's paths. Candidates are evaluated in Phase 2 (read-only) and validated with mocks in Phase 3. Until validated, Automation uses an approved default runner or Qwen in advisory/read-only mode |
+| D-17 | **Local runner for the remote Qwen model** | *(approved 2026-10-17, see above)* A runner on this host that speaks Chat Completions, assembles tool calls and implements the client-side `apply-patch` / `multi-find-replace` / `find-replace` tools within Automation's paths. Candidates are evaluated in Phase 2 (read-only) and validated with mocks in Phase 3. Until validated, Automation uses an approved default runner or Qwen in advisory/read-only mode |
 | D-18 | Qwen API authentication | Whether the server requires `AGENT_QWEN_API_KEY`; if so, it is provisioned through a private secret store, never in tracked files |
+| D-20, D-21, D-23–D-27 | Runner credentials in the sandbox, runner network policy, the Phase 5 gate set, Phase 5 GitHub write scope, push and the single PR, a separate GitHub identity, test artifacts | Open; options and recommendations in [phase-status](../coordination/phase-status.md#human-decisions-required) |

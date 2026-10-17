@@ -12,12 +12,18 @@
     github test-lifecycle [--apply]    the Phase 4 live acceptance scenario (4 test Issues; see live_test.py)
     github cleanup-test FEATURE [--apply]
                                        final comment + close for a TEST feature's Issues (repeatable)
+    github project …                   the GitHub Projects board (Phase 4 extension; see `github project -h`)
     hold TASK --reason TEXT [--apply]  hold a task for a human decision (needs-human)
     release TASK [--apply]             release a human hold
 
 The `github` commands use the real adapter (`gh api`, existing login) unless `--tracker local`
 is given. Writes happen only with --apply; the configured write scope (test features only in
-Phase 4) still applies. No command creates a pull request.
+Phase 4) still applies. No command creates a pull request. `github sync` also converges the
+feature's project board items when `github.project` is enabled and the feature is authorized
+for the board (`--no-board` skips it).
+
+Exit codes: 0 OK; 1 the command ran but found a problem (a missing capability, deferred or
+refused work, drift it could not repair); 2 invalid arguments.
 """
 
 from __future__ import annotations
@@ -31,10 +37,13 @@ from pathlib import Path
 from typing import Any
 
 from .config import ProjectConfig
-from .errors import GitHubError
+from .errors import GitHubError, ProjectBoardError
 from .github_api import GitHubClient, sanitize
+from .gitops import branch_contains
 from .issue_sync import IssueSync
 from .issues import LABEL_SPECS, MockIssueTracker, TrackerClient
+from .operations import make_board
+from .project_sync import ProjectSync
 from .statedir import ensure_state_dir, resolve_state_dir
 from .store import StateStore
 
@@ -71,6 +80,36 @@ def _tracker(args: argparse.Namespace, config: ProjectConfig, state_dir: Path) -
 def _sync(args: argparse.Namespace, config: ProjectConfig) -> IssueSync:
     state_dir = _state(args, config)
     return IssueSync(StateStore(state_dir), _tracker(args, config, state_dir), config)
+
+
+def project_sync(args: argparse.Namespace, config: ProjectConfig, *, issues: IssueSync | None = None) -> ProjectSync:
+    """The board synchronizer for the CLI's state directory and tracker kind (Phase 4 extension)."""
+    if not config.github.project.enabled:
+        raise ProjectBoardError("github.project is disabled in the configuration")
+    state_dir = _state(args, config)
+    if issues is None:
+        issues = IssueSync(StateStore(state_dir), _tracker(args, config, state_dir), config)
+    client = make_board(tracker_kind(args, "github"), config, state_dir, issues.client)
+    repo = Path(args.repo)
+    return ProjectSync(issues.store, client, issues, config,
+                       revision_check=lambda feature, sha: branch_contains(repo, feature.branch, sha))
+
+
+def board_lines(report: dict[str, Any]) -> list[str]:
+    """Human-readable lines of a BoardReport dict."""
+    project = report.get("project") or {}
+    lines = [f"board {report['feature_id']}: project #{project.get('number', '?')}; "
+             f"{'applied' if report['applied'] else 'dry run'}; ok={report['ok']}"]
+    for rid, info in sorted(report.get("items", {}).items()):
+        reason = f" — {info['Blocked Reason']}" if info.get("Blocked Reason") else ""
+        lines.append(f"  {rid:44s} #{info['issue']:<5} {info.get('Status', ''):12s} {info.get('Agent', ''):13s}"
+                     f"{reason}")
+    for key in ("writes", "drift", "warnings", "deferred"):
+        lines += [f"  {key.rstrip('s')}: {sanitize(item, 240)}" for item in report.get(key, [])]
+    for key in ("added", "adopted", "protected", "skipped"):
+        if report.get(key):
+            lines.append(f"  {key}: {report[key]}")
+    return lines
 
 
 def _report_lines(report: dict[str, Any]) -> list[str]:
@@ -126,6 +165,11 @@ def cmd_status(args: argparse.Namespace, config: ProjectConfig) -> int:
         rows.append(("endpoint pulls (read-only)", "OK"))
         rate = client.rate_limit()
         rows.append(("rate limit (core)", f"{rate['remaining']}/{rate['limit']} remaining"))
+        scopes = client.token_scopes()
+        rows.append(("token scopes (header)", ", ".join(scopes) if scopes is not None else "not reported"))
+        if gh.project.enabled and scopes is not None and "project" not in scopes:
+            missing.append("the `project` scope (GitHub Projects board): the operator runs "
+                           "`gh auth refresh -s project`")
         rows.append(("write scope", f"{gh.write_scope}; pull request creation disabled (Phase 4)"))
     except GitHubError as exc:
         missing.append(sanitize(exc))
@@ -153,10 +197,18 @@ def cmd_labels(args: argparse.Namespace, config: ProjectConfig) -> int:
 # -- sync / reconcile ------------------------------------------------------------------------
 
 def cmd_sync(args: argparse.Namespace, config: ProjectConfig) -> int:
-    """Converge one feature's Issues with the local state."""
-    report = _sync(args, config).sync(args.feature, apply=args.apply).to_dict()
-    _emit(args, report, _report_lines(report) + ([] if args.apply else ["dry run — pass --apply to write"]))
-    return 0 if report["ok"] else 1
+    """Converge one feature's Issues (and its project board items) with the local state."""
+    sync = _sync(args, config)
+    report = sync.sync(args.feature, apply=args.apply).to_dict()
+    lines = _report_lines(report)
+    ok = report["ok"]
+    if config.github.project.enabled and not args.no_board:
+        board = project_sync(args, config, issues=sync).sync(args.feature, apply=args.apply).to_dict()
+        report = {**report, "board": board}
+        lines += board_lines(board)
+        ok = ok and board["ok"]
+    _emit(args, report, lines + ([] if args.apply else ["dry run — pass --apply to write"]))
+    return 0 if ok else 1
 
 
 def cmd_reconcile(args: argparse.Namespace, config: ProjectConfig) -> int:
@@ -260,10 +312,8 @@ def cmd_cleanup_test(args: argparse.Namespace, config: ProjectConfig) -> int:
 # -- human escalation (local) ---------------------------------------------------------------------
 
 def _coordinator(args: argparse.Namespace, config: ProjectConfig):
-    from .operations import build_coordinator, make_tracker  # pylint: disable=import-outside-toplevel
-    state_dir = _state(args, config)
-    return build_coordinator(config, Path(args.repo), state_dir,
-                             tracker=make_tracker(tracker_kind(args, "local"), config, state_dir))
+    from .operations import build_coordinator  # pylint: disable=import-outside-toplevel
+    return build_coordinator(config, Path(args.repo), _state(args, config), tracker_kind=tracker_kind(args, "local"))
 
 
 def cmd_hold(args: argparse.Namespace, config: ProjectConfig) -> int:
@@ -286,9 +336,9 @@ def cmd_release(args: argparse.Namespace, config: ProjectConfig) -> int:
     return 0
 
 
-def register(sub: Any) -> None:
-    """Add the Phase 4 commands to the CLI's subparsers."""
-    _register_github(sub)
+def register(sub: Any) -> Any:
+    """Add the Phase 4 commands to the CLI's subparsers; returns the `github` group's subparsers."""
+    gsub = _register_github(sub)
     hold = sub.add_parser("hold", help="hold a task for a human decision (needs-human)")
     hold.add_argument("task")
     hold.add_argument("--reason", required=True)
@@ -300,9 +350,10 @@ def register(sub: Any) -> None:
     release.add_argument("--actor", default="operator")
     release.add_argument("--apply", action="store_true")
     release.set_defaults(func=cmd_release)
+    return gsub
 
 
-def _register_github(sub: Any) -> None:
+def _register_github(sub: Any) -> Any:
     group = sub.add_parser("github", help="GitHub Issue coordination (real adapter unless --tracker local)",
                            description=__doc__.split("\n\n", 1)[0], epilog=__doc__,
                            formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -316,6 +367,7 @@ def _register_github(sub: Any) -> None:
     sync.add_argument("feature")
     sync.add_argument("--apply", action="store_true", help="write to GitHub (default: dry run, reads only)")
     sync.add_argument("--json", action="store_true", help="print the report as JSON")
+    sync.add_argument("--no-board", action="store_true", help="skip the project board (Issues only)")
     sync.set_defaults(func=cmd_sync)
     rec = gsub.add_parser("reconcile", help="after a restart: sync, report drift/duplicates/orphans")
     rec.add_argument("features", nargs="*", help="feature IDs (default: every feature in the state)")
@@ -346,3 +398,4 @@ def _register_github(sub: Any) -> None:
     clean.add_argument("--apply", action="store_true")
     clean.add_argument("--json", action="store_true")
     clean.set_defaults(func=cmd_cleanup_test)
+    return gsub

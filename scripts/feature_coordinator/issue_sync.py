@@ -29,6 +29,9 @@ comment. After a crash or an ambiguous failure (GitHubUncertainWriteError) the n
 searches for the Issue by its key, or for the comment by its operation marker, before it
 writes again — so a request that succeeded remotely is reused, never duplicated.
 
+Fault points (tests and the live recovery checks): crash-after-create, crash-after-link,
+crash-after-comment, crash-after-outbox and fail-before-update, each followed by `:<record-id>`.
+
 Locks. A sync holds only `github-sync.lock` (one sync at a time) while it talks to GitHub;
 state changes happen in short `StateStore.transaction()` sections that always reload the
 record first, so a stale GitHub view can never overwrite newer local state, and a failed
@@ -553,6 +556,7 @@ class IssueSync:  # pylint: disable=too-many-instance-attributes,too-many-public
         self._record_mapping(feature, task, issue)
         report.created[record_id] = issue.number
         report.writes.append(f"created Issue #{issue.number} for {record_id}")
+        self._fault(f"crash-after-link:{record_id}")
         return issue
 
     def _mapped_issue(self, feature: Feature, task: Task | None, link: IssueLink | None,  # pylint: disable=too-many-arguments

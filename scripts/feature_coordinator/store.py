@@ -139,8 +139,9 @@ class StateStore:
     # -- GitHub sync records (see issue_sync.py) -------------------------------
 
     def save_record(self, kind: str, record: Any) -> None:
-        """Persist a revision-checked record of *kind* ('github' or 'outbox'; inside a transaction)."""
-        if kind not in ("github", "outbox"):
+        """Persist a revision-checked record of *kind* ('github', 'outbox' or 'project'; inside a
+        transaction)."""
+        if kind not in ("github", "outbox", "project"):
             raise StateDirError(f"unknown record kind {kind!r}")
         self._write(kind, record)
 

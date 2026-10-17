@@ -22,6 +22,11 @@ and recoverable synchronization with validated operator commands (issue_sync.py)
 escalation (escalation.py) and the live acceptance scenario (live_test.py). The local state
 stays authoritative; GitHub writes are limited to test features, and no pull request is
 ever created in this phase.
+
+The Phase 4 extension adds a GitHub Projects (v2) board as a picture of that state: a
+GraphQL client with a write guard (github_projects.py), a local board (projects_local.py),
+board synchronization with the status mapping (project_sync.py), `feature.py github project`
+(project_commands.py) and the live board test (live_projects.py). The board is never input.
 """
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"

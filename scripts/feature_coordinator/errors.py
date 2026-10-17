@@ -92,6 +92,11 @@ class SyncScopeError(TrackerError):
     """The GitHub write scope (e.g. test features only, Phase 4) does not cover this feature."""
 
 
+class ProjectBoardError(TrackerError):
+    """The GitHub project board is not the configured one, is a protected project, or lacks a
+    required field, option or view (`feature.py github project setup`). Nothing is written."""
+
+
 class GitHubError(TrackerError):
     """A GitHub API failure. Messages are sanitized: no tokens, no control characters, bounded."""
 

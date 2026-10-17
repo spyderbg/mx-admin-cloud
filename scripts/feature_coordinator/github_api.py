@@ -19,6 +19,12 @@ Layers:
 Pull requests: LIVE_PULL_REQUESTS_ENABLED is False in Phase 4, so `create_pull_request`
 refuses before any request. Listing pull requests (read-only) is allowed, which is how the
 live test proves that no PR exists.
+
+GraphQL (Phase 4 extension, GitHub Projects): `GitHubClient.graphql()` sends one query or
+mutation through the same transport and the same retry, pacing and rate-limit rules. A
+GraphQL response is HTTP 200 even when it failed, so its `errors` list is classified like an
+HTTP status (NOT_FOUND, FORBIDDEN, INSUFFICIENT_SCOPES, RATE_LIMITED, …). Queries are never
+paced and never counted as writes.
 """
 
 from __future__ import annotations
@@ -58,6 +64,7 @@ _CONTROL_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|[\x00-\x08\x0b-\x1f\x7f-\x9
 _LOGIN_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:\[bot\])?$")
 _STATUS_RE = re.compile(r"^HTTP/[0-9.]+ (\d{3})")
 _ISO_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$")
+_NODE_ID_RE = re.compile(r"^[A-Za-z0-9_=-]{2,120}$")
 GH_ENV = {"GH_PROMPT_DISABLED": "1", "GH_NO_UPDATE_NOTIFIER": "1", "NO_COLOR": "1", "CLICOLOR": "0",
           "GH_PAGER": "cat", "PAGER": "cat", "GH_SPINNER_DISABLED": "1"}
 
@@ -231,11 +238,14 @@ def parse_issue(data: Any) -> RemoteIssue:
     if not isinstance(updated, str) or updated and not _ISO_RE.fullmatch(updated):
         raise GitHubResponseError(f"{where}: unexpected updated_at")
     reason = data.get("state_reason")
+    node_id = data.get("node_id") or ""
+    if not isinstance(node_id, str) or node_id and not _NODE_ID_RE.fullmatch(node_id):
+        raise GitHubResponseError(f"{where}: unexpected node_id")
     return RemoteIssue(number=number, id=_field(data, "id", int, where), title=_field(data, "title", str, where),
                        body=body, state=state, labels=tuple(labels), author=_login(data.get("user"), where),
                        url=url, is_pull_request=data.get("pull_request") is not None, updated_at=updated,
                        comments=int(data.get("comments") or 0),
-                       state_reason=reason if isinstance(reason, str) else None)
+                       state_reason=reason if isinstance(reason, str) else None, node_id=node_id)
 
 
 def parse_comment(data: Any) -> RemoteComment:
@@ -262,6 +272,33 @@ def _parse_pull(data: Any) -> PullRequest:
     return PullRequest(number=_field(data, "number", int, "pull request"), head=str(head.get("ref", "")),
                        base=str(base.get("ref", "")), title=str(data.get("title", "")),
                        body=str(data.get("body") or ""), state=str(data.get("state", "")))
+
+
+def _operation_name(query: str) -> str:
+    match = re.match(r"\s*(query|mutation)\s+([A-Za-z_][A-Za-z0-9_]*)", query)
+    return match.group(2) if match else "anonymous"
+
+
+def _graphql_error(errors: Any) -> tuple[str, str]:
+    """(type, sanitized message) of the first GraphQL error."""
+    first = errors[0] if isinstance(errors, list) and errors and isinstance(errors[0], dict) else {}
+    kind = first.get("type") or (first.get("extensions") or {}).get("code") or "UNKNOWN"
+    return sanitize(kind, 40), sanitize(first.get("message", ""), 240)
+
+
+def _graphql_exception(operation: str, kind: str, message: str) -> GitHubError:
+    text = f"graphql {operation}: {kind}: {message or 'no message'}"
+    if kind == "INSUFFICIENT_SCOPES":
+        return GitHubPermissionError(f"{text} — the gh login lacks a scope (for projects: `project`); the "
+                                     "operator must run `gh auth refresh -s project`", status=403)
+    if kind == "FORBIDDEN":
+        return GitHubPermissionError(f"{text} — the account lacks this capability", status=403)
+    if kind == "NOT_FOUND":
+        return GitHubNotFoundError(text, status=404)
+    if kind in ("UNPROCESSABLE", "BAD_USER_INPUT", "UNPROCESSABLE_ENTITY", "argumentLiteralsIncompatible",
+                "undefinedField", "variableMismatch", "missingRequiredArguments"):
+        return GitHubValidationError(text, status=422)
+    return GitHubResponseError(text)
 
 
 # ---------------------------------------------------------------------------
@@ -325,9 +362,10 @@ class GitHubClient:  # pylint: disable=too-many-instance-attributes,too-many-pub
         return 60.0 * (2 ** attempt)  # GitHub: otherwise wait at least one minute, then back off
 
     def _call(self, method: str, path: str, body: Any = None, *, idempotent: bool,  # pylint: disable=too-many-branches
-              ok: Iterable[int] = ()) -> ApiResponse:
-        """Send with bounded retries. *ok* lists extra statuses returned instead of raised."""
-        write = method != "GET"
+              ok: Iterable[int] = (), write: bool | None = None) -> ApiResponse:
+        """Send with bounded retries. *ok* lists extra statuses returned instead of raised.
+        *write* defaults to "not a GET" (a GraphQL query is a POST that writes nothing)."""
+        write = method != "GET" if write is None else write
         ok = set(ok)
         attempt = 0
         while True:
@@ -400,6 +438,39 @@ class GitHubClient:  # pylint: disable=too-many-instance-attributes,too-many-pub
                 return items
         raise GitHubResponseError(f"GET {path}: more than {self.settings.max_pages} pages; refusing a partial result")
 
+    # -- GraphQL -------------------------------------------------------------------
+
+    def graphql(self, query: str, variables: Mapping[str, Any] | None = None, *, mutation: bool = False,
+                idempotent: bool = True) -> dict[str, Any]:
+        """The `data` of one GraphQL operation. `errors` raise like the matching HTTP status;
+        RATE_LIMITED waits (bounded) and retries. A non-idempotent mutation that may have been
+        applied raises GitHubUncertainWriteError, exactly like a REST create."""
+        body = {"query": query, "variables": dict(variables or {})}
+        operation = _operation_name(query)
+        attempt = 0
+        while True:
+            resp = self._call("POST", "graphql", body, idempotent=idempotent or not mutation, write=mutation)
+            data = resp.data
+            if not isinstance(data, dict):
+                raise GitHubResponseError(f"graphql {operation}: response is not an object")
+            errors = data.get("errors")
+            if errors:
+                kind, message = _graphql_error(errors)
+                if kind == "RATE_LIMITED":
+                    wait = self._rate_limit_wait(ApiResponse(429, resp.headers, None), attempt) or 60.0
+                    if wait > self.settings.max_rate_limit_wait_seconds or attempt >= self.settings.max_retries:
+                        raise GitHubRateLimitError(f"graphql {operation}: rate limited (retry after {wait:.0f}s)",
+                                                   status=429)
+                    self.retries += 1
+                    self.sleep(wait)
+                    attempt += 1
+                    continue
+                raise _graphql_exception(operation, kind, message)
+            payload = data.get("data")
+            if not isinstance(payload, dict):
+                raise GitHubResponseError(f"graphql {operation}: no data")
+            return payload
+
     # -- identity and capabilities -------------------------------------------------
 
     def viewer_login(self) -> str:
@@ -407,6 +478,14 @@ class GitHubClient:  # pylint: disable=too-many-instance-attributes,too-many-pub
         if self._viewer is None:
             self._viewer = _login(self._call("GET", "user", idempotent=True).data, "user")
         return self._viewer
+
+    def token_scopes(self) -> tuple[str, ...] | None:
+        """The OAuth scopes GitHub reports for the gh login (the `X-OAuth-Scopes` response header;
+        the token itself is never seen). None when GitHub reports none (e.g. a fine-grained token)."""
+        header = self._call("GET", "user", idempotent=True).headers.get("x-oauth-scopes")
+        if header is None:
+            return None
+        return tuple(sorted(s.strip() for s in header.split(",") if s.strip()))
 
     def repository_info(self) -> dict[str, Any]:
         """Validated repository facts needed for Issue coordination."""

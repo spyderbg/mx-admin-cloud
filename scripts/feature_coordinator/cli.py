@@ -152,11 +152,15 @@ def cmd_plan(args: argparse.Namespace, config: ProjectConfig) -> int:
     if not getattr(args, "apply", False):
         _print("dry run — nothing was written (pass --apply to record the feature)")
         return 0
-    from .operations import build_coordinator, make_tracker  # pylint: disable=import-outside-toplevel
+    from .operations import build_coordinator  # pylint: disable=import-outside-toplevel
     state_dir = _ensure_state(args, config)
-    feature = build_coordinator(config, Path(args.repo), state_dir,
-                                tracker=make_tracker(args.tracker or "local", config, state_dir)).plan(spec)
+    coord = build_coordinator(config, Path(args.repo), state_dir, tracker_kind=args.tracker or "local")
+    feature = coord.plan(spec)
     _print(f"recorded feature {feature.id} ({feature.state.value}) with {len(feature.task_ids)} task(s)")
+    board = coord.last_board_sync
+    if board is not None:
+        _print(f"project board: {len(board.added) + len(board.adopted)} item(s) added; "
+               + ("ok" if board.ok else f"deferred: {board.deferred or board.protected}"))
     return 0
 
 
@@ -227,7 +231,8 @@ def build_parser() -> argparse.ArgumentParser:
     from .commands import register  # pylint: disable=import-outside-toplevel
     register(sub)
     from .github_commands import register as register_github  # pylint: disable=import-outside-toplevel
-    register_github(sub)
+    from .project_commands import register as register_project  # pylint: disable=import-outside-toplevel
+    register_project(register_github(sub))
     sub.add_parser("status", help="show coordinator state (read-only)").set_defaults(func=cmd_status)
     sub.add_parser("demo", help="run the mock end-to-end feature in a temporary repository").set_defaults(func=cmd_demo)
     return parser

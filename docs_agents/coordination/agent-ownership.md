@@ -1,6 +1,6 @@
 # Agent Ownership and Write Enforcement (Phase 3)
 
-> Owner role: **coordination**. Status: **Phase 3 deliverable, awaiting operator approval** (2026-10-17).
+> Owner role: **coordination**. Status: **Phase 3 deliverable, approved** (2026-10-17; committed as `b3f3691`).
 > Design: [feature-workflow.md](feature-workflow.md) · Operations: [operations.md](operations.md) · Configuration: [project-config.example.yaml](project-config.example.yaml) · Status: [phase-status.md](phase-status.md)
 >
 > Evidence tags: **[V]** verified by execution (the named test or command), **[S]** source-read, **[U]** unverified.

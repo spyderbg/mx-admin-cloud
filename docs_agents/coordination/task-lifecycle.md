@@ -1,6 +1,6 @@
 # Task Lifecycle and Dependencies (Phase 4)
 
-> Owner role: **coordination**. Status: **Phase 4 deliverable, awaiting operator approval** (2026-10-17).
+> Owner role: **coordination**. Status: **Phase 4 deliverable, approved** (2026-10-17).
 > State machines and locks: [feature-workflow §4–§7](feature-workflow.md#4-data-model-and-schema-proposal) · GitHub projection: [github-integration.md](github-integration.md) · Issue/comment formats: [templates/](templates/README.md) · Commands: [operations.md](operations.md)
 >
 > Evidence tags: **[V]** verified by execution (the named test), **[S]** source-read, **[U]** unverified.

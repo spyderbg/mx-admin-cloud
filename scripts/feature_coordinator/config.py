@@ -21,6 +21,11 @@ Phase 4 adds the `github` section: the repository, the coordinator identity writ
 every Issue it owns, the write scope (test features only during Phase 4), the operators
 whose Issue-comment commands are accepted, and retry/rate-limit bounds. It holds no
 credentials: the adapter uses the existing `gh` login.
+
+The Phase 4 extension adds `github.project`: the GitHub Projects (v2) board that shows the
+coordinator's Issues (owner, number and GraphQL node ID, the projects that must never be
+written, the Status options and the Agent / Feature ID / Blocked Reason fields). It is
+disabled by default; `default_config()` points it at the mx-admin-cloud board.
 """
 
 from __future__ import annotations
@@ -102,6 +107,55 @@ COMMAND_PERMISSIONS = ("admin", "maintain", "write")
 _REPO_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}$")
 _LOGIN_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$")
 _COORDINATOR_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{2,63}$")
+PROJECT_OWNER_TYPES = ("user", "organization")
+# The coordinator's board columns, in board order. Each key has a fixed meaning (project_sync.py);
+# the configuration chooses only the option names.
+STATUS_KEYS = ("backlog", "ready", "in_progress", "blocked", "review", "done")
+DEFAULT_STATUS_NAMES = {"backlog": "Backlog", "ready": "Ready", "in_progress": "In Progress", "blocked": "Blocked",
+                        "review": "Review", "done": "Done"}
+# GitHub creates every new project with the Status options Todo / In Progress / Done. "Todo" is
+# reused as Backlog (renamed, option ID kept), so items and workflows that point at it keep working.
+DEFAULT_STATUS_REUSE = {"Todo": "backlog"}
+DEFAULT_AGENT_NAMES = {"coordination": "Coordination", "backend": "Backend", "cli": "CLI", "frontend": "Frontend",
+                       "automation": "Automation", "full-project": "Full Project"}
+_PROJECT_NODE_RE = re.compile(r"^PVT_[A-Za-z0-9_-]{4,64}$")
+_PROJECT_NAME_RE = re.compile(r"^[^\x00-\x1f\x7f\"\\]{1,50}$")
+_BUILTIN_PROJECT_FIELDS = ("Title", "Assignees", "Labels", "Linked pull requests", "Milestone", "Repository",
+                           "Reviewers", "Parent issue", "Sub-issues progress", "Type", "Tracks", "Tracked by")
+
+
+@dataclass(frozen=True)
+class GitHubProjectConfig:  # pylint: disable=too-many-instance-attributes
+    """The GitHub Projects (v2) board that visualizes coordinator Issues (Phase 4 extension).
+
+    The project is identified by owner, number AND node ID; all three must match before
+    anything is written. `protected_numbers` lists projects of the same owner that are never
+    written (for mx-admin-cloud: Project #1, owned by the independent mxissues workflow).
+    The board is a projection of the local state: it never claims, locks or approves anything.
+    """
+
+    enabled: bool = False
+    owner: str = ""
+    owner_type: str = "user"
+    number: int = 0
+    node_id: str = ""
+    title: str = ""                       # informational; a mismatch is reported, identity is the node ID
+    protected_numbers: tuple[int, ...] = ()
+    status_field: str = "Status"
+    status_names: Mapping[str, str] = field(default_factory=lambda: dict(DEFAULT_STATUS_NAMES))
+    status_reuse: Mapping[str, str] = field(default_factory=lambda: dict(DEFAULT_STATUS_REUSE))
+    agent_field: str = "Agent"
+    agent_names: Mapping[str, str] = field(default_factory=lambda: dict(DEFAULT_AGENT_NAMES))
+    feature_id_field: str = "Feature ID"
+    blocked_reason_field: str = "Blocked Reason"
+    board_view: str = "Kanban"
+    active_view: str = "Active Tasks"
+    item_settle_seconds: float = 2.0      # after adding an item, before setting its fields (project workflows)
+    max_field_attempts: int = 2           # field writes re-applied when a read-back differs
+
+    def status(self, key: str) -> str:
+        """The option name of a status key (see STATUS_KEYS)."""
+        return self.status_names[key]
 
 
 @dataclass(frozen=True)
@@ -126,6 +180,7 @@ class GitHubConfig:  # pylint: disable=too-many-instance-attributes
     sync_lock_timeout_seconds: float = 120.0
     create_settle_seconds: float = 5.0
     max_pages: int = 20
+    project: GitHubProjectConfig = field(default_factory=GitHubProjectConfig)
 
     @property
     def owner(self) -> str:
@@ -324,6 +379,43 @@ def _validate_github(github: GitHubConfig) -> None:
         raise ConfigError("github.min_write_interval_seconds and create_settle_seconds must not be negative")
     if not 0 <= github.max_retries <= 10 or not 1 <= github.max_pages <= 100:
         raise ConfigError("github.max_retries must be 0..10 and github.max_pages 1..100")
+    _validate_project(github.project)
+
+
+def _validate_project(project: GitHubProjectConfig) -> None:  # pylint: disable=too-many-branches
+    if not project.enabled:
+        return
+    where = "github.project"
+    if not _LOGIN_RE.fullmatch(project.owner):
+        raise ConfigError(f"{where}.owner must be a GitHub login, got {project.owner!r}")
+    if project.owner_type not in PROJECT_OWNER_TYPES:
+        raise ConfigError(f"{where}.owner_type must be one of {PROJECT_OWNER_TYPES}")
+    if project.number < 1 or not _PROJECT_NODE_RE.fullmatch(project.node_id):
+        raise ConfigError(f"{where}.number must be positive and {where}.node_id a ProjectV2 node ID (PVT_…)")
+    if project.number in project.protected_numbers:
+        raise ConfigError(f"{where}.number {project.number} is listed in protected_numbers; it is never written")
+    if any(n < 1 for n in project.protected_numbers):
+        raise ConfigError(f"{where}.protected_numbers must be positive project numbers")
+    if tuple(project.status_names) != STATUS_KEYS:
+        raise ConfigError(f"{where}.status_names must map exactly {STATUS_KEYS}, in this order")
+    if set(project.agent_names) != {*ROLES, FULL_PROJECT}:
+        raise ConfigError(f"{where}.agent_names must map exactly {(*ROLES, FULL_PROJECT)}")
+    for group in (project.status_names, project.agent_names):
+        names = list(group.values())
+        if len(set(names)) != len(names) or not all(_PROJECT_NAME_RE.fullmatch(n) for n in names):
+            raise ConfigError(f"{where}: option names must be unique, 1-50 printable characters")
+    for name, key in project.status_reuse.items():
+        if key not in STATUS_KEYS or not _PROJECT_NAME_RE.fullmatch(name) or name in project.status_names.values():
+            raise ConfigError(f"{where}.status_reuse: {name!r} → {key!r} is not a reusable status option")
+    fields = [project.status_field, project.agent_field, project.feature_id_field, project.blocked_reason_field]
+    if len(set(fields)) != 4 or not all(_PROJECT_NAME_RE.fullmatch(f) for f in fields) \
+            or set(fields[1:]) & set(_BUILTIN_PROJECT_FIELDS):
+        raise ConfigError(f"{where}: field names must be distinct, printable and not built-in project fields")
+    views = (project.board_view, project.active_view)
+    if len(set(views)) != 2 or not all(_PROJECT_NAME_RE.fullmatch(v) for v in views):
+        raise ConfigError(f"{where}: board_view and active_view must be distinct, printable names")
+    if project.item_settle_seconds < 0 or not 1 <= project.max_field_attempts <= 5:
+        raise ConfigError(f"{where}.item_settle_seconds must not be negative; max_field_attempts must be 1..5")
 
 
 # ---------------------------------------------------------------------------
@@ -393,6 +485,13 @@ DEFAULT_ROLE_COMMANDS: dict[str, tuple[str, ...]] = {
 }
 
 
+# The mx-admin-cloud board (Phase 4 extension). Project #1 ("mx-admin-cloud issues") belongs to the
+# independent mxissues bug workflow and is never written.
+MX_ADMIN_CLOUD_PROJECT = GitHubProjectConfig(
+    enabled=True, owner="spyderbg", owner_type="user", number=2, node_id="PVT_kwHOACEIPc4BndH-",
+    title="mx-admin-cloud automation", protected_numbers=(1,))
+
+
 def default_config() -> ProjectConfig:
     """The approved mx-admin-cloud configuration (architecture §1, D-12, D-14)."""
     roles = {
@@ -417,6 +516,7 @@ def default_config() -> ProjectConfig:
         lint_gates=dict(DEFAULT_LINT_GATES),
         unsafe_gates=dict(DEFAULT_UNSAFE_GATES),
         runtime=RuntimeConfig(role_commands=dict(DEFAULT_ROLE_COMMANDS)),
+        github=GitHubConfig(project=MX_ADMIN_CLOUD_PROJECT),
     )
 
 
@@ -520,8 +620,33 @@ def _github_from_mapping(data: Mapping[str, Any]) -> GitHubConfig:
     for key in known & set(data):
         default = getattr(defaults, key)
         raw = data[key]
-        values[key] = tuple(str(v) for v in raw) if isinstance(default, tuple) else type(default)(raw)
+        if key == "project":
+            values[key] = _project_from_mapping(dict(raw or {}))
+        else:
+            values[key] = tuple(str(v) for v in raw) if isinstance(default, tuple) else type(default)(raw)
     return GitHubConfig(**values)
+
+
+def _project_from_mapping(data: Mapping[str, Any]) -> GitHubProjectConfig:
+    defaults = GitHubProjectConfig()
+    known = set(GitHubProjectConfig.__dataclass_fields__)  # pylint: disable=no-member
+    unknown = set(data) - known
+    if unknown:
+        raise ConfigError(f"unknown github.project keys: {sorted(unknown)} (tokens never belong here)")
+    values: dict[str, Any] = {}
+    for key in known & set(data):
+        default, raw = getattr(defaults, key), data[key]
+        if key == "protected_numbers":
+            values[key] = tuple(int(v) for v in raw)
+        elif isinstance(default, Mapping):
+            values[key] = {str(k): str(v) for k, v in dict(raw).items()}
+        elif isinstance(default, bool):
+            if not isinstance(raw, bool):
+                raise ConfigError(f"github.project.{key} must be true or false")
+            values[key] = raw
+        else:
+            values[key] = type(default)(raw)
+    return GitHubProjectConfig(**values)
 
 
 def load_config(path: Path) -> ProjectConfig:
