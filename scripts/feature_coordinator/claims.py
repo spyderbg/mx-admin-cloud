@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import secrets
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 from .errors import ClaimError, FullProjectActiveError, LockBusyError, RoleBusyError, WritersActiveError
@@ -76,6 +77,16 @@ class RecoveryReport:
     live: list[dict[str, Any]] = field(default_factory=list)
     unknown_lock_holders: list[str] = field(default_factory=list)
     cleared_full_project_request: bool = False
+    unresponsive: list[dict[str, Any]] = field(default_factory=list)  # alive, but no recent heartbeat
+
+
+def heartbeat_age(record: dict[str, Any]) -> float | None:
+    """Seconds since the claim's last heartbeat (None if unknown)."""
+    try:
+        stamp = datetime.fromisoformat(str(record["heartbeat_at"]).replace("Z", "+00:00"))
+    except (KeyError, ValueError):
+        return None
+    return (datetime.now(timezone.utc) - stamp).total_seconds()
 
 
 class ClaimManager:
@@ -163,6 +174,12 @@ class ClaimManager:
                                                     "identity": ProcessIdentity.current().to_dict()})
             self.store.append_event("full-project-requested", reason=reason)
 
+    def withdraw_full_project_request(self, reason: str) -> None:
+        """Withdraw a pending full-project request (before it was claimed); scoped work resumes."""
+        with self.store.transaction():
+            self.store.set_flag(FULL_PROJECT_FLAG, None)
+            self.store.append_event("full-project-request-withdrawn", reason=reason)
+
     def claim_full_project(self) -> FullProjectClaim:
         """Take project.lock exclusively. Fails while any scoped writer is still active."""
         with self.store.transaction():
@@ -188,14 +205,20 @@ class ClaimManager:
 
     # -- recovery ------------------------------------------------------------
 
-    def recover(self) -> RecoveryReport:
-        """Reclaim claims whose holder is provably dead; report everything else."""
+    def recover(self, *, stale_after_seconds: float | None = None) -> RecoveryReport:
+        """Reclaim claims whose holder is provably dead; report everything else.
+
+        A live holder is never reclaimed. With *stale_after_seconds*, a live holder whose last
+        heartbeat is older than that is reported as unresponsive (the operator may `stop` it)."""
         report = RecoveryReport()
         with self.store.transaction():
             for task_id, record in self.store.list_claims().items():
                 holder = ProcessIdentity.from_dict(record["identity"])
                 if holder.is_alive():
                     report.live.append(record)
+                    age = heartbeat_age(record)
+                    if stale_after_seconds is not None and age is not None and age > stale_after_seconds:
+                        report.unresponsive.append({**record, "heartbeat_age_seconds": round(age, 1)})
                     continue
                 task = self.store.load_task(task_id)
                 if task.state is TaskState.IN_PROGRESS:

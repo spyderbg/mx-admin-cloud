@@ -72,8 +72,8 @@ class RecordingGates:  # pylint: disable=too-few-public-methods
         self.failing = set(failing)
         self.calls: list[str] = []
 
-    def __call__(self, name: str, argv: Sequence[str], repo_root: Path) -> int:
-        del argv, repo_root
+    def __call__(self, name: str, context: object) -> int:
+        del context
         self.calls.append(name)
         return 1 if name in self.failing else 0
 

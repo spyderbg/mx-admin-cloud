@@ -89,18 +89,48 @@ FEATURE_TRANSITIONS: Mapping[FeatureState, frozenset[FeatureState]] = {
 }
 
 
+GATE_STATUSES = ("passed", "failed", "timeout", "blocked", "error")
+EXIT_TIMEOUT, EXIT_BLOCKED, EXIT_ERROR = 124, 125, 126
+
+
 @dataclass(frozen=True)
-class GateResult:
-    """One executed check (a configured gate) and its exit code."""
+class GateResult:  # pylint: disable=too-many-instance-attributes
+    """One executed (or refused) check and its outcome.
+
+    `status` is passed | failed | timeout (killed at its deadline) | blocked (not run: unsafe
+    against this checkout, or a tool is missing) | error. Only `passed` counts as passing."""
 
     gate: str
     exit_code: int
     command: tuple[str, ...] = ()
+    status: str = ""
+    duration_seconds: float = 0.0
+    log: str = ""
+    summary: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.status:
+            object.__setattr__(self, "status", "passed" if self.exit_code == 0 else "failed")
+        if self.status not in GATE_STATUSES:
+            raise ValueError(f"gate {self.gate!r}: unknown status {self.status!r}")
 
     @property
     def passed(self) -> bool:
-        """True when the gate exited 0."""
-        return self.exit_code == 0
+        """True when the gate ran and exited 0."""
+        return self.exit_code == 0 and self.status == "passed"
+
+    def to_dict(self) -> dict[str, Any]:
+        """JSON-serializable form."""
+        return {"gate": self.gate, "exit_code": self.exit_code, "command": list(self.command),
+                "status": self.status,
+                "duration_seconds": round(self.duration_seconds, 3), "log": self.log, "summary": self.summary}
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "GateResult":
+        """Inverse of to_dict()."""
+        return cls(gate=data["gate"], exit_code=int(data["exit_code"]), command=tuple(data.get("command", ())),
+                   status=data.get("status", ""), duration_seconds=float(data.get("duration_seconds", 0.0)),
+                   log=data.get("log", ""), summary=data.get("summary", ""))
 
 
 @dataclass(frozen=True)
@@ -130,12 +160,12 @@ class Evidence:
     def to_dict(self) -> dict[str, Any]:
         """JSON-serializable form."""
         return {"head_sha": self.head_sha, "summary": self.summary, "recorded_at": self.recorded_at,
-                "gates": [{"gate": g.gate, "exit_code": g.exit_code, "command": list(g.command)} for g in self.gates]}
+                "gates": [g.to_dict() for g in self.gates]}
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "Evidence":
         """Inverse of to_dict()."""
-        gates = tuple(GateResult(g["gate"], int(g["exit_code"]), tuple(g.get("command", ()))) for g in data["gates"])
+        gates = tuple(GateResult.from_dict(g) for g in data["gates"])
         return cls(head_sha=data["head_sha"], gates=gates, summary=data.get("summary", ""),
                    recorded_at=data.get("recorded_at", utc_now()))
 

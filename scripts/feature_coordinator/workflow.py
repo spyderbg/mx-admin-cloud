@@ -20,7 +20,6 @@ Only one feature may be active per checkout; others wait in `planned`.
 
 from __future__ import annotations
 
-import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
@@ -54,22 +53,21 @@ from .model import (
     refresh_readiness,
     transition_feature,
     transition_task,
+    utc_now,
     validate_dag,
 )
 from .paths import PathPolicy, ScopedWorkspace
+from .gates import GateContext, SandboxedGateRunner
+from .launchers import run_context
 from .runners import RunRequest, RunResult, Runner
 from .store import StateStore
 
-GateRunner = Callable[[str, Sequence[str], Path], int]
+# A gate runner gets the gate name and a GateContext and returns a GateResult (or an exit code).
+GateRunner = Callable[[str, GateContext], "GateResult | int"]
 ACTIVE_FEATURE_STATES = (FeatureState.ACTIVE, FeatureState.INTEGRATION, FeatureState.REVIEW)
 DEFAULT_INTEGRATION_GATES = ("contract-check", "docs-check")
 CONTRACT_GATES = ("contract-check", "backend-tests")
-
-
-def subprocess_gate_runner(name: str, argv: Sequence[str], repo_root: Path) -> int:
-    """Run a configured gate. `backend-*`, `cli-*` and `frontend-*` gates run in that directory."""
-    cwd = repo_root / name.split("-", 1)[0] if name.startswith(("backend-", "cli-", "frontend-")) else repo_root
-    return subprocess.run(list(argv), cwd=cwd, check=False).returncode
+CANCEL_FLAG = "cancel-{task}"
 
 
 @dataclass(frozen=True)
@@ -126,14 +124,15 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
     """Coordinates one shared checkout."""
 
     def __init__(self, config: ProjectConfig, repo_root: Path, store: StateStore, *, tracker: IssueTracker,
-                 runners: Mapping[str, Runner], gate_runner: GateRunner = subprocess_gate_runner,
+                 runners: Mapping[str, Runner], gate_runner: GateRunner | None = None,
                  author: tuple[str, str] | None = None) -> None:
         self.config = config
         self.root = Path(repo_root)
         self.store = store
         self.tracker = tracker
         self.runners = dict(runners)
-        self.gate_runner = gate_runner
+        # Gates never run unsandboxed: the default is the offline, read-only gate sandbox.
+        self.gate_runner = gate_runner or SandboxedGateRunner(config, store.root / "logs")
         self.author = author
         self.policy = PathPolicy(self.root, config)
         self.claims = ClaimManager(store)
@@ -152,7 +151,7 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
         for t in spec.tasks:
             if t.role not in self.config.roles:
                 raise CoordinatorError(f"task {t.key!r}: unknown role {t.role!r}")
-            unknown_gates = [g for g in t.required_gates if g not in self.config.gates]
+            unknown_gates = [g for g in t.required_gates if g not in self.config.gate_names]
             if unknown_gates:
                 raise CoordinatorError(f"task {t.key!r}: unknown gates {unknown_gates}")
             tasks[f"{feature_id}.{t.key}"] = Task(
@@ -245,16 +244,20 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
     def _head(self, feature: Feature) -> str:
         return self.git.rev_parse(f"refs/heads/{feature.branch}")
 
-    def _run_gates(self, gates: Sequence[str], head: str) -> Evidence:
-        results = tuple(GateResult(g, self.gate_runner(g, self.config.gates[g], self.root), self.config.gates[g])
-                        for g in gates)
-        return Evidence(head_sha=head, gates=results)
+    def _run_gates(self, feature: Feature, gates: Sequence[str], head: str) -> Evidence:
+        context = GateContext(self.root, head_sha=head, base_sha=feature.base_sha, feature_id=feature.id)
+        results = []
+        for gate in gates:
+            outcome = self.gate_runner(gate, context)
+            results.append(outcome if isinstance(outcome, GateResult)
+                           else GateResult(gate, int(outcome), self.config.gates.get(gate, ())))
+        return Evidence(head_sha=head, gates=tuple(results))
 
     def gate_evidence(self, feature: Feature, gates: Sequence[str], attempts: int = 3) -> Evidence:
         """Run *gates* and bind them to the branch HEAD; retry if another role committed meanwhile."""
         for _attempt in range(attempts):
             head = self._head(feature)
-            evidence = self._run_gates(gates, head)
+            evidence = self._run_gates(feature, gates, head)
             if self._head(feature) == head:
                 return evidence
         raise EvidenceError(f"the branch kept moving while gates ran ({attempts} attempts)")
@@ -276,24 +279,66 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
         claim = self.claims.claim(task_id, role=task.role, branch=feature.branch, head_sha=head)
         try:
             workspace = ScopedWorkspace(self.policy, task.role, grants=task.grants)
-            result = self.runners[task.role].run(RunRequest(task_id, task.role, prompt or task.title, workspace))
-            run = TaskRun(task_id, TaskState.IN_PROGRESS, result)
-            if result.status == "unavailable":
-                return self._defer(run, "runner-unavailable", task.role, result.error)
-            if not result.ok:
-                return self._finish(task_id, TaskState.FAILED, f"runner {result.status}: {result.error}", run)
-            try:
-                run.commit = self._commit(feature, task, head, result.changed_paths)
-            except UnstableFileError as exc:
-                return self._defer(run, "commit-deferred", task.role, str(exc))
-            except HeadMismatchError as exc:
-                return self._finish(task_id, TaskState.NEEDS_HUMAN, f"commit conflicts with the branch: {exc}", run)
-            except (ScopeViolationError, GitOperationError) as exc:
-                return self._finish(task_id, TaskState.FAILED, f"commit refused: {exc}", run)
-            return self._verify(feature, task, run)
+            context = run_context(
+                self.store.root / "runs", task_id, timeout_seconds=self.config.runtime.task_timeout_seconds,
+                heartbeat=lambda checkpoint: self.claims.heartbeat(claim, dict(checkpoint)),
+                cancelled=lambda: self._cancel_requested(task_id, claim.token))
+            request = RunRequest(task_id, task.role, prompt or self._task_prompt(task), workspace, context=context)
+            run = TaskRun(task_id, TaskState.IN_PROGRESS, self.runners[task.role].run(request))
+            return self._after_run(feature, task, head, run)
         finally:
             # Only a task still in-progress is affected: it goes back to ready for a later claim.
             self.claims.release(claim, yield_task=True)
+            with self.store.transaction():
+                flag = self.store.get_flag(CANCEL_FLAG.format(task=task_id))
+                if flag and flag.get("token") == claim.token:
+                    self.store.set_flag(CANCEL_FLAG.format(task=task_id), None)
+
+    def _after_run(self, feature: Feature, task: Task, head: str, run: TaskRun) -> TaskRun:  # pylint: disable=too-many-return-statements
+        """Turn the runner outcome into a task state: defer, fail, commit and verify."""
+        result = run.runner
+        if result.status == "unavailable":
+            return self._defer(run, "runner-unavailable", task.role, result.error)
+        if result.status == "cancelled":
+            # The role's uncommitted work stays in its roots; a later run continues from it.
+            return self._defer(run, "run-cancelled", task.role, result.error)
+        if result.status == "timeout":
+            return self._finish(task.id, TaskState.FAILED, f"runner timed out: {result.error}", run)
+        if not result.ok:
+            return self._finish(task.id, TaskState.FAILED, f"runner {result.status}: {result.error}", run)
+        try:
+            run.commit = self._commit(feature, task, head, result.changed_paths)
+        except UnstableFileError as exc:
+            return self._defer(run, "commit-deferred", task.role, str(exc))
+        except HeadMismatchError as exc:
+            return self._finish(task.id, TaskState.NEEDS_HUMAN, f"commit conflicts with the branch: {exc}", run)
+        except (ScopeViolationError, GitOperationError) as exc:
+            return self._finish(task.id, TaskState.FAILED, f"commit refused: {exc}", run)
+        return self._verify(feature, task, run)
+
+    @staticmethod
+    def _task_prompt(task: Task) -> str:
+        lines = [task.title]
+        if task.acceptance:
+            lines += ["", "Acceptance criteria:", *(f"- {a}" for a in task.acceptance)]
+        if task.required_gates:
+            lines += ["", f"The coordinator will verify with these checks: {', '.join(task.required_gates)}."]
+        return "\n".join(lines)
+
+    def _cancel_requested(self, task_id: str, token: str) -> bool:
+        flag = self.store.get_flag(CANCEL_FLAG.format(task=task_id))
+        return bool(flag) and flag.get("token") == token
+
+    def request_cancel(self, task_id: str, reason: str = "operator stop") -> dict[str, Any]:
+        """Ask the worker running *task_id* to stop. It terminates its sandbox and yields the task."""
+        with self.store.transaction():
+            record = self.store.load_claim(task_id)
+            if record is None:
+                raise ClaimError(f"task {task_id!r} is not running (no claim)")
+            flag = {"token": record["token"], "reason": reason, "requested_at": utc_now()}
+            self.store.set_flag(CANCEL_FLAG.format(task=task_id), flag)
+            self.store.append_event("cancel-requested", task=task_id, pid=record["identity"]["pid"], reason=reason)
+        return record
 
     def _commit(self, feature: Feature, task: Task, head: str, changed: Sequence[str]) -> str | None:
         if not changed:

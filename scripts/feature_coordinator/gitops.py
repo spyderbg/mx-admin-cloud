@@ -20,7 +20,7 @@ read another role's files:
   9. refresh only those paths in the shared index so `git status` stays truthful.
 
 Plumbing commands run no hooks. Push and PR creation are rendered as dry-run plans only
-in Phase 2.
+(Phases 2–3); live pushes and PRs need operator approval (Phase 4/5).
 """
 
 from __future__ import annotations
@@ -299,5 +299,5 @@ class GitCoordinator:
 
     @staticmethod
     def push_plan(branch: str, remote: str = "origin") -> list[str]:
-        """The non-force push the coordinator would run (Phase 2: never executed)."""
+        """The non-force push the coordinator would run (never executed yet)."""
         return ["git", "push", "--set-upstream", remote, f"refs/heads/{branch}:refs/heads/{branch}"]

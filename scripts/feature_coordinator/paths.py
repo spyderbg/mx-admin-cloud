@@ -14,9 +14,10 @@ A path is writable by a role only when all of these hold:
 Everything else is refused. Generated outputs follow destination ownership: the
 generator's role does not gain write access to the files it generates.
 
-This module is a *policy and detector*. In Phase 2 the mock runners write only through
-ScopedWorkspace, which enforces the policy at write time; OS-level containment of real
-runners (bubblewrap/Landlock) is Phase 3.
+This module is a *policy and detector*. Mock runners and the OpenAI-compatible runner write
+only through ScopedWorkspace, which enforces the policy at write time. Real Claude Code and
+Codex runners are contained by bubblewrap (sandbox.py), whose mounts are derived from this
+same policy; the Git coordinator re-checks every committed path against it.
 """
 
 from __future__ import annotations
@@ -45,10 +46,13 @@ GENERATED_OUTPUTS: tuple[tuple[str, str], ...] = (
 
 @lru_cache(maxsize=None)
 def _regex(pattern: str) -> re.Pattern[str]:
-    subtree = pattern.endswith("/**")
-    body = pattern[:-3] if subtree else pattern
+    any_depth = pattern.startswith("**/")
+    body = pattern[3:] if any_depth else pattern
+    subtree = body.endswith("/**")
+    body = body[:-3] if subtree else body
     parts = [re.escape(seg).replace(r"\*", "[^/]*") for seg in body.split("/")]
-    return re.compile("/".join(parts) + ("(/.*)?" if subtree else "") + r"\Z")
+    prefix = "(?:.*/)?" if any_depth else ""
+    return re.compile(prefix + "/".join(parts) + ("(/.*)?" if subtree else "") + r"\Z")
 
 
 def matches(pattern: str, rel: str) -> bool:

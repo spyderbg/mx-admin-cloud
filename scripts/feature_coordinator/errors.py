@@ -106,3 +106,11 @@ class TransportPolicyError(ProviderError):
 
 class ContextBudgetError(ProviderError):
     """The request would exceed the model's effective input or output token budget."""
+
+
+class ProviderRateLimitError(ProviderUnavailableError):
+    """The provider answered HTTP 429 (retried with backoff like other unavailability)."""
+
+
+class ProviderCancelledError(ProviderError):
+    """The request was cancelled by the coordinator (operator stop or worker shutdown)."""

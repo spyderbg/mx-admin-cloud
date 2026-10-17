@@ -1,17 +1,31 @@
-"""`python scripts/feature.py` — the feature coordinator's dry-run CLI (Phase 2).
+"""`python scripts/feature.py` — the feature coordinator's CLI (Phases 2–3).
 
-Commands (all read-only unless stated):
-    doctor [--apply]        state directory: resolution, filesystem suitability; with --apply,
-                            create it (mode 0700) and run the two-process flock self-test
-    config [--config FILE]  validate a project configuration (default: the documented example)
-                            and check that it equals the built-in configuration
-    providers               provider profiles per role; remote Qwen limits, capabilities and
-                            transport gate (never connects; the endpoint address is not printed)
-    plan SPEC               validate a feature spec (YAML/JSON): branch, task DAG, roles, gates
-    status                  coordinator state: features, tasks, live and stale claims
-    demo                    run the complete mock feature in a temporary repository
+Global options: --repo PATH (default: this checkout), --state-dir PATH (default: the D-12
+state directory), --project-config FILE (default: the built-in configuration).
+Every command that changes something is a DRY RUN unless --apply is given.
 
-Phase 2 has no command that mutates the real checkout, pushes, or talks to GitHub or a model.
+Inspection:
+    doctor [--apply]        state directory checks; --apply creates it and runs the flock self-test
+    config [--config FILE]  validate a configuration; check it equals the built-in one
+    providers               provider per role; remote Qwen limits and gates (never connects)
+    runners                 probe the installed claude/codex CLIs (--version/--help only) and bwrap
+    sandbox-check [--role R] [--apply]
+                            show each role's sandbox; --apply runs the containment self-test
+                            in a DISPOSABLE repository
+    status                  features, tasks, claims (live / stale / heartbeat age), cancel requests
+    demo                    the mock end-to-end feature in a temporary repository
+Gates (always sandboxed: checkout read-only, no network):
+    gate NAME [--base REF] [--apply]      run one gate against --repo
+    lint-report NAME [--apply]            current Pylint findings of a lint gate, by symbol
+Feature operations (on --repo / --state-dir):
+    plan SPEC [--apply]     validate (and record) a feature and its tasks
+    activate FEATURE [--apply]            create the feature branch (requires quiescence)
+    launch TASK [--apply]   run one task with its real runner, contained and supervised
+    stop TASK               ask the running worker to stop; the task returns to ready
+    recover [--apply]       reclaim tasks of dead workers; report unresponsive ones
+    integrate FEATURE [--apply]           the quiescent integration barrier → PR candidate
+
+No command pushes, opens Issues or PRs, or sends anything to the remote Qwen server.
 """
 
 from __future__ import annotations
@@ -23,6 +37,7 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
+from .claims import heartbeat_age
 from .config import ProjectConfig, default_config, load_config
 from .errors import CoordinatorError
 from .locks import ProcessIdentity
@@ -40,9 +55,13 @@ def _print(text: str = "") -> None:
     sys.stdout.write(text + "\n")
 
 
+def _state_dir(args: argparse.Namespace, config: ProjectConfig) -> Path:
+    return Path(args.state_dir) if getattr(args, "state_dir", None) else resolve_state_dir(app_dir=config.state_app_dir)
+
+
 def cmd_doctor(args: argparse.Namespace, config: ProjectConfig) -> int:
     """State directory diagnostics."""
-    state_dir = resolve_state_dir(app_dir=config.state_app_dir)
+    state_dir = _state_dir(args, config)
     mount = mount_for(state_dir)
     _print(f"state directory: {state_dir} ({'exists' if state_dir.exists() else 'not created yet'})")
     _print(f"filesystem:      {mount.fs_type} on {mount.mount_point}")
@@ -114,7 +133,7 @@ def cmd_plan(args: argparse.Namespace, config: ProjectConfig) -> int:
                                           required_gates=t.required_gates)
              for t in spec.tasks}
     order = validate_dag(tasks)
-    unknown = sorted({g for t in spec.tasks for g in t.required_gates} - set(config.gates))
+    unknown = sorted({g for t in spec.tasks for g in t.required_gates} - set(config.gate_names))
     if unknown:
         raise CoordinatorError(f"unknown gates {unknown}")
     _print(f"dry run — feature {spec.slug!r}: branch {branch} from {spec.base_branch or config.base_branch}; "
@@ -124,13 +143,22 @@ def cmd_plan(args: argparse.Namespace, config: ProjectConfig) -> int:
         provider = config.provider_for(task.role)
         _print(f"  {task_id:40s} role={task.role:12s} runner={provider.name:12s} after={list(task.depends_on)} "
                f"gates={list(task.required_gates)}")
-    _print("nothing was written (Phase 2 dry run)")
+    if not getattr(args, "apply", False):
+        _print("dry run — nothing was written (pass --apply to record the feature)")
+        return 0
+    from .operations import build_coordinator  # pylint: disable=import-outside-toplevel
+    feature = build_coordinator(config, Path(args.repo), _ensure_state(args, config)).plan(spec)
+    _print(f"recorded feature {feature.id} ({feature.state.value}) with {len(feature.task_ids)} task(s)")
     return 0
 
 
-def cmd_status(_args: argparse.Namespace, config: ProjectConfig) -> int:
+def _ensure_state(args: argparse.Namespace, config: ProjectConfig) -> Path:
+    return ensure_state_dir(_state_dir(args, config), allowed=config.allowed_state_filesystems)
+
+
+def cmd_status(args: argparse.Namespace, config: ProjectConfig) -> int:
     """Read-only view of the coordinator state."""
-    state_dir = resolve_state_dir(app_dir=config.state_app_dir)
+    state_dir = _state_dir(args, config)
     if not (state_dir / "features").is_dir():
         _print(f"no coordinator state yet at {state_dir}")
         return 0
@@ -143,8 +171,13 @@ def cmd_status(_args: argparse.Namespace, config: ProjectConfig) -> int:
             _print(f"  {task.id:40s} {task.state.value:12s} {task.blocked_reason}")
     for task_id, record in store.list_claims().items():
         alive = ProcessIdentity.from_dict(record["identity"]).is_alive()
-        _print(f"claim {task_id}: role {record['role']} pid {record['identity']['pid']} "
-               f"{'live' if alive else 'STALE (recoverable)'}")
+        age = heartbeat_age(record)
+        stale = age is not None and age > config.runtime.stale_heartbeat_seconds
+        state = ("live, UNRESPONSIVE" if stale else "live") if alive else "STALE (recoverable)"
+        _print(f"claim {task_id}: role {record['role']} pid {record['identity']['pid']} {state}; "
+               f"heartbeat {age:.0f}s ago" if age is not None else f"claim {task_id}: {state}")
+        if store.get_flag(f"cancel-{task_id}"):
+            _print(f"  stop requested for {task_id}")
     return 0
 
 
@@ -164,6 +197,9 @@ def build_parser() -> argparse.ArgumentParser:
     """The argument parser."""
     parser = argparse.ArgumentParser(prog="feature.py", description=__doc__.split("\n\n", 1)[0],
                                      formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
+    parser.add_argument("--repo", default=str(REPO_ROOT), help="the checkout to operate on")
+    parser.add_argument("--state-dir", default=None, help="coordinator state directory (default: D-12 location)")
+    parser.add_argument("--project-config", default=None, help="project configuration YAML (default: built-in)")
     sub = parser.add_subparsers(dest="command", required=True)
     doctor = sub.add_parser("doctor", help="check (and with --apply, create) the state directory")
     doctor.add_argument("--apply", action="store_true", help="create the directory and run the flock self-test")
@@ -173,9 +209,12 @@ def build_parser() -> argparse.ArgumentParser:
     cfg.set_defaults(func=cmd_config)
     sub.add_parser("providers", help="show provider profiles and gates (no connection)") \
         .set_defaults(func=cmd_providers)
-    plan = sub.add_parser("plan", help="validate a feature spec (dry run)")
+    plan = sub.add_parser("plan", help="validate (and with --apply, record) a feature spec")
     plan.add_argument("spec", help="feature spec, YAML or JSON")
+    plan.add_argument("--apply", action="store_true", help="record the feature and its tasks")
     plan.set_defaults(func=cmd_plan)
+    from .commands import register  # pylint: disable=import-outside-toplevel
+    register(sub)
     sub.add_parser("status", help="show coordinator state (read-only)").set_defaults(func=cmd_status)
     sub.add_parser("demo", help="run the mock end-to-end feature in a temporary repository").set_defaults(func=cmd_demo)
     return parser
@@ -185,7 +224,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Entry point."""
     args = build_parser().parse_args(argv)
     try:
-        return int(args.func(args, default_config()))
+        config = load_config(Path(args.project_config)) if args.project_config else default_config()
+        return int(args.func(args, config))
     except (CoordinatorError, OSError, ValueError) as exc:
         sys.stderr.write(f"error: {exc}\n")
         return 1

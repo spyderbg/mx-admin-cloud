@@ -43,6 +43,13 @@ class ProviderKind(str, Enum):
     OPENAI_COMPATIBLE = "openai-compatible"
 
 
+DEFAULT_CREDENTIAL_FILES = {
+    # Home-relative files the runner needs to authenticate; bound READ-ONLY into the sandbox.
+    "claude-code": (".claude/.credentials.json",),
+    "codex": (".codex/auth.json",),
+}
+
+
 @dataclass(frozen=True)
 class CliRunnerProfile:
     """A local agent CLI (Claude Code or Codex) launched on the agent host."""
@@ -50,10 +57,15 @@ class CliRunnerProfile:
     name: str
     kind: ProviderKind
     executable: str
+    model: str = ""  # empty: the CLI's own default model
+    credential_files: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.kind not in (ProviderKind.CLAUDE_CODE, ProviderKind.CODEX):
             raise ProviderError(f"provider {self.name!r}: {self.kind} is not a CLI runner kind")
+        for rel in self.credential_files:
+            if rel.startswith("/") or ".." in rel.split("/"):
+                raise ProviderError(f"provider {self.name!r}: credential file {rel!r} must be home-relative")
 
 
 @dataclass(frozen=True)
@@ -124,8 +136,10 @@ class OpenAICompatibleProfile:  # pylint: disable=too-many-instance-attributes
 
 ProviderProfile = Union[CliRunnerProfile, OpenAICompatibleProfile]
 
-CLAUDE_CODE = CliRunnerProfile(name="claude", kind=ProviderKind.CLAUDE_CODE, executable="claude")
-CODEX = CliRunnerProfile(name="codex", kind=ProviderKind.CODEX, executable="codex")
+CLAUDE_CODE = CliRunnerProfile(name="claude", kind=ProviderKind.CLAUDE_CODE, executable="claude",
+                               credential_files=DEFAULT_CREDENTIAL_FILES["claude-code"])
+CODEX = CliRunnerProfile(name="codex", kind=ProviderKind.CODEX, executable="codex",
+                         credential_files=DEFAULT_CREDENTIAL_FILES["codex"])
 REMOTE_QWEN = OpenAICompatibleProfile(
     name="remote_qwen",
     default_model="Qwen3.6-35B-A3B-Q4_K_M.gguf",
@@ -151,7 +165,10 @@ def profile_from_mapping(name: str, data: Mapping[str, Any]) -> ProviderProfile:
         raise ProviderError(f"provider {name!r}: missing or unknown kind") from exc
     if kind in (ProviderKind.CLAUDE_CODE, ProviderKind.CODEX):
         default_exe = "claude" if kind is ProviderKind.CLAUDE_CODE else "codex"
-        return CliRunnerProfile(name=name, kind=kind, executable=str(data.get("executable", default_exe)))
+        return CliRunnerProfile(name=name, kind=kind, executable=str(data.get("executable", default_exe)),
+                                model=str(data.get("model", "")),
+                                credential_files=tuple(str(f) for f in data.get(
+                                    "credential_files", DEFAULT_CREDENTIAL_FILES[kind.value])))
     try:
         return OpenAICompatibleProfile(
             name=name,

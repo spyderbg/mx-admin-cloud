@@ -1,12 +1,13 @@
 """Agent runners: mock Claude Code, mock Codex, and the OpenAI-compatible (remote Qwen) runner.
 
-Every runner writes only through a ScopedWorkspace, so the role's write scope is
-enforced at write time whatever the model asks for.
+The mock runners and the OpenAI-compatible runner write only through a ScopedWorkspace,
+so the role's write scope is enforced at write time whatever the model asks for. The REAL
+Claude Code and Codex runners live in launchers.py and are contained by bubblewrap
+(sandbox.py) instead, because their tools write to the file system directly.
 
-  * MockClaudeCodeRunner / MockCodexRunner replay scripted file edits per task. They
-    never start the real CLIs; `planned_invocation()` shows the command line Phase 3
-    would launch (flags confirmed to exist by the read-only `--help` probe; their
-    containment behavior is a Phase 3 validation item).
+  * MockClaudeCodeRunner / MockCodexRunner replay scripted file edits per task (tests,
+    demo). `planned_invocation()` is the Phase 2 sketch of the command line; the real one
+    is built by launchers.ClaudeCodeLauncher / CodexLauncher.
   * OpenAICompatibleRunner is the real control loop for a Chat Completions endpoint: it
     sends requests through a pluggable transport, enforces the context budget, the
     transport/disclosure gates, timeouts and bounded retries, and executes tool calls
@@ -14,8 +15,9 @@ enforced at write time whatever the model asks for.
     `tool_calling` capability is validated; until then the model is advisory/read-only.
     `apply-patch` is declared by the operator profile but not implemented yet, so it is
     refused.
-  * The default transport is DisabledLiveTransport: Phase 2 cannot reach the remote
-    server even by accident. Tests use MockChatTransport.
+  * The default transport is DisabledLiveTransport, which refuses every request. The HTTP
+    transport (http_transport.py) reaches loopback test servers only: live remote
+    execution stays disabled. Tests use MockChatTransport or the local fake server.
 """
 
 from __future__ import annotations
@@ -23,11 +25,13 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
 from .errors import (
     ContextBudgetError,
     ProviderAuthError,
+    ProviderCancelledError,
     ProviderError,
     ProviderResponseError,
     ProviderUnavailableError,
@@ -58,7 +62,17 @@ class FileEdit:
 
 
 @dataclass
-class RunRequest:
+class RunContext:
+    """Supervision hooks a real runner receives from the coordinator (Phase 3)."""
+
+    run_dir: Path
+    heartbeat: Callable[[Mapping[str, Any]], None] | None = None
+    cancelled: Callable[[], bool] | None = None
+    timeout_seconds: float | None = None
+
+
+@dataclass
+class RunRequest:  # pylint: disable=too-many-instance-attributes
     """What a runner is asked to do for one task."""
 
     task_id: str
@@ -67,18 +81,21 @@ class RunRequest:
     workspace: ScopedWorkspace
     carries_code: bool = True
     max_turns: int = 8
+    context: RunContext | None = None
 
 
 @dataclass
-class RunResult:
+class RunResult:  # pylint: disable=too-many-instance-attributes
     """What a runner did."""
 
     runner: str
-    status: str  # completed | advisory | rejected | unavailable | failed
+    status: str  # completed | advisory | rejected | unavailable | failed | cancelled | timeout
     changed_paths: list[str] = field(default_factory=list)
     transcript: list[str] = field(default_factory=list)
     rejected_tool_calls: list[str] = field(default_factory=list)
     error: str = ""
+    stray_writes: list[str] = field(default_factory=list)
+    details: dict[str, Any] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
@@ -129,7 +146,7 @@ class MockCliRunner:
                          transcript=[f"mock {self.kind.value}: {len(request.workspace.changed)} file(s) written"])
 
     def planned_invocation(self, request: RunRequest) -> list[str]:
-        """The command line Phase 3 would launch (never executed in Phase 2)."""
+        """The Phase 2 sketch of the command line (the real one: launchers.py)."""
         if self.kind is ProviderKind.CLAUDE_CODE:
             # --setting-sources user,local skips the repository's project settings, whose
             # default is bypassPermissions; the launcher supplies its own --settings instead.
@@ -155,18 +172,19 @@ class ChatTransport(Protocol):  # pylint: disable=too-few-public-methods
     """Sends one Chat Completions request and returns the decoded JSON response."""
 
     def send(self, endpoint: Endpoint, payload: Mapping[str, Any], *, connect_timeout: float,
-             request_timeout: float) -> Mapping[str, Any]:
-        """Raise ProviderUnavailableError (retryable), ProviderAuthError or ProviderResponseError."""
+             request_timeout: float, cancelled: Callable[[], bool] | None = None) -> Mapping[str, Any]:
+        """Raise ProviderUnavailableError (retryable), ProviderAuthError, ProviderResponseError
+        or ProviderCancelledError."""
 
 
 class DisabledLiveTransport:  # pylint: disable=too-few-public-methods
-    """The default transport: live connections do not exist in Phase 2."""
+    """The default transport: it refuses every request (no live connection)."""
 
     def send(self, endpoint: Endpoint, payload: Mapping[str, Any], *, connect_timeout: float,
-             request_timeout: float) -> Mapping[str, Any]:
+             request_timeout: float, cancelled: Callable[[], bool] | None = None) -> Mapping[str, Any]:
         """Always refuse."""
-        del endpoint, payload, connect_timeout, request_timeout
-        raise TransportPolicyError("live model connections are disabled in Phase 2; use a mock transport")
+        del endpoint, payload, connect_timeout, request_timeout, cancelled
+        raise TransportPolicyError("live model connections are disabled; use a mock or loopback transport")
 
 
 @dataclass
@@ -188,8 +206,9 @@ class MockChatTransport:  # pylint: disable=too-few-public-methods
         self.requests: list[RecordedRequest] = []
 
     def send(self, endpoint: Endpoint, payload: Mapping[str, Any], *, connect_timeout: float,
-             request_timeout: float) -> Mapping[str, Any]:
+             request_timeout: float, cancelled: Callable[[], bool] | None = None) -> Mapping[str, Any]:
         """Record the request and return (or raise) the next scripted item."""
+        del cancelled
         self.requests.append(RecordedRequest(endpoint.url, json.loads(json.dumps(payload)),
                                              endpoint.api_key is not None,
                                              connect_timeout, request_timeout))
@@ -264,6 +283,7 @@ class OpenAICompatibleRunner:  # pylint: disable=too-many-instance-attributes,to
         self.max_tokens = max_tokens
         self.sleep = sleep
         self.backoff_seconds = backoff_seconds
+        self._cancelled: Callable[[], bool] | None = None
 
     def _secrets(self) -> list[str | None]:
         return [self.env.get(self.profile.api_key_env)]
@@ -273,7 +293,8 @@ class OpenAICompatibleRunner:  # pylint: disable=too-many-instance-attributes,to
         for attempt in range(attempts):
             try:
                 return self.transport.send(endpoint, payload, connect_timeout=self.profile.connect_timeout_seconds,
-                                           request_timeout=self.profile.request_timeout_seconds)
+                                           request_timeout=self.profile.request_timeout_seconds,
+                                           cancelled=self._cancelled)
             except ProviderUnavailableError:
                 if attempt == attempts - 1:
                     raise
@@ -323,7 +344,9 @@ class OpenAICompatibleRunner:  # pylint: disable=too-many-instance-attributes,to
     def _request(self, endpoint: Endpoint, messages: list[dict[str, Any]], tools: list[dict[str, Any]],
                  result: RunResult) -> dict[str, Any] | None:
         """One chat completion. On failure, record the outcome in *result* and return None."""
-        payload: dict[str, Any] = {"model": endpoint.model, "messages": messages, "stream": False,
+        # Streaming is used only once it has been validated against this endpoint (V5-5).
+        payload: dict[str, Any] = {"model": endpoint.model, "messages": messages,
+                                   "stream": self.profile.capability_enabled("streaming"),
                                    "temperature": self.profile.temperature, "max_tokens": self.max_tokens}
         if tools:
             payload["tools"] = tools
@@ -334,6 +357,8 @@ class OpenAICompatibleRunner:  # pylint: disable=too-many-instance-attributes,to
             result.error = str(exc)
         except TransportPolicyError as exc:
             result.status, result.error = "rejected", str(exc)
+        except ProviderCancelledError as exc:
+            result.status, result.error = "cancelled", str(exc)
         except ProviderUnavailableError as exc:
             result.status, result.error = "unavailable", redact(str(exc), self._secrets())
         except (ProviderAuthError, ProviderResponseError) as exc:
@@ -342,6 +367,7 @@ class OpenAICompatibleRunner:  # pylint: disable=too-many-instance-attributes,to
 
     def run(self, request: RunRequest) -> RunResult:  # pylint: disable=too-many-return-statements
         """Drive the model for one task. Never raises for provider problems; reports them."""
+        self._cancelled = request.context.cancelled if request.context else None
         try:
             endpoint = resolve_endpoint(self.profile, self.env)
             check_transport(self.profile, endpoint, carries_code=request.carries_code)

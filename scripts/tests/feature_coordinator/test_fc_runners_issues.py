@@ -72,7 +72,7 @@ def test_planned_cli_invocations_avoid_bypass_modes(policy: PathPolicy, config: 
 def test_default_transport_never_connects(policy: PathPolicy) -> None:
     runner = OpenAICompatibleRunner(REMOTE_QWEN, LOOPBACK)
     result = runner.run(req(policy))
-    assert result.status == "rejected" and "disabled in Phase 2" in result.error
+    assert result.status == "rejected" and "live model connections are disabled" in result.error
 
 
 def test_unconfigured_endpoint_marks_the_role_unavailable(policy: PathPolicy) -> None:

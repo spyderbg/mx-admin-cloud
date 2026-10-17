@@ -33,11 +33,10 @@ The `scripts/mxfix/` and `scripts/mxissues/` bug workflow is a **separate system
 | CLI | [`cli/README.md`](cli/README.md) — user guide |
 | Frontend | [`frontend/README.md`](frontend/README.md) — structure, data layer, cache layers, tests |
 | Automation | [`automation/README.md`](automation/README.md) — generic tools by side effect (incl. the feature coordinator CLI), the independent bug workflow (observe only), tests |
-| Coordination | [`coordination/phase-status.md`](coordination/phase-status.md) — phase state, v4 adoption, decisions, blockers, Phase 2–7 plan · [`coordination/feature-workflow.md`](coordination/feature-workflow.md) — the feature coordinator: data model, state machines, locks, Git protocol, providers incl. remote Qwen, safety model (Phase 2) · [`coordination/project-config.example.yaml`](coordination/project-config.example.yaml) — the documented coordinator configuration · [`coordination/cli-coverage.md`](coordination/cli-coverage.md) — API-to-CLI capability matrix |
+| Coordination | [`coordination/phase-status.md`](coordination/phase-status.md) — phase state, v4 adoption, decisions, blockers, Phase 2–7 plan · [`coordination/feature-workflow.md`](coordination/feature-workflow.md) — the feature coordinator: data model, state machines, locks, Git protocol, providers incl. remote Qwen, safety model (Phase 2) · [`coordination/agent-ownership.md`](coordination/agent-ownership.md) — who may write what, bubblewrap enforcement and its evidence (Phase 3) · [`coordination/operations.md`](coordination/operations.md) — launch, stop, resume, recover, sandboxed gates (Phase 3) · [`coordination/backend-task-b7.md`](coordination/backend-task-b7.md) — the open Backend fix for test writes into `content/` · [`coordination/project-config.example.yaml`](coordination/project-config.example.yaml) — the documented coordinator configuration · [`coordination/cli-coverage.md`](coordination/cli-coverage.md) — API-to-CLI capability matrix |
 
 Planned later per the v4 layout (not created as placeholders; the Phase 2 pages above now exist):
 
-- Phase 3: `coordination/agent-ownership.md` and the launch/stop/resume operations guide.
 - Phase 4: `coordination/{README.md,task-lifecycle.md,templates/}`.
 - Generic tests: `automation/testing.md`.
 - A Frontend task: `frontend/caching.md` and `frontend/help/`.

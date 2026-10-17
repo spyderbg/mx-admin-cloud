@@ -1,13 +1,13 @@
-# Feature Workflow — Coordinator Design and Phase 2 Skeleton (v5)
+# Feature Workflow — Coordinator Design (v5, Phases 2–3)
 
-> Owner role: **coordination**. Status: **Phase 2 deliverable, awaiting operator approval** (2026-10-17).
+> Owner role: **coordination**. Status: Phase 2 design **approved** (2026-10-17); Phase 3 additions (§17–§18) **awaiting operator approval**. Companion pages: [agent-ownership.md](agent-ownership.md) (write enforcement and evidence), [operations.md](operations.md) (launch/stop/resume/recover), [backend-task-b7.md](backend-task-b7.md).
 > Governing assignment: [`agents_prompt_v5.md`](../../docs/multiple_agents/agents_prompt_v5.md) §11 Phase 2. Design baseline: [architecture §11](../architecture/README.md#11-v4-feature-development-architecture-design-baseline-for-phases-27), remote Qwen contract [§11.11](../architecture/README.md#1111-remote-openai-compatible-qwen-integration-contract-v5-101), decisions [§12](../architecture/README.md#12-decision-register). Progress: [`phase-status.md`](phase-status.md).
 >
 > Evidence tags: **[V]** verified by execution (a test or command named here), **[S]** verified by reading source, **[U]** unverified.
 
 The feature coordinator is a small, **stdlib-only** Python package that runs one feature at a time on this Linux host, on **one shared checkout** and **one `feature/<slug>` branch**. Role agents edit disjoint paths in parallel; a single Git coordinator lands their commits one at a time; exactly **one PR** is opened per feature, after all gates pass and only with operator approval.
 
-Phase 2 delivers the design, a working skeleton with **mock runners, a mock issue tracker and a disabled live model transport**, and tests. Phase 2 has no command that changes the real checkout, pushes, talks to GitHub, starts an agent or contacts a model.
+Phase 2 delivered the design and a skeleton with mock runners, a mock issue tracker and a disabled live model transport. Phase 3 adds real Claude Code and Codex launchers contained by **bubblewrap**, process supervision (heartbeat, stop, timeout, safe termination, recovery), **sandboxed** gates with timeouts, logs and D-19 lint baselines, and a loopback-only HTTP transport for the remote Qwen model (§17). Nothing pushes, opens Issues or PRs, or sends a request to the remote Qwen server.
 
 ## 1. Boundaries
 
@@ -22,7 +22,7 @@ Phase 2 delivers the design, a working skeleton with **mock runners, a mock issu
 
 ## 2. Package map
 
-`scripts/feature_coordinator/` (D-13), entry point `scripts/feature.py`. About 3,900 lines including docstrings; Python 3.12 standard library, plus PyYAML only for loading the YAML example **[V]**.
+`scripts/feature_coordinator/` (D-13), entry point `scripts/feature.py`. About 6,200 lines including docstrings; Python 3.12 standard library, plus PyYAML only for loading the YAML example **[V]**. Phase 3 modules are marked ³.
 
 | Module | Responsibility |
 | --- | --- |
@@ -40,7 +40,13 @@ Phase 2 delivers the design, a working skeleton with **mock runners, a mock issu
 | `runners.py` | Runner interface; mock Claude Code and Codex runners; the OpenAI-compatible runner with mock and disabled transports |
 | `workflow.py` | `FeatureCoordinator`: plan → activate → run tasks → integrate → one PR → done |
 | `demo.py` | The mock end-to-end feature in a temporary repository |
-| `cli.py` | The dry-run CLI (§12) |
+| `cli.py`, `commands.py`³ | The CLI (§12); every mutating command is a dry run unless `--apply` |
+| `sandbox.py`³ | bubblewrap profiles per role and for gates, built from `PathPolicy`: shadow root, writable roots, read-only overlays, hidden secrets, stray-write detection |
+| `supervisor.py`³ | Process supervision: heartbeat, deadline, cancellation, SIGTERM→SIGKILL of the whole sandbox |
+| `launchers.py`³ | Real Claude Code and Codex launchers, the flag probe, `RealCliRunner` |
+| `gates.py`³, `lint_baseline.py`³ | Sandboxed gate runner (offline, read-only, timeouts, logs, unsafe-gate refusal); baseline-aware Pylint gates (D-19) |
+| `http_transport.py`³, `capabilities.py`³ | Loopback-only Chat Completions transport (streaming, partial tool calls, cancellation); capability validation |
+| `operations.py`³ | Containment self-test, real runner wiring |
 
 ## 3. Configuration
 
@@ -54,7 +60,8 @@ The documented example is [`project-config.example.yaml`](project-config.example
 | automation | `remote_qwen` (OpenAI-compatible) | `scripts/**`, `test_environment/**`, `docs_agents/automation/**` | `scripts/mxfix/**`, `scripts/mxissues/**`, `scripts/deploy.sh` |
 | coordination | `claude` (configurable) | `docs_agents/coordination/**` | — |
 
-- **Protected** (no role, no grant): `.git/**`, `.env`, `.env.*`, `content/**`, `data/**`, `backend/data/**`, `scripts/mxfix/**`, `scripts/mxissues/**`.
+- **Protected** (no role, no grant): `.git/**`, `.env`, `.env.*`, `**/.env`, `**/.env.*` (any depth, Phase 3), `content/**`, `data/**`, `backend/data/**`, `scripts/mxfix/**`, `scripts/mxissues/**`.
+- Phase 3 configuration sections: `runtime` (containment fixed to `bwrap`, timeouts, heartbeat, Claude budget, secret patterns, per-role command allowlists; gates are always offline), `lint_gates` (policy fixed to `block-new`) and `unsafe_gates` (§11).
 - **Approval-required** (only with a task grant): root instruction files (`CLAUDE.md`, `AGENTS.md`, `README.md`), `.gitignore`, `.gitlab-ci.yml`, `testenv.toml`, `scripts/deploy.sh`, agent-tool configuration (`.claude/**`, `.cursor/**`, `.opencode/**`, `.aiassistant/**`, `.agents/**`), `.github/**`, `docker/**`, `docs_agents/architecture/**`, `docs_agents/README.md`.
 - Anything else, for example `package.json` at the root, is **unowned and denied**.
 
@@ -169,7 +176,7 @@ Tests: `test_blocked_consumer_does_not_freeze_unrelated_work`, `test_contract_re
 
 Generated outputs follow **destination ownership**. For example, `frontend/src/types/*Schemas.ts` (from `generate_ts_schemas.py`) and `frontend/src/api/*Client.ts` belong to Frontend, and Backend-owned OpenAPI files belong to Backend; a denial names the generator.
 
-Runners write only through `ScopedWorkspace`, which enforces the policy **at write time** and refuses to read `.env*`. In Phase 2 this is in-process enforcement; OS containment (bwrap/Landlock) is Phase 3.
+Mock runners and the Qwen tool loop write only through `ScopedWorkspace`, which enforces the policy **at write time** and refuses to read `.env*`. Real Claude Code and Codex runs are contained by bubblewrap mounts derived from the same policy (§17.1, [agent-ownership.md](agent-ownership.md)).
 
 Tests: 34 in `test_fc_paths.py` **[V]**.
 
@@ -260,9 +267,9 @@ Plumbing runs no hooks. Commit trailers record `Feature:`, `Feature-Task:` and `
 
 ## 9. Providers and runners
 
-### 9.1 Runners (Phase 2: mocks only)
+### 9.1 Runners (mocks in tests; real launchers in §17.2)
 
-| Role | Runner | Planned real invocation (rendered, never executed) |
+| Role | Mock runner (tests, demo) | Phase 2 sketch (superseded by the real command lines in §17.2) |
 | --- | --- | --- |
 | backend, cli, coordination | `MockClaudeCodeRunner` | `claude -p --output-format json --setting-sources user,local --permission-mode acceptEdits --no-session-persistence` |
 | frontend | `MockCodexRunner` | `codex exec --json --sandbox workspace-write --ephemeral -C <repo>` |
@@ -348,20 +355,20 @@ The tracker refuses any label outside `feature:*` and refuses to modify, comment
 | Gate | Command | Working directory | Baseline exit (Phase 0/1 evidence) |
 | --- | --- | --- | --- |
 | `backend-tests` | `python -m pytest -q -p no:cacheprovider` | `backend/` | 0 — 919 passed, but it writes into the real `content/` (B-7) |
-| `backend-lint` | `env PYTHONPATH=src python -m pylint src/` | `backend/` | **8** — 10.00/10 with one `R0915` message |
-| `cli-lint` | `python -m pylint src/kiddo_cli` | `cli/` | **28** — 9.62/10, 34 messages |
+| `backend-lint` (lint gate, D-19) | Pylint on changed files under `backend/src`, against the feature base | `backend/` | baseline report: **1** existing finding (`too-many-statements`) |
+| `cli-lint` (lint gate, D-19) | Pylint on changed files under `cli/src/kiddo_cli`, against the feature base | `cli/` | baseline report: **34** existing findings |
 | `contract-check` | `python scripts/export_openapi.py --docs-agents --check` | root | 0 — 91/91 operations up to date |
 | `docs-check` | `python scripts/check_docs_agents.py` | root | 0 — 6/6 |
 | `frontend-type-check` | `npm run type-check` | `frontend/` | 0 |
-| `frontend-build` | `npm run build` | `frontend/` | 0 |
+| `frontend-build` | `npm run build -- --outDir /tmp/fc-frontend-dist --emptyOutDir` (output stays in the sandbox) | `frontend/` | 0 |
 | `frontend-tests` / `-content` / `-auth` | `npm run test:voices` / `test:content` / `test:auth` | `frontend/` | 0 — 29/29, 5/5, 8/8 |
-| `coordinator-tests` | `python -m pytest -q -p no:cacheprovider scripts/tests` | root | 0 — 204 passed |
+| `coordinator-tests` | `python -m pytest -q -p no:cacheprovider scripts/tests` | root | 0 — 290 passed, 4 opt-in skipped |
 
-- The CLI has no test suite (Phase 0), so `cli-lint` and the per-task acceptance checks are its only gates. The two lint gates fail on the unchanged baseline: a feature cannot require them as blocking until the messages are fixed or the threshold is decided (D-19).
+- The CLI has no test suite (Phase 0), so `cli-lint` and the per-task acceptance checks are its only gates. D-19: lint gates are **baseline-aware**: existing findings are reported, findings the feature introduces block (§17.5).
 
 - `validate_build.py`, `validate_tests.py`, `validate_frontend_build.py` and `validate.sh` are **not** gates: they create virtual environments and run `pip install` / `npm install` in shared environments.
 - Gate evidence is recorded with the HEAD it ran on. If HEAD moves while gates run, or between the gates and verification, they are re-run (bounded); then the task is deferred.
-- **Phase 2 runs gates only through the fake `RecordingGates`.** `subprocess_gate_runner` exists but is not exercised.
+- **Every gate runs in the gate sandbox** (Phase 3): the checkout read-only, no network, private HOME and `/tmp`, a timeout, and logs. There is no unsandboxed gate runner. `backend-tests` is listed in `unsafe_gates` and reported `blocked` without running until [B-7](backend-task-b7.md) is fixed.
 
 ## 12. CLI (`python scripts/feature.py …`)
 
@@ -373,6 +380,8 @@ The tracker refuses any label outside `feature:*` and refuses to modify, comment
 | `plan SPEC` | Validates a feature spec (YAML/JSON): branch name, roles, gates, DAG. Writes nothing |
 | `status` | Read-only view of features, tasks and live/stale claims |
 | `demo` | Runs the complete mock feature in a temporary repository |
+| `runners`, `sandbox-check [--apply]`, `gate`, `lint-report` | Phase 3 inspection and sandboxed gates ([operations.md](operations.md)) |
+| `plan --apply`, `activate`, `launch`, `stop`, `recover`, `integrate` | Phase 3 feature operations; dry runs unless `--apply` ([operations.md](operations.md)) |
 
 ## 13. One feature, one branch, one PR — lifecycle and approval points
 
@@ -393,27 +402,27 @@ The tracker refuses any label outside `feature:*` and refuses to modify, comment
 
 | Action | Who may | Gate |
 | --- | --- | --- |
-| Edit role-owned paths | That role's single active writer | Claim + role lock + `PathPolicy` (Phase 3 adds OS containment) |
+| Edit role-owned paths | That role's single active writer | Claim + role lock + bubblewrap containment + runner permissions + `PathPolicy` at commit |
 | Edit approval-required paths | A task with an explicit grant | Operator-approved grant; protected paths can never be granted |
 | Edit protected paths, the bug workflow, `.env`, data/content | Nobody | Policy has no override |
 | Commit | Only `GitCoordinator` | `git.lock`, manifest, hashes, compare-and-swap |
 | Create or switch the branch | Only `GitCoordinator` | Exclusive `project.lock` (no writer active), clean tree |
-| Push, Issues, PR | Coordinator **after operator approval** (Phase 4/5) | Phase 2: mock tracker and dry-run push plan only |
+| Push, Issues, PR | Coordinator **after operator approval** (Phase 4/5) | Phases 2–3: local/mock tracker and dry-run push plan only |
 | Merge | Humans only | Never automated |
-| Send a request to the remote Qwen model | Automation role | D-15 (transport) and D-18 (auth) decided, a live test approved; Phase 2 transport is disabled |
+| Send a request to the remote Qwen model | Automation role | D-15 (transport) and D-18 (auth) decided, a live test approved; the Phase 3 transport reaches loopback test servers only |
 | Send source code to the remote model | — | Additionally D-16 (a disclosure policy) |
 | Enable a declared Qwen capability (for example tool calling) | — | Only after it is validated (V5-5) and recorded in `validated_capabilities` |
-| Change authentication or debug defaults, application code, CI | — | Separate explicit approval (unchanged in Phase 2) |
+| Run a real (paid) agent model call | Operator-approved runs only | Phase 3: one approved smoke run per runner, in a disposable repository |
+| Change authentication or debug defaults, application code, CI | — | Separate explicit approval (unchanged in Phases 2–3; D-5) |
 
-## 15. Limitations of the Phase 2 skeleton
+## 15. Limitations (as of Phase 3)
 
-- **No real agents run.** Runners are mocks; `claude`/`codex` invocations are rendered, not executed. OS containment (bwrap/Landlock) is not applied yet (Phase 3).
-- **No live model transport.** `DisabledLiveTransport` always refuses; there is no HTTP client yet. Streaming, partial tool-call assembly and cancellation are not implemented (Phase 3).
-- `apply-patch` is declared by the profile but refused by the client.
-- **No live GitHub adapter**, push or PR (Phase 4/5). The mock tracker has no network or rate-limit behavior.
-- **Gates are simulated** in all tests. The gate catalog is defined, but the real commands, especially `backend-tests` (which writes into `content/`, B-7/F-5), were not run by the coordinator.
-- **Tokens are estimated, not counted** (bytes / 3). A real tokenizer check belongs to the Phase 3 live validation.
-- **Heartbeats are recorded, not monitored.** Liveness relies on process identity plus `flock`, which is sufficient on a single host.
+- **Real agents run only through `feature.py launch --apply`**, contained by bubblewrap. Residual risks are in [agent-ownership §5](agent-ownership.md#5-residual-risks-operator-decisions-in-phase-status): readable runner credentials, network for Claude Code, protected-name creation inside a role's own root (rejected at commit), and unverified OAuth refresh.
+- **No live remote model.** The HTTP transport reaches loopback servers only; capability validation has run only against the local fake server. `apply-patch` is declared by the profile but refused by the client.
+- **No live GitHub adapter**, push or PR (Phase 4/5). The JSON tracker is local.
+- **`backend-tests` is blocked** until [B-7](backend-task-b7.md). Gates run against the working tree of the shared checkout; evidence is bound to the HEAD at verification time, and integration requires a clean tree.
+- **Tokens are estimated, not counted** (bytes / 3) until a live validation can compare with the server.
+- **Heartbeats** are written every `heartbeat_interval_seconds`; a stale but alive worker is reported, never killed automatically.
 - **One active feature per checkout** by design. A second feature waits in `planned`.
 
 ## 16. Phase 2 exit gate → evidence
@@ -433,4 +442,114 @@ Run them:
 .venv/bin/python -m pytest -p no:cacheprovider scripts/tests      # 204 tests, all temporary repositories
 python scripts/feature.py demo                                     # the mock end-to-end feature
 python scripts/feature.py doctor                                   # state-dir suitability (read-only)
+```
+
+## 17. Phase 3 — runtime design
+
+### 17.1 OS containment (`sandbox.py`)
+
+Each real runner and each gate runs as `bwrap … <command>` with:
+
+| Area | Setting |
+| --- | --- |
+| Process | `--die-with-parent --new-session --unshare-all` (mount, PID, IPC, UTS, cgroup and user namespaces); `--share-net` only for runners, which need their model API, never for gates |
+| System | `/usr` and `/etc` read-only; `/proc`, `/dev`, private `/tmp` and `/var/tmp`; `--remount-ro /`, so nothing outside the explicit binds is writable |
+| Home and environment | A private HOME (`<state>/runs/<id>/home`); the runner's credential files are bound read-only; `--clearenv` plus an allowlisted environment (no `XDG_STATE_HOME`, no `AGENT_QWEN_*`) |
+| Repository | A **shadow root**: every top-level entry of the checkout is bound read-only into a private directory mounted at the repository path. The role's writable roots are then bound read-write, and paths the role must not write inside them are re-bound read-only: exclusions, protected and approval-required paths, nested `.git` |
+| Secrets | Untracked or ignored files matching `runtime.secret_patterns` (`.env`, `.env.*`, any depth; `*.example` exempt) are hidden at top level or masked with `/dev/null` |
+| State | The coordinator state directory is never visible: it lives under the real HOME, and a tmpfs covers it if a bound toolchain prefix would expose it |
+| Shadow writability | Read-only for Claude Code and gates (`EROFS` everywhere else). Writable only for Codex, whose own nested bubblewrap sandbox must create guard mount points in its working root. Anything written there is discarded and rejects the run as a **stray write** |
+
+Containment fails closed: if `bwrap` is missing or cannot create namespaces, real runners are *unavailable* and gates are *blocked*.
+
+### 17.2 Real launchers (`launchers.py`)
+
+| Runner | Command line (prompt on stdin) |
+| --- | --- |
+| Claude Code 2.1.302 | `claude -p --output-format stream-json --verbose --restricted --tools Read,Glob,Grep,Edit,Write[,Bash] --settings $HOME/.fc/claude-settings.json --strict-mcp-config --permission-mode acceptEdits --permission-prompts none --no-session-persistence --disable-slash-commands --max-budget-usd 5` |
+| Codex 0.163.0 | `codex exec --json --sandbox workspace-write --ephemeral --ignore-user-config -C <repo> -o $HOME/.fc/last-message.txt -c sandbox_workspace_write.network_access=false -` |
+
+Claude Code:
+
+- `--restricted` ignores the user, project and local settings files. The repository's `.claude/settings.json` (`bypassPermissions`) is therefore never loaded and never edited, and bypass is refused.
+- The generated settings allow only the file tools and the role's Bash prefixes (`runtime.role_commands`), and deny Web tools, state-changing Git, `curl`/`wget` and reads of the runner credential directories.
+
+Codex:
+
+- keeps its own sandbox, nested inside ours, so model-generated commands get no network.
+
+Fail closed:
+
+- `probe_runner()` checks every required flag in `--help`; a missing flag makes the runner unavailable;
+- `FORBIDDEN_ARGS` (every bypass and danger flag) can never be emitted.
+
+After a run, `RealCliRunner`:
+
+- takes the role's dirty paths (`git status`, read-only, optional locks off) as the commit manifest;
+- **rejects** the run if it wrote outside its roots (strays) or created a path the role may not commit (for example a new `.env` or a symlink);
+- leaves pre-existing untracked files alone, judging only changes made during the run by content fingerprints.
+
+### 17.3 Supervision, stop and recovery (`supervisor.py`, `workflow.py`, `claims.py`)
+
+- The worker process holding the claim supervises the sandbox:
+  - it heartbeats the claim, with a checkpoint naming the run directory;
+  - it polls the operator stop flag, bound to the claim token;
+  - it enforces `task_timeout_seconds`.
+- Stopping sends SIGTERM to the process group, waits `terminate_grace_seconds`, then sends SIGKILL. The PID namespace guarantees that a detached grandchild dies too.
+- SIGTERM or SIGINT to the worker is a graceful stop.
+- If the worker is SIGKILLed, bwrap ends the sandbox and the kernel releases the flocks; `recover` reclaims the task.
+- Outcomes:
+  - `cancelled` → task **ready** (the role's uncommitted work stays);
+  - `timeout` → **failed**;
+  - an alive worker without heartbeats → reported **unresponsive**, never reclaimed.
+
+### 17.4 Sandboxed gates (`gates.py`)
+
+- **Execution:** the gate sandbox has no writable repository path and no network. `python` resolves to the repository `.venv`. Host tools such as `npm` and `node` get their install prefix bound read-only; a broad prefix such as `~/.local` is never bound.
+- **Logs and evidence:** logs go to `<state>/logs/<gate>.<stamp>/`. A result carries `status` (`passed`, `failed`, `timeout` = 124, `blocked` = 125, `error` = 126), the duration, the log path and a summary; only `passed` counts.
+- **Unsafe gates:** a gate in `unsafe_gates` is not run.
+- **Frontend build:** writes only to the sandbox's private `/tmp`.
+
+### 17.5 Baseline-aware lint (D-19, `lint_baseline.py`)
+
+1. **Files:** the Python files changed between the feature base and HEAD under the gate's targets.
+2. **Two runs:** Pylint runs on those files twice in the gate sandbox: on the checkout, and on a `git archive` snapshot of the base (with the root Pylint configuration).
+3. **Fingerprints:** each finding is identified by (path, symbol, object, message with digits normalized). Moved code and changed counts ("Too many statements (55/50)") are therefore not new.
+4. **Verdict:** new = head − base, as a multiset. Any new finding fails the gate; the summary always reports base, HEAD, new and fixed counts.
+
+The policy is fixed to `block-new`: Pylint is never disabled and no finding is suppressed. `lint-report` gives the full baseline.
+
+### 17.6 Remote Qwen transport (D-17, `http_transport.py`, `capabilities.py`)
+
+The transport is a minimal native Chat Completions client and the tool loop stays in `OpenAICompatibleRunner`; neither is a general agent.
+
+| Behavior | Implementation |
+| --- | --- |
+| Request | Connect timeout plus an overall deadline. The blocking exchange runs in a helper thread, and cancellation or the deadline closes the raw socket |
+| Errors | 401/403 → auth error (not retried); 429 → rate limit (retried); 5xx, refused connection and timeout → unavailable (retried with backoff); anything else → invalid response |
+| Streaming | SSE streams are assembled into the non-streaming shape, including tool calls whose id, name and arguments arrive in fragments. Used only once `streaming` is validated |
+| Remote endpoints | `LIVE_REMOTE_ENABLED = False`: any non-loopback endpoint is refused before DNS or a socket |
+| Validation | `validate_capabilities()`: chat (exact model echo) → tool calling (probe tool plus a two-step loop) → streaming. Synthetic prompts only; it reports results and never edits `validated_capabilities`. `thinking` and `vision` are reported as not tested |
+
+## 18. Phase 3 exit gate → evidence
+
+| v5 Phase 3 exit criterion | Evidence **[V]** |
+| --- | --- |
+| Backend + Frontend write concurrently in disjoint paths | `test_backend_and_frontend_write_concurrently_and_land_separately`: two worker processes (the Claude Code and Codex launchers with the fake agent, real bwrap) prove overlap through a barrier. Each lands one single-role commit; the third role's dirty file is not captured |
+| A second Backend writer is rejected | Same test: `RoleBusyError` in-process and from another process; plus `test_fc_claims.py` races |
+| Unauthorized symlink, traversal and generated-output writes are rejected | `test_containment_matrix_for_every_role` (19 targets × 5 roles, 0 mismatches); `test_traversal_and_symlink_escapes_never_reach_the_host`; generated `*Schemas.ts` writable only by Frontend |
+| A Git branch switch is rejected while any writer is active | Parallel test (`WritersActiveError` while both sandboxes run); `test_branch_switch_is_refused_while_a_scoped_writer_is_active` |
+| Concurrent commits cannot corrupt the index or capture foreign files | Parallel test (`git fsck` clean, two single-role commits); `test_parallel_commits_from_two_processes_are_serialized` |
+| Full-project cannot overlap scoped writers | Parallel test (`claim_full_project` → `WritersActiveError` naming both roles) |
+| Git metadata read-only for agents; only the Git coordinator mutates Git | `test_git_metadata_is_read_only_but_readable` (`commit`, `branch`, `update-ref`, `config` fail in the sandbox); `git commit` refused for every role in the matrix |
+| Real Claude Code and Codex launchers; flags verified | `test_installed_cli_supports_every_required_flag`, `test_installed_cli_starts_inside_the_sandbox`, opt-in login checks, and the **approved live smoke runs** ([agent-ownership §4](agent-ownership.md#4-real-runner-verification-2026-10-17)) |
+| Heartbeat, cancellation, recovery, safe termination | `test_fc_supervisor.py` (7) and `test_fc_worker_lifecycle.py` (9) |
+| Integration checks with timeouts and logs | `test_fc_gates.py` (7); live checkout gates in [operations §4](operations.md#4-gates) |
+| Remote Qwen mocked failure, security and capability tests before write-capable use | `test_fc_http_transport.py` (23) against the local fake server; remote endpoints refused |
+| No unproven enforcement assertions | Every claim above names a test or command; open items are marked **[U]** in [agent-ownership §5](agent-ownership.md#5-residual-risks-operator-decisions-in-phase-status) |
+
+```bash
+.venv/bin/python -m pytest -p no:cacheprovider scripts/tests     # 294 collected: 290 passed, 4 opt-in skipped
+python scripts/feature.py sandbox-check --apply                   # the containment matrix (disposable repository)
+python scripts/feature.py runners                                 # installed CLIs and planned command lines
 ```
