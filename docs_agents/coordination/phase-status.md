@@ -5,12 +5,12 @@
 
 | Field | Value |
 | --- | --- |
-| Current phase | **Phase 4 finalization**: Phase 4 (Real GitHub Issue Coordination and Task Dependencies) and its GitHub Projects (v2) extension are **approved** (2026-10-17). Validation is complete, D-22/D-28/D-29 are done, and the D-10 commit plan is prepared, **not executed** |
-| State | **awaiting-approval** of the D-10 commit plan (nothing committed or pushed). Phase 5 not started; it needs a separate authorization |
-| Execution policy | Supervised, phase by phase. No autonomous phased execution. Phases 0–3 approved (Phase 3 on 2026-10-17). **Phase 4 and the Phase 4 extension approved 2026-10-17** by the finalization instruction ("Phase 4 and the GitHub Projects V2 extension are approved. This is a Phase 4 finalization task. Do not start Phase 5."), which also approved D-10 (a reviewed commit plan; no commit or push yet), D-22, D-28 and D-29. Earlier: Phase 4 authorized 2026-10-17 ("Proceed with Phase 4 ONLY"), including **real** GitHub Issue operations on `spyderbg/mx-admin-cloud` for coordinator-owned test Issues and their `feature:*` labels — no PRs, no commit or push. The **Phase 4 extension** (GitHub Projects V2 Kanban integration, before Phase 5) was authorized the same day: configure the existing Project #2, never modify Project #1 or Issues #1–#14, up to two test Issues — no PRs, no commit or push. The operator's instruction for the extension did not state an approval of Phase 4 itself (approved later with the finalization) |
-| Code base | Branch `agents`, `HEAD` = `b3f3691`; Phases 0–3 committed by the operator (`12183e0`, `8454e63`, `b3f3691`; not pushed). Phase 4, the extension and the finalization are **uncommitted**: inventory and proposed commits in the [finalization record](#phase-4-finalization--record-2026-10-17) |
-| Last updated | 2026-10-17 |
-| Active writers / locks | None running. The real state directory holds only `github-tests/fc-p4-20261017033506/` and `github-tests/fc-p4x-20261017090916/` (the live tests' disposable repositories, states and `report.json`), earlier gate logs and `commit-plan-2026-10-17/` (the D-10 plan); no feature in the main state, no claims |
+| Current phase | **Phase 4 finalization**: Phase 4 (Real GitHub Issue Coordination and Task Dependencies) and its GitHub Projects (v2) extension are **approved** (2026-10-17). Validation is complete, D-22/D-28/D-29 are done, and the D-10 commit plan was **executed** on 2026-10-17 (C4 `ce2d1fc`, C5 `80cb1d6`); the file modes it got wrong were fixed by `545b9d3` on 2026-10-19 ([execution record](#execution-record-d-10)) |
+| State | **awaiting-approval** of the push of the two local commits (`545b9d3` and this status update) and of the D-11 bootstrap PR `agents` → `dev`. Phase 5 not started; it needs a separate authorization |
+| Execution policy | Supervised, phase by phase. No autonomous phased execution. Phases 0–3 approved (Phase 3 on 2026-10-17). **Phase 4 and the Phase 4 extension approved 2026-10-17** by the finalization instruction ("Phase 4 and the GitHub Projects V2 extension are approved. This is a Phase 4 finalization task. Do not start Phase 5."), which also approved D-10 (a reviewed commit plan; no commit or push yet), D-22, D-28 and D-29. The plan's execution was approved the same day ("The commit plan is approved, run it"); the mode correction was approved on 2026-10-19 as new commits instead of a history rewrite ("fix it with new commits instead of rewriting"), because `agents` had been pushed by then. Earlier: Phase 4 authorized 2026-10-17 ("Proceed with Phase 4 ONLY"), including **real** GitHub Issue operations on `spyderbg/mx-admin-cloud` for coordinator-owned test Issues and their `feature:*` labels — no PRs, no commit or push. The **Phase 4 extension** (GitHub Projects V2 Kanban integration, before Phase 5) was authorized the same day: configure the existing Project #2, never modify Project #1 or Issues #1–#14, up to two test Issues — no PRs, no commit or push. The operator's instruction for the extension did not state an approval of Phase 4 itself (approved later with the finalization) |
+| Code base | Branch `agents`. Phases 0–3: `12183e0`, `8454e63`, `b3f3691` (operator). Phase 4: `ce2d1fc` (C4). Extension and finalization: `80cb1d6` (C5). Operator's execution reports: `0d4d8f5`. All of these were pushed by the operator to `origin/agents` on 2026-10-17. **Local, not pushed:** `545b9d3` (file-mode fix) and the documentation commit with this status update ([execution record](#execution-record-d-10)) |
+| Last updated | 2026-10-19 |
+| Active writers / locks | None running. The real state directory holds only `github-tests/fc-p4-20261017033506/` and `github-tests/fc-p4x-20261017090916/` (the live tests' disposable repositories, states and `report.json`), earlier gate logs and `commit-plan-2026-10-17/` (the D-10 plan, executed); no feature in the main state, no claims |
 
 ## Phase overview
 
@@ -20,8 +20,8 @@
 | 1 | Documentation Foundation (v3 scope, preserved) | **verified** | Approved by the operator 2026-10-16 (twice); v4 and v5 handoff gates re-run and passing (below) |
 | 2 | New Feature Coordinator Design and Minimal Skeleton (incl. remote Qwen provider configuration, mocked) | **verified** | Approved by the operator 2026-10-17; committed as `8454e63` |
 | 3 | Role Launchers, Scoped Write Enforcement, Concurrent Shared Checkout (+ remote Qwen adapter tests against a local fake server) | **verified** | Approved by the operator (2026-10-17, Phase 4 instruction); committed as `b3f3691` |
-| 4 | **Feature Task Issue Coordination and Dependencies — real GitHub** | **verified** | Approved by the operator 2026-10-17 (finalization). All 22 exit gates met (record below; live Issues #11–#14, closed). Proposed commit C4 (not yet committed) |
-| 4x | **Phase 4 extension — GitHub Projects (v2) Kanban board** | **verified** | Approved by the operator 2026-10-17 (finalization). All 16 extension gates met (live Issues #15–#16, 35/35 checks); finalized with D-28 (verified) and D-29 (applied). Proposed commit C5 (not yet committed) |
+| 4 | **Feature Task Issue Coordination and Dependencies — real GitHub** | **verified** | Approved by the operator 2026-10-17 (finalization). All 22 exit gates met (record below; live Issues #11–#14, closed). Committed as `ce2d1fc` (C4); file modes fixed in `545b9d3` |
+| 4x | **Phase 4 extension — GitHub Projects (v2) Kanban board** | **verified** | Approved by the operator 2026-10-17 (finalization). All 16 extension gates met (live Issues #15–#16, 35/35 checks); finalized with D-28 (verified) and D-29 (applied). Committed as `80cb1d6` (C5) |
 | 5 | First End-to-End Feature (vertical slice) | not-started | Not authorized. Prerequisites: [Phase 5 prerequisites](#phase-5-prerequisites-and-remaining-security-restrictions) |
 | 6 | CI, API Drift and Final PR Quality Gates | not-started | Constrained by B-2 |
 | 7 | Budget-Aware Optional Continuous Feature Delivery | not-started | Needs separate authorization |
@@ -37,7 +37,7 @@
 | D-28 | Project #2 must not close Issues automatically or overwrite coordinator-managed states; verify that "Auto-close issue" and "Item closed" are disabled; do not modify Project #1 | **Verified**: configuration and a behavior check (below) |
 | D-29 | Keep #11–#14 off Project #2; keep #15–#16 in GitHub for audit; exclude completed test tasks from Active Tasks without deleting their Issues | **Applied**: Active Tasks filter `is:open …`; #11–#14 untouched and off the board; #15–#16 kept (closed, on Kanban) |
 | D-22 | Update `docs_agents/architecture/README.md` and `docs_agents/README.md` | **Done** |
-| D-10 | Prepare a reviewed commit plan for all completed phases; do not commit or push yet | **Prepared and rehearsed**; nothing committed or pushed |
+| D-10 | Prepare a reviewed commit plan for all completed phases; do not commit or push yet | **Prepared and rehearsed**; then executed after approval: C4 `ce2d1fc`, C5 `80cb1d6`; file modes fixed in `545b9d3` ([execution record](#execution-record-d-10)) |
 
 ### Validation results (instruction items 1–10)
 
@@ -92,6 +92,8 @@ Method: no credential file was opened and no value printed. A probe ran inside t
 
 ### Uncommitted change inventory (2026-10-17, final)
 
+> Committed on 2026-10-17 as C4 and C5 ([execution record](#execution-record-d-10)). The table is kept as the record of what the plan contained.
+
 `git status`: 48 paths in the plan, plus the operator's own untracked notes. Columns: C4 = the proposed Phase 4 commit; C5 = the proposed extension and finalization commit.
 
 | Group | Paths | C4 | C5 |
@@ -108,22 +110,22 @@ Method: no credential file was opened and no value printed. A probe ran inside t
 | Phase 4 docs, modified | `docs_agents/coordination/{feature-workflow,operations,phase-status}.md`, `project-config.example.yaml`, `docs_agents/README.md`, `docs_agents/automation/README.md` | Phase 4 version | extension and finalization |
 | Extension docs, new | `docs_agents/coordination/github-projects.md` | — | yes |
 | D-22 / status, committed docs | `docs_agents/architecture/README.md`, `docs_agents/coordination/agent-ownership.md` | — | yes |
-| **Operator's files (not in the plan)** | `docs/multiple_agents/execution/` (6 files, untracked): saved copies of the Phase 1–4 chat reports; no token-shaped string; one IPv4-like string (presumably loopback, not checked) | — | — (operator's decision) |
+| **Operator's files (not in the plan)** | `docs/multiple_agents/execution/` (6 files, untracked): saved copies of the Phase 1–4 chat reports; no token-shaped string; one IPv4-like string (presumably loopback, not checked). **Later committed by the operator as `0d4d8f5` (7 files)** | — | — (operator's decision) |
 | Outside Git | `~/.local/state/mx-admin-agents/github-tests/{fc-p4-20261017033506,fc-p4x-20261017090916}/` (live evidence), `commit-plan-2026-10-17/` (this plan) | — | — |
 
 Unchanged **[V]**: `backend/`, `cli/`, `frontend/`, `content/`, `data/`, `.env`, `docker/`, `scripts/deploy.sh`, `scripts/mxfix/`, `scripts/mxissues/`, `CLAUDE.md`, `AGENTS.md` (`git status` empty); `AUTH_DISABLED`/`DEBUG_MODE`; D-15/D-16/D-18 settings.
 
-### Proposed commit plan (D-10) — prepared, rehearsed, NOT executed
+### Commit plan (D-10) — prepared, rehearsed, executed 2026-10-17
 
-The first three requested groups already exist as the operator's commits on `agents` (local; `origin/agents` is at `d1a3f5c`, 4 commits behind):
+The first three requested groups already exist as the operator's commits on `agents` (when the plan was made, local only; `origin/agents` was at `d1a3f5c`):
 
 | Group (instruction) | Commit | Content (verified with `git show --name-status`) |
 | --- | --- | --- |
 | Phase 0/1 documentation and tooling | `12183e0` "Add agent documentation tree and per-owner OpenAPI export" (on top of the operator's `e2ddd9c`) | `docs_agents/` tree, `scripts/{check_docs_agents,openapi_docs}.py`, `export_openapi.py` extension, tests, the v4 and v5 prompts |
 | Phase 2 coordinator foundation | `8454e63` "Add feature coordinator tooling and v4 workflow docs" | `scripts/feature.py`, `scripts/feature_coordinator/` (16 modules), tests, `feature-workflow.md`, configuration example |
 | Phase 3 real runners and sandbox | `b3f3691` "Add supervisor, sandbox, and launch/operations tooling" | sandbox, supervisor, launchers, gates, lint baseline, HTTP transport; tests; `agent-ownership.md`, `operations.md`, `backend-task-b7.md` |
-| **Phase 4 GitHub Issues integration** | **C4 (new)** "Add GitHub Issue coordination and task dependencies (Phase 4)" | the 37 Phase 4 paths **in their Phase 4 versions** (inventory above) |
-| **GitHub Projects V2 integration** | **C5 (new)** "Add GitHub Projects board sync and finalize Phase 4" | the extension, the finalization and every path's final version (48 paths) |
+| **Phase 4 GitHub Issues integration** | **C4** `ce2d1fc` "Add GitHub Issue coordination and task dependencies (Phase 4)" | the 37 Phase 4 paths **in their Phase 4 versions** (inventory above) |
+| **GitHub Projects V2 integration** | **C5** `80cb1d6` "Add GitHub Projects board sync and finalize Phase 4" | the extension, the finalization and every path's final version (48 paths) |
 
 Recommendation: keep the three existing commits as they are; they already match the requested split. Add C4 and C5 on top. No history rewrite is needed.
 
@@ -132,7 +134,7 @@ Recommendation: keep the three existing commits as they are; they already match 
 - re-running every recorded edit for real on the rebuilt files reproduces the current files **byte for byte**;
 - the Phase 4 tree passes on its own: 367 passed, 13 skipped (the 12 opt-in tests, plus `test_fc_statedir_locks`, which needs the checkout's FUSE mount and runs in the real checkout: 368/12 as recorded for Phase 4); Pylint 10.00/10 (package and tests); docs check 6/6; configuration identical; no reference to the extension.
 
-**Execution (after approval only):** `bash ~/.local/state/mx-admin-agents/commit-plan-2026-10-17/commit_plan.sh <repo>`. The script:
+**Execution (approved and run 2026-10-17):** `bash ~/.local/state/mx-admin-agents/commit-plan-2026-10-17/commit_plan.sh <repo>`. The script:
 
 - refuses to run unless the branch is `agents`, `HEAD` is `b3f3691`, nothing is staged, and the changed set and each file's content equal what was reviewed (`c5_paths.txt`, `c5_blobs.txt`);
 - applies `c4.patch` to the **index only** (`git apply --cached`), so the working tree is never touched, and commits C4;
@@ -142,14 +144,40 @@ Recommendation: keep the three existing commits as they are; they already match 
 
 The plan was rehearsed in two throwaway clones; results are in the plan directory's `REHEARSAL.txt`.
 
-**Before anything is pushed (separate approval):** review the literal remote-Qwen address in the already committed `agents_prompt_v5.md` (v5 §10.1.1; history can still be rewritten before the first push). Decide also about `docs/multiple_agents/execution/` (commit separately, keep untracked, or ignore).
+**Before anything is pushed (separate approval):** review the literal remote-Qwen address in the already committed `agents_prompt_v5.md` (v5 §10.1.1; history can still be rewritten before the first push). Decide also about `docs/multiple_agents/execution/` (commit separately, keep untracked, or ignore). *Overtaken:* the operator committed the execution notes and pushed `agents` on 2026-10-17 (below). This record does not show the outcome of that review. Both files are now on `origin/agents`; any follow-up is the operator's decision.
+
+### Execution record (D-10)
+
+| When | Commit / action | Result **[V]** |
+| --- | --- | --- |
+| 2026-10-17 15:30 +0300 | `commit_plan.sh` → C4 `ce2d1fc` "Add GitHub Issue coordination and task dependencies (Phase 4)" | Tree `9f9bff8` **equal to the rehearsal**; 36 files, +5292/−273 |
+| same run | C5 `80cb1d6` "Add GitHub Projects board sync and finalize Phase 4" | Each of the 48 paths has its reviewed blob; 32 files, +4938/−88. The script's last check **stopped**: tree `b8e6f2d` ≠ rehearsal `1e8b9f1`. The trees differ only in file modes (below); contents are identical |
+| 2026-10-17 17:11 +0300 | `0d4d8f5` "Add documentation for multi-agent execution phases 1–3." (operator) | The 7 files under `docs/multiple_agents/execution/`, all `100644`; nothing else |
+| 2026-10-17 17:12 +0300 | Push by the operator | `origin/agents` = `0d4d8f5` (C4, C5 and the operator's commit are published) |
+| 2026-10-19 | `545b9d3` "Make Phase 4 coordinator files non-executable" | The mode fix below; **not pushed** |
+| 2026-10-19 | The documentation commit with this status update | `phase-status.md` only; **not pushed** |
+
+**File-mode correction.** `c4.patch` was generated in a rehearsal clone that had `core.fileMode` enabled. That clone took its files from the checkout's FUSE file system, where every file reads as `0777`, so C4 recorded the **18 files it adds** as `100755`:
+
+- `scripts/feature_coordinator/{escalation,github_api,github_commands,issue_sync,live_test}.py`
+- `scripts/tests/feature_coordinator/{fc_fake_gh,test_fc_github_client,test_fc_github_live,test_fc_issue_sync}.py`
+- `docs_agents/coordination/{github-integration,task-lifecycle}.md`
+- `docs_agents/coordination/templates/` (7 files)
+
+The checkout has `core.fileMode=false`, so C5's nine new files were staged as `100644`. The rehearsal had them at `100755`, which is why the C5 tree check failed. `agents` was already pushed, so the operator chose a forward fix over a history rewrite. `545b9d3` sets the 18 index entries to `100644` with their existing blob IDs (`git update-index --index-info`). There is no `chmod` and no working-tree change. Verified:
+
+- exactly 18 entries change, each `100755 → 100644` with the same blob ID; no other path or mode changes;
+- all 2,595 path/blob pairs are identical between `0d4d8f5` and `545b9d3`;
+- the executable files are again exactly the 28 of `b3f3691`, with the same blobs;
+- C4 and C5 are unchanged: history was not rewritten, and `ce2d1fc`/`80cb1d6` still show the 18 files as `100755`;
+- after the fix the working tree is clean and the index equals `HEAD`. `scripts/tests`: 430 passed, 18 opt-in skipped. Pylint 10.00/10 (package and tests). Docs check 6/6. `feature.py config` identical.
 
 ### Phase 5 prerequisites and remaining security restrictions
 
 Phase 5 is **not started** and needs an explicit authorization. Before it:
 
-1. **D-10:** approve and execute the commit plan (C4, C5). Nothing has been committed or pushed.
-2. **Pre-push review** (above), then **D-11 / B-8**: push `agents` and open the human-reviewed bootstrap PR into `dev`, so the coordinator exists on the feature base. This needs its own approval; it is not a feature PR.
+1. ~~**D-10:** approve and execute the commit plan (C4, C5)~~ **Done 2026-10-17**: C4 `ce2d1fc`, C5 `80cb1d6`, pushed by the operator together with `0d4d8f5`. The mode fix `545b9d3` and this status update are local ([execution record](#execution-record-d-10)).
+2. **D-11 / B-8:** push the two local commits and open the human-reviewed bootstrap PR `agents` → `dev`, so the coordinator exists on the feature base. This needs its own approval; it is not a feature PR. The planned pre-push review was overtaken by the operator's push (above).
 3. **B-7:** an approved, test-only Backend fix landed in `dev`; then remove `backend-tests` from `unsafe_gates` (review above).
 4. **D-23:** the Phase 5 gate set. Recommended: the full catalog with D-19 lint baselines and `backend-tests` after B-7.
 5. **D-24:** `github.write_scope: all-features`, only together with the Phase 5 feature approval.
@@ -272,7 +300,7 @@ The local board used with `--tracker local` starts already set up, like the real
 | `feature.py github project inspect` / `validate` (read-only, before and after setup) | identity verified, scopes include `project`; NOT READY before setup, READY after |
 | `python scripts/check_docs_agents.py` · Pylint (package / tests) · `feature.py config` | 6/6 · 10.00/10 / 10.00/10 · identical |
 
-### Files (all uncommitted)
+### Files (committed as `80cb1d6`, C5)
 
 | Status | Path |
 | --- | --- |
@@ -386,7 +414,7 @@ During step T, the coordinator also reported **drift on the parent #11**, which 
 - **`issues.py` rewritten:** the unversioned Phase 2 marker `<!-- feature-coordinator key=… -->` was replaced by the versioned ownership marker, and the mock implements the live protocol. Two Phase 2 tests changed only how they read the mock (`test_contract_requests_are_deduplicated`, `test_single_pr_needs_approval_and_done_needs_a_merge`); their assertions are unchanged.
 - **Stale-command check:** first written against the local clock; changed before the live run to compare GitHub comment IDs for holds that came from GitHub, which removes clock-skew risk.
 
-### Files (all uncommitted)
+### Files (committed as `ce2d1fc`, C4; file modes fixed in `545b9d3`)
 
 | Status | Path |
 | --- | --- |
@@ -408,7 +436,7 @@ Unchanged **[V]**: `backend/`, `cli/`, `frontend/`, `content/`, `data/`, `script
 
 | Step | Role | Work |
 | --- | --- | --- |
-| P5-0 | operator | Approve Phase 4; commit it (D-10); decide D-24 (write scope), D-25 (push + one PR), D-20/D-21 (supervised runs), D-23 (gates); land [B-7](backend-task-b7.md); complete the D-11 bootstrap PR into `dev` so the coordinator exists on the base branch |
+| P5-0 | operator | ~~Approve Phase 4; commit it (D-10)~~ (done 2026-10-17); decide D-24 (write scope), D-25 (push + one PR), D-20/D-21 (supervised runs), D-23 (gates); land [B-7](backend-task-b7.md); complete the D-11 bootstrap PR into `dev` so the coordinator exists on the base branch |
 | P5-1 | operator + coordination | Choose one small **new** feature that spans Backend, CLI and Frontend (not a bug repair); write its spec (tasks, acceptance criteria, contract, gates) |
 | P5-2 | coordination | `plan --apply --tracker github` (real parent and component Issues), `activate` (one `feature/<slug>` from `dev`) |
 | P5-3 | backend (Claude Code) | Implement the API with tests, regenerate the service OpenAPI; verified by `contract-check` + `backend-tests` on the shared branch |
@@ -469,7 +497,7 @@ This finding is residual risk 1 in [agent-ownership §5](agent-ownership.md#5-re
 
 **Update (2026-10-17, Phase 4 instruction):** the operator reports the exposure **resolved**. Phase 4 read no credential file and printed no token (`gh auth status` output was shown with its token line redacted; the adapter never calls `gh auth token`).
 
-### Files (all uncommitted)
+### Files (committed by the operator as `b3f3691`)
 
 | Status | Path |
 | --- | --- |
@@ -754,7 +782,7 @@ No application code (`backend/`, `cli/`, `frontend/`) changed. No content, DB, `
 - **Created (Phase 4 extension live test, coordinator-owned, `feature:test`, closed as completed after verification, kept for audit):** [#15](https://github.com/spyderbg/mx-admin-cloud/issues/15) parent · [#16](https://github.com/spyderbg/mx-admin-cloud/issues/16) Backend task. Project #2 items: `PVTI_lAHOACEIPc4BndH-zhBbwdk` (#15, Review), `PVTI_lAHOACEIPc4BndH-zhBbwo8` (#16, Done).
 - **Project #2** "mx-admin-cloud automation" configured (Status options, Agent / Feature ID / Blocked Reason, Kanban and Active Tasks views). **Project #1** unchanged.
 - **Finalization (2026-10-17):** the Active Tasks filter became `is:open status:…` (D-29). The D-28 behavior check reopened and re-closed #16 (card Review → Done) and #15; both ended as before: closed as completed, #15 Review, #16 Done. #11–#14 stay off the board (D-29). No Issue or PR created.
-- **PRs:** none created in any phase. **Pushes:** none.
+- **PRs:** none created in any phase. **Pushes:** none by an agent. The operator pushed `agents` to `origin` (up to `0d4d8f5`) on 2026-10-17.
 - Pre-existing Issues/PRs #1–#10 (including open #9 "S3 content provider", #10 "Database content provider", and the bug workflow's #8): **unchanged** (`updated_at`, state, labels and comment counts compared before and after) **[V]**.
 
 ## Approved decisions
@@ -797,7 +825,7 @@ No application code (`backend/`, `cli/`, `frontend/`) changed. No content, DB, `
 
 | ID | Approved decision |
 | --- | --- |
-| D-10 | Prepare a reviewed commit plan for all completed phases, preferring separate logical commits (Phase 0/1, 2, 3, 4, Projects); **no commit or push yet**. Prepared: the three existing commits plus C4 and C5 ([plan](#proposed-commit-plan-d-10--prepared-rehearsed-not-executed)) |
+| D-10 | Prepare a reviewed commit plan for all completed phases, preferring separate logical commits (Phase 0/1, 2, 3, 4, Projects); **no commit or push yet**. Prepared: the three existing commits plus C4 and C5 ([plan](#commit-plan-d-10--prepared-rehearsed-executed-2026-10-17)). Execution approved and run on 2026-10-17 (C4 `ce2d1fc`, C5 `80cb1d6`); file modes fixed by `545b9d3` on 2026-10-19 ([execution record](#execution-record-d-10)) |
 | D-22 | Update `docs_agents/architecture/README.md` and `docs_agents/README.md` for the completed Phase 4 and Projects integration. Done |
 | D-28 | Project #2 must not close Issues or overwrite coordinator-managed states; "Auto-close issue" and "Item closed" disabled. Verified |
 | D-29 | #11–#14 stay off Project #2; #15–#16 stay in GitHub for audit; completed test tasks excluded from Active Tasks without deleting their Issues. Applied |
@@ -811,7 +839,7 @@ See the tables above and [architecture §12](../architecture/README.md#12-decisi
 | ID | Decision | Recommendation | Needed by |
 | --- | --- | --- | --- |
 | D-9 | `backend/docs/openapi.yaml` (stale, 50/91 operations) | Regenerate it as a Backend task, or mark it superseded by `docs_agents/backend/**/openapi.yaml` (README edit needs approval) | Optional |
-| D-10 | ~~Commit the bootstrap, Phase 2 and Phase 3 work~~ **Settled by the operator:** `12183e0`, `8454e63`, `b3f3691` on `agents` (not pushed). **Phase 4 and the extension:** commit plan approved for preparation 2026-10-17 and **prepared** (C4, C5; [plan](#proposed-commit-plan-d-10--prepared-rehearsed-not-executed)); executing it needs the operator's approval. Still review the literal Qwen address in `agents_prompt_v5.md` before anything is pushed (v5 §10.1.1) | Now (execution approval), then before the D-11 PR |
+| D-10 | ~~Commit the bootstrap, Phase 2 and Phase 3 work~~ **Settled by the operator:** `12183e0`, `8454e63`, `b3f3691` on `agents`. **Phase 4 and the extension: executed** 2026-10-17 as C4 `ce2d1fc` and C5 `80cb1d6` ([plan](#commit-plan-d-10--prepared-rehearsed-executed-2026-10-17)); file modes fixed by `545b9d3` on 2026-10-19 ([execution record](#execution-record-d-10)). The operator pushed `agents` up to `0d4d8f5`. `545b9d3` and this status update are not pushed | Push the two local commits with the D-11 PR |
 | D-15 | Transport for the remote Qwen endpoint (plain HTTP today) | Secure it (TLS reverse proxy, HTTPS with certificate verification, or a WireGuard/Tailscale tunnel), **or** record an explicit plain-HTTP exception after a network security assessment. Until decided, **no source code or repository context is sent** | Before any live Qwen use with code (Phase 3 at the earliest) |
 | D-16 | Disclosure policy for the remote model | Approve which code/context categories may be sent; never `.env`, production data, tokens or whole repositories | Same as D-15 |
 | D-18 | Qwen API authentication | Whether the server requires `AGENT_QWEN_API_KEY`; if yes, provision it via a private secret store only | Before any live request |
@@ -837,7 +865,7 @@ See the tables above and [architecture §12](../architecture/README.md#12-decisi
 | B-5 | GitHub→GitLab mirror failing (3/5 runs) | Out of scope for agents | Operator |
 | B-6 | ~~Runner permission and sandbox flags unproven~~ **Resolved in Phase 3** **[V]**: flags probed on the installed CLIs, OS containment tested, live smoke runs observed ([agent-ownership §4](agent-ownership.md#4-real-runner-verification-2026-10-17)) | — | — |
 | B-7 | Backend test writes into the real `content/` (F-5). **Pinpointed in Phase 3:** `test_delete_item_image_last_remaining_is_allowed` creates `content/.categories_registry.lock` and `content/foods/.items_registry.lock`; it is hidden by `.gitignore` and tolerated on read-only trees. **Re-reviewed 2026-10-17:** unchanged on `HEAD`, `origin/main`, `origin/dev` and `gitlab/dev`; no leaked lock file today | `backend-tests` is **blocked** against real checkouts (`unsafe_gates`); Phase 5 Backend verification would lack the backend suite | [Backend task B-7](backend-task-b7.md): an approved test-only fix into `dev` before the Phase 5 feature, then unblock the gate |
-| B-8 | Bootstrap work not on any feature base | Phase 5 cannot start from `dev` with the tooling | D-11 approved (PR into `dev`); needs the D-10 commits (plan prepared), the pre-push review, a push and then the human-reviewed PR |
+| B-8 | Bootstrap work not on any feature base | Phase 5 cannot start from `dev` with the tooling | D-11 approved (PR into `dev`). The D-10 commits exist, and `agents` is on `origin` up to `0d4d8f5`. Still needed: a push of `545b9d3` and the status update, then the human-reviewed PR `agents` → `dev` |
 | B-9 | Remote Qwen endpoint is plain HTTP | No source code may be sent; live validation with code is blocked | D-15 (+ D-16) |
 | B-10 | *(narrowed in Phase 3)* D-17 decided and implemented (native tool loop plus a loopback-only HTTP transport, validated against a local fake server). Capabilities are still unvalidated against the real server | Automation cannot use Qwen write-capably | D-15, D-16, D-18, then an approved live validation run |
 
@@ -1036,16 +1064,15 @@ Execution remains **sequential and supervised** until Phase 3 proves enforcement
 
 ## Exact next action
 
-1. Operator reviews the [Phase 4 finalization record](#phase-4-finalization--record-2026-10-17): validation results, the change inventory and the [commit plan](#proposed-commit-plan-d-10--prepared-rehearsed-not-executed). The plan's files are in `~/.local/state/mx-admin-agents/commit-plan-2026-10-17/` (`README.txt`, `commit_plan.sh`, `c4.patch`, path lists, messages, `REHEARSAL.txt`).
-2. Operator approves (or amends) the commit plan; then the plan is executed: two commits on `agents`, **no push**. Nothing has been committed, pushed or opened as a PR.
-3. Pre-push review (the Qwen address in `agents_prompt_v5.md`; `docs/multiple_agents/execution/`), then the D-11 bootstrap PR into `dev` (separate approval).
-4. Schedule [Backend task B-7](backend-task-b7.md); decide D-20, D-21, D-23–D-25 (D-26, D-27 optional).
-5. Approve a concrete **new feature** for Phase 5 (Backend + CLI + Frontend), then explicitly authorize Phase 5. **Phase 5 has not been started.**
+1. Operator reviews the [execution record](#execution-record-d-10): C4 `ce2d1fc` and C5 `80cb1d6` (pushed), and the two local commits, the mode fix `545b9d3` and this status update.
+2. Operator pushes the two local commits, then the D-11 bootstrap PR `agents` → `dev` (separate approval; human-reviewed, not a feature PR). The Qwen address in `agents_prompt_v5.md` and `docs/multiple_agents/execution/` are already on `origin/agents` since the operator's push; any follow-up is the operator's decision. No PR has been opened.
+3. Schedule [Backend task B-7](backend-task-b7.md); decide D-20, D-21, D-23–D-25 (D-26, D-27 optional).
+4. Approve a concrete **new feature** for Phase 5 (Backend + CLI + Frontend), then explicitly authorize Phase 5. **Phase 5 has not been started.**
 
 ## Resume checklist (for the next session)
 
 - Re-read this file, `docs/multiple_agents/agents_prompt_v5.md`, [`feature-workflow.md`](feature-workflow.md), [`agent-ownership.md`](agent-ownership.md), [`operations.md`](operations.md), then architecture §1, §10, §11 (including §11.11) and §12.
 - Run `python scripts/check_docs_agents.py` (expect 6/6), `.venv/bin/python -m pytest -p no:cacheprovider scripts/tests` (expect 430 passed, 18 opt-in skipped), `python scripts/feature.py config` (expect "identical"), `python scripts/feature.py sandbox-check --apply` (expect PASSED), `python scripts/feature.py github status` (expect OK; read-only) and `python scripts/feature.py github project validate` (expect READY; read-only). `github project inspect` should list "Auto-close issue" and "Item closed" as disabled (D-28).
-- Confirm `git status --porcelain -- scripts/mxfix scripts/mxissues` is empty.
+- Confirm `git status --porcelain -- scripts/mxfix scripts/mxissues` is empty, and `git ls-tree -r HEAD | grep -c '^100755'` is 28 (the executable files of `b3f3691`).
 - Do not modify `content/`, `data/`, `backend/data/`, `.env`, root instruction files, `mxfix`/`mxissues`, or application code without explicit approval. Do not create Issues (beyond an approved scope), PRs, commits or pushes without approval. Re-read [github-integration.md](github-integration.md) and [github-projects.md](github-projects.md) before any live GitHub operation. Never write Project #1.
 - Do not send any request (and never source code) to the remote Qwen endpoint before D-15, D-16 and D-18 are decided and a live test is approved. Never write its literal address or any key into tracked files.
