@@ -1,0 +1,134 @@
+Phase 4 is done and every exit gate is met, including a live run  
+  against spyderbg/mx-admin-cloud: 8/8 live tests passed and the    
+  scenario's 41 checks all passed. Nothing has been committed,      
+  pushed or opened as a PR, and I've stopped for your review. Phase 
+  5 has not started.                                                
+                                                                    
+  GitHub Issues (all closed as completed after verification, kept   
+  for audit)                                                        
+                                                                    
+  ┌───────┬────────────────┐                                        
+  │ Issue │      Role      │                                        
+  ├───────┼────────────────┤                                        
+  │ #11   │ parent feature │ 
+  ├───────┼────────────────┤    
+  │ #12   │ Backend        │                                        
+  ├───────┼────────────────┤                                        
+  │ #13   │ CLI            │                                        
+  ├───────┼────────────────┤                                        
+  │ #14   │ Frontend       │                                        
+  └───────┴────────────────┘                                        
+                                                                    
+  - Test feature: fc-p4-20261017033506.                             
+  - Labels: 9 feature:* labels created; no existing label changed.  
+  - Comments: 30 by the coordinator, plus 3 operator commands I     
+    posted to simulate a human (/feature release on #13 was         
+    rejected; /feature hold and later /feature release on #14 were  
+    accepted).                                                      
+  - Simulated tampering: I added a "verified" label to #12, removed 
+    "blocked" from #13 and closed #12. The coordinator undid all    
+    three from its local state.                                     
+  - Untouched: Issues/PRs #1–#10, including the bug workflow's #8,  
+    are identical to a snapshot taken at the start of the session.  
+    No PR exists for the test branch.       
+
+What was built                                                    
+                                                                    
+  - GitHub adapter (github_api.py): calls GitHub through the        
+    existing gh login, so no token is ever read or printed. It      
+    handles retries, rate limits, pacing and pagination, and        
+    validates every response.                                       
+  - Synchronizer (issue_sync.py): local state stays the authority   
+    and the Issues are derived from it.                             
+    - Each Issue carries a versioned ownership marker. Before any   
+      write, the coordinator checks the marker, that its own account
+      created the Issue, and the exact Issue number and ID.         
+    - Network calls never happen while a coordinator lock is held.  
+    - The only way GitHub can change local state is a /feature hold 
+      or /feature release comment from an authorized operator.      
+  - Dependency lifecycle: one Backend task is created or reused per 
+    API; only the consumers wait; only verified evidence unblocks   
+    them; a re-opened contract blocks them again; a human hold stays
+    until it is explicitly released.                                
+  - Commands: a feature.py github … group (status, labels, sync,    
+    reconcile, inspect, owned, deps, test-lifecycle, cleanup-test)  
+    plus hold and release. Everything is a dry run unless --apply.  
+  - Two fixes to existing behavior: re-opening a dependency now also
+    blocks dependents that were only ready, not just verified ones. 
+    A task can no longer be verified while one of its dependencies  
+    is unverified.                    
+
+ Lifecycle as run live                                             
+                                                                    
+  - I injected a crash right after GitHub created #14; the restarted
+    coordinator found and reused #14 instead of creating a          
+    duplicate.                                                      
+  - The real sandboxed contract check failed, so CLI and Frontend   
+    were blocked and GitHub showed it. A label, a closed Issue or a 
+    comment did not unblock anything.                               
+  - The Backend task was verified with a real commit and real gate  
+    runs, which unblocked its dependents. Re-opening the contract   
+    blocked them again; re-verifying unblocked them.                
+  - A repeated sync sent zero writes. After a restart in a separate 
+    process, reconciliation found nothing to change and the Issue   
+    numbers were unchanged.                                         
+  - Exactly one PR candidate was produced; a second integration was 
+    refused, and opening a real PR was refused before any request   
+    was sent.                                                       
+                                                                    
+  Tests                                                             
+                                                                    
+  - Local suite: 368 passed, 12 skipped (the skips are opt-in host  
+    and live tests). Before Phase 4 it was 290 passed, 4 skipped.   
+    This includes a full rehearsal of the scenario against the local
+    tracker.                                                        
+  - Quality: docs check 6/6, pylint 10.00/10 for the package and the
+    tests, config identical to the built-in one, containment        
+    self-test passed.                                               
+  - Not run: the backend and frontend suites, since no application  
+    code changed (B-7 still blocks backend tests on the real        
+    checkout).                                                      
+  - Scope: no changes in backend/, cli/, frontend/, content/, data/,
+    .env, docker/, scripts/deploy.sh, scripts/mxfix or              
+    scripts/mxissues. No request was sent to the remote Qwen server.
+                                                              
+ One unexpected finding                                            
+                                                                    
+  The coordinator reported a change to parent #11, which the test   
+  never edited, and restored it. #11's edit history shows no        
+  inconsistent version, so GitHub changed it without recording an   
+  edit. The likely cause, not confirmed, is that closing #12        
+  auto-checks its box in the parent's task list. It's documented as 
+  a limitation.                                                     
+                                                                    
+  Decisions for you                                                 
+                                                                    
+  - D-10: how to commit the Phase 4 work (I recommend one reviewed  
+    commit on agents).                                              
+  - D-24: widen the GitHub write scope from test features to all    
+    features, together with the Phase 5 feature approval.           
+  - D-25: allow the push and exactly one real PR per feature in     
+    Phase 5, each with your approval; never auto-merge.             
+  - D-26: a separate bot account or GitHub App for the coordinator, 
+    since it currently shares spyderbg with you.                    
+  - D-27: keep #11–#14 and the labels for audit (recommended).      
+  - Still open: D-20, D-21, D-23, and the B-7 backend fix before    
+    Phase 5.                                                        
+                                                                    
+  Recommended Phase 5 plan                                          
+                                                                    
+  1. Approve Phase 4, commit it, decide D-24 and D-25, land B-7, and
+     complete the bootstrap PR into dev.                            
+  2. Approve one small new feature that spans Backend, CLI and      
+     Frontend, with real Issues.                                    
+  3. Backend (Claude Code) delivers the API and its contract first; 
+     CLI (Claude Code) and Frontend (Codex) then run in parallel.   
+  4. Serialized commits, combined integration gates, then one PR to 
+     dev, with no merge.                                            
+                                                                    
+  The full record (exit-gate evidence, files changed, live action   
+  log) is in docs_agents/coordination/phase-status.md. The design is
+  in docs_agents/coordination/github-integration.md.                
+                                                                    
+  Please approve Phase 4 and explicitly authorize Phase 5 before I  
+  start it.                             

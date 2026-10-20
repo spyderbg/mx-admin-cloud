@@ -1,0 +1,739 @@
+mx-admin-cloud/
+├── backend/
+│   ├── config/
+│   │   ├── logging/
+│   │   │   ├── default.json
+│   │   │   ├── requests.json
+│   │   │   └── trace.json
+│   │   ├── text_to_image/
+│   │   │   ├── workflows/
+│   │   │   │   └── default_txt2img.json
+│   │   │   ├── comfyui.json
+│   │   │   ├── genai.json
+│   │   │   ├── genai_http.json
+│   │   │   ├── openai.json
+│   │   │   └── openai_http.json
+│   │   ├── text_to_speech/
+│   │   │   ├── elevenlabs.json
+│   │   │   ├── elevenlabs_slow.json
+│   │   │   ├── openai.json
+│   │   │   ├── pyttsx3.json
+│   │   │   ├── speaktor.json
+│   │   │   └── static.json
+│   │   ├── text_translation/
+│   │   │   ├── openai_en_bg.json
+│   │   │   ├── openai_en_es.json
+│   │   │   ├── openai_en_fr.json
+│   │   │   ├── qwen_en_bg.json
+│   │   │   ├── qwen_en_es.json
+│   │   │   ├── qwen_en_fr.json
+│   │   │   └── static.json
+│   │   ├── voice_optimizers/
+│   │   │   ├── ffmpeg_high.json
+│   │   │   ├── ffmpeg_low.json
+│   │   │   └── pydub_optimized.json
+│   │   └── _service_strategies.json
+│   ├── data/
+│   │   ├── users.db
+│   │   └── users.sql
+│   ├── docs/
+│   │   └── openapi.yaml
+│   ├── src/
+│   │   ├── api/
+│   │   │   ├── __tests__/
+│   │   │   │   ├── __init__.py
+│   │   │   │   └── test_viewer_access.py
+│   │   │   ├── internal/
+│   │   │   │   ├── schemas/
+│   │   │   │   │   ├── __init__.py
+│   │   │   │   │   └── jobs.py
+│   │   │   │   ├── __init__.py
+│   │   │   │   ├── jobs_routes.py
+│   │   │   │   └── services_routes.py
+│   │   │   ├── v1/
+│   │   │   │   ├── __tests__/
+│   │   │   │   │   ├── __init__.py
+│   │   │   │   │   └── test_routes_auth_google.py
+│   │   │   │   ├── schemas/
+│   │   │   │   │   ├── __init__.py
+│   │   │   │   │   ├── auth.py
+│   │   │   │   │   ├── common.py
+│   │   │   │   │   └── users.py
+│   │   │   │   ├── __init__.py
+│   │   │   │   ├── routes_auth.py
+│   │   │   │   ├── routes_common.py
+│   │   │   │   └── routes_users.py
+│   │   │   ├── __init__.py
+│   │   │   ├── dependencies.py
+│   │   │   └── service_resolver.py
+│   │   ├── core/
+│   │   │   ├── __tests__/
+│   │   │   │   ├── __init__.py
+│   │   │   │   ├── test_log_client.py
+│   │   │   │   ├── test_logging_route.py
+│   │   │   │   └── test_tasks.py
+│   │   │   ├── __init__.py
+│   │   │   ├── config.py
+│   │   │   ├── input_loader.py
+│   │   │   ├── job_store.py
+│   │   │   ├── languages.py
+│   │   │   ├── localization.py
+│   │   │   ├── log_client.py
+│   │   │   ├── logging_route.py
+│   │   │   ├── models.py
+│   │   │   ├── pipeline.py
+│   │   │   ├── result_writer.py
+│   │   │   ├── tasks.py
+│   │   │   └── utils.py
+│   │   ├── db/
+│   │   │   ├── __init__.py
+│   │   │   └── database.py
+│   │   ├── security/
+│   │   │   ├── __init__.py
+│   │   │   ├── auth.py
+│   │   │   ├── google.py
+│   │   │   └── tokens.py
+│   │   ├── services/
+│   │   │   ├── __tests__/
+│   │   │   │   ├── __init__.py
+│   │   │   │   └── test_provider_strategy.py
+│   │   │   ├── configuration/
+│   │   │   │   ├── __tests__/
+│   │   │   │   │   ├── __init__.py
+│   │   │   │   │   ├── test_configuration_service.py
+│   │   │   │   │   └── test_configuration_service_integration.py
+│   │   │   │   ├── providers/
+│   │   │   │   │   ├── __init__.py
+│   │   │   │   │   └── file_system.py
+│   │   │   │   ├── __init__.py
+│   │   │   │   ├── merge.py
+│   │   │   │   ├── models.py
+│   │   │   │   ├── openapi.yaml
+│   │   │   │   ├── routes.py
+│   │   │   │   ├── schemas.py
+│   │   │   │   └── service.py
+│   │   │   ├── evaluation/
+│   │   │   │   ├── __tests__/
+│   │   │   │   │   └── __init__.py
+│   │   │   │   ├── __init__.py
+│   │   │   │   ├── engine.py
+│   │   │   │   ├── models.py
+│   │   │   │   ├── routes.py
+│   │   │   │   ├── schemas.py
+│   │   │   │   ├── score_store.py
+│   │   │   │   ├── score_store_json.py
+│   │   │   │   ├── score_store_sqlite.py
+│   │   │   │   └── service.py
+│   │   │   ├── logging/
+│   │   │   │   ├── __tests__/
+│   │   │   │   │   ├── __init__.py
+│   │   │   │   │   ├── test_logging_service.py
+│   │   │   │   │   └── test_request_log_fields.py
+│   │   │   │   ├── providers/
+│   │   │   │   │   ├── __init__.py
+│   │   │   │   │   └── struct_log.py
+│   │   │   │   ├── __init__.py
+│   │   │   │   ├── models.py
+│   │   │   │   ├── openapi.yaml
+│   │   │   │   ├── routes.py
+│   │   │   │   ├── schemas.py
+│   │   │   │   └── service.py
+│   │   │   ├── text_to_image/
+│   │   │   │   ├── __tests__/
+│   │   │   │   │   ├── __init__.py
+│   │   │   │   │   ├── test_comfyui_provider.py
+│   │   │   │   │   ├── test_governor.py
+│   │   │   │   │   ├── test_http_providers.py
+│   │   │   │   │   ├── test_pricing.py
+│   │   │   │   │   ├── test_templating.py
+│   │   │   │   │   ├── test_text_to_image_provider_base.py
+│   │   │   │   │   ├── test_text_to_image_service.py
+│   │   │   │   │   └── test_text_to_image_service_integration.py
+│   │   │   │   ├── providers/
+│   │   │   │   │   ├── __init__.py
+│   │   │   │   │   ├── _genai_common.py
+│   │   │   │   │   ├── _openai_payload.py
+│   │   │   │   │   ├── comfyui_image.py
+│   │   │   │   │   ├── genai_http_image.py
+│   │   │   │   │   ├── genai_image.py
+│   │   │   │   │   ├── openai_http_image.py
+│   │   │   │   │   └── openai_image.py
+│   │   │   │   ├── __init__.py
+│   │   │   │   ├── governor.py
+│   │   │   │   ├── models.py
+│   │   │   │   ├── openapi.yaml
+│   │   │   │   ├── pricing.py
+│   │   │   │   ├── routes.py
+│   │   │   │   ├── schemas.py
+│   │   │   │   ├── service.py
+│   │   │   │   └── templating.py
+│   │   │   ├── text_to_speech/
+│   │   │   │   ├── __tests__/
+│   │   │   │   │   ├── __init__.py
+│   │   │   │   │   ├── test_pyttsx3_provider.py
+│   │   │   │   │   ├── test_speaktor_provider.py
+│   │   │   │   │   ├── test_text_to_speech_service.py
+│   │   │   │   │   └── test_text_to_speech_service_integration.py
+│   │   │   │   ├── providers/
+│   │   │   │   │   ├── __init__.py
+│   │   │   │   │   ├── elevenlabs_tts.py
+│   │   │   │   │   ├── openai_tts.py
+│   │   │   │   │   ├── pyttsx3_tts.py
+│   │   │   │   │   ├── speaktor_tts.py
+│   │   │   │   │   └── static_tts.py
+│   │   │   │   ├── __init__.py
+│   │   │   │   ├── models.py
+│   │   │   │   ├── openapi.yaml
+│   │   │   │   ├── routes.py
+│   │   │   │   ├── schemas.py
+│   │   │   │   └── service.py
+│   │   │   ├── text_translation/
+│   │   │   │   ├── __tests__/
+│   │   │   │   │   ├── __init__.py
+│   │   │   │   │   ├── test_qwen_translate.py
+│   │   │   │   │   ├── test_static_translate.py
+│   │   │   │   │   ├── test_text_translation_service.py
+│   │   │   │   │   └── test_text_translation_service_integration.py
+│   │   │   │   ├── providers/
+│   │   │   │   │   ├── __init__.py
+│   │   │   │   │   ├── openai_translate.py
+│   │   │   │   │   ├── qwen_translate.py
+│   │   │   │   │   └── static_translate.py
+│   │   │   │   ├── __init__.py
+│   │   │   │   ├── models.py
+│   │   │   │   ├── openapi.yaml
+│   │   │   │   ├── routes.py
+│   │   │   │   ├── schemas.py
+│   │   │   │   └── service.py
+│   │   │   ├── voice_optimization/
+│   │   │   │   ├── __tests__/
+│   │   │   │   │   └── __init__.py
+│   │   │   │   ├── providers/
+│   │   │   │   │   ├── __init__.py
+│   │   │   │   │   ├── ffmpeg_optimizer.py
+│   │   │   │   │   └── pydub_optimizer.py
+│   │   │   │   ├── __init__.py
+│   │   │   │   ├── models.py
+│   │   │   │   ├── normalizer.py
+│   │   │   │   ├── openapi.yaml
+│   │   │   │   ├── routes.py
+│   │   │   │   ├── schemas.py
+│   │   │   │   └── service.py
+│   │   │   ├── __init__.py
+│   │   │   ├── acceptance.py
+│   │   │   ├── models.py
+│   │   │   ├── provider_factory.py
+│   │   │   ├── provider_strategy.py
+│   │   │   ├── schemas.py
+│   │   │   └── service_registry.py
+│   │   ├── __init__.py
+│   │   └── main.py
+│   ├── code_improvements.md
+│   ├── kill_uvicorn.sh
+│   ├── pyproject.toml
+│   ├── pytest.ini
+│   ├── requirements.txt
+│   ├── uvicorn_start.bat
+│   └── uvicorn_start.sh
+├── cli/
+│   ├── src/
+│   │   └── kiddo_cli/
+│   │       ├── api/
+│   │       │   ├── __init__.py
+│   │       │   ├── auth.py
+│   │       │   └── client.py
+│   │       ├── commands/
+│   │       │   ├── __init__.py
+│   │       │   ├── common_commands.py
+│   │       │   ├── config_commands.py
+│   │       │   ├── content_commands.py
+│   │       │   ├── generate_commands.py
+│   │       │   ├── list_commands.py
+│   │       │   ├── logging_commands.py
+│   │       │   ├── translate_commands.py
+│   │       │   └── users_commands.py
+│   │       ├── __init__.py
+│   │       ├── auth_flow.py
+│   │       ├── main.py
+│   │       ├── output.py
+│   │       └── utils.py
+│   ├── pyproject.toml
+│   └── requirements.txt
+├── data/
+│   └── users.db
+├── docs/
+│   ├── Chats/
+│   │   └── logging_schemas_use.txt
+│   ├── content_service_features/
+│   │   └── categories_features.md
+│   ├── item_voices/
+│   │   ├── initial_result.md
+│   │   └── initial_spec.md
+│   ├── multiple_agents/
+│   │   ├── agents_init.md
+│   │   └── dirtree.txt
+│   ├── backend_first_build.md
+│   ├── game_plugin_generate.md
+│   ├── kiddo-admin-api.postman_collection.json
+│   └── required_endpoints.md
+├── frontend/
+│   ├── docs/
+│   │   ├── backend-regeneration-agent-tasks.md
+│   │   ├── item-voices-api.md
+│   │   ├── openapi.yaml
+│   │   └── types-usage.md
+│   ├── public/
+│   │   └── mockServiceWorker.js
+│   ├── src/
+│   │   ├── api/
+│   │   │   ├── auth.ts
+│   │   │   ├── cache.ts
+│   │   │   ├── client.ts
+│   │   │   ├── configurationCache.ts
+│   │   │   ├── configurationClient.ts
+│   │   │   ├── contentClient.ts
+│   │   │   ├── internalClient.ts
+│   │   │   ├── itemVoicesClient.ts
+│   │   │   └── uiConfigurationDb.ts
+│   │   ├── assets/
+│   │   │   ├── css/
+│   │   │   │   ├── demo_1/
+│   │   │   │   │   ├── style.css
+│   │   │   │   │   └── style.css.map
+│   │   │   │   ├── shared/
+│   │   │   │   │   ├── style.css
+│   │   │   │   │   └── style.css.map
+│   │   │   │   └── auth.css
+│   │   │   ├── images/
+│   │   │   │   ├── auth/
+│   │   │   │   │   ├── login_1.jpg
+│   │   │   │   │   ├── login_2.jpg
+│   │   │   │   │   ├── register.jpg
+│   │   │   │   │   └── register_2.jpg
+│   │   │   │   ├── carousel/
+│   │   │   │   │   ├── banner_1.jpg
+│   │   │   │   │   ├── banner_10.jpg
+│   │   │   │   │   ├── banner_11.jpg
+│   │   │   │   │   ├── banner_12.jpg
+│   │   │   │   │   ├── banner_2.jpg
+│   │   │   │   │   ├── banner_3.jpg
+│   │   │   │   │   ├── banner_4.jpg
+│   │   │   │   │   ├── banner_5.jpg
+│   │   │   │   │   ├── banner_6.jpg
+│   │   │   │   │   ├── banner_7.jpg
+│   │   │   │   │   ├── banner_8.jpg
+│   │   │   │   │   ├── banner_9.jpg
+│   │   │   │   │   ├── dashboard_slides.jpg
+│   │   │   │   │   ├── lock_bg.jpg
+│   │   │   │   │   ├── login_1.jpg
+│   │   │   │   │   ├── login_2.jpg
+│   │   │   │   │   ├── register.jpg
+│   │   │   │   │   └── register_1.jpg
+│   │   │   │   ├── chat/
+│   │   │   │   │   ├── profile_image.jpg
+│   │   │   │   │   ├── thumb_image1.jpg
+│   │   │   │   │   ├── thumb_image2.jpg
+│   │   │   │   │   ├── thumb_image3.jpg
+│   │   │   │   │   ├── thumb_image4.jpg
+│   │   │   │   │   ├── thumb_image5.jpg
+│   │   │   │   │   ├── thumb_image6.jpg
+│   │   │   │   │   ├── thumb_image7.jpg
+│   │   │   │   │   └── thumb_image8.jpg
+│   │   │   │   ├── dashboard/
+│   │   │   │   │   ├── banner_bg.jpg
+│   │   │   │   │   ├── banner_img.png
+│   │   │   │   │   ├── img_1.jpg
+│   │   │   │   │   ├── img_2.jpg
+│   │   │   │   │   ├── img_3.jpg
+│   │   │   │   │   ├── profile-card.jpg
+│   │   │   │   │   ├── progress-card-bg.jpg
+│   │   │   │   │   └── weather-card.jpg
+│   │   │   │   ├── email/
+│   │   │   │   │   ├── fb.png
+│   │   │   │   │   ├── mail-image.jpg
+│   │   │   │   │   ├── medium.png
+│   │   │   │   │   ├── slack.png
+│   │   │   │   │   ├── twitter.png
+│   │   │   │   │   └── youtube.png
+│   │   │   │   ├── faces/
+│   │   │   │   │   ├── profile/
+│   │   │   │   │   ├── face1.jpg
+│   │   │   │   │   ├── face10.jpg
+│   │   │   │   │   ├── face11.jpg
+│   │   │   │   │   ├── face12.jpg
+│   │   │   │   │   ├── face13.jpg
+│   │   │   │   │   ├── face14.jpg
+│   │   │   │   │   ├── face15.jpg
+│   │   │   │   │   ├── face16.jpg
+│   │   │   │   │   ├── face17.jpg
+│   │   │   │   │   ├── face18.jpg
+│   │   │   │   │   ├── face19.jpg
+│   │   │   │   │   ├── face2.jpg
+│   │   │   │   │   ├── face20.jpg
+│   │   │   │   │   ├── face21.jpg
+│   │   │   │   │   ├── face22.jpg
+│   │   │   │   │   ├── face23.jpg
+│   │   │   │   │   ├── face24.jpg
+│   │   │   │   │   ├── face25.jpg
+│   │   │   │   │   ├── face26.jpg
+│   │   │   │   │   ├── face27.jpg
+│   │   │   │   │   ├── face3.jpg
+│   │   │   │   │   ├── face4.jpg
+│   │   │   │   │   ├── face5.jpg
+│   │   │   │   │   ├── face6.jpg
+│   │   │   │   │   ├── face7.jpg
+│   │   │   │   │   ├── face8.jpg
+│   │   │   │   │   └── face9.jpg
+│   │   │   │   ├── faces-clipart/
+│   │   │   │   │   ├── pic-1.png
+│   │   │   │   │   ├── pic-2.png
+│   │   │   │   │   ├── pic-3.png
+│   │   │   │   │   └── pic-4.png
+│   │   │   │   ├── file-icons/
+│   │   │   │   │   ├── 128/
+│   │   │   │   │   ├── 256/
+│   │   │   │   │   ├── 512/
+│   │   │   │   │   ├── 64/
+│   │   │   │   │   ├── extension/
+│   │   │   │   │   ├── chrome.png
+│   │   │   │   │   ├── firefox.png
+│   │   │   │   │   ├── icon-3.svg
+│   │   │   │   │   ├── icon-google.svg
+│   │   │   │   │   ├── Internet-Explorer.png
+│   │   │   │   │   ├── opera.png
+│   │   │   │   │   ├── Safari.png
+│   │   │   │   │   └── vivaldi.png
+│   │   │   │   ├── lazy-load/
+│   │   │   │   │   ├── 1.jpg
+│   │   │   │   │   ├── 1_small.jpg
+│   │   │   │   │   ├── 2.jpg
+│   │   │   │   │   ├── 2_small.jpg
+│   │   │   │   │   ├── 3.jpg
+│   │   │   │   │   ├── 3_small.jpg
+│   │   │   │   │   ├── 4.jpg
+│   │   │   │   │   ├── 4_small.jpg
+│   │   │   │   │   ├── 5.jpg
+│   │   │   │   │   ├── 5_small.jpg
+│   │   │   │   │   ├── 6.jpg
+│   │   │   │   │   └── 6_small.jpg
+│   │   │   │   ├── lightbox/
+│   │   │   │   │   ├── play-button.png
+│   │   │   │   │   ├── thumb-v-v-1.jpg
+│   │   │   │   │   ├── thumb-v-v-2.jpg
+│   │   │   │   │   ├── thumb-v-y-1.jpg
+│   │   │   │   │   └── thumb-v-y-2.jpg
+│   │   │   │   ├── product_images/
+│   │   │   │   │   ├── apple-watch.jpg
+│   │   │   │   │   ├── apple-watch_2.jpg
+│   │   │   │   │   ├── baf.jpeg
+│   │   │   │   │   ├── ball.jpeg
+│   │   │   │   │   ├── beats-headphone.jpg
+│   │   │   │   │   ├── headphone.jpeg
+│   │   │   │   │   ├── Homepod.png
+│   │   │   │   │   ├── homepod_small.png
+│   │   │   │   │   ├── imac.png
+│   │   │   │   │   ├── iphone-x.jpg
+│   │   │   │   │   ├── iphone.png
+│   │   │   │   │   ├── macbook-pro.png
+│   │   │   │   │   ├── magic-mouse.png
+│   │   │   │   │   ├── shoe.jpeg
+│   │   │   │   │   ├── shoe_2.jpeg
+│   │   │   │   │   ├── shoe_3.jpeg
+│   │   │   │   │   └── watch.jpeg
+│   │   │   │   ├── product_images_2/
+│   │   │   │   │   ├── thumb_image1.jpg
+│   │   │   │   │   ├── thumb_image10.jpg
+│   │   │   │   │   ├── thumb_image11.jpg
+│   │   │   │   │   ├── thumb_image12.jpg
+│   │   │   │   │   ├── thumb_image2.jpg
+│   │   │   │   │   ├── thumb_image3.jpg
+│   │   │   │   │   ├── thumb_image4.jpg
+│   │   │   │   │   ├── thumb_image5.jpg
+│   │   │   │   │   ├── thumb_image6.jpg
+│   │   │   │   │   ├── thumb_image7.jpg
+│   │   │   │   │   ├── thumb_image8.jpg
+│   │   │   │   │   └── thumb_image9.jpg
+│   │   │   │   ├── samples/
+│   │   │   │   │   ├── 1280x768/
+│   │   │   │   │   ├── 300x300/
+│   │   │   │   │   ├── profile_page/
+│   │   │   │   │   ├── tab_preview/
+│   │   │   │   │   ├── angular-4.png
+│   │   │   │   │   ├── bg_1.jpg
+│   │   │   │   │   ├── bootstrap-stack.png
+│   │   │   │   │   ├── camera-placeholder.svg
+│   │   │   │   │   ├── charts.png
+│   │   │   │   │   ├── dashboard.png
+│   │   │   │   │   ├── e-commerce.png
+│   │   │   │   │   ├── editors.png
+│   │   │   │   │   ├── email.png
+│   │   │   │   │   ├── footer_bg.jpg
+│   │   │   │   │   ├── forms.png
+│   │   │   │   │   ├── html5.png
+│   │   │   │   │   ├── invoice_banner.jpg
+│   │   │   │   │   ├── lockscreen-bg.jpg
+│   │   │   │   │   ├── Login_bg.jpg
+│   │   │   │   │   ├── Login_bg2.jpg
+│   │   │   │   │   ├── Mac.png
+│   │   │   │   │   ├── modal.png
+│   │   │   │   │   ├── popup.png
+│   │   │   │   │   ├── weather.svg
+│   │   │   │   │   └── widgets.png
+│   │   │   │   ├── screenshots/
+│   │   │   │   │   ├── analytics-dasboard.jpg
+│   │   │   │   │   ├── classic-dashboard.jpg
+│   │   │   │   │   ├── crm-dashboard.jpg
+│   │   │   │   │   ├── dark-dashboard.png
+│   │   │   │   │   ├── default-dark.jpg
+│   │   │   │   │   ├── default-two.jpg
+│   │   │   │   │   ├── default.jpg
+│   │   │   │   │   ├── e-commerce_dashboard.jpg
+│   │   │   │   │   ├── finance-dashboard.jpg
+│   │   │   │   │   ├── horizontal-screens.jpg
+│   │   │   │   │   ├── Marketing-dashboard.jpg
+│   │   │   │   │   └── modern-dashboard.jpg
+│   │   │   │   ├── social_icons/
+│   │   │   │   │   ├── facebook.svg
+│   │   │   │   │   ├── google_plus.svg
+│   │   │   │   │   ├── instagram.svg
+│   │   │   │   │   ├── twitter.svg
+│   │   │   │   │   └── youtube.svg
+│   │   │   │   ├── sprites/
+│   │   │   │   │   ├── blue.png
+│   │   │   │   │   ├── dark.png
+│   │   │   │   │   ├── flag.png
+│   │   │   │   │   ├── green.png
+│   │   │   │   │   ├── jsgrid-icons.png
+│   │   │   │   │   ├── logo-mini.svg
+│   │   │   │   │   ├── red.png
+│   │   │   │   │   └── yellow.png
+│   │   │   │   ├── thumb_images/
+│   │   │   │   │   ├── thumb_image1.jpg
+│   │   │   │   │   ├── thumb_image2.jpg
+│   │   │   │   │   ├── thumb_image3.jpg
+│   │   │   │   │   ├── thumb_image4.jpg
+│   │   │   │   │   ├── thumb_image5.jpg
+│   │   │   │   │   ├── thumb_image6.jpg
+│   │   │   │   │   ├── thumb_image7.jpg
+│   │   │   │   │   ├── thumb_image8.jpg
+│   │   │   │   │   └── thumb_image9.jpg
+│   │   │   │   ├── weather_icons/
+│   │   │   │   │   ├── sun.svg
+│   │   │   │   │   └── sunset.svg
+│   │   │   │   ├── favicon.ico
+│   │   │   │   ├── favicon.png
+│   │   │   │   ├── logo-mini-4.svg
+│   │   │   │   ├── logo-mini.svg
+│   │   │   │   ├── logo-mini_10.svg
+│   │   │   │   ├── logo-mini_11.svg
+│   │   │   │   ├── logo-mini_3.svg
+│   │   │   │   ├── logo-mini_5.svg
+│   │   │   │   ├── logo-mini_6.svg
+│   │   │   │   ├── logo-mini_7.svg
+│   │   │   │   ├── logo.svg
+│   │   │   │   ├── logo_10.svg
+│   │   │   │   ├── logo_11.svg
+│   │   │   │   ├── logo_2.svg
+│   │   │   │   ├── logo_3.svg
+│   │   │   │   ├── logo_5.svg
+│   │   │   │   ├── logo_6.svg
+│   │   │   │   ├── logo_7.svg
+│   │   │   │   ├── logo_8.svg
+│   │   │   │   ├── logo_9.svg
+│   │   │   │   ├── logo_blue.svg
+│   │   │   │   ├── logo_dark.svg
+│   │   │   │   ├── logo_dark_mini.svg
+│   │   │   │   └── logo_star_white.svg
+│   │   │   └── vendors/
+│   │   │       ├── chart.js/
+│   │   │       │   └── Chart.min.js
+│   │   │       ├── css/
+│   │   │       │   ├── vendor.bundle.addons.css
+│   │   │       │   └── vendor.bundle.base.css
+│   │   │       ├── flag-icon-css/
+│   │   │       │   ├── css/
+│   │   │       │   └── flags/
+│   │   │       ├── font-awesome/
+│   │   │       │   ├── css/
+│   │   │       │   └── fonts/
+│   │   │       ├── iconfonts/
+│   │   │       │   ├── flag-icon-css/
+│   │   │       │   ├── font-awesome/
+│   │   │       │   ├── ionicons/
+│   │   │       │   ├── mdi/
+│   │   │       │   └── puse-icons-feather/
+│   │   │       ├── js/
+│   │   │       │   ├── bootstrap.min.js.map
+│   │   │       │   ├── vendor.bundle.addons.js
+│   │   │       │   └── vendor.bundle.base.js
+│   │   │       └── mdi/
+│   │   │           ├── css/
+│   │   │           └── fonts/
+│   │   ├── components/
+│   │   │   ├── AddCategoryModal.vue
+│   │   │   ├── AddItemModal.vue
+│   │   │   ├── CategoryDetail.vue
+│   │   │   ├── CategoryListIcon.vue
+│   │   │   ├── CollectionCard.vue
+│   │   │   ├── ConfigurationModal.vue
+│   │   │   ├── CopyTextButton.vue
+│   │   │   ├── DeleteFileDialog.vue
+│   │   │   ├── DynamicConfigFields.vue
+│   │   │   ├── GenerateImageDialog.vue
+│   │   │   ├── ItemGrid.vue
+│   │   │   ├── ItemImageCard.vue
+│   │   │   ├── ItemVoiceCard.vue
+│   │   │   ├── ItemVoicesSection.vue
+│   │   │   ├── JsonDetailsPopup.vue
+│   │   │   ├── LoginForm.vue
+│   │   │   ├── MobileActionsMenu.vue
+│   │   │   ├── MockDataBadge.vue
+│   │   │   ├── ServerWord.vue
+│   │   │   ├── ServiceIcon.vue
+│   │   │   ├── ViewBreadcrumb.vue
+│   │   │   ├── VoiceAudioPreview.vue
+│   │   │   ├── VoiceCardsGrid.vue
+│   │   │   ├── VoiceDialog.vue
+│   │   │   ├── VoiceGenerationDetails.vue
+│   │   │   └── VoiceParametersTooltip.vue
+│   │   ├── composables/
+│   │   │   ├── useAudioPlayer.ts
+│   │   │   ├── useContentLanguage.ts
+│   │   │   └── useCurrentUser.ts
+│   │   ├── data/
+│   │   │   └── mockData.ts
+│   │   ├── layouts/
+│   │   │   ├── AppFooter.vue
+│   │   │   ├── AppLayout.vue
+│   │   │   ├── AppNavbar.vue
+│   │   │   └── AppSidebar.vue
+│   │   ├── mocks/
+│   │   │   ├── browser.ts
+│   │   │   ├── configurationHandlers.ts
+│   │   │   ├── contentHandlers.ts
+│   │   │   ├── itemVoiceHandlers.ts
+│   │   │   └── mockToken.ts
+│   │   ├── router/
+│   │   │   └── index.ts
+│   │   ├── types/
+│   │   │   ├── configurationSchemas.ts
+│   │   │   ├── contentSchemas.ts
+│   │   │   ├── evaluationSchemas.ts
+│   │   │   ├── index.ts
+│   │   │   ├── itemVoices.ts
+│   │   │   ├── localization.ts
+│   │   │   ├── loggingSchemas.ts
+│   │   │   ├── sharedSchemas.ts
+│   │   │   ├── textToImageSchemas.ts
+│   │   │   ├── textToSpeechSchemas.ts
+│   │   │   ├── textTranslationSchemas.ts
+│   │   │   ├── viewModels.ts
+│   │   │   └── voiceOptimizationSchemas.ts
+│   │   ├── utils/
+│   │   │   ├── cacheBustedUri.ts
+│   │   │   ├── categoryIds.ts
+│   │   │   ├── configurationNavigation.ts
+│   │   │   ├── googleIdentity.ts
+│   │   │   ├── imageId.ts
+│   │   │   ├── imageResize.ts
+│   │   │   ├── itemIds.ts
+│   │   │   ├── itemVoiceCopy.ts
+│   │   │   ├── itemVoices.ts
+│   │   │   ├── jwt.ts
+│   │   │   ├── localizedConfigurations.ts
+│   │   │   ├── localizedLabels.ts
+│   │   │   ├── pascalCaseWords.ts
+│   │   │   ├── permissions.ts
+│   │   │   ├── ttsConfigurations.ts
+│   │   │   ├── voiceGenerationPreferences.ts
+│   │   │   └── voiceLabels.ts
+│   │   ├── views/
+│   │   │   ├── CategoriesView.vue
+│   │   │   ├── ConfigurationsView.vue
+│   │   │   ├── DashboardView.vue
+│   │   │   ├── ItemDetailsView.vue
+│   │   │   ├── LoginView.vue
+│   │   │   └── ServiceConfigurationView.vue
+│   │   ├── App.vue
+│   │   ├── env.d.ts
+│   │   └── main.ts
+│   ├── tests/
+│   │   ├── auth.test.mjs
+│   │   ├── contentAvailability.test.mjs
+│   │   ├── itemVoices.test.ts
+│   │   └── itemVoicesApi.test.mjs
+│   ├── code_improvements.md
+│   ├── index.html
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── tsconfig.json
+│   └── vite.config.ts
+└── scripts/
+    ├── mxfix/
+    │   ├── strategy/
+    │   │   ├── __init__.py
+    │   │   ├── batch.py
+    │   │   ├── common.py
+    │   │   ├── heal.py
+    │   │   ├── report.py
+    │   │   └── work.py
+    │   ├── __init__.py
+    │   ├── claude_fixer.py
+    │   ├── codex_fixer.py
+    │   ├── config.py
+    │   ├── fix_result_schema.json
+    │   ├── fixer.py
+    │   ├── git_target.py
+    │   └── worktree.py
+    ├── mxissues/
+    │   ├── sources/
+    │   │   ├── __init__.py
+    │   │   ├── detector.py
+    │   │   ├── e2e.py
+    │   │   ├── pylint_source.py
+    │   │   └── pytest_source.py
+    │   ├── trackers/
+    │   │   ├── __init__.py
+    │   │   ├── github.py
+    │   │   └── gitlab.py
+    │   ├── __init__.py
+    │   ├── cache.py
+    │   ├── config.py
+    │   ├── fingerprint.py
+    │   ├── models.py
+    │   ├── paths.py
+    │   ├── sync.py
+    │   └── tracker.py
+    ├── testenvlib/
+    │   ├── __init__.py
+    │   ├── dockerutil.py
+    │   ├── envfile.py
+    │   ├── paths.py
+    │   ├── proc.py
+    │   └── pyenv.py
+    ├── app.py
+    ├── app.sh
+    ├── clean_null_bytes.py
+    ├── cli.sh
+    ├── deploy.sh
+    ├── export_env_variables.py
+    ├── export_openapi.py
+    ├── fix_crlf.py
+    ├── generate_mockdata.py
+    ├── generate_ts_client.py
+    ├── generate_ts_schemas.py
+    ├── issues.py
+    ├── list_categories.sh
+    ├── login.sh
+    ├── requirements.txt
+    ├── setup.sh
+    ├── setup_initial.py
+    ├── sync_repo.py
+    ├── testenv.py
+    ├── testenv.sh
+    ├── testenv_config.py
+    ├── testenv_seed.py
+    ├── validate.sh
+    ├── validate_build.py
+    ├── validate_frontend_build.py
+    └── validate_tests.py

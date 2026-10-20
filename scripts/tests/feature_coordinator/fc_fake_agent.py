@@ -1,0 +1,142 @@
+#!/usr/bin/python3
+"""A stand-in for the `claude` and `codex` CLIs, used by the Phase 3 tests.
+
+It answers `--version` and `--help` (`exec --help`) with the flags the launchers require,
+and otherwise behaves like a non-interactive agent run: it reads the prompt from stdin,
+takes the JSON action list after a `FAKE-ACTIONS:` line, performs the actions relative to
+its working directory and reports every attempt in the CLI's own output format
+(Claude Code stream-json `result` event, or Codex JSONL events). No model is involved.
+
+Actions: write, try_write, delete, symlink, read, try_read, sleep, wait_for, git,
+ignore_sigterm, daemon (a grandchild that keeps appending to a file), exit.
+Standard library only: it runs inside the sandbox with the system interpreter.
+"""
+
+# pylint: disable=missing-function-docstring
+
+import json
+import os
+import signal
+import subprocess
+import sys
+import time
+
+HELP = """Usage: fake-agent [options]
+  -p, --print  --output-format <format> (text, json, stream-json)  --verbose  --restricted
+  --tools <tools...>  --settings <file-or-json>  --strict-mcp-config
+  --permission-mode <mode> (acceptEdits, dontAsk, plan)  --permission-prompts <target>
+  --no-session-persistence  --disable-slash-commands  --max-budget-usd <amount>  --model <model>
+exec options:
+  --json  -s, --sandbox <SANDBOX_MODE> [read-only, workspace-write]  --ephemeral  --ignore-user-config
+  -C, --cd <DIR>  -o, --output-last-message <FILE>  -c, --config <key=value>  -m, --model <MODEL>
+"""
+
+
+def attempt(report, label, func):
+    try:
+        value = func()
+        report.append({"action": label, "ok": True, "value": value})
+    except Exception as exc:  # pylint: disable=broad-except
+        report.append({"action": label, "ok": False, "error": f"{type(exc).__name__}: {exc}"})
+
+
+def write(path, text):
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(text)
+    return len(text)
+
+
+def read(path):
+    with open(path, encoding="utf-8") as handle:
+        return handle.read()[:200]
+
+
+def daemon(path, interval):
+    """Fork a grandchild (new session) that appends to *path* until it is killed."""
+    pid = os.fork()
+    if pid == 0:
+        os.setsid()
+        while True:
+            try:
+                with open(path, "a", encoding="utf-8") as handle:
+                    handle.write(f"{time.time()}\n")
+            except OSError:
+                pass
+            time.sleep(interval)
+    return pid
+
+
+def run_actions(actions):  # pylint: disable=too-many-branches
+    report = []
+    for act in actions:
+        kind = act["do"]
+        if kind == "write":
+            write(act["path"], act.get("text", "x\n"))
+            report.append({"action": f"write {act['path']}", "ok": True})
+        elif kind == "try_write":
+            attempt(report, f"try_write {act['path']}", lambda a=act: write(a["path"], a.get("text", "x\n")))
+        elif kind == "delete":
+            attempt(report, f"delete {act['path']}", lambda a=act: os.remove(a["path"]))
+        elif kind == "symlink":
+            attempt(report, f"symlink {act['link']}", lambda a=act: os.symlink(a["target"], a["link"]))
+        elif kind in ("read", "try_read"):
+            attempt(report, f"read {act['path']}", lambda a=act: read(a["path"]))
+        elif kind == "sleep":
+            time.sleep(act["seconds"])
+        elif kind == "wait_for":
+            deadline = time.time() + act.get("timeout", 30)
+            while not os.path.exists(act["path"]) and time.time() < deadline:
+                time.sleep(0.02)
+            report.append({"action": f"wait_for {act['path']}", "ok": os.path.exists(act["path"])})
+        elif kind == "git":
+            proc = subprocess.run(["git", *act["args"]], capture_output=True, text=True, check=False)
+            report.append({"action": "git " + " ".join(act["args"]), "ok": proc.returncode == 0,
+                           "error": proc.stderr.strip()[-300:]})
+        elif kind == "ignore_sigterm":
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        elif kind == "daemon":
+            report.append({"action": "daemon", "ok": True, "value": daemon(act["path"], act.get("interval", 0.05))})
+        elif kind == "exit":
+            emit(report, error=act.get("code", 1) != 0)
+            sys.exit(act.get("code", 1))
+    return report
+
+
+MODE = "codex" if len(sys.argv) > 1 and sys.argv[1] == "exec" else "claude"
+
+
+def emit(report, error=False):
+    text = json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd(), "home": os.environ.get("HOME"),
+                       "env_keys": sorted(os.environ), "report": report})
+    if MODE == "claude":
+        print(json.dumps({"type": "system", "subtype": "init"}), flush=True)
+        print(json.dumps({"type": "result", "subtype": "error_during_execution" if error else "success",
+                          "is_error": error, "result": text, "num_turns": 1, "total_cost_usd": 0.0,
+                          "permission_denials": []}), flush=True)
+    else:
+        print(json.dumps({"type": "thread.started"}), flush=True)
+        print(json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": text}}), flush=True)
+        print(json.dumps({"type": "turn.failed", "error": {"message": "scripted"}} if error
+                         else {"type": "turn.completed", "usage": {}}), flush=True)
+
+
+def main():
+    args = sys.argv[1:]
+    if "--version" in args:
+        print("fake-agent 1.0")
+        return 0
+    if "--help" in args:
+        print(HELP)
+        return 0
+    prompt = sys.stdin.read()
+    actions = []
+    for line in prompt.splitlines():
+        if line.startswith("FAKE-ACTIONS:"):
+            actions = json.loads(line[len("FAKE-ACTIONS:"):])
+    emit(run_actions(actions))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

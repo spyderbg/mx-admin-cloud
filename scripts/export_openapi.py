@@ -9,10 +9,15 @@ Usage:
     python scripts/export_openapi.py --service translation # one service
     python scripts/export_openapi.py --service logging
     python scripts/export_openapi.py --all # full app spec
+    python scripts/export_openapi.py --docs-agents # docs_agents/backend/**/openapi.yaml
+    python scripts/export_openapi.py --docs-agents --check # verify them, write nothing
 
 Options:
     --service <name> Export only the named service (see SERVICES below).
     --all Export the full app spec (all routes). Output: docs/openapi.yaml
+    --docs-agents Export one spec per service package (plus the API layer) into docs_agents/,
+                  owned by endpoint module rather than URL prefix (see scripts/openapi_docs.py).
+    --check With --docs-agents: exit 1 if the files on disk differ from a fresh export.
 """
 
 from __future__ import annotations
@@ -265,6 +270,42 @@ def export_all(full_schema: dict) -> None:
     schemas = full_schema.get("components", {}).get("schemas", {})
     print(f"[Full app]  {len(paths)} path(s), {len(schemas)} schema(s) → {output}")
 
+
+def export_docs_agents(full_schema: dict, *, check: bool) -> int:
+    """Write (or, with *check*, only verify) docs_agents/backend/**/openapi.yaml. Returns an exit code."""
+    import openapi_docs  # pylint: disable=import-outside-toplevel  # scripts/ sits on sys.path when run directly
+
+    docs_root = ROOT / "docs_agents"
+    service_names = openapi_docs.discover_service_packages(BACKEND_ROOT / "src" / "services")
+    try:
+        rendered = openapi_docs.generate(full_schema, app.routes, service_names, docs_root)
+    except openapi_docs.OwnershipError as exc:
+        print(f"Operation ownership is incomplete or ambiguous:\n{exc}", file=sys.stderr)
+        return 1
+
+    owned = sum(
+        openapi_docs.count_operations(yaml.safe_load(text).get("paths") or {}) for text in rendered.values()
+    )
+    total = openapi_docs.count_operations(full_schema.get("paths", {}))
+    if owned != total:
+        print(f"Exported {owned} operation(s), but the app has {total}.", file=sys.stderr)
+        return 1
+
+    if check:
+        problems = openapi_docs.compare(rendered, docs_root)
+        for problem in problems:
+            print(problem, file=sys.stderr)
+        print(f"[docs_agents]  {len(rendered)} document(s), {total} operation(s): "
+              + ("up to date" if not problems else f"{len(problems)} problem(s)"))
+        return 1 if problems else 0
+
+    openapi_docs.write(rendered)
+    for path, text in sorted(rendered.items()):
+        operations = openapi_docs.count_operations(yaml.safe_load(text).get("paths") or {})
+        print(f"  {operations:3d} operation(s) → {path.relative_to(ROOT)}")
+    print(f"[docs_agents]  {len(rendered)} document(s), {total} operation(s)")
+    return 0
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -272,6 +313,9 @@ def export_all(full_schema: dict) -> None:
 def main() -> None:
     args = sys.argv[1:]
     full_schema = app.openapi()
+
+    if "--docs-agents" in args:
+        sys.exit(export_docs_agents(full_schema, check="--check" in args))
 
     if "--all" in args:
         export_all(full_schema)

@@ -1,0 +1,237 @@
+# Feature coordinator — documented example configuration for mx-admin-cloud (v5 §10).
+#
+# This file is DOCUMENTATION, not a live credential file. It loads into exactly the same
+# object as the coordinator's built-in configuration (scripts/feature_coordinator/config.py,
+# default_config()); `python scripts/feature.py config` and the test suite verify that.
+#
+# Never put endpoints, API keys or other secrets here. Provider endpoints and keys are read
+# from the runtime environment only (variable NAMES below). Paths are repository-relative
+# POSIX patterns: owned/excluded paths are either "<dir>/**" (a subtree) or an exact file;
+# protected/approval lists may also use "*" inside one segment and a leading "**/" (any depth).
+
+schema_version: 1
+repository: mx-admin-cloud
+
+# Fixed v5 ceilings — validated, not configurable:
+execution_host: single-linux            # all agent processes, Git and tools on one Linux host
+checkout_mode: shared-single-feature    # one shared checkout, one active feature at a time
+
+feature:
+  branch_pattern: "feature/{slug}"      # exactly one branch per feature
+  base_branch: dev                      # D-4 approved 2026-10-17: feature/* branches start from dev
+  pr_policy: one-after-all-gates        # exactly one final PR per feature, after every gate passes
+
+git:
+  single_mutation_coordinator: true     # only the Git coordinator mutates .git
+  serialize_commits_push_branch_and_pr: true
+  no_agent_branch_switches: true        # branch operations need every writer quiescent
+  no_per_agent_worktrees: true          # one shared checkout; no worktree per agent
+
+state:
+  # Resolved as $XDG_STATE_HOME/<app_dir>, else ~/.local/state/<app_dir> (D-12). Outside Git.
+  app_dir: mx-admin-agents
+  # Deny-by-default allowlist; FUSE and network filesystems are always rejected.
+  allowed_filesystems: [ext4, ext3, ext2, xfs, btrfs, f2fs, tmpfs]
+
+roles:                                   # max_writers is fixed to 1 per role (v5 ceiling)
+  backend:
+    provider: claude
+    owned_paths: ["backend/**", "docs_agents/backend/**"]
+    excluded_paths: ["backend/data/**"]
+    max_writers: 1
+  cli:
+    provider: claude
+    owned_paths: ["cli/**", "docs_agents/cli/**"]
+    max_writers: 1
+  frontend:
+    provider: codex
+    owned_paths: ["frontend/**", "docs_agents/frontend/**"]
+    max_writers: 1
+  automation:
+    provider: remote_qwen
+    owned_paths: ["scripts/**", "test_environment/**", "docs_agents/automation/**"]
+    excluded_paths: ["scripts/mxfix/**", "scripts/mxissues/**", "scripts/deploy.sh"]
+    max_writers: 1
+  coordination:
+    provider: claude                     # configurable
+    owned_paths: ["docs_agents/coordination/**"]
+    max_writers: 1
+
+# Never writable by any role, and no task grant can change that.
+protected_paths:
+  - ".git/**"
+  - ".env"
+  - ".env.*"
+  - "**/.env"                            # env files at any depth (dev/debug defaults stay unchanged, D-5)
+  - "**/.env.*"
+  - "content/**"
+  - "data/**"
+  - "backend/data/**"
+  - "scripts/mxfix/**"                   # independent bug-finding/repair system
+  - "scripts/mxissues/**"                # independent bug-finding/repair system
+
+# Writable only with an explicit, task-specific operator grant (v5 §3).
+approval_required_paths:
+  - "CLAUDE.md"
+  - "AGENTS.md"
+  - "README.md"
+  - ".gitignore"
+  - ".gitlab-ci.yml"
+  - "testenv.toml"
+  - "scripts/deploy.sh"
+  - ".claude/**"
+  - ".cursor/**"
+  - ".opencode/**"
+  - ".aiassistant/**"
+  - ".agents/**"
+  - ".github/**"
+  - "docker/**"
+  - "docs_agents/architecture/**"
+  - "docs_agents/README.md"
+
+providers:
+  claude:
+    kind: claude-code
+    executable: claude
+    model: ""                            # empty: Claude Code's own default model
+    credential_files: [.claude/.credentials.json]   # home-relative; bound READ-ONLY into the sandbox
+  codex:
+    kind: codex
+    executable: codex
+    model: ""
+    credential_files: [.codex/auth.json]
+  remote_qwen:
+    # Exact operator profile (v5 §10.1.1). Configuration input, NOT verified behavior.
+    kind: openai-compatible
+    default_model: Qwen3.6-35B-A3B-Q4_K_M.gguf   # exact ID; overridable at runtime via model_env
+    display_name: Qwen 3.6 35B A3B
+    base_url_env: AGENT_QWEN_BASE_URL     # ends in /v1; the client appends /chat/completions once
+    model_env: AGENT_QWEN_MODEL
+    api_key_env: AGENT_QWEN_API_KEY       # optional; private secret store only (D-18)
+    api_route: chat.completions
+    declared_capabilities:                # claims only — every one is disabled until validated (V5-5)
+      tool_calling: true
+      vision: true
+      streaming: true
+      thinking: true
+    validated_capabilities: []            # filled only after a validation run
+    context_window_tokens: 131072
+    declared_max_input_tokens: 128000     # metadata; NOT usable together with the full output reservation
+    max_output_tokens: 16384
+    safety_margin_tokens: 4096
+    effective_max_input_tokens: 110592    # 131072 - 16384 - 4096 (hard maximum 114688)
+    temperature: 0.2
+    client_edit_tools: [apply-patch, multi-find-replace, find-replace]   # executed LOCALLY, Automation paths only
+    connect_timeout_seconds: 10
+    request_timeout_seconds: 180
+    max_retries: 2
+    require_tool_use_validation: true
+    require_tls: true                     # plain-HTTP non-loopback endpoints blocked ...
+    plain_http_exception: false           # ... unless the operator records an exception (D-15)
+    code_disclosure_allowed: false        # sending repository code needs an approved policy (D-16)
+
+# Gate commands (argv). backend-*, cli-* and frontend-* gates run in that directory, others at the root.
+# Every gate runs in a bubblewrap sandbox: the checkout READ-ONLY, no network, private /tmp and HOME.
+gates:
+  backend-tests: [python, -m, pytest, -q, -p, "no:cacheprovider"]
+  contract-check: [python, scripts/export_openapi.py, --docs-agents, --check]
+  docs-check: [python, scripts/check_docs_agents.py]
+  frontend-type-check: [npm, run, type-check]
+  frontend-build: [npm, run, build, --, --outDir, /tmp/fc-frontend-dist, --emptyOutDir]   # output to private /tmp
+  frontend-tests: [npm, run, "test:voices"]
+  frontend-tests-content: [npm, run, "test:content"]
+  frontend-tests-auth: [npm, run, "test:auth"]
+  coordinator-tests: [python, -m, pytest, -q, -p, "no:cacheprovider", scripts/tests]
+
+# Baseline-aware Pylint gates (D-19): findings already present at the feature's base commit
+# are reported; findings the feature introduces block. The only policy is block-new.
+lint_gates:
+  backend-lint:
+    root: backend
+    targets: [src]
+    pythonpath: [src]
+    policy: block-new
+  cli-lint:
+    root: cli
+    targets: [src/kiddo_cli]
+    pythonpath: [src]
+    policy: block-new
+
+# Gates that must not run against a real checkout until the named fix lands (reported as "blocked").
+unsafe_gates:
+  backend-tests: "B-7/F-5: backend tests write registry lock files into the real content/ tree; blocked against a real checkout until the Backend-owned fix lands"
+
+# How real runners and gates execute (Phase 3).
+runtime:
+  containment: bwrap                     # fixed: write-capable runs are never unconfined
+  agent_network: true                    # runners need their model API; gates never get network
+  gate_network: false                    # fixed
+  task_timeout_seconds: 3600
+  heartbeat_interval_seconds: 10
+  stale_heartbeat_seconds: 120           # an alive worker without heartbeats is reported "unresponsive"
+  terminate_grace_seconds: 10            # SIGTERM, then SIGKILL of the whole sandbox
+  gate_timeout_seconds: 900
+  claude_max_budget_usd: 5.0             # passed as --max-budget-usd
+  secret_patterns: ["**/.env", "**/.env.*"]    # untracked/ignored matches are hidden from agents
+  secret_exempt_suffixes: [.example, .sample, .template]
+  role_commands:                         # Claude Code Bash allowlist per role (prefix rules); all else denied
+    backend: ["python -m pytest:*", "python -m pylint:*", "python -m compileall:*"]
+    cli: ["python -m pytest:*", "python -m pylint:*", "kiddo-cli --help:*"]
+    coordination: ["python scripts/check_docs_agents.py:*"]
+
+# GitHub Issues adapter (Phase 4). No credentials here: the adapter calls the installed
+# GitHub CLI (`gh api`), which uses its existing login. Issues and labels are the human-
+# visible record only; the local state stays authoritative for claims, locks and permissions.
+github:
+  repository: spyderbg/mx-admin-cloud
+  coordinator_id: mx-admin-cloud.feature-coordinator   # written into every owned Issue's marker
+  transport: gh-cli                      # fixed: the authenticated GitHub CLI
+  gh_executable: gh
+  hostname: github.com
+  write_scope: test-features-only        # Phase 4 ceiling; "all-features" needs operator approval (Phase 5)
+  test_title_prefix: "[Feature Coordinator Test] "
+  command_authors: [spyderbg]            # only these logins may issue /feature commands in comments
+  command_min_permission: write          # ... and only with at least this repository permission
+  request_timeout_seconds: 30
+  max_retries: 3                         # bounded; exponential backoff
+  backoff_base_seconds: 1.0
+  max_backoff_seconds: 30.0
+  max_rate_limit_wait_seconds: 120.0     # a longer rate-limit wait defers the sync instead
+  min_write_interval_seconds: 1.0        # pacing between write requests (secondary rate limits)
+  sync_lock_timeout_seconds: 120.0       # github-sync.lock only; never a coordinator, role or Git lock
+  create_settle_seconds: 5.0             # re-search window after an interrupted Issue creation
+  max_pages: 20                          # 100 items per page; more pages is an error, never a silent cut
+  # GitHub Projects (v2) board (Phase 4 extension; docs_agents/coordination/github-projects.md).
+  # A projection only: the board never claims, locks, starts or approves anything, and a card
+  # moved by a person is restored on the next sync. Needs the gh login's `project` scope.
+  project:
+    enabled: true
+    owner: spyderbg
+    owner_type: user                     # user | organization
+    number: 2                            # "mx-admin-cloud automation"
+    node_id: PVT_kwHOACEIPc4BndH-        # the project's GraphQL ID: owner, number AND node ID must match
+    title: mx-admin-cloud automation     # informational; a different title is only reported
+    protected_numbers: [1]               # "mx-admin-cloud issues" (mxissues bug workflow): never written
+    status_field: Status
+    status_names:                        # board columns, in order (the keys have fixed meanings)
+      backlog: Backlog
+      ready: Ready
+      in_progress: In Progress
+      blocked: Blocked
+      review: Review
+      done: Done
+    status_reuse: {Todo: backlog}        # GitHub's default "Todo" option becomes Backlog (option ID kept)
+    agent_field: Agent
+    agent_names:
+      coordination: Coordination
+      backend: Backend
+      cli: CLI
+      frontend: Frontend
+      automation: Automation
+      full-project: Full Project
+    feature_id_field: Feature ID
+    blocked_reason_field: Blocked Reason
+    board_view: Kanban                   # a board grouped by Status (GitHub's default "View N" board is reused)
+    active_view: Active Tasks            # open Issues in Ready, In Progress, Blocked, Review (D-29)
+    item_settle_seconds: 2.0             # after adding an item, before setting fields (project workflows)
+    max_field_attempts: 2                # field writes re-applied when a read-back differs

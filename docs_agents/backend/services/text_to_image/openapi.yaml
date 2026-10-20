@@ -1,0 +1,342 @@
+# GENERATED FILE - do not edit by hand.
+# Source: the runtime FastAPI schema (app.openapi()) of backend/src/main.py, split by the
+# module that defines each endpoint (see scripts/openapi_docs.py).
+# Regenerate: python scripts/export_openapi.py --docs-agents
+# Verify:     python scripts/export_openapi.py --docs-agents --check
+openapi: 3.1.0
+info:
+  title: mx-admin backend text_to_image service HTTP API
+  version: 0.1.0
+  description: 'Operations whose endpoint functions are defined in: src.services.text_to_image.routes.'
+paths:
+  /internal/image-generators/:
+    get:
+      tags:
+      - internal-image-generators
+      summary: List text to image service configurations
+      description: Return all configured image services with their activation state,
+        config path, generation settings, traffic limits, and price table. The per-provider
+        'workflow' block is omitted to keep the payload compact.
+      operationId: list_image_generators_internal_image_generators__get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/ImageGeneratorProviderInfo'
+                type: array
+                title: Response List Image Generators Internal Image Generators  Get
+      security:
+      - OAuth2PasswordBearer: []
+  /internal/image-generators/generate-image:
+    post:
+      tags:
+      - internal-image-generators
+      summary: Generate an image and return the raw bytes
+      description: Generate an image for a prompt and return the raw image bytes,
+        using the image configuration named by 'provider' or, without it, the first
+        active one that succeeds. The 'X-Image-Provider' header names the configuration
+        that generated the image and 'X-Image-Parameters' carries its generation settings
+        as base64-encoded JSON. Responds with HTTP 400 when the prompt is empty, HTTP
+        404 when 'provider' is not an active configuration, HTTP 500 when generation
+        fails, and HTTP 503 when no active image providers are configured.
+      operationId: generate_image_internal_image_generators_generate_image_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateImageBytesRequest'
+        required: true
+      responses:
+        '200':
+          description: Raw image bytes
+          content:
+            application/json:
+              schema: {}
+            image/png: {}
+        '400':
+          description: Prompt is empty
+        '404':
+          description: Named image configuration not found or not active
+        '500':
+          description: Image generation failed
+        '503':
+          description: No active image providers configured
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /internal/image-generators/{provider}/generate:
+    post:
+      tags:
+      - internal-image-generators
+      summary: Generate an image for one request
+      description: 'Generate an image using the image service named by the ''provider''
+        path parameter and return the result as JSON, including the output path, estimated
+        cost, and attempt count. Provider failures are reported in-band with ''success:
+        false'' and an ''error'' message. Responds with HTTP 404 when the provider
+        is unknown and HTTP 503 when no active image providers are configured.'
+      operationId: generate_single_internal_image_generators__provider__generate_post
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: provider
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Provider
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateImageRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageGenerateResult'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+components:
+  securitySchemes:
+    OAuth2PasswordBearer:
+      type: oauth2
+      flows:
+        password:
+          scopes: {}
+          tokenUrl: /api/v1/login
+  schemas:
+    GenerateImageBytesRequest:
+      properties:
+        prompt:
+          type: string
+          title: Prompt
+        filename_text:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Filename Text
+        provider:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Provider
+      type: object
+      required:
+      - prompt
+      title: GenerateImageBytesRequest
+      description: Body for single-image generation returning raw bytes.
+    GenerateImageRequest:
+      properties:
+        prompt:
+          type: string
+          title: Prompt
+        filename_text:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Filename Text
+        negative_prompt:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Negative Prompt
+        language_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Language Code
+        size:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Size
+        quality:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Quality
+        output_format:
+          type: string
+          title: Output Format
+          default: png
+        seed:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Seed
+        request_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Request Id
+        metadata:
+          additionalProperties: true
+          type: object
+          title: Metadata
+      type: object
+      required:
+      - prompt
+      title: GenerateImageRequest
+      description: Body for a single image generation request.
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    ImageGenerateResult:
+      properties:
+        provider:
+          type: string
+          title: Provider
+        request_id:
+          type: string
+          title: Request Id
+        prompt:
+          type: string
+          title: Prompt
+        filename_text:
+          type: string
+          title: Filename Text
+        output_format:
+          type: string
+          title: Output Format
+        raw_path:
+          type: string
+          title: Raw Path
+        raw_extension:
+          type: string
+          title: Raw Extension
+        latency_seconds:
+          type: number
+          title: Latency Seconds
+        success:
+          type: boolean
+          title: Success
+        model:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model
+        width:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Width
+        height:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Height
+        cost_estimate:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Cost Estimate
+        attempts:
+          type: integer
+          title: Attempts
+          default: 1
+        error:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error
+      type: object
+      required:
+      - provider
+      - request_id
+      - prompt
+      - filename_text
+      - output_format
+      - raw_path
+      - raw_extension
+      - latency_seconds
+      - success
+      title: ImageGenerateResult
+      description: Serialized generated-image payload returned by the generate endpoint.
+    ImageGeneratorProviderInfo:
+      properties:
+        name:
+          type: string
+          title: Name
+        provider:
+          type: string
+          title: Provider
+        enabled:
+          type: boolean
+          title: Enabled
+        priority:
+          type: integer
+          title: Priority
+        config_path:
+          type: string
+          title: Config Path
+        generate:
+          additionalProperties: true
+          type: object
+          title: Generate
+        traffic:
+          additionalProperties: true
+          type: object
+          title: Traffic
+        pricing:
+          additionalProperties: true
+          type: object
+          title: Pricing
+      type: object
+      required:
+      - name
+      - provider
+      - enabled
+      - priority
+      - config_path
+      - generate
+      - traffic
+      - pricing
+      title: ImageGeneratorProviderInfo
+      description: Metadata for one configured image provider (GET /internal/image-generators).
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError

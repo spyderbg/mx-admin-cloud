@@ -333,6 +333,53 @@ class FileSystemCategoriesMixin(ContentProvider):  # pylint: disable=abstract-me
             # A concurrent request created it since the caller checked; the folder is theirs.
             raise CategoryConflictError(f"Category already exists: {category_path.name}") from exc
 
+    def _generate_category_voices(
+            self,
+            category_name: str,
+            category_path: Path,
+            description_en: str,
+    ) -> tuple[dict[str, str], dict[str, str]]:
+        """Translate a new category's label and description and write its voice in every supported language.
+
+        Returns the labels and the descriptions by language.
+        """
+        label_en = category_name.replace("_", " ").strip() or category_name
+        labels_by_lang: dict[str, str] = {}
+        descriptions_by_lang: dict[str, str] = {"en": description_en}
+        for lang in settings.SUPPORTED_LANGUAGES:
+            if lang == "en":
+                label = label_en
+            else:
+                try:
+                    label = self._translate_word(label_en, lang, category_name)
+                    descriptions_by_lang[lang] = self._translate_word(description_en, lang, category_name)
+                except (ValueError, RuntimeError, httpx.HTTPError, KeyError) as exc:
+                    raise ContentOperationError(f"Translation failed for {lang}: {exc}") from exc
+            labels_by_lang[lang] = label
+            try:
+                audio_bytes = self._generate_audio(label, lang)
+                voice_path = category_path / _CATEGORY_VOICE_MP3.format(category_name, lang)
+                with open(voice_path, "wb") as fh:
+                    fh.write(audio_bytes)
+                self._write_generated_voice_metadata(voice_path, audio_bytes, label)
+            except (ValueError, RuntimeError, httpx.HTTPError) as exc:
+                raise ContentOperationError(f"TTS failed for {lang}: {exc}") from exc
+            except OSError as exc:
+                raise ContentOperationError(f"File write failed for {lang}: {exc}") from exc
+        return labels_by_lang, descriptions_by_lang
+
+    def _generate_category_icon(self, category_name: str, category_path: Path) -> None:
+        """Generate a new category's icon and write it as ``{category_name}{ext}``."""
+        try:
+            prompt = self._category_name_to_icon_prompt(category_name)
+            icon_bytes, icon_extension = self._generate_image(prompt, category_name)
+            with open(category_path / f"{category_name}{icon_extension}", "wb") as fh:
+                fh.write(icon_bytes)
+        except (ValueError, RuntimeError, httpx.HTTPError) as exc:
+            raise ContentOperationError(f"Icon generation failed: {exc}") from exc
+        except OSError as exc:
+            raise ContentOperationError(f"Icon file write failed: {exc}") from exc
+
     def create_category(self, category_name: str) -> CreateCategory:
         category_name = self._normalize_category_name(category_name)
         if not self._is_safe_category_name(category_name):
@@ -349,40 +396,10 @@ class FileSystemCategoriesMixin(ContentProvider):  # pylint: disable=abstract-me
 
         try:
             description_en = f"Explore fun items about {category_name.replace('_', ' ').strip() or category_name}."
-            labels_by_lang: dict[str, str] = {}
-            descriptions_by_lang: dict[str, str] = {"en": description_en}
-            for lang in settings.SUPPORTED_LANGUAGES:
-                if lang == "en":
-                    label = category_name.replace("_", " ").strip() or category_name
-                else:
-                    try:
-                        label = self._translate_word(
-                            category_name.replace("_", " ").strip() or category_name, lang, category_name,
-                        )
-                        descriptions_by_lang[lang] = self._translate_word(description_en, lang, category_name)
-                    except (ValueError, RuntimeError, httpx.HTTPError, KeyError) as exc:
-                        raise ContentOperationError(f"Translation failed for {lang}: {exc}") from exc
-                labels_by_lang[lang] = label
-                try:
-                    audio_bytes = self._generate_audio(label, lang)
-                    voice_path = category_path / _CATEGORY_VOICE_MP3.format(category_name, lang)
-                    with open(voice_path, "wb") as fh:
-                        fh.write(audio_bytes)
-                    self._write_generated_voice_metadata(voice_path, audio_bytes, label)
-                except (ValueError, RuntimeError, httpx.HTTPError) as exc:
-                    raise ContentOperationError(f"TTS failed for {lang}: {exc}") from exc
-                except OSError as exc:
-                    raise ContentOperationError(f"File write failed for {lang}: {exc}") from exc
-
-            try:
-                prompt = self._category_name_to_icon_prompt(category_name)
-                icon_bytes, icon_extension = self._generate_image(prompt, category_name)
-                with open(category_path / f"{category_name}{icon_extension}", "wb") as fh:
-                    fh.write(icon_bytes)
-            except (ValueError, RuntimeError, httpx.HTTPError) as exc:
-                raise ContentOperationError(f"Icon generation failed: {exc}") from exc
-            except OSError as exc:
-                raise ContentOperationError(f"Icon file write failed: {exc}") from exc
+            labels_by_lang, descriptions_by_lang = self._generate_category_voices(
+                category_name, category_path, description_en,
+            )
+            self._generate_category_icon(category_name, category_path)
 
             fallback_label = category_name.replace("_", " ").strip()
             self._register_category_rows(
