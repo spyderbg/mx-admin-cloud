@@ -1,0 +1,23 @@
+
+
+Feature: Content Statistics
+          |
+          v
+    Backend API
+     Claude Code
+          |
+     API verified
+          |
+    +-----+-----+
+    |           |
+    v           v
+   CLI        Frontend
+ Claude        Codex
+    |           |
+    +-----+-----+
+          |
+   Integration Gates
+          |
+     One final PR
+          |
+         dev
