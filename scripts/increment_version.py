@@ -17,7 +17,7 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 from zoneinfo import ZoneInfo
 
 PACKAGE = "frontend/package.json"
@@ -30,6 +30,10 @@ RELEASE_SUBJECT = re.compile(r"Increment version to ([0-9]\.[0-9]\.[0-9])\Z")
 
 class ReleaseError(RuntimeError):
     """An actionable release validation or Git error."""
+
+
+def release_tag(version: str) -> str:
+    return f"releases/v{version}"
 
 
 class Git:
@@ -126,11 +130,13 @@ def release_boundary(git: Git, version: str) -> str | None:
         if match:
             if match[1] != version:
                 raise ReleaseError(f"Package version {version} differs from the last increment ({match[1]}).")
-            if git.exists(f"refs/tags/{version}") and git.read("rev-parse", f"{version}^{{commit}}") != commit:
-                raise ReleaseError(f"Tag {version} does not point to the last version increment commit.")
+            for tag in (release_tag(version), version, f"v{version}"):
+                ref = f"refs/tags/{tag}"
+                if git.exists(ref) and git.read("rev-parse", f"{ref}^{{commit}}") != commit:
+                    raise ReleaseError(f"Tag {tag} does not point to the last version increment commit.")
             return commit
     # Bootstrap repositories with a version tag but no script-generated commit.
-    for tag in (version, f"v{version}"):
+    for tag in (release_tag(version), version, f"v{version}"):
         if git.exists(f"refs/tags/{tag}") and git.ancestor(f"refs/tags/{tag}^{{commit}}", "HEAD"):
             return git.read("rev-parse", f"refs/tags/{tag}^{{commit}}")
     return None
@@ -222,8 +228,9 @@ def render_changelog(original: str, version: str, date: str, groups: dict[str, l
         result = re.sub(r"^\[unreleased\]:.*\n?", "", result, flags=re.M | re.I).rstrip()
         separator = "/-/" if "gitlab" in urlsplit(url).hostname else "/"
         compare = f"{url}{separator}compare/"
-        release_url = f"{compare}{boundary}...{version}" if boundary else f"{url}{separator}commits/{version}"
-        result += f"\n\n[Unreleased]: {compare}{version}...HEAD\n[{version}]: {release_url}"
+        tag_url = quote(release_tag(version), safe="")
+        release_url = f"{compare}{boundary}...{tag_url}" if boundary else f"{url}{separator}commits/{tag_url}"
+        result += f"\n\n[Unreleased]: {compare}{tag_url}...HEAD\n[{version}]: {release_url}"
     return result.rstrip() + "\n"
 
 
@@ -248,8 +255,9 @@ def plan_release(git: Git, part: str) -> ReleasePlan:
             raise ReleaseError("package.json and package-lock.json root versions must match before releasing.")
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise ReleaseError(f"Cannot read frontend version files: {exc}") from exc
-    if git.exists(f"refs/tags/{version}"):
-        raise ReleaseError(f"Tag {version} already exists; refusing to overwrite a release.")
+    tag = release_tag(version)
+    if git.exists(f"refs/tags/{tag}"):
+        raise ReleaseError(f"Tag {tag} already exists; refusing to overwrite a release.")
     boundary = release_boundary(git, current)
     revision = f"{boundary}..{head}" if boundary else head
     subjects = git.read("log", "--reverse", "--format=%s", revision).splitlines()
@@ -293,11 +301,12 @@ def publish(git: Git, plan: ReleasePlan) -> None:
         completed.append("release commit")
         require_clean(git)
         phase = "creating the version tag"
-        git.command("tag", "-a", plan.version, "-m", f"Increment version to {plan.version}")
-        completed.append(f"local tag {plan.version}")
+        tag = release_tag(plan.version)
+        git.command("tag", "-a", tag, "-m", f"Increment version to {plan.version}")
+        completed.append(f"local tag {tag}")
         phase = "pushing dev and its tag"
         git.command("push", "--atomic", "origin", "HEAD:refs/heads/dev",
-                    f"refs/tags/{plan.version}:refs/tags/{plan.version}")
+                    f"refs/tags/{tag}:refs/tags/{tag}")
         completed.append("origin/dev and tag pushed")
         phase = "checking out main"
         if git.exists("refs/heads/main"):
@@ -335,7 +344,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         git = Git(Path(__file__).resolve().parent.parent)
         plan = plan_release(git, args.part)
-        print(f"Version: {plan.version}; collected {len(plan.subjects)} commit subjects.")
+        print(f"Version: {plan.version}; tag: {release_tag(plan.version)}; collected {len(plan.subjects)} commit subjects.")
         if args.dry_run:
             print(f"\n--- Preview: {CHANGELOG} ---\n{plan.files[CHANGELOG]}")
             print("Dry run: release files and branches are unchanged (origin refs were fetched).")

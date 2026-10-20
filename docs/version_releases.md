@@ -41,7 +41,8 @@ move into the new release. HTTP/SSH origins get release and comparison links.
 
 The script collects commit subjects (first lines) since the most recent
 first-parent `Increment version to X.Y.Z` commit. Without such a commit, the
-current version tag (`X.Y.Z` or `vX.Y.Z`) supplies the boundary. If neither exists,
+current version tag (`releases/vX.Y.Z`, with legacy `X.Y.Z` and `vX.Y.Z` tags also
+recognized) supplies the boundary. If no boundary exists,
 the first release includes the reachable history. Commit bodies are excluded.
 
 Subject classification recognizes conventional `feat:`, `fix:`, and `security:`
@@ -54,7 +55,7 @@ For curated wording, commit entries in the appropriate Unreleased sections first
 ## Publication
 
 The script commits only the three release files using the exact message
-`Increment version to X.Y.Z`, creates an annotated tag named `X.Y.Z` (without `v`),
+`Increment version to X.Y.Z`, creates an annotated tag named `releases/vX.Y.Z`,
 and atomically pushes `dev` and that tag to origin. The origin must support atomic
 pushes. It then performs the equivalent of:
 

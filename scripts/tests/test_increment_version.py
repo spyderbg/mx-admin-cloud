@@ -66,7 +66,7 @@ class VersionTests(unittest.TestCase):
         self.assertIn("### Added\n\n- Curated feature.", text)
         self.assertIn("### Fixed\n\n- New fix", text)
         self.assertIn("- Older fix.", text)
-        self.assertIn("compare/abc123...1.0.1", text)
+        self.assertIn("compare/abc123...releases%2Fv1.0.1", text)
         self.assertEqual(text.lower().count("[unreleased]:"), 1)
         self.assertNotIn("### Removed", text)
 
@@ -76,7 +76,7 @@ class VersionTests(unittest.TestCase):
         text = release.render_changelog("", "1.0.1", "2026-10-20",
                                         release.change_entries(["Added feature"]),
                                         "git@gitlab.com:team/app.git", "abc")
-        self.assertIn("https://gitlab.com/team/app/-/compare/abc...1.0.1", text)
+        self.assertIn("https://gitlab.com/team/app/-/compare/abc...releases%2Fv1.0.1", text)
 
 
 class ReleaseIntegrationTests(unittest.TestCase):
@@ -140,9 +140,9 @@ class ReleaseIntegrationTests(unittest.TestCase):
         self.assertEqual(lock["packages"]["node_modules/example"]["version"], "1.0.0")
         self.assertEqual(self.git.read("log", "-1", "--format=%s"), "Increment version to 1.0.1")
         head = self.git.read("rev-parse", "HEAD")
-        for ref in ("refs/heads/dev", "refs/heads/main", "refs/tags/1.0.1^{commit}"):
+        for ref in ("refs/heads/dev", "refs/heads/main", "refs/tags/releases/v1.0.1^{commit}"):
             self.assertEqual(self.run_git(self.origin, "rev-parse", ref), head)
-        self.assertEqual(self.git.read("cat-file", "-t", "1.0.1"), "tag")
+        self.assertEqual(self.git.read("cat-file", "-t", "releases/v1.0.1"), "tag")
         self.assertEqual(self.git.read("branch", "--show-current"), "dev")
         self.assertFalse(self.git.read("status", "--porcelain"))
 
@@ -215,10 +215,10 @@ class ReleaseIntegrationTests(unittest.TestCase):
             self.plan()
 
     def test_remote_tag_collision_is_rejected_without_writing_files(self):
-        self.run_git(self.root, "tag", "1.0.1")
-        self.run_git(self.root, "push", "origin", "refs/tags/1.0.1")
-        self.run_git(self.root, "tag", "-d", "1.0.1")
-        with self.assertRaisesRegex(release.ReleaseError, "Tag 1.0.1 already exists"):
+        self.run_git(self.root, "tag", "releases/v1.0.1")
+        self.run_git(self.root, "push", "origin", "refs/tags/releases/v1.0.1")
+        self.run_git(self.root, "tag", "-d", "releases/v1.0.1")
+        with self.assertRaisesRegex(release.ReleaseError, "Tag releases/v1.0.1 already exists"):
             self.plan()
         self.assertFalse(self.git.read("status", "--porcelain"))
 
@@ -232,9 +232,18 @@ class ReleaseIntegrationTests(unittest.TestCase):
             self.plan()
 
     def test_existing_version_tag_is_used_as_initial_boundary(self):
-        self.run_git(self.root, "tag", "1.0.0", "main")
-        plan = self.plan()
-        self.assertEqual(plan.subjects, ["feat: Add voices"])
+        for tag in ("releases/v1.0.0", "1.0.0", "v1.0.0"):
+            with self.subTest(tag=tag):
+                self.run_git(self.root, "tag", tag, "main")
+                plan = self.plan()
+                self.assertEqual(plan.subjects, ["feat: Add voices"])
+                self.run_git(self.root, "tag", "-d", tag)
+
+    def test_moved_release_tag_is_rejected_when_finding_previous_increment(self):
+        self.publish()
+        self.run_git(self.root, "tag", "-f", "releases/v1.0.1", "main^")
+        with self.assertRaisesRegex(release.ReleaseError, "Tag releases/v1.0.1 does not point"):
+            release.release_boundary(self.git, "1.0.1")
 
     def test_merge_conflict_aborts_merge_returns_to_dev_and_reports_partial_release(self):
         self.write("conflict.txt", "dev change\n")
@@ -262,20 +271,20 @@ class ReleaseIntegrationTests(unittest.TestCase):
         plan = self.plan()
         old_main = self.git.read("rev-parse", "main")
         with patch.object(self.git, "command", side_effect=reject_push):
-            with self.assertRaisesRegex(release.ReleaseError, "local tag 1.0.1"):
+            with self.assertRaisesRegex(release.ReleaseError, "local tag releases/v1.0.1"):
                 release.publish(self.git, plan)
         self.assertEqual(self.git.read("branch", "--show-current"), "dev")
         self.assertEqual(self.run_git(self.origin, "rev-parse", "main"), old_main)
-        self.assertNotIn("1.0.1", self.run_git(self.origin, "tag", "--list"))
+        self.assertNotIn("releases/v1.0.1", self.run_git(self.origin, "tag", "--list"))
 
     def test_atomic_push_rejects_dev_update_when_remote_tag_appears_during_release(self):
         plan = self.plan()
         before = self.run_git(self.origin, "rev-parse", "dev")
-        self.run_git(self.origin, "tag", "1.0.1", "main")
+        self.run_git(self.origin, "tag", "releases/v1.0.1", "main")
         with self.assertRaisesRegex(release.ReleaseError, "pushing dev and its tag"):
             release.publish(self.git, plan)
         self.assertEqual(self.run_git(self.origin, "rev-parse", "dev"), before)
-        self.assertEqual(self.run_git(self.origin, "rev-parse", "1.0.1"),
+        self.assertEqual(self.run_git(self.origin, "rev-parse", "refs/tags/releases/v1.0.1"),
                          self.run_git(self.origin, "rev-parse", "main"))
 
     def test_failed_main_push_returns_to_dev_and_reports_dev_was_published(self):
@@ -291,7 +300,7 @@ class ReleaseIntegrationTests(unittest.TestCase):
                 release.publish(self.git, plan)
         self.assertEqual(self.git.read("branch", "--show-current"), "dev")
         self.assertEqual(self.run_git(self.origin, "rev-parse", "main"), old_main)
-        self.assertEqual(self.run_git(self.origin, "rev-parse", "1.0.1^{commit}"),
+        self.assertEqual(self.run_git(self.origin, "rev-parse", "refs/tags/releases/v1.0.1^{commit}"),
                          self.run_git(self.origin, "rev-parse", "dev"))
 
     def test_cli_publishes_requested_minor_version(self):
@@ -300,7 +309,7 @@ class ReleaseIntegrationTests(unittest.TestCase):
                                 capture_output=True, check=False)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Released 1.1.0", result.stdout)
-        self.assertEqual(self.run_git(self.origin, "rev-parse", "1.1.0^{commit}"),
+        self.assertEqual(self.run_git(self.origin, "rev-parse", "refs/tags/releases/v1.1.0^{commit}"),
                          self.run_git(self.origin, "rev-parse", "main"))
 
     def test_branch_switch_after_planning_is_rejected_before_writing(self):
@@ -310,7 +319,7 @@ class ReleaseIntegrationTests(unittest.TestCase):
         with self.assertRaisesRegex(release.ReleaseError, "Current branch changed"):
             release.publish(self.git, plan)
         self.assertFalse(self.git.read("status", "--porcelain"))
-        self.assertFalse(self.git.exists("refs/tags/1.0.1"))
+        self.assertFalse(self.git.exists("refs/tags/releases/v1.0.1"))
 
     def test_cli_dry_run_fetches_and_previews_without_changing_repository(self):
         before = self.git.read("rev-parse", "HEAD")
@@ -318,10 +327,11 @@ class ReleaseIntegrationTests(unittest.TestCase):
                                 cwd=self.root / "frontend", text=True, capture_output=True, check=False)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Version: 1.0.1", result.stdout)
+        self.assertIn("tag: releases/v1.0.1", result.stdout)
         self.assertIn("### Added", result.stdout)
         self.assertEqual(self.git.read("rev-parse", "HEAD"), before)
         self.assertFalse(self.git.read("status", "--porcelain"))
-        self.assertFalse(self.git.exists("refs/tags/1.0.1"))
+        self.assertFalse(self.git.exists("refs/tags/releases/v1.0.1"))
 
 
 if __name__ == "__main__":
