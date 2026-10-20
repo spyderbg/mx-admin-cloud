@@ -362,9 +362,10 @@ def test_delete_item_image_last_remaining_is_allowed(tmp_path: Path) -> None:
     with patch_fs_settings() as mock_settings:
         mock_settings.content_path = content_root
         provider.delete_item_image("C_Foods", "I_Apple", "apple")
+        remaining = provider.item_images("C_Foods", "I_Apple").images
 
     assert not list(item_path.glob("*.png"))
-    assert not provider.item_images("C_Foods", "I_Apple").images
+    assert not remaining
 
 
 # ---------------------------------------------------------------------------
