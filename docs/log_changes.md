@@ -1,0 +1,542 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
+Versions follow the project's single-digit major.minor.build scheme.
+
+## [Unreleased]
+
+## [1.0.1] - 2026-10-20
+
+### Added
+
+- Added docker images and CI/CD for the services
+- Added deploy script for the CI/CD
+- Added cursor rules
+- Added optimizers
+- Added login method
+- Added README rule
+- Added users commands for the CLI
+- Added service-providers separations
+- Added Claude commands, settings, and README sync rules
+- Added frontend endpoints docs Backend ServicePlugins auto registrations
+- Added new word generation command to CLI, adjusted configs for TTS and text translation providers, and improved internal APIs.
+- Added unit tests for TTS provider service, refactored provider resolution logic, and updated APIs for better error handling.
+- Added ServerWord component to the frontend
+- Added content folder to the frontend
+- Add OpenAPI support for logging service generation
+- Added Python-based backend validation script, refactored error and service provider schemas, and updated OpenAPI spec generation logic.
+- Added logging commands to CLI, introduced internal logging route for listing loggers, and removed obsolete text translation OpenAPI spec.
+- Added structured logging commands to CLI, enabling log emission for events, API requests, provider requests, and translator requests through the backend logging service.
+- Added docsctring rules for Calude
+- Added docsctring rules for Cursor
+- Added integration and unit tests for \`ConfigurationService\` and configuration routes in \`src/services/configuration/\`, ensuring full coverage of orchestration logic, request handling, and schema validation.
+- Added left and right margin support to \`\_box\_line\` and box border methods in \`output.py\` for improved formatting flexibility.
+- Add \`provider\_category\` field to logging configurations and schemas
+- Added "reset" endpoint for the logging service.
+- Add "reset" command to logging CLI and update documentation
+- Add \`log\` method to log client: enable structured logging to specific loggers or fallback to default emit
+- Added docs generation for 'configuration' service
+- Add unit and integration tests for ConfigurationService and routes
+- Add unit tests for content service and FileSystemContentProvider.
+- Add VS Code configuration for auto-applying changes in continue.json
+- Add test content service mount, file system config, dev scripts, and gitignore update
+- Add JetBrains IDE config, update OpenAPI schemas with response models
+- Add HTTP client test files for content service
+- Add type usage reference documentation for frontend data models and update HTTP client test file for content service
+- Add test validation script and disable auth by default
+- Add verbose request logging interceptor and clean up debug logs
+- Add category ID field to \`CategoryDetail\` with backend schema, provider, and test updates
+- load category icons from API fallback data in DashboardView
+- add script to generate TypeScript schemas from Pydantic models and generate initial types
+- replace deprecated schema types with updated versions and introduce \`contentClient.ts\` API
+- Added categories thumbnails
+- add thumbnails to category summaries and rename thumbnail\_url → thumbnail\_uri
+- Added validate build script for the frontend.
+- add \`thumbnailUri\` to mock category data
+- add \`LocalizedString\` classes for backend and frontend
+- Added category descriptions.
+- add comprehensive mock data for categories, items, and voices
+- expand mock data with comprehensive category, item, and voice details
+- add generator metadata with date to mock data output
+- add \`LocalizedString\` support to category images and voices
+- add localized labels for items and categories
+- add localized labels for category fields
+- add descriptions to categories with i18n support
+- enhance category and item loaders with fine-grained caching and logging
+- add support for item images and voices retrieval
+- Add \`imagesCount\` support and update item grid badge
+- add script to export folder names to CSV in multiple formats
+- Add a new category 'at home'
+- Added sample voice file
+- implement category voice management
+- enhance image and voice management workflows
+- improve scrolling behavior and enhance category image handling
+- add support for category icon management
+- add localized descriptions for categories
+- Added 'at\_school' categories and images
+- Added new category images for 'at\_school' category
+- add support for item image and voice management
+- Added 'at school' items voices
+- Added mock data badge.
+- Add image resizing utility and apply it to category thumbnails
+- Add frontend package lock
+- Add filesystem provider tests for delete\_archived\_category
+- redesign archived categories section with richer metadata and card-based layout
+- add created date column to archived categories and commit slash command
+- Add configurable archive confirmation mode
+- Added 'fruits' category to the content folder.
+- Add archive confirmation mode flag to dev environment
+- Add full-screen preview for category icon
+- Add full-screen preview for item images
+- Added shapes category
+- Add category-scoped item creation endpoint with best-effort voices
+- Added 'launcher.json' so the VS Code can start backend and frontend project
+- add dockerized CLI tool support
+- Added vehicles category
+- Add text-to-image generation service with multi-provider support
+- Add voice regeneration and improve image upload UX
+- Add text-to-image pipeline and expand content tooling
+- Add repo sync tool with profile-based configuration
+- Add repo sync utility with profile-based mirroring
+- Added "Selected Image" for the item details screen + endpoint that changes the selected image.
+- Add initial environment setup script
+- Add GitHub workflow for GitLab push
+- Add GitHub workflow for GitLab push fix
+- Added parameter 'VITE\_DELETE\_ITEM\_CONFIRMATION\_MODE' to control item delete confirmation mode.
+- Added test environment spec and implementation plan
+- add sandboxed test environment and Playwright e2e suite
+- add GitLab issue tracker CLI to manage tool-owned tasks
+- add testenv execution strategies for AI-driven issue fixing
+- add known gaps doc for test environment
+- add work strategy and share heal's per-issue loop; relax pylint design limits
+- Add CLI override for testenv parameters
+- Add MobileActionsMenu and mobile actions to ItemDetailsView
+- Add score store query APIs and silence excessive-method lint
+- Add docstrings to content service dataclasses
+- Add regenerate-all-voices action and improve item/sidebar UI
+- Add GitHub as an issue tracker backend for the testenv tooling
+- Add id updates for items and categories
+- Add multi-candidate item voices section with selection and preview
+- Add item voice variant selection
+- Add item voice optimization and connect the voices UI to the API
+- Add voice deletion and per-language add cards
+- Add item voice takes on regeneration and advertise voice capabilities
+- Add item voices initial AI spec files.
+- Add per-service provider selection strategies
+- Add configuration overview page and sidebar service navigation
+- Add per-service icons across configuration UI
+- Add Qwen translation provider for self-hosted models
+- Add pyttsx3 TTS provider and refine voice settings UI
+- Added new resources
+- support category ID rename and update CLI; add categories features doc
+- Added optimized vocies
+- Add image generation from text prompts for items
+- Add Google sign-in and read-only viewer access
+- Add additional item voice takes as variants
+- Added more items
+- Add version release script with changelog and tests
+
+### Changed
+
+- Initial commit
+- Initial version for the MarXman Studio admin
+- Update readme file
+- Recreate the deploy script for Ubuntu CI/CD
+- Docker compose v2
+- Docker deploy script docs updated
+- Docker API=1.41
+- Backend-cli container created
+- Refactor deploy script
+- Backend CLI UDS
+- Fixe backend cli container
+- Update .gitlab-ci.yml file
+- UI changes for the footer
+- Use SQLite db for the users
+- Change mode for bash files
+- Ignore files
+- Trasfer the translators and generators code logic
+- Changes to debug application on windows
+- Reorganize cofnig parameters
+- Backend changes
+- CLI log message changes
+- Pylint rule is added for Cursor
+- Pylint issues
+- Changes
+- Updated README files
+- Improve output formating
+- List users
+- Implement service cofiguration for translaters and optimizers
+- Debug mode for the backend
+- Config changes
+- Chaged the configuration files structure
+- Code refactoring
+- Internal API first change
+- Internal API settings directory properties changes
+- Internal API separate routes per service
+- Http boundary API implementation
+- Translate CLI commands in progress
+- Renamed routes files
+- CLI fixed translate command
+- CLI added filter command
+- CLI extend list services command
+- Translate service fixes
+- Translate service changes
+- Idea configurations
+- Idea cnfigurations
+- Minor changes
+- Sync README
+- Core code refactoring
+- Services code refactoring
+- Miner change
+- Service provider register logic changed
+- Config loading different approach
+- Config loader change
+- Renamed optimization to voice\_optimization service name
+- Dynamicly register services
+- Service classes
+- Updated frontend
+- Changed ServiceRegistry class
+- Service register changes
+- Enable mock service worker in development mode and replace mock data with API integration in frontend
+- fixed images gird spacing
+- Audio optimizer factory issues
+- Service registration changes
+- Coloring
+- Updated active providers list
+- Initial tests implementations
+- Code cleanup
+- Frontend changes
+- Frontend update vite
+- Frontend fixed play/stop for voice files
+- Backend fixes
+- Replaced \`uvicorn\_stop.sh\` with \`kill\_uvicorn.sh\`, added PID tracking and socket cleanup. Updated CLI dependencies, improved error handling, and streamlined user management over Unix sockets.
+- Refactored TTS generation logic to eliminate explicit \`output\_format\` argument, using \`TTSRequest.output\_format\` instead. Updated providers, services, models, and tests accordingly.
+- Sync readme files
+- Introduce \`src/api/internal/schemas\` package for OpenAPI contracts and refactor internal APIs to use Pydantic models.
+- Updated translation and TTS APIs to improve parameter handling and streamline response models; refreshed README formatting for consistency.
+- List evaluators as a service
+- Logging changed to use internal calls
+- Latest changes
+- Configuration routes
+- Refactor configuration services: replace \`config\_file\_store\` with \`configuration\` subsystem using provider-based architecture.
+- sync README.md
+- Frontend collapse/expand buttons
+- Optimized CLAUDE.md files
+- Frontend inprovements
+- Category details changes
+- Reorginize rules for the projects
+- Standardize terminology: replace "object" with "item" in backend schemas, routes, services, CLI, docs, and tests.
+- Align logging client and providers with updated schema contracts for internal HTTP endpoints. Refactored \`log\_provider\_request\` and \`log\_translator\_request\` to use schema models, ensuring API consistency.
+- Export OpenAPI docs
+- Set .cursorignore for frontend work
+- Update README.md
+- Set .cursorignore for backend work
+- Set .cursorignore for dev work
+- Changed readme
+- Move .cursorignore to backend/ folder
+- Move .cursorignore to frontend/ folder
+- Correct .cursorignore in frontned/ folder
+- Correct .cursorignore files
+- Exported text\_to\_speech service OpenAPI
+- Initial cloud version for the frontend
+- Update browser title to KiddoWords Admin (#1)
+- Refactored error schemas and replaced \`ErrorDetail\` with \`ErrorMessage\` across internal API. Removed obsolete \`TranslatorProviderInfo\` and introduced \`ServiceProviderInfo\`.
+- Refactored logging schemas and added new structured API request logging functionality. Updated OpenAPI spec and adjusted related endpoints and services.
+- Refactored API routes with reusable constants, improved structured logging for provider and translator requests, and introduced new schemas for service providers. Removed redundant validation script.
+- OpenAPI regenerate
+- Code changes
+- Logging config
+- Logging configurations
+- README.md
+- Refactored logging configurations and services: introduced provider-based routing, replaced "request\_logger" with "requests", updated internal endpoints, and improved request-event logging.
+- Enhanced HTTP status handling in CLI error messages; switched to stdlib \`http.HTTPStatus\` reason phrases with support for compatibility overrides. Introduced optional logger name in logging APIs and CLI commands. Enabled TRACE log level across configurations, added structured logging abbreviations, and improved log message wrapping.
+- Refactored logging services to support live level updates, added \`apply\_levels\` method for dynamic configuration, and registered custom log levels (\`TRACE\`, \`FATAL\`) for compatibility with \`dictConfig\`. Removed redundant backend requirements sync file.
+- change logging levels
+- Moved \`logging\_routes.py\` and \`schemas/logging.py\` to \`src/services/logging/\`, updated imports across modules, and established new per-service layout for logging artifacts.
+- Moved \`text\_translation\_routes.py\` and related schemas to \`src/services/text\_translation/\`, updated imports across modules, and adopted per-service structure for the text translation feature.
+- Moved \`text\_to\_speech\_routes.py\`, testing modules, and schemas to \`src/services/text\_to\_speech/\`, updated imports, and refactored for consistency with per-service structure.
+- Moved \`configuration\_routes.py\` and \`schemas/configuration.py\` to \`src/services/configuration/\`, updated imports, and adopted the per-service structure for configuration management.
+- Moved \`optimizers\_routes.py\` and \`schemas/voice\_optimization.py\` to \`src/services/voice\_optimization/\`, updated imports, and adopted per-service structure for voice optimization endpoints.
+- Moved \`schemas/common.py\` to \`src/services/schemas.py\`, updated imports in \`text\_translation/routes.py\`, and aligned structure with per-service schema organization.
+- Moved \`evaluators\_routes.py\` and \`schemas/evaluation.py\` to \`src/services/evaluation/\`, updated imports, and adopted the per-service structure for evaluation endpoints.
+- Discover services claude
+- Refactored \`ServiceProviderInfo\` handling across services, standardized descriptions, introduced \`all\_providers\` property, simplified \`/services\` endpoint logic, and updated category mappings in CLI.
+- Refactored \`voice\_optimization\` service to introduce \`all\_providers\` property, added alias for \`active\_optimizers\`, and updated related methods for clarity and consistency.
+- Refactor logging service to replace configuration details with ServiceProviderInfo model
+- Standardized provider management across services by introducing \`get\_all\_providers\` and \`get\_active\_providers\` methods, refined service abstraction, and updated schemas and OpenAPI docs for consistency.
+- Refactored provider management across services by removing redundant \`all\_providers\` and \`active\_providers\` properties, standardizing logic in \`get\_all\_providers\` and \`get\_active\_providers\` methods.
+- Updated logging endpoint paths and OpenAPI specs for consistency and clarity, replacing \`/internal/logging\` with \`/internal/log\`.
+- Refactor service routes to use consistent \`APIRouter\` prefixes and path definitions
+- Refactored logging service to simplify structured logging, standardized endpoint paths, updated OpenAPI specs, and introduced support for targeted logger-specific message handling.
+- Refactor logging commands and schemas; add new structured log types for services and payments
+- Export OpenAPI schema for API documentation
+- Enhance build validation script: add detailed error parsing, issue categorization, and summary display
+- Refactor and enhance logging commands; unify payload construction, add new log types (\`log\`, \`service\`, \`payment\`), and remove unused \`translator-request\`
+- Refactor error handling: replace generic exceptions with specific error types across services and database initialization
+- Logging configurations updated
+- changed loggin configurations
+- Minor code refactoring
+- Refactored logging configuration handling to use \`\_apply\_logging\_config\` for additive config application, ensuring coexistence of multiple \`StructLogProvider\` instances without handler conflicts.
+- Service routes endpoints rule, returns only predefined models
+- Refactored logging routes: added \`reset\_loggers\`, standardized response models, renamed endpoints for clarity, and introduced logger validation logic using \`validate\_logger\_exists\`. Updated logging service with \`find\_provider\` method.
+- Improved runtime logging configuration: added \`\_is\_configured\` flag for providers, ensured new providers are fully configured during updates, and refined level application logic.
+- Refactored logging configuration: removed explicit logger definitions in \`trace.json\` and \`requests.json\`, added automatic named logger injection for non-default providers, and updated level application logic to handle injected loggers.
+- Disabled tracing logger in \`trace.json\` and fixed provider-specific message logging in \`service.py\`.
+- Update logging configurations: replace \`provider\_category\` with None, adjust priorities, and enhance schemas
+- Refactor logging configuration: enhance handler management, prevent stale handlers, and add \`\_evict\_handlers\` method
+- Refactor log client: add support for new log endpoints (\`service\`, \`payment\`, \`provider\`), use specific exception handling, and remove unnecessary imports
+- Generated OpenAPI for the frontend
+- Migrated content management from core services to provider-based architecture with a file system-backed implementation. Removed legacy routes and schemas.
+- Change frontend on no images for an item
+- Moved content naming helpers to \`ContentProvider\` interface, updated references, and enhanced OpenAPI schemas with detailed response models.
+- Content routes
+- Refactor service test layout: consolidate test files to enforce \`test\_\<service\_name\>\_service.py\` and \`test\_\<service\_name\>\_service\_integration.py\` naming conventions
+- Consolidate text-to-speech service tests: rename and restructure files to align with \`test\_\<service\_name\>\_service.py\` and \`test\_\<service\_name\>\_service\_integration.py\` conventions
+- Enhanced OpenAPI schemas with detailed models for configuration, translation, and logging APIs.
+- Refactor configuration service: replace per-request construction with shared registry-based resolution, update tests and documentation, and consolidate route logic.
+- Regenerate OpenAPI docs.
+- Update OpenAPI documentation and route tags: standardize naming conventions for categories, items, images, and voices. Add new endpoints for managing voices and image files.
+- Standardize naming conventions for OpenAPI routes, schemas, and parameters: replace "images" with "items" and update related endpoints, request/response models, test cases, and frontend references.
+- Update OpenAPI routes and documentation for categories, images, and voices: add new endpoints, clarify descriptions, and standardize naming conventions.
+- Update OpenAPI documentation and backend routes for categories: standardize naming, clarify descriptions, and improve consistency across endpoints.
+- Update OpenAPI documentation and backend routes: refine endpoint descriptions, standardize naming conventions, and add authentication details.
+- Enhance OpenAPI documentation and backend routes: refine endpoint summaries and descriptions for configuration management, standardize naming conventions, and ensure consistent HTTP status codes across all routes.
+- Refactor frontend: replace \`ImageDetailView\` and \`ImageGrid\` with \`ItemDetailView\`, update related styles, and add API utilities for category voices and content management.
+- Align frontend with OpenAPI spec: rename \`Image\` -\> \`Item\`, update routes, rebuild API client and mocks, refactor views and components, and update README.
+- Refactor content service: introduce typed result models, update route handlers for consistent error handling, and align provider logic with updated models.
+- Refactor content service: replace error flags with exceptions, update route handlers for consistent exception handling, and revise unit tests to match the new error handling logic.
+- Implement category and item media endpoints: add support for handling voices and images, replace unimplemented route handlers with mock-backed logic, and update schemas to reflect response models.
+- Refactor category and item detail handling: align API responses with OpenAPI spec, update schemas, mocks, and route logic.
+- Refactor category images handling: replace per-language fields with \`images\_by\_lang\`, update APIs, schemas, mocks, and environment config.
+- Update OpenAPI schema: rename objects→items, images\_names→images\_ids, add images\_by\_lang property
+- Rename iconUrl/thumbnailUrl/audioUrl/avatarUrl to \*Uri across frontend
+- Disable VITE\_DEBUG\_MODE in frontend dev environment
+- Refactor Category.iconUri into typed Image object
+- Rename CategoryDetail.objects→items and images\_names→images\_ids across backend
+- Rename Item.files to Item.images across frontend
+- Changed categories details files
+- Content refactoring
+- Ignore package-lock.json
+- Split \`loadCategoriesTree\` into \`loadCategoriesBasic\` and \`loadCategoryFull\` for efficient category data fetching and update all dependent views and API methods accordingly.
+- extract methods in file\_system and static\_translate
+- Redesign DashboardView to display dynamic category cards and breadcrumbs; adjust router paths and enhance CategoriesView breadcrumb logic
+- Update categories list to include summary with item counts
+- Rename CategorySummary.item\_count to items\_count across backend
+- rename Category.icon to Category.images array and cleanup dashboard card
+- centralize category fetching with shared cache and deduplication logic
+- update category name handling and schema definitions for localization support
+- remove deprecated category/item-related API modules
+- make generate\_ts\_client.py executable
+- return structured item details and localized names in category detail
+- enhance TypeScript generation scripts with imports and detailed route logging
+- unify ID and localization handling across backend and frontend
+- update READMEs to document LocalizedString implementation and schema changes
+- update types and mocks to align with \`thumbnail\_uri\` changes and schema updates
+- replace section comments with # region blocks for IDE folding
+- update schemas and services to use \`CategoryDetails\` and improve image/voice handling
+- replace \`audio\_url\` with \`file\_uri\` and standardize file naming constants
+- isolate view model types and enhance multilingual support
+- Generate mockData and missing endpoints
+- remove outdated mock handlers and update references
+- update HTTP client and requests to use \`CONTENT\_URL\` for consistency
+- add project-specific command documentation and workflow guide
+- remove \`LocalizedString\` from categories and voices
+- add OpenCode AI commands to README for improved workflow clarity
+- regenerate content API spec after schema refactoring
+- Code refatoring
+- enhance item and category handling with extended metadata and i18n support
+- Logging provider exceptions not caught
+- service.create\_item returns dict, route accesses attributes
+- Correct content directory structure and update
+- extract route path strings into named constants
+- add item\_images and item\_voices stubs to test providers
+- derive folder keys from English labels and persist new categories to CSV registries
+- commit package-lock.json for reproducible builds
+- update volume paths in docker-compose.yml for consistent local environment configuration
+- update content directory path to relative path for improved portability
+- Correct 'id' fields for categories and items.
+- Correct generate\_mockdata.py to include category thumbnailUri and category images.
+- Correct the endpoints to use 'category\_id' instead of 'category\_name'
+- Put category images (wip)
+- Categories images (wip)
+- .idex changes added excluded folder '.venv'
+- replace \`category\_name\` with \`category\_id\` in item-related endpoints and functions
+- replace image and voice file indexing with id-based management
+- add detailed backend and frontend code improvement reviews and prioritized action lists
+- - Implement update item endpoint - Implement delete item endpoint - Removed unused endpoints for content service
+- Endpoints update
+- - Configuration service created with Fable 5 - Configuration UI for managing service configurations -
+- Run configuration
+- Visual improvements
+- Localized configuration tab
+- Improved the frontend documentation.
+- UI improvements - voice button now uses icons instead of buttons - item detail page uses icons also
+- Change TS generation scripts.
+- Do not use mock data.
+- Typo in log request
+- Localize a few UI elements.
+- Docker parameters for the frontned container.
+- Most mutations in the UI are console.log stubs
+- Line endings flag for \*.csv files.
+- Parse JWT token to get information regarding the current user.
+- Updating the documentation
+- Audio playback improvements
+- Swallowed errors issue
+- Minor issue
+- checkpoint before checking out dev
+- Go to categories list on archive
+- Minor visual fixes
+- Set category icon max size to 256
+- Increment the items grid slider to 7 elements in a row
+-  Fixing category icon caching so uploaded icon refresh everywhere.
+- Category voices card UI improvements
+- Sync the repo with the latest changes from 'mx-admin' project
+- format unrelated commit groups as bullet list
+- refine commit command formatting guidelines
+- require imperitive subject lines based on user preference
+- capitalize markdown in commit command guideline
+- always format commit body as markdown bullet list
+- Drop lowercase requirement and disallow conventional-commit prefixes
+- Improve voice table layout and remove placeholder audio UI
+- Rework item detail summary with image preview and voice cards
+- Localize item details labels and refine summary layout
+- Extract breadcrumb into reusable component and restyle category page
+- Extract voice cards into reusable grid component
+- Align category detail layout with item summary panel
+- Use internal log levels throughout logging service
+- Refine category and item detail layouts
+- Implement localized file picker and improve accessibility
+- Improve modal management and clean up item grid
+- Combine the play button with the voice file.
+- Implement collapsible language groups in item details
+- Surface provider error details in responses
+- Аdd voice renaming capability in item details
+- Implement voice regeneration capability
+- Store TTS generation parameters in voice metadata
+- Store synthesized text in generated voice metadata
+- Surface voice generation metadata across the stack
+- Widen the voice parameters tooltip
+- Relocate item image replace and delete actions
+- Enable drag-and-drop audio upload onto voice cards
+- PyCharm settings
+- TEXT
+- - Update commit message formatting guidance
+- Clarify commit message body formatting guidance for groups
+- Route service telemetry through the out-of-process logging client
+- Execute rights for sync\_repo.py
+- Emit service telemetry over the internal logging API
+- Improve Docker deployment and image write diagnostics
+- improve docker deployment and content mount diagnostics
+- configure docker compose services for resilience and new env vars
+- Raise nginx upload size limit to 10m
+- GiLab push now uses SSH connection
+- Do not use username and password in scripts
+- Introduce dedicated main image handling for item images
+- Select an item's main image by copying it over the main file
+- Changed Speaktor BG voice to Sveta.
+- surface sync report and initial check status in testenv run output
+- lower testenv max new issues per sync cap
+- Validate scripts prioritaize project root for the .venv
+- Set test strategy to 'heal'
+- Changed strategy to 'work' mode.
+- Pick up commented needs-human issues in work strategy
+- Refactor evaluation engine dispatch and scoring
+- Make translation language-pair support explicit
+- Update content tests to match provider interface changes
+- Refactor evaluation comparison, content thumbnails, and Speaktor TTS internals
+- Refactor file system path and image extension validation into helpers
+- highlight active category and submenu items
+- Unify item summary actions and switch TTS provider priority
+- Split filesystem provider tests into focused modules
+- Split file\_system content provider into a package
+- Split content routes and integration tests
+- Generalize runtime provider wiring in the service registry
+- Localize language names across the voice UI
+- Clean up leftover mock preview affordances in the voices UI
+- Group content HTTP request files and centralize voice section notices
+- Improve voice selection feedback and cover set-main requests
+- Derive the voice language from voice\_id when setting an item's main voice
+- Type-check the frontend test utilities
+- Name item folders after the item id instead of the English word
+- Restore melon name
+- Update configs, services, and sync OpenAPI/frontend types/client
+- Close navbar dropdowns on outside click
+- Show service config confirmations as toasts
+- Localize configuration UI and add category quick-access menu
+- Fail content over to the next active provider and surface unavailability
+- Enable file system provider and add ESC key handling to modals
+- Surface voice generation details in a card popup
+- Unify voice card detail popups into a shared component
+- Clamp details popup to the viewport and keep its arrow aligned
+- Select saved TTS configurations for item voice generation
+- Generate item voices with a chosen TTS configuration and settings
+- Track voice file hashes in metadata sidecars
+- Generate and select new voices instead of adding unselected takes
+- Pylint issue fix
+- Extract shared delete confirmation dialog
+- Show entity IDs in delete confirmation dialogs
+- Extract image variant card into ItemImageCard component
+- Name optimized voices after their source and optimizer
+- Rmoved unused files.
+- Display the current user's role in lower case
+- Show uploaded voice details in a popup and let them optimize
+- Show optimize panel for all voice cards and stack narrow details
+- Record how item images were made in metadata sidecars
+- Copy prompts as plain text in the details popup
+- Image cards minor UI fixes
+- Let item creation generate the image and voices on request
+- Make item registry reads and writes locked and atomic
+- Unify CSV registries and make item voice/image generation opt-in
+- Resource changes
+- Show app version in footer
+
+### Removed
+
+- Removed .cursorignore from main
+- Removed the legacy LogTranslatorRequest and replaced it with unified LogProviderRequest
+- Removed unused \`LoggingProviderInfo\` model from \`schemas.py\` to clean up deprecated logger-related definitions.
+- Remove OpenAPI documentation for Configuration and Content APIs.
+- Remove Result suffix from content model dataclass names
+- Removed Cursor plans
+- Removed toys thumbinal
+- Remove leading indentation from commit message body
+- Remove legacy content item creation endpoint
+- Delete the main copy together with its taken variant
+- Delete item's voice issue with optimized voices
+
+### Fixed
+
+- Fixed CI/CD
+- Fixed logo
+- Fixed footer
+- Fixed a few Pylint issues
+- Fixed issue
+- Fixed mocked data
+- Fixed service provider
+- Fixed service names
+- Fixed providers name issue
+- Fixed text translation endpoints
+- Fixed inconsistent indentation in API route definitions across internal modules.
+- Fix typo in documentation for required endpoints.
+- Fixed frontend languga popup
+- Fix test dependency injection in content service integration tests: override \`get\_content\_service\` instead of commented \`\_content\_service\`.
+- Fixed dashboard view issues
+- Fixed generate mockdata script to handle absolute and relative paths correctly.
+- Fixed CategoriesView to use enhanced requests and cache management
+- Fixed item detail loading view to handle category
+- Fixed pylint issues
+- Fixed category rename
+- Fixed item read file data Minor localization issues
+- Fixed minor localization issues
+- Fixed add new category issue
+- Fixed category creations issue
+- Fix initial login CSS glitch
+- Fix add image button label to use singular variant
+- Fix image button label and add initial setup script
+- Fix dedicated main image counts and cache refresh
+- Fixed item's add image on mobile.
+
+[Unreleased]: https://github.com/spyderbg/mx-admin-cloud/compare/1.0.1...HEAD
+[1.0.1]: https://github.com/spyderbg/mx-admin-cloud/commits/1.0.1
