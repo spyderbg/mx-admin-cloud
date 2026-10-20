@@ -1,4 +1,4 @@
-"""Sandboxed gates: timeouts, logs, offline, read-only checkout, unsafe-gate refusal (B-7)."""
+"""Sandboxed gates: timeouts, logs, offline, read-only checkout (B-7), unsafe-gate refusal."""
 
 # pylint: disable=missing-function-docstring,redefined-outer-name
 
@@ -27,12 +27,24 @@ lock.write_text("locked by a test")
 print("wrote", lock)
 '''
 
+B7_PYTEST_FIXTURE = '''"""The B-7 fixture as a pytest test, collected by the real backend-tests gate command."""
+from pathlib import Path
+
+
+def test_writes_a_registry_lock_into_content():
+    lock = Path(__file__).resolve().parents[1] / "content" / "foods" / ".registry.lock"
+    lock.write_text("locked by a test")
+'''
+
+UNSAFE_REASON = "unsafe against a real checkout (test fixture)"
+
 
 @pytest.fixture
 def gate_repo(tmp_path: Path) -> Path:
     path = tmp_path / "gate-repo"
-    init_demo_repo(path, {"backend/run_fixture_tests.py": B7_FIXTURE, "content/foods/items.csv": "id\n",
-                          "frontend/src/view.ts": "export {}\n", "docs_agents/coordination/README.md": "# c\n"})
+    init_demo_repo(path, {"backend/run_fixture_tests.py": B7_FIXTURE, "backend/test_b7_fixture.py": B7_PYTEST_FIXTURE,
+                          "content/foods/items.csv": "id\n", "frontend/src/view.ts": "export {}\n",
+                          "docs_agents/coordination/README.md": "# c\n"})
     return path
 
 
@@ -47,20 +59,27 @@ def gate_config(config: ProjectConfig, gate_repo: Path) -> ProjectConfig:
         "missing-tool": ("definitely-not-an-installed-tool", "--version"),
         "net": ("python", "-c", "import socket, sys; s = socket.socket(); s.settimeout(2); "
                                 "sys.exit(0 if s.connect_ex(('127.0.0.1', int(sys.argv[1]))) == 0 else 7)", "0"),
-        "backend-tests": config.gates["backend-tests"],
+        "unsafe": ("python", "-c", "open('started', 'w').close()"),
     }
-    return dataclasses.replace(config, gates=gates, lint_gates={},
-                               unsafe_gates={"backend-tests": config.unsafe_gates["backend-tests"]})
+    return dataclasses.replace(config, gates=gates, lint_gates={}, unsafe_gates={"unsafe": UNSAFE_REASON})
 
 
 def run(gate_config: ProjectConfig, repo: Path, name: str, tmp_path: Path, **kwargs):
     return SandboxedGateRunner(gate_config, tmp_path / "logs", **kwargs)(name, GateContext(repo))
 
 
-def test_the_real_backend_tests_gate_is_blocked_not_run(config: ProjectConfig, gate_repo: Path, tmp_path: Path) -> None:
-    result = SandboxedGateRunner(config, tmp_path / "logs")("backend-tests", GateContext(gate_repo))
-    assert result.status == "blocked" and not result.passed and "B-7" in result.summary
+def test_an_unsafe_gate_is_blocked_not_run(gate_config: ProjectConfig, gate_repo: Path, tmp_path: Path) -> None:
+    result = run(gate_config, gate_repo, "unsafe", tmp_path)
+    assert result.status == "blocked" and not result.passed and result.summary == UNSAFE_REASON
     assert not (tmp_path / "logs").exists()  # nothing was started
+
+
+@pytest.mark.usefixtures("needs_bwrap")
+def test_the_real_backend_tests_gate_runs_sandboxed(config: ProjectConfig, gate_repo: Path, tmp_path: Path) -> None:
+    assert not config.unsafe_gates  # B-7 is fixed: backend-tests is no longer refused
+    result = SandboxedGateRunner(config, tmp_path / "logs")("backend-tests", GateContext(gate_repo))
+    assert (result.status, result.exit_code) == ("failed", 1) and "Read-only file system" in result.summary
+    assert not (gate_repo / "content/foods/.registry.lock").exists()
 
 
 @pytest.mark.usefixtures("needs_bwrap")

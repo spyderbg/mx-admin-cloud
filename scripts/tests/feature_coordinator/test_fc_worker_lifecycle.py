@@ -11,9 +11,10 @@ import time
 from pathlib import Path
 
 import pytest
+import yaml
 
 from feature_coordinator.claims import ClaimManager, heartbeat_age
-from feature_coordinator.cli import main as cli_main
+from feature_coordinator.cli import EXAMPLE_CONFIG, main as cli_main
 from feature_coordinator.config import ProjectConfig
 from feature_coordinator.demo import RecordingGates, init_demo_repo
 from feature_coordinator.errors import ClaimError
@@ -161,9 +162,17 @@ def test_cli_sandbox_check_and_gate_commands(capsys: pytest.CaptureFixture[str],
     assert "dry run" in capsys.readouterr().out
     assert cli_main(["--repo", str(repo), "--state-dir", str(state), "sandbox-check", "--apply"]) == 0
     assert "containment self-test: PASSED" in capsys.readouterr().out
-    assert cli_main(["--repo", str(repo), "--state-dir", str(state), "gate", "backend-tests", "--apply"]) == 1
+    assert cli_main(["--repo", str(repo), "--state-dir", str(state), "gate", "backend-tests"]) == 0
+    out = capsys.readouterr().out  # B-7 is fixed: not refused, and still read-only and offline
+    assert "BLOCKED" not in out and "checkout read-only, no network" in out and "dry run" in out
+    data = yaml.safe_load(EXAMPLE_CONFIG.read_text(encoding="utf-8"))
+    data["unsafe_gates"] = {"backend-tests": "unsafe (test)"}
+    unsafe = tmp_path / "unsafe-config.yaml"
+    unsafe.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    assert cli_main(["--repo", str(repo), "--state-dir", str(state), "--project-config", str(unsafe),
+                     "gate", "backend-tests", "--apply"]) == 1
     out = capsys.readouterr().out
-    assert "BLOCKED" in out and "B-7" in out  # refused, with the recorded reason
+    assert "BLOCKED" in out and "unsafe (test)" in out  # refused, with the recorded reason
     assert cli_main(["--repo", str(repo), "--state-dir", str(state), "stop", "nope.task"]) == 1
     assert cli_main(["--repo", str(repo), "--state-dir", str(state), "recover"]) == 0
 

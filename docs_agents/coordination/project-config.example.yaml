@@ -158,8 +158,7 @@ lint_gates:
     policy: block-new
 
 # Gates that must not run against a real checkout until the named fix lands (reported as "blocked").
-unsafe_gates:
-  backend-tests: "B-7/F-5: backend tests write registry lock files into the real content/ tree; blocked against a real checkout until the Backend-owned fix lands"
+unsafe_gates: {}
 
 # How real runners and gates execute (Phase 3).
 runtime:
