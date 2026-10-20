@@ -472,10 +472,8 @@ DEFAULT_LINT_GATES: dict[str, LintGate] = {
     "cli-lint": LintGate(root="cli", targets=("src/kiddo_cli",), pythonpath=("src",)),
 }
 
-DEFAULT_UNSAFE_GATES: dict[str, str] = {
-    "backend-tests": ("B-7/F-5: backend tests write registry lock files into the real content/ tree; "
-                      "blocked against a real checkout until the Backend-owned fix lands"),
-}
+# None since the B-7 fix: the backend tests no longer reach the real content/ tree.
+DEFAULT_UNSAFE_GATES: dict[str, str] = {}
 
 DEFAULT_ROLE_COMMANDS: dict[str, tuple[str, ...]] = {
     # Claude Code Bash permission rules (prefix matches). Anything not listed is denied.
