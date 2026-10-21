@@ -1,6 +1,6 @@
 # Feature Workflow — Coordinator Design (v5, Phases 2–4 and the Phase 4 extension)
 
-> Owner role: **coordination**. Status: Phase 2 design and Phase 3 additions (§17–§18) **approved** (2026-10-17); Phase 4 additions (§10, §19) and the Phase 4 extension (§20, GitHub Projects board) **approved** (2026-10-17). Companion pages: [agent-ownership.md](agent-ownership.md) (write enforcement and evidence), [operations.md](operations.md) (launch/stop/resume/recover, GitHub commands), [github-integration.md](github-integration.md) and [task-lifecycle.md](task-lifecycle.md) (Phase 4), [github-projects.md](github-projects.md) (Phase 4 extension), [backend-task-b7.md](backend-task-b7.md).
+> Owner role: **coordination**. Status: Phase 2 design and Phase 3 additions (§17–§18) **approved** (2026-10-17); Phase 4 additions (§10, §19) and the Phase 4 extension (§20, GitHub Projects board) **approved** (2026-10-17). W1 Worker security (§21: credential and network isolation, D-20/D-21) **implemented and tested offline, awaiting review** (2026-10-21). Companion pages: [worker-security.md](worker-security.md) (W1), [agent-ownership.md](agent-ownership.md) (write enforcement and evidence), [operations.md](operations.md) (launch/stop/resume/recover, GitHub commands), [github-integration.md](github-integration.md) and [task-lifecycle.md](task-lifecycle.md) (Phase 4), [github-projects.md](github-projects.md) (Phase 4 extension), [backend-task-b7.md](backend-task-b7.md).
 > Governing assignment: [`agents_prompt_v5.md`](../../docs/multiple_agents/agents_prompt_v5.md) §11 Phase 2. Design baseline: [architecture §11](../architecture/README.md#11-v4-feature-development-architecture-design-baseline-for-phases-27), remote Qwen contract [§11.11](../architecture/README.md#1111-remote-openai-compatible-qwen-integration-contract-v5-101), decisions [§12](../architecture/README.md#12-decision-register). Progress: [`phase-status.md`](phase-status.md).
 >
 > Evidence tags: **[V]** verified by execution (a test or command named here), **[S]** verified by reading source, **[U]** unverified.
@@ -47,6 +47,9 @@ Phase 2 delivered the design and a skeleton with mock runners, a mock issue trac
 | `gates.py`³, `lint_baseline.py`³ | Sandboxed gate runner (offline, read-only, timeouts, logs, unsafe-gate refusal); baseline-aware Pylint gates (D-19) |
 | `http_transport.py`³, `capabilities.py`³ | Loopback-only Chat Completions transport (streaming, partial tool calls, cancellation); capability validation |
 | `operations.py`³ | Containment self-test, real runner wiring, tracker selection (`make_tracker`)⁴ |
+| `broker.py`ᵂ | Host-side authentication broker: per-run token, approved provider routes, the upstream credential, limits, redacted log (W1, D-20) |
+| `netns_channel.py`ᵂ, `sandbox_bootstrap.py`ᵂ | The handshake that puts the broker endpoint inside a runner sandbox's own network namespace and verifies the isolation (W1, D-21) |
+| `isolation_check.py`ᵂ | Network and credential isolation self-test; `feature.py worker-check` eligibility (W1) |
 | `github_api.py`⁴ | The real GitHub adapter: `gh api --include` transport, retries, rate limits, pacing, pagination, response validation, sanitized errors |
 | `issue_sync.py`⁴ | Local state ⇄ Issues: create/adopt, managed block, labels, open/closed, progress comments, outbox, validated commands, reconciliation, test cleanup |
 | `escalation.py`⁴ | Human holds (`needs-human`) and releases |
@@ -425,7 +428,7 @@ The demo uses a loopback mock endpoint (`127.0.0.1`, never contacted; the transp
 
 ## 15. Limitations (as of Phase 3)
 
-- **Real agents run only through `feature.py launch --apply`**, contained by bubblewrap. Residual risks are in [agent-ownership §5](agent-ownership.md#5-residual-risks-operator-decisions-in-phase-status): readable runner credentials, network for Claude Code, protected-name creation inside a role's own root (rejected at commit), and unverified OAuth refresh.
+- **Real agents run only through `feature.py launch --apply`**, contained by bubblewrap, network-isolated and brokered (W1). Residual risks are in [agent-ownership §5](agent-ownership.md#5-residual-risks-operator-decisions-in-phase-status) and [worker-security §10](worker-security.md#10-known-limitations). The credential and network risks are resolved in W1; real runs need an operator-chosen broker credential (D-20).
 - **No live remote model.** The HTTP transport reaches loopback servers only; capability validation has run only against the local fake server. `apply-patch` is declared by the profile but refused by the client.
 - **GitHub:** the live adapter exists (Phase 4) but writes only test features; no push or PR yet (Phase 5). Body updates are last-writer-wins, and relationships are Issue references, not GitHub sub-issues ([github-integration §14](github-integration.md#14-limitations)).
 - **`backend-tests` is blocked** until [B-7](backend-task-b7.md). Gates run against the working tree of the shared checkout; evidence is bound to the HEAD at verification time, and integration requires a clean tree.
@@ -460,9 +463,9 @@ Each real runner and each gate runs as `bwrap … <command>` with:
 
 | Area | Setting |
 | --- | --- |
-| Process | `--die-with-parent --new-session --unshare-all` (mount, PID, IPC, UTS, cgroup and user namespaces); `--share-net` only for runners, which need their model API, never for gates |
+| Process | `--die-with-parent --new-session --unshare-all` (mount, PID, IPC, UTS, cgroup, user and **network** namespaces). Since W1 no sandbox shares the host network: a runner reaches its model only through the broker endpoint inside its own namespace (§21); gates have none |
 | System | `/usr` and `/etc` read-only; `/proc`, `/dev`, private `/tmp` and `/var/tmp`; `--remount-ro /`, so nothing outside the explicit binds is writable |
-| Home and environment | A private HOME (`<state>/runs/<id>/home`); the runner's credential files are bound read-only; `--clearenv` plus an allowlisted environment (no `XDG_STATE_HOME`, no `AGENT_QWEN_*`) |
+| Home and environment | A private HOME (`<state>/runs/<id>/home`); since W1 no credential file is bound and no API key is forwarded; `--clearenv` plus an allowlisted environment (no `XDG_STATE_HOME`, no `AGENT_QWEN_*`). The broker URL and per-run token reach the CLI through the channel only |
 | Repository | A **shadow root**: every top-level entry of the checkout is bound read-only into a private directory mounted at the repository path. The role's writable roots are then bound read-write, and paths the role must not write inside them are re-bound read-only: exclusions, protected and approval-required paths, nested `.git` |
 | Secrets | Untracked or ignored files matching `runtime.secret_patterns` (`.env`, `.env.*`, any depth; `*.example` exempt) are hidden at top level or masked with `/dev/null` |
 | State | The coordinator state directory is never visible: it lives under the real HOME, and a tmpfs covers it if a bound toolchain prefix would expose it |
@@ -474,22 +477,24 @@ Containment fails closed: if `bwrap` is missing or cannot create namespaces, rea
 
 | Runner | Command line (prompt on stdin) |
 | --- | --- |
-| Claude Code 2.1.302 | `claude -p --output-format stream-json --verbose --restricted --tools Read,Glob,Grep,Edit,Write[,Bash] --settings $HOME/.fc/claude-settings.json --strict-mcp-config --permission-mode acceptEdits --permission-prompts none --no-session-persistence --disable-slash-commands --max-budget-usd 5` |
-| Codex 0.163.0 | `codex exec --json --sandbox workspace-write --ephemeral --ignore-user-config -C <repo> -o $HOME/.fc/last-message.txt -c sandbox_workspace_write.network_access=false -` |
+| Claude Code ≥ 2.1.303 (W1) | `claude -p --output-format stream-json --verbose --restricted --tools Read,Glob,Grep,Edit,Write[,Bash] --settings $HOME/.fc/claude-settings.json --strict-mcp-config --permission-mode acceptEdits --permission-prompts none --no-session-persistence --disable-slash-commands --max-budget-usd 5`, started by the sandbox bootstrap with `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN` (the broker) |
+| Codex ≥ 0.163.0 (W1) | `codex exec --json --strict-config --sandbox workspace-write --ephemeral --ignore-user-config -C <repo> -o $HOME/.fc/last-message.txt -c model_provider="fc_broker" -c model_providers.fc_broker.{name,base_url,env_key,wire_api}=… -c web_search="disabled" -c shell_environment_policy.inherit="core" -c shell_environment_policy.ignore_default_excludes=false -c sandbox_workspace_write.network_access=false -`, with `FC_BROKER_TOKEN` from the bootstrap |
 
 Claude Code:
 
 - `--restricted` ignores the user, project and local settings files. The repository's `.claude/settings.json` (`bypassPermissions`) is therefore never loaded and never edited, and bypass is refused.
 - The generated settings allow only the file tools and the role's Bash prefixes (`runtime.role_commands`), and deny Web tools, state-changing Git, `curl`/`wget` and reads of the runner credential directories.
+- W1: the settings also turn on Claude Code's own Bash sandbox in strict mode (`failIfUnavailable`, no unsandboxed retry, no auto-allow, a strict empty domain allowlist, the broker variables denied to commands).
 
 Codex:
 
-- keeps its own sandbox, nested inside ours, so model-generated commands get no network.
+- keeps its own sandbox, nested inside ours, so model-generated commands get no network (W1: no socket at all, no token in their environment).
 
 Fail closed:
 
-- `probe_runner()` checks every required flag in `--help`; a missing flag makes the runner unavailable;
-- `FORBIDDEN_ARGS` (every bypass and danger flag) can never be emitted.
+- `probe_runner()` checks every required flag in `--help` and (W1) the verified minimum version; a missing flag or an older version makes the runner unavailable;
+- `FORBIDDEN_ARGS` (every bypass and danger flag) can never be emitted;
+- W1: without a broker credential, a sandbox dependency or a network-isolated broker endpoint, the runner is unavailable or the run fails.
 
 After a run, `RealCliRunner`:
 
@@ -587,3 +592,14 @@ Exit-gate evidence, live Issue numbers and test results: [phase-status](phase-st
 | Idempotency and recovery | `pending_add` + adoption by the Issue's project items; read-back after writes; drift restored | [github-projects §7](github-projects.md#7-recovery-and-reconciliation) |
 
 Exit-gate evidence, the live item IDs and test results: [phase-status](phase-status.md).
+
+## 21. W1 — Worker security: credential and network isolation (D-20, D-21)
+
+Design, trust boundaries, tests, limitations and troubleshooting: [worker-security.md](worker-security.md).
+
+| Area | Design | Where |
+| --- | --- | --- |
+| Credentials | No runner login is mounted and no API key forwarded. A host-side broker holds the upstream credential (`broker.credential_source`: `none` by default, so real runners are unavailable), checks a per-run token, forwards only approved operations to one approved HTTPS host, applies limits, and is revoked when the run ends | `broker.py`, `launchers.broker_for_run` |
+| Network | Every runner sandbox has its own network namespace; the bootstrap hands the worker a listener inside it, verified to be in a different namespace (`SO_NETNS_COOKIE`). There is no `--share-net` path | `netns_channel.py`, `sandbox_bootstrap.py`, `sandbox.py` |
+| Nested commands | Claude Code's strict Bash sandbox; Codex's workspace-write sandbox without network; neither sees the broker or the token | `launchers.CLAUDE_SANDBOX`, `CodexLauncher.prepare` |
+| Eligibility | `feature.py worker-check --apply`: CLI versions and flags, dependencies, broker credential, containment and isolation self-tests | `commands.cmd_worker_check`, `isolation_check.py` |

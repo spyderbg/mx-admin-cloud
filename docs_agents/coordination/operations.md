@@ -9,9 +9,10 @@
 | Step | Command | What it proves |
 | --- | --- | --- |
 | State directory | `feature.py doctor --apply` | Local filesystem (FUSE and network rejected), mode 0700, two-process `flock` contention test |
-| Runners | `feature.py runners` | `claude` and `codex` exist, support every required flag, and get no bypass flag; prints each role's exact command line. **No model call** |
+| Runners | `feature.py runners` | `claude` and `codex` exist, are at least the verified versions, support every required flag, and get no bypass flag; prints each role's exact command line and what blocks real runs (sandbox dependencies, broker credential). **No model call** |
 | Containment | `feature.py sandbox-check` (dry run) | Each role's writable roots, read-only islands and hidden secrets on `--repo` |
-| | `feature.py sandbox-check --apply` | The full containment matrix in a **disposable** repository ([agent-ownership §3](agent-ownership.md#3-containment-matrix-exit-gate-evidence)) |
+| | `feature.py sandbox-check --apply` | The full containment matrix **and the network/credential isolation self-test** (W1) in a **disposable** repository ([agent-ownership §3](agent-ownership.md#3-containment-matrix-exit-gate-evidence), [worker-security §8](worker-security.md#8-security-self-tests)) |
+| Worker eligibility (W1) | `feature.py worker-check --apply` | `Worker: ELIGIBLE` only when bwrap, the CLIs, the sandbox dependencies, a broker credential per CLI provider and both self-tests pass; otherwise `INELIGIBLE` with the blockers (exit 1). Never reads or prints a credential value. **No model call** |
 
 ## 2. One feature, step by step
 
@@ -30,7 +31,8 @@ Each run gets `<state>/runs/<task>.<stamp>.<id>/` containing:
 | File | Content |
 | --- | --- |
 | `prompt.txt` | The role prompt |
-| `sandbox.json` | The exact `bwrap` command line, writable roots, overlays, masked and hidden paths |
+| `sandbox.json` | The exact `bwrap` command line, writable roots, overlays, masked and hidden paths, the network mode and the broker endpoint and upstream (never the token) |
+| `broker.log` | One JSON line per model request: method, path, status, reason, sizes, duration (W1; never headers or bodies) |
 | `stdout.jsonl`, `stderr.log` | The runner's output |
 | `home/` | The private HOME |
 
@@ -86,8 +88,10 @@ Enabling the remote server needs, in order:
 
 | Variable | Test | Cost |
 | --- | --- | --- |
-| `FC_HOST_RUNNER_CHECKS=1` | Real `claude auth status` / `codex login status` inside the sandbox with read-only real credentials; asserts only "logged in" | none (no model call) |
-| `FC_LIVE_RUNNER_SMOKE=1` | One tiny real run per runner in a disposable repository (create `hello.txt`); Claude capped at $0.50 | small; **operator approval required** (approved and run once on 2026-10-17) |
+| `FC_HOST_RUNNER_CHECKS=1` | W1: real `claude auth status` / `codex login status` inside the sandbox with the real HOME path; asserts that **no** login is visible (nothing is mounted or read) | none (no model call) |
+| `FC_LIVE_RUNNER_SMOKE=1` + `FC_LIVE_PROJECT_CONFIG=<config with a broker credential>` | One tiny real run per runner through the broker in a disposable repository (create `hello.txt`); Claude capped at $0.50 | per-token API billing; **operator approval required** (the Phase 3 run on 2026-10-17 used the pre-W1 login mount and is not evidence for the broker) |
+
+The installed-CLI compatibility tests (`test_fc_runner_compat.py`) are **not** opt-in: they run the real CLIs offline against a fake provider, at no cost ([worker-security §8](worker-security.md#8-security-self-tests)).
 
 ```bash
 FC_HOST_RUNNER_CHECKS=1 .venv/bin/python -m pytest -p no:cacheprovider scripts/tests/feature_coordinator/test_fc_launchers.py -k real_login

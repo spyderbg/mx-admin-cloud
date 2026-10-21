@@ -5,11 +5,11 @@
 
 | Field | Value |
 | --- | --- |
-| Current phase | **Phase 4 finalization**: Phase 4 (Real GitHub Issue Coordination and Task Dependencies) and its GitHub Projects (v2) extension are **approved** (2026-10-17). Validation is complete, D-22/D-28/D-29 are done, and the D-10 commit plan was **executed** on 2026-10-17 (C4 `ce2d1fc`, C5 `80cb1d6`); the file modes it got wrong were fixed by `545b9d3` on 2026-10-19 ([execution record](#execution-record-d-10)) |
-| State | **awaiting-approval** of the push of the two local commits (`545b9d3` and this status update) and of the D-11 bootstrap PR `agents` → `dev`. Phase 5 not started; it needs a separate authorization |
+| Current phase | **W1 — Worker security (D-20 credential isolation, D-21 network isolation)**, on branch `security/worker-d20-d21` from `dev` (`bfd55a7`): implemented and tested offline on 2026-10-21, **uncommitted, awaiting operator review** ([W1 record](#w1--worker-security-d-20-d-21-record-2026-10-21)). Earlier: **Phase 4 finalization**: Phase 4 (Real GitHub Issue Coordination and Task Dependencies) and its GitHub Projects (v2) extension are **approved** (2026-10-17). Validation is complete, D-22/D-28/D-29 are done, and the D-10 commit plan was **executed** on 2026-10-17 (C4 `ce2d1fc`, C5 `80cb1d6`); the file modes it got wrong were fixed by `545b9d3` on 2026-10-19 ([execution record](#execution-record-d-10)) |
+| State | **awaiting-approval** of the W1 changes (commit and push need approval). Real agent execution stays **disabled**: this Worker is INELIGIBLE until the operator chooses the broker's credential source (D-20). The AWS coordinator is postponed; Content Statistics is not started. Previously: **awaiting-approval** of the push of the two local commits (`545b9d3` and this status update) and of the D-11 bootstrap PR `agents` → `dev`. Phase 5 not started; it needs a separate authorization |
 | Execution policy | Supervised, phase by phase. No autonomous phased execution. Phases 0–3 approved (Phase 3 on 2026-10-17). **Phase 4 and the Phase 4 extension approved 2026-10-17** by the finalization instruction ("Phase 4 and the GitHub Projects V2 extension are approved. This is a Phase 4 finalization task. Do not start Phase 5."), which also approved D-10 (a reviewed commit plan; no commit or push yet), D-22, D-28 and D-29. The plan's execution was approved the same day ("The commit plan is approved, run it"); the mode correction was approved on 2026-10-19 as new commits instead of a history rewrite ("fix it with new commits instead of rewriting"), because `agents` had been pushed by then. Earlier: Phase 4 authorized 2026-10-17 ("Proceed with Phase 4 ONLY"), including **real** GitHub Issue operations on `spyderbg/mx-admin-cloud` for coordinator-owned test Issues and their `feature:*` labels — no PRs, no commit or push. The **Phase 4 extension** (GitHub Projects V2 Kanban integration, before Phase 5) was authorized the same day: configure the existing Project #2, never modify Project #1 or Issues #1–#14, up to two test Issues — no PRs, no commit or push. The operator's instruction for the extension did not state an approval of Phase 4 itself (approved later with the finalization) |
 | Code base | Branch `agents`. Phases 0–3: `12183e0`, `8454e63`, `b3f3691` (operator). Phase 4: `ce2d1fc` (C4). Extension and finalization: `80cb1d6` (C5). Operator's execution reports: `0d4d8f5`. All of these were pushed by the operator to `origin/agents` on 2026-10-17. **Local, not pushed:** `545b9d3` (file-mode fix) and the documentation commit with this status update ([execution record](#execution-record-d-10)) |
-| Last updated | 2026-10-19 |
+| Last updated | 2026-10-21 |
 | Active writers / locks | None running. The real state directory holds only `github-tests/fc-p4-20261017033506/` and `github-tests/fc-p4x-20261017090916/` (the live tests' disposable repositories, states and `report.json`), earlier gate logs and `commit-plan-2026-10-17/` (the D-10 plan, executed); no feature in the main state, no claims |
 
 ## Phase overview
@@ -25,8 +25,33 @@
 | 5 | First End-to-End Feature (vertical slice) | not-started | Not authorized. Prerequisites: [Phase 5 prerequisites](#phase-5-prerequisites-and-remaining-security-restrictions) |
 | 6 | CI, API Drift and Final PR Quality Gates | not-started | Constrained by B-2 |
 | 7 | Budget-Aware Optional Continuous Feature Delivery | not-started | Needs separate authorization |
+| W1 | **Worker security: D-20 credential isolation, D-21 network isolation** (local Worker; AWS coordinator postponed) | **implemented, awaiting review** | D-20 PARTIALLY VERIFIED (isolation proven; real provider auth needs a credential decision), D-21 VERIFIED offline ([record](#w1--worker-security-d-20-d-21-record-2026-10-21)) |
 
 > **Superseded by v4 (historical v3 phase titles):** v3 Phase 2 was "Existing Automation Audit and Minimal Extensions" of `mxfix`/`mxissues`; v3 Phase 3 was "Agent Profiles and Scope Enforcement" with per-task worktrees; v3 Phase 4 was "GitHub Issue Coordination" extending `mxissues`; v3 Phases 5–7 assumed per-task PRs. All of these are replaced by the v4 titles above.
+
+## W1 — Worker security (D-20, D-21): record (2026-10-21)
+
+**Instruction:** "W1 — D-20 Credential Isolation + D-21 Network Isolation" for the local Worker (the AWS coordinator is postponed). Started on `dev` at `bfd55a7` (clean, equal to `origin/dev`; no unfinished D1 work found), on the new branch `security/worker-d20-d21`. Nothing committed or pushed; no real model session, no provider API call, no credential file read.
+
+**Design and evidence:** [worker-security.md](worker-security.md).
+
+| Item | Result |
+| --- | --- |
+| Credential files mounted / API keys forwarded | **Removed**; `credential_files` rejected by the loader; a control test proves the probes would catch a reintroduced mount or key **[V]** |
+| Host-side broker | `broker.py`: a per-run token (expiry, revocation at run end), approved routes (Claude Code → `api.anthropic.com` `/v1/messages`[`/count_tokens`]; Codex → `api.openai.com` `/v1/responses`), the upstream credential added on the host, limits, a redacted log **[V]** |
+| Runner network | Own network namespace for every sandbox; the broker endpoint is handed over from inside it and verified to be in a different namespace (`SO_NETNS_COOKIE`); there is no `--share-net` path; `runtime.agent_network` fixed to `false` **[V]** |
+| Nested command isolation | Claude Code strict Bash sandbox; Codex workspace-write sandbox with no network; both verified with the **installed** CLIs against a fake provider **[V]** |
+| Desktop socket (the earlier finding) | `@/tmp/.X11-unix/X0` → ECONNREFUSED inside the sandbox (`sandbox-check --apply`) **[V]** |
+| Real provider authentication | **NOT VERIFIED.** The documented brokered mode of both CLIs uses a per-token-billed API key; the operator's subscription logins cannot be brokered (Anthropic: gateway credentials replace the claude.ai login and are billed per token) |
+| Worker eligibility | `feature.py worker-check --apply` → **INELIGIBLE** (blocker: no broker credential) — fail closed |
+| Regression | `scripts/tests` **517 passed, 18 opt-in skipped** (baseline 455/18), exit 0; Pylint 10.00/10 (package and tests); docs check 6/6; `feature.py config` identical; `sandbox-check --apply` PASSED (containment and isolation); opt-in `FC_HOST_RUNNER_CHECKS=1`: no real login visible in the sandbox **[V]** |
+| Files | New: `broker.py`, `netns_channel.py`, `sandbox_bootstrap.py`, `isolation_check.py`, `worker-security.md`, tests `test_fc_broker.py`, `test_fc_isolation.py`, `test_fc_runner_compat.py`, `fc_fake_provider.py`. Changed: `launchers.py`, `sandbox.py`, `supervisor.py`, `config.py`, `providers.py`, `operations.py`, `commands.py`, `cli.py`, `errors.py`, `gates.py`, `__init__.py`, the example configuration, the existing tests that assumed the login mount or the shared network, and the coordination and architecture docs |
+
+W1 decisions for the operator (also under [Human decisions required](#human-decisions-required)):
+
+1. **D-20 credential source:** provision provider API keys for the broker (`broker.credential_source: api-key-file`, per-token billing), or keep real runners disabled.
+2. **Review and commit** the W1 changes (branch `security/worker-d20-d21`), then authorize the real authenticated smoke stage separately.
+3. **W2 input:** `/usr/bin/python` does not exist on this host, so the Backend/CLI Bash allowlists (`python -m pytest`, `python -m pylint`) cannot run inside the sandbox (pre-existing; not changed in W1).
 
 ## Phase 4 finalization — record (2026-10-17)
 
@@ -182,7 +207,7 @@ Phase 5 is **not started** and needs an explicit authorization. Before it:
 4. **D-23:** the Phase 5 gate set. Recommended: the full catalog with D-19 lint baselines and `backend-tests` after B-7.
 5. **D-24:** `github.write_scope: all-features`, only together with the Phase 5 feature approval.
 6. **D-25:** the Git coordinator's non-force push of `feature/<slug>`, and `LIVE_PULL_REQUESTS_ENABLED` for **one** PR per feature, each with explicit approval; never merge.
-7. **D-20 and D-21** for supervised runs. Recommended: (a) for both in Phase 5; credential brokering and an egress proxy before unattended runs.
+7. ~~**D-20 and D-21** for supervised runs~~ **Implemented in W1** (2026-10-21; credential brokering and network namespaces, [worker-security](worker-security.md)). Still open: the broker's credential source (D-20).
 8. **Optional:** D-26 (a separate GitHub identity), and switching off Project #2's two pull-request workflows. They would move the parent's card when the single PR is linked or merged; the coordinator restores the value.
 9. **The feature:** an operator-approved **new** feature spanning Backend, CLI and Frontend, with its spec (tasks, contract, acceptance criteria, gates).
 10. **Only if the Automation role should use the remote Qwen model:** D-15, D-16, D-18 and an approved live validation. Otherwise Automation stays off or on an approved default runner.
@@ -195,7 +220,7 @@ Phase 5 is **not started** and needs an explicit authorization. Before it:
 - The board and GitHub comments are never authority. Locks, claims, permissions and approvals come only from the local state and the operator's own commands. The shared `spyderbg` account means a GitHub edit or comment can never authorize a sensitive operation (D-26).
 - No request to the remote Qwen server (`LIVE_REMOTE_ENABLED = False`; D-15/D-16/D-18 open).
 - Runner sandboxes:
-  - runner credentials are bound read-only (D-20) and the runner shares the host network for its API (D-21);
+  - *(superseded by W1, 2026-10-21)* runner credentials were bound read-only (D-20) and Claude Code shared the host network (D-21). Since W1 no credential is mounted and no sandbox shares the host network; real runs need a broker credential;
   - every other credential path stays invisible;
   - gate sandboxes are offline and read-only.
 - `backend-tests` is blocked against real checkouts (B-7).
@@ -843,8 +868,8 @@ See the tables above and [architecture §12](../architecture/README.md#12-decisi
 | D-15 | Transport for the remote Qwen endpoint (plain HTTP today) | Secure it (TLS reverse proxy, HTTPS with certificate verification, or a WireGuard/Tailscale tunnel), **or** record an explicit plain-HTTP exception after a network security assessment. Until decided, **no source code or repository context is sent** | Before any live Qwen use with code (Phase 3 at the earliest) |
 | D-16 | Disclosure policy for the remote model | Approve which code/context categories may be sent; never `.env`, production data, tokens or whole repositories | Same as D-15 |
 | D-18 | Qwen API authentication | Whether the server requires `AGENT_QWEN_API_KEY`; if yes, provision it via a private secret store only | Before any live request |
-| D-20 | Runner credentials inside the sandbox | The CLIs need their credentials, bound read-only, so commands an agent runs can read them (residual risk 1). Options: (a) accept with the current mitigations (deny rules, Bash allowlist, Codex offline commands); (b) credential brokering, e.g. a Claude Code `apiKeyHelper` or an API key in a helper outside the sandbox, and short-lived tokens. **Recommended: (b) before unattended runs (Phase 7); (a) acceptable for supervised Phase 5.** Also: rotate the Claude token exposed in this session (security note above) | Before Phase 5 |
-| D-21 | Network policy for runner sandboxes | Claude Code's sandbox shares the host network (its API is needed), so allowlisted Bash commands could reach the network. Options: (a) keep the Bash allowlist only; (b) a network namespace with an allowlisting egress proxy; (c) enable Claude Code's own sandboxed Bash, nested like Codex [U]. **Recommended: (a) for supervised Phase 5, then (b)** | Before unattended runs |
+| D-20 | Runner credentials inside the sandbox | **Isolation implemented in W1 (2026-10-21)**: no login file is mounted and no API key is forwarded; a host-side broker holds the upstream credential and gives the runner a per-run token ([worker-security §4](worker-security.md#4-credential-broker-d-20)). **Still open — the broker's credential source:** (a) `api-key-file` with Anthropic/OpenAI API keys (billed per token; the only documented brokered mode of both CLIs), or (b) keep `none` (real runners unavailable). A Claude or ChatGPT subscription login cannot be brokered with the mechanisms verified in W1. **Potential alternative (not investigated):** official OpenAI documentation now describes ChatGPT plan usage through Sign in with ChatGPT and the Codex app-server; it needs a separate security and compatibility investigation ([worker-security §4.4](worker-security.md#44-credential-sources--and-why-subscriptions-cannot-be-brokered)). Also still: rotate the Claude token exposed in Phase 3 (security note above) | Before any real agent run |
+| D-21 | Network policy for runner sandboxes | **Implemented in W1 (2026-10-21), verified offline**: every runner sandbox has its own network namespace whose only route is the broker endpoint; agent commands run in the CLI's nested sandbox (Claude Code strict Bash sandbox, Codex sandbox) ([worker-security §5](worker-security.md#5-network-isolation-d-21)). To approve: the W1 changes | With W1 review |
 | D-22 | ~~Update the architecture page and the docs index~~ **Approved and done 2026-10-17** (finalization record) | — | — |
 | D-24 | GitHub write scope for Phase 5 | `github.write_scope` is `test-features-only`. Recommended: switch to `all-features` only together with the Phase 5 feature approval (one config line) | Phase 5 |
 | D-25 | Push and the single real PR | Recommended for Phase 5: allow the Git coordinator's non-force push of `feature/<slug>` and set `LIVE_PULL_REQUESTS_ENABLED` for **one** PR per feature, each with explicit operator approval; never merge | Phase 5 |
@@ -1064,6 +1089,7 @@ Execution remains **sequential and supervised** until Phase 3 proves enforcement
 
 ## Exact next action
 
+0. **W1 (2026-10-21):** review the uncommitted changes on `security/worker-d20-d21` ([record](#w1--worker-security-d-20-d-21-record-2026-10-21)); decide the broker credential source (D-20); approve commit and push separately; then, if wanted, the operator-approved real smoke runs through the broker.
 1. Operator reviews the [execution record](#execution-record-d-10): C4 `ce2d1fc` and C5 `80cb1d6` (pushed), and the two local commits, the mode fix `545b9d3` and this status update.
 2. Operator pushes the two local commits, then the D-11 bootstrap PR `agents` → `dev` (separate approval; human-reviewed, not a feature PR). The Qwen address in `agents_prompt_v5.md` and `docs/multiple_agents/execution/` are already on `origin/agents` since the operator's push; any follow-up is the operator's decision. No PR has been opened.
 3. Schedule [Backend task B-7](backend-task-b7.md); decide D-20, D-21, D-23–D-25 (D-26, D-27 optional).
