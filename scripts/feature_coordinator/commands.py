@@ -8,10 +8,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from .broker import ROUTES, configured_credential
 from .config import ProjectConfig
-from .errors import CoordinatorError
+from .errors import BrokerUnavailableError, CoordinatorError
 from .gates import GateContext, SandboxedGateRunner, gate_cwd
-from .launchers import LAUNCHERS, probe_runner
+from .launchers import LAUNCHERS, missing_dependencies, probe_runner
 from .lint_baseline import lint_report
 from .paths import PathPolicy, ScopedWorkspace
 from .providers import CliRunnerProfile, OpenAICompatibleProfile
@@ -65,7 +66,31 @@ def cmd_runners(args: argparse.Namespace, config: ProjectConfig) -> int:
             request = RunRequest(f"example.{role}", role, "(task prompt)", ScopedWorkspace(policy, role))
             spec = launcher.prepare(request, Path(args.scratch or _state(args, config) / "tmp" / f"plan-{role}"), roots)
             _print(f"{'':15s}argv: {' '.join(spec.argv)}")
+    for name, reason in _real_run_blockers(config, repo).items():
+        _print(f"{name:12s} real runs: UNAVAILABLE — {reason}")
+    _print("network: every runner sandbox has its own namespace; the model is reached only through the broker")
     return 0 if ok else 1
+
+
+def _real_run_blockers(config: ProjectConfig, repo: Path) -> dict[str, str]:
+    """Per CLI provider used by a role: why a real run cannot start (sandbox dependencies, no broker
+    credential). Checks the credential file's existence and permissions only; never prints it."""
+    blockers: dict[str, str] = {}
+    for role_cfg in config.roles.values():
+        profile = config.providers[role_cfg.provider]
+        if not isinstance(profile, CliRunnerProfile) or profile.name in blockers:
+            continue
+        missing = missing_dependencies(profile.kind)
+        try:
+            configured_credential(config.broker, profile.name, ROUTES[profile.kind], forbidden_roots=(repo,))
+            credential = ""
+        except BrokerUnavailableError as exc:
+            credential = str(exc)
+        reasons = [f"missing sandbox dependencies {missing}"] if missing else []
+        reasons += [credential] if credential else []
+        if reasons:
+            blockers[profile.name] = "; ".join(reasons)
+    return blockers
 
 
 def cmd_sandbox_check(args: argparse.Namespace, config: ProjectConfig) -> int:
@@ -83,8 +108,14 @@ def cmd_sandbox_check(args: argparse.Namespace, config: ProjectConfig) -> int:
     secrets = builder.secret_files()
     _print(f"secret files hidden from every sandbox: {secrets or 'none'}")
     if not args.apply:
-        _print("dry run — pass --apply to run the containment self-test in a disposable repository")
+        _print("dry run — pass --apply to run the containment and isolation self-tests in a disposable repository")
         return 0
+    return 0 if _self_tests(config) else 1
+
+
+def _self_tests(config: ProjectConfig) -> bool:
+    """The containment matrix and the network/credential isolation self-test (W1), printed."""
+    from .isolation_check import isolation_self_test  # pylint: disable=import-outside-toplevel
     from .operations import containment_self_test  # pylint: disable=import-outside-toplevel
     report = containment_self_test(config)
     for role, result in report.roles.items():
@@ -94,7 +125,41 @@ def cmd_sandbox_check(args: argparse.Namespace, config: ProjectConfig) -> int:
     for mismatch in report.mismatches:
         _print(f"MISMATCH: {mismatch}")
     _print(f"containment self-test: {'PASSED' if report.ok else 'FAILED'}")
-    return 0 if report.ok else 1
+    isolation = isolation_self_test(config)
+    for name, check in isolation.checks.items():
+        _print(f"[isolation] {'ok  ' if check['ok'] else 'FAIL'} {name}: {check['observed']}")
+    for failure in isolation.failures:
+        _print(f"ISOLATION FAILURE: {failure}")
+    _print(f"isolation self-test: {'PASSED' if isolation.ok else 'FAILED'}")
+    return report.ok and isolation.ok
+
+
+def cmd_worker_check(args: argparse.Namespace, config: ProjectConfig) -> int:
+    """Is this Worker eligible for REAL agent execution? (W1: D-20, D-21; no model call)."""
+    if not args.apply:
+        _print("dry run — --apply checks: bubblewrap; each CLI's version and flags; the sandbox dependencies; a "
+               "broker credential per CLI provider; the containment and isolation self-tests (disposable "
+               "repository, no model call, no credential is read or printed)")
+        return 0
+    reasons: list[str] = []
+    try:
+        _print(f"bubblewrap: {bwrap_version(check_bwrap())}")
+    except SandboxUnavailableError as exc:
+        reasons.append(str(exc))
+    for name in sorted({config.providers[r.provider].name for r in config.roles.values()
+                        if isinstance(config.providers[r.provider], CliRunnerProfile)}):
+        probe = probe_runner(config.providers[name])  # type: ignore[arg-type]
+        _print(f"{name}: {probe.version or '-'} at {probe.resolved or '-'}: {'OK' if probe.ok else 'UNAVAILABLE'}")
+        if not probe.ok:
+            reasons.append(f"{name}: {probe.error or 'missing flags ' + ', '.join(probe.missing_flags)}")
+    reasons += [f"{name}: {why}" for name, why in _real_run_blockers(config, Path(args.repo)).items()]
+    if not reasons and not _self_tests(config):
+        reasons.append("a sandbox self-test failed (see above)")
+    for reason in reasons:
+        _print(f"BLOCKER: {reason}")
+    _print("Worker: ELIGIBLE for real agent execution" if not reasons
+           else "Worker: INELIGIBLE for real agent execution (fail closed)")
+    return 0 if not reasons else 1
 
 
 # -- gates ------------------------------------------------------------------------------
@@ -230,10 +295,14 @@ def register(sub: Any) -> None:
     runners = sub.add_parser("runners", help="probe the claude/codex CLIs and bwrap (no model call)")
     runners.add_argument("--scratch", default=None, help="directory for the generated example files")
     runners.set_defaults(func=cmd_runners)
-    check = sub.add_parser("sandbox-check", help="show role sandboxes; --apply runs the containment self-test")
+    check = sub.add_parser("sandbox-check", help="show role sandboxes; --apply runs the containment and "
+                                                 "isolation self-tests")
     check.add_argument("--role", default=None)
     check.add_argument("--apply", action="store_true")
     check.set_defaults(func=cmd_sandbox_check)
+    worker = sub.add_parser("worker-check", help="is this Worker eligible for real agent execution? (W1)")
+    worker.add_argument("--apply", action="store_true")
+    worker.set_defaults(func=cmd_worker_check)
     gate = sub.add_parser("gate", help="run one gate in the offline read-only sandbox")
     gate.add_argument("name")
     gate.add_argument("--base", default=None, help="base commit for lint gates (default: merge-base with base)")
