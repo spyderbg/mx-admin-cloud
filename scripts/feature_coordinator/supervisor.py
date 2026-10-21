@@ -86,16 +86,22 @@ def supervise(argv: Sequence[str], *, cwd: Path, env: Mapping[str, str] | None, 
               stderr_path: Path, stdin_path: Path | None = None, timeout_seconds: float,
               heartbeat: Callable[[], None] | None = None, heartbeat_interval: float = 10.0,
               cancelled: Callable[[], bool] | None = None, grace_seconds: float = 10.0,
-              poll_interval: float = 0.1, on_start: Callable[[int], None] | None = None) -> Supervision:
-    """Run *argv* under supervision. See the module docstring."""
+              poll_interval: float = 0.1, on_start: Callable[[int], None] | None = None,
+              pass_fds: Sequence[int] = ()) -> Supervision:
+    """Run *argv* under supervision. See the module docstring. Only *pass_fds* (the broker
+    channel, W1) are inherited besides stdin/stdout/stderr; every other descriptor is closed."""
     stdout_path.parent.mkdir(parents=True, exist_ok=True)
     with open(stdout_path, "wb") as out, open(stderr_path, "wb") as err, \
             (open(stdin_path, "rb") if stdin_path else open(os.devnull, "rb")) as stdin:
         start = time.monotonic()
         proc = subprocess.Popen(list(argv), cwd=cwd, env=dict(env) if env is not None else None,  # pylint: disable=consider-using-with
-                                stdin=stdin, stdout=out, stderr=err, start_new_session=True)
+                                stdin=stdin, stdout=out, stderr=err, start_new_session=True, pass_fds=tuple(pass_fds))
         if on_start:
-            on_start(proc.pid)
+            try:
+                on_start(proc.pid)
+            except BaseException:
+                terminate_group(proc, 0)  # never leave a sandbox running when its set-up hook fails
+                raise
         deadline = start + timeout_seconds
         next_beat = start + heartbeat_interval
         beats = 0

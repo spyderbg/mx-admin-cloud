@@ -24,10 +24,10 @@ from feature_coordinator.config import ProjectConfig
 from feature_coordinator.demo import RecordingGates, init_demo_repo
 from feature_coordinator.errors import RoleBusyError, WritersActiveError
 from feature_coordinator.model import TaskState
-from feature_coordinator.operations import build_coordinator, build_runners
+from feature_coordinator.operations import build_coordinator
 from feature_coordinator.workflow import FeatureSpec, TaskSpec
 
-from fc_helpers import WORKER_SCRIPT, actions_prompt, git, run_py, start_worker, worker_result
+from fc_helpers import WORKER_SCRIPT, actions_prompt, fake_runners, git, run_py, start_worker, worker_result
 
 def barrier_actions(role: str, file: str, other: str) -> list[dict]:
     return [{"do": "write", "path": file, "text": f"// written by the {role} agent\n"},
@@ -52,7 +52,7 @@ def test_backend_and_frontend_write_concurrently_and_land_separately(  # pylint:
     del fake_home
     repo = tmp_path / "shared"
     init_demo_repo(repo)
-    coord = build_coordinator(agent_config, repo, state_dir, runners=build_runners(agent_config))
+    coord = build_coordinator(agent_config, repo, state_dir, runners=fake_runners(agent_config))
     coord.gate_runner = RecordingGates()
     feature = coord.activate(coord.plan(FeatureSpec("par", "Parallel roles", (
         TaskSpec("api", "backend", "API"), TaskSpec("ui", "frontend", "UI"), TaskSpec("db", "backend", "DB")))).id)

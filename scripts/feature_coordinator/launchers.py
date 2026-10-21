@@ -1,15 +1,25 @@
-"""Real Claude Code and Codex launchers (Phase 3).
+"""Real Claude Code and Codex launchers (Phase 3; brokered and network-isolated since W1, D-20/D-21).
 
 A launcher turns one task into a command line for the installed CLI, the files that command
 needs, and the sandbox mounts it needs; `RealCliRunner` runs it under bubblewrap
 (sandbox.py) and supervision (supervisor.py), then reports what changed.
 
+W1 — credentials and network. The sandbox has its own empty network namespace and no reusable
+credential: no login file is mounted and no API key is forwarded. The CLI's only route to a
+model is the host-side broker (broker.py), whose endpoint the sandbox bootstrap opens inside
+the sandbox's namespace (netns_channel.py). The CLI receives the broker's base URL and a
+per-run token through the channel at exec time — never on a command line or in a file.
+
 Fail closed:
 
   * `probe_runner()` reads the installed CLI's `--version` and `--help`. A missing required
-    flag makes the runner *unavailable* — it never falls back to weaker flags;
+    flag or a version older than the verified one (MIN_VERSIONS) makes the runner
+    *unavailable* — it never falls back to weaker flags;
   * no launcher may emit a bypass flag (`FORBIDDEN_ARGS`); building such a command raises;
-  * without a working bwrap a real runner is unavailable — there is no unconfined mode.
+  * without a working bwrap, a sandbox dependency (SANDBOX_DEPENDENCIES) or a broker with an
+    upstream credential, a real runner is unavailable — there is no unconfined, networked or
+    credential-mounting mode;
+  * a sandbox that does not hand over a network-isolated broker endpoint fails the run.
 
 Claude Code (Backend, CLI, Coordination):
   `claude -p --output-format stream-json --verbose --restricted --tools <list>
@@ -21,14 +31,24 @@ Claude Code (Backend, CLI, Coordination):
   edited — and refuses bypassPermissions. The generated settings allow file tools and only
   the role's Bash command prefixes (runtime.role_commands); with `--permission-prompts none`
   everything else is denied. `--strict-mcp-config` with no MCP config loads no MCP servers.
+  Gateway mode: ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN (the broker's per-run token).
+  Nested command isolation: the settings turn on Claude Code's own Bash sandbox in strict
+  mode (`failIfUnavailable`, no unsandboxed retry, no auto-allow, a strict empty domain
+  allowlist, the two broker variables removed from every command's environment). Each Bash
+  command then runs in a further bubblewrap sandbox with its own network and PID namespaces
+  and Unix sockets blocked, so it cannot reach the broker endpoint or read the runner's token.
 
 Codex (Frontend):
-  `codex exec --json --sandbox workspace-write --ephemeral --ignore-user-config -C <repo>
-   -o <file> -c sandbox_workspace_write.network_access=false [-m <m>] -`, prompt on stdin.
+  `codex exec --json --strict-config --sandbox workspace-write --ephemeral --ignore-user-config
+   -C <repo> -o <file> -c <broker provider…> -c web_search="disabled"
+   -c shell_environment_policy.inherit="core" -c sandbox_workspace_write.network_access=false
+   [-m <m>] -`, prompt on stdin. The broker provider is a custom `responses` provider whose
+  base URL is the broker endpoint and whose key variable (FC_BROKER_TOKEN) holds the per-run
+  token. `--strict-config` refuses any override key this Codex version does not know.
   Codex keeps its own sandbox (bubblewrap) nested inside ours: its model-generated commands
-  get no network, and our outer sandbox limits writes to the Frontend roots.
+  get no network and no socket at all, and our outer sandbox limits writes to the Frontend roots.
 
-Both get a private HOME; their credential files are bound read-only.
+Both get a private, empty HOME. Nothing in it can authenticate to a provider.
 """
 
 from __future__ import annotations
@@ -37,12 +57,16 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
+from .broker import ROUTES, AuthBroker, configured_credential
 from .config import ProjectConfig
+from .errors import BrokerError
+from .netns_channel import BROKER_PORT, SANDBOX_PYTHON, BrokerChannel
 from .paths import PathPolicy
 from .providers import CliRunnerProfile, ProviderKind
 from .runners import RunContext, RunRequest, RunResult
@@ -61,23 +85,47 @@ REQUIRED_FLAGS: Mapping[ProviderKind, tuple[str, ...]] = {
         "--no-session-persistence", "--disable-slash-commands", "--max-budget-usd", "--model",
     ),
     ProviderKind.CODEX: (
-        "--json", "--sandbox", "workspace-write", "--ephemeral", "--ignore-user-config", "--cd",
+        "--json", "--strict-config", "--sandbox", "workspace-write", "--ephemeral", "--ignore-user-config", "--cd",
         "--output-last-message", "--config", "--model",
     ),
 }
 
-PASSTHROUGH_ENV = {
-    ProviderKind.CLAUDE_CODE: ("ANTHROPIC_API_KEY", "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY"),
-    ProviderKind.CODEX: ("OPENAI_API_KEY", "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY"),
+# The versions whose security mechanisms were verified offline against the fake provider (W1):
+# Claude Code's gateway mode and strict nested Bash sandbox, Codex's custom provider through
+# `-c` with --ignore-user-config and --strict-config. An older CLI is unavailable.
+MIN_VERSIONS: Mapping[ProviderKind, tuple[int, int, int]] = {
+    ProviderKind.CLAUDE_CODE: (2, 1, 303),
+    ProviderKind.CODEX: (0, 163, 0),
 }
+
+# Programs the sandbox itself needs (all under /usr, which is bound read-only): the system Python
+# for the bootstrap, and for Claude Code's nested Bash sandbox bubblewrap and socat.
+SANDBOX_DEPENDENCIES: Mapping[ProviderKind, tuple[str, ...]] = {
+    ProviderKind.CLAUDE_CODE: (SANDBOX_PYTHON, "bwrap", "socat"),
+    ProviderKind.CODEX: (SANDBOX_PYTHON,),
+}
+SANDBOX_PATH = "/usr/local/bin:/usr/bin:/bin"
+
+BROKER_URL = f"http://127.0.0.1:{BROKER_PORT}"
+CLAUDE_BROKER_ENV = ("ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN")
+CODEX_PROVIDER_ID = "fc_broker"
+CODEX_TOKEN_ENV = "FC_BROKER_TOKEN"
 
 CLAUDE_FILE_TOOLS = ("Read", "Glob", "Grep", "Edit", "Write")
 CLAUDE_DENY = ("WebFetch", "WebSearch", "Bash(git commit:*)", "Bash(git add:*)", "Bash(git push:*)",
                "Bash(git checkout:*)", "Bash(git switch:*)", "Bash(git reset:*)", "Bash(git stash:*)",
                "Bash(curl:*)", "Bash(wget:*)",
-               # The runner's credential files are mounted read-only so the CLI can authenticate;
-               # its file tools must not read them (residual risk: see feature-workflow §17).
+               # No login file exists in the sandbox (W1); these rules stay as defense in depth.
                "Read(~/.claude/**)", "Read(~/.codex/**)", "Read(~/.claude.json)")
+# Claude Code's own Bash sandbox, strict (documented settings; verified with 2.1.303 nested in ours).
+CLAUDE_SANDBOX: Mapping[str, Any] = {
+    "enabled": True,
+    "failIfUnavailable": True,          # exit at start-up instead of running commands unsandboxed
+    "allowUnsandboxedCommands": False,  # the dangerouslyDisableSandbox retry is ignored
+    "autoAllowBashIfSandboxed": False,  # only the role's command allowlist runs
+    "network": {"allowedDomains": [], "strictAllowlist": True},
+    "credentials": {"envVars": [{"name": name, "mode": "deny"} for name in CLAUDE_BROKER_ENV]},
+}
 
 
 # ---------------------------------------------------------------------------
@@ -98,12 +146,28 @@ class RunnerProbe:
 
     @property
     def ok(self) -> bool:
-        """True when the CLI exists and supports every required flag."""
+        """True when the CLI exists, is recent enough and supports every required flag."""
         return bool(self.resolved) and not self.missing_flags and not self.error
 
 
+def parse_version(text: str) -> tuple[int, int, int] | None:
+    """The first `X.Y.Z` in a `--version` output."""
+    found = re.search(r"(\d+)\.(\d+)\.(\d+)", text)
+    return (int(found.group(1)), int(found.group(2)), int(found.group(3))) if found else None
+
+
+def missing_dependencies(kind: ProviderKind) -> list[str]:
+    """Sandbox programs (SANDBOX_DEPENDENCIES) that are not installed under /usr."""
+    missing = []
+    for tool in SANDBOX_DEPENDENCIES[kind]:
+        present = os.access(tool, os.X_OK) if tool.startswith("/") else shutil.which(tool, path=SANDBOX_PATH)
+        if not present:
+            missing.append(tool)
+    return missing
+
+
 def probe_runner(profile: CliRunnerProfile, *, timeout: float = 30.0) -> RunnerProbe:
-    """Verify the installed CLI and its required flags. Never starts a model session."""
+    """Verify the installed CLI, its version and its required flags. Never starts a model session."""
     resolved = shutil.which(profile.executable)
     if not resolved:
         return RunnerProbe(profile.name, profile.kind, profile.executable, "", "",
@@ -120,7 +184,11 @@ def probe_runner(profile: CliRunnerProfile, *, timeout: float = 30.0) -> RunnerP
     text = help_text.stdout + help_text.stderr
     missing = tuple(flag for flag in REQUIRED_FLAGS[profile.kind]
                     if not re.search(rf"(?<![\w-]){re.escape(flag)}(?![\w-])", text))
-    return RunnerProbe(profile.name, profile.kind, profile.executable, real, version, missing)
+    parsed, minimum = parse_version(version), MIN_VERSIONS[profile.kind]
+    error = "" if parsed and parsed >= minimum else (
+        f"version {version or '(none)'!r} is older than the verified minimum {'.'.join(map(str, minimum))} "
+        "(security mechanisms unverified)")
+    return RunnerProbe(profile.name, profile.kind, profile.executable, real, version, missing, error)
 
 
 # ---------------------------------------------------------------------------
@@ -163,19 +231,6 @@ def _home() -> Path:
     return Path(os.environ.get("HOME", str(Path.home())))
 
 
-def _credential_binds(profile: CliRunnerProfile) -> list[Bind]:
-    binds = []
-    for rel in profile.credential_files:
-        host = _home() / rel
-        if host.is_file():
-            binds.append(Bind(str(host), str(host), "ro"))
-    return binds
-
-
-def _passthrough(kind: ProviderKind) -> dict[str, str]:
-    return {k: os.environ[k] for k in PASSTHROUGH_ENV[kind] if k in os.environ}
-
-
 class ClaudeCodeLauncher:
     """Builds the Claude Code invocation for one task."""
 
@@ -187,10 +242,17 @@ class ClaudeCodeLauncher:
         self.executable = executable
 
     def settings(self, role: str) -> dict[str, Any]:
-        """The generated Claude Code settings: file tools plus the role's Bash prefixes; deny the rest."""
+        """The generated Claude Code settings: file tools plus the role's Bash prefixes, deny the
+        rest; every Bash command in Claude Code's strict nested sandbox."""
         commands = self.config.runtime.role_commands.get(role, ())
         return {"permissions": {"allow": [*CLAUDE_FILE_TOOLS, *(f"Bash({c})" for c in commands)],
-                                "deny": list(CLAUDE_DENY), "defaultMode": "acceptEdits"}}
+                                "deny": list(CLAUDE_DENY), "defaultMode": "acceptEdits"},
+                "sandbox": json.loads(json.dumps(CLAUDE_SANDBOX))}
+
+    @staticmethod
+    def broker_environment(token: str) -> dict[str, str]:
+        """Gateway mode: the broker endpoint and this run's token (delivered through the channel)."""
+        return {"ANTHROPIC_BASE_URL": BROKER_URL, "ANTHROPIC_AUTH_TOKEN": token}
 
     def prepare(self, request: RunRequest, run_dir: Path, writable: Sequence[str]) -> LaunchSpec:
         """Write the settings and prompt files and return the launch spec."""
@@ -212,9 +274,8 @@ class ClaudeCodeLauncher:
         if self.profile.model:
             argv += ["--model", self.profile.model]
         _check_forbidden(argv)
-        env = {"DISABLE_AUTOUPDATER": "1", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", **_passthrough(self.kind)}
-        binds = [Bind(str(install_prefix(self.executable)), str(install_prefix(self.executable)), "ro"),
-                 *_credential_binds(self.profile)]
+        env = {"DISABLE_AUTOUPDATER": "1", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"}
+        binds = [Bind(str(install_prefix(self.executable)), str(install_prefix(self.executable)), "ro")]
         return LaunchSpec(argv, prompt_path, env, binds, shadow_writable=False,
                           files={settings_sandbox: "generated Claude Code settings"})
 
@@ -256,18 +317,31 @@ class CodexLauncher:
         prompt_path.write_text(role_prompt(request, writable), encoding="utf-8")
         last_message = str(_home() / ".fc" / "last-message.txt")
         repo = str(request.workspace.policy.root)
-        argv = [self.executable, "exec", "--json", "--sandbox", "workspace-write", "--ephemeral",
+        provider = f"model_providers.{CODEX_PROVIDER_ID}"
+        argv = [self.executable, "exec", "--json", "--strict-config", "--sandbox", "workspace-write", "--ephemeral",
                 "--ignore-user-config", "-C", repo, "-o", last_message,
+                "-c", f'model_provider="{CODEX_PROVIDER_ID}"',
+                "-c", f'{provider}.name="feature-coordinator broker"',
+                "-c", f'{provider}.base_url="{BROKER_URL}/v1"',
+                "-c", f'{provider}.env_key="{CODEX_TOKEN_ENV}"',
+                "-c", f'{provider}.wire_api="responses"',
+                "-c", 'web_search="disabled"',
+                "-c", 'shell_environment_policy.inherit="core"',
+                "-c", "shell_environment_policy.ignore_default_excludes=false",
                 "-c", "sandbox_workspace_write.network_access=false"]
         if self.profile.model:
             argv += ["-m", self.profile.model]
         argv.append("-")
         _check_forbidden(argv)
-        env = {"CODEX_HOME": str(_home() / ".codex"), **_passthrough(self.kind)}
-        binds = [Bind(str(install_prefix(self.executable)), str(install_prefix(self.executable)), "ro"),
-                 *_credential_binds(self.profile)]
+        env = {"CODEX_HOME": str(_home() / ".codex")}
+        binds = [Bind(str(install_prefix(self.executable)), str(install_prefix(self.executable)), "ro")]
         return LaunchSpec(argv, prompt_path, env, binds, shadow_writable=True,
                           files={last_message: "Codex last message"})
+
+    @staticmethod
+    def broker_environment(token: str) -> dict[str, str]:
+        """The custom provider's key variable holds this run's token (delivered through the channel)."""
+        return {CODEX_TOKEN_ENV: token}
 
     @staticmethod
     def parse(stdout_path: Path) -> tuple[bool, str, dict[str, Any]]:
@@ -335,16 +409,59 @@ def role_dirty_paths(repo_root: Path, roots: Sequence[str]) -> list[str]:
     return sorted(set(paths))
 
 
-class RealCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-public-methods
-    """Runs a real Claude Code or Codex process for one task, contained and supervised."""
+BrokerFactory = Callable[[CliRunnerProfile, ProjectConfig, RunContext, Path], AuthBroker]
 
-    def __init__(self, profile: CliRunnerProfile, config: ProjectConfig, *, bwrap: str | None = None,
-                 probe: RunnerProbe | None = None) -> None:
+
+def broker_for_run(profile: CliRunnerProfile, config: ProjectConfig, ctx: RunContext, repo_root: Path) -> AuthBroker:
+    """The production broker: the operator-configured upstream credential (none → raises
+    BrokerUnavailableError) and the provider's approved HTTPS upstream. Its session expires
+    shortly after the run's own deadline."""
+    route = ROUTES[profile.kind]
+    credential = configured_credential(config.broker, profile.name, route, forbidden_roots=(repo_root,))
+    runtime = config.runtime
+    ttl = (ctx.timeout_seconds or runtime.task_timeout_seconds) + runtime.terminate_grace_seconds + 60
+    return AuthBroker(route, credential, config.broker, ttl_seconds=ttl, log_path=ctx.run_dir / "broker.log")
+
+
+class _Handshake:  # pylint: disable=too-few-public-methods
+    """supervise()'s on_start hook: take the sandbox's broker endpoint, start serving, send the
+    runner's broker environment. On any failure the sandbox is killed at once."""
+
+    def __init__(self, channel: BrokerChannel, broker: AuthBroker, environment: Mapping[str, str],
+                 timeout: float) -> None:
+        self.channel = channel
+        self.broker = broker
+        self.environment = environment
+        self.timeout = timeout
+        self.error = ""
+
+    def __call__(self, pid: int) -> None:
+        self.channel.started()
+        try:
+            self.broker.serve(self.channel.receive_listener(self.timeout))
+            self.channel.send_environment(self.environment)
+        except (BrokerError, OSError) as exc:
+            self.error = str(exc)
+            try:
+                os.killpg(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+
+class RealCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-public-methods
+    """Runs a real Claude Code or Codex process for one task: contained, network-isolated,
+    brokered and supervised."""
+
+    def __init__(self, profile: CliRunnerProfile, config: ProjectConfig, *, bwrap: str | None = None,  # pylint: disable=too-many-arguments
+                 probe: RunnerProbe | None = None, broker_factory: BrokerFactory | None = None,
+                 dependency_check: Callable[[ProviderKind], list[str]] = missing_dependencies) -> None:
         self.profile = profile
         self.name = profile.name
         self.kind = profile.kind
         self.config = config
         self.bwrap = bwrap
+        self.broker_factory = broker_factory or broker_for_run
+        self.dependency_check = dependency_check
         self._probe = probe
 
     def probe(self) -> RunnerProbe:
@@ -353,39 +470,69 @@ class RealCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-pub
             self._probe = probe_runner(self.profile)
         return self._probe
 
-    def run(self, request: RunRequest) -> RunResult:  # pylint: disable=too-many-locals
-        """Launch the CLI for one task inside its sandbox and report the outcome."""
+    def _preflight(self) -> tuple[str, str]:
+        """(bwrap path, '') when everything a run needs exists, else ('', reason)."""
         probe = self.probe()
         if not probe.ok:
-            return RunResult(self.name, "unavailable",
-                             error=probe.error or f"{probe.resolved} lacks required flags {list(probe.missing_flags)}")
+            flags = f"{probe.resolved} lacks required flags {list(probe.missing_flags)}" if probe.missing_flags else ""
+            return "", "; ".join(part for part in (flags, probe.error) if part)
+        missing = self.dependency_check(self.kind)
+        if missing:
+            return "", f"missing sandbox dependencies {missing} (install them; there is no unsandboxed mode)"
         try:
-            bwrap = check_bwrap(self.bwrap)
+            return check_bwrap(self.bwrap), ""
         except SandboxUnavailableError as exc:
-            return RunResult(self.name, "unavailable", error=str(exc))
+            return "", str(exc)
+
+    def run(self, request: RunRequest) -> RunResult:
+        """Launch the CLI for one task inside its sandbox and report the outcome. The broker
+        exists only for this call and is stopped (its token revoked) however the run ends."""
+        bwrap, reason = self._preflight()
+        if reason:
+            return RunResult(self.name, "unavailable", error=reason)
         ctx = request.context
         if ctx is None:
             return RunResult(self.name, "failed", error="a real runner needs a RunContext (run directory)")
+        try:
+            broker = self.broker_factory(self.profile, self.config, ctx, request.workspace.policy.root)
+        except BrokerError as exc:
+            return RunResult(self.name, "unavailable", error=str(exc))
+        try:
+            return self._run(request, ctx, bwrap, broker)
+        finally:
+            broker.stop()
+
+    def _run(self, request: RunRequest, ctx: RunContext, bwrap: str,  # pylint: disable=too-many-locals
+             broker: AuthBroker) -> RunResult:
         policy: PathPolicy = request.workspace.policy
         builder = SandboxBuilder(policy.root, self.config, policy, bwrap=bwrap)
         writable = builder.writable_roots(request.role, request.workspace.grants)
-        launcher = LAUNCHERS[self.kind](self.profile, self.config, probe.resolved)
+        launcher = LAUNCHERS[self.kind](self.profile, self.config, self.probe().resolved)
         spec = launcher.prepare(request, ctx.run_dir, writable)
-        plan = builder.plan(run_dir=ctx.run_dir, role=request.role, grants=request.workspace.grants,
-                            network=self.config.runtime.agent_network, shadow_writable=spec.shadow_writable,
-                            env=spec.env, extra=spec.binds, hide=[ctx.run_dir.parent.parent])
-        (ctx.run_dir / "sandbox.json").write_text(json.dumps({
-            "argv": plan.argv(spec.argv), "writable": plan.writable, "readonly_overlays": plan.readonly_overlays,
-            "masked": plan.masked, "hidden": plan.hidden}, indent=2), encoding="utf-8")
-        before = snapshot(policy.root, role_dirty_paths(policy.root, writable))
-        runtime = self.config.runtime
-        sup = supervise(
-            plan.argv(spec.argv), cwd=policy.root, env={"PATH": os.environ.get("PATH", "/usr/bin:/bin")},
-            stdout_path=ctx.run_dir / "stdout.jsonl", stderr_path=ctx.run_dir / "stderr.log",
-            stdin_path=spec.stdin_path, timeout_seconds=ctx.timeout_seconds or runtime.task_timeout_seconds,
-            heartbeat=(lambda: ctx.heartbeat({"run_dir": str(ctx.run_dir)})) if ctx.heartbeat else None,
-            heartbeat_interval=runtime.heartbeat_interval_seconds, cancelled=ctx.cancelled,
-            grace_seconds=runtime.terminate_grace_seconds)
+        channel = BrokerChannel()
+        handshake = _Handshake(channel, broker, launcher.broker_environment(broker.session.token),
+                               self.config.broker.handshake_timeout_seconds)
+        try:
+            plan = builder.plan(run_dir=ctx.run_dir, role=request.role, grants=request.workspace.grants,
+                                shadow_writable=spec.shadow_writable, env=spec.env, extra=[*spec.binds, channel.bind()],
+                                hide=[ctx.run_dir.parent.parent])
+            argv = plan.argv(channel.command(spec.argv))
+            (ctx.run_dir / "sandbox.json").write_text(json.dumps({
+                "argv": argv, "writable": plan.writable, "readonly_overlays": plan.readonly_overlays,
+                "masked": plan.masked, "hidden": plan.hidden, "network": "own namespace; broker endpoint only",
+                "broker": {"endpoint": BROKER_URL, "upstream": broker.upstream.host}}, indent=2), encoding="utf-8")
+            before = snapshot(policy.root, role_dirty_paths(policy.root, writable))
+            runtime = self.config.runtime
+            sup = supervise(
+                argv, cwd=policy.root, env={"PATH": os.environ.get("PATH", "/usr/bin:/bin")},
+                stdout_path=ctx.run_dir / "stdout.jsonl", stderr_path=ctx.run_dir / "stderr.log",
+                stdin_path=spec.stdin_path, timeout_seconds=ctx.timeout_seconds or runtime.task_timeout_seconds,
+                heartbeat=(lambda: ctx.heartbeat({"run_dir": str(ctx.run_dir)})) if ctx.heartbeat else None,
+                heartbeat_interval=runtime.heartbeat_interval_seconds, cancelled=ctx.cancelled,
+                grace_seconds=runtime.terminate_grace_seconds, pass_fds=(channel.child_fd,), on_start=handshake)
+        finally:
+            channel.close()
+        broker.stop()
         strays, residue = plan.stray_writes()
         plan.discard_shadow()
         after = role_dirty_paths(policy.root, writable)
@@ -397,11 +544,13 @@ class RealCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-pub
         details.update(exit_code=sup.exit_code, duration_seconds=round(sup.duration_seconds, 1),
                        escalated_to_kill=sup.escalated_to_kill, run_dir=str(ctx.run_dir),
                        changed_during_run=touched, preexisting=sorted(before),
-                       shadow_residue=residue)
+                       shadow_residue=residue, broker=broker.describe())
         result = RunResult(self.name, "completed", allowed, transcript=[summary] if summary else [],
                            stray_writes=strays, details=details)
         if sup.status in ("timeout", "cancelled"):
             result.status, result.error = sup.status, f"runner {sup.status} after {sup.duration_seconds:.0f}s"
+        elif handshake.error:
+            result.status, result.error = "failed", f"sandbox start-up failed: {handshake.error}"
         elif strays:
             result.status, result.error = "rejected", f"wrote outside its roots (discarded): {strays}"
         elif denied:

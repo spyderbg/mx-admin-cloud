@@ -94,12 +94,12 @@ providers:
     kind: claude-code
     executable: claude
     model: ""                            # empty: Claude Code's own default model
-    credential_files: [.claude/.credentials.json]   # home-relative; bound READ-ONLY into the sandbox
+    # No credential files (W1, D-20): nothing is mounted into a sandbox to authenticate; the
+    # host-side broker holds the upstream credential (see `broker` below). The key is refused.
   codex:
     kind: codex
     executable: codex
     model: ""
-    credential_files: [.codex/auth.json]
   remote_qwen:
     # Exact operator profile (v5 §10.1.1). Configuration input, NOT verified behavior.
     kind: openai-compatible
@@ -163,7 +163,7 @@ unsafe_gates: {}
 # How real runners and gates execute (Phase 3).
 runtime:
   containment: bwrap                     # fixed: write-capable runs are never unconfined
-  agent_network: true                    # runners need their model API; gates never get network
+  agent_network: false                   # fixed (W1, D-21): runners reach their model only through the broker
   gate_network: false                    # fixed
   task_timeout_seconds: 3600
   heartbeat_interval_seconds: 10
@@ -177,6 +177,24 @@ runtime:
     backend: ["python -m pytest:*", "python -m pylint:*", "python -m compileall:*"]
     cli: ["python -m pytest:*", "python -m pylint:*", "kiddo-cli --help:*"]
     coordination: ["python scripts/check_docs_agents.py:*"]
+
+# Host-side authentication broker (W1: D-20, D-21; docs_agents/coordination/worker-security.md).
+# Every real runner sandbox has its own empty network namespace; its CLI reaches the model only
+# through this broker, which holds the upstream credential on the host and forwards approved
+# provider operations to the provider's fixed HTTPS endpoint. No secrets here — at most the
+# absolute HOST paths of API key files (mode 0600, outside every checkout).
+broker:
+  credential_source: none                # none: real runners are UNAVAILABLE (fail closed). api-key-file:
+                                         # a per-token-billed provider API key — an operator decision (D-20);
+                                         # a Claude/ChatGPT subscription login cannot be brokered
+  api_key_files: {}                      # provider name -> absolute host path (api-key-file only)
+  max_request_bytes: 33554432            # 32 MiB per request
+  max_response_bytes: 67108864           # 64 MiB per response; a longer stream is cut off (the run fails)
+  upstream_idle_timeout_seconds: 300.0   # connect / read idle timeout towards the provider
+  max_request_seconds: 1800.0            # total time of one request
+  max_requests_per_run: 1000             # then 429: the run's request budget is spent
+  max_concurrent_requests: 8
+  handshake_timeout_seconds: 30.0        # the sandbox must hand over its broker endpoint within this time
 
 # GitHub Issues adapter (Phase 4). No credentials here: the adapter calls the installed
 # GitHub CLI (`gh api`), which uses its existing login. Issues and labels are the human-

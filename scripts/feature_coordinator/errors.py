@@ -172,3 +172,15 @@ class ProviderRateLimitError(ProviderUnavailableError):
 
 class ProviderCancelledError(ProviderError):
     """The request was cancelled by the coordinator (operator stop or worker shutdown)."""
+
+
+class BrokerError(CoordinatorError):
+    """The host-side authentication broker refused to start or failed (W1: D-20, D-21)."""
+
+
+class BrokerUnavailableError(BrokerError):
+    """No usable upstream credential or broker: real runners stay unavailable (fail closed)."""
+
+
+class BrokerChannelError(BrokerError):
+    """The runner sandbox did not hand over a valid, network-isolated broker endpoint."""

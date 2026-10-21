@@ -26,6 +26,12 @@ The Phase 4 extension adds `github.project`: the GitHub Projects (v2) board that
 coordinator's Issues (owner, number and GraphQL node ID, the projects that must never be
 written, the Status options and the Agent / Feature ID / Blocked Reason fields). It is
 disabled by default; `default_config()` points it at the mx-admin-cloud board.
+
+W1 (Worker security, D-20/D-21) adds the `broker` section: where the host-side authentication
+broker reads the upstream credential (`none` by default, so real runners are unavailable) and
+the limits it applies. `runtime.agent_network` is now fixed to false like `gate_network`: no
+runner sandbox shares the host network. Provider profiles no longer name credential files —
+nothing is mounted into a sandbox to authenticate.
 """
 
 from __future__ import annotations
@@ -81,10 +87,10 @@ LINT_POLICIES = ("block-new",)  # D-19: new findings always block; no "disabled"
 
 @dataclass(frozen=True)
 class RuntimeConfig:  # pylint: disable=too-many-instance-attributes
-    """How real runners and gates execute (Phase 3)."""
+    """How real runners and gates execute (Phase 3; network isolation W1, D-21)."""
 
     containment: str = "bwrap"
-    agent_network: bool = True
+    agent_network: bool = False
     gate_network: bool = False
     task_timeout_seconds: int = 3600
     heartbeat_interval_seconds: int = 10
@@ -98,6 +104,29 @@ class RuntimeConfig:  # pylint: disable=too-many-instance-attributes
 
 
 CONTAINMENT_MODES = ("bwrap",)  # write-capable runs are never unconfined
+
+# W1 (D-20): where the host-side broker reads the upstream credential. `none` (the default)
+# leaves real runners unavailable; `api-key-file` is a per-token-billed provider API key that
+# the operator provisions on the host. A subscription login cannot be brokered.
+BROKER_CREDENTIAL_SOURCES = ("none", "api-key-file")
+
+
+@dataclass(frozen=True)
+class BrokerConfig:  # pylint: disable=too-many-instance-attributes
+    """The host-side authentication broker (W1: D-20, D-21). It holds no secret itself: only
+    where the broker reads its upstream credential (an absolute host path per provider) and
+    the limits it applies to every run."""
+
+    credential_source: str = "none"
+    api_key_files: Mapping[str, str] = field(default_factory=dict)
+    max_request_bytes: int = 32 * 1024 * 1024
+    max_response_bytes: int = 64 * 1024 * 1024
+    upstream_idle_timeout_seconds: float = 300.0
+    max_request_seconds: float = 1800.0
+    max_requests_per_run: int = 1000
+    max_concurrent_requests: int = 8
+    handshake_timeout_seconds: float = 30.0
+
 
 GITHUB_TRANSPORTS = ("gh-cli",)
 # Phase 4 ceiling: only features marked `test` may be written to GitHub. Widening the scope to
@@ -207,6 +236,7 @@ class ProjectConfig:  # pylint: disable=too-many-instance-attributes
     unsafe_gates: Mapping[str, str] = field(default_factory=dict)
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
     github: GitHubConfig = field(default_factory=GitHubConfig)
+    broker: BrokerConfig = field(default_factory=BrokerConfig)
     extra: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -311,6 +341,7 @@ def validate(config: ProjectConfig) -> None:
         if not argv or not all(isinstance(arg, str) and arg for arg in argv):
             raise ConfigError(f"gate {name!r} must be a non-empty argv list of strings")
     _validate_gates_and_runtime(config)
+    _validate_broker(config)
     _validate_github(config.github)
     if not config.allowed_state_filesystems or any(fs.startswith("fuse") for fs in config.allowed_state_filesystems):
         raise ConfigError("allowed_state_filesystems must be non-empty and must not include FUSE filesystems")
@@ -340,6 +371,9 @@ def _validate_runtime(config: ProjectConfig) -> None:
                           "never unconfined")
     if runtime.gate_network:
         raise ConfigError("runtime.gate_network is fixed to false: gates run offline")
+    if runtime.agent_network:
+        raise ConfigError("runtime.agent_network is fixed to false: runner sandboxes never share the host network; "
+                          "the model is reached only through the host-side broker (D-21)")
     for name in ("task_timeout_seconds", "heartbeat_interval_seconds", "stale_heartbeat_seconds",
                  "terminate_grace_seconds", "gate_timeout_seconds"):
         if getattr(runtime, name) <= 0:
@@ -351,6 +385,26 @@ def _validate_runtime(config: ProjectConfig) -> None:
     unknown_roles = set(runtime.role_commands) - set(config.roles)
     if unknown_roles:
         raise ConfigError(f"runtime.role_commands names unknown roles: {sorted(unknown_roles)}")
+
+
+def _validate_broker(config: ProjectConfig) -> None:
+    broker = config.broker
+    if broker.credential_source not in BROKER_CREDENTIAL_SOURCES:
+        raise ConfigError(f"broker.credential_source must be one of {BROKER_CREDENTIAL_SOURCES}")
+    cli_providers = {name for name, p in config.providers.items() if not isinstance(p, OpenAICompatibleProfile)}
+    for name, path in broker.api_key_files.items():
+        if name not in cli_providers:
+            raise ConfigError(f"broker.api_key_files: {name!r} is not a Claude Code or Codex provider")
+        if not str(path).startswith("/") or "\x00" in str(path) or ".." in str(path).split("/"):
+            raise ConfigError(f"broker.api_key_files[{name!r}] must be an absolute host path without '..'")
+    if broker.api_key_files and broker.credential_source != "api-key-file":
+        raise ConfigError("broker.api_key_files is only used with credential_source: api-key-file")
+    for name in ("max_request_bytes", "max_response_bytes", "upstream_idle_timeout_seconds", "max_request_seconds",
+                 "max_requests_per_run", "max_concurrent_requests", "handshake_timeout_seconds"):
+        if getattr(broker, name) <= 0:
+            raise ConfigError(f"broker.{name} must be positive")
+    if broker.max_request_bytes > 256 * 1024 * 1024 or broker.max_concurrent_requests > 64:
+        raise ConfigError("broker.max_request_bytes is capped at 256 MiB and max_concurrent_requests at 64")
 
 
 def _validate_github(github: GitHubConfig) -> None:
@@ -571,6 +625,7 @@ def config_from_mapping(data: Mapping[str, Any]) -> ProjectConfig:
         unsafe_gates={str(k): str(v) for k, v in dict(data.get("unsafe_gates", {})).items()},
         runtime=_runtime_from_mapping(dict(data.get("runtime", {}))),
         github=_github_from_mapping(dict(data.get("github", {}))),
+        broker=_broker_from_mapping(dict(data.get("broker") or {})),
         repository=str(_require(data, "repository")),
         base_branch=str(_require(feature, "base_branch")),
         branch_pattern=str(_require(feature, "branch_pattern")),
@@ -606,6 +661,22 @@ def _runtime_from_mapping(data: Mapping[str, Any]) -> RuntimeConfig:
         else:
             values[key] = type(default)(raw)
     return RuntimeConfig(**values)
+
+
+def _broker_from_mapping(data: Mapping[str, Any]) -> BrokerConfig:
+    defaults = BrokerConfig()
+    known = set(BrokerConfig.__dataclass_fields__)  # pylint: disable=no-member
+    unknown = set(data) - known
+    if unknown:
+        raise ConfigError(f"unknown broker keys: {sorted(unknown)} (credentials never belong here, only file paths)")
+    values: dict[str, Any] = {}
+    for key in known & set(data):
+        default, raw = getattr(defaults, key), data[key]
+        if key == "api_key_files":
+            values[key] = {str(k): str(v) for k, v in dict(raw or {}).items()}
+        else:
+            values[key] = type(default)(raw)
+    return BrokerConfig(**values)
 
 
 def _github_from_mapping(data: Mapping[str, Any]) -> GitHubConfig:

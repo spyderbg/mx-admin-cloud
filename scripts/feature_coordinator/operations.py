@@ -26,7 +26,7 @@ from .gates import SandboxedGateRunner
 from .http_transport import HttpChatTransport
 from .issue_sync import IssueSync
 from .issues import MockIssueTracker, TrackerClient
-from .launchers import RealCliRunner
+from .launchers import BrokerFactory, RealCliRunner
 from .paths import PathPolicy
 from .providers import CliRunnerProfile, OpenAICompatibleProfile
 from .runners import OpenAICompatibleRunner, Runner
@@ -170,8 +170,7 @@ def containment_self_test(config: ProjectConfig, workdir: Path | None = None) ->
                     "victim": victim}
             # The Frontend role runs Codex, whose nested sandbox needs a writable shadow root.
             shadow_writable = config.provider_for(role).kind.value == "codex"
-            plan = builder.plan(run_dir=base / "runs" / role, role=role, network=False,
-                                shadow_writable=shadow_writable)
+            plan = builder.plan(run_dir=base / "runs" / role, role=role, shadow_writable=shadow_writable)
             out_path = base / "runs" / role / "probe.json"
             sup = supervise(plan.argv(["/usr/bin/python3", "-c", PROBE, json.dumps(spec)]), cwd=repo,
                             env={"PATH": os.environ.get("PATH", "")}, stdout_path=out_path,
@@ -203,14 +202,16 @@ def containment_self_test(config: ProjectConfig, workdir: Path | None = None) ->
         return report
 
 
-def build_runners(config: ProjectConfig, env: Mapping[str, str] | None = None) -> dict[str, Runner]:
-    """Real runners per role: Claude Code / Codex in bwrap; OpenAI-compatible over the loopback-only
-    HTTP transport (remote execution stays disabled in Phase 3)."""
+def build_runners(config: ProjectConfig, env: Mapping[str, str] | None = None, *,
+                  broker_factory: BrokerFactory | None = None) -> dict[str, Runner]:
+    """Real runners per role: Claude Code / Codex in bwrap, network-isolated and brokered (W1;
+    `broker_factory` defaults to the configured credential — tests pass a fake one); OpenAI-compatible
+    over the loopback-only HTTP transport (remote execution stays disabled in Phase 3)."""
     runners: dict[str, Runner] = {}
     for name, role in config.roles.items():
         profile = config.providers[role.provider]
         if isinstance(profile, CliRunnerProfile):
-            runners[name] = RealCliRunner(profile, config)
+            runners[name] = RealCliRunner(profile, config, broker_factory=broker_factory)
         elif isinstance(profile, OpenAICompatibleProfile):
             runners[name] = OpenAICompatibleRunner(profile, dict(env if env is not None else os.environ),
                                                    HttpChatTransport())

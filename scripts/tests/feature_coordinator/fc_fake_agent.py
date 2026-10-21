@@ -9,6 +9,11 @@ its working directory and reports every attempt in the CLI's own output format
 
 Actions: write, try_write, delete, symlink, read, try_read, sleep, wait_for, git,
 ignore_sigterm, daemon (a grandchild that keeps appending to a file), exit.
+W1 isolation probes (report only outcomes, never a credential value): http (a request to the
+broker endpoint with this run's token, none, or a given one), connect (TCP), connect_unix
+(a path or an `@abstract` name), resolve (DNS), exists, scan (markers in /proc environ and
+cmdline of every visible process, in this environment, and in files), exec (run a program,
+e.g. code the agent wrote) and crash (SIGKILL itself).
 Standard library only: it runs inside the sandbox with the system interpreter.
 """
 
@@ -17,9 +22,14 @@ Standard library only: it runs inside the sandbox with the system interpreter.
 import json
 import os
 import signal
+import socket
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
+
+BROKER = "http://127.0.0.1:47613"
 
 HELP = """Usage: fake-agent [options]
   -p, --print  --output-format <format> (text, json, stream-json)  --verbose  --restricted
@@ -27,7 +37,7 @@ HELP = """Usage: fake-agent [options]
   --permission-mode <mode> (acceptEdits, dontAsk, plan)  --permission-prompts <target>
   --no-session-persistence  --disable-slash-commands  --max-budget-usd <amount>  --model <model>
 exec options:
-  --json  -s, --sandbox <SANDBOX_MODE> [read-only, workspace-write]  --ephemeral  --ignore-user-config
+  --json  --strict-config  -s, --sandbox <SANDBOX_MODE> [read-only, workspace-write]  --ephemeral  --ignore-user-config
   -C, --cd <DIR>  -o, --output-last-message <FILE>  -c, --config <key=value>  -m, --model <MODEL>
 """
 
@@ -67,6 +77,100 @@ def daemon(path, interval):
     return pid
 
 
+def broker_request(act):
+    token = os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("FC_BROKER_TOKEN") or ""
+    token = token if act.get("token", "env") == "env" else act.get("token") or ""
+    headers = {"Content-Type": "application/json", "anthropic-version": "2023-06-01"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    body = json.dumps(act.get("body", {"model": "m", "max_tokens": 8, "messages": []})).encode()
+    request = urllib.request.Request(BROKER + act.get("path", "/v1/messages"), data=body, headers=headers,
+                                     method=act.get("method", "POST"))
+    try:
+        with urllib.request.urlopen(request, timeout=act.get("timeout", 20)) as response:
+            return {"status": response.status, "body": response.read()[:300].decode("utf-8", "replace")}
+    except urllib.error.HTTPError as exc:
+        return {"status": exc.code, "body": exc.read()[:300].decode("utf-8", "replace")}
+
+
+def connect(act):
+    with socket.create_connection((act["host"], act["port"]), timeout=act.get("timeout", 3)):
+        return "connected"
+
+
+def connect_unix(path):
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+        sock.settimeout(3)
+        sock.connect("\0" + path[1:] if path.startswith("@") else path)
+        return "connected"
+
+
+def scan(markers, roots, session_token=False):
+    """Where any marker occurs: labels only, never the matching text. With *session_token*, this
+    run's own broker token is searched for too — in command lines and files, not environments
+    (the runner holds it in its environment by design)."""
+    hits = []
+    token = os.environ.get("ANTHROPIC_AUTH_TOKEN") or os.environ.get("FC_BROKER_TOKEN") or ""
+    for pid in sorted(p for p in os.listdir("/proc") if p.isdigit()):
+        if session_token and token:
+            try:
+                with open(f"/proc/{pid}/cmdline", "rb") as handle:
+                    if token.encode() in handle.read():
+                        hits.append(f"/proc/{pid}/cmdline:token")
+            except OSError:
+                pass
+        for name in ("environ", "cmdline"):
+            try:
+                with open(f"/proc/{pid}/{name}", "rb") as handle:
+                    data = handle.read()
+            except OSError:
+                continue
+            hits += [f"/proc/{pid}/{name}:{i}" for i, m in enumerate(markers) if m.encode() in data]
+    hits += [f"env:{i}" for i, m in enumerate(markers) if any(m in v for v in os.environ.values())]
+    for root in roots:
+        for dirpath, _dirs, files in os.walk(root):
+            for name in files:
+                try:
+                    with open(os.path.join(dirpath, name), "rb") as handle:
+                        data = handle.read(4_000_000)
+                except OSError:
+                    continue
+                hits += [f"{os.path.join(dirpath, name)}:{i}" for i, m in enumerate(markers) if m.encode() in data]
+                if session_token and token and token.encode() in data:
+                    hits.append(f"{os.path.join(dirpath, name)}:token")
+    return {"hits": hits, "pids": sorted(int(p) for p in os.listdir("/proc") if p.isdigit())}
+
+
+def run_probe(report, act):  # pylint: disable=too-many-branches
+    kind = act["do"]
+    label = act.get("label", kind)
+    if kind == "http":
+        attempt(report, label, lambda: broker_request(act))
+        if act.get("required") and (not report[-1]["ok"] or report[-1]["value"]["status"] != 200):
+            emit(report, error=True)  # like a real CLI: no model, no work
+            sys.exit(3)
+    elif kind == "connect":
+        attempt(report, label, lambda: connect(act))
+    elif kind == "connect_unix":
+        attempt(report, label, lambda: connect_unix(act["path"]))
+    elif kind == "resolve":
+        attempt(report, label, lambda: socket.getaddrinfo(act["host"], 443)[0][4][0])
+    elif kind == "exists":
+        report.append({"action": label, "ok": True, "value": [p for p in act["paths"] if os.path.lexists(p)]})
+    elif kind == "scan":
+        report.append({"action": label, "ok": True,
+                       "value": scan(act["markers"], act.get("roots", []), act.get("session_token", False))})
+    elif kind == "exec":
+        proc = subprocess.run(act["argv"], capture_output=True, text=True, check=False, timeout=60)
+        report.append({"action": label, "ok": proc.returncode == 0, "value": proc.stdout[-3000:],
+                       "error": proc.stderr[-500:]})
+    elif kind == "crash":
+        os.kill(os.getpid(), signal.SIGKILL)
+
+
+PROBES = ("http", "connect", "connect_unix", "resolve", "exists", "scan", "exec", "crash")
+
+
 def run_actions(actions):  # pylint: disable=too-many-branches
     report = []
     for act in actions:
@@ -100,6 +204,8 @@ def run_actions(actions):  # pylint: disable=too-many-branches
         elif kind == "exit":
             emit(report, error=act.get("code", 1) != 0)
             sys.exit(act.get("code", 1))
+        elif kind in PROBES:
+            run_probe(report, act)
     return report
 
 
@@ -124,7 +230,7 @@ def emit(report, error=False):
 def main():
     args = sys.argv[1:]
     if "--version" in args:
-        print("fake-agent 1.0")
+        print("fake-agent 9.9.9")
         return 0
     if "--help" in args:
         print(HELP)
