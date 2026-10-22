@@ -263,6 +263,7 @@ class Feature:  # pylint: disable=too-many-instance-attributes
     integration_evidence: Evidence | None = None
     merged_sha: str | None = None
     test: bool = False  # a coordinator test feature: its Issues carry `feature:test` (Phase 4)
+    workspace: dict[str, Any] = field(default_factory=dict)  # W2: repository identity recorded at activation
     history: list[HistoryEntry] = field(default_factory=list)
     revision: int = 0
 
@@ -289,6 +290,7 @@ class Feature:  # pylint: disable=too-many-instance-attributes
             issue_number=data.get("issue_number"), pull_request=PullRequestCandidate(**pr) if pr else None,
             integration_evidence=Evidence.from_dict(evidence) if evidence else None,
             merged_sha=data.get("merged_sha"), test=bool(data.get("test", False)),
+            workspace=dict(data.get("workspace") or {}),
             history=[HistoryEntry(**h) for h in data.get("history", ())], revision=int(data.get("revision", 0)),
         )
 

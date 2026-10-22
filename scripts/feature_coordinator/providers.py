@@ -15,6 +15,11 @@ temperature. It is configuration input, not verified behavior:
     repository code to a remote model (D-16) until the operator records an exception;
   * the usable input budget is window − output − margin = 110,592 tokens, not the
     declared 128,000.
+
+W2: a role chooses its agent (a provider) AND, optionally, its model (`roles.<r>.model`, which
+overrides the provider's default). `check_model()` rejects a model the agent kind does not
+support — a Claude model for Codex, an unknown alias — instead of substituting another one;
+"default" selects the CLI's own default model explicitly.
 """
 
 from __future__ import annotations
@@ -22,6 +27,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import math
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Iterable, Mapping, Union
@@ -50,6 +56,40 @@ DEFAULT_CREDENTIAL_FILES = {
 }
 
 
+# W2: which model names each agent kind accepts. A model outside these is REJECTED, never
+# replaced by another one. "default" (or "") selects the CLI's own default model explicitly.
+MODEL_DEFAULT = "default"
+CLAUDE_MODEL_ALIASES = ("fable", "opus", "sonnet", "haiku", "opusplan")  # `claude --help`: aliases or full names
+_CLAUDE_MODEL_ID = re.compile(r"^claude-[a-z0-9][a-z0-9.-]*(\[1m\])?$")
+_CODEX_MODEL_ID = re.compile(r"^(gpt-[0-9][a-z0-9.-]*|o[0-9][a-z0-9-]*|codex-[a-z0-9][a-z0-9.-]*)$")
+
+
+def check_model(kind: "ProviderKind", model: str, *, where: str = "model") -> str:
+    """*model* normalized ('' = the CLI default) if *kind* supports it; ProviderError otherwise."""
+    model = (model or "").strip()
+    if model in ("", MODEL_DEFAULT):
+        return ""
+    if kind is ProviderKind.CLAUDE_CODE and (model in CLAUDE_MODEL_ALIASES or _CLAUDE_MODEL_ID.fullmatch(model)):
+        return model
+    if kind is ProviderKind.CODEX and _CODEX_MODEL_ID.fullmatch(model):
+        return model
+    if kind is ProviderKind.OPENAI_COMPATIBLE:
+        raise ProviderError(f"{where}: {model!r} — the OpenAI-compatible provider takes its model from its "
+                            "profile and environment; a role-level model is not supported")
+    raise ProviderError(f"{where}: {model!r} is not a {kind.value} model (unsupported agent/model combination; "
+                        "it is never substituted)")
+
+
+def model_family(model: str) -> tuple[str, ...]:
+    """The Claude model families a requested model may resolve to (for the post-run check)."""
+    if model == "opusplan":
+        return ("opus", "sonnet")
+    for family in CLAUDE_MODEL_ALIASES:
+        if model == family or model.startswith(f"claude-{family}"):
+            return (family,)
+    return ()
+
+
 @dataclass(frozen=True)
 class CliRunnerProfile:
     """A local agent CLI (Claude Code or Codex) launched on the agent host."""
@@ -57,12 +97,13 @@ class CliRunnerProfile:
     name: str
     kind: ProviderKind
     executable: str
-    model: str = ""  # empty: the CLI's own default model
+    model: str = ""  # empty or "default": the CLI's own default model (a role may override it)
     credential_files: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.kind not in (ProviderKind.CLAUDE_CODE, ProviderKind.CODEX):
             raise ProviderError(f"provider {self.name!r}: {self.kind} is not a CLI runner kind")
+        check_model(self.kind, self.model, where=f"provider {self.name!r}")
         for rel in self.credential_files:
             if rel.startswith("/") or ".." in rel.split("/"):
                 raise ProviderError(f"provider {self.name!r}: credential file {rel!r} must be home-relative")

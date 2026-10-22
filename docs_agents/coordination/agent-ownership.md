@@ -24,9 +24,11 @@
 
 ## 2. Enforcement layers
 
+> **W2 (2026-10-22): which layers apply depends on `runtime.execution_backend`.** With `bwrap`, all four layers below apply as described. With the default **`native-cli`** ([worker-functional.md](worker-functional.md)), layer 1 does **not** apply: the agent runs with the operator's full file-system and network access. Layer 2 applies to the CLIs' own permissions (Claude Code's allowlist, Codex's command sandbox). Layer 3 applies **workspace-wide**: any change outside the role, any protected ignored file and any Git-state change rejects the run, and the changes are left in place for review. Role write scopes are then verified *after* the run, not enforced while it runs.
+
 | Layer | Mechanism | Status |
 | --- | --- | --- |
-| 1. OS containment | bubblewrap per run (`sandbox.py`): new namespaces, a read-only shadow root with the role roots bound read-write, read-only overlays, `.git` read-only, private HOME and `/tmp`, untracked secrets hidden | **Enforced and tested [V]**. bubblewrap 0.9.0, unprivileged |
+| 1. OS containment | bubblewrap per run (`sandbox.py`): new namespaces, a read-only shadow root with the role roots bound read-write, read-only overlays, `.git` read-only, private HOME and `/tmp`, untracked secrets hidden | **Enforced and tested [V]** for the `bwrap` backend. bubblewrap 0.9.0, unprivileged. **Not applied** by the `native-cli` backend (W2) |
 | 2. Runner permissions | Claude Code: `--restricted`, `--tools`, generated `--settings` allow/deny list, `--permission-prompts none`, `--strict-mcp-config`. Codex: `--sandbox workspace-write` (nested bubblewrap), `--ignore-user-config`, `network_access=false` | **Enforced [V]**: flags probed on the installed CLIs; live smoke runs observed (§4) |
 | 3. Commit gate | `RealCliRunner` rejects a run that created a path the role may not commit or wrote outside its roots. The Git coordinator re-validates every manifest path (`PathPolicy`) and refuses foreign staged content | **Enforced [V]** (Phase 2 and Phase 3 tests) |
 | 4. PR/CI gate | Changed-path re-verification across the whole feature diff | Phase 6 |
@@ -80,6 +82,8 @@ Further negative tests **[V]**:
 | **Live smoke run** (operator-approved, disposable repository) | created `backend/hello.txt`. Exactly 6 tools offered (`Bash, Edit, Glob, Grep, Read, Write`), **no MCP servers loaded**, `acceptEdits`, no permission denials, 2 turns, 5 s, $0.0225 **[V]** | created `frontend/hello.txt` through one command in its nested sandbox; 29,355 input tokens (24,576 cached), 90 output **[V]** |
 
 ## 5. Residual risks (operator decisions in [phase-status](phase-status.md))
+
+The risks below concern the `bwrap` backend. The `native-cli` backend (W2) gives agents full access by design; its limitations are listed in [worker-functional §11](worker-functional.md#11-known-limitations). W1's credential and network isolation work (D-20, D-21) is postponed in [PR #20](https://github.com/spyderbg/mx-admin-cloud/pull/20).
 
 1. **The runner's own credentials are readable inside its sandbox.** The CLI needs them, and they are bound read-only. Commands an agent runs could read them; a Phase 3 smoke probe demonstrated this.
    - Claude Code's file tools are denied (`Read(~/.claude/**)`, `Read(~/.codex/**)`).

@@ -83,6 +83,8 @@ from .gates import GateContext, SandboxedGateRunner
 from .launchers import run_context
 from .runners import RunRequest, RunResult, Runner
 from .store import StateStore
+from .workspace import identity as workspace_identity
+from .workspace import require_workspace
 
 # A gate runner gets the gate name and a GateContext and returns a GateResult (or an exit code).
 GateRunner = Callable[[str, GateContext], "GateResult | int"]
@@ -274,6 +276,7 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
             if feature.state is not FeatureState.PLANNED:
                 raise CoordinatorError(f"feature {feature_id!r} is {feature.state.value}, not planned")
             feature.base_sha = self.git.create_feature_branch(feature.branch, base_ref or feature.base_branch)
+            feature.workspace = workspace_identity(self.root)  # W2: verified before every run
             transition_feature(feature, FeatureState.ACTIVE, f"branch {feature.branch} created")
             tasks = self.store.load_tasks(feature)
             for task in tasks.values():
@@ -324,7 +327,9 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
             raise ClaimError(f"feature {feature.id!r} is {feature.state.value}, not active")
         if self.git.current_branch() != feature.branch:
             raise GitOperationError(f"the shared checkout is not on {feature.branch!r}")
+        require_workspace(self.root, feature)  # W2: identity, base revision, no unfinished Git operation
         head = self._head(feature)
+        mark = len(self.store.events())
         claim = self.claims.claim(task_id, role=task.role, branch=feature.branch, head_sha=head)
         self._publish(feature.id)  # "In Progress" on the board while the agent runs (another process)
         try:
@@ -332,7 +337,9 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
             context = run_context(
                 self.store.root / "runs", task_id, timeout_seconds=self.config.runtime.task_timeout_seconds,
                 heartbeat=lambda checkpoint: self.claims.heartbeat(claim, dict(checkpoint)),
-                cancelled=lambda: self._cancel_requested(task_id, claim.token))
+                cancelled=lambda: self._cancel_requested(task_id, claim.token),
+                concurrent_roles=lambda: self._concurrent_roles(mark, task.role),
+                git_quiet=lambda: self.store.locks.git().acquire(timeout=self.git.lock_timeout))
             request = RunRequest(task_id, task.role, prompt or self._task_prompt(task), workspace, context=context)
             run = TaskRun(task_id, TaskState.IN_PROGRESS, self.runners[task.role].run(request))
 
@@ -385,6 +392,12 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
         if task.required_gates:
             lines += ["", f"The coordinator will verify with these checks: {', '.join(task.required_gates)}."]
         return "\n".join(lines)
+
+    def _concurrent_roles(self, mark: int, own: str) -> set[str]:
+        """Roles other than *own* that held a claim since event *mark* (W2: native attribution)."""
+        roles = {e.get("role") for e in self.store.events()[mark:] if e.get("kind") == "claim"}
+        roles |= {c.get("role") for c in self.store.list_claims().values()}
+        return {r for r in roles if r and r != own}
 
     def _cancel_requested(self, task_id: str, token: str) -> bool:
         flag = self.store.get_flag(CANCEL_FLAG.format(task=task_id))

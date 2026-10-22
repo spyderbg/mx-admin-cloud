@@ -15,13 +15,19 @@ Inspection:
                             in a DISPOSABLE repository
     status                  features, tasks, claims (live / stale / heartbeat age), cancel requests
     demo                    the mock end-to-end feature in a temporary repository
+    subscription-smoke [--apply] [--workdir DIR]
+                            W2: bounded REAL smoke test with the subscription logins (dry run unless
+                            --apply; --apply needs operator approval)
 Gates (always sandboxed: checkout read-only, no network):
     gate NAME [--base REF] [--apply]      run one gate against --repo
     lint-report NAME [--apply]            current Pylint findings of a lint gate, by symbol
 Feature operations (on --repo / --state-dir):
     plan SPEC [--apply]     validate (and record) a feature and its tasks
     activate FEATURE [--apply]            create the feature branch (requires quiescence)
-    launch TASK [--apply]   run one task with its real runner, contained and supervised
+    launch TASK [--apply]   run one task with its real runner (runtime.execution_backend), supervised
+    work FEATURE [--apply] [--max-parallel N] [--max-attempts N] [--integrate]
+                            W2: one Worker drives the whole feature: ready tasks run concurrently
+                            (one per role), dependents follow, each task launched at most N times
     stop TASK               ask the running worker to stop; the task returns to ready
     recover [--apply]       reclaim tasks of dead workers; report unresponsive ones
     integrate FEATURE [--apply]           the quiescent integration barrier → PR candidate
@@ -89,7 +95,12 @@ def cmd_config(args: argparse.Namespace, config: ProjectConfig) -> int:
     same = loaded == config
     _print(f"{args.config}: valid; {'identical to' if same else 'DIFFERENT from'} the built-in configuration")
     for name, role in loaded.roles.items():
-        _print(f"  {name:12s} provider={role.provider:12s} owned={list(role.owned)} excluded={list(role.excluded)}")
+        profile = loaded.provider_for(name)
+        model = loaded.model_for(name) or (profile.default_model if isinstance(profile, OpenAICompatibleProfile)
+                                           else "CLI default")
+        _print(f"  {name:12s} provider={role.provider:12s} model={model:12s} "
+               f"{'enabled ' if role.enabled else 'DISABLED'} owned={list(role.owned)} excluded={list(role.excluded)}")
+    _print(f"  execution backend: {loaded.runtime.execution_backend}; python: {loaded.runtime.python_interpreter}")
     return 0 if same else 1
 
 
@@ -230,6 +241,8 @@ def build_parser() -> argparse.ArgumentParser:
     plan.set_defaults(func=cmd_plan)
     from .commands import register  # pylint: disable=import-outside-toplevel
     register(sub)
+    from .worker_commands import register as register_worker  # pylint: disable=import-outside-toplevel
+    register_worker(sub)
     from .github_commands import register as register_github  # pylint: disable=import-outside-toplevel
     from .project_commands import register as register_project  # pylint: disable=import-outside-toplevel
     register_project(register_github(sub))

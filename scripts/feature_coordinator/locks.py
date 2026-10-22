@@ -169,6 +169,11 @@ class LockSet:
         """Every Git mutation."""
         return FileLock(self.dir / "git.lock")
 
+    def worker(self, feature_id: str) -> FileLock:
+        """One Worker per feature (W2, worker.py). Held for the whole Worker run; it is NOT part
+        of the lock order above — the Worker takes no other lock itself."""
+        return FileLock(self.dir / f"worker-{feature_id}.lock")
+
     def github_sync(self) -> FileLock:
         """One GitHub synchronization at a time (prevents racing Issue creation). It is NOT
         part of the lock order above: no worker holds it, and a sync holds no other lock

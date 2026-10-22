@@ -69,6 +69,10 @@ class RunContext:
     heartbeat: Callable[[Mapping[str, Any]], None] | None = None
     cancelled: Callable[[], bool] | None = None
     timeout_seconds: float | None = None
+    # W2 (native backend): the OTHER roles that held a claim at any time since this run's claim,
+    # and the Git coordinator's lock, so workspace snapshots never see a commit half-way.
+    concurrent_roles: Callable[[], set[str]] | None = None
+    git_quiet: Callable[[], Any] | None = None
 
 
 @dataclass
@@ -111,6 +115,22 @@ class Runner(Protocol):  # pylint: disable=too-few-public-methods
 
     def run(self, request: RunRequest) -> RunResult:
         """Do the work for one task."""
+
+
+class DisabledRoleRunner:  # pylint: disable=too-few-public-methods
+    """W2: the runner of a role with `enabled: false` (Automation by default). It never runs
+    anything; its tasks go back to ready like any unavailable runner."""
+
+    def __init__(self, role: str, provider: str, kind: ProviderKind) -> None:
+        self.name = provider
+        self.kind = kind
+        self.role = role
+
+    def run(self, request: RunRequest) -> RunResult:
+        """Refuse."""
+        del request
+        return RunResult(self.name, "unavailable", error=f"role {self.role!r} is disabled by configuration "
+                                                         "(roles.<role>.enabled: false)")
 
 
 # ---------------------------------------------------------------------------

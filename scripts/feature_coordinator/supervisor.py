@@ -82,6 +82,36 @@ def terminate_group(proc: subprocess.Popen, grace_seconds: float) -> bool:
     return True
 
 
+def tagged_processes(name: str, value: str) -> list[int]:
+    """PIDs of this user's processes whose initial environment holds NAME=value (W2, native runs).
+    Best effort: a process that cleared its environment before exec is not found."""
+    needle = f"{name}={value}".encode()
+    found = []
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit() or int(entry) == os.getpid():
+            continue
+        try:
+            with open(f"/proc/{entry}/environ", "rb") as handle:
+                if needle in handle.read().split(b"\0"):
+                    found.append(int(entry))
+        except OSError:
+            continue
+    return found
+
+
+def kill_tagged(name: str, value: str) -> list[int]:
+    """SIGKILL every process tagged NAME=value (descendants that left the process group, e.g. a
+    daemon that called setsid). Returns the PIDs signalled."""
+    killed = []
+    for pid in tagged_processes(name, value):
+        try:
+            os.kill(pid, signal.SIGKILL)
+            killed.append(pid)
+        except (ProcessLookupError, PermissionError):
+            pass
+    return killed
+
+
 def supervise(argv: Sequence[str], *, cwd: Path, env: Mapping[str, str] | None, stdout_path: Path,  # pylint: disable=too-many-arguments,too-many-locals
               stderr_path: Path, stdin_path: Path | None = None, timeout_seconds: float,
               heartbeat: Callable[[], None] | None = None, heartbeat_interval: float = 10.0,
