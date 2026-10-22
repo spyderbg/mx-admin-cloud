@@ -97,7 +97,7 @@ Enabling the remote server needs, in order:
 
 | Variable / command | Test | Cost |
 | --- | --- | --- |
-| `feature.py subscription-smoke [--apply]` | W2: three small real tasks (Backend Claude Code `opus`, CLI Claude Code `sonnet`, Frontend Codex default) through the Worker in a new disposable repository; dry run without `--apply` | subscription usage only (no API key); **operator approval required** ([worker-functional §10](worker-functional.md#10-real-subscription-smoke-test-operator-approval-required)) |
+| `feature.py subscription-smoke [--apply]` | W2: three small real tasks (Backend Claude Code `opus`, CLI Claude Code `sonnet`, Frontend Codex default) through the Worker in a new disposable repository; dry run without `--apply` | subscription usage only (no API key); **operator approval required** ([worker-functional §10](worker-functional.md#10-real-subscription-smoke-test-operator-approval-required)); approved and **passed** once on 2026-10-22 (Ubuntu laptop) |
 | `FC_HOST_RUNNER_CHECKS=1` | Real `claude auth status` / `codex login status` inside the sandbox with read-only real credentials; asserts only "logged in" | none (no model call) |
 | `FC_LIVE_RUNNER_SMOKE=1` | One tiny real run per runner in a disposable repository (create `hello.txt`); Claude capped at $0.50 | small; **operator approval required** (approved and run once on 2026-10-17) |
 

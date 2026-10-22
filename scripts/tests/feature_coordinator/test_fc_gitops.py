@@ -20,7 +20,13 @@ from feature_coordinator.errors import (
     UnstableFileError,
     WritersActiveError,
 )
-from feature_coordinator.gitops import CommitRequest, GitCoordinator, file_digest
+from feature_coordinator.gitops import (
+    COMMIT_SUBJECT_MAX,
+    CommitRequest,
+    GitCoordinator,
+    commit_subject,
+    file_digest,
+)
 from feature_coordinator.locks import LockSet
 from feature_coordinator.paths import PathPolicy
 
@@ -71,6 +77,37 @@ def test_commit_contains_only_the_manifest_never_another_agents_unfinished_work(
     assert " M frontend/src/view.ts" in status and "?? cli/" in status
     assert "backend/src/app.py" not in status  # shared index refreshed for the committed path
     assert (repo / "frontend/src/view.ts").read_text(encoding="utf-8").endswith("['half-done']\n")
+
+
+PROMPT = ("Create the file backend/smoke/backend.txt containing exactly one line: backend ok\n"
+          "Do not create, change or delete anything else. Do not run any command. Then reply 'done'.")
+FITS = COMMIT_SUBJECT_MAX - len("backend: ")
+
+
+@pytest.mark.parametrize("title,subject", [
+    ("Export endpoint", "backend: Export endpoint"),               # a short one-line title is the subject
+    ("  Export \t  endpoint  ", "backend: Export endpoint"),       # whitespace collapsed
+    ("x" * FITS, "backend: " + "x" * FITS),                        # exactly at the limit
+    ("x" * (FITS + 1), "backend: task f.api"),                     # too long
+    (PROMPT, "backend: task f.api"),                               # a multi-line instruction
+    ("first\rsecond", "backend: task f.api"),                      # any line break counts
+    ("red \x1b[31malert", "backend: task f.api"),                  # control characters
+    ("", "backend: task f.api"),
+    ("   ", "backend: task f.api"),
+], ids=["short", "whitespace", "at-limit", "too-long", "prompt", "carriage-return", "control", "empty", "blank"])
+def test_commit_subject_is_short_and_never_a_task_prompt(title: str, subject: str) -> None:
+    assert commit_subject("backend", "f.api", title) == subject
+    assert "\n" not in subject and len(subject) <= COMMIT_SUBJECT_MAX
+
+
+def test_a_trailer_like_title_cannot_change_the_trailers(gc: GitCoordinator, repo: Path) -> None:
+    write(repo, "backend/src/app.py", "ROUTES = ['/y']\n")
+    req = request(gc, "backend", ["backend/src/app.py"])
+    subject = commit_subject("backend", req.task_id, "Feature-Task: other.task")
+    sha = gc.commit(CommitRequest(**{**req.__dict__, "message": subject})).sha
+    assert git(repo, "log", "-1", "--format=%(trailers:key=Feature-Task,valueonly)", sha).strip() == "f.backend"
+    assert git(repo, "log", "-1", "--format=%B", sha) == (
+        "backend: Feature-Task: other.task\n\nFeature: f\nFeature-Task: f.backend\nFeature-Role: backend\n\n")
 
 
 def test_foreign_staged_content_is_refused(gc: GitCoordinator, repo: Path) -> None:

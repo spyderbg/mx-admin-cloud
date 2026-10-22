@@ -354,12 +354,14 @@ def test_subscription_smoke_apply_runs_the_bounded_feature(tmp_path: Path, fake_
     assert (state.stat().st_mode & 0o777) == 0o700 and not list(state.glob("**/pull-request*.json"))
     branch = "feature/subscription-smoke"
     base = git(repo, "merge-base", "dev", branch).strip()
-    roles = {}
+    roles, subjects = {}, {}
     for sha in git(repo, "rev-list", f"{base}..{branch}").split():  # one commit per role, inside its role
         role = git(repo, "log", "-1", "--format=%(trailers:key=Feature-Role,valueonly)", sha).strip()
         roles[role] = git(repo, "diff-tree", "--no-commit-id", "--name-only", "-r", sha).split()
+        subjects[role] = git(repo, "log", "-1", "--format=%s", sha).strip()
     assert roles == {"backend": ["backend/smoke/backend.txt"], "cli": ["cli/smoke/cli.txt"],
                      "frontend": ["frontend/smoke/frontend.txt"]}
+    assert subjects == {r: f"{r}: task subscription-smoke.{r}" for r in roles}  # the prompts are not subjects
 
 
 def test_subscription_smoke_refuses_without_subscription(tmp_path: Path, fake_home: Path, fake_agent: Path) -> None:

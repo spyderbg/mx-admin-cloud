@@ -26,6 +26,7 @@ from feature_coordinator.gitops import CommitRequest, file_digest
 from feature_coordinator.issues import OwnershipMarker
 from feature_coordinator.locks import LockSet
 from feature_coordinator.model import FeatureState, TaskState
+from feature_coordinator.runners import FileEdit
 from feature_coordinator.workflow import FeatureCoordinator, FeatureSpec, TaskSpec
 
 from fc_helpers import git
@@ -154,6 +155,30 @@ def _verified_feature(coord: FeatureCoordinator) -> str:
     for task_id in ("items-export.view", contract.id, "items-export.cmd", "items-export.e2e"):
         assert coord.run_task(task_id).state is TaskState.VERIFIED, task_id
     return feature.id
+
+
+def test_commit_messages_carry_a_short_subject_never_the_task_prompt(coord: FeatureCoordinator, repo: Path) -> None:
+    prompt = ("Create the file backend/src/app.py containing exactly one line: ROUTES = ['/x']\n"
+              "Do not create, change or delete anything else. Do not run any command. Then reply 'done'.")
+    feature = coord.activate(coord.plan(FeatureSpec("subjects", "Commit subjects", (
+        TaskSpec("api", "backend", prompt), TaskSpec("view", "frontend", "Export button in the category view"),
+    ))).id)
+    coord.runners["backend"].script["subjects.api"] = [FileEdit("backend/src/app.py", "ROUTES = ['/x']\n")]
+    coord.runners["frontend"].script["subjects.view"] = [FileEdit("frontend/src/view.ts", "export const v = 1\n")]
+    for task_id in ("subjects.api", "subjects.view"):
+        assert coord.run_task(task_id).state is TaskState.VERIFIED
+    coord.reopen_task("subjects.api", "the route changes")  # a second run of the task: a second commit
+    coord.runners["backend"].script["subjects.api"] = [FileEdit("backend/src/app.py", "ROUTES = ['/y']\n")]
+    assert coord.run_task("subjects.api").state is TaskState.VERIFIED
+    commits = git(repo, "rev-list", "--reverse", f"{feature.base_sha}..{feature.branch}").split()
+    assert coord.store.load_task("subjects.api").commits == [commits[0], commits[2]]
+    messages = [git(repo, "log", "-1", "--format=%B", sha) for sha in commits]
+    trailers = "\n\nFeature: subjects\nFeature-Task: subjects.{key}\nFeature-Role: {role}\n\n"
+    assert messages == ["backend: task subjects.api" + trailers.format(key="api", role="backend"),
+                        "frontend: Export button in the category view" + trailers.format(key="view", role="frontend"),
+                        "backend: task subjects.api" + trailers.format(key="api", role="backend")]
+    assert {git(repo, "log", "-1", "--format=%an <%ae>", sha).strip() for sha in commits} == {
+        "Feature Coordinator Demo <feature-coordinator@example.invalid>"}
 
 
 def test_integration_requires_everything_verified_and_a_clean_checkout(coord: FeatureCoordinator,

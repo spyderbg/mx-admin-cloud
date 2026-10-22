@@ -57,7 +57,7 @@ from .errors import (
 from .escalation import hold_task as _hold_task
 from .escalation import release_task as _release_task
 from .github_api import sanitize
-from .gitops import CommitRequest, GitCoordinator, file_digest
+from .gitops import CommitRequest, GitCoordinator, commit_subject, file_digest
 from .issue_sync import IssueSync, SyncReport, enqueue_comment
 from .project_sync import BoardReport, ProjectSync
 from .issues import PullRequest, TrackerClient
@@ -420,7 +420,8 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
         files = {p: file_digest(self.root / p) for p in changed}
         try:
             return self.git.commit(CommitRequest(feature.id, task.id, task.role, feature.branch, head, files,
-                                                 task.title, task.grants), author=self.author).sha
+                                                 commit_subject(task.role, task.id, task.title), task.grants),
+                                   author=self.author).sha
         except NothingToCommitError:
             return None
 
