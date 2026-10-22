@@ -33,27 +33,37 @@ state:
   # Deny-by-default allowlist; FUSE and network filesystems are always rejected.
   allowed_filesystems: [ext4, ext3, ext2, xfs, btrfs, f2fs, tmpfs]
 
+# Role → agent → model (W2). `provider` is the agent; `model` overrides that provider's model
+# ("default" = the CLI's own default model; omitted = the provider's `model`). Both are plain
+# configuration: changing them needs no code change. An agent/model combination the agent kind
+# does not support (e.g. a Claude model for Codex) is rejected, never substituted. Write scopes
+# belong to the role and do not change with the agent.
 roles:                                   # max_writers is fixed to 1 per role (v5 ceiling)
   backend:
-    provider: claude
+    provider: claude                     # Claude Code
+    model: opus
     owned_paths: ["backend/**", "docs_agents/backend/**"]
     excluded_paths: ["backend/data/**"]
     max_writers: 1
   cli:
-    provider: claude
+    provider: claude                     # Claude Code; `provider: codex` (+ a Codex model or default) also works
+    model: sonnet
     owned_paths: ["cli/**", "docs_agents/cli/**"]
     max_writers: 1
   frontend:
     provider: codex
+    model: default                       # Codex's own default model, explicitly
     owned_paths: ["frontend/**", "docs_agents/frontend/**"]
     max_writers: 1
   automation:
     provider: remote_qwen
+    enabled: false                       # disabled: its tasks are never run (no request to the remote Qwen)
     owned_paths: ["scripts/**", "test_environment/**", "docs_agents/automation/**"]
     excluded_paths: ["scripts/mxfix/**", "scripts/mxissues/**", "scripts/deploy.sh"]
     max_writers: 1
   coordination:
     provider: claude                     # configurable
+    model: sonnet
     owned_paths: ["docs_agents/coordination/**"]
     max_writers: 1
 
@@ -93,8 +103,8 @@ providers:
   claude:
     kind: claude-code
     executable: claude
-    model: ""                            # empty: Claude Code's own default model
-    credential_files: [.claude/.credentials.json]   # home-relative; bound READ-ONLY into the sandbox
+    model: ""                            # the provider default ("" or "default": Claude Code's own default)
+    credential_files: [.claude/.credentials.json]   # bwrap backend only: bound READ-ONLY into the sandbox
   codex:
     kind: codex
     executable: codex
@@ -162,7 +172,12 @@ unsafe_gates: {}
 
 # How real runners and gates execute (Phase 3).
 runtime:
-  containment: bwrap                     # fixed: write-capable runs are never unconfined
+  containment: bwrap                     # fixed: gates and the bwrap backend are never unconfined
+  # W2: native-cli = the installed claude/codex CLIs with the operator's existing SUBSCRIPTION logins,
+  # run directly in the workspace (NOT a security sandbox); bwrap = the Phase 3 OS containment.
+  # Never a silent fallback from one to the other.
+  execution_backend: native-cli
+  python_interpreter: auto               # auto: <workspace>/.venv/bin/python, else python3; or an absolute path
   agent_network: true                    # runners need their model API; gates never get network
   gate_network: false                    # fixed
   task_timeout_seconds: 3600
@@ -174,9 +189,10 @@ runtime:
   secret_patterns: ["**/.env", "**/.env.*"]    # untracked/ignored matches are hidden from agents
   secret_exempt_suffixes: [.example, .sample, .template]
   role_commands:                         # Claude Code Bash allowlist per role (prefix rules); all else denied
-    backend: ["python -m pytest:*", "python -m pylint:*", "python -m compileall:*"]
-    cli: ["python -m pytest:*", "python -m pylint:*", "kiddo-cli --help:*"]
-    coordination: ["python scripts/check_docs_agents.py:*"]
+    # {python} = the resolved interpreter (W2); a bare python/python3 is rejected (it may not exist)
+    backend: ["{python} -m pytest:*", "{python} -m pylint:*", "{python} -m compileall:*"]
+    cli: ["{python} -m pytest:*", "{python} -m pylint:*", "kiddo-cli --help:*"]
+    coordination: ["{python} scripts/check_docs_agents.py:*"]
 
 # GitHub Issues adapter (Phase 4). No credentials here: the adapter calls the installed
 # GitHub CLI (`gh api`), which uses its existing login. Issues and labels are the human-

@@ -9,7 +9,7 @@
 | Step | Command | What it proves |
 | --- | --- | --- |
 | State directory | `feature.py doctor --apply` | Local filesystem (FUSE and network rejected), mode 0700, two-process `flock` contention test |
-| Runners | `feature.py runners` | `claude` and `codex` exist, support every required flag, and get no bypass flag; prints each role's exact command line. **No model call** |
+| Runners | `feature.py runners` | `claude` and `codex` exist, support every required flag, and get no bypass flag; prints the execution backend, each role's agent, model and exact command line, and — for `native-cli` (W2) — the subscription login each CLI's status command reports. **No model call** |
 | Containment | `feature.py sandbox-check` (dry run) | Each role's writable roots, read-only islands and hidden secrets on `--repo` |
 | | `feature.py sandbox-check --apply` | The full containment matrix in a **disposable** repository ([agent-ownership §3](agent-ownership.md#3-containment-matrix-exit-gate-evidence)) |
 
@@ -18,10 +18,21 @@
 ```bash
 feature.py plan spec.yaml --apply            # record the feature and its tasks (local tracker: <state>/tracker.json)
 feature.py activate <feature> --apply        # create feature/<slug> from dev (D-4); every writer must be quiescent
-feature.py launch <feature>.<task> --apply   # one task: claim → sandboxed runner → commit → gates → release
+feature.py launch <feature>.<task> --apply   # one task: claim → runner (execution backend) → commit → gates → release
+feature.py work <feature> --apply            # W2: one Worker runs every task — dependencies first, roles in parallel
 feature.py status                            # tasks, claims (live / stale / heartbeat age), stop requests
 feature.py integrate <feature> --apply       # quiescent barrier → single PR candidate (not opened)
 ```
+
+**Execution backend (W2).** `runtime.execution_backend` is `native-cli` by default: the installed `claude` and `codex` run directly in the checkout with the operator's **subscription logins**. That is **not a security sandbox**: write scopes are verified after each run, and changes outside the role are rejected and left in place. `bwrap` selects the Phase 3 containment. There is never a fallback between the two. Design: [worker-functional.md](worker-functional.md).
+
+**The Worker (W2).** `feature.py work <feature>` (dry run) lists the tasks in dependency order with their agent, model and state, and checks the workspace. With `--apply` it launches READY tasks as separate `launch` processes:
+- one per role at a time, up to `--max-parallel`;
+- dependents start once their dependencies are verified;
+- each task is launched at most `--max-attempts` times (default 1);
+- Ctrl-C/SIGTERM stops every running task gracefully.
+
+`--integrate` runs the integration when every task is verified.
 
 **Parallel work** means one `launch` process per task, for **different** roles: Backend and Frontend together, never two Backend tasks. A second same-role launch exits with `RoleBusyError`, and a branch switch or full-project session is refused while any writer runs (`test_backend_and_frontend_write_concurrently_and_land_separately` **[V]**).
 
@@ -84,8 +95,9 @@ Enabling the remote server needs, in order:
 
 ## 6. Opt-in host tests
 
-| Variable | Test | Cost |
+| Variable / command | Test | Cost |
 | --- | --- | --- |
+| `feature.py subscription-smoke [--apply]` | W2: three small real tasks (Backend Claude Code `opus`, CLI Claude Code `sonnet`, Frontend Codex default) through the Worker in a new disposable repository; dry run without `--apply` | subscription usage only (no API key); **operator approval required** ([worker-functional §10](worker-functional.md#10-real-subscription-smoke-test-operator-approval-required)); approved and **passed** once on 2026-10-22 (Ubuntu laptop) |
 | `FC_HOST_RUNNER_CHECKS=1` | Real `claude auth status` / `codex login status` inside the sandbox with read-only real credentials; asserts only "logged in" | none (no model call) |
 | `FC_LIVE_RUNNER_SMOKE=1` | One tiny real run per runner in a disposable repository (create `hello.txt`); Claude capped at $0.50 | small; **operator approval required** (approved and run once on 2026-10-17) |
 

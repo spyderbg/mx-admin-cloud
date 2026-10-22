@@ -26,6 +26,14 @@ The Phase 4 extension adds `github.project`: the GitHub Projects (v2) board that
 coordinator's Issues (owner, number and GraphQL node ID, the projects that must never be
 written, the Status options and the Agent / Feature ID / Blocked Reason fields). It is
 disabled by default; `default_config()` points it at the mx-admin-cloud board.
+
+W2 (functional Worker) makes the routing role → agent → model configurable: a role names its
+agent (`provider`) and may override that provider's model (`model`, validated per agent kind;
+"default" = the CLI's own default), and a role can be disabled (`enabled: false`, Automation).
+`runtime.execution_backend` selects how real runners execute: `native-cli` (the installed CLIs
+with their existing subscription logins, no OS sandbox) or `bwrap` (the Phase 3 containment).
+Role command allowlists use the `{python}` placeholder, resolved to a discovered or configured
+interpreter (`runtime.python_interpreter`), never to a bare `python` on PATH.
 """
 
 from __future__ import annotations
@@ -39,10 +47,12 @@ from .errors import ConfigError, ProviderError
 from .providers import (
     CLAUDE_CODE,
     CODEX,
+    MODEL_DEFAULT,
     REMOTE_QWEN,
     OpenAICompatibleProfile,
     ProviderProfile,
     check_effective_input,
+    check_model,
     profile_from_mapping,
 )
 
@@ -55,14 +65,16 @@ _SEGMENT_RE = re.compile(r"^[A-Za-z0-9._*-]+$")
 
 
 @dataclass(frozen=True)
-class RoleConfig:
-    """One specialized role: its provider and write scope."""
+class RoleConfig:  # pylint: disable=too-many-instance-attributes
+    """One specialized role: its agent (provider), model, write scope and whether it runs."""
 
     name: str
     provider: str
     owned: tuple[str, ...]
     excluded: tuple[str, ...] = ()
     max_writers: int = MAX_WRITERS_PER_ROLE
+    model: str = ""        # W2: "" = the provider's model; "default" = the CLI's own default; else validated
+    enabled: bool = True   # W2: a disabled role's tasks are never run (the runner reports unavailable)
 
 
 @dataclass(frozen=True)
@@ -84,6 +96,8 @@ class RuntimeConfig:  # pylint: disable=too-many-instance-attributes
     """How real runners and gates execute (Phase 3)."""
 
     containment: str = "bwrap"
+    execution_backend: str = "native-cli"   # W2: native-cli | bwrap (never a silent fallback between them)
+    python_interpreter: str = "auto"        # W2: auto (workspace .venv, then python3) or an absolute path
     agent_network: bool = True
     gate_network: bool = False
     task_timeout_seconds: int = 3600
@@ -97,7 +111,11 @@ class RuntimeConfig:  # pylint: disable=too-many-instance-attributes
     role_commands: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
 
 
-CONTAINMENT_MODES = ("bwrap",)  # write-capable runs are never unconfined
+CONTAINMENT_MODES = ("bwrap",)  # gates and the bwrap backend are never unconfined
+# W2: how real runners execute. `native-cli` runs the installed CLIs directly with the operator's
+# subscription logins and is NOT a security sandbox; `bwrap` is the Phase 3 OS containment.
+EXECUTION_BACKENDS = ("native-cli", "bwrap")
+PYTHON_PLACEHOLDER = "{python}"
 
 GITHUB_TRANSPORTS = ("gh-cli",)
 # Phase 4 ceiling: only features marked `test` may be written to GitHub. Widening the scope to
@@ -223,6 +241,17 @@ class ProjectConfig:  # pylint: disable=too-many-instance-attributes
         """The provider profile configured for *role*."""
         return self.providers[self.role(role).provider]
 
+    def model_for(self, role: str) -> str:
+        """The model *role* runs with: its own `model`, else its provider's; '' = the CLI default."""
+        cfg = self.role(role)
+        if cfg.model == MODEL_DEFAULT:
+            return ""
+        if cfg.model:
+            return cfg.model
+        profile = self.provider_for(role)
+        model = getattr(profile, "model", "")
+        return "" if model == MODEL_DEFAULT else model
+
     @property
     def gate_names(self) -> tuple[str, ...]:
         """Every configured gate: command gates and lint gates."""
@@ -286,6 +315,10 @@ def _validate_roles(config: ProjectConfig) -> None:
             raise ConfigError(f"role {name!r}: max_writers is fixed to {MAX_WRITERS_PER_ROLE} (v5 ceiling)")
         if role.provider not in config.providers:
             raise ConfigError(f"role {name!r}: unknown provider {role.provider!r}")
+        try:
+            check_model(config.providers[role.provider].kind, role.model, where=f"role {name!r}")
+        except ProviderError as exc:
+            raise ConfigError(str(exc)) from exc
         if not role.owned:
             raise ConfigError(f"role {name!r}: owned paths must not be empty")
         for pattern in (*role.owned, *role.excluded):
@@ -351,6 +384,26 @@ def _validate_runtime(config: ProjectConfig) -> None:
     unknown_roles = set(runtime.role_commands) - set(config.roles)
     if unknown_roles:
         raise ConfigError(f"runtime.role_commands names unknown roles: {sorted(unknown_roles)}")
+    if runtime.execution_backend not in EXECUTION_BACKENDS:
+        raise ConfigError(f"runtime.execution_backend must be one of {EXECUTION_BACKENDS}")
+    interpreter = runtime.python_interpreter
+    if interpreter != "auto" and (not interpreter.startswith("/") or any(c.isspace() for c in interpreter)):
+        raise ConfigError("runtime.python_interpreter must be 'auto' or an absolute path without whitespace")
+    for role, commands in runtime.role_commands.items():
+        for command in commands:
+            _check_role_command(role, command)
+
+
+def _check_role_command(role: str, command: str) -> None:
+    """A Claude Code Bash prefix rule: no bare `python`/`python3` (W2: it may not exist, e.g. on
+    Ubuntu 24.04) and no placeholder other than a leading {python}."""
+    body = command[len(PYTHON_PLACEHOLDER):] if command.startswith(PYTHON_PLACEHOLDER + " ") else command
+    first = command.split(" ", 1)[0]
+    if not command.strip() or "{" in body or "}" in body:
+        raise ConfigError(f"runtime.role_commands[{role!r}]: {command!r} may only use a leading {PYTHON_PLACEHOLDER}")
+    if first in ("python", "python3") or first.startswith("python3."):
+        raise ConfigError(f"runtime.role_commands[{role!r}]: {command!r} names a bare interpreter; use "
+                          f"{PYTHON_PLACEHOLDER} (resolved from runtime.python_interpreter)")
 
 
 def _validate_github(github: GitHubConfig) -> None:
@@ -477,9 +530,10 @@ DEFAULT_UNSAFE_GATES: dict[str, str] = {}
 
 DEFAULT_ROLE_COMMANDS: dict[str, tuple[str, ...]] = {
     # Claude Code Bash permission rules (prefix matches). Anything not listed is denied.
-    "backend": ("python -m pytest:*", "python -m pylint:*", "python -m compileall:*"),
-    "cli": ("python -m pytest:*", "python -m pylint:*", "kiddo-cli --help:*"),
-    "coordination": ("python scripts/check_docs_agents.py:*",),
+    # {python} is the discovered or configured interpreter (W2), never a bare `python`.
+    "backend": ("{python} -m pytest:*", "{python} -m pylint:*", "{python} -m compileall:*"),
+    "cli": ("{python} -m pytest:*", "{python} -m pylint:*", "kiddo-cli --help:*"),
+    "coordination": ("{python} scripts/check_docs_agents.py:*",),
 }
 
 
@@ -492,16 +546,19 @@ MX_ADMIN_CLOUD_PROJECT = GitHubProjectConfig(
 
 def default_config() -> ProjectConfig:
     """The approved mx-admin-cloud configuration (architecture §1, D-12, D-14)."""
+    # W2 routing: Backend → Claude Code (Opus), CLI → Claude Code (Sonnet), Frontend → Codex (CLI
+    # default), Automation → remote Qwen, disabled. Changing an agent or model is configuration only.
     roles = {
-        "backend": RoleConfig("backend", "claude", ("backend/**", "docs_agents/backend/**"), ("backend/data/**",)),
-        "cli": RoleConfig("cli", "claude", ("cli/**", "docs_agents/cli/**")),
-        "frontend": RoleConfig("frontend", "codex", ("frontend/**", "docs_agents/frontend/**")),
+        "backend": RoleConfig("backend", "claude", ("backend/**", "docs_agents/backend/**"), ("backend/data/**",),
+                              model="opus"),
+        "cli": RoleConfig("cli", "claude", ("cli/**", "docs_agents/cli/**"), model="sonnet"),
+        "frontend": RoleConfig("frontend", "codex", ("frontend/**", "docs_agents/frontend/**"), model=MODEL_DEFAULT),
         "automation": RoleConfig(
             "automation", "remote_qwen",
             ("scripts/**", "test_environment/**", "docs_agents/automation/**"),
-            ("scripts/mxfix/**", "scripts/mxissues/**", "scripts/deploy.sh"),
+            ("scripts/mxfix/**", "scripts/mxissues/**", "scripts/deploy.sh"), enabled=False,
         ),
-        "coordination": RoleConfig("coordination", "claude", ("docs_agents/coordination/**",)),
+        "coordination": RoleConfig("coordination", "claude", ("docs_agents/coordination/**",), model="sonnet"),
     }
     return ProjectConfig(
         repository="mx-admin-cloud",
@@ -548,6 +605,8 @@ def config_from_mapping(data: Mapping[str, Any]) -> ProjectConfig:
             owned=tuple(spec["owned_paths"]),
             excluded=tuple(spec.get("excluded_paths", ())),
             max_writers=int(spec.get("max_writers", MAX_WRITERS_PER_ROLE)),
+            model=str(spec.get("model", "") or ""),
+            enabled=_bool(spec.get("enabled", True), f"roles.{name}.enabled"),
         )
         for name, spec in dict(_require(data, "roles")).items()
     }
@@ -583,6 +642,12 @@ def config_from_mapping(data: Mapping[str, Any]) -> ProjectConfig:
         state_app_dir=str(state.get("app_dir", "mx-admin-agents")),
         allowed_state_filesystems=tuple(state.get("allowed_filesystems", ProjectConfig.allowed_state_filesystems)),
     )
+
+
+def _bool(value: Any, where: str) -> bool:
+    if not isinstance(value, bool):
+        raise ConfigError(f"{where} must be true or false")
+    return value
 
 
 def _runtime_from_mapping(data: Mapping[str, Any]) -> RuntimeConfig:

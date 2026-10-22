@@ -83,6 +83,12 @@ def config_with_agents(config, claude: Path, codex: Path | None = None):
     return dataclasses.replace(config, providers=providers)
 
 
+def contained(config):
+    """*config* on the Phase 3 `bwrap` execution backend (the containment tests pin it, W2)."""
+    import dataclasses  # pylint: disable=import-outside-toplevel
+    return dataclasses.replace(config, runtime=dataclasses.replace(config.runtime, execution_backend="bwrap"))
+
+
 def actions_prompt(actions) -> str:
     """A prompt carrying a fake-agent action list."""
     import json  # pylint: disable=import-outside-toplevel
@@ -102,7 +108,7 @@ from feature_coordinator.store import StateStore
 from feature_coordinator.supervisor import install_termination_handlers
 from feature_coordinator.workflow import FeatureCoordinator
 repo, state, agent, task, prompt = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3], sys.argv[4], sys.argv[5]
-overrides = json.loads(sys.argv[6]) if len(sys.argv) > 6 else {}
+overrides = {"execution_backend": "bwrap", **(json.loads(sys.argv[6]) if len(sys.argv) > 6 else {})}
 config = default_config()
 providers = {**config.providers}
 for name in ("claude", "codex"):

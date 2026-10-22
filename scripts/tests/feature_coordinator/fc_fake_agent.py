@@ -10,12 +10,21 @@ its working directory and reports every attempt in the CLI's own output format
 Actions: write, try_write, delete, symlink, read, try_read, sleep, wait_for, git,
 ignore_sigterm, daemon (a grandchild that keeps appending to a file), exit.
 Standard library only: it runs inside the sandbox with the system interpreter.
+
+W2 (native backend): it also answers the CLIs' status commands — `auth status --json` (Claude
+Code) and `login status` (Codex) — and reports its model and `apiKeySource` in the Claude init
+event. Because native runs get an allowlisted environment, tests steer this through a control
+file next to the executable (`<name>.json`): {"auth": "subscription" | "api-key" | "none" |
+"unknown", "report_model": "...", "api_key_source": "...", "follow_prompt": true}. With
+`follow_prompt` it also carries out a plain "Create the file PATH containing exactly one line:
+TEXT" instruction (the subscription smoke test's prompt) when the prompt has no FAKE-ACTIONS.
 """
 
 # pylint: disable=missing-function-docstring
 
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -27,7 +36,7 @@ HELP = """Usage: fake-agent [options]
   --permission-mode <mode> (acceptEdits, dontAsk, plan)  --permission-prompts <target>
   --no-session-persistence  --disable-slash-commands  --max-budget-usd <amount>  --model <model>
 exec options:
-  --json  -s, --sandbox <SANDBOX_MODE> [read-only, workspace-write]  --ephemeral  --ignore-user-config
+  --json  --strict-config  -s, --sandbox <SANDBOX_MODE> [read-only, workspace-write]  --ephemeral  --ignore-user-config
   -C, --cd <DIR>  -o, --output-last-message <FILE>  -c, --config <key=value>  -m, --model <MODEL>
 """
 
@@ -103,14 +112,54 @@ def run_actions(actions):  # pylint: disable=too-many-branches
     return report
 
 
-MODE = "codex" if len(sys.argv) > 1 and sys.argv[1] == "exec" else "claude"
+MODE = "codex" if len(sys.argv) > 1 and sys.argv[1] in ("exec", "login") else "claude"
+
+
+def control():
+    path = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), os.path.basename(sys.argv[0]) + ".json")
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return json.load(handle)
+    except (OSError, ValueError):
+        return {}
+
+
+def requested_model():
+    args = sys.argv[1:]
+    for flag in ("--model", "-m"):
+        if flag in args and args.index(flag) + 1 < len(args):
+            return args[args.index(flag) + 1]
+    return ""
+
+
+def init_event():
+    model = requested_model()
+    reported = control().get("report_model") or (f"claude-{model}-fake-1" if model in ("opus", "sonnet", "haiku")
+                                                 else model or "claude-default-fake-1")
+    return {"type": "system", "subtype": "init", "model": reported,
+            "apiKeySource": control().get("api_key_source", "none")}
+
+
+def status():
+    """`auth status --json` (Claude Code) / `login status` (Codex), as steered by the control file."""
+    auth = control().get("auth", "subscription")
+    if MODE == "codex":
+        print({"subscription": "Logged in using ChatGPT", "api-key": "Logged in using an API key - sk-***",
+               "none": "Not logged in"}.get(auth, "Something else"))
+        return 0 if auth in ("subscription", "api-key") else 1
+    data = {"subscription": {"loggedIn": True, "authMethod": "claude.ai", "apiProvider": "firstParty",
+                             "subscriptionType": "pro", "email": "not-a-real@example.invalid"},
+            "api-key": {"loggedIn": True, "authMethod": "api_key", "apiProvider": "firstParty"},
+            "none": {"loggedIn": False, "authMethod": "none", "apiProvider": "firstParty"}}
+    print(json.dumps(data.get(auth, {"loggedIn": True, "authMethod": "something-new", "apiProvider": "firstParty"})))
+    return 0
 
 
 def emit(report, error=False):
     text = json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd(), "home": os.environ.get("HOME"),
                        "env_keys": sorted(os.environ), "report": report})
     if MODE == "claude":
-        print(json.dumps({"type": "system", "subtype": "init"}), flush=True)
+        print(json.dumps(init_event()), flush=True)
         print(json.dumps({"type": "result", "subtype": "error_during_execution" if error else "success",
                           "is_error": error, "result": text, "num_turns": 1, "total_cost_usd": 0.0,
                           "permission_denials": []}), flush=True)
@@ -129,11 +178,16 @@ def main():
     if "--help" in args:
         print(HELP)
         return 0
+    if args[:2] in (["auth", "status"], ["login", "status"]):
+        return status()
     prompt = sys.stdin.read()
     actions = []
     for line in prompt.splitlines():
         if line.startswith("FAKE-ACTIONS:"):
             actions = json.loads(line[len("FAKE-ACTIONS:"):])
+    create = re.search(r"^Create the file (\S+) containing exactly one line: (.+)$", prompt, re.MULTILINE)
+    if not actions and create and control().get("follow_prompt"):
+        actions = [{"do": "write", "path": create.group(1), "text": create.group(2) + "\n"}]
     emit(run_actions(actions))
     return 0
 

@@ -29,6 +29,13 @@ Codex (Frontend):
   get no network, and our outer sandbox limits writes to the Frontend roots.
 
 Both get a private HOME; their credential files are bound read-only.
+
+W2 — the same launchers serve the `native-cli` execution backend (native_backend.py) with
+`native=True`: the command lines are the same, but the run's files (settings, last message)
+live in the run directory instead of a private HOME, nothing is bound, and Codex additionally
+gets `--strict-config` and `forced_login_method="chatgpt"` (its ChatGPT subscription login, or
+nothing). In both backends the model is the ROLE's (`config.model_for(role)`), and role commands
+use `{python}`, resolved by python_env.py.
 """
 
 from __future__ import annotations
@@ -45,6 +52,7 @@ from typing import Any, Mapping, Sequence
 from .config import ProjectConfig
 from .paths import PathPolicy
 from .providers import CliRunnerProfile, ProviderKind
+from .python_env import PLACEHOLDER, PythonInterpreter, discover_python, expand_commands
 from .runners import RunContext, RunRequest, RunResult
 from .sandbox import Bind, SandboxBuilder, SandboxUnavailableError, check_bwrap, install_prefix
 from .supervisor import supervise
@@ -61,10 +69,11 @@ REQUIRED_FLAGS: Mapping[ProviderKind, tuple[str, ...]] = {
         "--no-session-persistence", "--disable-slash-commands", "--max-budget-usd", "--model",
     ),
     ProviderKind.CODEX: (
-        "--json", "--sandbox", "workspace-write", "--ephemeral", "--ignore-user-config", "--cd",
+        "--json", "--strict-config", "--sandbox", "workspace-write", "--ephemeral", "--ignore-user-config", "--cd",
         "--output-last-message", "--config", "--model",
     ),
 }
+SANDBOX_PATH = "/usr/local/bin:/usr/bin:/bin"  # the bwrap sandbox's PATH (sandbox.py)
 
 PASSTHROUGH_ENV = {
     ProviderKind.CLAUDE_CODE: ("ANTHROPIC_API_KEY", "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY"),
@@ -145,14 +154,20 @@ def _check_forbidden(argv: Sequence[str]) -> None:
         raise ValueError(f"refusing to build a runner command with bypass arguments {bad}")
 
 
-def role_prompt(request: RunRequest, writable: Sequence[str]) -> str:
+def role_prompt(request: RunRequest, writable: Sequence[str], *, python: PythonInterpreter | None = None,
+                native: bool = False) -> str:
     """The task prompt with the role's operating rules."""
     roots = ", ".join(writable) or "(none)"
+    scope = ("Changes anywhere else make the coordinator reject this whole run." if native
+             else "Everything else is read-only and writes there fail.")
+    interpreter = (f"Run Python as `{python.path}` from the repository root (for example "
+                   f"`{python.path} -m pytest`); `python` may not exist.\n") if python else ""
     return (
         f"You are the {request.role} agent working on feature task {request.task_id} in this repository.\n"
-        f"You may write ONLY inside: {roots}. Everything else is read-only and writes there fail.\n"
+        f"You may write ONLY inside: {roots}. {scope}\n"
         "Do not run Git commands that change state (add, commit, checkout, switch, branch, stash, reset, push);\n"
         "the coordinator commits your changes. Do not read, print or copy secrets or credentials.\n"
+        f"{interpreter}"
         "When you finish, reply with a short summary: files changed, checks you ran and their results, and\n"
         "anything that blocks you (for example an API another role must provide).\n\n"
         f"Task:\n{request.prompt}\n"
@@ -176,43 +191,74 @@ def _passthrough(kind: ProviderKind) -> dict[str, str]:
     return {k: os.environ[k] for k in PASSTHROUGH_ENV[kind] if k in os.environ}
 
 
-class ClaudeCodeLauncher:
+class _Launcher:  # pylint: disable=too-few-public-methods
+    """What both launchers share: the role's model, interpreter and file locations."""
+
+    kind: ProviderKind
+
+    def __init__(self, profile: CliRunnerProfile, config: ProjectConfig, executable: str, *,
+                 native: bool = False) -> None:
+        self.profile = profile
+        self.config = config
+        self.executable = executable
+        self.native = native
+
+    def model(self, role: str) -> str:
+        """The role's model ('' = the CLI's own default)."""
+        return self.config.model_for(role)
+
+    def interpreter(self, role: str, workspace: Path) -> PythonInterpreter | None:
+        """The interpreter for the role's `{python}` commands (None if it has none)."""
+        if not any(c.startswith(PLACEHOLDER) for c in self.config.runtime.role_commands.get(role, ())):
+            return None
+        return discover_python(workspace, self.config.runtime.python_interpreter,
+                               search_path=None if self.native else SANDBOX_PATH)
+
+    def files(self, run_dir: Path) -> tuple[Path, Path]:
+        """(where the run's files are written, where the CLI sees them)."""
+        if self.native:
+            return run_dir, run_dir
+        (run_dir / "home" / ".fc").mkdir(parents=True, exist_ok=True)
+        return run_dir / "home" / ".fc", _home() / ".fc"
+
+
+class ClaudeCodeLauncher(_Launcher):
     """Builds the Claude Code invocation for one task."""
 
     kind = ProviderKind.CLAUDE_CODE
 
-    def __init__(self, profile: CliRunnerProfile, config: ProjectConfig, executable: str) -> None:
-        self.profile = profile
-        self.config = config
-        self.executable = executable
-
-    def settings(self, role: str) -> dict[str, Any]:
+    def settings(self, role: str, workspace: Path) -> dict[str, Any]:
         """The generated Claude Code settings: file tools plus the role's Bash prefixes; deny the rest."""
-        commands = self.config.runtime.role_commands.get(role, ())
+        commands = expand_commands(self.config.runtime.role_commands.get(role, ()),
+                                   self.interpreter(role, workspace), workspace)
         return {"permissions": {"allow": [*CLAUDE_FILE_TOOLS, *(f"Bash({c})" for c in commands)],
                                 "deny": list(CLAUDE_DENY), "defaultMode": "acceptEdits"}}
 
     def prepare(self, request: RunRequest, run_dir: Path, writable: Sequence[str]) -> LaunchSpec:
         """Write the settings and prompt files and return the launch spec."""
-        home = run_dir / "home"
-        fc_dir = home / ".fc"
-        fc_dir.mkdir(parents=True, exist_ok=True)
-        settings_host = fc_dir / "claude-settings.json"
-        settings_host.write_text(json.dumps(self.settings(request.role), indent=2), encoding="utf-8")
+        workspace = request.workspace.policy.root
+        written, visible = self.files(run_dir)
+        (written / "claude-settings.json").write_text(json.dumps(self.settings(request.role, workspace), indent=2),
+                                                      encoding="utf-8")
         prompt_path = run_dir / "prompt.txt"
-        prompt_path.write_text(role_prompt(request, writable), encoding="utf-8")
+        prompt_path.write_text(role_prompt(request, writable, python=self.interpreter(request.role, workspace),
+                                           native=self.native), encoding="utf-8")
         tools = list(CLAUDE_FILE_TOOLS)
         if self.config.runtime.role_commands.get(request.role):
             tools.append("Bash")
-        settings_sandbox = str(_home() / ".fc" / "claude-settings.json")
+        settings_sandbox = str(visible / "claude-settings.json")
         argv = [self.executable, "-p", "--output-format", "stream-json", "--verbose", "--restricted",
                 "--tools", ",".join(tools), "--settings", settings_sandbox, "--strict-mcp-config",
                 "--permission-mode", "acceptEdits", "--permission-prompts", "none", "--no-session-persistence",
                 "--disable-slash-commands", "--max-budget-usd", f"{self.config.runtime.claude_max_budget_usd:g}"]
-        if self.profile.model:
-            argv += ["--model", self.profile.model]
+        if self.model(request.role):
+            argv += ["--model", self.model(request.role)]
         _check_forbidden(argv)
-        env = {"DISABLE_AUTOUPDATER": "1", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", **_passthrough(self.kind)}
+        env = {"DISABLE_AUTOUPDATER": "1", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"}
+        if self.native:
+            return LaunchSpec(argv, prompt_path, env, [], shadow_writable=False,
+                              files={settings_sandbox: "generated Claude Code settings"})
+        env.update(_passthrough(self.kind))
         binds = [Bind(str(install_prefix(self.executable)), str(install_prefix(self.executable)), "ro"),
                  *_credential_binds(self.profile)]
         return LaunchSpec(argv, prompt_path, env, binds, shadow_writable=False,
@@ -238,31 +284,35 @@ class ClaudeCodeLauncher:
         return (not result.get("is_error", False)), str(result.get("result", ""))[:4000], details
 
 
-class CodexLauncher:
+class CodexLauncher(_Launcher):
     """Builds the Codex invocation for one task."""
 
     kind = ProviderKind.CODEX
 
-    def __init__(self, profile: CliRunnerProfile, config: ProjectConfig, executable: str) -> None:
-        self.profile = profile
-        self.config = config
-        self.executable = executable
-
     def prepare(self, request: RunRequest, run_dir: Path, writable: Sequence[str]) -> LaunchSpec:
         """Write the prompt file and return the launch spec."""
-        (run_dir / "home" / ".codex").mkdir(parents=True, exist_ok=True)
-        (run_dir / "home" / ".fc").mkdir(parents=True, exist_ok=True)
+        workspace = request.workspace.policy.root
+        if not self.native:
+            (run_dir / "home" / ".codex").mkdir(parents=True, exist_ok=True)
+        _written, visible = self.files(run_dir)
         prompt_path = run_dir / "prompt.txt"
-        prompt_path.write_text(role_prompt(request, writable), encoding="utf-8")
-        last_message = str(_home() / ".fc" / "last-message.txt")
-        repo = str(request.workspace.policy.root)
+        prompt_path.write_text(role_prompt(request, writable, python=self.interpreter(request.role, workspace),
+                                           native=self.native), encoding="utf-8")
+        last_message = str(visible / "last-message.txt")
+        repo = str(workspace)
         argv = [self.executable, "exec", "--json", "--sandbox", "workspace-write", "--ephemeral",
                 "--ignore-user-config", "-C", repo, "-o", last_message,
                 "-c", "sandbox_workspace_write.network_access=false"]
-        if self.profile.model:
-            argv += ["-m", self.profile.model]
+        if self.native:  # the operator's ChatGPT login or nothing; unknown -c keys fail (--strict-config)
+            argv[3:3] = ["--strict-config"]
+            argv += ["-c", 'forced_login_method="chatgpt"']
+        if self.model(request.role):
+            argv += ["-m", self.model(request.role)]
         argv.append("-")
         _check_forbidden(argv)
+        if self.native:
+            return LaunchSpec(argv, prompt_path, {}, [], shadow_writable=False,
+                              files={last_message: "Codex last message"})
         env = {"CODEX_HOME": str(_home() / ".codex"), **_passthrough(self.kind)}
         binds = [Bind(str(install_prefix(self.executable)), str(install_prefix(self.executable)), "ro"),
                  *_credential_binds(self.profile)]
@@ -369,7 +419,7 @@ class RealCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-pub
         policy: PathPolicy = request.workspace.policy
         builder = SandboxBuilder(policy.root, self.config, policy, bwrap=bwrap)
         writable = builder.writable_roots(request.role, request.workspace.grants)
-        launcher = LAUNCHERS[self.kind](self.profile, self.config, probe.resolved)
+        launcher = LAUNCHERS[self.kind](self.profile, self.config, probe.resolved)  # bwrap: native=False
         spec = launcher.prepare(request, ctx.run_dir, writable)
         plan = builder.plan(run_dir=ctx.run_dir, role=request.role, grants=request.workspace.grants,
                             network=self.config.runtime.agent_network, shadow_writable=spec.shadow_writable,

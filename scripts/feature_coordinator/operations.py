@@ -29,7 +29,7 @@ from .issues import MockIssueTracker, TrackerClient
 from .launchers import RealCliRunner
 from .paths import PathPolicy
 from .providers import CliRunnerProfile, OpenAICompatibleProfile
-from .runners import OpenAICompatibleRunner, Runner
+from .runners import DisabledRoleRunner, OpenAICompatibleRunner, Runner
 from .sandbox import SandboxBuilder, check_bwrap
 from .store import StateStore
 from .supervisor import supervise
@@ -204,13 +204,19 @@ def containment_self_test(config: ProjectConfig, workdir: Path | None = None) ->
 
 
 def build_runners(config: ProjectConfig, env: Mapping[str, str] | None = None) -> dict[str, Runner]:
-    """Real runners per role: Claude Code / Codex in bwrap; OpenAI-compatible over the loopback-only
-    HTTP transport (remote execution stays disabled in Phase 3)."""
+    """Real runners per role. Claude Code / Codex through the configured execution backend
+    (W2: `native-cli` with the subscription logins, or `bwrap` — never a fallback from one to the
+    other); OpenAI-compatible over the loopback-only HTTP transport (remote execution stays
+    disabled); a disabled role gets a runner that refuses."""
+    from .native_backend import NativeCliRunner  # pylint: disable=import-outside-toplevel
     runners: dict[str, Runner] = {}
+    native = config.runtime.execution_backend == "native-cli"
     for name, role in config.roles.items():
         profile = config.providers[role.provider]
-        if isinstance(profile, CliRunnerProfile):
-            runners[name] = RealCliRunner(profile, config)
+        if not role.enabled:
+            runners[name] = DisabledRoleRunner(name, profile.name, profile.kind)
+        elif isinstance(profile, CliRunnerProfile):
+            runners[name] = NativeCliRunner(profile, config) if native else RealCliRunner(profile, config)
         elif isinstance(profile, OpenAICompatibleProfile):
             runners[name] = OpenAICompatibleRunner(profile, dict(env if env is not None else os.environ),
                                                    HttpChatTransport())

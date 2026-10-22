@@ -13,6 +13,7 @@ from .errors import CoordinatorError
 from .gates import GateContext, SandboxedGateRunner, gate_cwd
 from .launchers import LAUNCHERS, probe_runner
 from .lint_baseline import lint_report
+from .native_backend import check_subscription, native_environment
 from .paths import PathPolicy, ScopedWorkspace
 from .providers import CliRunnerProfile, OpenAICompatibleProfile
 from .runners import RunRequest
@@ -48,8 +49,14 @@ def cmd_runners(args: argparse.Namespace, config: ProjectConfig) -> int:
     repo = Path(args.repo)
     policy = PathPolicy(repo, config)
     probed: dict[str, Any] = {}
+    native = config.runtime.execution_backend == "native-cli"
+    _print(f"execution backend: {config.runtime.execution_backend}"
+           f"{' — the installed CLIs with their subscription logins; NOT a security sandbox' if native else ''}")
     for role, role_cfg in config.roles.items():
         profile = config.providers[role_cfg.provider]
+        if not role_cfg.enabled:
+            _print(f"{role:12s} → {profile.name}: role DISABLED (roles.{role}.enabled: false)")
+            continue
         if isinstance(profile, OpenAICompatibleProfile):
             _print(f"{role:12s} → {profile.name}: OpenAI-compatible; HTTP transport loopback-only "
                    "(live remote execution disabled in Phase 3)")
@@ -58,9 +65,15 @@ def cmd_runners(args: argparse.Namespace, config: ProjectConfig) -> int:
         probe = probed.setdefault(profile.name, probe_runner(profile))
         status = "OK" if probe.ok else f"UNAVAILABLE ({probe.error or 'missing ' + ', '.join(probe.missing_flags)})"
         ok = ok and probe.ok
-        _print(f"{role:12s} → {profile.name}: {probe.version or '-'} at {probe.resolved or '-'}: {status}")
+        _print(f"{role:12s} → {profile.name}: {probe.version or '-'} at {probe.resolved or '-'}: {status}; "
+               f"model {config.model_for(role) or 'CLI default'}")
+        if probe.ok and native:
+            auth = probed.setdefault(f"auth:{profile.name}", check_subscription(profile.kind, probe.resolved,
+                                                                                native_environment()))
+            ok = ok and auth.ok
+            _print(f"{'':15s}authentication: {auth.method}{'' if auth.ok else ' — REFUSED: ' + auth.detail}")
         if probe.ok:
-            launcher = LAUNCHERS[profile.kind](profile, config, probe.resolved)
+            launcher = LAUNCHERS[profile.kind](profile, config, probe.resolved, native=native)
             roots = SandboxBuilder(repo, config, policy).writable_roots(role)
             request = RunRequest(f"example.{role}", role, "(task prompt)", ScopedWorkspace(policy, role))
             spec = launcher.prepare(request, Path(args.scratch or _state(args, config) / "tmp" / f"plan-{role}"), roots)
@@ -173,7 +186,10 @@ def cmd_launch(args: argparse.Namespace, config: ProjectConfig) -> int:
     """Run one task with its real runner: claim, sandbox, supervise, commit, gates, release."""
     coord = _coordinator(args, config)
     task = coord.store.load_task(args.task)
-    _print(f"{task.id}: role {task.role}, runner {config.provider_for(task.role).name}, state {task.state.value}")
+    backend = config.runtime.execution_backend
+    _print(f"{task.id}: role {task.role}, runner {config.provider_for(task.role).name}, model "
+           f"{config.model_for(task.role) or 'CLI default'}, backend {backend}"
+           f"{' (NOT a security sandbox)' if backend == 'native-cli' else ''}, state {task.state.value}")
     if not args.apply:
         _print("dry run — pass --apply to launch it (see `runners` for the exact command line)")
         return 0

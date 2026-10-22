@@ -77,15 +77,21 @@ def test_bypass_flags_can_never_be_emitted() -> None:
             _check_forbidden(["claude", "-p", flag])
 
 
-def test_claude_settings_allow_only_file_tools_and_role_commands(agent_config: ProjectConfig) -> None:
+def test_claude_settings_allow_only_file_tools_and_role_commands(agent_config: ProjectConfig, tmp_path: Path) -> None:
     launcher = ClaudeCodeLauncher(agent_config.providers["claude"], agent_config, "claude")  # type: ignore[arg-type]
-    allow = launcher.settings("backend")["permissions"]["allow"]
-    deny = launcher.settings("backend")["permissions"]["deny"]
+    venv_python = tmp_path / ".venv/bin/python"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.symlink_to("/usr/bin/python3")
+    allow = launcher.settings("backend", tmp_path)["permissions"]["allow"]
+    deny = launcher.settings("backend", tmp_path)["permissions"]["deny"]
     assert {"Read", "Edit", "Write", "Glob", "Grep"} <= set(allow)
-    assert "Bash(python -m pytest:*)" in allow and not any(a in ("Bash", "Bash(*)") for a in allow)
+    # W2: {python} is the workspace's interpreter, absolute and workspace-relative — never a bare `python`.
+    assert f"Bash({venv_python} -m pytest:*)" in allow and "Bash(.venv/bin/python -m pytest:*)" in allow
+    assert not any(a.startswith(("Bash(python ", "Bash(python3 ", "Bash({")) for a in allow)
+    assert not any(a in ("Bash", "Bash(*)") for a in allow)
     assert "Read(~/.claude/**)" in deny and "Bash(git commit:*)" in deny and "WebFetch" in deny
-    assert launcher.settings("frontend")["permissions"]["allow"] == ["Read", "Glob", "Grep", "Edit", "Write"]
-    assert launcher.settings("backend")["permissions"]["defaultMode"] == "acceptEdits"
+    assert launcher.settings("frontend", tmp_path)["permissions"]["allow"] == ["Read", "Glob", "Grep", "Edit", "Write"]
+    assert launcher.settings("backend", tmp_path)["permissions"]["defaultMode"] == "acceptEdits"
 
 
 def test_claude_command_line(repo3: Path, agent_config: ProjectConfig, tmp_path: Path, fake_home: Path) -> None:
