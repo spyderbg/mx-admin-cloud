@@ -76,6 +76,14 @@ class NothingToCommitError(GitOperationError):
     """The manifest paths already match HEAD."""
 
 
+class CheckpointError(CoordinatorError):
+    """W3: checkpoint metadata is missing, corrupt, incompatible or inconsistent with Git."""
+
+
+class RecoveryConflictError(CheckpointError):
+    """W3: automatic recovery would be unsafe; an operator decision is required."""
+
+
 class PullRequestPolicyError(CoordinatorError):
     """The one-feature/one-final-PR policy would be violated."""
 

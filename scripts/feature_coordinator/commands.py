@@ -213,7 +213,8 @@ def cmd_stop(args: argparse.Namespace, config: ProjectConfig) -> int:
 
 
 def cmd_recover(args: argparse.Namespace, config: ProjectConfig) -> int:
-    """Reclaim tasks of provably dead workers; report live and unresponsive ones."""
+    """Reclaim tasks of provably dead workers; report live, unresponsive and (W3) orphaned ones.
+    `recover TASK` (W3, one task from its checkpoints) is checkpoint_commands.py."""
     coord = _coordinator(args, config)
     if not args.apply:
         for task_id, record in coord.store.list_claims().items():
@@ -226,6 +227,9 @@ def cmd_recover(args: argparse.Namespace, config: ProjectConfig) -> int:
     _print(f"recovered {[r['task_id'] for r in report.recovered]}; live {[r['task_id'] for r in report.live]}; "
            f"unresponsive {[r['task_id'] for r in report.unresponsive]}; "
            f"unknown lock holders {report.unknown_lock_holders}")
+    for record in report.orphaned:
+        _print(f"NOT recovered {record['task_id']}: its worker is gone but agent process(es) {record['orphans']} of "
+               f"the run still live (`recover {record['task_id']}` shows them; --terminate-orphans stops them)")
     return 0
 
 
@@ -271,6 +275,6 @@ def register(sub: Any) -> None:
     stop.add_argument("task")
     stop.add_argument("--reason", default="operator stop")
     stop.set_defaults(func=cmd_stop)
-    recover = sub.add_parser("recover", help="reclaim tasks of dead workers")
+    recover = sub.add_parser("recover", help="reclaim tasks of dead workers; W3: recover one task from its checkpoints")
     recover.add_argument("--apply", action="store_true")
-    recover.set_defaults(func=cmd_recover)
+    recover.set_defaults(func=cmd_recover)  # checkpoint_commands.register() adds `recover TASK`

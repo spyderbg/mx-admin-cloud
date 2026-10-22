@@ -86,6 +86,12 @@ class RunRequest:  # pylint: disable=too-many-instance-attributes
     carries_code: bool = True
     max_turns: int = 8
     context: RunContext | None = None
+    step: str = ""  # W3: the step of a multi-step task this invocation works on ("" = the whole task)
+
+    @property
+    def script_key(self) -> str:
+        """`<task id>#<step>` for a step, else the task id (mock runners' script keys)."""
+        return f"{self.task_id}#{self.step}" if self.step else self.task_id
 
 
 @dataclass
@@ -138,7 +144,8 @@ class DisabledRoleRunner:  # pylint: disable=too-few-public-methods
 # ---------------------------------------------------------------------------
 
 class MockCliRunner:
-    """Replays scripted edits per task ID. Base class of the Claude Code and Codex mocks."""
+    """Replays scripted edits per task ID (W3: per `<task id>#<step>` for one step of a multi-step
+    task). Base class of the Claude Code and Codex mocks."""
 
     def __init__(self, profile: CliRunnerProfile, script: Mapping[str, Sequence[FileEdit]] | None = None,
                  *, failing_tasks: Sequence[str] = ()) -> None:
@@ -152,10 +159,10 @@ class MockCliRunner:
     def run(self, request: RunRequest) -> RunResult:
         """Apply this task's scripted edits through the scoped workspace."""
         self.requests.append(request)
-        if request.task_id in self.failing_tasks:
+        if request.task_id in self.failing_tasks or request.script_key in self.failing_tasks:  # whole task or a step
             return RunResult(self.name, "failed", error="scripted failure")
         try:
-            for edit in self.script.get(request.task_id, ()):
+            for edit in self.script.get(request.script_key, ()):
                 if edit.content is None:
                     request.workspace.delete(edit.path)
                 else:

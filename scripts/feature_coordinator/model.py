@@ -5,6 +5,9 @@ Task:    proposed → ready → in-progress → verified         (side states: b
 
 Rules:
   * A transition to the state a record is already in is a no-op (idempotent).
+  * W3: a task may define ordered `steps`; each is one bounded agent invocation that ends in a
+    checkpoint (checkpoints.py). The lifecycle is unchanged: step progress is checkpoint
+    metadata, not a task state.
   * `verified` needs Evidence bound to a HEAD SHA, with every required gate passing.
   * A feature reaches `done` only with merge evidence — creating a PR is never enough.
   * A feature owns exactly one branch and at most one PR candidate.
@@ -24,8 +27,15 @@ from typing import Any, Iterable, Mapping
 from .config import ROLES
 from .errors import DependencyError, EvidenceError, IllegalTransitionError
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 1  # feature records
+# Task records: v1 (Phases 2–W2) → v2 (W3: `steps`). v1 records are migrated explicitly on load
+# (migrate_task_record); a record with unknown fields or another version is refused, never
+# loaded with data silently dropped. Written records are always v2.
+TASK_SCHEMA_VERSION = 2
+TASK_SCHEMA_VERSIONS = (1, 2)
+MAX_TASK_STEPS = 20
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,79}$")
+_STEP_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
 
 
 def utc_now() -> str:
@@ -180,6 +190,31 @@ class HistoryEntry:
     reason: str
 
 
+@dataclass(frozen=True)
+class TaskStep:
+    """One step of a multi-step task (W3): a key (unique in the task) and the instruction."""
+
+    key: str
+    title: str
+
+    def __post_init__(self) -> None:
+        if not _STEP_KEY_RE.fullmatch(self.key):
+            raise ValueError(f"invalid step key {self.key!r} (lowercase letters, digits, '_', '-'; max 40)")
+        if not self.title.strip():
+            raise ValueError(f"step {self.key!r} needs a title")
+
+
+def check_steps(task_id: str, steps: Iterable[TaskStep]) -> tuple[TaskStep, ...]:
+    """Validate a task's steps: unique keys, at most MAX_TASK_STEPS (bounded model calls)."""
+    steps = tuple(steps)
+    keys = [s.key for s in steps]
+    if len(set(keys)) != len(keys):
+        raise ValueError(f"task {task_id!r}: step keys must be unique ({keys})")
+    if len(steps) > MAX_TASK_STEPS:
+        raise ValueError(f"task {task_id!r}: at most {MAX_TASK_STEPS} steps ({len(steps)} given)")
+    return steps
+
+
 @dataclass
 class Task:  # pylint: disable=too-many-instance-attributes
     """One component task: exactly one role, on the feature's shared branch."""
@@ -200,6 +235,7 @@ class Task:  # pylint: disable=too-many-instance-attributes
     issue_number: int | None = None
     history: list[HistoryEntry] = field(default_factory=list)
     revision: int = 0
+    steps: tuple[TaskStep, ...] = ()  # W3: empty = one implicit step (the W2 behaviour)
 
     def __post_init__(self) -> None:
         check_id(self.id, "task id")
@@ -208,18 +244,19 @@ class Task:  # pylint: disable=too-many-instance-attributes
             raise ValueError(f"task {self.id!r}: unknown role {self.role!r}")
         if self.id in self.depends_on:
             raise DependencyError(f"task {self.id!r} depends on itself")
+        self.steps = check_steps(self.id, self.steps)
 
     def to_dict(self) -> dict[str, Any]:
-        """JSON-serializable form."""
+        """JSON-serializable form (always the current task schema)."""
         data = asdict(self)
-        data.update(schema_version=SCHEMA_VERSION, state=self.state.value,
+        data.update(schema_version=TASK_SCHEMA_VERSION, state=self.state.value,
                     evidence=self.evidence.to_dict() if self.evidence else None)
         return data
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "Task":
-        """Inverse of to_dict()."""
-        _check_schema(data)
+        """Inverse of to_dict(); v1 records are migrated (migrate_task_record)."""
+        data = migrate_task_record(data)
         return cls(
             id=data["id"], feature_id=data["feature_id"], role=data["role"], title=data["title"],
             acceptance=tuple(data.get("acceptance", ())), depends_on=tuple(data.get("depends_on", ())),
@@ -229,7 +266,33 @@ class Task:  # pylint: disable=too-many-instance-attributes
             evidence=Evidence.from_dict(data["evidence"]) if data.get("evidence") else None,
             commits=list(data.get("commits", ())), issue_number=data.get("issue_number"),
             history=[HistoryEntry(**h) for h in data.get("history", ())], revision=int(data.get("revision", 0)),
+            steps=tuple(TaskStep(key=s["key"], title=s["title"]) for s in data.get("steps", ())),
         )
+
+
+TASK_FIELDS_V1 = frozenset({
+    "schema_version", "id", "feature_id", "role", "title", "acceptance", "depends_on", "required_gates",
+    "provides_contract", "grants", "state", "blocked_reason", "evidence", "commits", "issue_number", "history",
+    "revision"})
+TASK_FIELDS_V2 = TASK_FIELDS_V1 | {"steps"}
+
+
+def migrate_task_record(data: Mapping[str, Any]) -> dict[str, Any]:
+    """A task record in the current schema (v2). v1 (W2 and earlier) gains `steps: []`. Any other
+    version, or a field this version does not know, is refused (ValueError): loading it would
+    drop data on the next save."""
+    version = data.get("schema_version")
+    if version not in TASK_SCHEMA_VERSIONS:
+        raise ValueError(f"unsupported task record schema_version {version!r} (supported {TASK_SCHEMA_VERSIONS})")
+    known = TASK_FIELDS_V1 if version == 1 else TASK_FIELDS_V2
+    unknown = sorted(set(data) - known)
+    if unknown:
+        raise ValueError(f"task record {data.get('id')!r} (schema {version}) has unknown fields {unknown}; "
+                         "refusing to load it (they would be lost on the next save)")
+    migrated = dict(data)
+    if version == 1:
+        migrated.update(schema_version=TASK_SCHEMA_VERSION, steps=[])
+    return migrated
 
 
 @dataclass

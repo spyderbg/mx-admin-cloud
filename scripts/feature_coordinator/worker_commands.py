@@ -31,6 +31,7 @@ def _state(args: argparse.Namespace, config: ProjectConfig) -> Path:
 
 def cmd_work(args: argparse.Namespace, config: ProjectConfig) -> int:
     """Drive a feature's tasks through their agents (one Worker); --apply runs it."""
+    from .checkpoints import progress_line  # pylint: disable=import-outside-toplevel
     from .commands import _coordinator  # pylint: disable=import-outside-toplevel
     from .supervisor import install_termination_handlers  # pylint: disable=import-outside-toplevel
     from .worker import FeatureWorker, cli_spawner, default_parallelism  # pylint: disable=import-outside-toplevel
@@ -47,9 +48,10 @@ def cmd_work(args: argparse.Namespace, config: ProjectConfig) -> int:
         role = config.role(task.role)
         agent = config.provider_for(task.role)
         deps = ", ".join(task.depends_on) or "-"
+        steps = progress_line(coord.store, task)
         _print(f"  {task_id:30s} {task.state.value:11s} {task.role:12s} → {agent.name} ({agent.kind.value}), "
                f"model {config.model_for(task.role) or 'CLI default'}{'' if role.enabled else ', ROLE DISABLED'}; "
-               f"depends on {deps}")
+               f"depends on {deps}" + (f"; {steps}" if steps else ""))
     problems = workspace_problems(coord.root, feature)
     for problem in problems:
         _print(f"workspace: {problem}")
@@ -66,6 +68,8 @@ def cmd_work(args: argparse.Namespace, config: ProjectConfig) -> int:
            f"{'; STOPPED by request' if report.stopped else ''}")
     for task_id, why in report.skipped.items():
         _print(f"  not run: {task_id}: {why}")
+    if report.recovered:
+        _print(f"  recovered at start (stale claims): {report.recovered}")
     if report.all_verified and args.integrate:
         gates = tuple(args.integration_gate) or DEFAULT_INTEGRATION_GATES
         feature = coord.integrate(feature.id, gates=gates)
