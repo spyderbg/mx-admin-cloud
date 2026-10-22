@@ -6,6 +6,9 @@ Layout under the state directory:
     github/<record-id>.json      (Issue mapping and sync cursors of a feature or task, Phase 4)
     outbox/<op-id>.json          (pending coordinator comments with persisted operation IDs)
     checkpoints/<task-id>.json   (W3: a multi-step task's checkpoints, see checkpoints.py)
+    scheduling/<task-id>.json    (W4: retry budgets, waits, attention — portable; autonomy.py)
+    service/worker.json          (W4: the Worker service's health record — machine-specific)
+    worker-startup.json          (W4: consecutive identical startup failures — restart-loop guard)
     events.jsonl (append-only audit trail)   locks/*.lock (flock files)   tmp/
 
 Every write is atomic (temp file in the same directory, fsync, rename, fsync of the
@@ -140,9 +143,9 @@ class StateStore:
     # -- GitHub sync records (see issue_sync.py) -------------------------------
 
     def save_record(self, kind: str, record: Any) -> None:
-        """Persist a revision-checked record of *kind* ('github', 'outbox', 'project' or
-        'checkpoints'; inside a transaction)."""
-        if kind not in ("github", "outbox", "project", "checkpoints"):
+        """Persist a revision-checked record of *kind* ('github', 'outbox', 'project', 'checkpoints',
+        'scheduling' or 'service'; inside a transaction)."""
+        if kind not in ("github", "outbox", "project", "checkpoints", "scheduling", "service"):
             raise StateDirError(f"unknown record kind {kind!r}")
         self._write(kind, record)
 

@@ -219,7 +219,8 @@ def git_problems(root: Path, before: GitState, after: GitState) -> list[str]:
     """How the Git state changed in ways only the Git coordinator may change it."""
     problems = []
     if after.branch != before.branch:
-        problems.append(f"the checked-out branch changed ({before.branch or 'detached'} → {after.branch or 'detached'})")
+        problems.append(f"the checked-out branch changed ({before.branch or 'detached'} → "
+                        f"{after.branch or 'detached'})")
     if after.refs != before.refs:
         problems.append("other refs (branches, tags) changed")
     if after.staged and after.staged != before.staged:

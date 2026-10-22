@@ -29,6 +29,7 @@ every task is verified the feature is ready for integration (`feature.py integra
 
 from __future__ import annotations
 
+import os
 import signal
 import subprocess
 import sys
@@ -95,8 +96,9 @@ class WorkReport:
 
 def cli_spawner(repo: Path, state_dir: Path, *, tracker: str = "local", project_config: str | None = None,
                 log_dir: Path | None = None) -> Spawner:
-    """Start `feature.py launch TASK --apply` for this checkout and state directory."""
-    def spawn(task_id: str, attempt: int) -> Handle:
+    """Start `feature.py launch TASK --apply` for this checkout and state directory. *env*: extra
+    variables for the launch process (W4: the service's launch tag)."""
+    def spawn(task_id: str, attempt: int, env: dict[str, str] | None = None) -> Handle:
         argv = [sys.executable, str(FEATURE_PY), "--repo", str(repo), "--state-dir", str(state_dir),
                 "--tracker", tracker]
         if project_config:
@@ -106,7 +108,7 @@ def cli_spawner(repo: Path, state_dir: Path, *, tracker: str = "local", project_
         directory.mkdir(parents=True, exist_ok=True)
         with open(directory / f"work-{task_id}.{attempt}.log", "ab") as log:
             return subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,  # pylint: disable=consider-using-with
-                                    start_new_session=True)
+                                    start_new_session=True, env={**os.environ, **env} if env else None)
     return spawn
 
 

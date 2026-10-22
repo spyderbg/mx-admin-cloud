@@ -619,3 +619,19 @@ Design, protocol, recovery, examples, limitations: [worker-checkpoints.md](worke
 | Process recovery | Run tag + agent process identity in the claim; a dead worker with a live agent is not reclaimed (`orphaned`); `--terminate-orphans` stops only those processes | `claims.py`, `native_backend.py`, `supervisor.terminate_pids` |
 | Context | Completed / remaining / not to repeat / to verify, untrusted summaries, current step last | `checkpoints.step_prompt` |
 | Operator | `checkpoints TASK`, `recover TASK` (preview by default; `--apply`, `--terminate-orphans`, `--abandon-pending`, `--redo-from`) | `checkpoint_commands.py` |
+
+## 23. W4 — Autonomous Worker operations
+
+Design, policies, operator commands, systemd instructions, limitations: [worker-autonomy.md](worker-autonomy.md). **Implemented and verified offline**: fake agents, real processes, simulated time. No real-agent W4 run has taken place.
+
+| Area | Design | Where |
+| --- | --- | --- |
+| Service | `feature.py worker start`: one long-running loop per state directory (`worker-service.lock`; a second service exits 73); one cycle = heartbeat → control → active feature → workspace → claims → in-flight launches → eligible task → launch → integrity → outcome | `service.py` |
+| Sequential | Default `worker.max_parallel: 1` (the service requires it; `work` defaults to it). The `agent-exclusive` flag makes `ClaimManager.claim` refuse a claim while another exists; `work --max-parallel N` keeps the W2 scheduler | `claims.py`, `worker_commands.py` |
+| Scheduling | `scheduling/<task>.json`: launches (write-ahead), attempts per category, next attempt, waiting, attention + action, in-flight launch (tagged `FC_WORKER_LAUNCH`), history; no new task states | `autonomy.py` |
+| Classification | transient / subscription / validation / critical / unknown (fails closed); not failures: verified, dependency, cancelled, interrupted, external | `autonomy.classify` |
+| Retries | Exponential backoff, per-category budgets and a launch cap, persistent across restarts; validation auto-fix off by default; operator reset `worker reset-retries` | `autonomy.apply_outcome` |
+| Recovery | W3 at startup and every cycle; orphaned agents waited for, stopped only with certain identity after their deadline; per-task isolation of unreadable state | `service.py`, `claims.py`, `checkpoints.py` |
+| Health and control | `service/worker.json` (heartbeat, current agent, last checkpoint and error, counters); `worker status/health/waiting/attention` (read-only); `pause/resume/stop [--after-current]` (control flag + SIGUSR1/SIGTERM to the verified process); exit 78 = do not restart | `service_commands.py`, `supervisor.py` |
+| Redaction | `redact_secrets` (provider keys, secret assignments) in task reasons and everything the service records or prints | `github_api.py`, `workflow._finish`, `autonomy.scrub` |
+| systemd | User unit template, rendered by `worker systemd-unit`; never installed or enabled automatically | `systemd/mx-admin-worker.service.in` |

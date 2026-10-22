@@ -693,6 +693,24 @@ def test_redo_from_reruns_steps_after_a_failed_verification(repo: Path, state_di
     assert len(commits) == 5 and [c.status for c in record(coord).checkpoints][3:] == ["superseded", "committed"]
 
 
+def test_redo_from_twice_after_an_unchanged_rerun(repo: Path, state_dir: Path) -> None:
+    """W4 finding: a redone step that changes nothing again is `no-changes` (no commit); redoing it
+    once more supersedes that commit-less checkpoint, which is not a conflict."""
+    gates = RecordingGates(failing=["backend-tests"])
+    coord = build_coordinator(repo, state_dir, scripts=scripts(), gates=gates)
+    coord.runners["backend"] = Steps(coord.runners["backend"], [])
+    feature = stepped_feature(coord)
+    assert coord.run_task(TASK).state is TaskState.FAILED
+    assert recover_task(coord, TASK, redo_from="tests").state == "ready"
+    assert coord.run_task(TASK).state is TaskState.FAILED  # the same edit again: nothing to commit
+    assert record(coord).checkpoints[-1].status == "no-changes"
+    commits = branch_commits(repo, feature)
+    result = recover_task(coord, TASK, redo_from="tests")
+    assert result.state == "ready" and not result.inspection.conflicts
+    assert [c.status for c in record(coord).checkpoints][3:] == ["superseded", "superseded"]
+    assert branch_commits(repo, feature) == commits
+
+
 def test_a_worker_restart_reclaims_a_dead_claim(mock) -> None:
     feature = stepped_feature(mock)
     code = textwrap.dedent("""

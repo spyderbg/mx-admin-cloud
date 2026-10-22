@@ -29,16 +29,18 @@ def _state(args: argparse.Namespace, config: ProjectConfig) -> Path:
     return ensure_state_dir(path, allowed=config.allowed_state_filesystems)
 
 
-def cmd_work(args: argparse.Namespace, config: ProjectConfig) -> int:
+def cmd_work(args: argparse.Namespace, config: ProjectConfig) -> int:  # pylint: disable=too-many-locals
     """Drive a feature's tasks through their agents (one Worker); --apply runs it."""
     from .checkpoints import progress_line  # pylint: disable=import-outside-toplevel
     from .commands import _coordinator  # pylint: disable=import-outside-toplevel
     from .supervisor import install_termination_handlers  # pylint: disable=import-outside-toplevel
-    from .worker import FeatureWorker, cli_spawner, default_parallelism  # pylint: disable=import-outside-toplevel
+    from .claims import drop_exclusive, hold_exclusive  # pylint: disable=import-outside-toplevel
+    from .worker import FeatureWorker, cli_spawner  # pylint: disable=import-outside-toplevel
     coord = _coordinator(args, config)
     feature = coord.store.load_feature(args.feature)
     tasks = coord.store.load_tasks(feature)
-    parallel = args.max_parallel or default_parallelism(config, [t.role for t in tasks.values()])
+    # W4: one agent at a time unless explicitly asked for more (worker.max_parallel, --max-parallel N).
+    parallel = args.max_parallel or config.worker.max_parallel
     backend = config.runtime.execution_backend
     _print(f"{feature.id}: {feature.state.value} on {feature.branch}; execution backend {backend}"
            f"{' (NOT a security sandbox)' if backend == 'native-cli' else ''}; up to {parallel} task(s) at a "
@@ -61,8 +63,14 @@ def cmd_work(args: argparse.Namespace, config: ProjectConfig) -> int:
     install_termination_handlers()
     spawn = cli_spawner(coord.root, coord.store.root, tracker=getattr(args, "tracker", None) or "local",
                         project_config=getattr(args, "project_config", None))
-    report = FeatureWorker(coord, spawn, max_parallel=parallel, max_attempts=args.max_attempts, echo=_print).run(
-        feature.id)
+    if parallel == 1:  # sequential: no other agent (e.g. a manual launch) may run beside this Worker's
+        hold_exclusive(coord.store, f"feature.py work {feature.id}")
+    try:
+        report = FeatureWorker(coord, spawn, max_parallel=parallel, max_attempts=args.max_attempts,
+                               echo=_print).run(feature.id)
+    finally:
+        if parallel == 1:
+            drop_exclusive(coord.store)
     _print(f"{feature.id}: {sum(s == 'verified' for s in report.states.values())}/{len(report.states)} task(s) "
            f"verified; {len(report.launches)} launch(es); up to {report.max_concurrency} at once"
            f"{'; STOPPED by request' if report.stopped else ''}")
@@ -110,7 +118,8 @@ def register(sub: Any) -> None:
     work = sub.add_parser("work", help="drive a whole feature through its agents (one Worker)")
     work.add_argument("feature")
     work.add_argument("--apply", action="store_true")
-    work.add_argument("--max-parallel", type=int, default=0, help="tasks at a time (default: one per enabled role)")
+    work.add_argument("--max-parallel", type=int, default=0,
+                      help="agents at a time (default: worker.max_parallel = 1; N > 1 = the W2 parallel scheduler)")
     work.add_argument("--max-attempts", type=int, default=1, help="launches per task in this run (default 1)")
     work.add_argument("--integrate", action="store_true", help="when every task is verified, run the integration")
     work.add_argument("--integration-gate", action="append", default=[],

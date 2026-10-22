@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
 _STOP = threading.Event()
+_WAKE = threading.Event()  # W4: wakes an idle Worker service early (SIGUSR1, or any stop signal)
 _SIGNAL_NAMES: list[str] = []
 # W2/W3: every native agent run carries a random value in this variable, so its processes can be
 # found after the run, and after a crash of the process that supervised it (claims.recover()).
@@ -39,9 +40,22 @@ def install_termination_handlers() -> None:
     def _handler(signum: int, _frame: object) -> None:
         _SIGNAL_NAMES.append(signal.Signals(signum).name)
         _STOP.set()
+        _WAKE.set()
 
     signal.signal(signal.SIGTERM, _handler)
     signal.signal(signal.SIGINT, _handler)
+
+
+def install_wake_handler() -> None:
+    """W4: SIGUSR1 wakes an idle Worker service so it re-reads the operator's requests at once."""
+    signal.signal(signal.SIGUSR1, lambda _signum, _frame: _WAKE.set())
+
+
+def wait_for_wake(timeout: float) -> bool:
+    """Sleep up to *timeout* seconds, returning early (True) on SIGUSR1 or a stop signal."""
+    woke = _WAKE.wait(max(timeout, 0.0))
+    _WAKE.clear()
+    return woke
 
 
 def stop_requested() -> bool:

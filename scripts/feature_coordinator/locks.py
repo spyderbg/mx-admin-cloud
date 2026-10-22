@@ -174,6 +174,11 @@ class LockSet:
         of the lock order above — the Worker takes no other lock itself."""
         return FileLock(self.dir / f"worker-{feature_id}.lock")
 
+    def service(self) -> FileLock:
+        """W4: one autonomous Worker service per state directory (worker-service.lock), held for the
+        service's whole lifetime. Like worker(), NOT part of the lock order above."""
+        return FileLock(self.dir / "worker-service.lock")
+
     def github_sync(self) -> FileLock:
         """One GitHub synchronization at a time (prevents racing Issue creation). It is NOT
         part of the lock order above: no worker holds it, and a sync holds no other lock

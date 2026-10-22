@@ -72,6 +72,20 @@ feature.py launch <task> --apply                   # resume: only the remaining 
 
 `feature.py work` does the same automatically. At start it reclaims dead claims, never orphaned ones, and every run reconciles its checkpoints before the first step. A conflict sends the task to `needs-human`. Recovery never resets Git, never discards files and never starts an agent.
 
+**W4 — the autonomous Worker service** ([worker-autonomy.md](worker-autonomy.md)). It runs an activated feature's tasks one agent at a time, without a terminal, and retries within bounded, persistent budgets. It is OFF until `worker.autonomous.enabled: true`:
+
+```bash
+feature.py worker start [--exit-when-idle]          # foreground (systemd --user runs exactly this)
+feature.py worker status | health [--json]          # read-only; health exits 1 unless alive, fresh and attention-free
+feature.py worker waiting | attention               # read-only: retry / subscription waits; decisions needed (+ action)
+feature.py worker pause | resume                    # no new work / again (an active agent finishes)
+feature.py worker stop [--after-current]            # graceful: cancel the active agent (checkpoints stay) / finish it first
+feature.py worker reset-retries <task> [--apply]    # operator decision: clear budgets, waits and attention
+feature.py worker systemd-unit --config FILE        # print the user unit; nothing is installed or enabled
+```
+
+`feature.py work` now defaults to one agent at a time (`worker.max_parallel`); `--max-parallel N` is the W2 parallel scheduler. While a sequential Worker runs, a manual `launch` of another task is refused ("sequential mode").
+
 ## 4. Gates
 
 | Command | Notes |

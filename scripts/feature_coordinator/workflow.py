@@ -73,7 +73,7 @@ from .errors import (
 )
 from .escalation import hold_task as _hold_task
 from .escalation import release_task as _release_task
-from .github_api import sanitize
+from .github_api import redact_secrets, sanitize
 from .gitops import CommitRequest, GitCoordinator, commit_subject, file_digest
 from .issue_sync import IssueSync, SyncReport, enqueue_comment
 from .project_sync import BoardReport, ProjectSync
@@ -576,6 +576,7 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
     def _finish(self, task_id: str, state: TaskState, reason: str, run: TaskRun) -> TaskRun | None:
         """Record the outcome. Returns None only for `verified` when the branch HEAD no longer
         matches the evidence (the caller re-runs the gates)."""
+        reason = redact_secrets(reason)  # W4: a runner error may quote a key the CLI printed
         with self.store.transaction():
             task = self.store.load_task(task_id)
             feature = self.store.load_feature(task.feature_id)

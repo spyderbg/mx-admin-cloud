@@ -7,8 +7,9 @@ takes the JSON action list after a `FAKE-ACTIONS:` line, performs the actions re
 its working directory and reports every attempt in the CLI's own output format
 (Claude Code stream-json `result` event, or Codex JSONL events). No model is involved.
 
-Actions: write, try_write, delete, symlink, read, try_read, sleep, wait_for, git,
-ignore_sigterm, daemon (a grandchild that keeps appending to a file), exit. A `wait_for` with
+Actions: write, append, try_write, delete, symlink, read, try_read, sleep, wait_for, git,
+ignore_sigterm, daemon (a grandchild that keeps appending to a file), once (nested actions only
+on the first invocation: its marker file is created first), exit. A `wait_for` with
 "required": true is a synchronization point: if its file does not appear within the timeout,
 the run fails (exit 3) instead of continuing.
 Standard library only: it runs inside the sandbox with the system interpreter.
@@ -87,6 +88,14 @@ def run_actions(actions):  # pylint: disable=too-many-branches
         if kind == "write":
             write(act["path"], act.get("text", "x\n"))
             report.append({"action": f"write {act['path']}", "ok": True})
+        elif kind == "append":  # e.g. an audit line per invocation (an absolute path outside the repo)
+            with open(act["path"], "a", encoding="utf-8") as handle:
+                handle.write(act.get("text", "x\n"))
+            report.append({"action": f"append {act['path']}", "ok": True})
+        elif kind == "once":
+            if not os.path.exists(act["path"]):
+                write(act["path"], f"{os.getpid()}\n")
+                report += run_actions(act["actions"])
         elif kind == "try_write":
             attempt(report, f"try_write {act['path']}", lambda a=act: write(a["path"], a.get("text", "x\n")))
         elif kind == "delete":
@@ -114,8 +123,8 @@ def run_actions(actions):  # pylint: disable=too-many-branches
             signal.signal(signal.SIGTERM, signal.SIG_IGN)
         elif kind == "daemon":
             report.append({"action": "daemon", "ok": True, "value": daemon(act["path"], act.get("interval", 0.05))})
-        elif kind == "exit":
-            emit(report, error=act.get("code", 1) != 0)
+        elif kind == "exit":  # "message": the CLI's own error text (e.g. a network or usage-limit error)
+            emit(report, error=act.get("code", 1) != 0, message=act.get("message"))
             sys.exit(act.get("code", 1))
     return report
 
@@ -163,9 +172,9 @@ def status():
     return 0
 
 
-def emit(report, error=False):
-    text = json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd(), "home": os.environ.get("HOME"),
-                       "env_keys": sorted(os.environ), "report": report})
+def emit(report, error=False, message=None):
+    text = message or json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd(), "home": os.environ.get("HOME"),
+                                  "env_keys": sorted(os.environ), "report": report})
     if MODE == "claude":
         print(json.dumps(init_event()), flush=True)
         print(json.dumps({"type": "result", "subtype": "error_during_execution" if error else "success",
@@ -174,7 +183,7 @@ def emit(report, error=False):
     else:
         print(json.dumps({"type": "thread.started"}), flush=True)
         print(json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": text}}), flush=True)
-        print(json.dumps({"type": "turn.failed", "error": {"message": "scripted"}} if error
+        print(json.dumps({"type": "turn.failed", "error": {"message": message or "scripted"}} if error
                          else {"type": "turn.completed", "usage": {}}), flush=True)
 
 
