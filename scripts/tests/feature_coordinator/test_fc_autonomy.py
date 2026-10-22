@@ -575,7 +575,8 @@ def test_secrets_never_reach_records_events_or_logs(repo: Path, state_dir: Path)
     stored = [p.read_text(encoding="utf-8") for p in rig.coord.store.root.rglob("*") if p.is_file()]
     assert len(stored) > 5 and rig.out and not [t for t in stored + rig.out if "QQQQQQQQ" in t]
     assert "Invalid API key [redacted]" in rig.task("w4.api").history[-1].reason  # the task record too
-    assert scrub("Authorization: Bearer abcdefghijklmnop123") == "Authorization: [redacted]"
+    bearer_value = "test-" + "x" * 24  # build a synthetic token at runtime, not a hardcoded credential
+    assert scrub(f"Authorization: Bearer {bearer_value}") == "Authorization: [redacted]"
     assert scrub("gates failed: ['backend-tests']; usage limit reached|1900003600") == \
         "gates failed: ['backend-tests']; usage limit reached|1900003600"  # evidence stays readable
 
