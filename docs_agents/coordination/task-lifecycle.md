@@ -73,6 +73,17 @@ Legal transitions: [feature-workflow §5.1](feature-workflow.md#51-task). Re-app
 
 Atomic under `coordinator.lock`: the task must be `ready`, unclaimed and of the caller's role; the claim takes `project.lock` shared and `role-<role>.lock` exclusive, records PID + start time + boot ID, and moves the task to `in-progress` ([feature-workflow §7](feature-workflow.md#7-locks-claims-and-recovery-d-3-d-12)). One writer per role; different roles run in parallel; full-project work is exclusive. Labels are never locks. Live I1 shows a duplicate claim and a second Backend writer rejected **[V]**.
 
+## 4a. Multi-step tasks and checkpoints (W3)
+
+A task may define ordered `steps` (`Task.steps`; task records are schema v2, and W2's v1 records are migrated on load). Each step is one bounded agent invocation, and its accepted changes become one **checkpoint**. The record lives in `checkpoints/<task>.json`, plus one commit with a `Feature-Checkpoint` trailer when files changed.
+
+The task's states are unchanged: progress is checkpoint metadata.
+- **interrupted:** `in-progress` with a dead claim;
+- **resumable:** `ready` with completed and remaining steps;
+- **blocked by a recovery conflict:** `needs-human`, reason `recovery conflict: …`.
+
+A resumed run reconciles first and runs only the remaining steps. Design, protocol and recovery: [worker-checkpoints.md](worker-checkpoints.md).
+
 ## 5. Human escalation
 
 | Action | Local | GitHub (authorized operator, ≥ write permission) |
