@@ -28,6 +28,9 @@ from typing import Callable, Mapping, Sequence
 
 _STOP = threading.Event()
 _SIGNAL_NAMES: list[str] = []
+# W2/W3: every native agent run carries a random value in this variable, so its processes can be
+# found after the run, and after a crash of the process that supervised it (claims.recover()).
+RUN_TAG_ENV = "FC_RUN_TAG"
 
 
 def install_termination_handlers() -> None:
@@ -110,6 +113,33 @@ def kill_tagged(name: str, value: str) -> list[int]:
         except (ProcessLookupError, PermissionError):
             pass
     return killed
+
+
+def terminate_pids(pids: Sequence[int], *, grace_seconds: float = 5.0,
+                   still_ours: Callable[[int], bool] = lambda _pid: True) -> list[int]:
+    """SIGTERM *pids*, wait up to *grace_seconds*, then SIGKILL the survivors (W3: orphaned agent
+    processes of an interrupted run, identified by their run tag or process identity). Before
+    every signal, *still_ours(pid)* is asked again, so a PID that was reused meanwhile is never
+    signalled. Returns the PIDs still alive afterwards (empty: all gone)."""
+    def alive(pid: int) -> bool:
+        try:
+            raw = Path(f"/proc/{pid}/stat").read_text(encoding="ascii", errors="replace")
+        except OSError:
+            return False
+        state = raw[raw.rfind(")") + 2:][:1]
+        return state not in ("Z", "X", "x", "") and still_ours(pid)
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        for pid in [p for p in pids if alive(p)]:
+            try:
+                os.kill(pid, sig)
+            except (ProcessLookupError, PermissionError):
+                pass
+        deadline = time.monotonic() + (grace_seconds if sig == signal.SIGTERM else 5.0)
+        while time.monotonic() < deadline and any(alive(p) for p in pids):
+            time.sleep(0.05)
+        if not any(alive(p) for p in pids):
+            return []
+    return [p for p in pids if alive(p)]
 
 
 def supervise(argv: Sequence[str], *, cwd: Path, env: Mapping[str, str] | None, stdout_path: Path,  # pylint: disable=too-many-arguments,too-many-locals

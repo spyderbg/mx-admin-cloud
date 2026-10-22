@@ -24,6 +24,12 @@ trusted task data (`commit_subject`: the task title when it is a short one-line 
 `<role>: task <task id>`, so a task's instruction text never becomes a subject), then the
 `Feature:`, `Feature-Task:` and `Feature-Role:` trailers.
 
+W3 checkpoints add a `Feature-Checkpoint: <checkpoint id>` trailer. The id is unique (it
+carries a random part recorded in the state store before the commit), so the commit of a
+checkpoint can be found again after a crash. Committing a checkpoint is idempotent: under
+git.lock, a request whose checkpoint id already has a commit on the branch (since the expected
+HEAD) returns that commit (`CommitResult.existing`) instead of creating a second one.
+
 Plumbing commands run no hooks. Push and PR creation are rendered as dry-run plans only
 (Phases 2–3); live pushes and PRs need operator approval (Phase 4/5).
 """
@@ -53,6 +59,7 @@ from .paths import PathPolicy
 
 _SCRUBBED_ENV = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_COMMON_DIR")
 COMMIT_SUBJECT_MAX = 72
+CHECKPOINT_TRAILER = "Feature-Checkpoint"
 
 
 def commit_subject(role: str, task_id: str, title: str) -> str:
@@ -89,16 +96,18 @@ class CommitRequest:
     files: Mapping[str, str | None]
     message: str
     grants: tuple[str, ...] = ()
+    checkpoint_id: str = ""  # W3: adds the Feature-Checkpoint trailer; makes the commit idempotent
 
 
 @dataclass(frozen=True)
 class CommitResult:
-    """A landed commit."""
+    """A landed commit (or, with `existing`, the checkpoint commit that was already there)."""
 
     sha: str
     parent: str
     paths: tuple[str, ...]
     moved_over: tuple[str, ...] = field(default_factory=tuple)
+    existing: bool = False
 
 
 def branch_contains(repo: Path, branch: str, sha: str, *, env: Mapping[str, str] | None = None) -> bool:
@@ -185,6 +194,40 @@ class GitCoordinator:
         out = self._git("diff", "--name-only", "-z", f"{base}..{head}")
         return [p for p in out.split("\0") if p]
 
+    def is_ancestor(self, ancestor: str, descendant: str) -> bool:
+        """True when *ancestor* is an ancestor of (or equal to) *descendant* (read-only)."""
+        result = subprocess.run(["git", "-C", str(self.root), "merge-base", "--is-ancestor", ancestor, descendant],
+                                capture_output=True, env=self._env(), check=False)
+        return result.returncode == 0
+
+    def trailers(self, sha: str) -> dict[str, list[str]]:
+        """The trailers of commit *sha*: key → values (read-only)."""
+        found: dict[str, list[str]] = {}
+        for line in self._git("log", "-1", "--format=%(trailers:only,unfold)", sha).splitlines():
+            key, sep, value = line.partition(":")
+            if sep:
+                found.setdefault(key.strip(), []).append(value.strip())
+        return found
+
+    def checkpoint_commits(self, rev_range: str) -> dict[str, list[str]]:
+        """W3: checkpoint id → commits carrying it in *rev_range* (e.g. `base..branch`), read-only.
+        More than one commit for an id is reported by the caller as an inconsistency."""
+        out = self._git("log", f"--format=%H%x1f%(trailers:key={CHECKPOINT_TRAILER},valueonly,separator=%x1d)%x1e",
+                        rev_range)
+        found: dict[str, list[str]] = {}
+        for entry in out.split("\x1e"):
+            sha, _sep, values = entry.strip().partition("\x1f")
+            for value in (v.strip() for v in values.split("\x1d")):
+                if sha and value:
+                    found.setdefault(value, []).append(sha)
+        return found
+
+    def blob_digest(self, sha: str, path: str) -> str | None:
+        """SHA-256 of *path* in commit *sha*, or None when the commit has no such file (read-only)."""
+        result = subprocess.run(["git", "-C", str(self.root), "cat-file", "blob", f"{sha}:{path}"],
+                                capture_output=True, env=self._env(), check=False)
+        return hashlib.sha256(result.stdout).hexdigest() if result.returncode == 0 else None
+
     # -- working-tree-changing operations (need quiescence) ------------------
 
     def _quiescent(self):
@@ -229,6 +272,11 @@ class GitCoordinator:
             if self.current_branch() != request.branch:
                 raise HeadMismatchError(f"checkout is on {self.current_branch()!r}, not {request.branch!r}")
             head = self.rev_parse(f"refs/heads/{request.branch}")
+            if request.checkpoint_id:
+                existing = self.checkpoint_commits(f"{request.expected_head}..{head}").get(request.checkpoint_id)
+                if existing:  # a repeated checkpoint commit: never a second commit for the same id
+                    sha = existing[-1]
+                    return CommitResult(sha=sha, parent=self.rev_parse(f"{sha}^"), paths=(), existing=True)
             normalized = self.policy.require(request.role, request.files, grants=request.grants)
             declared = self._declared_hashes(request)
             if self.staged_paths():
@@ -247,6 +295,8 @@ class GitCoordinator:
                               "GIT_COMMITTER_NAME": name, "GIT_COMMITTER_EMAIL": email}
             message = (f"{request.message.strip()}\n\nFeature: {request.feature_id}\n"
                        f"Feature-Task: {request.task_id}\nFeature-Role: {request.role}\n")
+            if request.checkpoint_id:
+                message += f"{CHECKPOINT_TRAILER}: {request.checkpoint_id}\n"
             sha = self._commit_tree(tree, head, message, commit_env)
             result = subprocess.run(
                 ["git", "-C", str(self.root), "update-ref", "-m", f"feature-coordinator: {request.task_id}",

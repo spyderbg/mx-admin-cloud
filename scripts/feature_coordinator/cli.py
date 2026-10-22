@@ -29,7 +29,11 @@ Feature operations (on --repo / --state-dir):
                             W2: one Worker drives the whole feature: ready tasks run concurrently
                             (one per role), dependents follow, each task launched at most N times
     stop TASK               ask the running worker to stop; the task returns to ready
-    recover [--apply]       reclaim tasks of dead workers; report unresponsive ones
+    recover [--apply]       reclaim tasks of dead workers; report unresponsive (and, W3, orphaned) ones
+W3 checkpoints (multi-step tasks; see `checkpoints --help`):
+    checkpoints TASK [--json]             steps done / remaining, checkpoints, Git consistency (read-only)
+    recover TASK [--show-prompt] [--apply] [--terminate-orphans] [--abandon-pending] [--redo-from STEP]
+                            preview (default) or perform the recovery of one interrupted task
     integrate FEATURE [--apply]           the quiescent integration barrier → PR candidate
     hold TASK --reason R [--apply] / release TASK [--apply]
                             human escalation (needs-human); only a release resumes the task
@@ -147,7 +151,7 @@ def cmd_plan(args: argparse.Namespace, config: ProjectConfig) -> int:
     branch = config.branch_for(spec.slug)
     tasks = {f"{spec.slug}.{t.key}": Task(id=f"{spec.slug}.{t.key}", feature_id=spec.slug, role=t.role, title=t.title,
                                           depends_on=tuple(f"{spec.slug}.{d}" for d in t.depends_on),
-                                          required_gates=t.required_gates)
+                                          required_gates=t.required_gates, steps=t.steps)
              for t in spec.tasks}
     order = validate_dag(tasks)
     unknown = sorted({g for t in spec.tasks for g in t.required_gates} - set(config.gate_names))
@@ -159,7 +163,7 @@ def cmd_plan(args: argparse.Namespace, config: ProjectConfig) -> int:
         task = tasks[task_id]
         provider = config.provider_for(task.role)
         _print(f"  {task_id:40s} role={task.role:12s} runner={provider.name:12s} after={list(task.depends_on)} "
-               f"gates={list(task.required_gates)}")
+               f"gates={list(task.required_gates)}" + (f" steps={[s.key for s in task.steps]}" if task.steps else ""))
     if not getattr(args, "apply", False):
         _print("dry run — nothing was written (pass --apply to record the feature)")
         return 0
@@ -188,10 +192,12 @@ def cmd_status(args: argparse.Namespace, config: ProjectConfig) -> int:
     store = StateStore(state_dir)
     if not store.list_features() and not store.list_claims():
         _print(f"no features or claims recorded in {state_dir}")
+    from .checkpoints import progress_line  # pylint: disable=import-outside-toplevel
     for feature in store.list_features():
         _print(f"{feature.id}: {feature.state.value} on {feature.branch}")
         for task in store.load_tasks(feature).values():
-            _print(f"  {task.id:40s} {task.state.value:12s} {task.blocked_reason}")
+            steps = progress_line(store, task)
+            _print(f"  {task.id:40s} {task.state.value:12s} {task.blocked_reason}" + (f"  [{steps}]" if steps else ""))
     for task_id, record in store.list_claims().items():
         alive = ProcessIdentity.from_dict(record["identity"]).is_alive()
         age = heartbeat_age(record)
@@ -243,6 +249,8 @@ def build_parser() -> argparse.ArgumentParser:
     register(sub)
     from .worker_commands import register as register_worker  # pylint: disable=import-outside-toplevel
     register_worker(sub)
+    from .checkpoint_commands import register as register_checkpoints  # pylint: disable=import-outside-toplevel
+    register_checkpoints(sub)
     from .github_commands import register as register_github  # pylint: disable=import-outside-toplevel
     from .project_commands import register as register_project  # pylint: disable=import-outside-toplevel
     register_project(register_github(sub))

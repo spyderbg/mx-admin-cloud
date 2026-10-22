@@ -27,6 +27,9 @@ Subscription authentication — fail closed, never a silent switch to API billin
 Supervision: the existing supervisor (process group, heartbeats, operator stop, timeout,
 SIGTERM → grace → SIGKILL). Without a PID namespace, descendants that leave the process group
 are found by a per-run environment tag (FC_RUN_TAG) and killed afterwards (best effort).
+W3: the tag is recorded in the task's claim before the agent starts, and the agent's process
+identity (pid + start time + boot id) right after, so recovery can tell whether an agent of an
+interrupted run still lives (claims.recover() then refuses to reclaim the task).
 
 Acceptance (unchanged rules, workspace-wide here): every path the run changed anywhere in the
 checkout — tracked, untracked, and protected ignored files such as `.env` — must be writable by
@@ -57,16 +60,17 @@ from typing import Any, Callable, Mapping
 from .config import ProjectConfig
 from .errors import CoordinatorError
 from .launchers import LAUNCHERS, RunnerProbe, probe_runner, snapshot
+from .locks import ProcessIdentity
 from .paths import PathPolicy, matches
 from .providers import CliRunnerProfile, ProviderKind, model_family
 from .python_env import PythonInterpreter
 from .runners import RunContext, RunRequest, RunResult
 from .sandbox import SandboxBuilder
-from .supervisor import kill_tagged, supervise
+from .supervisor import RUN_TAG_ENV, kill_tagged, supervise
 from .workspace import git_operation_in_progress
 
 BACKEND = "native-cli"
-RUN_TAG = "FC_RUN_TAG"
+RUN_TAG = RUN_TAG_ENV
 # Passed through from the operator's environment, when set. Nothing else is.
 NATIVE_ENV_KEEP = (
     "PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LANGUAGE", "LC_ALL", "LC_CTYPE", "LC_MESSAGES", "TZ",
@@ -347,7 +351,7 @@ class NativeCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-p
             "environment_names": sorted(env), "model": model or "CLI default", "writable": writable,
             "authentication": self.subscription().method}, indent=2), encoding="utf-8")
         before = self._state(root, ctx)
-        sup = self._supervise(spec.argv, root, env, spec.stdin_path, ctx)
+        sup = self._supervise(spec.argv, root, env, spec.stdin_path, ctx, tag)
         leftovers = kill_tagged(RUN_TAG, tag)
         return self._judge(request, ctx, launcher, model, before, sup, leftovers, writable)
 
@@ -357,14 +361,25 @@ class NativeCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-p
         with ctx.git_quiet() if ctx.git_quiet else nullcontext():
             return workspace_state(root, self.config)
 
-    def _supervise(self, argv: list[str], root: Path, env: dict[str, str], stdin_path: Path, ctx: RunContext) -> Any:  # pylint: disable=too-many-arguments
+    def _supervise(self, argv: list[str], root: Path, env: dict[str, str], stdin_path: Path, ctx: RunContext,  # pylint: disable=too-many-arguments
+                   tag: str) -> Any:
         runtime = self.config.runtime
+        beat: dict[str, Any] = {"run_dir": str(ctx.run_dir), "run_tag": tag}
+
+        def on_start(pid: int) -> None:
+            identity = ProcessIdentity.of_pid(pid)
+            if identity is not None:
+                beat["agent"] = identity.to_dict()
+            if ctx.heartbeat:
+                ctx.heartbeat(dict(beat))
+        if ctx.heartbeat:
+            ctx.heartbeat(dict(beat))  # the tag is known to recovery before the agent exists
         return supervise(
             argv, cwd=root, env=env, stdout_path=ctx.run_dir / "stdout.jsonl", stderr_path=ctx.run_dir / "stderr.log",
             stdin_path=stdin_path, timeout_seconds=ctx.timeout_seconds or runtime.task_timeout_seconds,
-            heartbeat=(lambda: ctx.heartbeat({"run_dir": str(ctx.run_dir)})) if ctx.heartbeat else None,
+            heartbeat=(lambda: ctx.heartbeat(dict(beat))) if ctx.heartbeat else None,
             heartbeat_interval=runtime.heartbeat_interval_seconds, cancelled=ctx.cancelled,
-            grace_seconds=runtime.terminate_grace_seconds)
+            grace_seconds=runtime.terminate_grace_seconds, on_start=on_start)
 
     def _judge(self, request: RunRequest, ctx: RunContext, launcher: Any, model: str,  # pylint: disable=too-many-arguments,too-many-locals
                before: WorkspaceState, sup: Any, leftovers: list[int], writable: list[str]) -> RunResult:

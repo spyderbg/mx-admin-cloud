@@ -11,6 +11,10 @@
      one role never do (the role lock would refuse the second anyway);
   3. after each task finishes, re-reads the state: dependents of a verified task become READY
      (model.refresh_readiness) and are started in a later round;
+  W3: at start (after 1.) it reclaims the claims of this feature's tasks whose worker died — but
+     never one whose interrupted run still has a live agent process (reported instead: the
+     operator decides, `feature.py recover TASK`). A reclaimed multi-step task resumes from its
+     last checkpoint when it is launched again; completed steps are never run again;
   4. stops when nothing runs and nothing can start. Each task is launched at most
      `max_attempts` times per Worker run (default 1), so a deferred task — provider
      unavailable, operator stop, commit deferred — is reported instead of being retried
@@ -33,6 +37,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
+from .checkpoints import progress_line
 from .errors import CoordinatorError, LockBusyError
 from .model import FeatureState, Task, TaskState
 from .supervisor import stop_requested
@@ -79,6 +84,8 @@ class WorkReport:
     skipped: dict[str, str] = field(default_factory=dict)
     max_concurrency: int = 0  # most tasks in progress at the same time
     stopped: bool = False
+    recovered: list[str] = field(default_factory=list)          # W3: stale claims reclaimed at start
+    orphaned: dict[str, list[int]] = field(default_factory=dict)  # W3: dead worker, agent still alive
 
     @property
     def all_verified(self) -> bool:
@@ -148,12 +155,24 @@ class FeatureWorker:  # pylint: disable=too-many-instance-attributes,too-few-pub
         finally:
             lock.release()
 
+    def _recover(self, task_ids: Sequence[str], report: WorkReport) -> None:
+        """W3: reclaim this feature's claims whose worker died — never one whose run still has a
+        live agent process (reported as orphaned instead)."""
+        recovery = self.coord.claims.recover(task_ids=list(task_ids))
+        report.recovered = [r["task_id"] for r in recovery.recovered]
+        report.orphaned = {r["task_id"]: list(r["orphans"]) for r in recovery.orphaned}
+        for task_id in report.recovered:
+            self.echo(f"recovered {task_id}: its worker is gone; it continues from its last checkpoint")
+        for task_id, pids in report.orphaned.items():
+            self.echo(f"NOT recovered {task_id}: agent process(es) {pids} of its interrupted run are still running")
+
     def _run(self, feature_id: str) -> WorkReport:  # pylint: disable=too-many-locals
         feature = self.coord.store.load_feature(feature_id)
         if feature.state is not FeatureState.ACTIVE:
             raise CoordinatorError(f"feature {feature_id!r} is {feature.state.value}, not active")
         require_workspace(self.coord.root, feature)
         report = WorkReport(feature_id)
+        self._recover(feature.task_ids, report)
         running: dict[str, tuple[Handle, int, float]] = {}
         attempts: dict[str, int] = {}
         while True:
@@ -175,8 +194,10 @@ class FeatureWorker:  # pylint: disable=too-many-instance-attributes,too-few-pub
             started = [] if report.stopped else self._eligible(tasks, running, attempts, report)
             for task in started:
                 attempts[task.id] = attempts.get(task.id, 0) + 1
+                steps = progress_line(self.coord.store, task)
                 self.echo(f"start {task.id} ({task.role} → {self.coord.config.provider_for(task.role).name}, "
-                          f"model {self.coord.config.model_for(task.role) or 'CLI default'})")
+                          f"model {self.coord.config.model_for(task.role) or 'CLI default'})"
+                          + (f"; {steps}" if steps else ""))
                 running[task.id] = (self.spawn(task.id, attempts[task.id]), attempts[task.id], time.monotonic())
             # Tasks actually being worked on: a launch process may still be finishing its bookkeeping
             # (the Issue sync) after its task was verified and its role released.
@@ -190,6 +211,9 @@ class FeatureWorker:  # pylint: disable=too-many-instance-attributes,too-few-pub
         for task_id, task in final.items():
             if task.state is TaskState.BLOCKED and task_id not in report.skipped:
                 report.skipped[task_id] = task.blocked_reason
+            elif task_id in report.orphaned and task.state is TaskState.IN_PROGRESS:
+                report.skipped[task_id] = (f"its interrupted run's agent process(es) {report.orphaned[task_id]} are "
+                                           f"still running (`feature.py recover {task_id}`)")
         return report
 
 

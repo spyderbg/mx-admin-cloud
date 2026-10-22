@@ -7,6 +7,9 @@
                  serialized manifest commit → required gates on the combined HEAD → verified
                  (failed / needs-human, or back to ready when the provider is unavailable, a
                  commit is deferred or the branch keeps moving) → release
+                 W3: a task with `steps` runs its REMAINING steps — reconciliation first, then
+                 one bounded agent invocation and one checkpoint per step (checkpoints.py) —
+                 and is verified after the last one; completed steps never run again
     request_contract()  a consumer finds a missing API: create or reuse ONE Backend contract
                  task/issue, block only the dependent consumer task; it resumes when the
                  contract task is verified on the shared branch
@@ -36,13 +39,27 @@ process, which holds no coordinator lock, to show "In Progress" when the agent s
 
 from __future__ import annotations
 
+import secrets
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
-from .claims import ClaimManager
+from .checkpoints import (
+    CONFLICT_PREFIX,
+    CheckpointRecord,
+    classify_uncommitted,
+    commit_request,
+    load_record,
+    reconcile_for_run,
+    record_intent,
+    record_verification,
+    settle,
+    step_prompt,
+)
+from .claims import Claim, ClaimManager
 from .config import ProjectConfig
 from .errors import (
+    CheckpointError,
     ClaimError,
     CoordinatorError,
     EvidenceError,
@@ -69,6 +86,7 @@ from .model import (
     PullRequestCandidate,
     Task,
     TaskState,
+    TaskStep,
     check_id,
     invalidate_dependents,
     refresh_readiness,
@@ -83,6 +101,7 @@ from .gates import GateContext, SandboxedGateRunner
 from .launchers import run_context
 from .runners import RunRequest, RunResult, Runner
 from .store import StateStore
+from .supervisor import stop_requested
 from .workspace import identity as workspace_identity
 from .workspace import require_workspace
 
@@ -106,6 +125,7 @@ class TaskSpec:  # pylint: disable=too-many-instance-attributes
     required_gates: tuple[str, ...] = ()
     provides_contract: bool = False
     grants: tuple[str, ...] = ()
+    steps: tuple[TaskStep, ...] = ()  # W3: ordered steps, one checkpoint each (empty: one run, W2)
 
 
 @dataclass(frozen=True)
@@ -126,7 +146,8 @@ class FeatureSpec:
             TaskSpec(key=str(t["key"]), role=str(t["role"]), title=str(t["title"]),
                      acceptance=tuple(t.get("acceptance", ())), depends_on=tuple(t.get("depends_on", ())),
                      required_gates=tuple(t.get("required_gates", ())),
-                     provides_contract=bool(t.get("provides_contract", False)), grants=tuple(t.get("grants", ())))
+                     provides_contract=bool(t.get("provides_contract", False)), grants=tuple(t.get("grants", ())),
+                     steps=tuple(TaskStep(key=str(s["key"]), title=str(s["title"])) for s in t.get("steps", ())))
             for t in data.get("tasks", ())
         )
         return cls(slug=str(data["slug"]), title=str(data["title"]), tasks=tasks,
@@ -239,7 +260,7 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
                 id=f"{feature_id}.{t.key}", feature_id=feature_id, role=t.role, title=t.title,
                 acceptance=t.acceptance, depends_on=tuple(f"{feature_id}.{d}" for d in t.depends_on),
                 required_gates=t.required_gates, provides_contract=t.provides_contract,
-                grants=self.policy.validate_grants(t.grants))
+                grants=self.policy.validate_grants(t.grants), steps=t.steps)
         validate_dag(tasks)
         if self.git.branch_exists(branch):
             raise GitOperationError(f"branch {branch!r} already exists; a feature owns exactly one new branch")
@@ -325,6 +346,8 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
         feature = self.store.load_feature(task.feature_id)
         if feature.state is not FeatureState.ACTIVE:
             raise ClaimError(f"feature {feature.id!r} is {feature.state.value}, not active")
+        if prompt and task.steps:
+            raise CoordinatorError(f"task {task_id!r} has steps; its step prompts are built by the coordinator")
         if self.git.current_branch() != feature.branch:
             raise GitOperationError(f"the shared checkout is not on {feature.branch!r}")
         require_workspace(self.root, feature)  # W2: identity, base revision, no unfinished Git operation
@@ -333,21 +356,23 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
         claim = self.claims.claim(task_id, role=task.role, branch=feature.branch, head_sha=head)
         self._publish(feature.id)  # "In Progress" on the board while the agent runs (another process)
         try:
-            workspace = ScopedWorkspace(self.policy, task.role, grants=task.grants)
-            context = run_context(
-                self.store.root / "runs", task_id, timeout_seconds=self.config.runtime.task_timeout_seconds,
-                heartbeat=lambda checkpoint: self.claims.heartbeat(claim, dict(checkpoint)),
-                cancelled=lambda: self._cancel_requested(task_id, claim.token),
-                concurrent_roles=lambda: self._concurrent_roles(mark, task.role),
-                git_quiet=lambda: self.store.locks.git().acquire(timeout=self.git.lock_timeout))
-            request = RunRequest(task_id, task.role, prompt or self._task_prompt(task), workspace, context=context)
-            run = TaskRun(task_id, TaskState.IN_PROGRESS, self.runners[task.role].run(request))
-
             def verifying(commit: str | None) -> None:
                 # Implementation complete, awaiting verification: the board shows "Review".
                 self.claims.heartbeat(claim, {"phase": "verifying", "commit": commit or ""})
                 self._publish(feature.id)
-            result = self._after_run(feature, task, head, run, verifying)
+            if task.steps:
+                result = self._run_steps(feature, task, claim, mark, verifying)
+            else:
+                workspace = ScopedWorkspace(self.policy, task.role, grants=task.grants)
+                context = run_context(
+                    self.store.root / "runs", task_id, timeout_seconds=self.config.runtime.task_timeout_seconds,
+                    heartbeat=lambda checkpoint: self.claims.heartbeat(claim, dict(checkpoint)),
+                    cancelled=lambda: self._cancel_requested(task_id, claim.token),
+                    concurrent_roles=lambda: self._concurrent_roles(mark, task.role),
+                    git_quiet=lambda: self.store.locks.git().acquire(timeout=self.git.lock_timeout))
+                request = RunRequest(task_id, task.role, prompt or self._task_prompt(task), workspace, context=context)
+                run = TaskRun(task_id, TaskState.IN_PROGRESS, self.runners[task.role].run(request))
+                result = self._after_run(feature, task, head, run, verifying)
         finally:
             # Only a task still in-progress is affected: it goes back to ready for a later claim.
             self.claims.release(claim, yield_task=True)
@@ -383,6 +408,108 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
         if verifying is not None:
             verifying(run.commit)
         return self._verify(feature, task, run)
+
+    # -- W3: multi-step tasks and checkpoints -----------------------------------------
+
+    def _run_steps(self, feature: Feature, task: Task, claim: Claim, mark: int,
+                   verifying: Callable[[str | None], None]) -> TaskRun:
+        """Reconcile, run every remaining step (one invocation + one checkpoint each), verify."""
+        runner_name = self.runners[task.role].name
+        try:
+            record = reconcile_for_run(self, task, claim.token)
+        except CheckpointError as exc:  # never repaired automatically: an operator decides
+            run = TaskRun(task.id, TaskState.IN_PROGRESS, RunResult(runner_name, "not-run", error=str(exc)))
+            return self._finish(task.id, TaskState.NEEDS_HUMAN, (CONFLICT_PREFIX + str(exc))[:1000], run)
+        progress: dict[str, Any] = {"attempt": secrets.token_hex(6)}
+        run = TaskRun(task.id, TaskState.IN_PROGRESS,
+                      RunResult(runner_name, "completed", transcript=["every step was already complete"]))
+        for step in task.steps:
+            if step.key not in record.remaining_steps():
+                continue  # completed by an earlier run: never repeated
+            if self._cancel_requested(task.id, claim.token) or stop_requested():
+                return self._defer(run, "run-cancelled", task.role, f"stopped before step {step.key!r}")
+            run = self._run_step(feature, task, claim, mark, step, record, progress)
+            if run.state is not TaskState.IN_PROGRESS:
+                return run
+            current = self.store.load_task(task.id)
+            if current.state is not TaskState.IN_PROGRESS:  # e.g. a contract request blocked it meanwhile
+                self._event("task-result-superseded", task=task.id, state=current.state.value,
+                            result=f"step {step.key} checkpointed", commit=run.commit)
+                run.state = current.state
+                return run
+            record = load_record(self.store, task.id) or record
+        verifying(run.commit)
+        result = self._verify(feature, task, run)
+        record_verification(self.store, task.id, run.evidence)
+        return result
+
+    def _run_step(self, feature: Feature, task: Task, claim: Claim, mark: int,  # pylint: disable=too-many-arguments,too-many-return-statements
+                  step: TaskStep, record: CheckpointRecord, progress: dict[str, Any]) -> TaskRun:
+        """One bounded agent invocation for *step*, judged like a W2 run, then its checkpoint."""
+        base = self._head(feature)
+        leftovers = classify_uncommitted(self, task)["own"]  # an interrupted attempt's work, shown to the agent
+        progress.update(step=step.key, phase="agent", base=base)
+        self.claims.heartbeat(claim, dict(progress))
+        context = run_context(
+            self.store.root / "runs", f"{task.id}.{step.key}", timeout_seconds=self.config.runtime.task_timeout_seconds,
+            heartbeat=lambda data: self.claims.heartbeat(claim, {**progress, **dict(data)}),
+            cancelled=lambda: self._cancel_requested(task.id, claim.token),
+            concurrent_roles=lambda: self._concurrent_roles(mark, task.role),
+            git_quiet=lambda: self.store.locks.git().acquire(timeout=self.git.lock_timeout))
+        request = RunRequest(task.id, task.role, step_prompt(feature, task, record, step, uncommitted=leftovers),
+                             ScopedWorkspace(self.policy, task.role, grants=task.grants), context=context,
+                             step=step.key)
+        result = self.runners[task.role].run(request)
+        run = TaskRun(task.id, TaskState.IN_PROGRESS, result)
+        where = f"step {step.key!r}"
+        if result.status == "unavailable":
+            return self._defer(run, "runner-unavailable", task.role, f"{where}: {result.error}")
+        if result.status == "cancelled":
+            return self._defer(run, "run-cancelled", task.role, f"{where}: {result.error}")
+        if result.status == "timeout":
+            return self._finish(task.id, TaskState.FAILED, f"runner timed out at {where}: {result.error}", run)
+        if not result.ok:
+            return self._finish(task.id, TaskState.FAILED, f"runner {result.status} at {where}: {result.error}", run)
+        progress["phase"] = "checkpoint"
+        self.claims.heartbeat(claim, dict(progress))
+        return self._checkpoint(feature, task, step, base, run, str(progress["attempt"]))
+
+    def _checkpoint(self, feature: Feature, task: Task, step: TaskStep, base: str,  # pylint: disable=too-many-arguments,too-many-return-statements
+                    run: TaskRun, attempt: str) -> TaskRun:
+        """The checkpoint protocol for one accepted step: intent → commit → complete."""
+        result = run.runner
+        files = {p: file_digest(self.root / p) for p in result.changed_paths}
+        run_dir = str(result.details.get("run_dir") or "")
+        checkpoint = record_intent(
+            self.store, task, step=step, attempt=attempt, agent=result.runner, model=self.config.model_for(task.role),
+            base=base, files=files, summary=result.transcript[0] if result.transcript else "",
+            verification={"runner": result.status, "acceptance": "accepted",
+                          "backend": str(result.details.get("backend", ""))},
+            local={"run": Path(run_dir).name} if run_dir else {})
+        if checkpoint.status == "no-changes":
+            return run
+        try:
+            commit = self.git.commit(commit_request(feature, task, checkpoint), author=self.author)
+        except NothingToCommitError:
+            settle(self.store, task.id, checkpoint.id, status="no-changes", note="the files already matched the branch")
+            return run
+        except (GitOperationError, ScopeViolationError) as exc:
+            landed = self.git.checkpoint_commits(f"{checkpoint.base}..refs/heads/{feature.branch}").get(checkpoint.id)
+            if landed:  # the ref moved before the error (e.g. refreshing the index failed): it is committed
+                settle(self.store, task.id, checkpoint.id, status="committed", commit=landed[-1],
+                       note=f"committed; afterwards: {sanitize(str(exc))}")
+                run.commit = landed[-1]
+                return run
+            settle(self.store, task.id, checkpoint.id, status="abandoned",
+                   note=f"commit refused, files left in place: {sanitize(str(exc))}")
+            if isinstance(exc, UnstableFileError):
+                return self._defer(run, "commit-deferred", task.role, f"step {step.key!r}: {exc}")
+            if isinstance(exc, HeadMismatchError):
+                return self._finish(task.id, TaskState.NEEDS_HUMAN, f"commit conflicts with the branch: {exc}", run)
+            return self._finish(task.id, TaskState.FAILED, f"commit refused at step {step.key!r}: {exc}", run)
+        settle(self.store, task.id, checkpoint.id, status="committed", commit=commit.sha)
+        run.commit = commit.sha
+        return run
 
     @staticmethod
     def _task_prompt(task: Task) -> str:

@@ -56,6 +56,21 @@ Each run gets `<state>/runs/<task>.<stamp>.<id>/` containing:
 | A worker crashed (`kill -9`, OOM, reboot) | `feature.py recover` (dry run lists), then `recover --apply` | The kernel already released the worker's flocks, and `bwrap --die-with-parent` ended its sandbox. Recovery reclaims the task only when the worker is provably gone (PID absent, start time changed, zombie, other boot) |
 | A worker is alive but stops heartbeating | `feature.py status` shows `UNRESPONSIVE`; then `feature.py stop <task>` | Never reclaimed automatically while alive (`test_alive_worker_without_heartbeats_is_reported_unresponsive` **[V]**) |
 | A full-project session was requested by mistake | Python API `ClaimManager.withdraw_full_project_request()` | Scoped work can be scheduled again |
+| W3: the worker died but its native agent still runs | `feature.py recover` reports it **orphaned** and does not reclaim the task | No second execution starts. `recover <task> --apply --terminate-orphans` stops exactly the run's processes (run tag / process identity), then reclaims (`test_h_a_surviving_agent_blocks_a_second_execution` **[V]**) |
+
+**W3 — multi-step tasks** ([worker-checkpoints.md](worker-checkpoints.md)). A task with `steps` commits a checkpoint after every step and resumes from the last one:
+
+```bash
+feature.py checkpoints <task>                      # read-only: steps done/remaining, checkpoints, Git consistency
+feature.py recover <task> [--show-prompt]          # PREVIEW: what recovery would do, the exact checkpoint and
+                                                   # revision a resume continues from (and the next step's context)
+feature.py recover <task> --apply                  # reclaim, settle interrupted checkpoints, or record a conflict
+feature.py recover <task> --apply --abandon-pending    # explicit decision: re-run a step whose files changed
+feature.py recover <task> --apply --redo-from STEP     # redo STEP and later steps (e.g. after failed gates)
+feature.py launch <task> --apply                   # resume: only the remaining steps run
+```
+
+`feature.py work` does the same automatically. At start it reclaims dead claims, never orphaned ones, and every run reconciles its checkpoints before the first step. A conflict sends the task to `needs-human`. Recovery never resets Git, never discards files and never starts an agent.
 
 ## 4. Gates
 

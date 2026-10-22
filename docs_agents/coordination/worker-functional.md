@@ -269,6 +269,9 @@ These remain open after W2. None of them is addressed by an architectural change
 - **E. Codex does not report its selected model** in the observed `codex exec --json` output. For Claude Code, the model family is checked after every run from the `init` event, and a substitution fails the run. For Codex, the requested `-m`, or the CLI default, is trusted, not verified.
 - **F. The installed AI tools may update independently of the Worker.** Neither the npm-installed Claude Code nor the Codex standalone package is pinned by W2, and a Codex update daemon (`codex-update-manager`) was seen running on the laptop. The flag probe and the status checks run before every run and fail closed on a missing flag or an unrecognized login. A behaviour change behind unchanged flags is not detected. Only the versions in §8 are verified. Controlled updates and Worker maintenance belong to a later stage.
 - **G. No durable task checkpoints or recovery.** Work in progress stays uncommitted in the role's paths between runs, and there is no resumable Worker session (§12). This belongs to W3.
+  - *W3 update:* multi-step tasks with checkpoints and local recovery are implemented and verified offline. Their core recovery guarantee, that no completed step runs again after a Worker restart, is also verified with real Claude Code ([worker-checkpoints.md](worker-checkpoints.md) §15).
+  - W3 also narrows D for native runs: a run's surviving agent now blocks a second execution instead of being missed.
+  - Limitations A, B, C, E and F are unchanged.
 
 Other constraints:
 - **Gates still need bubblewrap.** The Worker runs the integration gates the operator names; `contract-check`/`docs-check` are the defaults.
@@ -287,7 +290,7 @@ Other constraints:
   - Trailers (unchanged): `Feature:`, `Feature-Task:`, `Feature-Role:`. They are the last paragraph, so a trailer-like title cannot change them. The native backend's acceptance check still requires `Feature-Task:` on every new commit.
   - Author, role-scoped manifests, `git.lock` serialization and compare-and-swap `update-ref` are unchanged. Every commit of a task, including a second run's, gets the same subject and trailers.
   - Example: the smoke Backend task now commits as `backend: task subscription-smoke.backend`. Before the fix, its subject was the full three-sentence prompt.
-- **For W3 to address:**
+- **For W3 to address** (the W3 status of each item is in [worker-checkpoints.md](worker-checkpoints.md)):
   - durable checkpoints of in-progress work: today it stays uncommitted in the role's paths between runs;
   - commits *within* a run (an agent's intermediate milestones);
   - recovery of orphaned native agent processes after a Worker crash;

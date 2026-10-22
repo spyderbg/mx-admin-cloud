@@ -12,6 +12,11 @@ The two flocks stay held by the claiming process until release() — or until it
 when the kernel drops them. recover() reclaims a claim only when its holder is provably
 gone (PID absent, start time different, zombie, or another boot): a lock is never stolen
 from a live worker.
+
+W3: a dead holder is not enough. A native agent runs in its own session and can outlive the
+worker that supervised it; the claim records the run's tag and the agent's process identity
+(the claim's progress data), and recover() keeps a claim whose run still has a live process
+(`orphaned`), so no second execution of the task can start while the old one may write.
 """
 
 from __future__ import annotations
@@ -25,6 +30,7 @@ from .errors import ClaimError, FullProjectActiveError, LockBusyError, RoleBusyE
 from .locks import FileLock, ProcessIdentity
 from .model import TaskState, transition_task, utc_now
 from .store import StateStore
+from .supervisor import RUN_TAG_ENV, tagged_processes
 
 FULL_PROJECT_FLAG = "full-project"
 
@@ -78,6 +84,26 @@ class RecoveryReport:
     unknown_lock_holders: list[str] = field(default_factory=list)
     cleared_full_project_request: bool = False
     unresponsive: list[dict[str, Any]] = field(default_factory=list)  # alive, but no recent heartbeat
+    orphaned: list[dict[str, Any]] = field(default_factory=list)  # W3: holder dead, agent processes alive
+
+
+def orphaned_agents(claim: dict[str, Any] | None) -> list[int]:
+    """Processes of the run recorded in *claim* that are still alive (W3): the agent itself, by
+    its process identity (pid + start time + boot id, so a reused PID never matches), and every
+    process carrying the run's tag in its environment."""
+    progress = dict((claim or {}).get("checkpoint") or {})
+    found: set[int] = set()
+    if progress.get("run_tag"):
+        found.update(tagged_processes(RUN_TAG_ENV, str(progress["run_tag"])))
+    agent = progress.get("agent")
+    if isinstance(agent, dict):
+        try:
+            identity = ProcessIdentity.from_dict(agent)
+        except (KeyError, TypeError, ValueError):
+            identity = None
+        if identity is not None and identity.is_alive():
+            found.add(identity.pid)
+    return sorted(found)
 
 
 def heartbeat_age(record: dict[str, Any]) -> float | None:
@@ -205,20 +231,31 @@ class ClaimManager:
 
     # -- recovery ------------------------------------------------------------
 
-    def recover(self, *, stale_after_seconds: float | None = None) -> RecoveryReport:
+    def recover(self, *, stale_after_seconds: float | None = None,
+                task_ids: list[str] | None = None) -> RecoveryReport:
         """Reclaim claims whose holder is provably dead; report everything else.
 
         A live holder is never reclaimed. With *stale_after_seconds*, a live holder whose last
-        heartbeat is older than that is reported as unresponsive (the operator may `stop` it)."""
+        heartbeat is older than that is reported as unresponsive (the operator may `stop` it).
+        A dead holder whose run still has live agent processes is kept and reported as orphaned
+        (W3). *task_ids* limits recovery to those tasks (default: every claim)."""
         report = RecoveryReport()
         with self.store.transaction():
             for task_id, record in self.store.list_claims().items():
+                if task_ids is not None and task_id not in task_ids:
+                    continue
                 holder = ProcessIdentity.from_dict(record["identity"])
                 if holder.is_alive():
                     report.live.append(record)
                     age = heartbeat_age(record)
                     if stale_after_seconds is not None and age is not None and age > stale_after_seconds:
                         report.unresponsive.append({**record, "heartbeat_age_seconds": round(age, 1)})
+                    continue
+                orphans = orphaned_agents(record)
+                if orphans:  # the worker is gone, but its agent may still write: no second execution
+                    report.orphaned.append({**record, "orphans": orphans})
+                    self.store.append_event("recovery-refused", task=task_id, role=record["role"], pid=holder.pid,
+                                            orphans=orphans)
                     continue
                 task = self.store.load_task(task_id)
                 if task.state is TaskState.IN_PROGRESS:

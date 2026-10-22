@@ -22,6 +22,7 @@ import pytest
 import yaml
 
 from feature_coordinator.cli import EXAMPLE_CONFIG
+from feature_coordinator.cli import main as cli_main
 from feature_coordinator.demo import RecordingGates, build_coordinator, init_demo_repo
 from feature_coordinator.errors import CoordinatorError
 from feature_coordinator.model import TaskState
@@ -334,17 +335,91 @@ def smoke_result(stdout: str) -> dict:
     return json.loads(stdout[start:stdout.index("\n}\n", start) + 2])
 
 
-def test_subscription_smoke_apply_runs_the_bounded_feature(tmp_path: Path, fake_home: Path,
-                                                           fake_agent: Path) -> None:
+def wait_until(predicate, timeout: float) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.02)
+    return predicate()
+
+
+def rendezvous(sync: Path, me: str, peer: str) -> dict:
+    """Fake-agent actions around writing the smoke file: arrive, wait for the peer agent, then wait
+    for the test's release. Neither agent can finish before both are running."""
+    return {"before": [{"do": "write", "path": str(sync / f"{me}.arrived"), "text": "1"},
+                       {"do": "wait_for", "path": str(sync / f"{peer}.arrived"), "timeout": 120, "required": True},
+                       {"do": "wait_for", "path": str(sync / "release"), "timeout": 120, "required": True}],
+            "after": [{"do": "write", "path": str(sync / f"{me}.done"), "text": "1"}]}
+
+
+def live_processes_mentioning(text: str) -> list[str]:
+    """Command lines of running processes that mention *text*."""
+    found = []
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit():
+            continue
+        try:
+            with open(f"/proc/{entry}/cmdline", "rb") as handle:
+                cmdline = handle.read()
+        except OSError:
+            continue
+        if text.encode() in cmdline:
+            found.append(cmdline.replace(b"\0", b" ").decode(errors="replace"))
+    return found
+
+
+def test_subscription_smoke_apply_runs_the_bounded_feature(tmp_path: Path, fake_home: Path, fake_agent: Path,  # pylint: disable=too-many-locals,too-many-statements
+                                                           capsys: pytest.CaptureFixture[str],
+                                                           monkeypatch: pytest.MonkeyPatch) -> None:
     del fake_home
-    Path(f"{fake_agent}.json").write_text(json.dumps({"follow_prompt": True}), encoding="utf-8")
+    sync = tmp_path / "sync"
+    sync.mkdir()
+    Path(f"{fake_agent}.json").write_text(json.dumps({"follow_prompt": True, "around": {
+        "cli/smoke/cli.txt": rendezvous(sync, "cli", "frontend"),
+        "frontend/smoke/frontend.txt": rendezvous(sync, "frontend", "cli")}}), encoding="utf-8")
     config, workdir = write_config(tmp_path / "config.yaml", fake_agent), tmp_path / "smoke"
     dry = smoke_cli(tmp_path, config, "--workdir", str(workdir))
     assert dry.returncode == 0 and "no model request was made" in dry.stdout, dry.stdout + dry.stderr
     assert not workdir.exists()
-    run = smoke_cli(tmp_path, config, "--apply", "--workdir", str(workdir))
-    assert run.returncode == 0 and "subscription smoke test: PASSED" in run.stdout, run.stdout + run.stderr
-    result = smoke_result(run.stdout)
+
+    # The Worker samples its running tasks once per polling iteration (FeatureWorker._run). A
+    # pass-through spy on _eligible (called once per iteration, before that iteration's sample)
+    # counts the iterations, so the agents are released only after the Worker has provably
+    # sampled while both were running. The --apply run is therefore in-process (a thread).
+    polls: list[float] = []
+    eligible = FeatureWorker._eligible  # pylint: disable=protected-access
+
+    def counting(self, *args):
+        chosen = eligible(self, *args)
+        polls.append(time.monotonic())
+        return chosen
+    monkeypatch.setattr(FeatureWorker, "_eligible", counting)
+    outcome: dict = {}
+
+    def apply() -> None:
+        try:
+            outcome["code"] = cli_main(["--state-dir", str(tmp_path / "state"), "--project-config", str(config),
+                                        "subscription-smoke", "--apply", "--workdir", str(workdir)])
+        except BaseException as exc:  # pylint: disable=broad-except
+            outcome["error"] = exc
+    runner = threading.Thread(target=apply, daemon=True)
+    runner.start()
+    try:
+        assert wait_until(lambda: (sync / "cli.arrived").exists() and (sync / "frontend.arrived").exists(), 120), \
+            f"the CLI and Frontend agents were never running at the same time: {sorted(p.name for p in sync.iterdir())}"
+        # Both agents are running, so both tasks are in progress until the release. Iteration n may
+        # have taken its snapshot before this point, but iteration n+1 took it after; its sample is
+        # complete once iteration n+2 calls _eligible.
+        seen = len(polls)
+        assert wait_until(lambda: len(polls) >= seen + 3, 30), "the Worker stopped polling while both agents ran"
+    finally:
+        (sync / "release").write_text("go", encoding="utf-8")  # always: never leave agents waiting
+        runner.join(240)
+    assert not runner.is_alive() and "error" not in outcome, outcome
+    out = capsys.readouterr().out
+    assert outcome["code"] == 0 and "subscription smoke test: PASSED" in out, out
+    result = smoke_result(out)
     assert set(result["states"].values()) == {"verified"} and len(result["states"]) == 3
     assert result["max_concurrency"] == 2 and not result["skipped"] and len(result["launches"]) == 3
     assert all(f["on_branch"] and f["content_ok"] for f in result["files"].values())
@@ -352,6 +427,21 @@ def test_subscription_smoke_apply_runs_the_bounded_feature(tmp_path: Path, fake_
     assert result["integration"] == {"state": "review", "pr_opened": False, "head": result["integration"]["head"]}
     repo, state = workdir / "repo", workdir / "state"
     assert (state.stat().st_mode & 0o777) == 0o700 and not list(state.glob("**/pull-request*.json"))
+
+    # Dependency order, then true overlap (from the coordinator's own event log).
+    events = [json.loads(line) for line in (state / "events.jsonl").read_text(encoding="utf-8").splitlines()]
+    at = {(e["kind"], e.get("task")): i for i, e in enumerate(events) if e["kind"] in ("claim", "release")}
+    verified = next(i for i, e in enumerate(events) if e["kind"] == "task-finished"
+                    and e["task"] == "subscription-smoke.backend")
+    assert events[verified]["state"] == "verified"
+    cli, frontend = "subscription-smoke.cli", "subscription-smoke.frontend"
+    assert verified < at[("claim", cli)] and verified < at[("claim", frontend)]  # Backend first
+    assert at[("claim", cli)] < at[("release", frontend)] and at[("claim", frontend)] < at[("release", cli)]
+    # Neither agent finished before both had started (markers outside the repository).
+    arrived = [(sync / f"{r}.arrived").stat().st_mtime_ns for r in ("cli", "frontend")]
+    done = [(sync / f"{r}.done").stat().st_mtime_ns for r in ("cli", "frontend")]
+    assert max(arrived) <= (sync / "release").stat().st_mtime_ns <= min(done)
+
     branch = "feature/subscription-smoke"
     base = git(repo, "merge-base", "dev", branch).strip()
     roles, subjects = {}, {}
@@ -362,6 +452,16 @@ def test_subscription_smoke_apply_runs_the_bounded_feature(tmp_path: Path, fake_
     assert roles == {"backend": ["backend/smoke/backend.txt"], "cli": ["cli/smoke/cli.txt"],
                      "frontend": ["frontend/smoke/frontend.txt"]}
     assert subjects == {r: f"{r}: task subscription-smoke.{r}" for r in roles}  # the prompts are not subjects
+    assert git(repo, "status", "--porcelain", "--untracked-files=all").strip() == ""  # nothing else changed
+    assert sorted(git(repo, "ls-tree", "-r", "--name-only", branch).split()) == sorted(
+        ["README.md", "backend/README.md", "cli/README.md", "frontend/README.md", "backend/smoke/backend.txt",
+         "cli/smoke/cli.txt", "frontend/smoke/frontend.txt"])
+    # No agent and no launch process outlives the run (the Worker waits for launches, launches for agents).
+    leftovers = live_processes_mentioning(str(workdir)) + live_processes_mentioning(str(fake_agent))
+    assert not [c for c in leftovers if " github sync " not in c], leftovers
+    # The launches' board publishers (operations.DetachedPublisher: detached, never waited for, by design)
+    # finish on their own shortly after; none may linger.
+    assert wait_until(lambda: not live_processes_mentioning(str(workdir)), 60), live_processes_mentioning(str(workdir))
 
 
 def test_subscription_smoke_refuses_without_subscription(tmp_path: Path, fake_home: Path, fake_agent: Path) -> None:
