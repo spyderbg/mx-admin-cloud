@@ -8,7 +8,9 @@ its working directory and reports every attempt in the CLI's own output format
 (Claude Code stream-json `result` event, or Codex JSONL events). No model is involved.
 
 Actions: write, try_write, delete, symlink, read, try_read, sleep, wait_for, git,
-ignore_sigterm, daemon (a grandchild that keeps appending to a file), exit.
+ignore_sigterm, daemon (a grandchild that keeps appending to a file), exit. A `wait_for` with
+"required": true is a synchronization point: if its file does not appear within the timeout,
+the run fails (exit 3) instead of continuing.
 Standard library only: it runs inside the sandbox with the system interpreter.
 
 W2 (native backend): it also answers the CLIs' status commands — `auth status --json` (Claude
@@ -17,7 +19,9 @@ event. Because native runs get an allowlisted environment, tests steer this thro
 file next to the executable (`<name>.json`): {"auth": "subscription" | "api-key" | "none" |
 "unknown", "report_model": "...", "api_key_source": "...", "follow_prompt": true}. With
 `follow_prompt` it also carries out a plain "Create the file PATH containing exactly one line:
-TEXT" instruction (the subscription smoke test's prompt) when the prompt has no FAKE-ACTIONS.
+TEXT" instruction (the subscription smoke test's prompt) when the prompt has no FAKE-ACTIONS;
+`"around": {"PATH": {"before": [actions], "after": [actions]}}` runs actions around writing PATH
+(e.g. a rendezvous of two agents whose prompts the tests cannot change).
 """
 
 # pylint: disable=missing-function-docstring
@@ -98,6 +102,10 @@ def run_actions(actions):  # pylint: disable=too-many-branches
             while not os.path.exists(act["path"]) and time.time() < deadline:
                 time.sleep(0.02)
             report.append({"action": f"wait_for {act['path']}", "ok": os.path.exists(act["path"])})
+            if act.get("required") and not report[-1]["ok"]:  # a synchronization point never reached
+                report[-1]["error"] = f"timed out after {act.get('timeout', 30)}s"
+                emit(report, error=True)
+                sys.exit(3)
         elif kind == "git":
             proc = subprocess.run(["git", *act["args"]], capture_output=True, text=True, check=False)
             report.append({"action": "git " + " ".join(act["args"]), "ok": proc.returncode == 0,
@@ -187,7 +195,9 @@ def main():
             actions = json.loads(line[len("FAKE-ACTIONS:"):])
     create = re.search(r"^Create the file (\S+) containing exactly one line: (.+)$", prompt, re.MULTILINE)
     if not actions and create and control().get("follow_prompt"):
-        actions = [{"do": "write", "path": create.group(1), "text": create.group(2) + "\n"}]
+        around = control().get("around", {}).get(create.group(1), {})
+        actions = [*around.get("before", ()), {"do": "write", "path": create.group(1), "text": create.group(2) + "\n"},
+                   *around.get("after", ())]
     emit(run_actions(actions))
     return 0
 
