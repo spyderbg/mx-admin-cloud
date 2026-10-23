@@ -6,7 +6,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shlex
 import shutil
+import subprocess
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import pytest
@@ -28,7 +32,7 @@ from feature_coordinator.operations import SELF_TEST_FILES
 from feature_coordinator.paths import PathPolicy, ScopedWorkspace
 from feature_coordinator.providers import CLAUDE_CODE, CODEX, ProviderKind
 from feature_coordinator.runners import RunRequest
-from feature_coordinator.sandbox import SandboxBuilder, install_prefix
+from feature_coordinator.sandbox import SandboxBuilder, SandboxPlan, install_prefix
 from feature_coordinator.supervisor import supervise
 
 from fc_helpers import FAKE_CREDENTIAL, actions_prompt
@@ -226,19 +230,152 @@ def test_installed_cli_starts_inside_the_sandbox(profile, repo3: Path, config: P
     assert sup.ok and probe_runner(profile).version in (tmp_path / "v.out").read_text(encoding="utf-8")
 
 
+# -- nested sandboxes (Codex's own bubblewrap inside ours) -------------------------------------
+
+# Ubuntu's `bwrap-userns-restrict` AppArmor profile runs everything bubblewrap starts as
+# `unpriv_bwrap`, with every capability denied, so a bubblewrap started inside ours cannot create
+# namespaces. The Codex integration test is skipped only when the probe demonstrates exactly that:
+# the `unpriv_bwrap` label inside our sandbox AND a namespace-permission refusal from the nested bwrap.
+RESTRICTED_PROFILE = "unpriv_bwrap"
+NAMESPACE_REFUSALS = ("No permissions to create",  # bwrap's EPERM message (Debian/Ubuntu and upstream wording)
+                      "Creating new namespace failed: Operation not permitted",
+                      "setting up uid map: Permission denied")
+
+
+@dataclass(frozen=True)
+class NestedSandbox:
+    """The probe's decision: `restricted` (skip, with `reason`) only for the known host restriction."""
+    supported: bool
+    restricted: bool
+    reason: str
+
+
+def nested_sandbox_decision(label: str, returncode: int | None, stderr: str) -> NestedSandbox:
+    """Decide from the AppArmor label seen inside our sandbox and the nested bwrap's outcome."""
+    if returncode == 0:
+        return NestedSandbox(True, False, "nested bubblewrap works")
+    profiles = set(re.split(r"//&?", label.split(" (", 1)[0].strip()))  # "bwrap//&unpriv_bwrap (enforce)"
+    refusal = next((line.strip() for line in stderr.splitlines()
+                    if any(text in line for text in NAMESPACE_REFUSALS)), "")
+    if RESTRICTED_PROFILE in profiles and refusal:
+        return NestedSandbox(False, True, (
+            f"nested bubblewrap is denied on this host: inside the coordinator's sandbox processes run as AppArmor "
+            f"{label.strip()!r} (Ubuntu's bwrap-userns-restrict profile) and the nested bwrap failed: "
+            f"{refusal[:160]!r}. "
+            "Codex's own sandbox cannot start inside ours; this affects only runtime.execution_backend: bwrap with "
+            "Codex (native-cli and the gates are unaffected). Run this test on a host without that profile; do not "
+            "disable AppArmor or the user-namespace restriction to make it pass (agent-ownership.md §5)"))
+    return NestedSandbox(False, False, f"nested bubblewrap failed (exit {returncode}, AppArmor label "
+                                       f"{label.strip() or 'unreadable'!r}), not the known restriction: "
+                                       f"{stderr.strip()[:300]}")
+
+
+def probe_nested_sandbox(plan: SandboxPlan, cwd: Path) -> NestedSandbox:
+    """Start a minimal bubblewrap inside `plan` and decide. Writes nothing; discards the plan's shadow."""
+    script = ("label=$(cat /proc/self/attr/apparmor/current 2>/dev/null || cat /proc/self/attr/current 2>/dev/null);"
+              ' printf "label=%s\\n" "$label";'
+              f" exec {shlex.quote(plan.bwrap)} --ro-bind / / --unshare-user /usr/bin/true")
+    try:
+        proc = subprocess.run(plan.argv(["/bin/sh", "-c", script]), cwd=cwd, env={"PATH": os.environ["PATH"]},
+                              capture_output=True, text=True, timeout=30, check=False)
+    except subprocess.TimeoutExpired:
+        return nested_sandbox_decision("", None, "the nested-sandbox probe timed out")
+    except OSError as exc:  # our own sandbox could not even start
+        return nested_sandbox_decision("", None, f"the nested-sandbox probe could not start: {exc}")
+    finally:
+        plan.discard_shadow()
+    label = next((line[len("label="):] for line in proc.stdout.splitlines() if line.startswith("label=")), "")
+    return nested_sandbox_decision(label, proc.returncode, proc.stderr)
+
+
+RESTRICTED_LABEL = "bwrap//&unpriv_bwrap (enforce)"
+DEBIAN_REFUSAL = ("bwrap: No permissions to create new namespace, likely because the kernel does not allow "
+                  "non-privileged user namespaces. See <https://deb.li/bubblewrap> or "
+                  "<file:///usr/share/doc/bubblewrap/README.Debian.gz>.")
+UPSTREAM_REFUSAL = ("bwrap: No permissions to create a new namespace, likely because the kernel does not allow "
+                    "non-privileged user namespaces.")
+
+
+@pytest.mark.parametrize("label, returncode, stderr, supported, restricted", [
+    (RESTRICTED_LABEL, 0, "", True, False),                    # nested bubblewrap works: the test runs
+    ("unconfined", 0, "", True, False),
+    (RESTRICTED_LABEL, 1, DEBIAN_REFUSAL, False, True),        # the known restriction, demonstrated: skip
+    ("unpriv_bwrap (enforce)", 1, UPSTREAM_REFUSAL, False, True),
+    (RESTRICTED_LABEL, 1, "bwrap: setting up uid map: Permission denied", False, True),
+    ("unconfined", 1, DEBIAN_REFUSAL, False, False),           # refused, but not under that profile: no skip
+    ("", 1, DEBIAN_REFUSAL, False, False),                     # label unreadable: no skip
+    ("unprivileged_userns (enforce)", 1, DEBIAN_REFUSAL, False, False),
+    ("bwrap//&unpriv_bwrap_custom (enforce)", 1, DEBIAN_REFUSAL, False, False),
+    (RESTRICTED_LABEL, 1, "bwrap: execvp /usr/bin/true: No such file or directory", False, False),  # other failures
+    (RESTRICTED_LABEL, 127, "sh: 1: exec: /opt/bwrap: not found", False, False),
+    (RESTRICTED_LABEL, -9, "", False, False),                  # killed
+    (RESTRICTED_LABEL, None, "the nested-sandbox probe timed out", False, False),
+], ids=["works-restricted-label", "works-unconfined", "debian-refusal", "upstream-refusal", "uid-map-refusal",
+        "refusal-unconfined", "refusal-no-label", "refusal-userns-profile", "refusal-other-profile",
+        "exec-failure", "bwrap-not-found", "killed", "timeout"])
+def test_nested_sandbox_decision_skips_only_for_the_known_restriction(label, returncode, stderr, supported,
+                                                                       restricted) -> None:
+    decision = nested_sandbox_decision(label, returncode, stderr)
+    assert (decision.supported, decision.restricted) == (supported, restricted), decision.reason
+    if restricted:  # actionable: what is denied, by what, what it affects, what not to do
+        for text in ("unpriv_bwrap", "bwrap-userns-restrict", stderr[:40], "execution_backend: bwrap", "native-cli",
+                     "do not disable AppArmor"):
+            assert text in decision.reason
+    elif not supported:
+        assert "not the known restriction" in decision.reason and str(returncode) in decision.reason
+
+
+def frontend_codex_plan(repo3: Path, config: ProjectConfig, run_dir: Path, real: str | None) -> SandboxPlan:
+    """The Frontend sandbox the Codex integration test uses (`real`: the codex binary, bound read-only)."""
+    from feature_coordinator.sandbox import Bind  # pylint: disable=import-outside-toplevel
+    return SandboxBuilder(repo3, config).plan(
+        run_dir=run_dir, role="frontend", network=True, shadow_writable=True,
+        env={"CODEX_HOME": f"{os.environ['HOME']}/.codex"},
+        extra=[Bind(str(install_prefix(real)), str(install_prefix(real)), "ro")] if real else [])
+
+
+@pytest.mark.usefixtures("needs_bwrap")
+def test_nested_sandbox_probe_reaches_a_justified_decision(repo3: Path, config: ProjectConfig, tmp_path: Path) -> None:
+    """In a real Frontend sandbox the probe finds nested bubblewrap working, or demonstrates the
+    known restriction; any other failure is reported here, never turned into a skip."""
+    def checkout() -> str:
+        return subprocess.run(["git", "status", "--porcelain", "--ignored"], cwd=repo3, capture_output=True,
+                              text=True, check=True).stdout
+    before = checkout()
+    probe = probe_nested_sandbox(frontend_codex_plan(repo3, config, tmp_path / "probe", None), repo3)
+    assert probe.supported or probe.restricted, probe.reason
+    assert checkout() == before and not (tmp_path / "probe" / "shadow").exists()
+
+
+@pytest.mark.usefixtures("needs_bwrap")
+@pytest.mark.parametrize("outer", ["missing", "failing"])
+def test_nested_sandbox_probe_never_skips_for_an_unrelated_failure(outer: str, repo3: Path, config: ProjectConfig,
+                                                                   tmp_path: Path) -> None:
+    """A sandbox that cannot start, or fails for its own reasons, is reported, never a skip."""
+    bwrap = tmp_path / "bwrap"
+    if outer == "failing":
+        bwrap.write_text('#!/bin/sh\necho "bwrap: Can\'t mount proc on /newroot/proc: Device or resource busy" >&2\n'
+                         "exit 1\n", encoding="utf-8")
+        bwrap.chmod(0o755)
+    plan = replace(frontend_codex_plan(repo3, config, tmp_path / "probe", None), bwrap=str(bwrap))
+    probe = probe_nested_sandbox(plan, repo3)
+    assert not probe.supported and not probe.restricted and "not the known restriction" in probe.reason
+    assert ("could not start" if outer == "missing" else "Can't mount proc") in probe.reason
+
+
 @pytest.mark.usefixtures("needs_bwrap")
 def test_codex_own_sandbox_works_nested_inside_ours(repo3: Path, config: ProjectConfig, tmp_path: Path) -> None:
     """Codex keeps its own (bubblewrap) sandbox inside the Frontend sandbox: writes stay in the
-    Frontend roots and model-generated commands get no network. Uses `codex sandbox`, no model."""
+    Frontend roots and model-generated commands get no network. Uses `codex sandbox`, no model.
+    Skipped only where the probe demonstrates the host's AppArmor restriction on nested bubblewrap."""
     if not shutil.which("codex"):
         pytest.skip("codex is not installed")
     real = str(Path(shutil.which("codex")).resolve())
-    from feature_coordinator.sandbox import Bind  # pylint: disable=import-outside-toplevel
+    probe = probe_nested_sandbox(frontend_codex_plan(repo3, config, tmp_path / "probe", real), repo3)
+    if probe.restricted:
+        pytest.skip(probe.reason)
     home = tmp_path / "run" / "home"
-    plan = SandboxBuilder(repo3, config).plan(
-        run_dir=tmp_path / "run", role="frontend", network=True, shadow_writable=True,
-        env={"CODEX_HOME": f"{os.environ['HOME']}/.codex"},
-        extra=[Bind(str(install_prefix(real)), str(install_prefix(real)), "ro")])
+    plan = frontend_codex_plan(repo3, config, tmp_path / "run", real)
     (home / ".codex").mkdir(parents=True, exist_ok=True)
     inner = ("{ touch frontend/nested_ok && echo frontend-ok;"
              " touch backend/nested_bad 2>/dev/null || echo backend-denied;"
