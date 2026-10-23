@@ -46,6 +46,7 @@ from typing import Any, Callable
 from .autonomy import (
     AVAILABLE,
     BUSY,
+    CANCELLED,
     CRITICAL,
     EXIT_ALREADY_RUNNING,
     EXIT_DO_NOT_RESTART,
@@ -64,15 +65,19 @@ from .autonomy import (
     Scheduling,
     ServiceRecord,
     apply_outcome,
+    blocking_survivors,
+    claim_view,
     classify,
     eligible_tasks,
     epoch,
+    hung_after_seconds,
     iso,
     load_scheduling,
     load_service,
     new_service_record,
     process_start_epoch,
     read_control,
+    safe_identity,
     scrub,
     task_status,
 )
@@ -124,6 +129,7 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
         self._exclusive = False
         self._stop_reason = ""
         self._cycle_errors = 0
+        self._uncertain: dict[str, set[int]] = {}  # processes that survived SIGKILL: not signalled again
 
     # -- the whole lifetime ------------------------------------------------------------------
 
@@ -283,6 +289,12 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
             return
         if settled:
             return  # outcomes recorded; look again with fresh state
+        blocking = {t: pids for t, rec in schedules.items() for pids in [blocking_survivors(rec)] if pids}
+        if blocking:
+            self._set_state(NEEDS_ATTENTION, f"processes of an earlier run are still alive and could not be stopped: "
+                                             f"{blocking}; no agent is started while they may modify the workspace")
+            self._idle(self.cfg.idle_poll_seconds)
+            return
         candidates = eligible_tasks(self.config, tasks, schedules, now)
         if candidates:
             self._run_task(feature, candidates[0])
@@ -352,17 +364,32 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
         self._feature_lock, self._feature_id = None, ""
 
     def _claims_clear(self) -> bool:
-        """True when no claim exists on the checkout. A live one: wait. Stale ones: W3 recovery."""
+        """True when no claim exists on the checkout. A live one: wait (or, for a hung launch of an
+        earlier service instance, continue the watchdog's termination). Stale ones: W3 recovery.
+        An unreadable holder identity: nothing is assumed (fail closed)."""
         claims = self.store.list_claims()
         if not claims:
             return True
-        live = {t: r for t, r in claims.items() if ProcessIdentity.from_dict(r["identity"]).is_alive()}
+        live: dict[str, tuple[dict[str, Any], ProcessIdentity]] = {}
+        stale, ambiguous = [], []
+        for task_id, rec in claims.items():
+            holder = safe_identity(rec.get("identity"))
+            if holder is None:
+                ambiguous.append(task_id)
+            elif holder.is_alive():
+                live[task_id] = (rec, holder)
+            else:
+                stale.append(task_id)
         if live:
-            task_id, rec = next(iter(live.items()))
-            self._set_state(WAITING, f"another agent is active on this checkout: {task_id} (pid "
-                                     f"{rec['identity']['pid']}) — no second writer is started")
+            task_id, (rec, holder) = next(iter(live.items()))
+            self._live_claim(task_id, rec, holder)
             return False
-        report = self.coord.claims.recover(task_ids=list(claims))
+        if ambiguous:
+            self._set_state(NEEDS_ATTENTION, f"the claims of {ambiguous} have no readable holder identity: their "
+                                             "processes cannot be verified, so nothing is recovered, stopped or "
+                                             "started automatically (`feature.py recover TASK`)")
+            return False
+        report = self.coord.claims.recover(task_ids=stale)
         for rec in report.recovered:
             self._event("worker-recovered", task=rec["task_id"], pid=rec["identity"]["pid"])
             self._log(f"recovered {rec['task_id']}: its worker (pid {rec['identity']['pid']}) is gone")
@@ -370,12 +397,86 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
             self._orphan(rec)
         return not self.store.list_claims()
 
+    def _live_claim(self, task_id: str, rec: dict[str, Any], holder: ProcessIdentity) -> None:
+        """A live process holds a claim: no second writer. Its heartbeat tells slow from hung; only
+        a launch of an earlier instance of THIS service (its identity, and the launch tag recorded
+        before it started) is stopped by the watchdog — never a launch started by anyone else."""
+        runtime = self.config.runtime
+        age = heartbeat_age(rec) or 0.0
+        flight = self._earlier_flight(task_id)
+        ours = bool(flight and flight.get("tag") and holder.pid in tagged_processes(LAUNCH_TAG_ENV, flight["tag"]))
+        decided = ours and (flight.get("watchdog") or {}).get("pid") == holder.pid  # recorded for THIS process
+        if ours and (decided or age > hung_after_seconds(runtime)):
+            self._stop_earlier_launch(task_id, holder, flight, age)
+        elif age > hung_after_seconds(runtime):
+            self._set_state(NEEDS_ATTENTION, f"the launch holding {task_id} (pid {holder.pid}) has not heartbeated for "
+                                             f"{age:.0f}s (hung?); this service did not start it, so it is not "
+                                             f"stopped automatically (`feature.py stop {task_id}`)")
+        elif age > runtime.stale_heartbeat_seconds:
+            self._set_state(WAITING, f"another agent is active on this checkout: {task_id} (pid {holder.pid}), no "
+                                     f"heartbeat for {age:.0f}s (slow: a gate or a long step) — no second writer "
+                                     "is started")
+        else:
+            self._set_state(WAITING, f"another agent is active on this checkout: {task_id} (pid {holder.pid}) — "
+                                     "no second writer is started")
+
+    def _earlier_flight(self, task_id: str) -> dict[str, Any] | None:
+        """The in-flight launch an EARLIER service instance recorded for *task_id* (None if none)."""
+        try:
+            flight = load_scheduling(self.store, self.store.load_task(task_id)).in_flight
+        except CoordinatorError:
+            return None
+        return flight if flight and flight.get("instance") != self.instance else None
+
+    def _stop_earlier_launch(self, task_id: str, holder: ProcessIdentity, flight: dict[str, Any], age: float) -> None:
+        """The watchdog decided (now, or before this service restarted) that this launch is hung:
+        record the decision first, then stop exactly that process (identity re-checked before every
+        signal). Idempotent: a later instance continues from the recorded decision."""
+        recorded = flight.get("watchdog") if (flight.get("watchdog") or {}).get("pid") == holder.pid else None
+        if holder.pid in self._uncertain.get(task_id, set()):  # tried, SIGKILL included: no repeated signals
+            self._cleanup_uncertain(task_id, [holder.pid], "the hung launch could not be confirmed terminated")
+            return
+        decision = dict(recorded or {"decision": "hung-launch", "pid": holder.pid, "since": utc_now(),
+                                     "heartbeat_age": round(age, 1), "by": self.instance})
+        if recorded is None:
+            self._persist_watchdog(task_id, flight.get("launch"), decision)
+        self._set_state(RECOVERING, f"stopping the hung launch {holder.pid} of {task_id} (earlier service instance, "
+                                    f"decided {decision['since']})")
+        self._event("worker-watchdog-hung", task=task_id, pid=holder.pid, heartbeat_age=round(age, 1),
+                    earlier_instance=flight.get("instance"), resumed=recorded is not None)
+        tag = str(flight["tag"])
+        survivors = terminate_pids([holder.pid], grace_seconds=self.config.runtime.terminate_grace_seconds,
+                                   still_ours=lambda pid: holder.is_alive()
+                                   and pid in tagged_processes(LAUNCH_TAG_ENV, tag))
+        self._event("worker-watchdog-terminated", task=task_id, pids=[holder.pid], survivors=survivors)
+        if survivors:  # one bounded attempt per service instance; it keeps blocking (the claim stays)
+            self._uncertain[task_id] = set(survivors)
+            self._cleanup_uncertain(task_id, survivors, "the hung launch could not be confirmed terminated")
+
+    def _persist_watchdog(self, task_id: str, launch: Any, decision: dict[str, Any]) -> None:
+        """Write-ahead for the watchdog: the decision to terminate is durable BEFORE any signal."""
+        with self.store.transaction():
+            rec = load_scheduling(self.store, self.store.load_task(task_id))
+            if rec.in_flight and rec.in_flight.get("launch") == launch:
+                rec.in_flight["watchdog"] = decision
+                self.store.save_record("scheduling", rec)
+
+    def _cleanup_uncertain(self, task_id: str, pids: list[int], why: str) -> None:
+        """Processes that may still modify the workspace could not be confirmed gone: everything
+        stays blocked (their claim, or the task's blocking run tags) until they are."""
+        reason = f"{why}: processes {pids} of {task_id} are still alive; no agent is started while they may " \
+                 "modify the workspace"
+        if self.record is not None:
+            self.record.last_error = {"task": task_id, "category": "cleanup-uncertain", "pids": pids,
+                                      "reason": scrub(reason, 500), "at": utc_now()}
+        self._set_state(NEEDS_ATTENTION, reason)
+
     def _orphan(self, rec: dict[str, Any]) -> None:
         """An agent of a dead worker's run still lives: wait; stop it only with a certain identity
         after its run deadline (never an unidentified process)."""
         runtime = self.config.runtime
         agent = (rec.get("checkpoint") or {}).get("agent")
-        identity = ProcessIdentity.from_dict(agent) if isinstance(agent, dict) else None
+        identity = safe_identity(agent) if isinstance(agent, dict) else None
         started = process_start_epoch(identity) if identity else None
         deadline = started + runtime.task_timeout_seconds + runtime.terminate_grace_seconds if started else None
         pids, task_id = list(rec["orphans"]), rec["task_id"]
@@ -389,12 +490,16 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
                                      + (f"it is stopped after its run deadline {iso(deadline)}"
                                         if self.cfg.stop_orphans_after_deadline else "waiting for it to end"))
             return
+        if set(pids) <= self._uncertain.get(task_id, set()):  # already tried, SIGKILL included: stay blocked
+            self._cleanup_uncertain(task_id, pids, "orphaned processes could not be stopped")
+            return
         survivors = terminate_pids(pids, grace_seconds=runtime.terminate_grace_seconds,
                                    still_ours=lambda pid: pid in set(orphaned_agents(rec)))
         self._event("worker-orphans-stopped", task=task_id, pids=pids, survivors=survivors, deadline=iso(deadline))
         self._log(f"stopped orphaned agent processes {pids} of {task_id} (past their run deadline)")
         if survivors:
-            self._set_state(NEEDS_ATTENTION, f"orphaned processes {survivors} of {task_id} could not be stopped")
+            self._uncertain[task_id] = set(survivors)
+            self._cleanup_uncertain(task_id, survivors, "orphaned processes could not be stopped")
         else:
             self.coord.claims.recover(task_ids=[task_id])
 
@@ -434,7 +539,10 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
             outcome = classify(tasks[task_id], tasks[task_id], events, exit_code=None,
                                log_text=self._launch_log(task_id, flight.get("launch")),
                                run_texts=self._run_texts(task_id, epoch(since) or 0.0))
-            if outcome.category == UNKNOWN and tasks[task_id].state is TaskState.READY:
+            if flight.get("watchdog") and outcome.category in (UNKNOWN, INTERRUPTED, CANCELLED):
+                outcome = Outcome(TRANSIENT, "watchdog: the launch was hung and was stopped "
+                                             f"({flight['watchdog'].get('since')})")
+            elif outcome.category == UNKNOWN and tasks[task_id].state is TaskState.READY:
                 # no evidence of what happened: the run was cut short by the service's loss
                 outcome = Outcome(INTERRUPTED, "the launch of an earlier service instance ended while the service "
                                                "was down")
@@ -482,7 +590,7 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
             rec.in_flight = {"launch": launch, "instance": self.instance, "started_at": utc_now(), "tag": tag,
                              "worker_id": self.record.worker_id if self.record else ""}
             self.store.save_record("scheduling", rec)
-        started = self.clock()
+        started = time.time()  # wall time: compared with run directories' modification times
         mark = len(self.store.events())
         branch = f"refs/heads/{feature.branch}"
         head = self.coord.git.rev_parse(branch)
@@ -497,9 +605,9 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
                     model=self.record.current["model"])
         self.launched.append((task.id, launch))
         handle = self.spawn(task.id, launch, env={LAUNCH_TAG_ENV: tag})
-        exit_code, tags = self._watch(task, handle)
+        exit_code, tags, decision = self._watch(task, handle, launch)
         self._event("worker-agent-stopped", task=task.id, launch=launch, exit_code=exit_code)
-        outcome = self._judge(feature, task, mark, exit_code, tags, head, foreign_before, launch, started)
+        outcome = self._judge(feature, task, mark, exit_code, tags, head, foreign_before, launch, started, decision)
         self._apply(task.id, outcome, launch)
         self.record.current = None
         self._beat(self.clock(), force=True)
@@ -533,13 +641,21 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
             return Outcome(CRITICAL, f"checkpoint state unreadable: {exc}")
         return Outcome(CRITICAL, "recovery conflict: " + "; ".join(conflicts)) if conflicts else None
 
-    def _watch(self, task: Task, handle: Any) -> tuple[int | None, set[str]]:
-        """Wait for the launch: heartbeats, the claim's progress, graceful stop, the watchdog."""
+    def _watch(self, task: Task, handle: Any, launch: int) -> tuple[int | None, set[str], dict[str, Any] | None]:  # pylint: disable=too-many-branches
+        """Wait for the launch: heartbeats, the claim's progress, graceful stop, the watchdog.
+
+        The agent's own deadline is enforced by the launch process (the Supervisor: SIGTERM to the
+        agent's process group, grace, SIGKILL, then every process with the run tag). This watchdog
+        covers the launch process itself: no claim heartbeat for longer than any legitimate silence
+        (hung_after_seconds) → the decision is recorded, then the launch (our child: its identity is
+        certain) gets SIGTERM, grace, SIGKILL, and its end is confirmed. A stale heartbeat below that
+        threshold is only reported (a gate or a slow step)."""
         runtime = self.config.runtime
-        hung_after = (runtime.stale_heartbeat_seconds + runtime.task_timeout_seconds + runtime.gate_timeout_seconds
-                      + runtime.terminate_grace_seconds)
+        hung_after = hung_after_seconds(runtime)
         tags: set[str] = set()
-        cancelled = warned = killed = False
+        cancelled = warned = False
+        decision: dict[str, Any] | None = None
+        quiet_since = time.time()  # the launch's last sign of life: spawn, or its claim's heartbeat
         while handle.poll() is None:
             self._beat(self.clock())
             claim = self.store.load_claim(task.id)
@@ -547,20 +663,30 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
                 progress = claim.get("checkpoint") or {}
                 if progress.get("run_tag"):
                     tags.add(str(progress["run_tag"]))
-                if self.record and self.record.current and progress.get("step") != self.record.current.get("step"):
-                    self.record.current["step"] = progress.get("step")
-                    self._beat(self.clock(), force=True)
+                self._track_progress(claim, progress)
                 age = heartbeat_age(claim) or 0.0
-                if age > runtime.stale_heartbeat_seconds and not warned:
-                    warned = True
-                    self._event("worker-watchdog-stale", task=task.id, heartbeat_age=round(age, 1))
-                    self._log(f"watchdog: {task.id}'s launch has not heartbeated for {age:.0f}s (gates or a slow "
-                              "step can do that; it is not stopped for this alone)")
-                if age > hung_after and not killed:
-                    killed = True
-                    self._event("worker-watchdog-hung", task=task.id, heartbeat_age=round(age, 1))
-                    self._log(f"watchdog: {task.id}'s launch is hung ({age:.0f}s without a heartbeat): stopping it")
-                    self._terminate(handle)
+                quiet_since = time.time() - age
+            else:
+                age = time.time() - quiet_since  # not claimed (yet, or any more): the launch must still end
+            if age > runtime.stale_heartbeat_seconds and not warned:
+                warned = True
+                self._watchdog_phase("slow", heartbeat_age=round(age, 1))
+                self._event("worker-watchdog-stale", task=task.id, heartbeat_age=round(age, 1))
+                self._log(f"watchdog: {task.id}'s launch has not heartbeated for {age:.0f}s (gates or a slow "
+                          "step can do that; it is not stopped for this alone)")
+            if age > hung_after and decision is None:
+                decision = {"decision": "hung-launch", "pid": handle.pid, "since": utc_now(),
+                            "heartbeat_age": round(age, 1), "by": self.instance}
+                self._persist_watchdog(task.id, launch, decision)
+                self._watchdog_phase("terminating", **decision)
+                self._event("worker-watchdog-hung", task=task.id, pid=handle.pid, heartbeat_age=round(age, 1))
+                self._log(f"watchdog: {task.id}'s launch is hung ({age:.0f}s without a heartbeat): stopping it")
+                confirmed = self._terminate(handle)
+                self._event("worker-watchdog-terminated", task=task.id, pids=[handle.pid], confirmed=confirmed)
+                if not confirmed:
+                    self._watchdog_phase("uncertain", **decision)
+                    self._cleanup_uncertain(task.id, [handle.pid], "the hung launch could not be confirmed "
+                                                                   "terminated")
             stop = stop_requested() or read_control(self.store).get("stop") == "graceful"
             if stop and not cancelled and claim:
                 try:
@@ -570,29 +696,58 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
                 except ClaimError:
                     pass  # released meanwhile
             self.poll_sleep(self.poll_seconds)
-        return handle.wait(), tags
+        return handle.wait(), tags, decision
 
-    def _terminate(self, handle: Any) -> None:
-        """Our own child launch process (certain identity): SIGTERM, grace, SIGKILL."""
-        try:
-            handle.send_signal(signal.SIGTERM)
-            handle.wait(timeout=self.config.runtime.terminate_grace_seconds)
-        except subprocess.TimeoutExpired:
-            handle.send_signal(signal.SIGKILL)
-        except (OSError, TypeError):
-            pass
+    def _track_progress(self, claim: dict[str, Any], progress: dict[str, Any]) -> None:
+        """Mirror the claim's progress (step, agent, its run deadline) into the health record."""
+        current = self.record.current if self.record else None
+        if not current:
+            return
+        view = claim_view(claim, self.config.runtime)
+        agent = {"pid": view["agent_pid"], "started_at": view["agent_started_at"], "deadline": view["deadline"]}
+        if progress.get("step") != current.get("step") or (view["agent_pid"] and current.get("agent_process") != agent):
+            current["step"] = progress.get("step")
+            if view["agent_pid"]:
+                current["agent_process"] = agent
+            self._beat(self.clock(), force=True)
+
+    def _watchdog_phase(self, phase: str, **details: Any) -> None:
+        if self.record is not None and self.record.current is not None:
+            self.record.current["watchdog"] = {"phase": phase, "since": utc_now(), **details}
+            self._beat(self.clock(), force=True)
+
+    def _terminate(self, handle: Any) -> bool:
+        """Our own child launch process (certain identity: not reaped while we wait): SIGTERM, grace,
+        SIGKILL, bounded. True once it has ended; False if even SIGKILL could not be confirmed."""
+        for sig, wait in ((signal.SIGTERM, self.config.runtime.terminate_grace_seconds), (signal.SIGKILL, 10.0)):
+            if handle.poll() is not None:
+                return True
+            try:
+                handle.send_signal(sig)
+                handle.wait(timeout=wait)
+                return True
+            except subprocess.TimeoutExpired:
+                continue
+            except (OSError, TypeError, AttributeError):
+                break
+        return handle.poll() is not None
 
     def _foreign_dirty(self, task: Task) -> set[str]:
         found = classify_uncommitted(self.coord, task)
         return set(found["other_roles"]) | set(found["unowned"])
 
     def _judge(self, feature: Feature, task: Task, mark: int, exit_code: int | None, tags: set[str],  # pylint: disable=too-many-arguments,too-many-locals
-               head: str, foreign_before: set[str], launch: int, started: float) -> Outcome:
+               head: str, foreign_before: set[str], launch: int, started: float,
+               decision: dict[str, Any] | None = None) -> Outcome:
         """Integrity first (agent stopped, branch, foreign commits and files, checkpoints), then the
-        launch's classified outcome."""
+        launch's classified outcome. A launch the watchdog stopped is a transient failure (backoff,
+        budget), whatever it reported on the way out."""
+        hung = Outcome(TRANSIENT, f"watchdog: the launch was hung ({decision.get('heartbeat_age')}s without a "
+                                  "heartbeat) and was stopped") if decision else None
         after = self.store.load_task(task.id)
         events = [e for e in self.store.events()[mark:] if e.get("task") == task.id]
         problems: list[str] = []
+        tags = tags | self._run_tags(task.id, started)  # also runs too short to be seen while polling
         survivors = sorted({pid for tag in tags for pid in tagged_processes(RUN_TAG_ENV, tag)})
         git = self.coord.git
         now_head = git.rev_parse(f"refs/heads/{feature.branch}")
@@ -610,15 +765,37 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
                 return Outcome(CRITICAL, "; ".join(problems))
             # the launch process died holding its claim: W3 recovery (next cycle) releases it and
             # applies the orphan policy to an agent still running; then the task runs again
-            return Outcome(INTERRUPTED, f"the launch process ended (exit {exit_code}) without releasing its claim")
-        if survivors:
-            problems.insert(0, f"agent processes {survivors} survived their launch")
+            return hung or Outcome(INTERRUPTED, f"the launch process ended (exit {exit_code}) without releasing its "
+                                                "claim")
+        blocking: list[str] = []
+        if survivors:  # the launch's own leftover sweep missed them: the same policy, bounded, once
+            remaining = terminate_pids(survivors, grace_seconds=self.config.runtime.terminate_grace_seconds,
+                                       still_ours=lambda pid: any(pid in tagged_processes(RUN_TAG_ENV, t)
+                                                                  for t in tags))
+            self._event("worker-leftovers-stopped", task=task.id, pids=survivors, remaining=remaining)
+            problems.insert(0, f"agent processes {survivors} survived their launch ("
+                               + (f"{remaining} could not be stopped)" if remaining else "stopped by the service)"))
+            blocking = sorted(tags) if remaining else []
         if after.steps:
             problems += inspect(self.coord, task.id).conflicts
         if problems:
-            return Outcome(CRITICAL, "; ".join(problems))
-        return classify(task, after, events, exit_code=exit_code, log_text=self._launch_log(task.id, launch),
-                        run_texts=self._run_texts(task.id, started))
+            return Outcome(CRITICAL, "; ".join(problems), evidence={"blocking_run_tags": blocking} if blocking else {})
+        outcome = classify(task, after, events, exit_code=exit_code, log_text=self._launch_log(task.id, launch),
+                           run_texts=self._run_texts(task.id, started))
+        return hung if hung and outcome.category in (CANCELLED, INTERRUPTED, UNKNOWN) else outcome
+
+    def _run_tags(self, task_id: str, since: float) -> set[str]:
+        """The run tags the native backend recorded (native.json) for this task's runs since *since*."""
+        found = set()
+        for run in (self.store.root / "runs").glob(f"{task_id}.*"):
+            try:
+                if run.stat().st_mtime >= since - 1:
+                    tag = json.loads((run / "native.json").read_text(encoding="utf-8")).get("run_tag")
+                    if tag:
+                        found.add(str(tag))
+            except (OSError, ValueError, AttributeError):
+                continue
+        return found
 
     def _launch_log(self, task_id: str, launch: Any) -> str:
         path = self.store.root / "logs" / f"work-{task_id}.{launch}.log"
@@ -653,6 +830,8 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
             task = self.store.load_task(task_id)
             rec = load_scheduling(self.store, task)
             actions = apply_outcome(rec, task, outcome, self.cfg, now, launch)
+            if rec.attention and outcome.evidence.get("blocking_run_tags"):
+                rec.attention["blocking_run_tags"] = list(outcome.evidence["blocking_run_tags"])
             if rec.in_flight and (launch is None or rec.in_flight.get("launch") == launch):
                 rec.in_flight = None
             if actions["ready"] and task.state is TaskState.FAILED:

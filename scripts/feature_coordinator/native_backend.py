@@ -348,7 +348,7 @@ class NativeCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-p
         env = {**native_environment(interpreter, tag=tag), **spec.env}
         model = launcher.model(request.role)
         (ctx.run_dir / "native.json").write_text(json.dumps({
-            "backend": BACKEND, "security_sandbox": False, "argv": spec.argv, "cwd": str(root),
+            "backend": BACKEND, "security_sandbox": False, "argv": spec.argv, "cwd": str(root), "run_tag": tag,
             "environment_names": sorted(env), "model": model or "CLI default", "writable": writable,
             "authentication": self.subscription().method}, indent=2), encoding="utf-8")
         before = self._state(root, ctx)

@@ -8,8 +8,12 @@ its working directory and reports every attempt in the CLI's own output format
 (Claude Code stream-json `result` event, or Codex JSONL events). No model is involved.
 
 Actions: write, append, try_write, delete, symlink, read, try_read, sleep, wait_for, git,
-ignore_sigterm, daemon (a grandchild that keeps appending to a file), once (nested actions only
-on the first invocation: its marker file is created first), exit. A `wait_for` with
+ignore_sigterm, daemon (a grandchild that keeps appending to a file; "pid_path" records its
+identity, "ignore_sigterm" makes it need SIGKILL), once (nested actions only on the first
+invocation: its marker file is created first), exit. W4.1 (watchdog tests): pidfile (this
+process's "pid start_ticks"), trap_sigterm (log each SIGTERM to a file; ignore it unless "exit"),
+check_gone (append "<label> gone" or "<label> ALIVE" for the process recorded in a pidfile — proof
+that a previous agent had ended before this one started). A `wait_for` with
 "required": true is a synchronization point: if its file does not appear within the timeout,
 the run fails (exit 3) instead of continuing.
 Standard library only: it runs inside the sandbox with the system interpreter.
@@ -66,11 +70,29 @@ def read(path):
         return handle.read()[:200]
 
 
-def daemon(path, interval):
+def start_ticks(pid):
+    """Field 22 of /proc/PID/stat (None if the process is gone or a zombie)."""
+    try:
+        with open(f"/proc/{pid}/stat", encoding="ascii") as handle:
+            rest = handle.read().rsplit(") ", 1)[1].split()
+    except (OSError, IndexError):
+        return None
+    return None if rest[0] in ("Z", "X", "x") else int(rest[19])
+
+
+def identity_line(pid):
+    return f"{pid} {start_ticks(pid)}\n"
+
+
+def daemon(path, interval, pid_path=None, ignore_term=False):
     """Fork a grandchild (new session) that appends to *path* until it is killed."""
     pid = os.fork()
     if pid == 0:
         os.setsid()
+        if ignore_term:
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        if pid_path:
+            write(pid_path, identity_line(os.getpid()))
         while True:
             try:
                 with open(path, "a", encoding="utf-8") as handle:
@@ -81,7 +103,17 @@ def daemon(path, interval):
     return pid
 
 
-def run_actions(actions):  # pylint: disable=too-many-branches
+def trap_sigterm(path, leave):
+    """Record every SIGTERM in *path*; exit on it only if *leave*."""
+    def handler(_signum, _frame):
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(f"sigterm {os.getpid()} {time.time()}\n")
+        if leave:
+            os._exit(143)
+    signal.signal(signal.SIGTERM, handler)
+
+
+def run_actions(actions):  # pylint: disable=too-many-branches,too-many-statements
     report = []
     for act in actions:
         kind = act["do"]
@@ -122,7 +154,18 @@ def run_actions(actions):  # pylint: disable=too-many-branches
         elif kind == "ignore_sigterm":
             signal.signal(signal.SIGTERM, signal.SIG_IGN)
         elif kind == "daemon":
-            report.append({"action": "daemon", "ok": True, "value": daemon(act["path"], act.get("interval", 0.05))})
+            report.append({"action": "daemon", "ok": True, "value": daemon(
+                act["path"], act.get("interval", 0.05), act.get("pid_path"), act.get("ignore_sigterm", False))})
+        elif kind == "pidfile":
+            write(act["path"], identity_line(os.getpid()))
+        elif kind == "trap_sigterm":
+            trap_sigterm(act["path"], act.get("exit", False))
+        elif kind == "check_gone":
+            with open(act["pid_file"], encoding="utf-8") as handle:
+                pid, ticks = handle.read().split()
+            alive = start_ticks(int(pid)) == int(ticks)
+            with open(act["path"], "a", encoding="utf-8") as handle:
+                handle.write(f"{act.get('label', 'previous')} {'ALIVE' if alive else 'gone'}\n")
         elif kind == "exit":  # "message": the CLI's own error text (e.g. a network or usage-limit error)
             emit(report, error=act.get("code", 1) != 0, message=act.get("message"))
             sys.exit(act.get("code", 1))

@@ -193,6 +193,42 @@ def pid_alive(pid: int) -> bool:
     return stat.exists() and stat.read_text(encoding="utf-8").split(") ")[-1][:1] != "Z"
 
 
+def agent_recorded(project: Project, task_id: str, agent_pid: int, timeout: float = 30) -> dict[str, Any]:
+    """Wait until the claim records the agent's identity (the launch writes it in a heartbeat just
+    after starting the agent; an agent may write its own marker first). Before that, an orphan has
+    only its run tag and is held for the operator, never stopped — a different scenario."""
+    def recorded() -> bool:
+        claim = project.record("claims", task_id) or {}
+        return ((claim.get("checkpoint") or {}).get("agent") or {}).get("pid") == agent_pid
+    assert wait_until(recorded, timeout), project.record("claims", task_id)
+    return project.record("claims", task_id) or {}
+
+
+def test_processes(root: Path) -> list[tuple[int, str]]:
+    """Live processes of THIS test: their command line names its temporary directory."""
+    found = []
+    for entry in os.listdir("/proc"):
+        if entry.isdigit() and int(entry) != os.getpid():
+            cmd = _cmdline(int(entry))
+            if str(root) in cmd and pid_alive(int(entry)):
+                found.append((int(entry), cmd[:160]))
+    return found
+
+
+test_processes.__test__ = False  # a helper, not a test
+
+
+@pytest.fixture(autouse=True)
+def reap_test_processes(tmp_path: Path):
+    """After every test here (even a failed one): kill what is left of THIS test — nothing else."""
+    yield
+    for pid, _cmd in test_processes(tmp_path):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+
 def simple_task(project: Project, key: str, role: str, path: str, **extra: Any) -> dict[str, Any]:
     return {"key": key, "role": role, "title": actions({"do": "append", "path": str(project.audit), "text": f"{key}\n"},
                                                        {"do": "write", "path": path, "text": f"# {key}\n"}), **extra}
@@ -234,7 +270,7 @@ def test_c_restart_continues_from_the_last_checkpoint(tmp_path: Path, fake_home:
     assert "recovered w4c.api" in out and not list(project.state.glob("claims/*.json"))
 
 
-# -- E: no subscription login, no launch ---------------------------------------------------------------------------------
+# -- E: no subscription login, no launch -------------------------------------------------------------------------------
 
 @pytest.mark.parametrize("auth", ["api-key", "unknown"])
 def test_e_without_a_subscription_login_no_agent_starts(tmp_path: Path, fake_home: Path, fake_agent: Path,
@@ -268,7 +304,7 @@ def test_h_orphaned_agent_is_stopped_only_after_its_deadline(tmp_path: Path, fak
     proc, log = services.start(project, "--exit-when-idle")
     assert wait_until(started.exists, 60)
     agent = int(started.read_text(encoding="utf-8"))
-    claim = project.record("claims", "w4h.api")
+    claim = agent_recorded(project, "w4h.api", agent)  # the scenario: an orphan whose identity is known
     os.kill(claim["identity"]["pid"], signal.SIGKILL)  # the launch process dies; its agent lives on
     assert pid_alive(agent)
     assert proc.wait(timeout=120) == 0, log.read_text(encoding="utf-8")

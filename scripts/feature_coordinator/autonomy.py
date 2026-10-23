@@ -42,11 +42,12 @@ import os
 import re
 import secrets
 import socket
+import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Mapping, Sequence
 
-from .claims import heartbeat_age
+from .claims import heartbeat_age, orphaned_agents
 from .config import ProjectConfig, WorkerConfig
 from .errors import CoordinatorError, StateDirError
 from .github_api import redact_secrets, sanitize
@@ -243,6 +244,56 @@ def process_start_epoch(identity: ProcessIdentity) -> float | None:
         return None
 
 
+def safe_identity(data: Any) -> ProcessIdentity | None:
+    """A recorded process identity, or None when it is missing or malformed (ambiguous: the
+    caller fails closed — nothing is recovered, stopped or started on its account)."""
+    try:
+        return ProcessIdentity.from_dict(data)
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def hung_after_seconds(runtime: Any) -> float:
+    """W4 watchdog: a launch whose claim has not heartbeated this long is hung. Longer than any
+    legitimate silence of a live launch (a stale heartbeat alone proves nothing): the agent's own
+    deadline, a full gate run and the termination grace on top of the stale threshold."""
+    return float(runtime.stale_heartbeat_seconds + runtime.task_timeout_seconds + runtime.gate_timeout_seconds
+                 + runtime.terminate_grace_seconds)
+
+
+def claim_view(claim: Mapping[str, Any], runtime: Any) -> dict[str, Any]:
+    """Read-only watchdog view of one claim: who holds it, is it heartbeating, the agent and its
+    run deadline. Status: running | slow (no heartbeat beyond the stale threshold — gates or a long
+    step; never a reason to stop) | hung (beyond the hung threshold) | deadline-exceeded (the agent
+    is alive past its run deadline) | orphaned (the holder is gone, run processes live on) | stale
+    (the holder is gone, nothing of the run lives: recoverable) | ambiguous (unreadable identity)."""
+    holder = safe_identity(claim.get("identity"))
+    progress = dict(claim.get("checkpoint") or {})
+    agent = safe_identity(progress.get("agent")) if isinstance(progress.get("agent"), dict) else None
+    started = process_start_epoch(agent) if agent else None
+    deadline = started + runtime.task_timeout_seconds + runtime.terminate_grace_seconds if started else None
+    agent_alive = agent.is_alive() if agent else None
+    age = heartbeat_age(dict(claim))
+    if holder is None:
+        status = "ambiguous"
+    elif holder.is_alive():
+        if agent_alive and deadline is not None and time.time() > deadline:
+            status = "deadline-exceeded"
+        elif age is not None and age > hung_after_seconds(runtime):
+            status = "hung"
+        elif age is not None and age > runtime.stale_heartbeat_seconds:
+            status = "slow"
+        else:
+            status = "running"
+    else:
+        status = "orphaned" if orphaned_agents(dict(claim)) else "stale"
+    return {"status": status, "holder_pid": (claim.get("identity") or {}).get("pid"),
+            "holder_alive": holder.is_alive() if holder else None,
+            "heartbeat_age_seconds": round(age, 1) if age is not None else None, "step": progress.get("step"),
+            "agent_pid": agent.pid if agent else None, "agent_alive": agent_alive, "agent_started_at": iso(started),
+            "deadline": iso(deadline)}
+
+
 # ---------------------------------------------------------------------------
 # Outcome classification
 # ---------------------------------------------------------------------------
@@ -410,8 +461,12 @@ def task_status(task: Task, rec: Scheduling | None, claim: Mapping[str, Any] | N
                 now: float) -> str:
     """The derived scheduling status of one task."""
     if claim is not None:
-        alive = ProcessIdentity.from_dict(claim["identity"]).is_alive()
-        return "running" if alive else "interrupted"
+        holder = safe_identity(claim.get("identity"))
+        if holder is None:
+            return "needs-attention"  # an unreadable claim: nothing is assumed about its processes
+        if holder.is_alive():
+            return "running"
+        return "orphaned" if orphaned_agents(dict(claim)) else "interrupted"
     if task.state is TaskState.VERIFIED:
         return "verified"
     if (rec is not None and rec.attention) or task.state is TaskState.NEEDS_HUMAN:
@@ -430,7 +485,8 @@ def health_report(store: StateStore, config: ProjectConfig, now: float) -> dict[
     every task's scheduling status, what waits and what needs an operator."""
     record = load_service(store)
     claims = store.list_claims()
-    alive = bool(record and record.identity and ProcessIdentity.from_dict(record.identity).is_alive())
+    identity = safe_identity(record.identity) if record and record.identity else None
+    alive = bool(identity and identity.is_alive())
     beat = epoch(record.heartbeat_at) if record else None
     stale_after = 3 * config.worker.heartbeat_seconds
     if record is None:
@@ -458,13 +514,18 @@ def health_report(store: StateStore, config: ProjectConfig, now: float) -> dict[
                      "attempts": dict(rec.attempts), "next_attempt_at": iso(rec.next_attempt_at),
                      "waiting": rec.waiting, "attention": rec.attention}
             if claim is not None:
-                entry["claim"] = {"pid": claim["identity"]["pid"], "progress": claim.get("checkpoint", {}),
-                                  "heartbeat_age_seconds": round(heartbeat_age(claim) or 0.0, 1)}
+                view = claim_view(claim, config.runtime)
+                entry["claim"] = {"pid": view["holder_pid"], "progress": claim.get("checkpoint", {}),
+                                  "heartbeat_age_seconds": view["heartbeat_age_seconds"], "watchdog": view}
+            blocking = blocking_survivors(rec)
+            if blocking:
+                entry["blocking_processes"] = blocking
             tasks.append(entry)
     attention = [t for t in tasks if t["status"] == "needs-attention"]
     waiting = [t for t in tasks if t["status"] in ("waiting-retry", "waiting-subscription")]
     healthy = alive and state not in (UNRESPONSIVE, NEEDS_ATTENTION) and not attention
     return {"worker_id": record.worker_id if record else None, "state": state,
+            "diagnosis": diagnose(state, record if alive else None, tasks, waiting),
             "recorded_state": record.state if record else None, "reason": record.reason if record else "",
             "alive": alive, "pid": (record.identity or {}).get("pid") if record else None,
             "host": record.host if record else None, "started_at": record.started_at if record else None,
@@ -474,5 +535,38 @@ def health_report(store: StateStore, config: ProjectConfig, now: float) -> dict[
             "last_checkpoint": record.last_checkpoint if record else None,
             "counters": record.counters if record else {}, "tasks": tasks, "waiting": waiting,
             "attention": attention, "pending": sum(t["status"] in ("ready", "waiting-retry", "waiting-subscription",
-                                                                    "interrupted", "running") for t in tasks),
+                                                                    "interrupted", "orphaned", "running")
+                                                   for t in tasks),
             "control": read_control(store), "healthy": healthy}
+
+
+def blocking_survivors(rec: Scheduling | None) -> list[int]:
+    """Live processes of an earlier run that the service could not stop (their run tags are kept
+    in the task's attention record): while any lives, no agent may start on the checkout."""
+    from .supervisor import RUN_TAG_ENV, tagged_processes  # pylint: disable=import-outside-toplevel
+    tags = ((rec.attention or {}).get("blocking_run_tags") or []) if rec is not None else []
+    return sorted({pid for tag in tags for pid in tagged_processes(RUN_TAG_ENV, str(tag))})
+
+
+def diagnose(state: str, live_record: ServiceRecord | None, tasks: Sequence[Mapping[str, Any]],  # pylint: disable=too-many-return-statements
+             waiting: Sequence[Any]) -> str:
+    """One word for what is going on (health): the most urgent condition first."""
+    views = {t["claim"]["watchdog"]["status"] for t in tasks if t.get("claim")}
+    phase = (((live_record.current or {}).get("watchdog") or {}).get("phase")) if live_record else None
+    uncertain = phase == "uncertain" or any(t.get("blocking_processes") for t in tasks) or (
+        state == NEEDS_ATTENTION and live_record is not None
+        and (live_record.last_error or {}).get("category") == "cleanup-uncertain")
+    for condition, word in ((state == UNRESPONSIVE, "service-heartbeat-stale"),
+                            (uncertain, "cleanup-uncertain"),
+                            (phase == "terminating", "termination-in-progress"),
+                            ("orphaned" in views, "orphan-detected"),
+                            (bool(views & {"deadline-exceeded", "hung"}), "agent-deadline-exceeded"),
+                            ("ambiguous" in views or state == NEEDS_ATTENTION
+                             or any(t["status"] == "needs-attention" for t in tasks), "attention-required"),
+                            ("slow" in views, "agent-slow"),
+                            ("running" in views, "agent-running"),
+                            (state in (OFFLINE, "NEVER-STARTED"), "offline"),
+                            (bool(waiting), "waiting")):
+        if condition:
+            return word
+    return "idle"

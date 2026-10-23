@@ -1,7 +1,7 @@
 # Autonomous Worker Operations (W4)
 
-> Owner role: **coordination**. Status: **IMPLEMENTED AND VERIFIED OFFLINE (2026-10-22).**
-> - Branch `feature/worker-autonomy-w4` from `dev` (`3019d37`, the W3 merge). Not committed, not pushed, no PR.
+> Owner role: **coordination**. Status: **IMPLEMENTED AND VERIFIED OFFLINE (2026-10-22); W4.1 watchdog reliability VERIFIED OFFLINE (2026-10-22).**
+> - Branch `feature/worker-autonomy-w4` from `dev` (`3019d37`, the W3 merge). W4 is committed (`1d58c03`, plus the operator's `b7c03de`) in draft PR #23 to `dev`. W4.1 is committed on top of it in the same PR (2026-10-23).
 > - Verified with fake agents only. The tests use real temporary Git repositories, real `feature.py worker start` processes, real signals and SIGKILLs, and simulated time.
 > - **No real Claude Code or Codex request was made in W4.** W4 has **not** been verified with real long-running AI workloads, and no real unattended run took place.
 > - The systemd user service is a **template**: it is not installed, enabled or started. Linger is not enabled.
@@ -39,7 +39,7 @@ Everything is **local**: no AWS, no new database, no new sandbox, no Git worktre
 | Bounded, persistent retries with exponential backoff; budgets survive restarts | IMPLEMENTED, VERIFIED OFFLINE (tests D, L, Q) |
 | Subscription-aware waiting: no API-key fallback, no model or provider change | IMPLEMENTED, VERIFIED OFFLINE with simulated usage-limit errors (test E). **NOT VERIFIED WITH REAL AGENTS**: the real CLIs' usage-limit messages were not observed in W4 (§7) |
 | Health record, `worker status/health/waiting/attention` (read-only) | IMPLEMENTED, VERIFIED OFFLINE |
-| Watchdog: stale launch heartbeat warning, hung-launch stop, orphaned agents stopped only with certain identity after their deadline | IMPLEMENTED, VERIFIED OFFLINE (test H; the hung-launch stop is covered by code review only, §9) |
+| Watchdog: agent run deadline, hung-launch stop, orphaned agents and survivors stopped only with certain identity, ambiguous state failing closed (§9.1) | IMPLEMENTED, VERIFIED OFFLINE with real hung, silent, killed and orphaned processes (W4.1, §14). **NOT VERIFIED WITH REAL AGENTS** |
 | Pause / resume / stop / stop after current | IMPLEMENTED, VERIFIED OFFLINE (tests J, K) |
 | One service per state directory (exit 73); restart-loop guard (exit 78) | IMPLEMENTED, VERIFIED OFFLINE (tests I, P) |
 | systemd user unit template + instructions | IMPLEMENTED (rendered and checked with `systemd-analyze --user verify`); **NOT installed, enabled or started** |
@@ -274,9 +274,64 @@ After the deadline (`recovery.stop_orphans_after_deadline`, default true), it st
 
 **Process existence alone is not health.** Exit 0 means healthy; 1 means not.
 
-**Watchdog.** It works on the evidence a running launch provides: the claim heartbeat that the W2 launch process refreshes while its agent runs, independent of the agent's output.
-- **Slow model:** a claim heartbeat older than `stale_heartbeat_seconds` gives one warning event, `worker-watchdog-stale`, and nothing else. A slow model is not a dead process.
-- **Hung launch:** the claim heartbeat is older than stale + task timeout + gate timeout + grace. The service stops its **own child launch process**, whose identity is certain (SIGTERM, grace, SIGKILL; event `worker-watchdog-hung`). The launch's own supervisor normally stops an agent at its timeout first, so this is a backstop. **Verified by code review only:** no test hangs a launch process for that long.
+### 9.1 Watchdog (W4.1)
+
+**Three layers, one supervisor each.** No second supervisor or watchdog daemon exists.
+
+| What hangs | Detected by | Evidence | Action |
+| --- | --- | --- | --- |
+| The **agent** (no progress, no exit) | The launch process's existing Supervisor (W2) | Its run deadline: `task_timeout_seconds` from the agent's start (per step for multi-step tasks). Output is irrelevant | SIGTERM to the agent's process group, `terminate_grace_seconds`, SIGKILL to the group, then SIGKILL to every process still carrying the run's tag (a setsid'd child). The task fails with "runner timed out", which is **transient**: backoff and the retry budget |
+| The **launch process** (no claim heartbeat) | The service (`_watch`) | The claim heartbeat, which the launch refreshes every `heartbeat_interval_seconds` while it supervises its agent | After `stale_heartbeat_seconds`: one warning (`worker-watchdog-stale`), health says **slow**, nothing is stopped. After `hung_after` = stale + task timeout + gate timeout + grace (4630 s by default): the decision is **recorded first** (the task's in-flight launch, `watchdog`), then SIGTERM, grace, SIGKILL to that launch only, and its end is **confirmed**. The outcome is **transient** ("watchdog: …"), whatever the launch reported on its way out |
+| A launch of an **earlier service instance** (the service restarted) | The new service (`_live_claim`) | The claim holder's identity (pid + start time + boot id), **and** the launch tag `FC_WORKER_LAUNCH` that was recorded before the launch started | The same policy. A decision recorded by the crashed instance is **continued**: identity is re-checked, there is no new waiting period, and signalling stays idempotent. A live launch that this service did not start (a manual one) is **never** stopped. Beyond `hung_after` it is reported as NEEDS_ATTENTION and stays blocking |
+| An **orphan** (holder dead, agent or tagged processes alive) | W3 claim recovery, then the service (`_orphan`) | The agent's recorded identity and the run tag | WAIT until the agent's run deadline (agent start + task timeout + grace) — **never because its parent died**. Then stop exactly those processes (`terminate_pids` re-checks identity before every signal), recover the claim, and resume from the W3 checkpoint |
+| **Survivors** of a finished launch (claim released, run-tag processes alive) | The service (`_judge`) | Run tags seen in the claim, or recorded in the run's `native.json` (so a run too short to be polled is covered too) | Stopped once (the launch's own leftover policy). The task is CRITICAL in any case, because they may have written late. If they cannot be stopped, the run tags are kept in the attention record and **no agent starts on the checkout** while any of them lives, across restarts |
+
+**Slow is not hung.** A silent agent is not slow: its launch keeps heartbeating, and health says "running" (tested with an agent silent for three stale periods). A launch that stops heartbeating, like a long gate, is "slow" and is only reported. Only the run deadline, or the hung threshold, stops anything.
+
+**Identity.**
+- Every automatic signal targets one of three kinds of process:
+  - the service's own unreaped child (its identity is certain);
+  - a process whose recorded identity matches exactly (pid + start ticks + boot id);
+  - a process carrying a random run or launch tag that this system set before the process started.
+- A PID whose start time differs is a different process. Its claim is recovered under the existing policy, and the process now using that PID is never signalled (tested with live processes and injected identities).
+- An unreadable identity (missing fields) fails closed. Nothing is recovered, stopped or started, the service reports NEEDS_ATTENTION and does not crash (W4 crashed with `KeyError`), and health still works.
+- **The window before the agent's identity is recorded.** The launch records the agent's identity in its claim just after starting it. If the launch dies within that short window, the orphan is known only by its run tag, and its run deadline cannot be timed. It is **held for the operator (NEEDS_ATTENTION) and never stopped automatically** (`feature.py recover TASK --apply --terminate-orphans` stops it by its run tag). The W4.1 full regression hit exactly this window once under load: a test had killed the launch too early. The service behaved as designed; the test now waits for the identity to be recorded.
+
+**Cleanup that cannot be confirmed.**
+- A process that survives SIGKILL keeps blocking: its claim stays, or its run tags stay in the attention record. Health says **cleanup-uncertain**.
+- The service does not signal it again in a loop: one bounded attempt per service instance.
+- A later instance re-checks it and finishes the cleanup once that is possible.
+
+**Retries after a termination.**
+- A hung agent (agent deadline) or a hung launch (watchdog) is **transient**: exponential backoff and `retry.transient.max_attempts`, then NEEDS_ATTENTION.
+- A crash or restart is `interrupted`, a graceful stop is `cancelled`; neither uses the budget.
+- Launches stay counted in every case (`max_launches_per_task`).
+- Budgets are never reset by a restart.
+- Completed W3 checkpoints are kept, and the task resumes at the interrupted step.
+
+**What the watchdog never does:** reset Git, rewrite history, discard uncommitted files, kill by process name, or stop a process whose identity is uncertain.
+
+**Health diagnosis.** `worker health --json` adds one `diagnosis`, the most urgent first:
+1. `service-heartbeat-stale`
+2. `cleanup-uncertain`
+3. `termination-in-progress`
+4. `orphan-detected`
+5. `agent-deadline-exceeded`
+6. `attention-required`
+7. `agent-slow`
+8. `agent-running`
+9. `offline`
+10. `waiting`
+11. `idle`
+
+**Health detail.** Each claimed task gets a `watchdog` view. Its status is one of running | slow | hung | deadline-exceeded | orphaned | stale | ambiguous, with:
+- holder pid and liveness;
+- heartbeat age;
+- step;
+- agent pid, start time and run deadline.
+
+**Persisted detail.** `current.agent_process`, `current.watchdog` (phase, decision) and `last_error` (`cleanup-uncertain`, pids) are stored in the service record. A task in attention whose cleanup was uncertain also lists `blocking_processes`. Every attention record names the next safe action.
+
 - **Dead launch:** the claim's holder is gone. W3 recovery handles it, plus the orphan policy (§8).
 - **Stopped service:** health derives OFFLINE.
 - **Unresponsive service:** health derives UNRESPONSIVE.
@@ -368,7 +423,7 @@ rm ~/.config/systemd/user/mx-admin-worker.service && systemctl --user daemon-rel
   - recovery: `worker-recovered`, `worker-recovery-done`, `worker-orphans-stopped`;
   - launches: `worker-task-selected`, `worker-agent-started`, `worker-agent-stopped`;
   - outcomes: `worker-task-verified`, `worker-retry-scheduled`, `worker-subscription-unavailable`, `worker-attention-required`, `worker-outcome`;
-  - the watchdog: `worker-watchdog-stale`, `worker-watchdog-hung`;
+  - the watchdog: `worker-watchdog-stale`, `worker-watchdog-hung` (with `resumed` when a restarted service continues a decision), `worker-watchdog-terminated` (confirmed, survivors), `worker-orphans-stopped`, `worker-leftovers-stopped`;
   - problems and operator actions: `worker-cycle-failed`, `worker-retries-reset`;
   - the exclusive flag: `agent-exclusive-held`, `agent-exclusive-released`;
   - the existing W2/W3 events, for checkpoints, claims and task results.
@@ -450,6 +505,29 @@ worker:
 - The same test passed alone on the final code.
 - Details: [phase-status.md](phase-status.md#w4--autonomous-worker-operations-record-2026-10-22).
 
+**W4.1 watchdog evidence: `test_fc_watchdog.py`** (17 tests). Real `feature.py worker start` processes, real launch processes (native-cli backend, Supervisor) and the fake agent CLI. Timeouts are short and set in each test's own configuration only. Processes are synchronized by pid and marker files and bounded polling.
+
+Real-process tests:
+- **Hung agent:** SIGTERM ignored, no output, plus a setsid'd child that ignores SIGTERM. Stopped at its run deadline: one SIGTERM, then SIGKILL; the child is stopped by its run tag. The outcome is transient, and the retry starts only after both are gone (the retry's agent checks).
+- **Silent but healthy agent:** three stale periods without output are reported as "running"; nothing is signalled.
+- **Slow launch phase:** 5 s without a heartbeat is reported as "slow", with one warning; nothing is stopped.
+- **Hung launch:** the decision is recorded, then SIGTERM and SIGKILL, and the end is confirmed. The outcome is transient, and the task resumes at step 2.
+- **Crash during cleanup, hung launch:** the service dies after SIGTERM. The next service continues the recorded decision. Health and status stay read-only, with state files byte-identical.
+- **Crash during cleanup, orphan:** the service dies after SIGTERM to the orphan. The next service re-checks it and escalates.
+- **Orphan after service and launch are SIGKILLed:** nothing starts until the orphan's deadline, the event timestamp is at or after that deadline, and the task resumes from its checkpoint.
+- **Stop, after-current and pause during a hung agent:** each keeps its documented semantics; nothing is terminated twice and no claim is released early.
+
+In-process tests (real processes, injected identity evidence or signal loss):
+- an orphan that cannot be confirmed terminated blocks every task and is not re-signalled;
+- survivors of a finished launch are stopped, or else block (both variants);
+- PID reuse never signals the process now using the PID;
+- an unreadable identity fails closed;
+- the claim watchdog view and the diagnosis order.
+
+Every process test ends with cleanup assertions: no process of the test left, no claim, no held lock, no live exclusive holder, checkpoint records consistent. A `reaper` fixture kills, after a failure, only processes whose command line names that test's temporary directory.
+
+**Repetition (final code and tests):** the W4.1 watchdog suite **together with** the W4 process suite passed **20 consecutive runs, 28/28 each** (560 test executions, 282–292 s per run). The code was checksummed before and after and was unchanged, and no test process was left. Earlier loops: 20/20 runs of the watchdog suite alone (17/17 each) on the previous test version, and one loop stopped by hand to apply a final change.
+
 **Optional soak.** `scripts/tests/feature_coordinator/fc_service_soak.py --workdir DIR [--tasks N] [--failure-every K] [--idle-seconds S]` runs the real service process over fake-agent tasks. It samples memory, file descriptors, threads and children every second, and checks invariants.
 
 The 2026-10-22 run (36 tasks, every 4th failing once, 120 s idle) passed every check:
@@ -493,7 +571,12 @@ The steps match tests E and A and the soak run. The example is **not** a real-ag
 
 - **No real agents.** No real-agent W4 run and no unattended overnight run took place. Real CLI usage-limit and outage messages were not observed, so the classification patterns may miss them. They would then fall into `unknown`, which means NEEDS_ATTENTION and is safe.
 - **Subscription reset times** are trusted only in the machine-readable `|<epoch>` form. Otherwise the service rechecks conservatively.
-- **Hung-launch watchdog** stop is verified by code review only. Its threshold is long by design.
+- **Watchdog limits** (W4.1):
+  - The hung-launch threshold is long by design (4630 s by default).
+  - A process that clears its environment *and* leaves its session cannot be found by run tag (no cgroup tracking without systemd).
+  - An uncertain cleanup is not retried within one service instance.
+  - An orphan whose launch died before recording the agent's identity is held for the operator, not timed out.
+  - While the service waits for an orphan's deadline, claim recovery logs a `recovery-refused` event every idle poll (bounded by the deadline).
 - **Validation auto-fix** redoes only the last step of a multi-step task. A single-step task always goes to NEEDS_ATTENTION.
 - **One feature per checkout.** When a feature completes, the service idles until an operator activates another. It neither integrates nor opens a PR.
 - **Retention is guidance only.** W2 `runs/` directories keep the agents' full output streams.
@@ -528,5 +611,5 @@ W4 has no AWS client, no distributed lock and no migration.
   - the restart-loop guard; orphan handling; per-task isolation; redaction;
   - the unit template (rendered and verified, not installed).
 - **Simulated:** long runs (accelerated clock), the soak (fake agents, minutes), usage-limit messages.
-- **Not verified:** real Claude Code / Codex under the service; overnight operation; suspend/resume; the hung-launch watchdog under a real hang.
+- **Not verified:** real Claude Code / Codex under the service; overnight operation; suspend/resume. The watchdog is verified offline with real hung, silent, killed and orphaned processes (W4.1), not with real agents.
 - **Planned:** central coordinator, multiple machines, a feature queue, notifications.

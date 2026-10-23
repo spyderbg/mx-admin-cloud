@@ -419,8 +419,8 @@ def _verify_commit(coord: "FeatureCoordinator", task: Task, checkpoint: Checkpoi
     return problems
 
 
-def _examine_git(coord: "FeatureCoordinator", feature: Feature, task: Task, record: CheckpointRecord | None,  # pylint: disable=too-many-branches
-                 inspection: Inspection) -> None:  # pylint: disable=too-many-statements
+def _examine_git(coord: "FeatureCoordinator", feature: Feature, task: Task, record: CheckpointRecord | None,  # pylint: disable=too-many-branches,too-many-statements
+                 inspection: Inspection) -> None:
     """Compare the checkpoint record with the feature branch (read-only)."""
     git = coord.git
     head = git.rev_parse(f"refs/heads/{feature.branch}")
