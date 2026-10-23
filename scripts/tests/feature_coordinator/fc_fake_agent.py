@@ -26,7 +26,9 @@ file next to the executable (`<name>.json`): {"auth": "subscription" | "api-key"
 `follow_prompt` it also carries out a plain "Create the file PATH containing exactly one line:
 TEXT" instruction (the subscription smoke test's prompt) when the prompt has no FAKE-ACTIONS;
 `"around": {"PATH": {"before": [actions], "after": [actions]}}` runs actions around writing PATH
-(e.g. a rendezvous of two agents whose prompts the tests cannot change).
+(e.g. a rendezvous of two agents whose prompts the tests cannot change). W4.2: it also follows a
+multi-line "Create the file PATH with exactly the content below" instruction with a fenced block,
+taken from the CURRENT STEP section only (the real-agent smoke test's prompt, unchanged).
 """
 
 # pylint: disable=missing-function-docstring
@@ -211,7 +213,8 @@ def status():
                              "subscriptionType": "pro", "email": "not-a-real@example.invalid"},
             "api-key": {"loggedIn": True, "authMethod": "api_key", "apiProvider": "firstParty"},
             "none": {"loggedIn": False, "authMethod": "none", "apiProvider": "firstParty"}}
-    print(json.dumps(data.get(auth, {"loggedIn": True, "authMethod": "something-new", "apiProvider": "firstParty"})))
+    print(json.dumps(data.get(auth, {"loggedIn": True, "authMethod": "something-new", "apiProvider": "firstParty"}),
+                     indent=2))  # several lines, as the real `claude auth status --json`
     return 0
 
 
@@ -230,6 +233,15 @@ def emit(report, error=False, message=None):
                          else {"type": "turn.completed", "usage": {}}), flush=True)
 
 
+def current_step_file(prompt):
+    """(path, content) of a "Create the file PATH with exactly the content below" instruction with a
+    fenced block in the prompt's CURRENT STEP section, or None (completed steps are never redone)."""
+    section = prompt.split("(do ONLY this step now):", 1)
+    found = re.search(r"^Create the file (\S+) with exactly the content below[^\n]*\n```[^\n]*\n(.*?)^```",
+                      section[-1], re.MULTILINE | re.DOTALL) if len(section) == 2 else None
+    return (found.group(1), found.group(2)) if found else None
+
+
 def main():
     args = sys.argv[1:]
     if "--version" in args:
@@ -246,9 +258,10 @@ def main():
         if line.startswith("FAKE-ACTIONS:"):
             actions = json.loads(line[len("FAKE-ACTIONS:"):])
     create = re.search(r"^Create the file (\S+) containing exactly one line: (.+)$", prompt, re.MULTILINE)
-    if not actions and create and control().get("follow_prompt"):
-        around = control().get("around", {}).get(create.group(1), {})
-        actions = [*around.get("before", ()), {"do": "write", "path": create.group(1), "text": create.group(2) + "\n"},
+    found = (create.group(1), create.group(2) + "\n") if create else current_step_file(prompt)
+    if not actions and found and control().get("follow_prompt"):
+        around = control().get("around", {}).get(found[0], {})
+        actions = [*around.get("before", ()), {"do": "write", "path": found[0], "text": found[1]},
                    *around.get("after", ())]
     emit(run_actions(actions))
     return 0
