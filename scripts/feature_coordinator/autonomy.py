@@ -28,7 +28,8 @@ Outcome categories (classify):
                 steps: then its last step is redone (W3 --redo-from), bounded
   critical      integrity problems: recovery conflicts, a rewritten branch, foreign commits,
                 unexplained file changes, scope violations, an API key or unknown login, a
-                surviving agent — never retried; the task needs an operator
+                surviving agent, a required gate that could not run at all (its sandbox or tool
+                unavailable: the code was never judged) — never retried; the task needs an operator
   unknown       anything not recognized — fails closed exactly like critical
 
 The text patterns that recognize usage limits and network errors are heuristics over the CLIs'
@@ -336,6 +337,8 @@ def classify(before: Task, after: Task, events: Sequence[Mapping[str, Any]], *, 
         return Outcome(INTERRUPTED, "the launch ended without releasing its claim (recovered next)")
     if after.state is TaskState.FAILED:
         texts = [last_reason, *run_texts]
+        if last_reason.startswith("gates could not run"):  # the environment, not the code: never an AI redo
+            return Outcome(CRITICAL, last_reason)
         if last_reason.startswith("gates failed"):
             return Outcome(VALIDATION, last_reason)
         if _CRITICAL.search(last_reason):

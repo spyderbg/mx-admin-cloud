@@ -167,6 +167,9 @@ class TaskRun:
     unblocked: list[str] = field(default_factory=list)
 
 
+GATES_NOT_RUN = ("blocked", "error")  # gate statuses that say nothing about the code
+
+
 class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
     """Coordinates one shared checkout."""
 
@@ -559,9 +562,14 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
                 run.evidence = self.gate_evidence(feature, task.required_gates)
             except EvidenceError as exc:
                 return self._defer(run, "verification-deferred", task.role, str(exc))
-            failing = [g.gate for g in run.evidence.gates if not g.passed]
+            failing = [g for g in run.evidence.gates if not g.passed]
+            unrun = [g for g in failing if g.status in GATES_NOT_RUN]
+            if unrun:  # the gate never judged the code (sandbox or tool unavailable): record why
+                causes = "; ".join(f"{g.gate} {g.status}: {g.summary[:300]}" for g in unrun)
+                return self._finish(task.id, TaskState.FAILED,
+                                    f"gates could not run: {[g.gate for g in unrun]} ({causes})"[:1000], run)
             if failing:
-                return self._finish(task.id, TaskState.FAILED, f"gates failed: {failing}", run)
+                return self._finish(task.id, TaskState.FAILED, f"gates failed: {[g.gate for g in failing]}", run)
             finished = self._finish(task.id, TaskState.VERIFIED, "acceptance gates passed on the shared branch", run)
             if finished is not None:
                 return finished

@@ -42,7 +42,8 @@ from feature_coordinator.checkpoints import load_record
 from feature_coordinator.claims import ClaimManager, drop_exclusive, hold_exclusive
 from feature_coordinator.cli import EXAMPLE_CONFIG, main as cli_main
 from feature_coordinator.config import WorkerConfig, config_from_mapping, default_config
-from feature_coordinator.demo import RecordingGates, build_coordinator
+from feature_coordinator.demo import DEMO_SCRIPTS, RecordingGates, build_coordinator, demo_spec
+from feature_coordinator.gates import SandboxedGateRunner
 from feature_coordinator.errors import CheckoutBusyError, ConfigError
 from feature_coordinator.model import HistoryEntry, Task, TaskState, TaskStep
 from feature_coordinator.runners import FileEdit, RunResult
@@ -183,6 +184,8 @@ def task_with(state: TaskState, reason: str = "", steps=()) -> Task:
 @pytest.mark.parametrize("state,reason,events,log,category", [
     (TaskState.VERIFIED, "", [], "", "success"),
     (TaskState.FAILED, "gates failed: ['backend-tests']", [], "", VALIDATION),
+    (TaskState.FAILED, "gates could not run: ['backend-tests'] (backend-tests blocked: bwrap cannot create namespaces "
+                       "here: Permission denied)", [], "", CRITICAL),
     (TaskState.FAILED, "runner failed: runner exit 1: read ECONNRESET", [], "", TRANSIENT),
     (TaskState.FAILED, "runner failed: runner exit 1: Claude AI usage limit reached|1900003600", [], "", SUBSCRIPTION),
     (TaskState.FAILED, "runner failed: You've hit your usage limit. Try again later.", [], "", SUBSCRIPTION),
@@ -209,6 +212,33 @@ def test_outcome_classification(state, reason, events, log, category) -> None:
     assert outcome.category == category, outcome
     if "1900003600" in reason:
         assert outcome.retry_at == 1_900_003_600.0  # the CLI's machine-readable reset time
+
+
+def test_a_gate_that_could_not_run_is_an_environment_failure_with_its_cause(tmp_path: Path, repo: Path,
+                                                                             state_dir: Path) -> None:
+    """W4.2.1, from a real run: bubblewrap could not create namespaces (Ubuntu's AppArmor restriction
+    of unprivileged user namespaces), so the gate never judged the code. It must be recorded with its
+    cause and fail closed as CRITICAL — not as a validation failure, which would point the operator at
+    correct code and, with auto-fix enabled, spend another AI session redoing it."""
+    fake = tmp_path / "bin" / "bwrap"  # what bwrap reports under that restriction
+    fake.parent.mkdir()
+    fake.write_text("#!/bin/sh\necho 'bwrap: setting up uid map: Permission denied' >&2\nexit 1\n", encoding="utf-8")
+    fake.chmod(0o755)
+    coord = build_coordinator(repo, state_dir, scripts=DEMO_SCRIPTS,
+                              gates=SandboxedGateRunner(default_config(), state_dir / "logs", bwrap=str(fake)))
+    coord.activate(coord.plan(demo_spec()).id)
+    before = coord.store.load_task("items-export.view")
+    assert coord.run_task("items-export.view").state is TaskState.FAILED
+    after = coord.store.load_task("items-export.view")
+    reason = after.history[-1].reason
+    assert reason.startswith("gates could not run: ['frontend-type-check', 'frontend-tests']"), reason
+    assert "blocked: bwrap cannot create namespaces here: bwrap: setting up uid map: Permission denied" in reason
+    outcome = classify(before, after, [], exit_code=0)
+    assert outcome.category == CRITICAL, outcome
+    rec = Scheduling(id=after.id, feature_id=after.feature_id)
+    actions = apply_outcome(rec, task_with(TaskState.FAILED, reason, STEPS), outcome,
+                            WorkerConfig(validation_auto_fix_enabled=True), T0, 1)
+    assert rec.attention and rec.attention["category"] == CRITICAL and not actions["redo_step"]  # no AI redo
 
 
 def test_backoff_and_category_budgets() -> None:
