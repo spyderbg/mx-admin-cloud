@@ -194,6 +194,37 @@ runtime:
     cli: ["{python} -m pytest:*", "{python} -m pylint:*", "kiddo-cli --help:*"]
     coordination: ["{python} scripts/check_docs_agents.py:*"]
 
+# The autonomous Worker service (W4; docs_agents/coordination/worker-autonomy.md). Safe defaults:
+# the service is OFF until autonomous.enabled is set; ONE agent at a time; bounded, category-specific
+# retries that survive restarts; validation auto-fix OFF; a conflict always stops the affected task.
+# An exhausted subscription is waited for: never another provider, model or billing method.
+worker:
+  autonomous:
+    enabled: false                       # `feature.py worker start` refuses to run until this is true
+  max_parallel: 1                        # agents at a time (the service: fixed 1 in W4; `feature.py work` default)
+  idle_poll_seconds: 30                  # an idle or waiting service looks again this often
+  heartbeat_seconds: 30                  # health record refresh
+  max_launches_per_task: 10              # hard cap on agent launches per task, whatever the reason
+  retry:
+    enabled: true
+    transient:                           # network errors, a CLI briefly missing, a deferred commit
+      max_attempts: 3
+      initial_delay_seconds: 60          # backoff: 60, 120, 240 … capped at max_delay_seconds
+      max_delay_seconds: 1800
+    subscription:                        # usage limit reached: WAITING, conservative bounded rechecks
+      enabled: true
+      recheck_interval_seconds: 900
+      max_rechecks: 16
+    validation:                          # failing gates: operator attention unless auto-fix is enabled
+      auto_fix_enabled: false
+      max_attempts: 2
+  recovery:
+    auto_recover_safe: true              # W3 safe recovery when the service starts
+    stop_on_conflict: true               # fixed: conflicts are never resolved automatically
+    stop_orphans_after_deadline: true    # an identified orphaned agent is stopped only after its run deadline
+  startup:
+    failure_limit: 3                     # identical consecutive startup failures → exit 78 (systemd: no restart)
+
 # GitHub Issues adapter (Phase 4). No credentials here: the adapter calls the installed
 # GitHub CLI (`gh api`), which uses its existing login. Issues and labels are the human-
 # visible record only; the local state stays authoritative for claims, locks and permissions.

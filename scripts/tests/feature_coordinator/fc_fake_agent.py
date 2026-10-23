@@ -7,8 +7,13 @@ takes the JSON action list after a `FAKE-ACTIONS:` line, performs the actions re
 its working directory and reports every attempt in the CLI's own output format
 (Claude Code stream-json `result` event, or Codex JSONL events). No model is involved.
 
-Actions: write, try_write, delete, symlink, read, try_read, sleep, wait_for, git,
-ignore_sigterm, daemon (a grandchild that keeps appending to a file), exit. A `wait_for` with
+Actions: write, append, try_write, delete, symlink, read, try_read, sleep, wait_for, git,
+ignore_sigterm, daemon (a grandchild that keeps appending to a file; "pid_path" records its
+identity, "ignore_sigterm" makes it need SIGKILL), once (nested actions only on the first
+invocation: its marker file is created first), exit. W4.1 (watchdog tests): pidfile (this
+process's "pid start_ticks"), trap_sigterm (log each SIGTERM to a file; ignore it unless "exit"),
+check_gone (append "<label> gone" or "<label> ALIVE" for the process recorded in a pidfile — proof
+that a previous agent had ended before this one started). A `wait_for` with
 "required": true is a synchronization point: if its file does not appear within the timeout,
 the run fails (exit 3) instead of continuing.
 Standard library only: it runs inside the sandbox with the system interpreter.
@@ -21,7 +26,9 @@ file next to the executable (`<name>.json`): {"auth": "subscription" | "api-key"
 `follow_prompt` it also carries out a plain "Create the file PATH containing exactly one line:
 TEXT" instruction (the subscription smoke test's prompt) when the prompt has no FAKE-ACTIONS;
 `"around": {"PATH": {"before": [actions], "after": [actions]}}` runs actions around writing PATH
-(e.g. a rendezvous of two agents whose prompts the tests cannot change).
+(e.g. a rendezvous of two agents whose prompts the tests cannot change). W4.2: it also follows a
+multi-line "Create the file PATH with exactly the content below" instruction with a fenced block,
+taken from the CURRENT STEP section only (the real-agent smoke test's prompt, unchanged).
 """
 
 # pylint: disable=missing-function-docstring
@@ -65,11 +72,29 @@ def read(path):
         return handle.read()[:200]
 
 
-def daemon(path, interval):
+def start_ticks(pid):
+    """Field 22 of /proc/PID/stat (None if the process is gone or a zombie)."""
+    try:
+        with open(f"/proc/{pid}/stat", encoding="ascii") as handle:
+            rest = handle.read().rsplit(") ", 1)[1].split()
+    except (OSError, IndexError):
+        return None
+    return None if rest[0] in ("Z", "X", "x") else int(rest[19])
+
+
+def identity_line(pid):
+    return f"{pid} {start_ticks(pid)}\n"
+
+
+def daemon(path, interval, pid_path=None, ignore_term=False):
     """Fork a grandchild (new session) that appends to *path* until it is killed."""
     pid = os.fork()
     if pid == 0:
         os.setsid()
+        if ignore_term:
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        if pid_path:
+            write(pid_path, identity_line(os.getpid()))
         while True:
             try:
                 with open(path, "a", encoding="utf-8") as handle:
@@ -80,13 +105,31 @@ def daemon(path, interval):
     return pid
 
 
-def run_actions(actions):  # pylint: disable=too-many-branches
+def trap_sigterm(path, leave):
+    """Record every SIGTERM in *path*; exit on it only if *leave*."""
+    def handler(_signum, _frame):
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(f"sigterm {os.getpid()} {time.time()}\n")
+        if leave:
+            os._exit(143)
+    signal.signal(signal.SIGTERM, handler)
+
+
+def run_actions(actions):  # pylint: disable=too-many-branches,too-many-statements
     report = []
     for act in actions:
         kind = act["do"]
         if kind == "write":
             write(act["path"], act.get("text", "x\n"))
             report.append({"action": f"write {act['path']}", "ok": True})
+        elif kind == "append":  # e.g. an audit line per invocation (an absolute path outside the repo)
+            with open(act["path"], "a", encoding="utf-8") as handle:
+                handle.write(act.get("text", "x\n"))
+            report.append({"action": f"append {act['path']}", "ok": True})
+        elif kind == "once":
+            if not os.path.exists(act["path"]):
+                write(act["path"], f"{os.getpid()}\n")
+                report += run_actions(act["actions"])
         elif kind == "try_write":
             attempt(report, f"try_write {act['path']}", lambda a=act: write(a["path"], a.get("text", "x\n")))
         elif kind == "delete":
@@ -113,9 +156,20 @@ def run_actions(actions):  # pylint: disable=too-many-branches
         elif kind == "ignore_sigterm":
             signal.signal(signal.SIGTERM, signal.SIG_IGN)
         elif kind == "daemon":
-            report.append({"action": "daemon", "ok": True, "value": daemon(act["path"], act.get("interval", 0.05))})
-        elif kind == "exit":
-            emit(report, error=act.get("code", 1) != 0)
+            report.append({"action": "daemon", "ok": True, "value": daemon(
+                act["path"], act.get("interval", 0.05), act.get("pid_path"), act.get("ignore_sigterm", False))})
+        elif kind == "pidfile":
+            write(act["path"], identity_line(os.getpid()))
+        elif kind == "trap_sigterm":
+            trap_sigterm(act["path"], act.get("exit", False))
+        elif kind == "check_gone":
+            with open(act["pid_file"], encoding="utf-8") as handle:
+                pid, ticks = handle.read().split()
+            alive = start_ticks(int(pid)) == int(ticks)
+            with open(act["path"], "a", encoding="utf-8") as handle:
+                handle.write(f"{act.get('label', 'previous')} {'ALIVE' if alive else 'gone'}\n")
+        elif kind == "exit":  # "message": the CLI's own error text (e.g. a network or usage-limit error)
+            emit(report, error=act.get("code", 1) != 0, message=act.get("message"))
             sys.exit(act.get("code", 1))
     return report
 
@@ -159,13 +213,14 @@ def status():
                              "subscriptionType": "pro", "email": "not-a-real@example.invalid"},
             "api-key": {"loggedIn": True, "authMethod": "api_key", "apiProvider": "firstParty"},
             "none": {"loggedIn": False, "authMethod": "none", "apiProvider": "firstParty"}}
-    print(json.dumps(data.get(auth, {"loggedIn": True, "authMethod": "something-new", "apiProvider": "firstParty"})))
+    print(json.dumps(data.get(auth, {"loggedIn": True, "authMethod": "something-new", "apiProvider": "firstParty"}),
+                     indent=2))  # several lines, as the real `claude auth status --json`
     return 0
 
 
-def emit(report, error=False):
-    text = json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd(), "home": os.environ.get("HOME"),
-                       "env_keys": sorted(os.environ), "report": report})
+def emit(report, error=False, message=None):
+    text = message or json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd(), "home": os.environ.get("HOME"),
+                                  "env_keys": sorted(os.environ), "report": report})
     if MODE == "claude":
         print(json.dumps(init_event()), flush=True)
         print(json.dumps({"type": "result", "subtype": "error_during_execution" if error else "success",
@@ -174,8 +229,17 @@ def emit(report, error=False):
     else:
         print(json.dumps({"type": "thread.started"}), flush=True)
         print(json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": text}}), flush=True)
-        print(json.dumps({"type": "turn.failed", "error": {"message": "scripted"}} if error
+        print(json.dumps({"type": "turn.failed", "error": {"message": message or "scripted"}} if error
                          else {"type": "turn.completed", "usage": {}}), flush=True)
+
+
+def current_step_file(prompt):
+    """(path, content) of a "Create the file PATH with exactly the content below" instruction with a
+    fenced block in the prompt's CURRENT STEP section, or None (completed steps are never redone)."""
+    section = prompt.split("(do ONLY this step now):", 1)
+    found = re.search(r"^Create the file (\S+) with exactly the content below[^\n]*\n```[^\n]*\n(.*?)^```",
+                      section[-1], re.MULTILINE | re.DOTALL) if len(section) == 2 else None
+    return (found.group(1), found.group(2)) if found else None
 
 
 def main():
@@ -194,9 +258,10 @@ def main():
         if line.startswith("FAKE-ACTIONS:"):
             actions = json.loads(line[len("FAKE-ACTIONS:"):])
     create = re.search(r"^Create the file (\S+) containing exactly one line: (.+)$", prompt, re.MULTILINE)
-    if not actions and create and control().get("follow_prompt"):
-        around = control().get("around", {}).get(create.group(1), {})
-        actions = [*around.get("before", ()), {"do": "write", "path": create.group(1), "text": create.group(2) + "\n"},
+    found = (create.group(1), create.group(2) + "\n") if create else current_step_file(prompt)
+    if not actions and found and control().get("follow_prompt"):
+        around = control().get("around", {}).get(found[0], {})
+        actions = [*around.get("before", ()), {"do": "write", "path": found[0], "text": found[1]},
                    *around.get("after", ())]
     emit(run_actions(actions))
     return 0

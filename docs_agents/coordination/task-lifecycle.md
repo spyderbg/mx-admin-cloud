@@ -84,6 +84,12 @@ The task's states are unchanged: progress is checkpoint metadata.
 
 A resumed run reconciles first and runs only the remaining steps. Design, protocol and recovery: [worker-checkpoints.md](worker-checkpoints.md).
 
+W4 adds scheduling metadata beside the task, not new states: `scheduling/<task>.json` ([worker-autonomy.md](worker-autonomy.md) §7).
+- **waiting for a retry or a subscription:** `ready` with a future next attempt;
+- **needs attention:** an attention record (with the operator's action), or `needs-human`.
+
+The service moves a retryable `failed` task back to `ready`; `worker reset-retries` is the operator's explicit version of that.
+
 ## 5. Human escalation
 
 | Action | Local | GitHub (authorized operator, ≥ write permission) |

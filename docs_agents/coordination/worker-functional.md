@@ -32,6 +32,8 @@ The coordinator itself is unchanged: plan, activate, `run_task`, the Git coordin
 
 Gates always run in the offline, read-only gate sandbox, whatever the backend (bubblewrap is still needed for gates). W1's credential and network isolation ([PR #20](https://github.com/spyderbg/mx-admin-cloud/pull/20), postponed) is not part of W2 and is not affected by it.
 
+On hosts with Ubuntu's `bwrap-userns-restrict` AppArmor profile, the `bwrap` backend cannot run Codex: Codex's own sandbox would be nested inside ours, and that profile denies nested bubblewrap. `native-cli` and the gates are unaffected. See [agent-ownership §5](agent-ownership.md#5-residual-risks-operator-decisions-in-phase-status), item 6.
+
 ## 3. The native-cli backend
 
 `native_backend.NativeCliRunner`. For each task:

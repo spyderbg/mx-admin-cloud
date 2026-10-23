@@ -419,7 +419,7 @@ def _verify_commit(coord: "FeatureCoordinator", task: Task, checkpoint: Checkpoi
     return problems
 
 
-def _examine_git(coord: "FeatureCoordinator", feature: Feature, task: Task, record: CheckpointRecord | None,  # pylint: disable=too-many-branches
+def _examine_git(coord: "FeatureCoordinator", feature: Feature, task: Task, record: CheckpointRecord | None,  # pylint: disable=too-many-branches,too-many-statements
                  inspection: Inspection) -> None:
     """Compare the checkpoint record with the feature branch (read-only)."""
     git = coord.git
@@ -449,6 +449,11 @@ def _examine_git(coord: "FeatureCoordinator", feature: Feature, task: Task, reco
         label = f"checkpoint #{checkpoint.sequence} ({checkpoint.step}, {checkpoint.id})"
         if len(shas) > 1:
             inspection.conflicts.append(f"{label}: several commits carry its id {[s[:12] for s in shas]}")
+            continue
+        if checkpoint.status == "superseded" and not checkpoint.commit:  # a superseded `no-changes` step
+            if shas:
+                inspection.conflicts.append(f"{label}: it recorded no changes, yet commit {shas[0][:12]} carries "
+                                            "its id")
             continue
         if checkpoint.status in ("committed", "superseded"):
             if not checkpoint.commit or shas != [checkpoint.commit]:

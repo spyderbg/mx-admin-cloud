@@ -42,7 +42,8 @@ def test_heartbeats_are_sent_while_running(tmp_path: Path) -> None:
     beats: list[float] = []
     sup = sh(tmp_path, "sleep 1", timeout_seconds=10, heartbeat=lambda: beats.append(time.monotonic()),
              heartbeat_interval=0.2)
-    assert sup.ok and sup.heartbeats >= 3 and len(beats) == sup.heartbeats
+    assert sup.ok and len(beats) == sup.heartbeats
+    assert sup.heartbeats >= 3
 
 
 def test_timeout_kills_the_process_group(tmp_path: Path) -> None:

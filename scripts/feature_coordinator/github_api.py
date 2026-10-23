@@ -69,6 +69,19 @@ GH_ENV = {"GH_PROMPT_DISABLED": "1", "GH_NO_UPDATE_NOTIFIER": "1", "NO_COLOR": "
           "GH_PAGER": "cat", "PAGER": "cat", "GH_SPINNER_DISABLED": "1"}
 
 
+# Secrets an agent CLI might print (W4): provider API keys and OAuth tokens, and NAME=value /
+# "name": value assignments of keys, tokens, secrets, passwords.
+_SECRET_RE = re.compile(r"\bsk-(?:ant-)?[A-Za-z0-9_\-]{16,}|\bAIza[A-Za-z0-9_\-]{30,}")
+_ASSIGNMENT_RE = re.compile(r"(?i)\b([A-Z0-9_]*(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|PASSWD|AUTHORIZATION|CREDENTIALS?)"
+                            r"[\"']?\s*[:=]\s*[\"']?)(?!\[redacted\])(?:(?:bearer|basic|token)\s+)?[^\s\"',;}]{4,}")
+
+
+def redact_secrets(text: str) -> str:
+    """Only the secrets above replaced by [redacted]; the text keeps its shape (W4: task reasons
+    that quote an agent CLI's error output)."""
+    return _ASSIGNMENT_RE.sub(r"\1[redacted]", _SECRET_RE.sub("[redacted]", text))
+
+
 def sanitize(text: Any, limit: int = 300) -> str:
     """Make untrusted or diagnostic text safe to log or print: tokens redacted, terminal
     control sequences removed, whitespace collapsed, length bounded."""

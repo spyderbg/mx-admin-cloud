@@ -40,6 +40,10 @@ class ClaimError(CoordinatorError):
     """A task cannot be claimed (wrong state, wrong role, already claimed, stale claim)."""
 
 
+class CheckoutBusyError(ClaimError):
+    """W4: a sequential Worker owns the checkout and another agent's claim exists (live or stale)."""
+
+
 class IllegalTransitionError(CoordinatorError):
     """A feature or task state change is not allowed by the lifecycle tables."""
 

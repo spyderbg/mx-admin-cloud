@@ -260,8 +260,8 @@ def test_complete_local_worker_workflow(tmp_path: Path, fake_home: Path, fake_ag
         assert result.returncode == 0, result.stdout + result.stderr
     dry = feature_cli(repo, state, config, "work", "w2-demo")
     assert dry.returncode == 0 and "native-cli (NOT a security sandbox)" in dry.stdout and "model opus" in dry.stdout
-    work = feature_cli(repo, state, config, "work", "w2-demo", "--apply", "--integrate", "--integration-gate",
-                       "unit-check")
+    work = feature_cli(repo, state, config, "work", "w2-demo", "--apply", "--max-parallel", "3", "--integrate",
+                       "--integration-gate", "unit-check")  # W4: parallelism is explicit (the default is 1)
     assert work.returncode == 0, work.stdout + work.stderr
     assert "3/3 task(s) verified" in work.stdout and "up to 2 at once" in work.stdout and "review" in work.stdout
 

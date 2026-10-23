@@ -13,6 +13,12 @@ when the kernel drops them. recover() reclaims a claim only when its holder is p
 gone (PID absent, start time different, zombie, or another boot): a lock is never stolen
 from a live worker.
 
+W4: while a sequential Worker (max_parallel 1) runs, it holds the `agent-exclusive` flag. A claim
+is then refused while ANY other claim exists in the checkout — live, or stale and not yet
+recovered (its agent may still write) — so a manually launched agent can never run next to the
+Worker's, and the Worker never starts a second writer while ownership is uncertain. The check
+runs inside the claim's coordinator.lock section, so two claims cannot both pass it.
+
 W3: a dead holder is not enough. A native agent runs in its own session and can outlive the
 worker that supervised it; the claim records the run's tag and the agent's process identity
 (the claim's progress data), and recover() keeps a claim whose run still has a live process
@@ -26,13 +32,50 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from .errors import ClaimError, FullProjectActiveError, LockBusyError, RoleBusyError, WritersActiveError
+from .errors import (CheckoutBusyError, ClaimError, FullProjectActiveError, LockBusyError, RoleBusyError,
+                     WritersActiveError)
 from .locks import FileLock, ProcessIdentity
 from .model import TaskState, transition_task, utc_now
 from .store import StateStore
 from .supervisor import RUN_TAG_ENV, tagged_processes
 
 FULL_PROJECT_FLAG = "full-project"
+EXCLUSIVE_FLAG = "agent-exclusive"  # W4: held by a sequential Worker; see the module docstring
+
+
+def exclusive_holder(store: StateStore) -> dict[str, Any] | None:
+    """The live holder of the agent-exclusive flag, or None (absent, or its holder is gone)."""
+    flag = store.get_flag(EXCLUSIVE_FLAG)
+    if not flag:
+        return None
+    try:
+        alive = ProcessIdentity.from_dict(flag["identity"]).is_alive()
+    except (KeyError, TypeError, ValueError):
+        return None
+    return flag if alive else None
+
+
+def hold_exclusive(store: StateStore, holder: str) -> dict[str, Any]:
+    """Take the agent-exclusive flag for this process (refused while another live holder has it)."""
+    with store.transaction():
+        current = exclusive_holder(store)
+        me = ProcessIdentity.current().to_dict()
+        if current and current["identity"] != me:
+            raise CheckoutBusyError(f"another sequential Worker ({current.get('holder')}, pid "
+                                    f"{current['identity']['pid']}) already owns this checkout")
+        flag = {"holder": holder, "identity": me, "since": utc_now()}
+        store.set_flag(EXCLUSIVE_FLAG, flag)
+        store.append_event("agent-exclusive-held", holder=holder, pid=me["pid"])
+    return flag
+
+
+def drop_exclusive(store: StateStore) -> None:
+    """Give the agent-exclusive flag back (only this process's own flag)."""
+    with store.transaction():
+        flag = store.get_flag(EXCLUSIVE_FLAG)
+        if flag and flag.get("identity") == ProcessIdentity.current().to_dict():
+            store.set_flag(EXCLUSIVE_FLAG, None)
+            store.append_event("agent-exclusive-released", holder=flag.get("holder"))
 
 
 @dataclass
@@ -132,6 +175,11 @@ class ClaimManager:
             task = self.store.load_task(task_id)
             if task.role != role:
                 raise ClaimError(f"task {task_id!r} belongs to role {task.role!r}, not {role!r}")
+            excl = exclusive_holder(self.store)
+            others = sorted(t for t in self.store.list_claims() if t != task_id)
+            if excl and others:
+                raise CheckoutBusyError(f"sequential mode ({excl.get('holder')}, pid {excl['identity']['pid']}): "
+                                        f"another agent's claim exists on this checkout ({', '.join(others)})")
             existing = self.store.load_claim(task_id)
             if existing is not None:
                 holder = ProcessIdentity.from_dict(existing["identity"])

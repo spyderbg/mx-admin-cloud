@@ -73,7 +73,7 @@ from .errors import (
 )
 from .escalation import hold_task as _hold_task
 from .escalation import release_task as _release_task
-from .github_api import sanitize
+from .github_api import redact_secrets, sanitize
 from .gitops import CommitRequest, GitCoordinator, commit_subject, file_digest
 from .issue_sync import IssueSync, SyncReport, enqueue_comment
 from .project_sync import BoardReport, ProjectSync
@@ -165,6 +165,9 @@ class TaskRun:
     commit: str | None = None
     evidence: Evidence | None = None
     unblocked: list[str] = field(default_factory=list)
+
+
+GATES_NOT_RUN = ("blocked", "error")  # gate statuses that say nothing about the code
 
 
 class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
@@ -559,9 +562,14 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
                 run.evidence = self.gate_evidence(feature, task.required_gates)
             except EvidenceError as exc:
                 return self._defer(run, "verification-deferred", task.role, str(exc))
-            failing = [g.gate for g in run.evidence.gates if not g.passed]
+            failing = [g for g in run.evidence.gates if not g.passed]
+            unrun = [g for g in failing if g.status in GATES_NOT_RUN]
+            if unrun:  # the gate never judged the code (sandbox or tool unavailable): record why
+                causes = "; ".join(f"{g.gate} {g.status}: {g.summary[:300]}" for g in unrun)
+                return self._finish(task.id, TaskState.FAILED,
+                                    f"gates could not run: {[g.gate for g in unrun]} ({causes})"[:1000], run)
             if failing:
-                return self._finish(task.id, TaskState.FAILED, f"gates failed: {failing}", run)
+                return self._finish(task.id, TaskState.FAILED, f"gates failed: {[g.gate for g in failing]}", run)
             finished = self._finish(task.id, TaskState.VERIFIED, "acceptance gates passed on the shared branch", run)
             if finished is not None:
                 return finished
@@ -576,6 +584,7 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
     def _finish(self, task_id: str, state: TaskState, reason: str, run: TaskRun) -> TaskRun | None:
         """Record the outcome. Returns None only for `verified` when the branch HEAD no longer
         matches the evidence (the caller re-runs the gates)."""
+        reason = redact_secrets(reason)  # W4: a runner error may quote a key the CLI printed
         with self.store.transaction():
             task = self.store.load_task(task_id)
             feature = self.store.load_feature(task.feature_id)

@@ -219,7 +219,8 @@ def git_problems(root: Path, before: GitState, after: GitState) -> list[str]:
     """How the Git state changed in ways only the Git coordinator may change it."""
     problems = []
     if after.branch != before.branch:
-        problems.append(f"the checked-out branch changed ({before.branch or 'detached'} → {after.branch or 'detached'})")
+        problems.append(f"the checked-out branch changed ({before.branch or 'detached'} → "
+                        f"{after.branch or 'detached'})")
     if after.refs != before.refs:
         problems.append("other refs (branches, tags) changed")
     if after.staged and after.staged != before.staged:
@@ -347,7 +348,7 @@ class NativeCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-p
         env = {**native_environment(interpreter, tag=tag), **spec.env}
         model = launcher.model(request.role)
         (ctx.run_dir / "native.json").write_text(json.dumps({
-            "backend": BACKEND, "security_sandbox": False, "argv": spec.argv, "cwd": str(root),
+            "backend": BACKEND, "security_sandbox": False, "argv": spec.argv, "cwd": str(root), "run_tag": tag,
             "environment_names": sorted(env), "model": model or "CLI default", "writable": writable,
             "authentication": self.subscription().method}, indent=2), encoding="utf-8")
         before = self._state(root, ctx)

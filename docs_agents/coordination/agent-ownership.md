@@ -93,3 +93,9 @@ The risks below concern the `bwrap` backend. The `native-cli` backend (W2) gives
 3. **New protected-named files inside a role's own root** cannot be prevented by mounts, since nothing exists to mount over. The run is rejected and the commit gate refuses them (layer 3).
 4. **Codex needs a writable shadow root** for its nested sandbox. Root-level writes are discarded and reject the run; empty mount-point residue is ignored.
 5. **OAuth token refresh** with read-only credentials is unverified **[U]**. A long run whose token expires would fail authentication, and the operator re-logs in on the host.
+6. **Codex's nested sandbox cannot start on hosts with Ubuntu's `bwrap-userns-restrict` AppArmor profile** (found 2026-10-23).
+   - **Why:** the profile runs everything bubblewrap starts as `unpriv_bwrap`, with every capability denied, so the bubblewrap that Codex starts inside the Frontend sandbox cannot create namespaces ("No permissions to create new namespace"; kernel audit `profile="unpriv_bwrap" capname="sys_admin"`). With `codex sandbox` the command did not run at all.
+   - **Affected:** only `runtime.execution_backend: bwrap` with Codex.
+   - **Not affected:** the default `native-cli` backend, which runs agents outside the coordinator's sandbox, and the gates, which are top-level sandboxes.
+   - **The test:** `test_fc_launchers.py::test_codex_own_sandbox_works_nested_inside_ours` is skipped, with that reason, only where a probe in the same Frontend sandbox shows both the `unpriv_bwrap` label and bubblewrap's namespace refusal. Any other failure still fails the test.
+   - **The fix is not to weaken the host:** never disable AppArmor or `kernel.apparmor_restrict_unprivileged_userns` for this. Use `native-cli`, or a host without that profile, until the `bwrap` backend has a Codex mode that does not nest bubblewrap (an open decision).

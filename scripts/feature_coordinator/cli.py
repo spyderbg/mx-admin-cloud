@@ -30,6 +30,9 @@ Feature operations (on --repo / --state-dir):
                             (one per role), dependents follow, each task launched at most N times
     stop TASK               ask the running worker to stop; the task returns to ready
     recover [--apply]       reclaim tasks of dead workers; report unresponsive (and, W3, orphaned) ones
+W4 autonomous Worker service (see `worker --help`; docs_agents/coordination/worker-autonomy.md):
+    worker start | status | health | waiting | attention | pause | resume | stop | reset-retries TASK
+           | systemd-unit       status/health/waiting/attention are read-only; start runs in the foreground
 W3 checkpoints (multi-step tasks; see `checkpoints --help`):
     checkpoints TASK [--json]             steps done / remaining, checkpoints, Git consistency (read-only)
     recover TASK [--show-prompt] [--apply] [--terminate-orphans] [--abandon-pending] [--redo-from STEP]
@@ -105,6 +108,12 @@ def cmd_config(args: argparse.Namespace, config: ProjectConfig) -> int:
         _print(f"  {name:12s} provider={role.provider:12s} model={model:12s} "
                f"{'enabled ' if role.enabled else 'DISABLED'} owned={list(role.owned)} excluded={list(role.excluded)}")
     _print(f"  execution backend: {loaded.runtime.execution_backend}; python: {loaded.runtime.python_interpreter}")
+    w = loaded.worker
+    _print(f"  worker service: {'ENABLED' if w.autonomous_enabled else 'disabled'}; max_parallel {w.max_parallel}; "
+           f"launches/task {w.max_launches_per_task}; transient {w.transient_max_attempts}x "
+           f"({w.transient_initial_delay_seconds}-{w.transient_max_delay_seconds}s); subscription "
+           f"{w.subscription_max_rechecks}x{w.subscription_recheck_interval_seconds}s; validation auto-fix "
+           f"{'on' if w.validation_auto_fix_enabled else 'off'}")
     return 0 if same else 1
 
 
@@ -251,6 +260,8 @@ def build_parser() -> argparse.ArgumentParser:
     register_worker(sub)
     from .checkpoint_commands import register as register_checkpoints  # pylint: disable=import-outside-toplevel
     register_checkpoints(sub)
+    from .service_commands import register as register_service  # pylint: disable=import-outside-toplevel
+    register_service(sub)
     from .github_commands import register as register_github  # pylint: disable=import-outside-toplevel
     from .project_commands import register as register_project  # pylint: disable=import-outside-toplevel
     register_project(register_github(sub))

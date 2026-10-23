@@ -194,6 +194,10 @@ class GitCoordinator:
         out = self._git("diff", "--name-only", "-z", f"{base}..{head}")
         return [p for p in out.split("\0") if p]
 
+    def commits_between(self, base: str, head: str) -> list[str]:
+        """Commits reachable from *head* but not *base*, oldest first (read-only)."""
+        return self._git("rev-list", "--reverse", f"{base}..{head}").split()
+
     def is_ancestor(self, ancestor: str, descendant: str) -> bool:
         """True when *ancestor* is an ancestor of (or equal to) *descendant* (read-only)."""
         result = subprocess.run(["git", "-C", str(self.root), "merge-base", "--is-ancestor", ancestor, descendant],

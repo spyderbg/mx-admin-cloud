@@ -111,6 +111,56 @@ class RuntimeConfig:  # pylint: disable=too-many-instance-attributes
     role_commands: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class WorkerConfig:  # pylint: disable=too-many-instance-attributes
+    """W4: the autonomous Worker service and the Worker's scheduling defaults (YAML `worker:`).
+
+    Safe defaults: the service is OFF until `autonomous.enabled` is set; one agent at a time;
+    retries are bounded and category-specific; validation auto-fix is OFF; conflicts always stop
+    the affected task (`recovery.stop_on_conflict` is fixed to true)."""
+
+    autonomous_enabled: bool = False          # the service refuses to start unless explicitly enabled
+    max_parallel: int = 1                     # agents at a time: the service (fixed 1 in W4) and `work`'s default
+    idle_poll_seconds: int = 30               # how often an idle or waiting service looks again
+    heartbeat_seconds: int = 30               # how often the service refreshes its health record
+    max_launches_per_task: int = 10           # hard cap on agent launches per task, whatever the category
+    retry_enabled: bool = True
+    transient_max_attempts: int = 3           # retries after transient failures (network, CLI briefly missing)
+    transient_initial_delay_seconds: int = 60
+    transient_max_delay_seconds: int = 1800   # exponential backoff: initial · 2^(n-1), capped here
+    subscription_enabled: bool = True         # wait for an exhausted subscription (never another billing method)
+    subscription_recheck_interval_seconds: int = 900
+    subscription_max_rechecks: int = 16
+    validation_auto_fix_enabled: bool = False  # OFF by default: redo the last step of a multi-step task
+    validation_max_attempts: int = 2
+    auto_recover_safe: bool = True            # W3 safe recovery (stale claims, settled checkpoints) at service start
+    stop_orphans_after_deadline: bool = True  # stop an identified orphaned agent only after its run deadline
+    startup_failure_limit: int = 3            # identical consecutive startup failures before "do not restart"
+
+
+# worker: YAML path → WorkerConfig field (the mapping is parsed strictly; unknown keys are refused).
+WORKER_KEYS: Mapping[tuple[str, ...], str] = {
+    ("autonomous", "enabled"): "autonomous_enabled",
+    ("max_parallel",): "max_parallel",
+    ("idle_poll_seconds",): "idle_poll_seconds",
+    ("heartbeat_seconds",): "heartbeat_seconds",
+    ("max_launches_per_task",): "max_launches_per_task",
+    ("retry", "enabled"): "retry_enabled",
+    ("retry", "transient", "max_attempts"): "transient_max_attempts",
+    ("retry", "transient", "initial_delay_seconds"): "transient_initial_delay_seconds",
+    ("retry", "transient", "max_delay_seconds"): "transient_max_delay_seconds",
+    ("retry", "subscription", "enabled"): "subscription_enabled",
+    ("retry", "subscription", "recheck_interval_seconds"): "subscription_recheck_interval_seconds",
+    ("retry", "subscription", "max_rechecks"): "subscription_max_rechecks",
+    ("retry", "validation", "auto_fix_enabled"): "validation_auto_fix_enabled",
+    ("retry", "validation", "max_attempts"): "validation_max_attempts",
+    ("recovery", "auto_recover_safe"): "auto_recover_safe",
+    ("recovery", "stop_orphans_after_deadline"): "stop_orphans_after_deadline",
+    ("startup", "failure_limit"): "startup_failure_limit",
+}
+WORKER_FIXED: Mapping[tuple[str, ...], Any] = {("recovery", "stop_on_conflict"): True}
+
+
 CONTAINMENT_MODES = ("bwrap",)  # gates and the bwrap backend are never unconfined
 # W2: how real runners execute. `native-cli` runs the installed CLIs directly with the operator's
 # subscription logins and is NOT a security sandbox; `bwrap` is the Phase 3 OS containment.
@@ -225,6 +275,7 @@ class ProjectConfig:  # pylint: disable=too-many-instance-attributes
     unsafe_gates: Mapping[str, str] = field(default_factory=dict)
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
     github: GitHubConfig = field(default_factory=GitHubConfig)
+    worker: WorkerConfig = field(default_factory=WorkerConfig)
     extra: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -345,6 +396,7 @@ def validate(config: ProjectConfig) -> None:
             raise ConfigError(f"gate {name!r} must be a non-empty argv list of strings")
     _validate_gates_and_runtime(config)
     _validate_github(config.github)
+    _validate_worker(config.worker)
     if not config.allowed_state_filesystems or any(fs.startswith("fuse") for fs in config.allowed_state_filesystems):
         raise ConfigError("allowed_state_filesystems must be non-empty and must not include FUSE filesystems")
 
@@ -392,6 +444,19 @@ def _validate_runtime(config: ProjectConfig) -> None:
     for role, commands in runtime.role_commands.items():
         for command in commands:
             _check_role_command(role, command)
+
+
+def _validate_worker(worker: WorkerConfig) -> None:
+    for name in ("max_parallel", "idle_poll_seconds", "heartbeat_seconds", "max_launches_per_task",
+                 "transient_initial_delay_seconds", "transient_max_delay_seconds",
+                 "subscription_recheck_interval_seconds", "startup_failure_limit"):
+        if getattr(worker, name) < 1:
+            raise ConfigError(f"worker.{name} must be at least 1")
+    for name in ("transient_max_attempts", "subscription_max_rechecks", "validation_max_attempts"):
+        if getattr(worker, name) < 0:
+            raise ConfigError(f"worker.{name} must not be negative (bounded retries; 0 = none)")
+    if worker.transient_max_delay_seconds < worker.transient_initial_delay_seconds:
+        raise ConfigError("worker.retry.transient.max_delay_seconds must be at least initial_delay_seconds")
 
 
 def _check_role_command(role: str, command: str) -> None:
@@ -630,6 +695,7 @@ def config_from_mapping(data: Mapping[str, Any]) -> ProjectConfig:
         unsafe_gates={str(k): str(v) for k, v in dict(data.get("unsafe_gates", {})).items()},
         runtime=_runtime_from_mapping(dict(data.get("runtime", {}))),
         github=_github_from_mapping(dict(data.get("github", {}))),
+        worker=_worker_from_mapping(dict(data.get("worker") or {})),
         repository=str(_require(data, "repository")),
         base_branch=str(_require(feature, "base_branch")),
         branch_pattern=str(_require(feature, "branch_pattern")),
@@ -671,6 +737,35 @@ def _runtime_from_mapping(data: Mapping[str, Any]) -> RuntimeConfig:
         else:
             values[key] = type(default)(raw)
     return RuntimeConfig(**values)
+
+
+def _worker_from_mapping(data: Mapping[str, Any]) -> WorkerConfig:
+    """`worker:` (W4). Absent → the defaults, so W2/W3 configurations load unchanged."""
+    defaults = WorkerConfig()
+    values: dict[str, Any] = {}
+
+    def walk(node: Any, path: tuple[str, ...]) -> None:
+        if isinstance(node, Mapping):
+            for key, child in node.items():
+                walk(child, (*path, str(key)))
+            return
+        if path in WORKER_FIXED:
+            if node != WORKER_FIXED[path]:
+                raise ConfigError(f"worker.{'.'.join(path)} is fixed to {WORKER_FIXED[path]!r} "
+                                  "(conflicts are never resolved automatically)")
+            return
+        if path not in WORKER_KEYS:
+            raise ConfigError(f"unknown worker key worker.{'.'.join(path)}")
+        name = WORKER_KEYS[path]
+        default = getattr(defaults, name)
+        if isinstance(default, bool):
+            values[name] = _bool(node, f"worker.{'.'.join(path)}")
+        elif isinstance(node, bool) or not isinstance(node, int):
+            raise ConfigError(f"worker.{'.'.join(path)} must be an integer")
+        else:
+            values[name] = node
+    walk(data, ())
+    return WorkerConfig(**values)
 
 
 def _github_from_mapping(data: Mapping[str, Any]) -> GitHubConfig:
