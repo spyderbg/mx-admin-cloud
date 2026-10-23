@@ -1,15 +1,16 @@
 # Autonomous Worker Operations (W4)
 
-> Owner role: **coordination**. Status: **IMPLEMENTED AND VERIFIED OFFLINE (2026-10-22); W4.1 watchdog reliability VERIFIED OFFLINE (2026-10-22).**
-> - Branch `feature/worker-autonomy-w4` from `dev` (`3019d37`, the W3 merge). W4 is committed (`1d58c03`, plus the operator's `b7c03de`) in draft PR #23 to `dev`. W4.1 is committed on top of it in the same PR (2026-10-23).
-> - Verified with fake agents only. The tests use real temporary Git repositories, real `feature.py worker start` processes, real signals and SIGKILLs, and simulated time.
-> - **No real Claude Code or Codex request was made in W4.** W4 has **not** been verified with real long-running AI workloads, and no real unattended run took place.
+> Owner role: **coordination**. Status: **IMPLEMENTED AND VERIFIED OFFLINE (2026-10-22); W4.1 watchdog reliability VERIFIED OFFLINE (2026-10-22); W4.2 bounded real-agent smoke test VERIFIED WITH REAL AGENTS (2026-10-23, §14.1).**
+> - Branch `feature/worker-autonomy-w4` from `dev` (`3019d37`, the W3 merge). W4 is committed (`1d58c03`, plus the operator's `b7c03de`) in draft PR #23 to `dev`. W4.1 is committed on top of it in the same PR (2026-10-23). W4.2 (harness, W4.2.1 fixes, this evidence) is not committed yet.
+> - W4 and W4.1 were verified with fake agents: real temporary Git repositories, real `feature.py worker start` processes, real signals and SIGKILLs, and simulated time.
+> - **W4.2** ran the real service with real Claude Code (`opus`, `sonnet`) and real Codex in one **bounded, foreground** smoke test: 4 sessions, a controlled restart, about 76 seconds. It is **not** evidence of long-running, overnight or unattended operation.
 > - The systemd user service is a **template**: it is not installed, enabled or started. Linger is not enabled.
 > Related: [worker-checkpoints.md](worker-checkpoints.md) (W3: checkpoints and recovery, which W4 runs automatically) · [worker-functional.md](worker-functional.md) (W2: the Worker and the native-cli backend) · [feature-workflow.md](feature-workflow.md) · [operations.md](operations.md) · [phase-status.md](phase-status.md)
 >
 > Status classes:
 > - **IMPLEMENTED**
 > - **VERIFIED OFFLINE**: fake agents, real processes and Git.
+> - **VERIFIED WITH REAL AGENTS**: real Claude Code / Codex sessions under the service, in the bounded W4.2 smoke test (§14.1).
 > - **SIMULATED**: an accelerated clock, or a short soak run.
 > - **NOT VERIFIED WITH REAL AGENTS**
 > - **PLANNED**: a later stage, not implemented.
@@ -35,7 +36,7 @@ Everything is **local**: no AWS, no new database, no new sandbox, no Git worktre
 | One agent at a time by default, *enforced* at claim time; manual launches refused while the service runs | IMPLEMENTED, VERIFIED OFFLINE (tests A, P) |
 | W2 parallel scheduler kept as an explicit option (`work --max-parallel N`) | IMPLEMENTED, VERIFIED OFFLINE (test N + the W2 suite) |
 | Automatic W3 recovery at startup (stale claims, interrupted launches, checkpoint consistency) | IMPLEMENTED, VERIFIED OFFLINE (tests C, H, Q) |
-| Error classification (transient, subscription, validation, critical; unknown fails closed) | IMPLEMENTED, VERIFIED OFFLINE (19 classification cases; tests D, E, F, G, M) |
+| Error classification (transient, subscription, validation, critical; unknown fails closed) | IMPLEMENTED, VERIFIED OFFLINE (classification cases; tests D, E, F, G, M). W4.2.1: a required gate that could not run is critical, not validation (§6) |
 | Bounded, persistent retries with exponential backoff; budgets survive restarts | IMPLEMENTED, VERIFIED OFFLINE (tests D, L, Q) |
 | Subscription-aware waiting: no API-key fallback, no model or provider change | IMPLEMENTED, VERIFIED OFFLINE with simulated usage-limit errors (test E). **NOT VERIFIED WITH REAL AGENTS**: the real CLIs' usage-limit messages were not observed in W4 (§7) |
 | Health record, `worker status/health/waiting/attention` (read-only) | IMPLEMENTED, VERIFIED OFFLINE |
@@ -45,7 +46,8 @@ Everything is **local**: no AWS, no new database, no new sandbox, no Git worktre
 | systemd user unit template + instructions | IMPLEMENTED (rendered and checked with `systemd-analyze --user verify`); **NOT installed, enabled or started** |
 | Accelerated long run (simulated days) | SIMULATED (in-process, simulated clock) |
 | Soak run: real service process, 36 tasks, 396 s | SIMULATED (fake agents; §14) |
-| Real Claude Code / Codex under the service, overnight operation | **NOT VERIFIED WITH REAL AGENTS** |
+| Real Claude Code / Codex under the service: sequential sessions, checkpoints, dependencies, a controlled restart, idle exit | **VERIFIED WITH REAL AGENTS** in one bounded foreground smoke test (W4.2, 4 sessions; §14.1) |
+| Overnight / unattended operation, real usage limits, real outages | **NOT VERIFIED WITH REAL AGENTS** |
 | Central coordinator, several Worker machines, cross-machine migration | **PLANNED** (§17) |
 
 What is unchanged:
@@ -189,8 +191,8 @@ If the launch process died **holding its claim**, the outcome is `interrupted`. 
 | --- | --- | --- |
 | A **transient** | ECONNRESET/ETIMEDOUT, socket hang up, overloaded, HTTP 502/503/504/529, agent timeout, CLI temporarily missing, commit/verification deferred | Retry with backoff, `transient.max_attempts` (3), then NEEDS_ATTENTION |
 | B **subscription** | "usage limit reached", "hit your usage limit", quota exhausted, out of credits | WAIT for the reported reset or a conservative recheck, `subscription.max_rechecks` (16), then NEEDS_ATTENTION. Never another provider, model or billing method |
-| C **validation** | "gates failed: […]" | NEEDS_ATTENTION by default. Optional auto-fix (off): redo the last step of a multi-step task, `validation.max_attempts` (2) |
-| D **critical** | API-key authentication, unknown auth method, model substitution, rejected changes (paths, symlinks), workspace/identity mismatch, Git conflicts, branch rewrite, foreign commits, unreadable state, launch budget exhausted, surviving agent processes | NEEDS_ATTENTION at once, never retried |
+| C **validation** | "gates failed: […]" (a gate ran and failed) | NEEDS_ATTENTION by default. Optional auto-fix (off): redo the last step of a multi-step task, `validation.max_attempts` (2) |
+| D **critical** | API-key authentication, unknown auth method, model substitution, rejected changes (paths, symlinks), workspace/identity mismatch, Git conflicts, branch rewrite, foreign commits, unreadable state, launch budget exhausted, surviving agent processes; "gates could not run: […] (cause)": a required gate was blocked or errored (its sandbox or tool unavailable), so the code was never judged (W4.2.1: never treated as validation, never an AI redo) | NEEDS_ATTENTION at once, never retried |
 | **unknown** | Anything else | NEEDS_ATTENTION at once (fails closed) |
 | not a failure | verified; blocked (dependency); cancelled (operator stop); interrupted (crash or restart; the launch stays counted); external (a sequential-mode refusal or a live foreign claim) | No budget consumed; the task stays eligible (external: waits) |
 
@@ -541,6 +543,87 @@ The 2026-10-22 run (36 tasks, every 4th failing once, 120 s idle) passed every c
 - suspend/resume;
 - days of uptime.
 
+### 14.1 W4.2 — real-agent smoke test (VERIFIED WITH REAL AGENTS, 2026-10-23)
+
+**Tooling (test-only, never imported by the coordinator):**
+- the harness `scripts/tests/feature_coordinator/fc_worker_smoke.py`;
+- its offline tests `test_fc_worker_smoke.py` (38 tests).
+
+**What the harness does:**
+- **The real service path.** It drives `feature.py worker start --exit-when-idle` twice, in a disposable repository with its own state directory: launch, native-cli backend, the real CLI, then checkpoints and gates.
+- **A controlled restart.** A test-only hook holds Backend's launch at the *production* cancel check after step 1. `worker stop` then defers the task before any step-2 agent exists, and a new service resumes it.
+- **An independent audit wrapper.** Every agent CLI call passes through it, and it refuses a session unless all of these hold:
+  - the CLI binary is unchanged;
+  - the session is in the disposable repository and carries a coordinator run tag;
+  - the role, task, step and model match the plan;
+  - only subscription flags are used and no API-key variables are set;
+  - the CLI's own status command reports the subscription login;
+  - the budgets have room (4 sessions in total, per role, one per step) and the test deadline allows it;
+  - no earlier agent or its children are alive;
+  - **both supervisors are valid**: the harness process, and a revocable grant for the exact Worker instance (pid and start time) that launched the session.
+- **Records and independent observation.** The wrapper logs start, child identity, end and exit status, never prompts. A `/proc` monitor and a `worker health --json` sampler observe on their own. A `gh` shim refuses any GitHub call.
+- **The Worker never outlives the harness.** The service gets a parent-death SIGTERM, and its grant is revoked before any stop.
+- **The report.** It gives a verdict (VERIFIED / PARTIALLY VERIFIED / BLOCKED) and separates the primary failure, its secondary consequences, other findings and independent safety violations.
+
+**Bounded configuration:**
+- 600 s per session (the Supervisor's deadline) and 40 minutes in total;
+- at most 2 launches per task and no transient retry;
+- validation auto-fix off;
+- one delayed subscription recheck (3600 s), which only makes WAITING observable;
+- Claude Code `--max-budget-usd 0.5`.
+
+**Passing run `run-20261023T083640`** (operator, separate terminal):
+- Claude Code 2.1.296 and Codex 0.162.1, each identified by the SHA-256 of its binary.
+- Logins reported by the CLIs themselves: claude.ai subscription (Pro) and ChatGPT subscription.
+- Verdict **VERIFIED**: 69/69 checks, independently re-verified from the raw evidence.
+
+| Step | Task / agent | Requested model | Reported model | Session (UTC) | Exit | Checkpoint commit |
+| --- | --- | --- | --- | --- | --- | --- |
+| `module` | backend / Claude Code | `opus` | `claude-opus-5-5`, `apiKeySource: none` | 08:36:51.8–08:36:57.3 (service 1) | 0 | `b79557ea4b23` (cp1) |
+| `validation-test` | backend / Claude Code | `opus` | `claude-opus-5-5`, `apiKeySource: none` | 08:37:00.3–08:37:07.8 (service 2) | 0 | `2598699bced7` (cp2) |
+| `cli-utility` | cli / Claude Code | `sonnet` | `claude-sonnet-5-5`, `apiKeySource: none` | 08:37:10.0–08:37:19.5 (service 2) | 0 | `abc211a561ad` (cp1) |
+| `ts-utility` | frontend / Codex | CLI default | **not reported** by Codex | 08:37:21.5–08:37:35.4 (service 2) | 0 | `1d7c59ef285e` (cp1) |
+
+- **Sequential execution.** The session intervals never overlap (gaps of 2.0–3.0 s). At each start, the wrapper found no earlier session or run-tagged process alive. The monitor saw at most one run tag and one launch process in all 283 samples, and health showed at most one claim in 70 samples.
+- **Dependencies.** Frontend was eligible during Backend's sessions but waited. CLI was not eligible until Backend was verified (verified 08:37:09.0, CLI session 08:37:10.0).
+- **Checkpoints and Git:**
+  - 4 committed checkpoints with unique IDs and commits, linear on one feature branch (each commit's parent is the previous one);
+  - `Feature-Task` / `Feature-Role` / `Feature-Checkpoint` trailers on every commit, one file per commit inside the role's paths;
+  - manifests equal to the files' SHA-256, and the agents' files byte-identical to the requested content;
+  - no remote, and a clean checkout.
+- **Restart and recovery:**
+  - service 1 ran only `module`; at the boundary it was stopped through the production cancel check ("stopped before step 'validation-test'"), so no agent was interrupted;
+  - service 2 adopted checkpoint #1 unchanged and ran only step 2, and the resumed prompt listed `module` as done;
+  - Backend's launches were 2 with history `[cancelled, success]`, and no retry budget was used.
+- **Gates and tasks.** `w4s-backend` (unittest), `w4s-cli` (exact output) and `w4s-frontend` (Node runs the TypeScript file) all passed in the gate sandbox, and all three tasks are verified.
+- **Service lifecycle.** Service 1 ended OPERATOR_STOP (the planned restart). Service 2 ended NATURAL_IDLE_EXIT after AVAILABLE. Afterwards health reports OFFLINE, not alive and not healthy, and reading it changed nothing.
+- **Cleanup.** No process carrying the test's run tags, no claim, exclusive flag, held lock or pending checkpoint transaction, and no `gh` call.
+
+**First attempt `run-20261023T071146`: PARTIALLY VERIFIED** (kept as evidence; never reused):
+- **What ran.** Two real Opus sessions ran and the restart worked.
+- **What failed.** The Backend gate was then *blocked* (exit 125). The operator's terminal was unconfined, and Ubuntu 24.04 restricts unprivileged user namespaces for unconfined processes (`kernel.apparmor_restrict_unprivileged_userns=1`), so bubblewrap was denied `setpcap` (kernel audit log). The agents' code was correct: the same gate passes offline on a copy of that repository.
+- **The consequence.** The harness stopped the Worker. Frontend's Codex invocation was refused by the audit wrapper (exit 97, no model request, the grant revoked), and CLI never started. There was no safety violation.
+- **W4.2.1 fixes:**
+  - **Production:** a gate that could not run is recorded with its cause ("gates could not run: … (cause)") and classified critical, never as validation, which with auto-fix would have spent an AI session on correct code.
+  - **Harness:** the preflight runs a real sandboxed gate in the services' environment; a refusal is recorded with its reason; service exits are classified from their logs.
+- **The host prerequisite.** The operator installed the distribution's `bwrap-userns-restrict` AppArmor profile (package `apparmor-profiles`), keeping the global restriction on (§16). A host-setup script and guide for this are planned for a separate PR; they are not part of PR #23.
+
+**Offline evidence for the harness:**
+- **Tests:** 38 tests, including the full rehearsal, a usage-limit path, the two supervisor-failure scenarios, the gate-sandbox preflight, and an exact offline reproduction of the first attempt's failure path.
+- **Repetition:** 10/10 consecutive rehearsals (69/69 checks each).
+- **Full suite:** `scripts/tests` 656 passed / 19 skipped / 0 failed before the host AppArmor profile was installed. On the same code after it, 1 environment failure, the nested Codex sandbox test (§16). **Final, with the nested-sandbox test guard and a fix for a `/proc` race in a W4 test helper: 672 passed / 20 skipped / 0 failed.** The extra skip is that test, skipped because its probe demonstrated the restriction; the other 19 are opt-in live checks and one filesystem condition. The real run logged no AppArmor denial.
+
+**Classification:**
+- **Verified with real AI:**
+  - four real sessions under the autonomous service;
+  - subscription logins and no API key (Claude Code's `apiKeySource: none`);
+  - the requested Claude model families;
+  - strict sequential execution, dependency order and checkpoint commits;
+  - a controlled restart with checkpoint adoption, gates, idle exit and cleanup.
+- **Verified offline:** the failure paths (harness or Worker death, refusals, usage limit, a broken gate sandbox) and the watchdog (W4.1).
+- **Simulated:** usage-limit messages; long runs.
+- **Not verified:** Codex's actual model (it is not reported); real usage limits and outages; long-running, overnight or unattended operation; the systemd service.
+
 ## 15. Operational example (what really happens; offline-verified behaviour)
 
 The steps match tests E and A and the soak run. The example is **not** a real-agent run.
@@ -569,7 +652,13 @@ The steps match tests E and A and the soak run. The example is **not** a real-ag
 
 ## 16. Limitations
 
-- **No real agents.** No real-agent W4 run and no unattended overnight run took place. Real CLI usage-limit and outage messages were not observed, so the classification patterns may miss them. They would then fall into `unknown`, which means NEEDS_ATTENTION and is safe.
+- **Real agents only in one bounded smoke test.** W4.2 ran 4 real sessions in the foreground (§14.1). No unattended or overnight run took place. Real CLI usage-limit and outage messages were not observed, so the classification patterns may miss them; they would then fall into `unknown`, which means NEEDS_ATTENTION and is safe.
+- **Codex does not report its model.** The Frontend session ran the Codex CLI default, which is not independently verified.
+- **Host prerequisite for gates.** On Ubuntu 24.04 the gate sandbox needs bubblewrap to be allowed unprivileged user namespaces, through the distribution's `bwrap-userns-restrict` AppArmor profile (package `apparmor-profiles`), installed and loaded by the operator; the coordinator never changes AppArmor. Without it every gate is blocked, and since W4.2.1 that is reported as critical "gates could not run".
+- **That profile breaks nested sandboxes.** It runs everything bubblewrap starts under `unpriv_bwrap`, with all capabilities denied, so a bubblewrap started *inside* the coordinator's sandbox cannot create namespaces.
+  - **Affected:** the optional `execution_backend: bwrap` with Codex, because Codex's own command sandbox would be nested inside ours. `test_fc_launchers.py::test_codex_own_sandbox_works_nested_inside_ours` is skipped there with an explicit reason, but only when a probe in the same Frontend sandbox demonstrates the restriction; any other failure still fails it ([agent-ownership §5](agent-ownership.md#5-residual-risks-operator-decisions-in-phase-status), item 6).
+  - **Not affected:** the default `native-cli` backend, which runs the agents outside the coordinator's sandbox, and the gates, which are top-level sandboxes.
+  - **Not exercised by real agents:** Codex's command sandbox under `native-cli`. In W4.2, Codex ran no shell command; it made one file change.
 - **Subscription reset times** are trusted only in the machine-readable `|<epoch>` form. Otherwise the service rechecks conservatively.
 - **Watchdog limits** (W4.1):
   - The hung-launch threshold is long by design (4630 s by default).
@@ -610,6 +699,7 @@ W4 has no AWS client, no distributed lock and no migration.
   - subscription waiting (simulated errors); health and status; pause, resume and stop;
   - the restart-loop guard; orphan handling; per-task isolation; redaction;
   - the unit template (rendered and verified, not installed).
+- **Verified with real agents (W4.2, bounded):** 4 real sessions (Claude Code `opus` ×2, `sonnet`, Codex) under the service: sequential execution, dependencies, checkpoints, a controlled restart, gates, idle exit and cleanup.
 - **Simulated:** long runs (accelerated clock), the soak (fake agents, minutes), usage-limit messages.
-- **Not verified:** real Claude Code / Codex under the service; overnight operation; suspend/resume. The watchdog is verified offline with real hung, silent, killed and orphaned processes (W4.1), not with real agents.
+- **Not verified:** overnight or unattended operation; real usage limits and outages; Codex's actual model; suspend/resume. The watchdog is verified offline with real hung, silent, killed and orphaned processes (W4.1), not with real agents.
 - **Planned:** central coordinator, multiple machines, a feature queue, notifications.
