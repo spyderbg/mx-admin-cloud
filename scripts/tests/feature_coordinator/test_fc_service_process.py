@@ -189,8 +189,10 @@ def pid_alive(pid: int) -> bool:
         return False
     except PermissionError:
         pass  # another user's process: it exists
-    stat = Path(f"/proc/{pid}/stat")
-    return stat.exists() and stat.read_text(encoding="utf-8").split(") ")[-1][:1] != "Z"
+    try:  # the process can be reaped between kill(0) and this read: then it is not alive
+        return Path(f"/proc/{pid}/stat").read_text(encoding="utf-8").split(") ")[-1][:1] != "Z"
+    except (FileNotFoundError, ProcessLookupError):
+        return False
 
 
 def agent_recorded(project: Project, task_id: str, agent_pid: int, timeout: float = 30) -> dict[str, Any]:
@@ -227,6 +229,16 @@ def reap_test_processes(tmp_path: Path):
             os.kill(pid, signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
             pass
+
+
+def test_pid_alive_is_false_for_a_process_reaped_between_looks(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression (a full-suite failure in scenario C): a SIGKILLed process was reaped between kill(0)
+    and the read of /proc/PID/stat, and the read raised instead of answering "not alive"."""
+    with subprocess.Popen(["true"]) as child:
+        child.wait()  # reaped: its /proc entry is gone
+    monkeypatch.setattr(os, "kill", lambda pid, sig: None)  # kill(0) still found it, just before the reap,
+    monkeypatch.setattr(Path, "exists", lambda self: True)  # as did any other look before the read
+    assert pid_alive(child.pid) is False
 
 
 def simple_task(project: Project, key: str, role: str, path: str, **extra: Any) -> dict[str, Any]:
