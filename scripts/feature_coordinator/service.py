@@ -2,7 +2,9 @@
 
 `feature.py worker start` (systemd --user runs exactly this). Each cycle:
 
-  1. heartbeat; operator requests (worker-control: pause, stop); a stop signal; W4.3.1: when
+  1. heartbeat; operator requests (worker-control: pause, stop); a stop signal; W4.3.3: when
+     `github.publish.enabled`, a publication pass (publish.py: an approved Issue's verified feature is
+     integrated, pushed, opened as ONE Draft PR, and completed once a person merged it); W4.3.1: when
      `github.intake.enabled`, at most every `poll_interval_seconds` a GitHub intake poll (intake.py):
      an Issue an operator approved with `/worker approve` is planned and, on a free checkout,
      activated — the approval is the operator's plan and activation;
@@ -136,8 +138,9 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
         self._stop_reason = ""
         self._cycle_errors = 0
         self._uncertain: dict[str, set[int]] = {}  # processes that survived SIGKILL: not signalled again
-        self._intake_at: float | None = None  # W4.3.1: the last GitHub intake poll (service clock)
-        self._intake_error = ""
+        self._polled_at: dict[str, float] = {}  # W4.3.1/W4.3.3: the last GitHub polls (service clock)
+        self._poll_errors: dict[str, str] = {}
+        self._publication: tuple[str, str] | None = None  # W4.3.3: what a published feature waits for
         self._intake_watch_at = 0.0           # W4.3.1: the last re-read of a running task's approved Issue
 
     # -- the whole lifetime ------------------------------------------------------------------
@@ -273,7 +276,7 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
             self._set_state(PAUSED, "paused by the operator: no new work is started")
             self._idle(self.cfg.idle_poll_seconds)
             return
-        self._poll_intake(now)
+        self._poll_github(now)
         feature = self._active_feature()
         if feature is None:
             return
@@ -313,26 +316,31 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
         self._set_state(state, reason)
         self._idle(min(self.cfg.idle_poll_seconds, max(wake - now, 0.01)) if wake else self.cfg.idle_poll_seconds)
 
-    def _poll_intake(self, now: float) -> None:
-        """W4.3.1: at most every github.intake.poll_interval_seconds, turn newly approved GitHub Issues
-        into tasks and check the approved texts (intake.py). A failure is recorded once per distinct
-        error; the service goes on (the next poll retries)."""
-        intake = self.config.github.intake
-        if not intake.enabled or (self._intake_at is not None and now - self._intake_at < intake.poll_interval_seconds):
-            return
-        self._intake_at = now
+    def _poll_github(self, now: float) -> None:
+        """Each at most every its poll_interval_seconds: W4.3.3 publication (publish.py) — first, so a merge
+        is seen before a closed Issue could look like a withdrawn approval — then the W4.3.1 intake poll
+        (newly approved Issues become tasks; approved texts are checked, intake.py). A failure is recorded
+        once per distinct error; the service goes on (the next poll retries)."""
         from .intake_poll import IntakePoller  # pylint: disable=import-outside-toplevel
-        try:
-            report = IntakePoller(self.coord).poll(apply=True)
-            lines, error = report.lines(), "; ".join(report.deferred)
-        except CoordinatorError as exc:
-            error = scrub(f"{type(exc).__name__}: {exc}", 500)
-            lines = [f"deferred: {error}"]
-        if error and error != self._intake_error:
-            self._event("worker-intake-deferred", error=scrub(error, 500))
-        self._intake_error = error
-        for line in lines:
-            self._log(f"intake: {line}")
+        from .publish import PullRequestPublisher  # pylint: disable=import-outside-toplevel
+        for name, cfg, poller in (("publish", self.config.github.publish, PullRequestPublisher),
+                                  ("intake", self.config.github.intake, IntakePoller)):
+            if not cfg.enabled or now - self._polled_at.get(name, float("-inf")) < cfg.poll_interval_seconds:
+                continue
+            self._polled_at[name] = now
+            try:
+                report = poller(self.coord).poll(apply=True)
+                lines, error = report.lines(), "; ".join(report.deferred)
+                if name == "publish":
+                    self._publication = report.service_state()
+            except CoordinatorError as exc:
+                error = scrub(f"{type(exc).__name__}: {exc}", 500)
+                lines = [f"deferred: {error}"]
+            if error and error != self._poll_errors.get(name, ""):
+                self._event(f"worker-{name}-deferred", error=scrub(error, 500))
+            self._poll_errors[name] = error
+            for line in lines:
+                self._log(f"{name}: {line}")
 
     def _intake_changed(self, task: Task) -> bool:
         """W4.3.1: a task from an approved GitHub Issue starts only while that Issue still matches the
@@ -406,9 +414,10 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
         active = [f for f in self.store.list_features() if f.state is FeatureState.ACTIVE]
         if len(active) > 1:
             self._set_state(NEEDS_ATTENTION, f"several active features {[f.id for f in active]} (one per checkout)")
-        elif not active:
+        elif not active:  # W4.3.3: a published feature may wait for its merge (or an operator) meanwhile
             self._release_feature()
-            self._set_state(AVAILABLE, "no active feature: waiting for an approved, activated assignment")
+            self._set_state(*(self._publication or (AVAILABLE, "no active feature: waiting for an approved, activated "
+                                                               "assignment")))
         else:
             return active[0]
         self._idle(self.cfg.idle_poll_seconds)

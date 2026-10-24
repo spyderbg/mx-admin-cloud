@@ -44,9 +44,14 @@ GitHub Issues (Phase 4; see `feature.py github --help`):
     github status | labels | sync | reconcile | inspect | owned | deps | test-lifecycle | cleanup-test
     github intake show N | poll [--apply] | status
                             W4.3.1: an Issue approved with `/worker approve` becomes a Worker task
+    github publish status | poll [FEATURE…] [--apply] | reset FEATURE [--apply]
+                            W4.3.3: that task's feature is integrated, pushed and opened as ONE Draft
+                            PR; once a person merged it, it is completed and its Issue closed
 
-No command pushes or opens a pull request, and nothing is sent to the remote Qwen server.
-GitHub Issue writes need --apply and stay within github.write_scope (test features only in Phase 4).
+Only `github publish poll --apply` (and the Worker service), with github.publish.enabled, pushes a
+branch or opens a pull request — the feature branch and Draft PR of an approved GitHub Issue, never
+anything else; nothing ever merges. Nothing is sent to the remote Qwen server. GitHub Issue writes
+need --apply and stay within github.write_scope (test features only in Phase 4).
 """
 
 from __future__ import annotations
@@ -267,9 +272,11 @@ def build_parser() -> argparse.ArgumentParser:
     from .github_commands import register as register_github  # pylint: disable=import-outside-toplevel
     from .project_commands import register as register_project  # pylint: disable=import-outside-toplevel
     from .intake_commands import register as register_intake  # pylint: disable=import-outside-toplevel
+    from .publish_commands import register as register_publish  # pylint: disable=import-outside-toplevel
     github = register_github(sub)
     register_project(github)
     register_intake(github)
+    register_publish(github)
     sub.add_parser("status", help="show coordinator state (read-only)").set_defaults(func=cmd_status)
     sub.add_parser("demo", help="run the mock end-to-end feature in a temporary repository").set_defaults(func=cmd_demo)
     return parser

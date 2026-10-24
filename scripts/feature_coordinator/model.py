@@ -9,7 +9,8 @@ Rules:
     checkpoint (checkpoints.py). The lifecycle is unchanged: step progress is checkpoint
     metadata, not a task state.
   * `verified` needs Evidence bound to a HEAD SHA, with every required gate passing.
-  * A feature reaches `done` only with merge evidence — creating a PR is never enough.
+  * A feature reaches `done` only with merge evidence — creating a PR is never enough (W4.3.3: for an
+    approved GitHub Issue's feature, the verified merge of its exact PR, publish.py).
   * A feature owns exactly one branch and at most one PR candidate.
   * Dependencies form a DAG; unknown IDs, self-dependencies and cycles are rejected. A task
     with unverified dependencies is `blocked`; it resumes (`ready`) once they are verified.
@@ -296,8 +297,12 @@ def migrate_task_record(data: Mapping[str, Any]) -> dict[str, Any]:
 
 
 @dataclass
-class PullRequestCandidate:
-    """The single aggregate PR of a feature (rendered locally; created only with approval)."""
+class PullRequestCandidate:  # pylint: disable=too-many-instance-attributes
+    """The single aggregate PR of a feature (rendered locally; created only with approval).
+
+    W4.3.3 (publish.py, an approved GitHub Issue's feature): what was published and verified — facts,
+    not states. `pending_create` is written BEFORE the create request (a crash is recovered by listing
+    first); `attention` stops automatic publication until an operator resets it."""
 
     head: str
     base: str
@@ -306,6 +311,14 @@ class PullRequestCandidate:
     head_sha: str
     url: str | None = None
     ci_state: str = "not-run"
+    number: int | None = None                   # the GitHub PR, once created or adopted
+    origin: str = ""                            # "created" (by the coordinator) | "adopted" (found on GitHub)
+    author: str = ""
+    draft: bool | None = None
+    pushed: dict[str, Any] | None = None        # {sha, before, at}: the remote branch holds the head
+    pending_create: dict[str, Any] | None = None  # {op, started_at}
+    merge: dict[str, Any] | None = None         # the verified merge evidence (completion)
+    attention: dict[str, Any] | None = None     # {reason, since}: why automatic publication stopped
 
 
 @dataclass

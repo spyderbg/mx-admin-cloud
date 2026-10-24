@@ -32,6 +32,9 @@ Flow:
      an operator (needs-human), stops a running agent through the existing graceful cancellation
      (completed checkpoints stay) and posts one notice: fail closed. The Issue is never reopened or
      edited. The task itself always runs the recorded text, never the Issue's current one.
+  6. W4.3.3 (publish.py, `github.publish.enabled`): the verified feature is integrated, pushed and opened
+     as ONE Draft PR; only after a person merged that exact PR is the feature done and the Issue closed
+     by the coordinator (once; a DONE feature's Issue is never checked for withdrawal again).
 
 Duplicates: one intake record per Issue number, created inside a state transaction; a second
 approval, a repeated poll or a restarted coordinator finds it and changes nothing. Polls are
@@ -132,8 +135,8 @@ def not_eligible(issue: RemoteIssue) -> str | None:
 _FIELDS = frozenset({"schema_version", "id", "issue_number", "issue_id", "node_id", "url", "issue_author", "title",
                      "body", "digest", "role", "gates", "task_id", "approved_by", "approval_comment_id",
                      "approval_comment_url", "approved_at", "recorded_at", "status", "spec_changed",
-                     "activation_error", "revision"})
-STATUSES = ("approved", "planned", "active")
+                     "activation_error", "completed", "revision"})
+STATUSES = ("approved", "planned", "active", "done")
 
 
 @dataclass
@@ -157,10 +160,12 @@ class IntakeRecord:  # pylint: disable=too-many-instance-attributes
     approval_comment_url: str
     approved_at: str              # the approval comment's creation time (GitHub)
     recorded_at: str = field(default_factory=utc_now)
-    status: str = "approved"      # approved (recorded) → planned (feature + task exist) → active
+    status: str = "approved"      # approved (recorded) → planned (feature + task exist) → active → done
+                                  # (W4.3.3: its PR merged, the Issue closed, the card Done; publish.py)
     spec_changed: dict[str, Any] | None = None  # {digest, reason, detected_at} while the approval does not
                                                 # hold: text changed, Issue closed, deleted or relabeled
     activation_error: str = ""
+    completed: dict[str, Any] | None = None     # W4.3.3: {pr, merge_commit_sha, issue, closed_by, at}
     revision: int = 0
 
     def to_dict(self) -> dict[str, Any]:

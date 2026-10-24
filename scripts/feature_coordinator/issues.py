@@ -25,15 +25,16 @@ TrackerClient protocol for tests, the demo and the local JSON tracker.
 
 from __future__ import annotations
 
+import dataclasses
 import fcntl
 import json
 import re
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Protocol
+from typing import Any, Callable, Iterable, Iterator, Protocol
 
-from .errors import GitHubNotFoundError, OwnershipError, PullRequestPolicyError, TrackerError
+from .errors import GitHubNotFoundError, GitHubValidationError, OwnershipError, PullRequestPolicyError, TrackerError
 
 FEATURE_PREFIX = "feature:"
 PARENT_LABEL = "feature:parent"
@@ -130,15 +131,28 @@ class RemoteComment:
 
 
 @dataclass
-class PullRequest:
-    """A tracker pull request."""
+class PullRequest:  # pylint: disable=too-many-instance-attributes
+    """A tracker pull request. W4.3.3: the identity and merge fields every adoption and completion
+    decision is checked against (publish.py); "" / False / 0 when the tracker did not report them."""
 
     number: int
-    head: str
-    base: str
+    head: str                    # the head branch name
+    base: str                    # the base branch name
     title: str
     body: str
-    state: str = "open"
+    state: str = "open"          # open | closed
+    head_sha: str = ""
+    head_repo: str = ""          # owner/name of the head and base repositories
+    base_repo: str = ""
+    draft: bool = False
+    merged: bool = False
+    merged_at: str = ""
+    merged_by: str = ""
+    merge_commit_sha: str = ""
+    author: str = ""
+    url: str = ""
+    node_id: str = ""
+    id: int = 0
 
 
 class TrackerClient(Protocol):
@@ -182,10 +196,14 @@ class TrackerClient(Protocol):
         """The repository permission of *login* (admin, maintain, write, triage, read or none)."""
 
     def create_pull_request(self, head: str, base: str, title: str, body: str) -> PullRequest:
-        """Open the single PR of a feature branch."""
+        """Open the single PR of a feature branch (W4.3.3: the real adapter takes `draft` and opens only Draft
+        PRs it was authorized for)."""
 
     def list_pull_requests(self, head: str | None = None, state: str = "all") -> list[PullRequest]:
         """PRs, optionally only those whose head branch is *head*."""
+
+    def get_pull_request(self, number: int) -> PullRequest:
+        """W4.3.3: one PR by number, with its merge state (GitHubNotFoundError if absent)."""
 
 
 # ---------------------------------------------------------------------------
@@ -353,7 +371,10 @@ class MockIssueTracker:  # pylint: disable=too-many-public-methods,too-many-inst
     Mutations made through it are counted in `writes`. With a *path*, every operation reloads
     and saves the JSON file under an flock, so several processes can share it (the local
     tracker of `feature.py --tracker local`). `fail` holds injected failures: a list of
-    (operation name, exception) pairs consumed in order.
+    (operation name, exception) pairs consumed in order. W4.3.3: `lost` holds failures raised
+    AFTER the operation was applied (a response lost on the way back), and `ref_resolver` (branch →
+    commit on the "remote", or None) gives a new PR its head commit, as GitHub reads it from the
+    pushed branch.
     """
 
     live = False
@@ -372,6 +393,9 @@ class MockIssueTracker:  # pylint: disable=too-many-public-methods,too-many-inst
         self.calls: list[str] = []
         self.writes = 0
         self.fail: list[tuple[str, BaseException]] = []
+        self.lost: list[tuple[str, BaseException]] = []
+        self.ref_resolver: Callable[[str], str | None] | None = None
+        self.authorized: list[tuple[str, str]] = []
         self._next = 1
         self._next_comment = 1000
         self._clock = 0
@@ -412,16 +436,20 @@ class MockIssueTracker:  # pylint: disable=too-many-public-methods,too-many-inst
             yield
             if write:
                 self.writes += 1
-            return
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.path.with_suffix(".lock"), "a+", encoding="utf-8") as handle:
-            fcntl.flock(handle, fcntl.LOCK_EX)
-            if self.path.exists():
-                self._load()
-            yield
-            if write:
-                self.writes += 1
-                self._save()
+        else:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.path.with_suffix(".lock"), "a+", encoding="utf-8") as handle:
+                fcntl.flock(handle, fcntl.LOCK_EX)
+                if self.path.exists():
+                    self._load()
+                yield
+                if write:
+                    self.writes += 1
+                    self._save()
+        for index, (operation, exc) in enumerate(self.lost):  # applied, but the caller never hears of it
+            if operation == name.split(":", 1)[0]:
+                del self.lost[index]
+                raise exc
 
     def _tick(self) -> str:
         self._clock += 1
@@ -548,24 +576,63 @@ class MockIssueTracker:  # pylint: disable=too-many-public-methods,too-many-inst
         """Configured permission of *login* (default none)."""
         return self.permissions.get(login, "none")
 
-    def create_pull_request(self, head: str, base: str, title: str, body: str) -> PullRequest:
+    def create_pull_request(self, head: str, base: str, title: str, body: str, *,  # pylint: disable=too-many-arguments
+                            draft: bool = False) -> PullRequest:
         """Open the single PR for a feature branch; a second open PR for the same head is refused."""
         with self._op(f"create_pull_request:{head}", write=True):
             if not head.startswith("feature/"):
                 raise PullRequestPolicyError(f"only feature branches get a PR, not {head!r}")
             if any(pr.head == head and pr.state == "open" for pr in self.prs.values()):
                 raise PullRequestPolicyError(f"{head!r} already has its single PR")
-            number = self._next
-            self._next += 1
-            pr = PullRequest(number, head, base, title, body)
-            self.prs[pr.number] = pr
-            return pr
+            head_sha = (self.ref_resolver(head) or "") if self.ref_resolver is not None else ""
+            if self.ref_resolver is not None and not head_sha:
+                raise GitHubValidationError(f"POST pulls: HTTP 422: no head branch {head!r}", status=422)
+            return self._new_pull(head, base, title, body, author=self.viewer, head_sha=head_sha, draft=draft)
+
+    def _new_pull(self, head: str, base: str, title: str, body: str, **fields: Any) -> PullRequest:  # pylint: disable=too-many-arguments
+        number = self._next
+        self._next += 1
+        fields = {"head_repo": self.repository, "base_repo": self.repository, "url": f"mock://pull/{number}",
+                  "node_id": f"PR_mock{number}", "id": 800000 + number, **fields}
+        pr = PullRequest(number, head, base, title, body, **fields)
+        self.prs[pr.number] = pr
+        return dataclasses.replace(pr)
 
     def list_pull_requests(self, head: str | None = None, state: str = "all") -> list[PullRequest]:
         """Recorded PRs."""
         with self._op("list_pull_requests", write=False):
-            return [pr for pr in self.prs.values()
+            return [dataclasses.replace(pr) for pr in self.prs.values()
                     if (head is None or pr.head == head) and state in ("all", pr.state)]
+
+    def get_pull_request(self, number: int) -> PullRequest:
+        """One PR (W4.3.3)."""
+        with self._op(f"get_pull_request:{number}", write=False):
+            try:
+                return dataclasses.replace(self.prs[number])
+            except KeyError as exc:
+                raise GitHubNotFoundError(f"unknown pull request #{number}", status=404) from exc
+
+    def authorize_pull_request(self, head: str, base: str) -> None:
+        """Recorded only (the mock also serves the Phase 2 `open_pull_request` path, which never authorizes)."""
+        self.authorized.append((head, base))
+
+    def add_pull_request_as(self, author: str, head: str, base: str, *, head_sha: str, title: str = "PR",  # pylint: disable=too-many-arguments
+                            body: str = "", **fields: Any) -> PullRequest:
+        """Test helper: a PR a person opened (not through the coordinator)."""
+        with self._op("add_pull_request_as", write=True):
+            return self._new_pull(head, base, title, body, author=author, head_sha=head_sha, **fields)
+
+    def update_pull_request(self, number: int, **changes: Any) -> PullRequest:
+        """Test helper: what a person (or GitHub) does to a PR — mark it ready, merge, close, push to it."""
+        with self._op(f"update_pull_request:{number}", write=True):
+            pr = dataclasses.replace(self.prs[number], **changes)
+            self.prs[number] = pr
+            return dataclasses.replace(pr)
+
+    def merge_pull_request(self, number: int, merge_sha: str, *, merged_by: str = "spyderbg") -> PullRequest:
+        """Test helper: a person merged the PR on GitHub as *merge_sha*."""
+        return self.update_pull_request(number, state="closed", merged=True, merge_commit_sha=merge_sha,
+                                        merged_at=self._tick(), merged_by=merged_by)
 
     # -- test helpers and the Phase 2 API --------------------------------------------
 

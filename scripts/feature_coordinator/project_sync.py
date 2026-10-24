@@ -21,6 +21,8 @@ Status mapping (`board_status`), from the existing state machines (model.py):
   task failed                         → Blocked  (Blocked Reason: "failed: <reason>")
   task verified                       → Done, only with evidence: every required gate passed at
                                         a commit that is on the feature branch; otherwise Review
+                                        (W4.3.3: the task of an approved GitHub Issue stays Review
+                                        until its feature is done with merge evidence: the merged PR)
   feature planned                     → Backlog
   feature active / integration        → In Progress
   feature review (one PR candidate)   → Review
@@ -546,16 +548,22 @@ class ProjectSync:  # pylint: disable=too-many-instance-attributes,too-many-publ
             return self._feature_status(feature, notes)
         state = task.state
         if state is TaskState.VERIFIED:
-            problem = self.evidence_problem(feature, task)
-            if problem:
-                notes.append(f"{task.id} is verified locally but not shown as Done: {problem}")
-                return "review", ""
-            return "done", ""
+            return self._verified_status(feature, task, notes), ""
         if state is TaskState.IN_PROGRESS:
             return ("review" if self._verifying(task) else "in_progress"), ""
         if state in (TaskState.PROPOSED, TaskState.READY):
             return ("backlog" if state is TaskState.PROPOSED else "ready"), ""
         return "blocked", self._blocked_reason(task)
+
+    def _verified_status(self, feature: Feature, task: Task, notes: list[str]) -> str:
+        problem = self.evidence_problem(feature, task)
+        if problem:
+            notes.append(f"{task.id} is verified locally but not shown as Done: {problem}")
+            return "review"
+        if load_intake(self.store, feature.id) is not None and not (feature.state is FeatureState.DONE
+                                                                     and feature.merged_sha):
+            return "review"  # W4.3.3: an approved Issue's task is Done only once its PR is merged
+        return "done"
 
     def _blocked_reason(self, task: Task) -> str:
         """Why a blocked, held or failed task cannot proceed."""

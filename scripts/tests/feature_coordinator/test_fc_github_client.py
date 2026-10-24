@@ -256,7 +256,7 @@ def test_pull_requests_are_flagged_and_never_created() -> None:
     client, _clock = client_for(Scripted(ok(issue_json(pull_request={"url": "x"}))))
     assert client.get_issue(7).is_pull_request
     transport = Scripted()
-    with pytest.raises(PullRequestPolicyError, match="disabled in Phase 4"):
+    with pytest.raises(PullRequestPolicyError, match="not authorized"):  # W4.3.3: test_fc_publish.py has the rest
         client_for(transport)[0].create_pull_request("feature/x", "dev", "T", "B")
     assert not transport.requests
     transport = Scripted(ok([]))

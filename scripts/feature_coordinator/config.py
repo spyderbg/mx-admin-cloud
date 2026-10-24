@@ -31,6 +31,10 @@ W4.3.1 adds `github.intake` (intake.py): a GitHub Issue that a command author ap
 `/worker approve <role> <spec-sha256>` becomes one feature with one task of that role, verified by
 the role's `role_gates`. Off by default (the Worker service polls only when it is enabled).
 
+W4.3.3 adds `github.publish` (publish.py): such a feature is integrated, its own branch pushed, ONE
+Draft PR opened to its base branch, and — after a person merged it — completed, its Issue closed and its
+Project #2 card moved to Done. Off by default; the Worker never merges.
+
 W2 (functional Worker) makes the routing role → agent → model configurable: a role names its
 agent (`provider`) and may override that provider's model (`model`, validated per agent kind;
 "default" = the CLI's own default), and a role can be disabled (`enabled: false`, Automation).
@@ -253,6 +257,17 @@ class GitHubIntakeConfig:
 
 
 @dataclass(frozen=True)
+class GitHubPublishConfig:
+    """W4.3.3: an approved GitHub Issue's feature is integrated, its own branch pushed, ONE Draft PR to its
+    base branch opened, the human merge detected and the feature completed (publish.py). Off until an
+    operator enables it. Fixed, not configurable: Draft PRs only, never a merge, never a forced push."""
+
+    enabled: bool = False
+    poll_interval_seconds: int = 60       # the Worker service checks at most this often
+    git_timeout_seconds: int = 120        # one `git push`, `ls-remote` or `fetch` of the feature or base branch
+
+
+@dataclass(frozen=True)
 class GitHubConfig:  # pylint: disable=too-many-instance-attributes
     """The GitHub Issues adapter (Phase 4). No credentials: `gh` uses its existing login."""
 
@@ -276,6 +291,7 @@ class GitHubConfig:  # pylint: disable=too-many-instance-attributes
     max_pages: int = 20
     project: GitHubProjectConfig = field(default_factory=GitHubProjectConfig)
     intake: GitHubIntakeConfig = field(default_factory=GitHubIntakeConfig)
+    publish: GitHubPublishConfig = field(default_factory=GitHubPublishConfig)
 
     @property
     def owner(self) -> str:
@@ -545,6 +561,11 @@ def _validate_intake(config: ProjectConfig) -> None:
         unknown = [gate for gate in gates if gate not in config.gate_names]
         if unknown and intake.enabled:  # a configuration with other gates is valid while the intake is off
             raise ConfigError(f"{where}.role_gates[{role!r}]: unknown gates {unknown}")
+    publish = config.github.publish
+    if publish.poll_interval_seconds < 10:
+        raise ConfigError("github.publish.poll_interval_seconds must be at least 10 (GitHub is polled, never hammered)")
+    if not 10 <= publish.git_timeout_seconds <= 1800:
+        raise ConfigError("github.publish.git_timeout_seconds must be 10..1800")
 
 
 def _validate_project(project: GitHubProjectConfig) -> None:  # pylint: disable=too-many-branches
@@ -829,6 +850,8 @@ def _github_from_mapping(data: Mapping[str, Any]) -> GitHubConfig:
             values[key] = _project_from_mapping(dict(raw or {}))
         elif key == "intake":
             values[key] = _intake_from_mapping(dict(raw or {}))
+        elif key == "publish":
+            values[key] = _publish_from_mapping(dict(raw or {}))
         else:
             values[key] = tuple(str(v) for v in raw) if isinstance(default, tuple) else type(default)(raw)
     return GitHubConfig(**values)
@@ -852,6 +875,25 @@ def _intake_from_mapping(data: Mapping[str, Any]) -> GitHubIntakeConfig:
         else:
             values[key] = raw
     return GitHubIntakeConfig(**values)
+
+
+def _publish_from_mapping(data: Mapping[str, Any]) -> GitHubPublishConfig:
+    """`github.publish` (W4.3.3): strict, like `github.intake`; absent → off."""
+    defaults = GitHubPublishConfig()
+    known = set(GitHubPublishConfig.__dataclass_fields__)  # pylint: disable=no-member
+    unknown = set(data) - known
+    if unknown:
+        raise ConfigError(f"unknown github.publish keys: {sorted(unknown)} (tokens and remotes never belong here)")
+    values: dict[str, Any] = {}
+    for key in known & set(data):
+        raw = data[key]
+        if isinstance(getattr(defaults, key), bool):
+            values[key] = _bool(raw, f"github.publish.{key}")
+        elif isinstance(raw, bool) or not isinstance(raw, int):
+            raise ConfigError(f"github.publish.{key} must be an integer")
+        else:
+            values[key] = raw
+    return GitHubPublishConfig(**values)
 
 
 def _project_from_mapping(data: Mapping[str, Any]) -> GitHubProjectConfig:
