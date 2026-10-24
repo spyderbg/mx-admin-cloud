@@ -27,6 +27,10 @@ coordinator's Issues (owner, number and GraphQL node ID, the projects that must 
 written, the Status options and the Agent / Feature ID / Blocked Reason fields). It is
 disabled by default; `default_config()` points it at the mx-admin-cloud board.
 
+W4.3.1 adds `github.intake` (intake.py): a GitHub Issue that a command author approves with
+`/worker approve <role> <spec-sha256>` becomes one feature with one task of that role, verified by
+the role's `role_gates`. Off by default (the Worker service polls only when it is enabled).
+
 W2 (functional Worker) makes the routing role → agent → model configurable: a role names its
 agent (`provider`) and may override that provider's model (`model`, validated per agent kind;
 "default" = the CLI's own default), and a role can be disabled (`enabled: false`, Automation).
@@ -226,6 +230,28 @@ class GitHubProjectConfig:  # pylint: disable=too-many-instance-attributes
         return self.status_names[key]
 
 
+# W4.3.1: the gates an approved GitHub Issue's task must pass, per role (a role without gates cannot
+# be approved; automation is disabled).
+DEFAULT_INTAKE_GATES: dict[str, tuple[str, ...]] = {
+    "backend": ("backend-tests", "backend-lint", "docs-check"),
+    "cli": ("cli-lint", "docs-check"),
+    "frontend": ("frontend-type-check", "frontend-build", "docs-check"),
+    "coordination": ("docs-check",),
+}
+
+
+@dataclass(frozen=True)
+class GitHubIntakeConfig:
+    """W4.3.1: approved GitHub Issues become Worker tasks (intake.py). Off until an operator enables it.
+    Approval rules are the `/feature` command rules (`command_authors`, `command_min_permission`)."""
+
+    enabled: bool = False
+    poll_interval_seconds: int = 60       # the Worker service polls at most this often
+    max_issues_per_poll: int = 30         # changed Issues whose comments are read per poll
+    max_spec_characters: int = 20000      # a longer Issue body is refused as a task specification
+    role_gates: Mapping[str, tuple[str, ...]] = field(default_factory=lambda: dict(DEFAULT_INTAKE_GATES))
+
+
 @dataclass(frozen=True)
 class GitHubConfig:  # pylint: disable=too-many-instance-attributes
     """The GitHub Issues adapter (Phase 4). No credentials: `gh` uses its existing login."""
@@ -249,6 +275,7 @@ class GitHubConfig:  # pylint: disable=too-many-instance-attributes
     create_settle_seconds: float = 5.0
     max_pages: int = 20
     project: GitHubProjectConfig = field(default_factory=GitHubProjectConfig)
+    intake: GitHubIntakeConfig = field(default_factory=GitHubIntakeConfig)
 
     @property
     def owner(self) -> str:
@@ -396,6 +423,7 @@ def validate(config: ProjectConfig) -> None:
             raise ConfigError(f"gate {name!r} must be a non-empty argv list of strings")
     _validate_gates_and_runtime(config)
     _validate_github(config.github)
+    _validate_intake(config)
     _validate_worker(config.worker)
     if not config.allowed_state_filesystems or any(fs.startswith("fuse") for fs in config.allowed_state_filesystems):
         raise ConfigError("allowed_state_filesystems must be non-empty and must not include FUSE filesystems")
@@ -498,6 +526,25 @@ def _validate_github(github: GitHubConfig) -> None:
     if not 0 <= github.max_retries <= 10 or not 1 <= github.max_pages <= 100:
         raise ConfigError("github.max_retries must be 0..10 and github.max_pages 1..100")
     _validate_project(github.project)
+
+
+def _validate_intake(config: ProjectConfig) -> None:
+    intake, where = config.github.intake, "github.intake"
+    if intake.poll_interval_seconds < 10:
+        raise ConfigError(f"{where}.poll_interval_seconds must be at least 10 (GitHub is polled, never hammered)")
+    if not 1 <= intake.max_issues_per_poll <= 100:
+        raise ConfigError(f"{where}.max_issues_per_poll must be 1..100")
+    if not 100 <= intake.max_spec_characters <= 65536:
+        raise ConfigError(f"{where}.max_spec_characters must be 100..65536 (GitHub's body limit)")
+    for role, gates in intake.role_gates.items():
+        if role not in config.roles:
+            raise ConfigError(f"{where}.role_gates: unknown role {role!r}")
+        if not gates:
+            raise ConfigError(f"{where}.role_gates[{role!r}] needs at least one gate (an approved task is always "
+                              "verified)")
+        unknown = [gate for gate in gates if gate not in config.gate_names]
+        if unknown and intake.enabled:  # a configuration with other gates is valid while the intake is off
+            raise ConfigError(f"{where}.role_gates[{role!r}]: unknown gates {unknown}")
 
 
 def _validate_project(project: GitHubProjectConfig) -> None:  # pylint: disable=too-many-branches
@@ -780,9 +827,31 @@ def _github_from_mapping(data: Mapping[str, Any]) -> GitHubConfig:
         raw = data[key]
         if key == "project":
             values[key] = _project_from_mapping(dict(raw or {}))
+        elif key == "intake":
+            values[key] = _intake_from_mapping(dict(raw or {}))
         else:
             values[key] = tuple(str(v) for v in raw) if isinstance(default, tuple) else type(default)(raw)
     return GitHubConfig(**values)
+
+
+def _intake_from_mapping(data: Mapping[str, Any]) -> GitHubIntakeConfig:
+    defaults = GitHubIntakeConfig()
+    known = set(GitHubIntakeConfig.__dataclass_fields__)  # pylint: disable=no-member
+    unknown = set(data) - known
+    if unknown:
+        raise ConfigError(f"unknown github.intake keys: {sorted(unknown)} (tokens never belong here)")
+    values: dict[str, Any] = {}
+    for key in known & set(data):
+        raw = data[key]
+        if key == "role_gates":
+            values[key] = {str(role): tuple(str(g) for g in (gates or ())) for role, gates in dict(raw or {}).items()}
+        elif isinstance(getattr(defaults, key), bool):
+            values[key] = _bool(raw, f"github.intake.{key}")
+        elif isinstance(raw, bool) or not isinstance(raw, int):
+            raise ConfigError(f"github.intake.{key} must be an integer")
+        else:
+            values[key] = raw
+    return GitHubIntakeConfig(**values)
 
 
 def _project_from_mapping(data: Mapping[str, Any]) -> GitHubProjectConfig:

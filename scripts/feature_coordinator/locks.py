@@ -184,3 +184,8 @@ class LockSet:
         part of the lock order above: no worker holds it, and a sync holds no other lock
         while it waits on the network (state transactions inside a sync are short)."""
         return FileLock(self.dir / "github-sync.lock")
+
+    def intake(self) -> FileLock:
+        """W4.3.1: one GitHub intake poll at a time (intake.py). Like github_sync(), NOT part of the
+        lock order above: nobody takes it while holding another lock."""
+        return FileLock(self.dir / "github-intake.lock")

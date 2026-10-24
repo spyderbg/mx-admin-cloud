@@ -18,10 +18,10 @@ and converges the Issue to it:
                  operation ID is its index range) and explicit outbox entries (outbox/<op>.json).
 
 The only GitHub → local path is a validated command in a comment (`/feature hold <task>
-<reason>`, `/feature release <task>`) from an operator listed in `github.command_authors` with at
-least `command_min_permission` on the repository. A command can move a task into or out of
-`needs-human`; it can never verify or unblock a dependency, grant a path, a tool or shell
-access. Labels, edits, closing and every other comment are ignored as input.
+<reason>`, `/feature release <task>`; W4.3.1: `/worker approve`, intake.py) from an operator listed
+in `github.command_authors` with at least `command_min_permission` on the repository. A `/feature`
+command can move a task into or out of `needs-human`; no command can verify or unblock a dependency,
+or grant a path, a tool or shell access. Labels, edits, closing and other comments are not input.
 
 Idempotency and recovery. Every remote write is preceded by a persisted operation record:
 `pending_create` before creating an Issue, `pending_history` / outbox `attempts` before a
@@ -61,6 +61,7 @@ from .errors import (
 )
 from .escalation import hold_task, release_task
 from .github_api import sanitize
+from .intake import load_intake, verify_intake_issue
 from .issues import (
     BLOCKED_LABEL,
     IN_PROGRESS_LABEL,
@@ -469,14 +470,18 @@ class IssueSync:  # pylint: disable=too-many-instance-attributes,too-many-public
         return report
 
     def _check_scope(self, feature: Feature) -> None:
-        if getattr(self.client, "live", False) and self.gh.write_scope == "test-features-only" and not feature.test:
-            raise SyncScopeError(f"feature {feature.id!r} is not a test feature; the GitHub write scope is "
-                                 "'test-features-only' (Phase 4). Widening it needs operator approval")
+        if getattr(self.client, "live", False) and self.gh.write_scope == "test-features-only" and not feature.test \
+                and load_intake(self.store, feature.id) is None:
+            raise SyncScopeError(f"feature {feature.id!r} is not a test feature or an approved GitHub Issue; the write "
+                                 "scope is 'test-features-only' (Phase 4). Widening it needs operator approval")
 
     def _sync(self, feature_id: str, report: SyncReport, apply: bool, ingest: bool) -> None:
         feature = self.store.load_feature(feature_id)
         if apply:
             self._check_scope(feature)
+        if (intake := load_intake(self.store, feature.id)) is not None:
+            self._sync_intake(feature, intake, report, apply)
+            return
         tasks = self.store.load_tasks(feature)
         if apply:
             self._ensure_labels(feature, tasks.values(), report)
@@ -502,6 +507,33 @@ class IssueSync:  # pylint: disable=too-many-instance-attributes,too-many-public
                 self._post_outbox(record_id, issues[record_id], numbers, report, apply)
         report.issues = {rid: {"number": i.number, "url": i.url, "state": i.state, "labels": sorted(i.labels)}
                          for rid, i in issues.items()}
+
+    def _sync_intake(self, feature: Feature, intake: Any, report: SyncReport, apply: bool) -> None:
+        """W4.3.1: no Issue is created; the task maps to the approved Issue, which only gets queued
+        comments (its comments are not commands; title, body, labels and state are never changed)."""
+        task, link = self.store.load_task(intake.task_id), self.load_link(intake.task_id)
+        try:
+            issue = self.client.get_issue(intake.issue_number)
+            self.verify_issue(feature.id, task.id, issue, link)
+            if apply and (link is None or link.issue_id is None or task.issue_number is None):
+                self._record_mapping(feature, task, issue)
+        except (GitHubNotFoundError, OwnershipError) as exc:
+            report.protected[task.id] = f"the approved Issue #{intake.issue_number}: {sanitize(str(exc))}"
+            return
+        self._post_outbox(task.id, issue, {task.id: issue.number}, report, apply)
+        report.issues = {task.id: {"number": issue.number, "url": issue.url, "state": issue.state,
+                                   "labels": sorted(issue.labels)}}
+
+    def verify_issue(self, feature_id: str, task_id: str | None, issue: RemoteIssue,
+                     link: IssueLink | None) -> None:
+        """OwnershipError unless *issue* is the record's Issue: the coordinator's own (Phase 4 proof),
+        or (W4.3.1) exactly the approved Issue of an intake feature's task."""
+        known_number, known_id = (link.issue_number, link.issue_id) if link else (None, None)
+        if (intake := load_intake(self.store, feature_id)) is not None:
+            verify_intake_issue(issue, intake, record_id=task_id or feature_id, known_id=known_id)
+        else:
+            verify_ownership(issue, self.expected_marker(feature_id, task_id), viewer=self.viewer(),
+                             known_number=known_number, known_id=known_id)
 
     def _ensure_labels(self, feature: Feature, tasks: Iterable[Task], report: SyncReport) -> None:
         wanted = {PARENT_LABEL, *STATE_LABELS, *(ROLE_LABELS[t.role] for t in tasks)}
@@ -766,8 +798,8 @@ class IssueSync:  # pylint: disable=too-many-instance-attributes,too-many-public
                 changed |= self._handle_comment(feature, record_id, comment, report, apply)
         return changed
 
-    def _authorize(self, comment: RemoteComment) -> str | None:
-        """None if the author may issue commands, else the reason it is ignored."""
+    def authorize(self, comment: RemoteComment) -> str | None:
+        """None if the author may issue commands (also W4.3.1 `/worker approve`), else why not."""
         if comment.author not in self.gh.command_authors:
             return f"{comment.author} is not a configured command author"
         permission = self._permission(comment.author)
@@ -788,7 +820,7 @@ class IssueSync:  # pylint: disable=too-many-instance-attributes,too-many-public
         verb, target, reason = command
         entry: dict[str, Any] = {"issue_record": record_id, "comment_id": comment.id, "author": comment.author,
                                  "command": f"{verb} {target}".strip()}
-        refusal = self._authorize(comment)
+        refusal = self.authorize(comment)
         if refusal is not None:
             entry["result"] = f"ignored: {refusal}"
             report.commands.append(entry)
@@ -919,11 +951,10 @@ class IssueSync:  # pylint: disable=too-many-instance-attributes,too-many-public
         link = next((l for l in self.links() if l.issue_number == number), None)
         verdict = "not owned: no local record maps to this Issue"
         if link is not None:
-            expected = self.expected_marker(link.feature_id, link.id if link.kind == "task" else None)
             try:
-                verify_ownership(issue, expected, viewer=self.viewer(), known_number=link.issue_number,
-                                 known_id=link.issue_id)
-                verdict = f"owned: {link.kind} `{link.id}`"
+                self.verify_issue(link.feature_id, link.id if link.kind == "task" else None, issue, link)
+                verdict = (f"approved intake Issue: task `{link.id}`" if load_intake(self.store, link.feature_id)
+                           else f"owned: {link.kind} `{link.id}`")
             except OwnershipError as exc:
                 verdict = f"not owned: {exc}"
         return {"number": issue.number, "title": sanitize(issue.title, 120), "state": issue.state,

@@ -281,3 +281,17 @@ github:
     active_view: Active Tasks            # open Issues in Ready, In Progress, Blocked, Review (D-29)
     item_settle_seconds: 2.0             # after adding an item, before setting fields (project workflows)
     max_field_attempts: 2                # field writes re-applied when a read-back differs
+  # W4.3.1 GitHub Issue intake (docs_agents/coordination/github-intake.md). An Issue that a command
+  # author approves with `/worker approve <role> <spec-sha256>` (printed by `feature.py github intake
+  # show N`) becomes ONE feature with ONE task of that role; the approved title and body are recorded
+  # and never re-read. Nothing is written to an Issue before approval. Off until an operator enables it.
+  intake:
+    enabled: false
+    poll_interval_seconds: 60            # the Worker service polls GitHub at most this often (>= 10)
+    max_issues_per_poll: 30              # changed Issues whose comments are read per poll; the rest next time
+    max_spec_characters: 20000           # a longer Issue body is refused as a task specification
+    role_gates:                          # what an approved task of each role must pass (no gates: no approval)
+      backend: [backend-tests, backend-lint, docs-check]
+      cli: [cli-lint, docs-check]
+      frontend: [frontend-type-check, frontend-build, docs-check]
+      coordination: [docs-check]

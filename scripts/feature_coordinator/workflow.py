@@ -29,6 +29,13 @@ every coordinator lock — asks the IssueSync to converge the Issues (issue_sync
 failure is recorded as a `tracker-sync-deferred` event and leaves the local state intact;
 `feature.py github sync` (or the next operation) completes the synchronization.
 
+W4.3.1 (intake.py): a task made from an approved GitHub Issue runs only while that Issue is open
+and unchanged. Its Issue is re-read — never while the claim is held — before the claim (otherwise
+the task is held, not started), right after the claim is released (a verification accepted
+meanwhile is withdrawn: re-opened, then held) and before integration; with the claim held, the
+acceptance is refused once a withdrawn approval is known locally (the poller and the Worker
+service record it, and stop the run through the existing cancellation).
+
 Project board (Phase 4 extension). With a ProjectSync (`board`), every such sync also
 converges the feature's GitHub Projects items (project_sync.py), and `plan` authorizes the new
 feature for the board. While a task runs, its worker holds its role slot, so it never talks
@@ -75,6 +82,7 @@ from .escalation import hold_task as _hold_task
 from .escalation import release_task as _release_task
 from .github_api import redact_secrets, sanitize
 from .gitops import CommitRequest, GitCoordinator, commit_subject, file_digest
+from .intake import issue_problem, known_problem, load_intake
 from .issue_sync import IssueSync, SyncReport, enqueue_comment
 from .project_sync import BoardReport, ProjectSync
 from .issues import PullRequest, TrackerClient
@@ -354,6 +362,7 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
         if self.git.current_branch() != feature.branch:
             raise GitOperationError(f"the shared checkout is not on {feature.branch!r}")
         require_workspace(self.root, feature)  # W2: identity, base revision, no unfinished Git operation
+        self._require_approval(task)  # W4.3.1: before the claim, so no lock is held during the request
         head = self._head(feature)
         mark = len(self.store.events())
         claim = self.claims.claim(task_id, role=task.role, branch=feature.branch, head_sha=head)
@@ -383,8 +392,55 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
                 flag = self.store.get_flag(CANCEL_FLAG.format(task=task_id))
                 if flag and flag.get("token") == claim.token:
                     self.store.set_flag(CANCEL_FLAG.format(task=task_id), None)
+        result = self._confirm_approval(result)  # W4.3.1: the claim is released, a request is allowed again
         # After the role slot is released: the Issues never delay another writer.
         self.sync_issues(feature.id)
+        return result
+
+    # -- W4.3.1: tasks from approved GitHub Issues ---------------------------------------------
+
+    def _approval_problem(self, task: Task) -> str | None:
+        """Why the approved Issue of an intake task no longer authorizes it (a fresh read: the caller
+        holds no lock), or None — without a request for every other task. Unreadable: CoordinatorError."""
+        record = load_intake(self.store, task.feature_id)
+        if record is None or record.task_id != task.id:
+            return None
+        return issue_problem(self.sync.client, record)[1] or None
+
+    def _require_approval(self, task: Task) -> None:
+        """Before a run: a withdrawn approval holds the task (an operator decides); an unreadable Issue
+        defers the run (transient). Either way no agent starts."""
+        try:
+            problem = self._approval_problem(task)
+        except CoordinatorError as exc:
+            self._event("verification-deferred", task=task.id, role=task.role,
+                        error=f"the approved GitHub Issue could not be re-read: {sanitize(str(exc))}")
+            raise ClaimError(f"task {task.id!r} was not started: its approved GitHub Issue could not be re-read") \
+                from exc
+        if problem:
+            self.hold_task(task.id, reason=problem, actor="github-intake")
+            raise ClaimError(f"task {task.id!r} was not started and is held for an operator: {problem}")
+
+    def _confirm_approval(self, result: TaskRun) -> TaskRun:
+        """After the claim is released, before anyone else sees the result: a verification accepted
+        while the approved Issue changed or closed is withdrawn (re-opened, then held); if the Issue
+        cannot be read, it is re-opened for a later attempt (transient). Checkpoints and commits stay."""
+        task = self.store.load_task(result.task_id)
+        if task.state is not TaskState.VERIFIED or load_intake(self.store, task.feature_id) is None:
+            return result
+        try:
+            problem, transient = self._approval_problem(task), False
+        except CoordinatorError as exc:
+            problem, transient = f"the approved GitHub Issue could not be re-read: {sanitize(str(exc))}", True
+        if not problem:
+            return result
+        self.reopen_task(task.id, f"verification withdrawn: {problem}")
+        if transient:
+            self._event("verification-deferred", task=task.id, role=task.role, error=problem)
+            result.state = TaskState.READY
+        else:
+            self.hold_task(task.id, reason=problem, actor="github-intake")
+            result.state = TaskState.NEEDS_HUMAN
         return result
 
     def _after_run(self, feature: Feature, task: Task, head: str, run: TaskRun,  # pylint: disable=too-many-return-statements,too-many-arguments
@@ -570,6 +626,9 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
                                     f"gates could not run: {[g.gate for g in unrun]} ({causes})"[:1000], run)
             if failing:
                 return self._finish(task.id, TaskState.FAILED, f"gates failed: {[g.gate for g in failing]}", run)
+            withdrawn = known_problem(self.store, task)  # W4.3.1: local only — the claim is held
+            if withdrawn:
+                return self._finish(task.id, TaskState.NEEDS_HUMAN, f"result not accepted: {withdrawn}", run)
             finished = self._finish(task.id, TaskState.VERIFIED, "acceptance gates passed on the shared branch", run)
             if finished is not None:
                 return finished
@@ -627,6 +686,9 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
 
     def verify_task(self, task_id: str, evidence: Evidence) -> list[str]:
         """Record externally produced evidence for an in-progress task; returns unblocked task IDs."""
+        problem = known_problem(self.store, self.store.load_task(task_id))  # W4.3.1: local; a caller may hold
+        if problem:                                                             # the task's claim
+            raise EvidenceError(f"task {task_id!r} cannot be verified: {problem}")
         with self.store.transaction():
             task = self.store.load_task(task_id)
             feature = self.store.load_feature(task.feature_id)
@@ -744,6 +806,10 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
 
         Runs as a quiescent barrier: project.lock EXCLUSIVE, so no scoped writer is active and
         no new claim can start while the combined gates run."""
+        for task in self.store.load_tasks(self.store.load_feature(feature_id)).values():
+            problem = self._approval_problem(task)  # W4.3.1, before the barrier: no lock is held
+            if problem:
+                raise PullRequestPolicyError(f"feature {feature_id!r} is not integrated: {problem}")
         try:
             with self.store.locks.project(shared=False, busy_error=WritersActiveError).acquire():
                 return self._integrate(feature_id, gates)
