@@ -35,9 +35,13 @@ Plumbing commands run no hooks. `push_plan` renders the push as a dry-run plan (
 W4.3.3 (publish.py, an approved GitHub Issue's feature only): `push_branch` pushes EXACTLY the validated
 commit to the remote's refs/heads/<feature branch> — never a protected branch, never forced (a remote
 branch that the commit does not contain is refused), only from a clean checkout that is on that branch
-at that commit, under project.lock EXCLUSIVE + git.lock, with no hooks and a bounded time. It reads the
-remote branch first and after, so a repeated or interrupted push is safe. `fetch_branch` fetches one
-branch (merge verification) into FETCH_HEAD; no local branch or working-tree file changes.
+at that commit, under project.lock EXCLUSIVE + git.lock, with no hooks and a bounded time. Under those
+locks, before reading the remote and again right before the push, the remote must have exactly one
+configured URL and exactly one effective push URL, both the approved destination: `git push <remote>`
+publishes to EVERY push URL (all `pushurl` values, else all `url` values, after insteadOf/pushInsteadOf
+rewriting). It reads the remote branch first and after, so a repeated or interrupted push is safe.
+`fetch_branch` fetches one branch (merge verification) into FETCH_HEAD; no local branch or working-tree
+file changes.
 """
 
 from __future__ import annotations
@@ -412,10 +416,21 @@ class GitCoordinator:  # pylint: disable=too-many-public-methods
 
     # -- remote operations (W4.3.3; see the module docstring) -----------------
 
-    def remote_urls(self, remote: str = "origin") -> tuple[str, str]:
-        """(the configured URL of *remote*, the URL a push really uses after pushurl/insteadOf rewriting)."""
-        configured = self._git("config", "--get", f"remote.{remote}.url", check=False).strip()
-        return configured, self._git("remote", "get-url", "--push", remote, check=False).strip()
+    def remote_urls(self, remote: str = "origin") -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """(every configured remote.<remote>.url, EVERY URL a push to *remote* publishes to). A push goes to all
+        of them — each pushurl, else each url — after insteadOf/pushInsteadOf rewriting; without --all,
+        `get-url --push` shows only the first."""
+        def lines(*args: str) -> tuple[str, ...]:
+            return tuple(line.strip() for line in self._git(*args, check=False).splitlines() if line.strip())
+        return (lines("config", "--get-all", f"remote.{remote}.url"),
+                lines("remote", "get-url", "--push", "--all", remote))
+
+    def _check_destination(self, remote: str, destination: str) -> None:
+        """(Under git.lock) a push to *remote* publishes to *destination* and nowhere else."""
+        configured, push = self.remote_urls(remote)
+        if configured != (destination,) or push != (destination,):
+            raise ScopeViolationError(f"a push to {remote} would publish to {len(push)} URL(s) ({len(configured)} "
+                                      "configured), not exactly the approved destination; nothing is pushed")
 
     def _network(self, *args: str, timeout: float) -> subprocess.CompletedProcess[str]:
         """A git command that talks to a remote: no hooks, no prompts, bounded. On timeout the whole process
@@ -447,9 +462,10 @@ class GitCoordinator:  # pylint: disable=too-many-public-methods
                 return sha
         return None
 
-    def push_branch(self, branch: str, sha: str, *, protected: Sequence[str] = (), remote: str = "origin",
-                    timeout: float = 120.0) -> PushResult:
-        """Push exactly *sha* to *remote*'s refs/heads/<branch>. See the module docstring."""
+    def push_branch(self, branch: str, sha: str, *, destination: str, protected: Sequence[str] = (),
+                    remote: str = "origin", timeout: float = 120.0) -> PushResult:
+        """Push exactly *sha* to *remote*'s refs/heads/<branch>, *destination* being the remote's only push URL.
+        See the module docstring."""
         if not _FEATURE_REF_RE.fullmatch(branch) or branch in protected or not _SHA_RE.fullmatch(sha):
             raise ScopeViolationError(f"only a feature branch is ever pushed (by its full commit SHA), not {branch!r}")
         project = self._quiescent()
@@ -462,12 +478,14 @@ class GitCoordinator:  # pylint: disable=too-many-public-methods
                 unclean = self.tracked_changes() + self.untracked_files() + git_operation_in_progress(self.root)
                 if unclean:
                     raise GitOperationError(f"the checkout is not clean ({unclean[:10]}); nothing is pushed")
+                self._check_destination(remote, destination)
                 before = self.remote_head(branch, remote=remote, timeout=timeout)
                 if before == sha:
                     return PushResult(branch, sha, before, pushed=False)
                 if before is not None and not (self._has_commit(before) and self.is_ancestor(before, sha)):
                     raise RemoteRejectedError(f"{remote} has {branch} at {before[:12]}, which {sha[:12]} does not "
                                               "contain: not a fast-forward, and a push is never forced")
+                self._check_destination(remote, destination)  # again, right before the push
                 result = self._network("push", "--porcelain", "--no-verify", remote, f"{sha}:refs/heads/{branch}",
                                        timeout=timeout)
                 if result.returncode != 0:

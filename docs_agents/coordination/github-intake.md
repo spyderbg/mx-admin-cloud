@@ -201,7 +201,7 @@ What the Worker never does: merge, mark a PR ready, approve a review, push `dev`
 
 - the branch must match `feature/…` and is never a protected branch;
 - the checkout must be clean (no tracked or untracked change, no unfinished Git operation), on that branch, at that commit; the local branch must still be at the PR candidate's head;
-- `origin` must be the feature's repository: the root commits and the `origin` URL recorded at activation, a plain `github.com/<github.repository>` URL, and the push URL must equal the configured URL (no `pushurl` or `insteadOf` rewriting);
+- `origin` must be the feature's repository: the root commits and the `origin` URL recorded at activation, a plain `github.com/<github.repository>` URL, configured once, and its **only** effective push URL. `git push origin` publishes to every push URL (each `pushurl`, else each `url`, after `insteadOf`/`pushInsteadOf` rewriting), so several push URLs, or one that differs from the configured URL, stop publication and nothing is pushed anywhere. `push_branch` checks this again under its locks, before it reads the remote and right before the push, against the destination the publisher approved;
 - project.lock EXCLUSIVE + git.lock are held (no writer can start meanwhile); hooks are disabled (`core.hooksPath=/dev/null`, `--no-verify`); every network call is bounded by `git_timeout_seconds`, and on timeout the whole process group is killed;
 - the remote branch is read first: already at the commit → nothing is pushed (a repeat); absent, or an ancestor → a normal push; anything else → **refused, never forced**. A remote rejection (`!` in the porcelain output) is refused too. After the push the remote branch is read again.
 
@@ -214,7 +214,7 @@ Before anything is created, the pass looks for the PR: the recorded number, else
 - its head commit is the verified head;
 - it was opened by the coordinator account or a `command_authors` login.
 
-A branch name alone is never enough. Anything else stops publication, and no PR is created: a PR whose head commit, base, repository or author differ; several matching PRs; a closed foreign PR on the branch.
+A branch name alone is never enough. Anything else stops publication, and no PR is created: a PR whose head commit, base, repository or author differ; several matching PRs; a closed foreign PR on the branch. The PR the pass has just created is checked the same way **before** it is recorded: a mismatch (for example, the branch moved on GitHub after the push) is never recorded and gets no link comment on the Issue. Publication stops, and later passes find that PR and refuse it instead of creating a second.
 
 PR creation is narrowly scoped. `GitHubClient.create_pull_request` refuses before any request unless `github.publish.enabled` is true AND the publisher authorized exactly this head and base for one creation. It creates Draft PRs only; the operator-approved Phase 2 `open_pull_request` is still refused against real GitHub. The PR body names the Issue and its link, the feature, the task, the approval (approver, time, comment, spec digest), the changed files, the task gates and the integration gates. It has no closing keyword: the coordinator closes the Issue itself, only after the verified merge.
 

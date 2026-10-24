@@ -353,9 +353,9 @@ def test_a_wrong_remote_stops_publication(repo: Path, state_dir: Path, remote: P
 def test_a_rewritten_or_changed_origin_stops_publication(rig: PubRig, tmp_path: Path) -> None:
     _number, _task_id, feature_id = integrated(rig)
     git(rig.repo, "config", "remote.origin.pushurl", str(tmp_path / "elsewhere.git"))
-    assert "rewritten" in rig.publish().attention[0]
+    assert "push URL of origin is rewritten" in rig.publish().attention[0]
     git(rig.repo, "config", "--unset", "remote.origin.pushurl")
-    assert "rewritten" in rig.publish().attention[0]  # still stopped: sticky
+    assert "push URL of origin is rewritten" in rig.publish().attention[0]  # still stopped: sticky
     state = ["--repo", str(rig.repo), "--state-dir", str(rig.state), "--tracker", "local"]
     assert cli_main([*state, "github", "publish", "reset", feature_id, "--apply"]) == 0
     git(rig.repo, "remote", "set-url", "origin", str(tmp_path / "other.git"))
@@ -445,7 +445,8 @@ def test_repeated_and_interrupted_pushes_are_safe(repo: Path, state_dir: Path, g
     assert again.ok and not again.pushed and len(again.created) == 1
     pushes = rig.events("publish-pushed")
     assert [e["pushed"] for e in pushes] == [False]
-    assert rig.coord.git.push_branch(branch, rig.candidate(feature_id).head_sha).pushed is False  # a repeat
+    assert rig.coord.git.push_branch(branch, rig.candidate(feature_id).head_sha,
+                                     destination=str(github_origin)).pushed is False  # a repeat
 
 
 def test_an_unreachable_remote_defers_and_recovers(rig: PubRig, tmp_path: Path) -> None:
@@ -461,24 +462,80 @@ def test_an_unreachable_remote_defers_and_recovers(rig: PubRig, tmp_path: Path) 
 
 def test_push_branch_guards(rig: PubRig, monkeypatch: pytest.MonkeyPatch) -> None:
     _number, _task_id, feature_id = integrated(rig)
-    gc, head = rig.coord.git, rig.candidate(feature_id).head_sha
+    gc, head, to = rig.coord.git, rig.candidate(feature_id).head_sha, str(rig.bare)
     for branch in ("dev", "main", "master", "release/x", "feature/../dev", f"feature/{feature_id}:dev"):
         with pytest.raises(ScopeViolationError):
-            gc.push_branch(branch, head)
+            gc.push_branch(branch, head, destination=to)
     with pytest.raises(ScopeViolationError):
-        gc.push_branch(f"feature/{feature_id}", "HEAD")
+        gc.push_branch(f"feature/{feature_id}", "HEAD", destination=to)
     with pytest.raises(ScopeViolationError):
-        gc.push_branch(f"feature/{feature_id}", head, protected=(f"feature/{feature_id}",))
+        gc.push_branch(f"feature/{feature_id}", head, destination=to, protected=(f"feature/{feature_id}",))
     with pytest.raises(HeadMismatchError):
-        gc.push_branch(f"feature/{feature_id}", rig.feature(feature_id).base_sha)
+        gc.push_branch(f"feature/{feature_id}", rig.feature(feature_id).base_sha, destination=to)
+    with pytest.raises(ScopeViolationError, match="not exactly the approved destination"):
+        gc.push_branch(f"feature/{feature_id}", head, destination=f"{to}.other")  # origin is not the destination
     seen: list[tuple[str, ...]] = []
     real = GitCoordinator._network
     monkeypatch.setattr(GitCoordinator, "_network", lambda self, *a, timeout: seen.append(a) or real(
         self, *a, timeout=timeout))
-    assert gc.push_branch(f"feature/{feature_id}", head).pushed
+    assert gc.push_branch(f"feature/{feature_id}", head, destination=to).pushed
     push = next(a for a in seen if a[0] == "push")
     assert "--force" not in push and "--force-with-lease" not in push and not any(a.startswith("+") for a in push)
     assert push[-1] == f"{head}:refs/heads/feature/{feature_id}" and "--no-verify" in push
+
+
+def unauthorized_remote(rig: PubRig, how: str) -> Path:
+    """A second destination for `git push origin`: another pushurl beside the expected one, or a second url."""
+    evil = rig.state.parent / "unauthorized.git"
+    subprocess.run(["git", "init", "--bare", "-q", "--initial-branch=dev", str(evil)], check=True)
+    if how == "pushurl":
+        git(rig.repo, "remote", "set-url", "--add", "--push", "origin", str(rig.bare))
+        git(rig.repo, "remote", "set-url", "--add", "--push", "origin", str(evil))
+    else:
+        git(rig.repo, "remote", "set-url", "--add", "origin", str(evil))
+    assert git(rig.repo, "remote", "get-url", "--push", "origin").strip() == str(rig.bare)  # the old check's view
+    return evil
+
+
+def refs_of(bare: Path) -> str:
+    return subprocess.run(["git", "--git-dir", str(bare), "for-each-ref"], capture_output=True, text=True,
+                          check=True).stdout
+
+
+@pytest.mark.parametrize("how", ["pushurl", "url"])
+def test_several_push_urls_publish_nowhere(rig: PubRig, how: str) -> None:
+    _number, _task_id, feature_id = integrated(rig)
+    evil = unauthorized_remote(rig, how)
+    expected_refs = refs_of(rig.bare)
+    report = rig.publish()
+    assert "would publish to 2 URLs" in report.attention[0] and str(evil) in report.attention[0]
+    assert remote_sha(rig.bare, f"feature/{feature_id}") is None and refs_of(rig.bare) == expected_refs
+    assert remote_sha(evil, f"feature/{feature_id}") is None and refs_of(evil) == ""
+    assert not rig.prs() and not rig.tracker.authorized and rig.candidate(feature_id).attention  # sticky
+    assert not rig.events("publish-pushed")
+
+
+def test_the_push_destination_is_checked_again_under_the_git_locks(rig: PubRig,
+                                                                   monkeypatch: pytest.MonkeyPatch) -> None:
+    _number, _task_id, feature_id = integrated(rig)
+    branch, head, to = f"feature/{feature_id}", rig.candidate(feature_id).head_sha, str(rig.bare)
+    evil = unauthorized_remote(rig, "pushurl")
+    with pytest.raises(ScopeViolationError, match="would publish to 2 URL"):
+        rig.coord.git.push_branch(branch, head, destination=to)
+    monkeypatch.setattr(PullRequestPublisher, "_origin", lambda self, feature: (to, None))  # an earlier check passed
+    report = rig.publish()
+    assert "push refused" in report.attention[0] and "would publish to 2 URL" in report.attention[0]
+    assert remote_sha(rig.bare, branch) is None and refs_of(evil) == "" and not rig.prs()
+    git(rig.repo, "config", "--unset-all", "remote.origin.pushurl")
+    real = GitCoordinator.remote_head
+
+    def added_meanwhile(self, b, **kw):  # the configuration changes while the remote is read
+        git(rig.repo, "remote", "set-url", "--add", "--push", "origin", str(evil))
+        return real(self, b, **kw)
+    monkeypatch.setattr(GitCoordinator, "remote_head", added_meanwhile)
+    with pytest.raises(ScopeViolationError, match="would publish to 1 URL"):  # checked again right before the push
+        rig.coord.git.push_branch(branch, head, destination=to)
+    assert remote_sha(rig.bare, branch) is None and refs_of(evil) == ""
 
 
 @pytest.mark.parametrize("url, expected", [
@@ -507,6 +564,26 @@ def test_a_failed_pr_creation_is_retried_without_duplicates(rig: PubRig) -> None
     assert rig.candidate(feature_id).pending_create and rig.candidate(feature_id).pushed
     again = rig.publish()
     assert again.ok and len(again.created) == 1 and len(rig.prs()) == 1
+
+
+def test_a_mismatched_new_pr_is_never_recorded_or_linked(rig: PubRig) -> None:
+    number, _task_id, feature_id = integrated(rig)
+    rig.tracker.ref_resolver = lambda branch: "1" * 40  # GitHub reports another head (the branch moved meanwhile)
+    comments = rig.own_comments(number)
+    report = rig.publish()
+    assert "does not match the verified candidate" in report.attention[0] and "not recorded" in report.attention[0]
+    assert not report.created and len(rig.prs()) == 1
+    cand = rig.candidate(feature_id)
+    assert cand.number is None and cand.url is None and not cand.origin and cand.attention  # sticky
+    assert cand.pending_create  # the attempt stays visible
+    assert not rig.events("pull-request-opened") and not rig.events("pull-request-adopted")
+    assert rig.store.load_record("outbox", f"pr-{feature_id}") is None and rig.own_comments(number) == comments
+    assert "reset" in rig.publish().attention[0] and len(rig.prs()) == 1
+    reset = ["--repo", str(rig.repo), "--state-dir", str(rig.state), "--tracker", "local"]
+    assert cli_main([*reset, "github", "publish", "reset", feature_id, "--apply"]) == 0
+    again = rig.publish()  # found again, still refused: never adopted, never a second PR
+    assert "cannot be adopted" in again.attention[0] and len(rig.prs()) == 1 and rig.candidate(feature_id).number \
+        is None and rig.own_comments(number) == comments
 
 
 def test_a_lost_create_response_is_adopted_not_repeated(rig: PubRig) -> None:

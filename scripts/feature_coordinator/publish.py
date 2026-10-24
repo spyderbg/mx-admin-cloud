@@ -18,8 +18,8 @@ idempotent). Per feature, by its EXISTING state (no new state machine):
       until a task is verified again or an operator integrates.
   review (the single PR candidate):
       1. the checkout is the feature's repository (root commits; `origin` as recorded at activation, a
-         plain github.com/<github.repository> URL that no pushurl/insteadOf rewrites) and the feature
-         branch is still at the validated head;
+         plain github.com/<github.repository> URL that no pushurl/insteadOf rewrites, and its ONLY push
+         URL: a push publishes to every one) and the feature branch is still at the validated head;
       2. the PR is looked for BEFORE anything is created: the recorded number, else every PR, open AND
          closed, of the feature branch. A PR is adopted only when it is exactly the candidate: this
          repository's branch → the feature's base branch at the verified head commit, opened by the
@@ -306,21 +306,31 @@ class PullRequestPublisher:  # pylint: disable=too-few-public-methods
 
     def _repository_problem(self, feature: Feature) -> str | None:
         """Why this checkout's `origin` is not the feature's GitHub repository (None: it is)."""
+        return self._origin(feature)[1]
+
+    def _origin(self, feature: Feature) -> tuple[str, str | None]:
+        """(origin's single push URL, why it is not exactly the feature's GitHub repository — None: it is)."""
         recorded = feature.workspace or {}
         if recorded.get("root_commits") and recorded["root_commits"] != workspace_identity(self.coord.root)[
                 "root_commits"]:
-            return "repository identity mismatch: different root commit(s) than at activation"
-        configured, effective = self.git.remote_urls()
-        if not configured or configured != effective:
-            return (f"the push URL of origin is rewritten ({sanitize(effective, 120)!r}, configured "
-                    f"{sanitize(configured, 120)!r}); nothing is pushed or verified")
-        if recorded.get("origin") and recorded["origin"] != configured:
-            return f"origin changed since activation (now {sanitize(configured, 120)!r})"
-        repository = github_repository_of(configured, self.config.github.hostname)
+            return "", "repository identity mismatch: different root commit(s) than at activation"
+        configured, push = self.git.remote_urls()
+        if len(push) != 1:
+            shown = ", ".join(repr(sanitize(url, 120)) for url in push[:5])
+            return "", (f"a push to origin would publish to {len(push)} URLs ({shown}); exactly one push "
+                        "destination is required; nothing is pushed or verified")
+        if configured != push:
+            return "", (f"the push URL of origin is rewritten ({sanitize(push[0], 120)!r}, configured "
+                        f"{', '.join(repr(sanitize(url, 120)) for url in configured[:5]) or 'nothing'}); nothing "
+                        "is pushed or verified")
+        url = push[0]
+        if recorded.get("origin") and recorded["origin"] != url:
+            return "", f"origin changed since activation (now {sanitize(url, 120)!r})"
+        repository = github_repository_of(url, self.config.github.hostname)
         if repository is None or repository.lower() != self.config.github.repository.lower():
-            return (f"origin ({sanitize(configured, 120)!r}) is not {self.config.github.hostname}/"
-                    f"{self.config.github.repository}; nothing is pushed or verified")
-        return None
+            return "", (f"origin ({sanitize(url, 120)!r}) is not {self.config.github.hostname}/"
+                        f"{self.config.github.repository}; nothing is pushed or verified")
+        return url, None
 
     def _head_problem(self, feature: Feature, cand: PullRequestCandidate) -> str | None:
         try:
@@ -443,8 +453,12 @@ class PullRequestPublisher:  # pylint: disable=too-few-public-methods
 
     def _push(self, feature: Feature, cand: PullRequestCandidate, report: PublishReport) -> None:
         self._fault(f"crash-before-push:{feature.id}")
+        destination, problem = self._origin(feature)  # push_branch checks it again under its locks
+        if problem:
+            self._stop(feature, report, f"push refused: {problem}")
         try:
-            result = self.git.push_branch(feature.branch, cand.head_sha, timeout=self.cfg.git_timeout_seconds,
+            result = self.git.push_branch(feature.branch, cand.head_sha, destination=destination,
+                                          timeout=self.cfg.git_timeout_seconds,
                                           protected=(*PROTECTED_BRANCHES, feature.base_branch, self.config.base_branch))
         except RemoteUnavailableError:
             raise
@@ -490,10 +504,11 @@ class PullRequestPublisher:  # pylint: disable=too-few-public-methods
             pr = found[0]
         self._fault(f"crash-after-create:{feature.id}")
         problem = self._pr_problem(feature, cand, pr)
+        if problem:  # never recorded, never linked on the Issue; the next pass finds it and refuses a second PR
+            self._stop(feature, report, f"the new PR #{pr.number} does not match the verified candidate: {problem}; "
+                                        "it is not recorded")
         self._record_pr(feature, pr, "created")
         report.created[feature.id] = pr.number
-        if problem:
-            self._stop(feature, report, f"the new PR #{pr.number} does not match the verified candidate: {problem}")
         report.waiting.append(f"{feature.id}: Draft PR #{pr.number} waits for a person to review and merge it "
                               f"({pr.url})")
         self._status(report, feature, "draft", f"Draft PR #{pr.number} opened")
