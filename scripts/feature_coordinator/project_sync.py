@@ -40,9 +40,10 @@ for audit, therefore stay off that view.
 Ownership. A record is shown only when (1) its feature is authorized for the board — features
 planned while the integration is on are authorized by `plan`, older ones only by an explicit
 `feature.py github project associate FEATURE --apply`; (2) its Issue passes the Phase 4
-ownership proof (marker, author, number and database ID); (3) the project is the configured
-one (owner, number and node ID) and not a protected project; and (4) the item's content is
-exactly that Issue. Items of other Issues are never modified.
+ownership proof (marker, author, number and database ID) — or, for the task of a feature made
+from an approved GitHub Issue (W4.3.1, intake.py), it is exactly that Issue; (3) the project is
+the configured one (owner, number and node ID) and not a protected project; and (4) the item's
+content is exactly that Issue. Items of other Issues are never modified.
 
 Idempotency and recovery. Before adding an item, `pending_add` is persisted. GitHub returns
 the existing item when an Issue is added twice, and the next sync looks the Issue's items up
@@ -66,8 +67,9 @@ from .errors import GitHubError, GitHubUncertainWriteError, OwnershipError, Proj
     SyncScopeError
 from .github_api import sanitize
 from .github_projects import BoardClient, FieldOption, ProjectField, ProjectItem, ProjectView, RemoteProject
+from .intake import load_intake
 from .issue_sync import IssueSync, SimulatedCrash
-from .issues import OwnershipMarker, RemoteIssue, verify_ownership
+from .issues import OwnershipMarker, RemoteIssue
 from .locks import ProcessIdentity
 from .model import Feature, FeatureState, Task, TaskState, utc_now
 from .store import StateStore
@@ -592,9 +594,9 @@ class ProjectSync:  # pylint: disable=too-many-instance-attributes,too-many-publ
 
     def _check_scope(self, feature: Feature) -> None:
         if getattr(self.board, "live", False) and self.config.github.write_scope == "test-features-only" \
-                and not feature.test:
-            raise SyncScopeError(f"feature {feature.id!r} is not a test feature; the GitHub write scope is "
-                                 "'test-features-only'. Widening it needs operator approval")
+                and not feature.test and load_intake(self.store, feature.id) is None:
+            raise SyncScopeError(f"feature {feature.id!r} is not a test feature or an approved GitHub Issue; the "
+                                 "GitHub write scope is 'test-features-only'. Widening it needs operator approval")
 
     def sync(self, feature_id: str, *, apply: bool = True) -> BoardReport:
         """Converge the feature's board items to the local state. Holds only github-sync.lock."""
@@ -634,12 +636,13 @@ class ProjectSync:  # pylint: disable=too-many-instance-attributes,too-many-publ
         record_id = task.id if task else feature.id
         ilink = self.issues.load_link(record_id)
         if ilink is None or ilink.issue_number is None or ilink.issue_id is None:
-            report.skipped[record_id] = "no Issue yet (the Issue sync creates it first)"
+            report.skipped[record_id] = ("from an approved Issue: that Issue is shown as its task's card"
+                                         if task is None and load_intake(self.store, feature.id) is not None
+                                         else "no Issue yet (the Issue sync creates it first)")
             return None
         issue = self.issues.client.get_issue(ilink.issue_number)
         try:
-            verify_ownership(issue, self.issues.expected_marker(feature.id, task.id if task else None),
-                             viewer=self.issues.viewer(), known_number=ilink.issue_number, known_id=ilink.issue_id)
+            self.issues.verify_issue(feature.id, task.id if task else None, issue, ilink)
             if not issue.node_id:
                 raise OwnershipError(f"#{issue.number} has no node ID")
         except OwnershipError as exc:

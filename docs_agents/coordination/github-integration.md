@@ -1,7 +1,7 @@
 # GitHub Integration — Feature and Task Issues (Phase 4)
 
 > Owner role: **coordination**. Status: **Phase 4 deliverable, approved** (2026-10-17); the project board sections are the **Phase 4 extension**, also approved (same date).
-> Lifecycle and dependency rules: [task-lifecycle.md](task-lifecycle.md) · Rendered Issue and comment formats: [templates/](templates/README.md) · Commands: [operations §7](operations.md#7-github-issues-phase-4) · Project board (Phase 4 extension): [github-projects.md](github-projects.md) · Design baseline: [feature-workflow.md](feature-workflow.md) · Status and live evidence: [phase-status.md](phase-status.md)
+> Lifecycle and dependency rules: [task-lifecycle.md](task-lifecycle.md) · Rendered Issue and comment formats: [templates/](templates/README.md) · Commands: [operations §7](operations.md#7-github-issues-phase-4) · Project board (Phase 4 extension): [github-projects.md](github-projects.md) · Approved Issues as Worker tasks (W4.3.1): [github-intake.md](github-intake.md) · Design baseline: [feature-workflow.md](feature-workflow.md) · Status and live evidence: [phase-status.md](phase-status.md)
 >
 > Evidence tags: **[V]** verified by execution (the named test or command), **[S]** source-read, **[U]** unverified.
 
@@ -17,7 +17,7 @@ GitHub Issues are the **human-visible record** of feature work. They are never t
 | No bulk updates | The synchronizer only touches the Issues mapped to (or found by the exact idempotency key of) the records of one feature | live check Q compares every pre-existing Issue and PR before/after **[V]** |
 | GitHub Projects v2 only as a picture (Phase 4 extension) | Issues, labels and comments carry the record; the configured board (Project #2) only shows their state, and Project #1 (the bug workflow's) is never written. See [github-projects.md](github-projects.md) | `test_protected_projects_are_never_bound_or_written`, live B14 **[V]** |
 | No pull request creation in Phase 4 | `github_api.LIVE_PULL_REQUESTS_ENABLED = False`; `create_pull_request` refuses before any request | `test_pull_requests_are_flagged_and_never_created`, `test_the_live_adapter_never_creates_a_pull_request` **[V]**; live check R/Q3 **[V]** |
-| Writes limited to test features in Phase 4 | `github.write_scope: test-features-only`: a sync of a feature without `test: true` against the live adapter raises `SyncScopeError` before any write | `test_write_scope_limits_live_writes_to_test_features` **[V]** |
+| Writes limited to test features in Phase 4 | `github.write_scope: test-features-only`: a sync of a feature without `test: true` against the live adapter raises `SyncScopeError` before any write. W4.3.1: a feature made from an operator-approved Issue may also write, but only comments on that Issue and its own board item ([github-intake.md](github-intake.md)) | `test_write_scope_limits_live_writes_to_test_features` **[V]** |
 
 ## 2. Architecture
 
@@ -172,6 +172,7 @@ Policy:
 - A `release` never frees a dependency block ("released only by verified evidence"), and a release written before the current hold is **stale** and rejected. For holds that came from GitHub, comment IDs are compared, so no clock is involved; for local holds, timestamps are.
 - Each comment is processed once: the command, the ingestion cursor, the audit event (`github-command`) and the acknowledgement comment are written in one local transaction.
 - Coordinator comments (operation marker plus coordinator account) are never parsed as commands.
+- **W4.3.1:** on an Issue the coordinator does not own, `/worker approve <role> <spec-sha256>` from the same authors with the same permission makes the Issue one task, bound to the exact text approved ([github-intake.md](github-intake.md)).
 - **Nothing else is input:** labels, body edits, closing, reopening, project board cards and fields, and any other comment text never change local state. No command grants a path, a tool, shell access or any permission, and nothing in an Issue is executed.
 
 ## 8. Idempotency and recovery
@@ -244,6 +245,6 @@ The scenario (`live_test.py`) uses a **new** feature ID (`fc-p4-<UTC timestamp>`
 - **Discovery by label.** An Issue whose creation was interrupted *and* whose fixed label a human removed before the next sync would not be found by the key search, and a duplicate would be created. `reconcile` reports duplicates; it never deletes them.
 - **Relationships are Issue references** (task lists and `#N` links), not GitHub's sub-issue or "blocked by" APIs (not required; possible later).
 - **Project board workflows.** GitHub's "Auto-close issue" workflow on Project #2 closed an Issue whose card reached Done, and the Issue sync then reopened it with a drift comment, because only the local state closes Issues. Since D-28 (2026-10-17) the workflow is switched off, verified by configuration and by a behavior check ([github-projects §9](github-projects.md#9-githubs-built-in-project-workflows)). The repair still applies if it is ever switched on again.
-- **One account.** Coordinator and operator share the `spyderbg` account. Coordinator comments are told apart by their operation marker; a human comment that copies such a marker is ignored as a command, which is the safe direction.
+- **One account.** Coordinator and operator share the `spyderbg` account. Coordinator comments are told apart by their operation marker; a human comment that copies such a marker is ignored as a command, which is the safe direction. An agent with access to that login can post commands, and W4.3.1 approvals, as the operator. This is a known risk, accepted temporarily ([github-intake §9](github-intake.md#accepted-risk-shared-github-identity-and-approval-impersonation)).
 - **Pull requests** are refused until a later phase sets `LIVE_PULL_REQUESTS_ENABLED` with operator approval. The feature keeps its single local PR candidate.
 - **Write scope:** test features only, until the operator approves `all-features` (Phase 5).

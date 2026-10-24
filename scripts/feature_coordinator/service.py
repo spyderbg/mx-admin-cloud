@@ -2,7 +2,10 @@
 
 `feature.py worker start` (systemd --user runs exactly this). Each cycle:
 
-  1. heartbeat; operator requests (worker-control: pause, stop); a stop signal;
+  1. heartbeat; operator requests (worker-control: pause, stop); a stop signal; W4.3.1: when
+     `github.intake.enabled`, at most every `poll_interval_seconds` a GitHub intake poll (intake.py):
+     an Issue an operator approved with `/worker approve` is planned and, on a free checkout,
+     activated — the approval is the operator's plan and activation;
   2. the active feature — only one an operator planned AND activated; nothing else is started;
   3. the checkout: workspace identity/branch/base (W2), the feature's Worker lock (so
      `feature.py work` cannot drive it at the same time), and claims: a LIVE claim (a manual
@@ -11,7 +14,10 @@
      only when its identity is certain and its run deadline has passed;
   4. eligible tasks (READY, dependencies verified, role enabled, no attention record, next
      attempt due) → ONE task: pre-launch checks (CLI present, subscription login — never an API
-     key, checkpoint consistency, launch budget), the launch counted BEFORE it starts
+     key, checkpoint consistency, launch budget; W4.3.1: an approved Issue's task only while the
+     Issue is open and still matches the approved text, re-read now — and re-read while it runs:
+     a withdrawn approval stops the run through the existing cancellation), the launch counted
+     BEFORE it starts
      (write-ahead), `feature.py launch TASK --apply` as a subprocess (the existing W2/W3 path:
      claim, agent, acceptance, checkpoints, gates), watched with heartbeats and a watchdog;
   5. after the launch: the agent has stopped (no process carries its run tags), its claim is
@@ -130,6 +136,9 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
         self._stop_reason = ""
         self._cycle_errors = 0
         self._uncertain: dict[str, set[int]] = {}  # processes that survived SIGKILL: not signalled again
+        self._intake_at: float | None = None  # W4.3.1: the last GitHub intake poll (service clock)
+        self._intake_error = ""
+        self._intake_watch_at = 0.0           # W4.3.1: the last re-read of a running task's approved Issue
 
     # -- the whole lifetime ------------------------------------------------------------------
 
@@ -264,6 +273,7 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
             self._set_state(PAUSED, "paused by the operator: no new work is started")
             self._idle(self.cfg.idle_poll_seconds)
             return
+        self._poll_intake(now)
         feature = self._active_feature()
         if feature is None:
             return
@@ -302,6 +312,64 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
         state, reason, wake = self._waiting_state(feature, tasks, schedules, now)
         self._set_state(state, reason)
         self._idle(min(self.cfg.idle_poll_seconds, max(wake - now, 0.01)) if wake else self.cfg.idle_poll_seconds)
+
+    def _poll_intake(self, now: float) -> None:
+        """W4.3.1: at most every github.intake.poll_interval_seconds, turn newly approved GitHub Issues
+        into tasks and check the approved texts (intake.py). A failure is recorded once per distinct
+        error; the service goes on (the next poll retries)."""
+        intake = self.config.github.intake
+        if not intake.enabled or (self._intake_at is not None and now - self._intake_at < intake.poll_interval_seconds):
+            return
+        self._intake_at = now
+        from .intake_poll import IntakePoller  # pylint: disable=import-outside-toplevel
+        try:
+            report = IntakePoller(self.coord).poll(apply=True)
+            lines, error = report.lines(), "; ".join(report.deferred)
+        except CoordinatorError as exc:
+            error = scrub(f"{type(exc).__name__}: {exc}", 500)
+            lines = [f"deferred: {error}"]
+        if error and error != self._intake_error:
+            self._event("worker-intake-deferred", error=scrub(error, 500))
+        self._intake_error = error
+        for line in lines:
+            self._log(f"intake: {line}")
+
+    def _intake_changed(self, task: Task) -> bool:
+        """W4.3.1: a task from an approved GitHub Issue starts only while that Issue still matches the
+        approved text (re-read now). Changed → the intake holds the task (needs-human); the Issue
+        could not be read → a transient wait. True = do not launch."""
+        from .intake_poll import IntakePoller  # pylint: disable=import-outside-toplevel
+        try:
+            reason = IntakePoller(self.coord).verify_task(task)
+        except CoordinatorError as exc:
+            self._apply(task.id, Outcome(TRANSIENT, f"the approved GitHub Issue could not be re-read before the "
+                                                    f"launch: {exc}"), None)
+            return True
+        self._intake_watch_at = self.clock()
+        if reason:
+            self._event("worker-intake-held", task=task.id, reason=scrub(reason, 300))
+            self._log(f"{task.id}: not started — {reason}; held for an operator")
+            return True
+        return False
+
+    def _watch_intake(self, task: Task) -> None:
+        """W4.3.1: while an approved Issue's task runs, re-read the Issue every poll interval (the
+        service holds no coordinator lock). A changed or closed Issue is recorded and the run asked to
+        stop through the existing graceful cancellation; its result is not accepted (workflow.py).
+        A read failure is only logged: the run's own boundaries check again."""
+        now = self.clock()
+        if now - self._intake_watch_at < self.config.github.intake.poll_interval_seconds:
+            return
+        self._intake_watch_at = now
+        from .intake_poll import IntakePoller  # pylint: disable=import-outside-toplevel
+        try:
+            reason = IntakePoller(self.coord).verify_task(task)
+        except CoordinatorError as exc:
+            self._log(f"{task.id}: the approved GitHub Issue could not be re-read while running: {exc}")
+            return
+        if reason:
+            self._event("worker-intake-stopping", task=task.id, reason=scrub(reason, 300))
+            self._log(f"{task.id}: stopping — {reason}; completed checkpoints stay, the task is held")
 
     def _cycle_failed(self, exc: Exception) -> None:
         """An unexpected error in one cycle: recorded, NEEDS_ATTENTION, looked at again after an
@@ -578,6 +646,8 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
             self._apply(task.id, Outcome(CRITICAL, f"launch budget exhausted ({rec.launches} of "
                                                    f"{self.cfg.max_launches_per_task})"), None)
             return
+        if self._intake_changed(task):
+            return
         pre = self._preflight(task)
         if pre is not None:
             self._apply(task.id, pre, None)
@@ -687,6 +757,8 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
                     self._watchdog_phase("uncertain", **decision)
                     self._cleanup_uncertain(task.id, [handle.pid], "the hung launch could not be confirmed "
                                                                    "terminated")
+            if claim and not cancelled:
+                self._watch_intake(task)
             stop = stop_requested() or read_control(self.store).get("stop") == "graceful"
             if stop and not cancelled and claim:
                 try:

@@ -42,6 +42,8 @@ W3 checkpoints (multi-step tasks; see `checkpoints --help`):
                             human escalation (needs-human); only a release resumes the task
 GitHub Issues (Phase 4; see `feature.py github --help`):
     github status | labels | sync | reconcile | inspect | owned | deps | test-lifecycle | cleanup-test
+    github intake show N | poll [--apply] | status
+                            W4.3.1: an Issue approved with `/worker approve` becomes a Worker task
 
 No command pushes or opens a pull request, and nothing is sent to the remote Qwen server.
 GitHub Issue writes need --apply and stay within github.write_scope (test features only in Phase 4).
@@ -264,7 +266,10 @@ def build_parser() -> argparse.ArgumentParser:
     register_service(sub)
     from .github_commands import register as register_github  # pylint: disable=import-outside-toplevel
     from .project_commands import register as register_project  # pylint: disable=import-outside-toplevel
-    register_project(register_github(sub))
+    from .intake_commands import register as register_intake  # pylint: disable=import-outside-toplevel
+    github = register_github(sub)
+    register_project(github)
+    register_intake(github)
     sub.add_parser("status", help="show coordinator state (read-only)").set_defaults(func=cmd_status)
     sub.add_parser("demo", help="run the mock end-to-end feature in a temporary repository").set_defaults(func=cmd_demo)
     return parser

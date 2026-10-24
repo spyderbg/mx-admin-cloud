@@ -8,6 +8,7 @@ Layout under the state directory:
     checkpoints/<task-id>.json   (W3: a multi-step task's checkpoints, see checkpoints.py)
     scheduling/<task-id>.json    (W4: retry budgets, waits, attention — portable; autonomy.py)
     service/worker.json          (W4: the Worker service's health record — machine-specific)
+    intake/<feature-id>.json     (W4.3.1: the approved specification of a GitHub Issue; intake.py)
     worker-startup.json          (W4: consecutive identical startup failures — restart-loop guard)
     events.jsonl (append-only audit trail)   locks/*.lock (flock files)   tmp/
 
@@ -144,8 +145,8 @@ class StateStore:
 
     def save_record(self, kind: str, record: Any) -> None:
         """Persist a revision-checked record of *kind* ('github', 'outbox', 'project', 'checkpoints',
-        'scheduling' or 'service'; inside a transaction)."""
-        if kind not in ("github", "outbox", "project", "checkpoints", "scheduling", "service"):
+        'scheduling', 'service' or 'intake'; inside a transaction)."""
+        if kind not in ("github", "outbox", "project", "checkpoints", "scheduling", "service", "intake"):
             raise StateDirError(f"unknown record kind {kind!r}")
         self._write(kind, record)
 

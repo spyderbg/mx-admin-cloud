@@ -150,11 +150,12 @@ Design and policies: [github-integration.md](github-integration.md). Dependency 
 | `feature.py github test-lifecycle [--apply] [--workdir DIR] [--no-cleanup]` | The Phase 4 acceptance scenario: 4 test Issues, a disposable repository, no PR ([github-integration §12](github-integration.md#12-live-acceptance-test)) | 4 new test Issues |
 | `feature.py github cleanup-test FEATURE [--apply] --state-dir <work>/<feature>/state` | Final verification comment and close for a **test** feature's Issues; refuses anything not owned or not labeled `feature:test`; repeatable | those Issues |
 | `feature.py hold TASK --reason TEXT [--apply]` / `release TASK [--apply]` | Human escalation (`needs-human`); a release re-checks dependencies | local state, then a sync |
+| `feature.py github intake show N` / `poll [--apply]` / `status` | W4.3.1: review an Issue (digest, `/worker approve` line per role); turn approved Issues into tasks (plan, activate, verify the approved text); list them ([github-intake.md](github-intake.md)) | `poll --apply`: local records, one comment on each approved Issue, its board item |
 
 Operating rules:
 
 - Feature operations (`plan`, `activate`, `launch`, `integrate`, `hold`, `release`) use the local JSON tracker unless `--tracker github` is given; with it, each operation syncs the Issues **after** its state change and outside every coordinator lock. A failed sync is recorded (`tracker-sync-deferred` event) and finished by `github sync FEATURE --apply`.
-- Phase 4 write scope: only features planned with `test: true` may be written to GitHub (`github.write_scope: test-features-only`). Widening it is an operator decision.
+- Phase 4 write scope: only features planned with `test: true` may be written to GitHub (`github.write_scope: test-features-only`); W4.3.1 adds features made from an operator-approved Issue, limited to that Issue's comments and board item. Widening it further is an operator decision.
 - No command creates a pull request.
 - If `github status` reports a missing capability, stop the live operation and fix it (for example `gh auth login`); there is no fallback to the local tracker.
 

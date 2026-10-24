@@ -13,6 +13,7 @@
     github cleanup-test FEATURE [--apply]
                                        final comment + close for a TEST feature's Issues (repeatable)
     github project …                   the GitHub Projects board (Phase 4 extension; see `github project -h`)
+    github intake …                    W4.3.1: approved GitHub Issues become Worker tasks (`github intake -h`)
     hold TASK --reason TEXT [--apply]  hold a task for a human decision (needs-human)
     release TASK [--apply]             release a human hold
 

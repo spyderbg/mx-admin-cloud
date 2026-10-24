@@ -158,6 +158,8 @@ A critical problem in one task holds **that task only** (its scheduling `attenti
 
 Eligible tasks are taken in dependency order. Only an **activated** feature is considered: planning plus activation is the operator's approval. The checkout is never switched to another branch to keep busy.
 
+**W4.3.1 GitHub intake.** With `github.intake.enabled`, each cycle starts with a bounded poll, at most every `poll_interval_seconds`. An Issue an operator approved with `/worker approve` is planned as one task and activated when the checkout is free; that approval is the operator's plan and activation. Before launching such a task, and every poll interval while its agent runs, the service re-reads the Issue. If the Issue changed or was closed, the task is held and no agent starts. A running agent is stopped through the existing graceful cancellation (completed checkpoints stay), and its result is not accepted ([github-intake.md](github-intake.md)).
+
 **Pre-launch checks**, made without a model request:
 - the launch budget (`max_launches_per_task`, default 10, all categories together);
 - the CLI and its required flags (`probe_runner`);
