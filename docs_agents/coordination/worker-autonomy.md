@@ -606,7 +606,7 @@ The 2026-10-22 run (36 tasks, every 4th failing once, 120 s idle) passed every c
 - **W4.2.1 fixes:**
   - **Production:** a gate that could not run is recorded with its cause ("gates could not run: … (cause)") and classified critical, never as validation, which with auto-fix would have spent an AI session on correct code.
   - **Harness:** the preflight runs a real sandboxed gate in the services' environment; a refusal is recorded with its reason; service exits are classified from their logs.
-- **The host prerequisite.** The operator installed the distribution's `bwrap-userns-restrict` AppArmor profile (package `apparmor-profiles`), keeping the global restriction on (§16). A host-setup script and guide for this are planned for a separate PR; they are not part of PR #23.
+- **The host prerequisite.** The operator installed the distribution's `bwrap-userns-restrict` AppArmor profile (package `apparmor-profiles`), keeping the global restriction on (§16). Host setup procedure: [worker-host-setup.md](worker-host-setup.md).
 
 **Offline evidence for the harness:**
 - **Tests:** 38 tests, including the full rehearsal, a usage-limit path, the two supervisor-failure scenarios, the gate-sandbox preflight, and an exact offline reproduction of the first attempt's failure path.
@@ -654,7 +654,7 @@ The steps match tests E and A and the soak run. The example is **not** a real-ag
 
 - **Real agents only in one bounded smoke test.** W4.2 ran 4 real sessions in the foreground (§14.1). No unattended or overnight run took place. Real CLI usage-limit and outage messages were not observed, so the classification patterns may miss them; they would then fall into `unknown`, which means NEEDS_ATTENTION and is safe.
 - **Codex does not report its model.** The Frontend session ran the Codex CLI default, which is not independently verified.
-- **Host prerequisite for gates.** On Ubuntu 24.04 the gate sandbox needs bubblewrap to be allowed unprivileged user namespaces, through the distribution's `bwrap-userns-restrict` AppArmor profile (package `apparmor-profiles`), installed and loaded by the operator; the coordinator never changes AppArmor. Without it every gate is blocked, and since W4.2.1 that is reported as critical "gates could not run".
+- **Host prerequisite for gates.** On Ubuntu 24.04 the gate sandbox needs bubblewrap to be allowed unprivileged user namespaces, through the distribution's `bwrap-userns-restrict` AppArmor profile (package `apparmor-profiles`), installed and loaded by the operator ([worker-host-setup.md](worker-host-setup.md)); the coordinator never changes AppArmor. Without it every gate is blocked, and since W4.2.1 that is reported as critical "gates could not run".
 - **That profile breaks nested sandboxes.** It runs everything bubblewrap starts under `unpriv_bwrap`, with all capabilities denied, so a bubblewrap started *inside* the coordinator's sandbox cannot create namespaces.
   - **Affected:** the optional `execution_backend: bwrap` with Codex, because Codex's own command sandbox would be nested inside ours. `test_fc_launchers.py::test_codex_own_sandbox_works_nested_inside_ours` is skipped there with an explicit reason, but only when a probe in the same Frontend sandbox demonstrates the restriction; any other failure still fails it ([agent-ownership §5](agent-ownership.md#5-residual-risks-operator-decisions-in-phase-status), item 6).
   - **Not affected:** the default `native-cli` backend, which runs the agents outside the coordinator's sandbox, and the gates, which are top-level sandboxes.
