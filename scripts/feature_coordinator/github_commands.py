@@ -14,12 +14,14 @@
                                        final comment + close for a TEST feature's Issues (repeatable)
     github project …                   the GitHub Projects board (Phase 4 extension; see `github project -h`)
     github intake …                    W4.3.1: approved GitHub Issues become Worker tasks (`github intake -h`)
+    github publish …                   W4.3.3: their Draft PR, the human merge, completion (`github publish -h`)
     hold TASK --reason TEXT [--apply]  hold a task for a human decision (needs-human)
     release TASK [--apply]             release a human hold
 
 The `github` commands use the real adapter (`gh api`, existing login) unless `--tracker local`
 is given. Writes happen only with --apply; the configured write scope (test features only in
-Phase 4) still applies. No command creates a pull request. `github sync` also converges the
+Phase 4) still applies. Only `github publish poll --apply` creates a pull request: the ONE Draft PR of
+an approved GitHub Issue's feature, with github.publish.enabled (W4.3.3). `github sync` also converges the
 feature's project board items when `github.project` is enabled and the feature is authorized
 for the board (`--no-board` skips it).
 
@@ -171,7 +173,9 @@ def cmd_status(args: argparse.Namespace, config: ProjectConfig) -> int:
         if gh.project.enabled and scopes is not None and "project" not in scopes:
             missing.append("the `project` scope (GitHub Projects board): the operator runs "
                            "`gh auth refresh -s project`")
-        rows.append(("write scope", f"{gh.write_scope}; pull request creation disabled (Phase 4)"))
+        rows.append(("write scope", f"{gh.write_scope}; pull requests: "
+                     + ("Draft PRs of approved GitHub Issues only (github.publish.enabled)" if gh.publish.enabled
+                        else "creation disabled (github.publish.enabled is false)")))
     except GitHubError as exc:
         missing.append(sanitize(exc))
     for name, value in rows:

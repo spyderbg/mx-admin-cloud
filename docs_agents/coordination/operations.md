@@ -151,12 +151,13 @@ Design and policies: [github-integration.md](github-integration.md). Dependency 
 | `feature.py github cleanup-test FEATURE [--apply] --state-dir <work>/<feature>/state` | Final verification comment and close for a **test** feature's Issues; refuses anything not owned or not labeled `feature:test`; repeatable | those Issues |
 | `feature.py hold TASK --reason TEXT [--apply]` / `release TASK [--apply]` | Human escalation (`needs-human`); a release re-checks dependencies | local state, then a sync |
 | `feature.py github intake show N` / `poll [--apply]` / `status` | W4.3.1: review an Issue (digest, `/worker approve` line per role); turn approved Issues into tasks (plan, activate, verify the approved text); list them ([github-intake.md](github-intake.md)) | `poll --apply`: local records, one comment on each approved Issue, its board item |
+| `feature.py github publish status` / `poll [FEATURE…] [--apply]` / `reset FEATURE [--apply]` | W4.3.3: an approved Issue's verified feature is integrated, its branch pushed, ONE Draft PR opened (or a matching PR adopted); after a person merged it, the merge is verified and the feature completed, the Issue closed and its card moved to Done. `status` is local; `poll` without `--apply` only reads; `reset` clears a stop ([github-intake §10](github-intake.md#10-automatic-publication-and-completion-w433)) | `poll --apply` (needs `github.publish.enabled`): the feature branch on `origin`, one Draft PR, comments on and the closing of that Issue, its board item. Never a merge |
 
 Operating rules:
 
 - Feature operations (`plan`, `activate`, `launch`, `integrate`, `hold`, `release`) use the local JSON tracker unless `--tracker github` is given; with it, each operation syncs the Issues **after** its state change and outside every coordinator lock. A failed sync is recorded (`tracker-sync-deferred` event) and finished by `github sync FEATURE --apply`.
 - Phase 4 write scope: only features planned with `test: true` may be written to GitHub (`github.write_scope: test-features-only`); W4.3.1 adds features made from an operator-approved Issue, limited to that Issue's comments and board item. Widening it further is an operator decision.
-- No command creates a pull request.
+- No command creates a pull request, except `github publish poll --apply` (and the Worker service) with `github.publish.enabled`: the ONE Draft PR of an approved Issue's feature. Nothing merges; a person reviews and merges it.
 - If `github status` reports a missing capability, stop the live operation and fix it (for example `gh auth login`); there is no fallback to the local tracker.
 
 | Situation | What to do |
@@ -166,6 +167,8 @@ Operating rules:
 | `duplicates` in a report | Two owned Issues carry one key; the oldest is used. Close the other one by hand after checking it |
 | `drift` in a report | A human changed labels, the managed block or the open/closed state; the local state was re-applied. Use `/feature hold`/`release` or `feature.py` commands to change task state |
 | Rate limited | The sync waits up to `max_rate_limit_wait_seconds`, otherwise it is deferred; run it again later |
+| `github publish poll` reports a stop (NEEDS ATTENTION) | Read the reason (`github publish status`). Resolve it: restore the remote or the branch; close a stray PR; inspect the merge. Then run `github publish reset FEATURE --apply`. A PR closed without merge is not a stop: reopen and merge it, and the next pass continues |
+| Publication was interrupted (crash, network, lost GitHub response) | Run `github publish poll --apply` again (or let the service do it). The remote branch and the PRs are read before anything is pushed or created, so nothing is duplicated ([github-intake §10.5](github-intake.md#105-recovery-after-interruptions)) |
 
 ## 8. GitHub Projects board (Phase 4 extension)
 

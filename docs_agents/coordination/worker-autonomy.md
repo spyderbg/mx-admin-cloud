@@ -160,6 +160,8 @@ Eligible tasks are taken in dependency order. Only an **activated** feature is c
 
 **W4.3.1 GitHub intake.** With `github.intake.enabled`, each cycle starts with a bounded poll, at most every `poll_interval_seconds`. An Issue an operator approved with `/worker approve` is planned as one task and activated when the checkout is free; that approval is the operator's plan and activation. Before launching such a task, and every poll interval while its agent runs, the service re-reads the Issue. If the Issue changed or was closed, the task is held and no agent starts. A running agent is stopped through the existing graceful cancellation (completed checkpoints stay), and its result is not accepted ([github-intake.md](github-intake.md)).
 
+**W4.3.3 publication.** With `github.publish.enabled`, each cycle starts with a publication pass (at most every `github.publish.poll_interval_seconds`, before the intake poll, never while paused or while an agent runs). An approved Issue's feature whose tasks are all verified is integrated, its branch pushed, and ONE Draft PR opened. While it waits for a person to merge the PR, no feature is active, and the service shows **WAITING** ("Draft PR #N waits for a person to review and merge it"), or **NEEDS_ATTENTION** when publication stopped. The next intake feature is not activated meanwhile (one feature per checkout). After the merge the pass verifies it, completes the feature, closes the Issue and moves its card to Done. The service never merges ([github-intake §10](github-intake.md#10-automatic-publication-and-completion-w433)).
+
 **Pre-launch checks**, made without a model request:
 - the launch budget (`max_launches_per_task`, default 10, all categories together);
 - the CLI and its required flags (`probe_runner`);
@@ -669,7 +671,7 @@ The steps match tests E and A and the soak run. The example is **not** a real-ag
   - An orphan whose launch died before recording the agent's identity is held for the operator, not timed out.
   - While the service waits for an orphan's deadline, claim recovery logs a `recovery-refused` event every idle poll (bounded by the deadline).
 - **Validation auto-fix** redoes only the last step of a multi-step task. A single-step task always goes to NEEDS_ATTENTION.
-- **One feature per checkout.** When a feature completes, the service idles until an operator activates another. It neither integrates nor opens a PR.
+- **One feature per checkout.** When a feature completes, the service idles until an operator activates another. For an operator-planned feature it neither integrates nor opens a PR. W4.3.3 does both only for an approved GitHub Issue's feature with `github.publish.enabled`, and only up to a Draft PR; a person merges it.
 - **Retention is guidance only.** W2 `runs/` directories keep the agents' full output streams.
 - **The service's own clock** governs waits. A large system clock jump shifts waits accordingly.
 - **Suspend and power-off stop all work.** systemd cannot change that.

@@ -477,7 +477,7 @@ def test_the_worker_service_receives_and_runs_an_approved_issue(rig: Rig) -> Non
     prompt = rig.runners["cli"].requests[0].prompt
     assert f"GitHub Issue #{number}" in prompt and "it prints one CSV line per item" in prompt
     assert rig.gates.calls == ["cli-lint", "docs-check"]
-    assert values(rig.coord, task_id)["Status"] == "Done"
+    assert values(rig.coord, task_id)["Status"] == "Review"  # W4.3.3: Done only once its PR is merged
     kinds = [e["kind"] for e in rig.store.events()]
     assert kinds.index("intake-approved") < kinds.index("intake-activated") < kinds.index("worker-agent-started")
 

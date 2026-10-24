@@ -17,6 +17,9 @@
                  render the single PR candidate (review)
     open_pull_request()  operator-approved only; creates the feature's one PR
     complete()   done only with merge evidence
+                 W4.3.3: for a feature made from an approved GitHub Issue, publish.py integrates, pushes,
+                 opens the one Draft PR and, after a person merged it, completes it (the PR body is the
+                 intake one: Issue, task, approved summary, validation and integration results)
     probe_dependency()  run a provider task's gates at the branch HEAD and report whether its
                  contract is available (evidence only: it never unblocks anything)
     hold_task() / release_task()  human escalation (needs-human), see escalation.py
@@ -85,6 +88,7 @@ from .gitops import CommitRequest, GitCoordinator, commit_subject, file_digest
 from .intake import issue_problem, known_problem, load_intake
 from .issue_sync import IssueSync, SyncReport, enqueue_comment
 from .project_sync import BoardReport, ProjectSync
+from .publish import intake_pr_body
 from .issues import PullRequest, TrackerClient
 from .model import (
     Evidence,
@@ -845,6 +849,12 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
 
     def _render_pr(self, feature: Feature, tasks: Mapping[str, Task], evidence: Evidence) -> PullRequestCandidate:
         changed = self.git.changed_paths(feature.base_sha, evidence.head_sha)
+        record = load_intake(self.store, feature.id)
+        if record is not None:  # W4.3.3: the Draft PR of an approved GitHub Issue (publish.py)
+            return PullRequestCandidate(head=feature.branch, base=feature.base_branch,
+                                        title=f"{feature.title} (#{record.issue_number})"[:256],
+                                        body=intake_pr_body(feature, tasks, evidence, changed, record),
+                                        head_sha=evidence.head_sha)
         def issue(number: int | None) -> str:
             return f"#{number}" if number else "(Issue not synchronized yet)"
         lines = [f"Feature `{feature.id}`: {feature.title}", "", f"Parent issue: {issue(feature.issue_number)}", "",
@@ -893,14 +903,18 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
             raise PullRequestPolicyError("the branch moved after integration; integrate again")
         return feature
 
-    def complete(self, feature_id: str, *, merged_sha: str) -> Feature:
-        """Mark the feature done — only with merge evidence for its single PR."""
+    def complete(self, feature_id: str, *, merged_sha: str, merge: Mapping[str, Any] | None = None) -> Feature:
+        """Mark the feature done — only with merge evidence for its single PR. W4.3.3: *merge*, the verified
+        evidence of an approved Issue's merged PR (publish.py), is recorded in the same transaction."""
         with self.store.transaction():
             feature = self.store.load_feature(feature_id)
             if feature.pull_request is None or not feature.pull_request.url:
                 raise EvidenceError("done requires the feature PR to exist and be merged")
+            if merge is not None:
+                feature.pull_request.merge = dict(merge)
             transition_feature(feature, FeatureState.DONE, "PR merged after human review", merged_sha=merged_sha)
             self.store.save_feature(feature)
-            self.store.append_event("feature-done", feature=feature_id, merged=merged_sha)
+            self.store.append_event("feature-done", feature=feature_id, merged=merged_sha,
+                                    pr=(merge or {}).get("number"))
         self.sync_issues(feature_id)  # a done feature's Issues are closed by the sync
         return self.store.load_feature(feature_id)

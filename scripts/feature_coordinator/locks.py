@@ -189,3 +189,8 @@ class LockSet:
         """W4.3.1: one GitHub intake poll at a time (intake.py). Like github_sync(), NOT part of the
         lock order above: nobody takes it while holding another lock."""
         return FileLock(self.dir / "github-intake.lock")
+
+    def publish(self) -> FileLock:
+        """W4.3.3: one publication pass at a time (publish.py: push, PR, completion). Like intake(), NOT part
+        of the lock order above: it is taken first, then the pass uses the ordinary locks."""
+        return FileLock(self.dir / "github-publish.lock")

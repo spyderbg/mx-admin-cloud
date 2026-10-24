@@ -487,7 +487,13 @@ def test_the_live_adapter_never_creates_a_pull_request(coord: FeatureCoordinator
     live = GitHubClient(NoNetwork(), coord.config.github)
     original, coord.tracker = coord.tracker, live
     coord.tracker.list_pull_requests = lambda head=None, state="all": []  # type: ignore[method-assign]
-    with pytest.raises(PullRequestPolicyError, match="disabled in Phase 4"):
+    with pytest.raises(PullRequestPolicyError, match="not authorized"):
+        coord.open_pull_request(feature_id, approved=True)
+    # W4.3.3: enabling publication does not open this path either — only the publisher's authorized Draft PR
+    coord.tracker = GitHubClient(NoNetwork(), dataclasses.replace(coord.config.github, publish=dataclasses.replace(
+        coord.config.github.publish, enabled=True)))
+    coord.tracker.list_pull_requests = lambda head=None, state="all": []  # type: ignore[method-assign]
+    with pytest.raises(PullRequestPolicyError, match="not authorized"):
         coord.open_pull_request(feature_id, approved=True)
     coord.tracker = original
     assert coord.store.load_feature(feature_id).pull_request.url is None  # type: ignore[union-attr]

@@ -57,6 +57,7 @@ Observed 2026-10-17 **[V]**: `gist, project, read:org, repo, workflow`. If `proj
 | task `failed` | **Blocked** | `failed: <reason>` (e.g. `failed: gates failed: [...]`) |
 | task `verified` **with valid evidence** | **Done** | — |
 | task `verified` without valid evidence | **Review** (and a report warning) | — |
+| task `verified` of an approved GitHub Issue's feature (W4.3.3), until that feature is `done` with merge evidence | **Review** | — |
 | feature `planned` | Backlog | — |
 | feature `active` / `integration` | In Progress | — |
 | feature `review` (the single PR candidate is rendered) | Review | — |

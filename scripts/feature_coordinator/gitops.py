@@ -30,8 +30,14 @@ checkpoint can be found again after a crash. Committing a checkpoint is idempote
 git.lock, a request whose checkpoint id already has a commit on the branch (since the expected
 HEAD) returns that commit (`CommitResult.existing`) instead of creating a second one.
 
-Plumbing commands run no hooks. Push and PR creation are rendered as dry-run plans only
-(Phases 2–3); live pushes and PRs need operator approval (Phase 4/5).
+Plumbing commands run no hooks. `push_plan` renders the push as a dry-run plan (Phases 2–3).
+
+W4.3.3 (publish.py, an approved GitHub Issue's feature only): `push_branch` pushes EXACTLY the validated
+commit to the remote's refs/heads/<feature branch> — never a protected branch, never forced (a remote
+branch that the commit does not contain is refused), only from a clean checkout that is on that branch
+at that commit, under project.lock EXCLUSIVE + git.lock, with no hooks and a bounded time. It reads the
+remote branch first and after, so a repeated or interrupted push is safe. `fetch_branch` fetches one
+branch (merge verification) into FETCH_HEAD; no local branch or working-tree file changes.
 """
 
 from __future__ import annotations
@@ -39,6 +45,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import signal
 import subprocess
 import tempfile
 import time
@@ -51,15 +58,36 @@ from .errors import (
     GitOperationError,
     HeadMismatchError,
     NothingToCommitError,
+    RemoteRejectedError,
+    RemoteUnavailableError,
+    ScopeViolationError,
     UnstableFileError,
     WritersActiveError,
 )
 from .locks import LockSet
 from .paths import PathPolicy
+from .workspace import git_operation_in_progress
 
 _SCRUBBED_ENV = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_COMMON_DIR")
 COMMIT_SUBJECT_MAX = 72
 CHECKPOINT_TRAILER = "Feature-Checkpoint"
+_SHA_RE = re.compile(r"[0-9a-f]{40}")
+_FEATURE_REF_RE = re.compile(r"feature/[a-z0-9][a-z0-9._-]{0,99}")  # W4.3.3: the only branches ever pushed
+_BRANCH_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,99}")
+
+
+@dataclass(frozen=True)
+class PushResult:
+    """W4.3.3: the remote's refs/heads/<branch> is now `sha` (`pushed` False: it already was — a repeat)."""
+
+    branch: str
+    sha: str
+    before: str | None  # the remote branch before the push (None: it did not exist)
+    pushed: bool
+
+
+def _tail(result: subprocess.CompletedProcess[str]) -> str:
+    return " ".join((result.stderr or result.stdout or "").split())[-300:]
 
 
 def commit_subject(role: str, task_id: str, title: str) -> str:
@@ -119,7 +147,7 @@ def branch_contains(repo: Path, branch: str, sha: str, *, env: Mapping[str, str]
     return result.returncode == 0
 
 
-class GitCoordinator:
+class GitCoordinator:  # pylint: disable=too-many-public-methods
     """Serialized Git mutations for one checkout."""
 
     def __init__(self, repo_root: Path, locks: LockSet, policy: PathPolicy, *, tmp_dir: Path,
@@ -381,6 +409,95 @@ class GitCoordinator:
             if "index.lock" not in result.stderr or attempt == attempts - 1:
                 raise GitOperationError(f"commit landed but refreshing the index failed: {result.stderr.strip()}")
             time.sleep(0.1 * (attempt + 1))
+
+    # -- remote operations (W4.3.3; see the module docstring) -----------------
+
+    def remote_urls(self, remote: str = "origin") -> tuple[str, str]:
+        """(the configured URL of *remote*, the URL a push really uses after pushurl/insteadOf rewriting)."""
+        configured = self._git("config", "--get", f"remote.{remote}.url", check=False).strip()
+        return configured, self._git("remote", "get-url", "--push", remote, check=False).strip()
+
+    def _network(self, *args: str, timeout: float) -> subprocess.CompletedProcess[str]:
+        """A git command that talks to a remote: no hooks, no prompts, bounded. On timeout the whole process
+        group is killed (RemoteUnavailableError: the operation may still have reached the remote)."""
+        proc = subprocess.Popen(["git", "-C", str(self.root), "-c", "core.hooksPath=/dev/null", *args],  # pylint: disable=consider-using-with
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL, text=True,
+                                env=self._env(), start_new_session=True)
+        try:
+            out, err = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                proc.kill()
+            proc.communicate()
+            raise RemoteUnavailableError(f"git {args[0]} did not finish within {timeout:.0f}s (it may have reached "
+                                         "the remote; the next attempt reads the remote first)") from None
+        return subprocess.CompletedProcess(proc.args, proc.returncode, out, err)
+
+    def remote_head(self, branch: str, *, remote: str = "origin", timeout: float = 120.0) -> str | None:
+        """The commit of refs/heads/<branch> on *remote* (None: the remote has no such branch). Read-only."""
+        ref = f"refs/heads/{branch}"
+        result = self._network("ls-remote", "--heads", remote, ref, timeout=timeout)
+        if result.returncode != 0:
+            raise RemoteUnavailableError(f"git ls-remote {remote} failed: {_tail(result)}")
+        for line in result.stdout.splitlines():
+            sha, _sep, name = line.partition("\t")
+            if name.strip() == ref and _SHA_RE.fullmatch(sha):
+                return sha
+        return None
+
+    def push_branch(self, branch: str, sha: str, *, protected: Sequence[str] = (), remote: str = "origin",
+                    timeout: float = 120.0) -> PushResult:
+        """Push exactly *sha* to *remote*'s refs/heads/<branch>. See the module docstring."""
+        if not _FEATURE_REF_RE.fullmatch(branch) or branch in protected or not _SHA_RE.fullmatch(sha):
+            raise ScopeViolationError(f"only a feature branch is ever pushed (by its full commit SHA), not {branch!r}")
+        project = self._quiescent()
+        try:
+            with self.locks.git().acquire(timeout=self.lock_timeout):
+                if self.rev_parse(f"refs/heads/{branch}") != sha:
+                    raise HeadMismatchError(f"{branch} is not at the validated {sha[:12]}: the branch moved")
+                if self.current_branch() != branch or self.rev_parse("HEAD") != sha:
+                    raise HeadMismatchError(f"the checkout is not on {branch} at {sha[:12]}")
+                unclean = self.tracked_changes() + self.untracked_files() + git_operation_in_progress(self.root)
+                if unclean:
+                    raise GitOperationError(f"the checkout is not clean ({unclean[:10]}); nothing is pushed")
+                before = self.remote_head(branch, remote=remote, timeout=timeout)
+                if before == sha:
+                    return PushResult(branch, sha, before, pushed=False)
+                if before is not None and not (self._has_commit(before) and self.is_ancestor(before, sha)):
+                    raise RemoteRejectedError(f"{remote} has {branch} at {before[:12]}, which {sha[:12]} does not "
+                                              "contain: not a fast-forward, and a push is never forced")
+                result = self._network("push", "--porcelain", "--no-verify", remote, f"{sha}:refs/heads/{branch}",
+                                       timeout=timeout)
+                if result.returncode != 0:
+                    refused = [line for line in result.stdout.splitlines() if line.startswith("!")]
+                    if refused:
+                        why = " ".join(refused[0].split())[:300]
+                        raise RemoteRejectedError(f"{remote} rejected the push of {branch}: {why}")
+                    raise RemoteUnavailableError(f"git push to {remote} failed: {_tail(result)}")
+                after = self.remote_head(branch, remote=remote, timeout=timeout)
+                if after != sha:
+                    raise RemoteUnavailableError(f"after the push {remote} has {branch} at {after or 'nothing'}, not "
+                                                 f"{sha[:12]}")
+                return PushResult(branch, sha, before, pushed=True)
+        finally:
+            project.release()
+
+    def fetch_branch(self, branch: str, *, remote: str = "origin", timeout: float = 120.0) -> str:
+        """Fetch *remote*'s refs/heads/<branch> into FETCH_HEAD and return its commit (merge verification)."""
+        if not _BRANCH_RE.fullmatch(branch) or ".." in branch:
+            raise GitOperationError(f"invalid branch name {branch!r}")
+        with self.locks.git().acquire(timeout=self.lock_timeout):
+            result = self._network("fetch", "--no-tags", "--no-recurse-submodules", remote, f"refs/heads/{branch}",
+                                   timeout=timeout)
+            if result.returncode != 0:
+                raise RemoteUnavailableError(f"git fetch {remote} {branch} failed: {_tail(result)}")
+            return self.rev_parse("FETCH_HEAD")
+
+    def _has_commit(self, sha: str) -> bool:
+        return subprocess.run(["git", "-C", str(self.root), "cat-file", "-e", f"{sha}^{{commit}}"], capture_output=True,
+                              env=self._env(), check=False).returncode == 0
 
     # -- dry-run plans -------------------------------------------------------
 

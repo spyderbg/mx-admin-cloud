@@ -80,6 +80,15 @@ class NothingToCommitError(GitOperationError):
     """The manifest paths already match HEAD."""
 
 
+class RemoteRejectedError(GitOperationError):
+    """W4.3.3: the remote refused a push (e.g. not a fast-forward); it is never forced — an operator decides."""
+
+
+class RemoteUnavailableError(GitOperationError):
+    """W4.3.3: the remote could not be reached or did not answer in time (a push may have arrived: the next
+    attempt reads the remote branch first)."""
+
+
 class CheckpointError(CoordinatorError):
     """W3: checkpoint metadata is missing, corrupt, incompatible or inconsistent with Git."""
 

@@ -16,9 +16,13 @@ Layers:
     Non-idempotent writes (create Issue, create comment) are never blindly retried after an
     ambiguous failure: GitHubUncertainWriteError tells the synchronizer to search first.
 
-Pull requests: LIVE_PULL_REQUESTS_ENABLED is False in Phase 4, so `create_pull_request`
-refuses before any request. Listing pull requests (read-only) is allowed, which is how the
-live test proves that no PR exists.
+Pull requests (W4.3.3, publish.py). Reading is allowed (`list_pull_requests`, `get_pull_request`: every
+field an adoption or completion decision uses is validated). Creating is narrowly scoped: refused before
+any request unless `github.publish.enabled` is true AND the coordinator authorized exactly this head and
+base for one creation (`authorize_pull_request`, called by the publisher after its checks for an
+approved GitHub Issue's feature); only Draft PRs from a `feature/` branch, never a merge (no merge
+request exists in this client). Any other caller — including the operator-approved Phase 2
+`open_pull_request` — is refused, as in Phase 4.
 
 GraphQL (Phase 4 extension, GitHub Projects): `GitHubClient.graphql()` sends one query or
 mutation through the same transport and the same retry, pacing and rate-limit rules. A
@@ -56,7 +60,6 @@ from .errors import (
 from .issues import PullRequest, RemoteComment, RemoteIssue, check_feature_labels
 
 API_VERSION = "2022-11-28"
-LIVE_PULL_REQUESTS_ENABLED = False
 PER_PAGE = 100
 _TOKEN_RE = re.compile(r"(gh[pousr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{16,}"
                        r"|(?i:bearer|token)\s+[A-Za-z0-9_.\-]{12,})")
@@ -65,6 +68,9 @@ _LOGIN_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:\[bot\])?$")
 _STATUS_RE = re.compile(r"^HTTP/[0-9.]+ (\d{3})")
 _ISO_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$")
 _NODE_ID_RE = re.compile(r"^[A-Za-z0-9_=-]{2,120}$")
+_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$")
+_PR_HEAD_RE = re.compile(r"^feature/[a-z0-9][a-z0-9._-]{0,99}$")
 GH_ENV = {"GH_PROMPT_DISABLED": "1", "GH_NO_UPDATE_NOTIFIER": "1", "NO_COLOR": "1", "CLICOLOR": "0",
           "GH_PAGER": "cat", "PAGER": "cat", "GH_SPINNER_DISABLED": "1"}
 
@@ -278,13 +284,58 @@ def parse_comment(data: Any) -> RemoteComment:
                          url=url if isinstance(url, str) else "")
 
 
-def _parse_pull(data: Any) -> PullRequest:
+def _optional_text(data: Mapping[str, Any], name: str, pattern: re.Pattern[str], where: str) -> str:
+    value = data.get(name)
+    if value is None:
+        return ""
+    if not isinstance(value, str) or not pattern.fullmatch(value):
+        raise GitHubResponseError(f"{where}: unexpected {name}")
+    return value
+
+
+def _pull_end(data: Any, side: str, where: str) -> tuple[str, str, str]:
+    """(ref, sha, repository full name) of a PR's head or base; the repository is "" when GitHub reports
+    none (a deleted fork)."""
+    if not isinstance(data, dict):
+        raise GitHubResponseError(f"{where}: missing {side}")
+    ref, sha = _field(data, "ref", str, where), _field(data, "sha", str, where)
+    if not _REF_RE.fullmatch(ref) or not _SHA_RE.fullmatch(sha):
+        raise GitHubResponseError(f"{where}: unexpected {side} ref or sha")
+    repo = data.get("repo")
+    name = repo.get("full_name") if isinstance(repo, dict) else ""
+    if not isinstance(name, str) or name and not re.fullmatch(r"[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}", name):
+        raise GitHubResponseError(f"{where}: unexpected {side} repository")
+    return ref, sha, name
+
+
+def parse_pull(data: Any) -> PullRequest:
+    """A validated PullRequest from a Pulls API object (list or single; only the single one says `merged`,
+    so a listed PR counts as merged when it has `merged_at`)."""
     if not isinstance(data, dict):
         raise GitHubResponseError("pull request: not an object")
-    head, base = data.get("head") or {}, data.get("base") or {}
-    return PullRequest(number=_field(data, "number", int, "pull request"), head=str(head.get("ref", "")),
-                       base=str(base.get("ref", "")), title=str(data.get("title", "")),
-                       body=str(data.get("body") or ""), state=str(data.get("state", "")))
+    number = _field(data, "number", int, "pull request")
+    where = f"pull request #{number}"
+    state = _field(data, "state", str, where)
+    if number <= 0 or state not in ("open", "closed"):
+        raise GitHubResponseError(f"{where}: invalid number or state")
+    head, head_sha, head_repo = _pull_end(data.get("head"), "head", where)
+    base, _base_sha, base_repo = _pull_end(data.get("base"), "base", where)
+    merged_at = _optional_text(data, "merged_at", _ISO_RE, where)
+    merged = data.get("merged", bool(merged_at))
+    url, body = data.get("html_url") or "", data.get("body") or ""
+    if not isinstance(url, str) or url and not url.startswith("https://"):
+        raise GitHubResponseError(f"{where}: unexpected html_url")
+    if not all(isinstance(value, kind) for value, kind in ((merged, bool), (body, str),
+                                                            (data.get("draft", False), bool))):
+        raise GitHubResponseError(f"{where}: unexpected merged, draft or body")
+    merged_by = data.get("merged_by")
+    return PullRequest(number=number, head=head, base=base, title=_field(data, "title", str, where), body=body,
+                       state=state, head_sha=head_sha, head_repo=head_repo, base_repo=base_repo,
+                       draft=bool(data.get("draft", False)), merged=merged, merged_at=merged_at,
+                       merged_by=_login(merged_by, where) if merged_by else "",
+                       merge_commit_sha=_optional_text(data, "merge_commit_sha", _SHA_RE, where),
+                       author=_login(data.get("user"), where), url=url,
+                       node_id=_optional_text(data, "node_id", _NODE_ID_RE, where), id=_field(data, "id", int, where))
 
 
 def _operation_name(query: str) -> str:
@@ -337,6 +388,7 @@ class GitHubClient:  # pylint: disable=too-many-instance-attributes,too-many-pub
         self.log: list[str] = []          # "METHOD path -> status" (no bodies, no headers)
         self._last_write = float("-inf")
         self._viewer: str | None = None
+        self._authorized: set[tuple[str, str]] = set()  # W4.3.3: (head, base) of the one PR the publisher may open
 
     @classmethod
     def from_config(cls, settings: GitHubConfig, **kwargs: Any) -> "GitHubClient":
@@ -606,19 +658,40 @@ class GitHubClient:  # pylint: disable=too-many-instance-attributes,too-many-pub
                  "description": str(item.get("description") or "")}
                 for item in self._pages(f"{self.repo_path}/labels", {}) if isinstance(item, dict)]
 
-    # -- pull requests -------------------------------------------------------------------
+    # -- pull requests (W4.3.3; see the module docstring) -----------------------------------
 
-    def create_pull_request(self, head: str, base: str, title: str, body: str) -> PullRequest:
-        """Refused in Phase 4: no real pull request is ever created."""
-        del base, title, body
-        if not LIVE_PULL_REQUESTS_ENABLED:
-            raise PullRequestPolicyError(f"creating a real pull request for {head!r} is disabled in Phase 4; "
-                                         "the feature keeps its single local PR candidate")
-        raise PullRequestPolicyError("pull request creation is not implemented")  # pragma: no cover
+    def authorize_pull_request(self, head: str, base: str) -> None:
+        """Allow exactly ONE Draft PR from *head* into *base* (the publisher, after its checks). Refused while
+        `github.publish.enabled` is false, for a head outside `feature/…` and for a base that is a feature branch."""
+        if not self.settings.publish.enabled:
+            raise PullRequestPolicyError(f"creating a pull request for {head!r} is disabled: github.publish.enabled "
+                                         "is false; the feature keeps its single local PR candidate")
+        if not _PR_HEAD_RE.fullmatch(head) or not _REF_RE.fullmatch(base) or base.startswith("feature/"):
+            raise PullRequestPolicyError(f"a pull request may only go from a feature branch into a base branch, not "
+                                         f"{head!r} → {base!r}")
+        self._authorized.add((head, base))
+
+    def create_pull_request(self, head: str, base: str, title: str, body: str, *,  # pylint: disable=too-many-arguments
+                            draft: bool = True) -> PullRequest:
+        """`POST /repos/{repo}/pulls`: ONE Draft PR, only as authorized (not idempotent: callers list first)."""
+        if not self.settings.publish.enabled or (head, base) not in self._authorized:
+            raise PullRequestPolicyError(f"creating a pull request for {head!r} is not authorized (github.publish."
+                                         f"enabled={self.settings.publish.enabled}); only the publisher of an approved "
+                                         "GitHub Issue's feature may open one")
+        if not draft:
+            raise PullRequestPolicyError("the coordinator opens Draft pull requests only")
+        self._authorized.discard((head, base))
+        payload = {"title": title[:256], "body": body, "head": head, "base": base, "draft": True,
+                   "maintainer_can_modify": False}
+        return parse_pull(self._call("POST", f"{self.repo_path}/pulls", payload, idempotent=False).data)
+
+    def get_pull_request(self, number: int) -> PullRequest:
+        """`GET /repos/{repo}/pulls/{number}` (with `merged` and `merged_by`)."""
+        return parse_pull(self._call("GET", f"{self.repo_path}/pulls/{int(number)}", idempotent=True).data)
 
     def list_pull_requests(self, head: str | None = None, state: str = "all") -> list[PullRequest]:
         """PRs (read-only), optionally only those from branch *head* of this repository."""
         params = {"state": state}
         if head:
             params["head"] = f"{self.settings.owner}:{head}"
-        return [_parse_pull(item) for item in self._pages(f"{self.repo_path}/pulls", params)]
+        return [parse_pull(item) for item in self._pages(f"{self.repo_path}/pulls", params)]

@@ -1,7 +1,7 @@
 # GitHub Issue Intake — Approved Issues as Worker Tasks (W4.3.1)
 
-> Owner role: **coordination**. Status: **implemented and tested with mock GitHub responses** (2026-10-23). **Approval impersonation through the shared GitHub identity is a known risk, accepted temporarily (§9).** Against real GitHub only its read-only commands have run (`intake show 25` and a dry-run poll: 0 writes). No Issue has been approved, and the intake is off until an operator enables it (§8).
-> Code: `scripts/feature_coordinator/intake.py` (records, approval grammar, digest, identity), `intake_poll.py` (the poll), `intake_commands.py` · Tests: `scripts/tests/feature_coordinator/test_fc_intake.py` · Builds on: [github-integration.md](github-integration.md) (adapter, command authorization), [github-projects.md](github-projects.md) (Project #2), [worker-autonomy.md](worker-autonomy.md) (the Worker service).
+> Owner role: **coordination**. Status: **W4.3.1 implemented and tested with mock GitHub responses** (2026-10-23), merged (PR #26); first real run on Issue #25 (W4.3.2: approval → Worker → verified task; its PR #27 was opened and merged by hand). **W4.3.3 (§10, 2026-10-24): automatic integration, push, Draft PR, human-merge detection and completion — implemented and verified offline only (disposable repositories, mock GitHub); never run against real GitHub; off by default.** **Approval impersonation through the shared GitHub identity is a known risk, accepted temporarily (§9).**
+> Code: `scripts/feature_coordinator/intake.py` (records, approval grammar, digest, identity), `intake_poll.py` (the poll), `intake_commands.py`, `publish.py` and `publish_commands.py` (W4.3.3) · Tests: `scripts/tests/feature_coordinator/test_fc_intake.py`, `test_fc_publish.py` (W4.3.3) · Builds on: [github-integration.md](github-integration.md) (adapter, command authorization), [github-projects.md](github-projects.md) (Project #2), [worker-autonomy.md](worker-autonomy.md) (the Worker service).
 
 A task can start as a GitHub Issue. Nobody writes a YAML file: an operator approves the Issue with a comment, and the approved text becomes one task for the existing coordinator and Worker. Before approval nothing happens. After approval the text is fixed.
 
@@ -50,13 +50,14 @@ Each step is recorded locally before the next one, so an interrupted poll resume
 2. **Plan.** The existing `plan` creates feature `issue-<N>` with **one** task `issue-<N>.<role>`, using the existing records, state machine and gates. The task's instructions are the approved Issue text. **No new Issue is created.** The approved Issue is the task's Issue, and the feature has no parent Issue.
 3. **Acknowledge.** One comment (with an operation marker) is posted on the Issue. It says who approved it, the digest, the task, the gates and the branch.
 4. **Activate.** If no other feature is active on the checkout, the oldest planned intake feature is activated: its branch is created from `dev` and the task becomes **Ready**. Otherwise it waits in **Backlog**, because the checkout runs one feature at a time.
-5. **Run.** The Worker service runs the Ready task as any other: claim, agent, checkpoint, gates, verification. Integration and the single pull request follow the existing procedures. The intake neither creates nor merges a pull request.
+5. **Run.** The Worker service runs the Ready task as any other: claim, agent, checkpoint, gates, verification.
+6. **Publish (W4.3.3, only with `github.publish.enabled`; §10).** Once every task is verified: integration, push of the feature branch, ONE Draft PR to `dev`. A person reviews and merges it; the verified merge completes the feature, closes this Issue and moves its card to Done. Nothing ever merges automatically. With publication off, integration and the PR stay manual, as before.
 
 ## 4. Project #2
 
 The plan step authorizes the feature for the board, and the board sync adds **exactly the approved Issue** as the task's item on Project #2 (`mx-admin-cloud automation`; owner, number and node ID verified, Project #1 never written).
 
-- **Status** follows the existing mapping: Backlog → Ready → In Progress → Review → Done, or Blocked ([github-projects §3](github-projects.md#3-status-mapping-from-the-existing-state-machines)). `Agent` is the role and `Feature ID` is `issue-<N>`.
+- **Status** follows the existing mapping: Backlog → Ready → In Progress → Review → Done, or Blocked ([github-projects §3](github-projects.md#3-status-mapping-from-the-existing-state-machines)), with one W4.3.3 rule: a verified intake task stays **Review** until its feature is done with merge evidence, its PR merged by a person. Verification alone never shows Done. `Agent` is the role and `Feature ID` is `issue-<N>`.
 - **Identity:** before a write, the Issue's number, database ID and node ID are checked against the approval record (in place of an ownership marker).
 - **Write scope:** with `github.write_scope: test-features-only` (unchanged; `all-features` is not enabled), live writes stay limited to test features **plus the exact approved Issue**:
   - the only writes are comments on that Issue and that Issue's own card;
@@ -139,7 +140,7 @@ All of them are `feature.py github intake …`; `--tracker local` uses the local
 
 - **No real approval yet:** the tests use mock Issue and comment responses and the local board; against real GitHub only the read-only commands have run.
 - **One task per Issue.** Multi-step and multi-role work still needs a planned feature (`feature.py plan`).
-- **No `/feature hold|release` on approved Issues:** use the local commands. When the feature is done, the coordinator does not close the Issue either; a person does.
+- **No `/feature hold|release` on approved Issues:** use the local commands. The coordinator closes the Issue only through W4.3.3 publication (§10), after the verified merge of its PR; with publication off, a person closes it.
 - **Detection delay while an agent runs:** the service re-reads the Issue every `poll_interval_seconds`, and a run without the service (`feature.py launch`) is not re-read until it ends. An edit in that window can therefore be verified and then immediately withdrawn by the read after the claim is released. The verification never reaches the board or integration, but it does appear in the task's history (`verified → ready → needs-human`).
 - **The approved body is prompt text.** The role's path policy and the post-run checks still bound what an agent may change, but `native-cli` is not a filesystem sandbox ([worker-functional.md](worker-functional.md)).
 
@@ -167,3 +168,120 @@ Such an agent can post `/worker approve <role> <digest>`, or `/feature release �
 - W1 isolation (D-20/D-21, draft PR #20).
 
 Until then, an operator can audit approvals with `feature.py github intake status` and the `intake-approved` events.
+
+## 10. Automatic publication and completion (W4.3.3)
+
+> Status: **implemented and verified offline** (2026-10-24): disposable repositories with a real bare `origin`, mock GitHub Issue and pull-request responses, the local board. **Never run against real GitHub. Off by default.** Code: `publish.py`, `publish_commands.py`; push and fetch in `gitops.py`; the PR adapter in `github_api.py`. Tests: `test_fc_publish.py` (82).
+
+With `github.publish.enabled: true`, a feature made from an approved Issue goes the rest of the way by itself, up to the one step that stays human: the merge.
+
+```text
+approved Issue → task verified → integration barrier → push of feature/issue-<N> → ONE Draft PR → dev
+   → a PERSON reviews, marks it ready and merges it (a merge commit)
+   → merge verified → feature done → completion comment → Issue closed → Project #2 card Done
+```
+
+### 10.1 Lifecycle
+
+The Worker service runs one publication pass at most every `poll_interval_seconds`, before its intake poll, between launches, never while paused. `feature.py github publish poll --apply` runs the same pass by hand. A pass handles **only features with an intake record**: nothing else is integrated, pushed or opened automatically. Each step first reads what is already true, so every step can be repeated:
+
+| Feature state | The pass does | It refuses or waits when |
+| --- | --- | --- |
+| active | runs the existing **integration barrier** (`integrate`) once every task is verified | a task is not verified; a claim exists or a launch is still recorded in flight (waits); a withdrawn approval is known; the last integration failed and no task was verified since (an operator runs `feature.py integrate issue-<N> --apply` after fixing it). A failure publishes nothing |
+| review, no PR yet | re-reads the approved Issue, **pushes** the feature's own branch, records `pending_create`, opens **one Draft PR** to the feature's base branch, records its number, posts one PR link comment on the Issue | the approval no longer holds; the remote or the branch is not what it must be (§10.2); a PR already exists on the branch but does not match (§10.3) |
+| review, PR recorded | reads the PR again by number | a draft or open PR: **waits** for a person; closed without merge: reports it and waits (never completes, never creates another PR; reopening resumes); a changed or mismatched PR: stops |
+| review, PR merged | verifies the merge (§10.4), then `complete()` records the evidence and moves the feature to **done** in one transaction | the evidence does not hold: stops |
+| done | posts one completion comment on the Issue, **closes the Issue** (state reason `completed`), checks that Project #2 shows **Done**, marks the intake record `done` | the Issue is no longer the approved one (it is not closed; reported); GitHub or the board fails (retried) |
+
+What the Worker never does: merge, mark a PR ready, approve a review, push `dev`, `main` or any protected branch, force a push, open a second PR for a feature, or touch Project #1. The GitHub adapter has no merge request at all.
+
+### 10.2 The push
+
+`GitCoordinator.push_branch` pushes **exactly the validated commit** to `refs/heads/feature/issue-<N>`:
+
+- the branch must match `feature/…` and is never a protected branch;
+- the checkout must be clean (no tracked or untracked change, no unfinished Git operation), on that branch, at that commit; the local branch must still be at the PR candidate's head;
+- `origin` must be the feature's repository: the root commits and the `origin` URL recorded at activation, a plain `github.com/<github.repository>` URL, and the push URL must equal the configured URL (no `pushurl` or `insteadOf` rewriting);
+- project.lock EXCLUSIVE + git.lock are held (no writer can start meanwhile); hooks are disabled (`core.hooksPath=/dev/null`, `--no-verify`); every network call is bounded by `git_timeout_seconds`, and on timeout the whole process group is killed;
+- the remote branch is read first: already at the commit → nothing is pushed (a repeat); absent, or an ancestor → a normal push; anything else → **refused, never forced**. A remote rejection (`!` in the porcelain output) is refused too. After the push the remote branch is read again.
+
+### 10.3 Exactly one PR per feature
+
+Before anything is created, the pass looks for the PR: the recorded number, else **every** PR of the branch, open AND closed. A PR is adopted only when it is exactly the candidate:
+
+- its head is `feature/issue-<N>` of `github.repository`;
+- its base is the feature's base branch (`dev`) in the same repository;
+- its head commit is the verified head;
+- it was opened by the coordinator account or a `command_authors` login.
+
+A branch name alone is never enough. Anything else stops publication, and no PR is created: a PR whose head commit, base, repository or author differ; several matching PRs; a closed foreign PR on the branch.
+
+PR creation is narrowly scoped. `GitHubClient.create_pull_request` refuses before any request unless `github.publish.enabled` is true AND the publisher authorized exactly this head and base for one creation. It creates Draft PRs only; the operator-approved Phase 2 `open_pull_request` is still refused against real GitHub. The PR body names the Issue and its link, the feature, the task, the approval (approver, time, comment, spec digest), the changed files, the task gates and the integration gates. It has no closing keyword: the coordinator closes the Issue itself, only after the verified merge.
+
+### 10.4 The human merge, verified
+
+A merge completes the feature only if all of these hold:
+
+- **The exact PR.** It is read again by number, and its identity still matches §10.3.
+- **The verified head.** The PR's head is the verified head commit.
+- **GitHub's evidence.** GitHub reports `merged` with a merge commit and a time.
+- **Independent Git evidence.** The base branch is fetched from `origin` (FETCH_HEAD and the remote-tracking ref only; no local branch or working-tree file changes). The fetched branch must contain the merge commit, and the merge commit must contain the verified head.
+
+A merge commit passes. A **squash or rebase merge** does not contain the verified head, so it stops for an operator, as does a merge commit that is not on `dev` or a PR whose head changed before the merge. The evidence is stored on the candidate (PR number and URL, merge commit, merged by and at, head, base, the fetched base tip), together with `merged_sha`, in the same transaction that moves the feature to done.
+
+A closed approved Issue no longer looks like a withdrawn approval once its feature is done: the W4.3.1 check never looks at a done feature. The coordinator's own close therefore triggers nothing (`test_completion_never_triggers_the_approval_withdrawal`). The service runs publication before the intake poll, so a person who closes the Issue right after merging does not trigger the withdrawal either (`test_an_issue_closed_by_a_person_after_the_merge_still_completes`). Before the PR exists, the W4.3.1 rules apply unchanged: a changed or closed Issue stops publication, and nothing is pushed.
+
+### 10.5 Recovery after interruptions
+
+| Interrupted | On the next pass |
+| --- | --- |
+| before or during the push | the remote branch is read first: pushed again only if it is not there yet |
+| after the push, before it was recorded | the remote already has the commit: nothing is pushed twice (`pushed: false`) |
+| before the create request (`pending_create` recorded) | the PRs are listed first; none → created once |
+| after GitHub created the PR, before it was recorded; a lost response | the PRs are listed first: the coordinator's own PR is adopted (`origin: created`), never duplicated. GitHub also refuses a second open PR per branch |
+| a failed create request (5xx, permission) | deferred; the next pass lists, then creates once |
+| while waiting for the merge (network, GitHub 5xx) | deferred, retried by the next pass; nothing is stopped |
+| after the merge was verified, before done | verified again, then completed |
+| between done and the Issue closure (comment, close, board) | a fixed outbox ID (`done-issue-<N>`) posts the comment once; the Issue is closed once (already closed: left as is); the board converges |
+
+Each crash point is tested with a restart on new coordinator objects over the same files, and further passes write nothing (`test_every_interruption_is_recovered_without_duplicates`, `test_repeated_completion_and_restarts_write_nothing`).
+
+**Stops:** doubtful evidence sets `attention` on the PR candidate. The stop is sticky: nothing about this feature runs automatically until an operator resolves the cause and runs `feature.py github publish reset issue-<N> --apply`. Causes: a wrong or rewritten remote; a moved branch; a mismatched or ambiguous PR; a rejected push; a withdrawn approval before publication; merge evidence that does not hold. Transient problems are reported and retried, not sticky: network, GitHub 5xx, a busy lock, an unclean checkout, a PR closed without merge.
+
+### 10.6 Adopting a PR opened by hand (Issue #25 / PR #27)
+
+A PR a person opened before W4.3.3 existed is adopted like any other once it matches §10.3. For Issue #25: feature `issue-25` is in review with its candidate at `8094a9c`; PR #27 (`feature/issue-25` → `dev`, by `spyderbg`, head `8094a9c`) was merged as `f631c57`; the Issue is still open. One pass:
+
+1. finds PR #27 among the branch's PRs and verifies it against the candidate;
+2. records it (`origin: adopted`);
+3. reads it again and verifies the merge (it pushes nothing and creates nothing);
+4. completes `issue-25`, posts the completion comment, closes Issue #25 and moves its card to Done.
+
+No new Issue and no new PR are created. This is tested with a disposable repository whose numbers are #25 and #27 (`test_a_manually_opened_and_merged_pr_completes_issue_25`), and against the real PR #27 response shape (`test_the_real_pr_27_matches_the_issue_25_candidate`). **It has not been applied to the real Issue #25.** That needs the supervised live test, with a local configuration outside the repository that sets `github.publish.enabled: true`.
+
+### 10.7 Configuration (`github.publish`)
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `enabled` | `false` | The service runs publication passes, and `publish poll --apply` writes, only when `true` |
+| `poll_interval_seconds` | `60` | How often the service checks at most (at least 10) |
+| `git_timeout_seconds` | `120` | Bound for one `git push`, `ls-remote` or `fetch` (10–1800) |
+
+Fixed, not configurable: Draft PRs only, the feature's base branch as the target, `origin` as the remote, no merge, no forced push. Unchanged: `github.write_scope: test-features-only` (an approved Issue's feature is inside it, as in W4.3.1), the authorization rules, Project #2 and the Project #1 protection. Enable it only in a local configuration outside the repository.
+
+### 10.8 Commands
+
+| Command | Effect |
+| --- | --- |
+| `github publish status [--json]` | Read-only, local: every approved Issue's feature with its candidate head, PR (number, origin, draft), push, merge evidence and stop |
+| `github publish poll [FEATURE…] [--apply] [--json]` | One pass. Without `--apply` it reads GitHub (and nothing else) and lists what it would do. `--apply` needs `github.publish.enabled`. Exit 1 when something was deferred or needs an operator |
+| `github publish reset FEATURE [--apply]` | Clears a stop after the operator resolved it; the next pass checks everything again |
+
+### 10.9 Limitations
+
+- **Offline only.** No real push, PR or completion has run. The Draft PR, merge detection and Issue closure are verified with mock GitHub responses and a local bare remote.
+- **Merge commits only.** A squash or rebase merge stops for an operator. There is no command for a manual completion yet, so such a feature stays in review; the operator closes the Issue by hand.
+- **The next feature starts from the local `dev`.** The coordinator fetches `dev` into FETCH_HEAD and the remote-tracking ref only, and never updates the local `dev` branch. Update it before the next feature is activated, or the next branch starts from an older base.
+- **Detection delay:** a merge is seen at the next pass (up to `poll_interval_seconds`; the service may be idle longer between cycles).
+- **One shared GitHub identity.** The coordinator pushes, opens the PR and closes the Issue as the same `spyderbg` login an agent can reach under `native-cli`. An agent could therefore also push to the feature branch or edit or merge the PR. A changed head stops completion, and a merge is accepted only with the verified head on `dev`, but nothing stops a merge itself. This is part of the accepted risk in §9.
+- **No CI.** Remote CI is not configured; the PR states it.

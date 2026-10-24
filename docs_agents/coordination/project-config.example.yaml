@@ -295,3 +295,12 @@ github:
       cli: [cli-lint, docs-check]
       frontend: [frontend-type-check, frontend-build, docs-check]
       coordination: [docs-check]
+  # W4.3.3 automatic publication (docs_agents/coordination/github-intake.md §10). For a feature made from
+  # an approved Issue only: once every task is verified, the integration barrier runs, the feature's own
+  # branch is pushed (never dev or another protected branch, never forced), ONE Draft PR to its base branch
+  # is opened (or an existing matching PR adopted), and after a PERSON merged it the feature is done, the
+  # Issue closed and its Project #2 card moved to Done. The Worker never merges. Off until an operator enables it.
+  publish:
+    enabled: false
+    poll_interval_seconds: 60            # the Worker service checks the PR at most this often (>= 10)
+    git_timeout_seconds: 120             # one push, ls-remote or fetch (10..1800); a timeout is retried safely
