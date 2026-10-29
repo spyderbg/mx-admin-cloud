@@ -233,4 +233,36 @@ git pull --ff-only origin dev
 
 **Safety and interpretation.** `github intake poll` and `github publish poll` without `--apply` are read-only; the Worker service and `--apply` perform real writes. Run `worker stop` only after confirming no active agent (or use `--after-current` to let an active task finish). Do **not** manually push a feature branch or create a PR during the automatic Draft PR test; that would test adoption instead. One approved Issue creates one feature and one Draft PR, never auto-merges. PR merge commits are required by the existing merge-evidence verification (squash/rebase are not supported). With the Worker stopped, manual `publish poll issue-N --apply` completes the Issue and Project #2 after human merge. Always update local `dev` before activating the **next** feature: the Coordinator fetches remote `dev` for verification but does not move the local branch. Keep Project #1 untouched.
 
-**2026-10-24 acceptance:** Issue #25 / manually merged PR #27 proved post-hoc adoption/closure; Issue #29 / automatically created Draft PR #30 proved the real auto-publication path and subsequent verified closure. Worker was stopped normally after Draft PR #30. These do not establish unattended reliability; W4.4 will use disposable repositories and fault injection before any wider live test.
+**2026-10-24 acceptance:** Issue #25 / manually merged PR #27 proved post-hoc adoption/closure; Issue #29 / automatically created Draft PR #30 proved the real auto-publication path and subsequent verified closure. Worker was stopped normally after Draft PR #30. These do not establish unattended reliability. W4.4 (2026-10-29) subsequently passed isolated fault regressions, a fake-agent soak and a bounded real-agent smoke **without real GitHub calls**; see [W4.4 acceptance](w44-reliability-acceptance.md).
+
+
+## 10. W4.4 closeout and safe reproduction (2026-10-29)
+
+**Acceptance:** 26/26 selected existing pytest regressions passed (worker crash 4, simulated Git/GitHub outage 4, validation/retry 7, publisher interruption 11). A 48-task, 60-run, 513-second fake-agent soak passed 10/10 harness invariants; a bounded four-session real Claude Code/Codex recovery smoke passed 69/69 checks. These results are recorded in [W4.4 acceptance](w44-reliability-acceptance.md); they are **not** a 24/7 reliability guarantee.
+
+### Read-only revalidation and scoped tests
+
+From an up-to-date documentation checkout, with `.venv` active:
+
+```bash
+# Inspect ONLY; never start the main Worker to validate the closeout:
+git status --short --branch
+python scripts/feature.py --tracker github --project-config ~/.config/mx-admin-agents/project.yaml worker status
+python scripts/feature.py --tracker github --project-config ~/.config/mx-admin-agents/project.yaml worker attention
+python scripts/check_docs_agents.py
+
+# Existing tests use disposable Git repos, fake agents / mock GitHub:
+python -m pytest -p no:cacheprovider -v \\
+  scripts/tests/feature_coordinator/test_fc_service_process.py::test_c_restart_continues_from_the_last_checkpoint \\
+  scripts/tests/feature_coordinator/test_fc_service_process.py::test_q_crash_during_bookkeeping
+python -m pytest -p no:cacheprovider -v \\
+  scripts/tests/feature_coordinator/test_fc_publish.py::test_every_interruption_is_recovered_without_duplicates
+```
+
+For the complete W4.4.1–W4.4.4 list of 26 selected cases, see [the acceptance record](w44-reliability-acceptance.md) and the operator's execution logs. The optional soak tool `scripts/tests/feature_coordinator/fc_service_soak.py` creates its own repository, state and fake HOME in a **new, empty** `--workdir`; it intentionally runs a *real service process* but **not** a real AI CLI. Its 2026-10-29 acceptance used `--tasks 48 --failure-every 4 --idle-seconds 180`. Do not reuse a previous workdir.
+
+The real-agent harness `scripts/tests/feature_coordinator/fc_worker_smoke.py --agent real` is **plan only**. `--agent real --apply` starts live subscription-backed AI sessions: **separate explicit operator approval is required for each such run**. It uses a disposable repository with **no Git remote** and does not exercise GitHub writes. Never use production Coordinator state for fault injection; never kill the main Worker as a substitute for the disposable test harness.
+
+### Hand-off for proposed W4.5 (not authorized)
+
+W4.4 is closed as **supervised bounded acceptance**. Do **not** install/enable systemd, switch on unattended scheduling, create test Issues, inject real network faults, or alter protected branches/Project #1 as part of this closeout. Proposed future acceptance adds: host-reboot/systemd recovery, a monitored multi-day run, measured resource and retry budgets, explicitly approved disposable live GitHub write-failure scenarios, and review of the shared-identity/W1 security exposure. Every new live or destructive step requires a separately reviewed rollback and authorization.

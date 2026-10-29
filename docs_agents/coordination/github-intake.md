@@ -257,7 +257,7 @@ A PR a person opened before W4.3.3 existed is adopted like any other once it mat
 3. reads it again and verifies the merge (it pushes nothing and creates nothing);
 4. completes `issue-25`, posts the completion comment, closes Issue #25 and moves its card to Done.
 
-No new Issue and no new PR are created. This is tested with a disposable repository whose numbers are #25 and #27 (`test_a_manually_opened_and_merged_pr_completes_issue_25`), and against the real PR #27 response shape (`test_the_real_pr_27_matches_the_issue_25_candidate`). **It has not been applied to the real Issue #25.** That needs the supervised live test, with a local configuration outside the repository that sets `github.publish.enabled: true`.
+No new Issue and no new PR are created. This is tested with a disposable repository whose numbers are #25 and #27 (`test_a_manually_opened_and_merged_pr_completes_issue_25`), and against the real PR #27 response shape (`test_the_real_pr_27_matches_the_issue_25_candidate`). **Historical note updated:** this was subsequently applied to real Issue #25 in the supervised W4.3.3 test; see §10.10. Publication was enabled only in the operator's external configuration.
 
 ### 10.7 Configuration (`github.publish`)
 
@@ -279,7 +279,7 @@ Fixed, not configurable: Draft PRs only, the feature's base branch as the target
 
 ### 10.9 Limitations
 
-- **Supervised live verification only.** Real adoption (PR #27), automatic integration/push/Draft PR creation (PR #30) and merged-Issue closure (#25, #29) succeeded. Simulated crashes/network loss are verified in isolated tests, **not** against live GitHub. No unattended 24/7 soak was performed.
+- **Supervised live verification only.** Real adoption (PR #27), automatic integration/push/Draft PR creation (PR #30) and merged-Issue closure (#25, #29) succeeded in W4.3. W4.4 reran 4 transient API/network and 11 publisher recovery test cases, **offline with simulated GitHub failures**, not against a live outage. No unattended 24/7 soak was performed.
 - **Merge commits only.** A squash or rebase merge stops for an operator. There is no command for a manual completion yet, so such a feature stays in review; the operator closes the Issue by hand.
 - **The next feature starts from the local `dev`.** The coordinator fetches `dev` into FETCH_HEAD and the remote-tracking ref only, and never updates the local `dev` branch. Update it before the next feature is activated, or the next branch starts from an older base.
 - **Detection delay:** a merge is seen at the next pass (up to `poll_interval_seconds`; the service may be idle longer between cycles).
@@ -295,4 +295,11 @@ Fixed, not configurable: Draft PRs only, the feature's base branch as the target
 | W4.3.4 / first auto Draft PR | Operator approved Issue [#29](https://github.com/spyderbg/mx-admin-cloud/issues/29) using its exact spec SHA-256; Worker (real Claude Sonnet, foreground) verified `issue-29.cli` and automatically integrated/pushed `feature/issue-29`, then opened **Draft** PR [#30](https://github.com/spyderbg/mx-admin-cloud/pull/30) at head `932a9643f4d4`. The only changed file was `docs_agents/cli/w434-auto-pr-smoke.md`; required gates passed, GitGuardian passed. |
 | W4.3.4 / human merge and closure | PR #30 was reviewed, marked ready and **merge-committed** to `dev` as `9861975d0d37`. The Worker had already stopped normally. One manual `github publish poll issue-29 --apply` later verified the merge, closed Issue #29 (`completed`), posted one completion comment and put its Project #2 item in `Done`. |
 
-**Interpretation:** The full happy path is now **verified with real GitHub**, while interrupted live PR creation, GitHub API outages, 24/7 unattended operation, network and process failures remain W4.4 test candidates. Do not present the isolated recovery tests as live-failure evidence. The Coordinator does **not** auto-merge; merge must be human-authorized and be a merge commit, not squash/rebase.
+**Interpretation:** The W4.3 happy path was verified with real GitHub. W4.4 subsequently completed **bounded offline fault regressions** and a separate real-agent run **without GitHub calls**; live interruption of GitHub writes and 24/7 unattended operation are still **unverified** ([W4.4 record](w44-reliability-acceptance.md)). The Coordinator does **not** auto-merge; merge must be human-authorized and be a merge commit, not squash/rebase.
+
+
+### 10.11 W4.4 publication reliability revalidation (2026-10-29)
+
+The operator re-ran **4/4** selected Git/GitHub transient-error tests and **11/11** selected publisher-interruption tests on the W4.4 baseline. Verified cases include an unreachable Git remote, HTTP 503 on PR create, an uncertain PR-create response recovered by adoption, transient GitHub waits, an uncertain push, a crash after PR creation, **eight** crash points before/after push, create, completion, comment and Issue closure, and idempotent re-polling/restarts. The tests use **disposable local Git and mock GitHub**, checking exactly one PR and completion comment where applicable; **they do not reproduce a failure against the real GitHub service**.
+
+W4.4's separate four-session real Claude/Codex smoke used a **no-remote** disposable repository and a GitHub shim that was never called. Its 69/69 success is evidence of agent and checkpoint recovery, **not** live GitHub outage handling. See [W4.4 acceptance](w44-reliability-acceptance.md). No new real GitHub Issue, PR or Project #2 item was created for W4.4 testing.

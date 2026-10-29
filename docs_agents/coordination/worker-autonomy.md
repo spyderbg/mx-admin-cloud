@@ -1,9 +1,9 @@
 # Autonomous Worker Operations (W4)
 
-> Owner role: **coordination**. W4/W4.1 verified offline; W4.2 bounded real-agent verification (2026-10-23); **W4.3.2–W4.3.4 bounded live GitHub workflow verified (2026-10-24)**. The service is **not** demonstrated for unattended/overnight operation.
+> Owner role: **coordination**. W4/W4.1 offline; W4.2 and W4.3 bounded real-agent/GitHub acceptance; **W4.4 supervised recovery regressions, fake-agent soak and four-session real-agent revalidation VERIFIED (2026-10-29)**. This does **not** demonstrate unattended/overnight or live GitHub-outage resilience. [W4.4 record](w44-reliability-acceptance.md).
 > - Historical implementation branch: `feature/worker-autonomy-w4`, integrated by merged PR [#23](https://github.com/spyderbg/mx-admin-cloud/pull/23) (`7ce3dbc`). W4.3 intake/publishing were merged separately via PRs #26 and #28; the latest supervised smoke merged PR #30 into `dev` (`9861975`).
 > - W4 and W4.1 were verified with fake agents: real temporary Git repositories, real `feature.py worker start` processes, real signals and SIGKILLs, and simulated time.
-> - **W4.2** ran 4 real Claude/Codex sessions in one controlled foreground smoke test. **W4.3.4** subsequently ran one real Claude Sonnet session through the autonomous Worker and automatically created Draft PR #30. These are bounded observations, **not** 24/7 evidence.
+> - **W4.2** ran 4 real Claude/Codex sessions in the original bounded foreground smoke test; **W4.3.4** ran a real Claude Sonnet task and opened Draft PR #30; **W4.4.5-B** repeated the bounded 4-session Claude/Codex smoke (69/69) with a controlled stop/restart. W4.4.5-A also ran 48 fake-agent tasks (10/10 soak checks). None proves 24/7 reliability.
 > - The systemd user service is a **template**: it is not installed, enabled or started. Linger is not enabled.
 > Related: [worker-checkpoints.md](worker-checkpoints.md) (W3: checkpoints and recovery, which W4 runs automatically) · [worker-functional.md](worker-functional.md) (W2: the Worker and the native-cli backend) · [feature-workflow.md](feature-workflow.md) · [operations.md](operations.md) · [phase-status.md](phase-status.md)
 >
@@ -635,6 +635,14 @@ The 2026-10-22 run (36 tasks, every 4th failing once, 120 s idle) passed every c
 - **W4.3.4:** A real Sonnet task from approved Issue [#29](https://github.com/spyderbg/mx-admin-cloud/issues/29) verified successfully. The running Worker integrated and pushed the branch and opened Draft PR [#30](https://github.com/spyderbg/mx-admin-cloud/pull/30), then waited for a human. PR #30 was manually marked ready and merged (`9861975`); after the Worker was stopped, the operator ran one manual publisher pass, which closed Issue #29 and moved Project #2 to `Done`.
 - **Boundary:** W4.3 validates the supervised happy path, **not** fault injection with real GitHub, overnight service operation, unattended auto-retry or systemd startup. See [phase-status.md](phase-status.md) and [github-intake.md §10.10](github-intake.md#1010-live-verification-record-2026-10-24).
 
+### 14.3 W4.4 — supervised reliability acceptance (2026-10-29)
+
+**This is fresh verification of existing implementation, not a new source-code feature.** The operator reran 26 selected pytest cases across crash recovery (4), transient Git/GitHub failures (4), validation/retries (7), and publication interruptions (11). All passed. Offline publisher fault injection uses mock GitHub; no real network failure was induced.
+
+An additional **513-second** soak exercised the real Worker service process in a disposable Git repository with **48 fake-agent tasks**, **60 runs**, **12 simulated transient failures** and **180 seconds idle**; all **10 invariant checks passed**, with no duplicated task commits or lingering claims/processes. A separate real-agent run invoked Claude Code Opus ×2, Sonnet ×1 and Codex (CLI default) ×1, gracefully stopped after the first Backend checkpoint, restarted without replay, and passed **69/69** independent checks (8 preflight, 28 outcome, 33 safety); all three gates passed and the service exited `OFFLINE` with no claims or agent processes. The harness prints its original `W4.2 real-agent smoke test` label.
+
+Details, command transcript summary and explicit unverified scenarios: [W4.4 acceptance](w44-reliability-acceptance.md). No systemd host reboot, 24/7 runtime, real GitHub outage or live interruption was attempted.
+
 ## 15. Operational example (what really happens; offline-verified behaviour)
 
 The steps match tests E and A and the soak run. The example is **not** a real-agent run.
@@ -663,7 +671,7 @@ The steps match tests E and A and the soak run. The example is **not** a real-ag
 
 ## 16. Limitations
 
-- **Only bounded real-agent runs.** W4.2 ran 4 real sessions in one foreground smoke (§14.1); W4.3.4 ran one additional real Claude Sonnet CLI task, automatically publishing Draft PR #30. No unattended or overnight run took place. Real CLI usage-limit and outage messages were not observed, so classification patterns may miss them and conservatively fall into `unknown`/NEEDS_ATTENTION.
+- **Only bounded real-agent runs.** W4.2 originally ran 4 real sessions; W4.3.4 ran one additional real Claude Sonnet task with live Draft PR publication; W4.4.5-B reran a separate 4-session Claude/Codex recovery smoke (69/69). W4.4.5-A was a 48-task **fake-agent** soak, not an overnight or 24/7 real-model trial. Actual GitHub outages, real CLI usage-limit text, and restart after machine reboot remain unverified.
 - **Codex does not report its model.** The Frontend session ran the Codex CLI default, which is not independently verified.
 - **Host prerequisite for gates.** On Ubuntu 24.04 the gate sandbox needs bubblewrap to be allowed unprivileged user namespaces, through the distribution's `bwrap-userns-restrict` AppArmor profile (package `apparmor-profiles`), installed and loaded by the operator ([worker-host-setup.md](worker-host-setup.md)); the coordinator never changes AppArmor. Without it every gate is blocked, and since W4.2.1 that is reported as critical "gates could not run".
 - **That profile breaks nested sandboxes.** It runs everything bubblewrap starts under `unpriv_bwrap`, with all capabilities denied, so a bubblewrap started *inside* the coordinator's sandbox cannot create namespaces.
@@ -710,7 +718,7 @@ W4 has no AWS client, no distributed lock and no migration.
   - subscription waiting (simulated errors); health and status; pause, resume and stop;
   - the restart-loop guard; orphan handling; per-task isolation; redaction;
   - the unit template (rendered and verified, not installed).
-- **Verified with real agents (bounded):** W4.2: 4 real sessions (Claude Code `opus` ×2, `sonnet`, Codex), controlled restart, gates and cleanup. W4.3.4: one real Sonnet CLI task, verified and automatically published as Draft PR #30 with human-controlled merge.
-- **Simulated:** long runs (accelerated clock), the soak (fake agents, minutes), usage-limit messages.
-- **Not verified:** overnight or unattended operation; actual GitHub outages/interrupted publication; real usage limits; Codex's actual model; suspend/resume. The watchdog fault scenarios are verified offline with fake agents and real processes (W4.1), not with real-agent failures.
+- **Verified with real agents (bounded):** W4.2: 4 sessions, controlled restart and gates; W4.3.4: one real Sonnet task, automatic Draft PR and human merge; W4.4.5-B (2026-10-29): four real sessions, 69/69 checks, checkpoints reused and no leaks. See [W4.4 acceptance](w44-reliability-acceptance.md).
+- **Simulated:** long runs (accelerated clock), real-service soaks with **fake agents** (W4.4.5-A: 48 tasks, 60 runs, 10/10 invariants, 513 seconds), GitHub outages and publication crash points (mock GitHub/disposable Git), usage-limit messages.
+- **Not verified:** multi-day/overnight unattended work; installed systemd restart after host reboot; real GitHub outages and interrupted live push/PR creation; actual subscription-limit errors; Codex's effective model; suspend/resume. Watchdog fault scenarios were tested offline with real processes and fake agents, not during real-agent failures.
 - **Planned:** central coordinator, multiple machines, a feature queue, notifications.

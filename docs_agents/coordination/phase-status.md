@@ -5,12 +5,12 @@
 
 | Field | Value |
 | --- | --- |
-| Current phase | **W4.3.4 — live end-to-end GitHub workflow VERIFIED (2026-10-24).** Issue #29 → approved CLI task → real Claude Code Sonnet → local validation → automatic integration/push/Draft PR #30 → human-reviewed merge → coordinator verified completion → Issue closed, Project #2 Done. W4.4 resilience testing is **planned, not started**. |
-| State | W4.3.1–W4.3.4 have completed supervised live tests. PRs #23 (W4), #26 (intake), #28 (publisher) and #30 (end-to-end smoke) are merged into `dev`. Worker was stopped normally after the W4.3.4 Draft PR, and its completion was polled manually. No systemd user service was installed or enabled during these tests. W1 security isolation remains separate in Draft PR #20; shared GitHub credentials and no unattended-soak evidence remain risks. |
+| Current phase | **W4.4 — Reliability & Recovery Testing CLOSED (2026-10-29), bounded supervised acceptance.** 26/26 selected regression tests; 48-task/60-run offline soak 10/10; real Claude Code/Codex smoke 69/69. Next proposed milestone: W4.5 unattended operations (not authorized or started). See [W4.4 acceptance](w44-reliability-acceptance.md). |
+| State | W4.4's selected crash/retry/publisher regressions and bounded soak/real-agent checks passed; **no production-code changes**. PR #31 (W4.3 documentation) is merged into `dev`. W4.4 does **not** prove 24/7 unattended operation, deployed systemd recovery or live GitHub outage resilience. W1 isolation remains separate in Draft PR #20 and the shared GitHub credential risk persists. |
 | Execution policy | Supervised, phase by phase. No autonomous phased execution. Phases 0–3 approved (Phase 3 on 2026-10-17). **Phase 4 and the Phase 4 extension approved 2026-10-17** by the finalization instruction ("Phase 4 and the GitHub Projects V2 extension are approved. This is a Phase 4 finalization task. Do not start Phase 5."), which also approved D-10 (a reviewed commit plan; no commit or push yet), D-22, D-28 and D-29. The plan's execution was approved the same day ("The commit plan is approved, run it"); the mode correction was approved on 2026-10-19 as new commits instead of a history rewrite ("fix it with new commits instead of rewriting"), because `agents` had been pushed by then. Earlier: Phase 4 authorized 2026-10-17 ("Proceed with Phase 4 ONLY"), including **real** GitHub Issue operations on `spyderbg/mx-admin-cloud` for coordinator-owned test Issues and their `feature:*` labels — no PRs, no commit or push. The **Phase 4 extension** (GitHub Projects V2 Kanban integration, before Phase 5) was authorized the same day: configure the existing Project #2, never modify Project #1 or Issues #1–#14, up to two test Issues — no PRs, no commit or push. The operator's instruction for the extension did not state an approval of Phase 4 itself (approved later with the finalization) |
-| Code base | Current integration branch: `dev` at `9861975d0d376a5208c0cbc47ff4425f36fcfab6` (merge PR #30, 2026-10-24). Historical Phase 0–4 development on `agents` and earlier feature branches is preserved below; do not confuse historical branch descriptions with current HEAD. |
-| Last updated | 2026-10-24 (supervised W4.3.2, W4.3.3, W4.3.4 live evidence reconciled; next W4.4 planned). |
-| Active writers / locks | Last operator report (2026-10-24): foreground Worker stopped normally after opening Draft PR #30. The main Coordinator recorded `issue-25` and `issue-29` as done, with their GitHub Issues closed. This is a historical observation, **not a live lock/process check**: always run `worker status`, `worker attention` and `git status` before new work. |
+| Code base | W4.4 verification baseline: `dev` at `06070029cccc420e9ed493a94caf3d5200a11a88` (documentation PR #31 merged, 2026-10-29). W4.4 verification did not change production code; historical Phase 0–4 `agents` and feature branch records remain below. |
+| Last updated | 2026-10-29 (W4.4 supervised bounded acceptance reconciled; results and open 24/7 risks in [W4.4 acceptance](w44-reliability-acceptance.md)). |
+| Active writers / locks | Operator's last **main Coordinator** inspection before W4.4 tests: Worker `OFFLINE`, no attention. The separate W4.4.5-B disposable Worker ended `OFFLINE` with no claims, agent processes or locks in its test state. These are **historical observations, not a live process/lock check**; recheck `worker status`, `worker attention` and `git status` before future work. |
 
 ## Phase overview
 
@@ -34,10 +34,20 @@
 | W4.3.2 | **Approved Issue → verified real Worker task** | **verified with real Claude Code** | Issue #25, `issue-25.cli`, head `8094a9c`; PR #27 manually opened and merged (`f631c57`). Its subsequent adoption/completion was tested in W4.3.3. |
 | W4.3.3 | **Automatic publishing and verified completion** | **verified offline and with live GitHub; merged** | PR #28 merged (`0b62949`); local publish tests 86 passed, 26/26 deliberate breakages caught (historical execution report). Real adoption of merged PR #27 for Issue #25; real automatic integration/push/Draft PR #30 for Issue #29 and merge verification/Issue closure. |
 | W4.3.4 | **Automatic Draft PR smoke test** | **verified with real GitHub, end to end** | Issue #29 → task `issue-29.cli`, validated head `932a964`; Worker pushed branch and opened Draft PR #30, later merged as `9861975`; completion comment, Issue closed and Project #2 Done. |
-| W4.4 | **Reliability & Recovery Testing** | **planned; not started** | Proposed: controlled restart, API/network failure, validation failure, interrupted publication and bounded supervised acceptance. Start with disposable repositories/mock GitHub; no new live Issue without explicit approval. |
+| W4.4 | **Reliability & Recovery Testing** | **closed — bounded supervised acceptance (2026-10-29)** | 26/26 selected offline regression cases (4 crash/recovery, 4 API/network, 7 validation/retry, 11 publisher recovery); fake-agent soak 48/48 tasks, 60 runs, 10/10 checks; real Claude/Codex four-session smoke, 69/69 checks. **No real outage, 24/7 unattended or systemd reboot test**. [Acceptance record](w44-reliability-acceptance.md). |
 | W2 | **Functional multi-agent Worker** (native subscription execution, role → agent → model, Worker loop) | **verified with real agents; merged** | Subscription smoke passed 2026-10-22; merged via PR #21 (`7161978`). Original evidence retained below. |
 
 > **Superseded by v4 (historical v3 phase titles):** v3 Phase 2 was "Existing Automation Audit and Minimal Extensions" of `mxfix`/`mxissues`; v3 Phase 3 was "Agent Profiles and Scope Enforcement" with per-task worktrees; v3 Phase 4 was "GitHub Issue Coordination" extending `mxissues`; v3 Phases 5–7 assumed per-task PRs. All of these are replaced by the v4 titles above.
+
+## W4.4 — Reliability & Recovery Testing: closeout (2026-10-29)
+
+> **CLOSED: bounded supervised acceptance, not 24/7 certification.** Full observed evidence, commands and limitations: [W4.4 acceptance record](w44-reliability-acceptance.md).
+
+The operator reran **26/26 selected regression cases**: W4.4.1 crash/recovery **4/4**; W4.4.2 transient Git/GitHub errors **4/4**; W4.4.3 validation/retry **7/7**; W4.4.4 interrupted publisher **11/11** (including eight deterministic fault points). The publisher tests used **mock GitHub and disposable local Git remotes**; the real GitHub service was not fault-injected.
+
+W4.4.5-A: optional real-service soak with **48 fake-agent tasks**, 12 expected transient failures, **60 agent runs**, 180 seconds idle; **10/10 invariants passed** in 513 seconds. W4.4.5-B: another bounded real Claude Code/Codex smoke run on 2026-10-29, with **4 sessions and 4 committed checkpoints**, controlled stop/restart and **69/69 checks** (8 preflight, 28 outcome, 33 safety); no GitHub calls, no live process left. Both reports were supplied by the operator; no fresh full test suite or multi-day unattended test is claimed.
+
+**Next, proposed but not approved:** W4.5 unattended operations and host/systemd recovery, monitored multi-day testing and separately authorized live GitHub fault scenarios. W1 Draft PR #20, shared credentials, squash/rebase handling and absence of general CI remain on the risk list. W4.4 closeout is documentation-only and has no effect on running processes.
 
 ## W4.3.2–W4.3.4 — supervised live GitHub acceptance (2026-10-24)
 
@@ -54,7 +64,7 @@
 | W4.3.4 merge and completion | Operator marked PR #30 ready and merged it with a **merge commit** `9861975d0d376a5208c0cbc47ff4425f36fcfab6` into `dev`. Dry-run: 3 requests / 0 writes. Coordinator's subsequent apply completed feature, published one completion comment, closed Issue #29 with `state_reason=completed`, and Project #2 reported `Done`. |
 | Worker lifecycle | Worker ran in the foreground, waited for human review after creating Draft PR #30, and was stopped normally (`OFFLINE`). Merge completion was done with an explicit, one-off `github publish poll issue-29 --apply`, without restarting Worker. |
 
-**Live-test boundaries and residual risks:** no systemd installation, prolonged unattended/overnight soak, deliberate live GitHub outage, failed real API write or interrupted live push/PR creation was tested. W4.4 is planned for isolated failure injection. Shared agent/coordinator GitHub credentials remain the temporarily accepted risk; W1 is still an unmerged Draft PR #20. Publication only supports merge commits; squash/rebase merge does not satisfy the existing verified-head ancestry rule. GitHub Actions CI is not configured as a general gate; GitGuardian was the sole check visible on PR #30.
+**Live-test boundaries and residual risks:** no systemd installation, prolonged unattended/overnight soak, deliberate live GitHub outage, failed real API write or interrupted live push/PR creation was tested. W4.4 subsequently completed isolated regressions, a fake-agent soak and a bounded real-agent revalidation ([acceptance record](w44-reliability-acceptance.md)); live GitHub failure injection remains unverified. Shared agent/coordinator GitHub credentials remain the temporarily accepted risk; W1 is still an unmerged Draft PR #20. Publication only supports merge commits; squash/rebase merge does not satisfy the existing verified-head ancestry rule. GitHub Actions CI is not configured as a general gate; GitGuardian was the sole check visible on PR #30.
 
 ## W4.3.3 — Automatic GitHub pull request and task completion: record (2026-10-24)
 
@@ -1233,14 +1243,14 @@ Execution remains **sequential and supervised** until Phase 3 proves enforcement
 | `docs_agents/README.md` | Governing assignment → v4; planned pages per the v4 tree |
 | `docs_agents/backend/README.md`, `docs_agents/cli/README.md`, `docs_agents/frontend/README.md`, `docs_agents/backend/services/content/README.md` | Header metadata only: v4 owned paths / default runner, D-1 approved, v4 references. Made by the bootstrap docs owner; no technical content changed |
 
-## Exact next action (updated 2026-10-24)
+## Exact next action (updated 2026-10-29)
 
-1. Create a **documentation-only** branch `docs/w4-progress-sync` from an up-to-date, clean `dev`. Review the documentation diff; validate documentation checks. Commit, push, open and merge its PR **only after explicit operator approval**.
-2. After the documentation PR is merged and local `dev` updated, scope **W4.4 — Reliability & Recovery Testing**. Begin with disposable Git repositories, fake agents and mock GitHub; no destructive fault injection into the main checkout or live GitHub without separate approval.
-3. Keep W1 security isolation (Draft PR #20), shared GitHub identity, unattended operation, usage-limit handling, squash/rebase limitations and host AppArmor constraints on the risk list. Do not enable 24/7 systemd operation as part of documentation maintenance.
-4. The v5 Phase 5 feature remains separate and requires explicit authorization. Earlier Phase 0–4 records above are historical; their old instruction checkpoints are not the current runbook.
+1. Review and integrate this **documentation-only W4.4 closeout** via `docs/w44-reliability-closeout` → `dev`, after the operator separately approves commit, push and PR/merge operations. Validate `python scripts/check_docs_agents.py` (6/6 expected in the configured `.venv`) and the documentation diff first.
+2. Scope the **proposed W4.5 — Unattended Operations & 24/7 Stability**; it is **not authorized or started**. Separate approval is needed before systemd installation, unattended agents, new live Issues or fault injection on GitHub. Use [W4.4 acceptance](w44-reliability-acceptance.md) as the baseline and maintain explicit rollback/cleanup plans.
+3. Keep W1 security isolation (Draft PR #20), shared GitHub identity, subscription error behavior, squash/rebase limitations and host AppArmor constraints on the risk list. Do not enable 24/7 systemd operation as part of this documentation change.
+4. The v5 Phase 5 feature is separate and needs explicit authorization. Earlier Phase 0–4 records are historical; do not execute their old next-action instructions.
 
-## Resume checklist (updated 2026-10-24)
+## Resume checklist (updated 2026-10-29)
 
 - Read this status, [`github-intake.md`](github-intake.md), [`worker-autonomy.md`](worker-autonomy.md), [`operations.md`](operations.md), and the governing v5 prompt.
 - Verify `git status --short --branch` on up-to-date `dev`; read `feature.py --tracker github --project-config <local config> worker status`, `worker attention`, `github intake status`, and `github publish status` before starting further work. Current local config is outside the repository (for the supervised test: `~/.config/mx-admin-agents/project.yaml`).
