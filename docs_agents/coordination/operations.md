@@ -82,6 +82,8 @@ feature.py worker pause | resume                    # no new work / again (an ac
 feature.py worker stop [--after-current]            # graceful: cancel the active agent (checkpoints stay) / finish it first
 feature.py worker reset-retries <task> [--apply]    # operator decision: clear budgets, waits and attention
 feature.py worker systemd-unit --config FILE        # print the user unit; nothing is installed or enabled
+                                                    # (--config defaults to the global --project-config; the
+                                                    #  global --state-dir / --tracker are kept in ExecStart)
 ```
 
 `feature.py work` now defaults to one agent at a time (`worker.max_parallel`); `--max-parallel N` is the W2 parallel scheduler. While a sequential Worker runs, a manual `launch` of another task is refused ("sequential mode").
