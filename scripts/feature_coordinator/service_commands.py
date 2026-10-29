@@ -8,7 +8,9 @@
     worker stop [--after-current]                       graceful stop (cancel the active agent; checkpoints stay)
                                                         or after the active task has finished
     worker reset-retries TASK [--apply]                 an operator decision: clear a task's retry budgets and attention
-    worker systemd-unit [--config FILE]                 print the systemd --user unit (nothing is installed)
+    worker systemd-unit [--config FILE]                 print the systemd --user unit (nothing is installed);
+                                                        --config defaults to the global --project-config, and
+                                                        an explicit global --state-dir / --tracker is kept in ExecStart
 
 Status, health, waiting and attention are READ-ONLY: they never create state, start work or ask
 a model. Control commands record the request and signal only the recorded service process, after
@@ -29,6 +31,7 @@ from typing import Any
 
 from .autonomy import health_report, iso, load_scheduling, load_service, write_control
 from .config import ProjectConfig
+from .errors import ConfigError
 from .locks import ProcessIdentity
 from .model import TaskState, transition_task
 from .statedir import ensure_state_dir, resolve_state_dir
@@ -196,12 +199,28 @@ def cmd_worker_reset(args: argparse.Namespace, config: ProjectConfig) -> int:
     return 0
 
 
+def _unit_project_config(args: argparse.Namespace) -> Path | None:
+    """`systemd-unit --config`, else the global `--project-config`; both given must be the same file."""
+    own, inherited = (Path(p).resolve() if p else None for p in (args.config, args.project_config))
+    if own and inherited and own != inherited:
+        raise ConfigError(f"conflicting project configurations: `systemd-unit --config {own}` and the global "
+                          f"`--project-config {inherited}`; give only one of them, or the same file to both")
+    return own or inherited
+
+
 def cmd_worker_unit(args: argparse.Namespace, config: ProjectConfig) -> int:
-    """Print the systemd --user unit for this checkout (NOT installed, enabled or started)."""
+    """Print the systemd --user unit for this checkout (NOT installed, enabled or started).
+
+    Explicit global `--state-dir`, `--project-config` (or `--config`) and `--tracker` are carried
+    into ExecStart as global options, in that order, before `worker start`. Without them,
+    ExecStart has none: the service uses the default state directory, the built-in
+    configuration and the local tracker."""
     del config
     repo = Path(args.repo).resolve()
     python = Path(os.path.abspath(args.python or sys.executable))  # normalized; a venv symlink is kept
-    project = Path(args.config).resolve() if args.config else None
+    project = _unit_project_config(args)
+    state = Path(args.state_dir).resolve() if args.state_dir else None  # the service runs in @REPO@, not here
+    tracker = getattr(args, "tracker", None)
     dirs = []
     for name in ("claude", "codex"):
         found = shutil.which(name)
@@ -210,12 +229,15 @@ def cmd_worker_unit(args: argparse.Namespace, config: ProjectConfig) -> int:
     path = ":".join(dict.fromkeys([*dirs, "/usr/local/bin", "/usr/bin", "/bin"]))
     text = UNIT_TEMPLATE.read_text(encoding="utf-8")
     for key, value in {"@REPO@": str(repo), "@PYTHON@": str(python), "@PATH@": path,
-                       "@CONFIG_ARG@": f" --project-config {project}" if project else ""}.items():
+                       "@STATE_ARG@": f" --state-dir {state}" if state else "",
+                       "@CONFIG_ARG@": f" --project-config {project}" if project else "",
+                       "@TRACKER_ARG@": f" --tracker {tracker}" if tracker else ""}.items():
         text = text.replace(key, value)
     _print(text.rstrip("\n"))
     if not project:
-        sys.stderr.write("note: without --config the built-in configuration is used, where "
-                         "worker.autonomous.enabled is false: the service would refuse to start (exit 78)\n")
+        sys.stderr.write("note: without --config (or the global --project-config) the built-in configuration is "
+                         "used, where worker.autonomous.enabled is false: the service would refuse to start "
+                         "(exit 78)\n")
     return 0
 
 
@@ -249,6 +271,7 @@ def register(sub: Any) -> None:
     reset.add_argument("--apply", action="store_true")
     reset.set_defaults(func=cmd_worker_reset)
     unit = commands.add_parser("systemd-unit", help="print the systemd --user unit (nothing is installed)")
-    unit.add_argument("--config", default=None, help="the project configuration the service runs with")
+    unit.add_argument("--config", default=None,
+                      help="the project configuration the service runs with (default: the global --project-config)")
     unit.add_argument("--python", default=None, help="interpreter (default: this one)")
     unit.set_defaults(func=cmd_worker_unit)

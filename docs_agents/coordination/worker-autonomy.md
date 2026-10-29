@@ -361,7 +361,7 @@ After the deadline (`recovery.stop_orphans_after_deadline`, default true), it st
 | `feature.py worker stop` | Graceful stop: SIGTERM to the verified service process. It cancels the active agent (completed checkpoints stay; the interrupted step runs again later) and exits 0 |
 | `feature.py worker stop --after-current` | Let the active task finish, then exit (nothing new starts) |
 | `feature.py worker reset-retries TASK [--apply]` | Clear a task's budgets, waits and attention (dry run without `--apply`) |
-| `feature.py worker systemd-unit --config FILE` | Print the unit for this checkout. Nothing is installed |
+| `feature.py [--state-dir DIR] [--project-config FILE] [--tracker github] worker systemd-unit [--config FILE]` | Print the unit for this checkout. `--config` defaults to the global `--project-config` (two different files are refused); an explicit `--state-dir` and `--tracker` are kept in `ExecStart` (without them: the default state directory and the local tracker). Nothing is installed |
 
 Control commands write `flags/worker-control.json` and signal only the **recorded** service process, after re-verifying its identity. The request stays recorded either way:
 - a pause also applies at the next start;
@@ -372,7 +372,7 @@ The existing commands are unchanged: `checkpoints TASK` and `recover TASK` for a
 ## 11. systemd (user service) — instructions; nothing is installed
 
 **Template.** `scripts/feature_coordinator/systemd/mx-admin-worker.service.in`:
-- `Type=simple`, with `ExecStart` running `feature.py … worker start`;
+- `Type=simple`, with `ExecStart` running `feature.py --repo R [--state-dir DIR] [--project-config FILE] [--tracker T] worker start` (global options before the subcommand, as absolute paths; each only when given to `systemd-unit`);
 - `Restart=on-failure`, `RestartSec=60`, `RestartPreventExitStatus=73 78`;
 - `StartLimitIntervalSec=900`, `StartLimitBurst=5`;
 - `KillMode=mixed`, `KillSignal=SIGTERM`, `TimeoutStopSec=180`;
@@ -386,7 +386,8 @@ It contains no credentials and no `HOME` override: Claude Code and Codex keep us
 - a successful `feature.py worker start --exit-when-idle` in a terminal first.
 
 ```bash
-# 1. Render the unit for this checkout and configuration (prints only):
+# 1. Render the unit for this checkout and configuration (prints only; global options such as
+#    --tracker github or --state-dir DIR go before `worker` and are kept in ExecStart):
 python scripts/feature.py worker systemd-unit --config /path/to/project.yaml > /tmp/mx-admin-worker.service
 systemd-analyze --user verify /tmp/mx-admin-worker.service
 
