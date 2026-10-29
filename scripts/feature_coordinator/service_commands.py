@@ -39,6 +39,8 @@ from .store import StateStore
 
 UNIT_TEMPLATE = Path(__file__).resolve().parent / "systemd" / "mx-admin-worker.service.in"
 REPO_ROOT = Path(__file__).resolve().parents[2]
+UNIT_EXECUTABLES = ("claude", "codex", "gh")  # the agent CLIs and the GitHub CLI (intake, publishing)
+UNIT_SYSTEM_PATH = ("/usr/local/bin", "/usr/bin", "/bin")
 
 
 def _print(text: str = "") -> None:
@@ -208,6 +210,17 @@ def _unit_project_config(args: argparse.Namespace) -> Path | None:
     return own or inherited
 
 
+def _unit_path() -> str:
+    """The unit's PATH: the directories where UNIT_EXECUTABLES are found, then the system defaults.
+
+    A directory is kept as found: a symlink such as Snap's /snap/bin/gh is not resolved. One
+    that is a system default keeps its place there, so /usr/bin/gh does not move /usr/bin ahead
+    of /usr/local/bin. Duplicates are removed."""
+    found = (shutil.which(name) for name in UNIT_EXECUTABLES)
+    dirs = (str(Path(os.path.abspath(exe)).parent) for exe in found if exe)
+    return ":".join(dict.fromkeys([*(d for d in dirs if d not in UNIT_SYSTEM_PATH), *UNIT_SYSTEM_PATH]))
+
+
 def cmd_worker_unit(args: argparse.Namespace, config: ProjectConfig) -> int:
     """Print the systemd --user unit for this checkout (NOT installed, enabled or started).
 
@@ -221,14 +234,8 @@ def cmd_worker_unit(args: argparse.Namespace, config: ProjectConfig) -> int:
     project = _unit_project_config(args)
     state = Path(args.state_dir).resolve() if args.state_dir else None  # the service runs in @REPO@, not here
     tracker = getattr(args, "tracker", None)
-    dirs = []
-    for name in ("claude", "codex"):
-        found = shutil.which(name)
-        if found:
-            dirs.append(str(Path(found).parent))
-    path = ":".join(dict.fromkeys([*dirs, "/usr/local/bin", "/usr/bin", "/bin"]))
     text = UNIT_TEMPLATE.read_text(encoding="utf-8")
-    for key, value in {"@REPO@": str(repo), "@PYTHON@": str(python), "@PATH@": path,
+    for key, value in {"@REPO@": str(repo), "@PYTHON@": str(python), "@PATH@": _unit_path(),
                        "@STATE_ARG@": f" --state-dir {state}" if state else "",
                        "@CONFIG_ARG@": f" --project-config {project}" if project else "",
                        "@TRACKER_ARG@": f" --tracker {tracker}" if tracker else ""}.items():

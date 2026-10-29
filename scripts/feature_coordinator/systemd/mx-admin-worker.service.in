@@ -20,7 +20,8 @@ StartLimitBurst=5
 Type=simple
 WorkingDirectory=@REPO@
 ExecStart=@PYTHON@ @REPO@/scripts/feature.py --repo @REPO@@STATE_ARG@@CONFIG_ARG@@TRACKER_ARG@ worker start
-# The agent CLIs' directories (no secrets): a user manager's default PATH may not include them.
+# The directories of the agent CLIs and gh as found when rendering (e.g. /snap/bin), then the
+# system defaults (no secrets): a user manager's default PATH may not include them.
 Environment=PATH=@PATH@
 Environment=PYTHONUNBUFFERED=1
 # Restart after an unexpected failure, with a delay. Never for 73 (another service owns the
