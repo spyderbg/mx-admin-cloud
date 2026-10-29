@@ -194,3 +194,43 @@ Operating rules:
 - The write scope applies: in Phase 4 only `test: true` features are written to the real board.
 - The project workflows **Auto-close issue** and **Item closed** are switched off in Project #2 (D-28, verified 2026-10-17; [github-projects §9](github-projects.md#9-githubs-built-in-project-workflows)). `github project inspect` lists the workflows; if either is switched on again, the coordinator repairs its effect but reports drift.
 - The **Active Tasks** view shows open Issues in Ready, In Progress, Blocked or Review (`is:open`, D-29). Finished test features stay on the Kanban view as closed audit records.
+
+## 9. Supervised GitHub intake → Worker → Draft PR → human merge → Done (verified 2026-10-24)
+
+The commands below reflect the successful live tests of Issues #25 and #29. They operate on the **same local Coordinator state directory** (the default, unless `--state-dir` was explicitly supplied earlier), and a **local** config outside the repository. Do not put access tokens or machine-specific settings in the repository.
+
+Preconditions: current `dev` fetched with `git pull --ff-only origin dev`, clean checkout, no running Worker or unattended service, GitHub Project #2 correctly configured, and `github.intake.enabled: true`, `github.publish.enabled: true`, `worker.autonomous.enabled: true` in `~/.config/mx-admin-agents/project.yaml`. The default config intentionally disables these capabilities. The W4.3.4 test was run under the user's approval and the shared `spyderbg` identity risk acceptance (§9 of [github-intake.md](github-intake.md)).
+
+```bash
+# Run from the mx-admin-cloud checkout. Inspection only:
+git status --short --branch
+python scripts/feature.py --tracker github --project-config ~/.config/mx-admin-agents/project.yaml worker status
+python scripts/feature.py --tracker github --project-config ~/.config/mx-admin-agents/project.yaml worker attention
+
+# After creating and reviewing a new Issue N, print its digest (read-only):
+python scripts/feature.py --tracker github --project-config ~/.config/mx-admin-agents/project.yaml github intake show N
+# Publish exactly the printed /worker approve <role> <64-hex-digest> line as a GitHub Issue comment.
+
+# Dry-run (read-only), then intake apply (writes, operator authorization):
+python scripts/feature.py --tracker github --project-config ~/.config/mx-admin-agents/project.yaml github intake poll
+python scripts/feature.py --tracker github --project-config ~/.config/mx-admin-agents/project.yaml github intake poll --apply
+
+# Verify clean feature branch and run foreground Worker until Draft PR is opened:
+git status --short --branch
+python scripts/feature.py --tracker github --project-config ~/.config/mx-admin-agents/project.yaml worker start
+# In another terminal, watch `worker status` / `github publish status`.
+# When the service reports WAITING for the Draft PR and no agent is running:
+python scripts/feature.py --tracker github --project-config ~/.config/mx-admin-agents/project.yaml worker stop
+
+# A PERSON reviews the Draft PR and explicitly marks it ready and merges with a merge commit.
+# Then, with the Worker stopped, dry-run and apply the verified completion for issue-N:
+python scripts/feature.py --tracker github --project-config ~/.config/mx-admin-agents/project.yaml github publish poll issue-N
+python scripts/feature.py --tracker github --project-config ~/.config/mx-admin-agents/project.yaml github publish poll issue-N --apply
+# Update local dev only AFTER completion and once the feature branch is no longer needed:
+git switch dev
+git pull --ff-only origin dev
+```
+
+**Safety and interpretation.** `github intake poll` and `github publish poll` without `--apply` are read-only; the Worker service and `--apply` perform real writes. Run `worker stop` only after confirming no active agent (or use `--after-current` to let an active task finish). Do **not** manually push a feature branch or create a PR during the automatic Draft PR test; that would test adoption instead. One approved Issue creates one feature and one Draft PR, never auto-merges. PR merge commits are required by the existing merge-evidence verification (squash/rebase are not supported). With the Worker stopped, manual `publish poll issue-N --apply` completes the Issue and Project #2 after human merge. Always update local `dev` before activating the **next** feature: the Coordinator fetches remote `dev` for verification but does not move the local branch. Keep Project #1 untouched.
+
+**2026-10-24 acceptance:** Issue #25 / manually merged PR #27 proved post-hoc adoption/closure; Issue #29 / automatically created Draft PR #30 proved the real auto-publication path and subsequent verified closure. Worker was stopped normally after Draft PR #30. These do not establish unattended reliability; W4.4 will use disposable repositories and fault injection before any wider live test.

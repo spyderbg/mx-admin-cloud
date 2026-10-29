@@ -1,9 +1,9 @@
 # Autonomous Worker Operations (W4)
 
-> Owner role: **coordination**. Status: **IMPLEMENTED AND VERIFIED OFFLINE (2026-10-22); W4.1 watchdog reliability VERIFIED OFFLINE (2026-10-22); W4.2 bounded real-agent smoke test VERIFIED WITH REAL AGENTS (2026-10-23, §14.1).**
-> - Branch `feature/worker-autonomy-w4` from `dev` (`3019d37`, the W3 merge). W4 is committed (`1d58c03`, plus the operator's `b7c03de`) in draft PR #23 to `dev`. W4.1 is committed on top of it in the same PR (2026-10-23). W4.2 (harness, W4.2.1 fixes, this evidence) is not committed yet.
+> Owner role: **coordination**. W4/W4.1 verified offline; W4.2 bounded real-agent verification (2026-10-23); **W4.3.2–W4.3.4 bounded live GitHub workflow verified (2026-10-24)**. The service is **not** demonstrated for unattended/overnight operation.
+> - Historical implementation branch: `feature/worker-autonomy-w4`, integrated by merged PR [#23](https://github.com/spyderbg/mx-admin-cloud/pull/23) (`7ce3dbc`). W4.3 intake/publishing were merged separately via PRs #26 and #28; the latest supervised smoke merged PR #30 into `dev` (`9861975`).
 > - W4 and W4.1 were verified with fake agents: real temporary Git repositories, real `feature.py worker start` processes, real signals and SIGKILLs, and simulated time.
-> - **W4.2** ran the real service with real Claude Code (`opus`, `sonnet`) and real Codex in one **bounded, foreground** smoke test: 4 sessions, a controlled restart, about 76 seconds. It is **not** evidence of long-running, overnight or unattended operation.
+> - **W4.2** ran 4 real Claude/Codex sessions in one controlled foreground smoke test. **W4.3.4** subsequently ran one real Claude Sonnet session through the autonomous Worker and automatically created Draft PR #30. These are bounded observations, **not** 24/7 evidence.
 > - The systemd user service is a **template**: it is not installed, enabled or started. Linger is not enabled.
 > Related: [worker-checkpoints.md](worker-checkpoints.md) (W3: checkpoints and recovery, which W4 runs automatically) · [worker-functional.md](worker-functional.md) (W2: the Worker and the native-cli backend) · [feature-workflow.md](feature-workflow.md) · [operations.md](operations.md) · [phase-status.md](phase-status.md)
 >
@@ -32,7 +32,7 @@ Everything is **local**: no AWS, no new database, no new sandbox, no Git worktre
 
 | Capability | Status |
 | --- | --- |
-| Service loop `feature.py worker start` (foreground; systemd runs exactly this) | IMPLEMENTED, VERIFIED OFFLINE |
+| Service loop `feature.py worker start` (foreground; systemd runs exactly this) | IMPLEMENTED, VERIFIED WITH REAL AGENTS in bounded W4.2/W4.3.4 smoke runs; not tested unattended |
 | One agent at a time by default, *enforced* at claim time; manual launches refused while the service runs | IMPLEMENTED, VERIFIED OFFLINE (tests A, P) |
 | W2 parallel scheduler kept as an explicit option (`work --max-parallel N`) | IMPLEMENTED, VERIFIED OFFLINE (test N + the W2 suite) |
 | Automatic W3 recovery at startup (stale claims, interrupted launches, checkpoint consistency) | IMPLEMENTED, VERIFIED OFFLINE (tests C, H, Q) |
@@ -56,7 +56,7 @@ What is unchanged:
 - provider routing (Backend/CLI → Claude Code `opus`/`sonnet`, Frontend → Codex);
 - subscription-only authentication (W2 §6);
 - one active feature per checkout;
-- GitHub stays off.
+- GitHub was off in the original W4 baseline; W4.3 adds opt-in intake and publication (`github.intake.enabled`, `github.publish.enabled`), verified in bounded supervised tests (§14.2).
 
 ## 2. Architecture
 
@@ -628,6 +628,13 @@ The 2026-10-22 run (36 tasks, every 4th failing once, 120 s idle) passed every c
 - **Simulated:** usage-limit messages; long runs.
 - **Not verified:** Codex's actual model (it is not reported); real usage limits and outages; long-running, overnight or unattended operation; the systemd service.
 
+### 14.2 W4.3 — real GitHub workflow (SUPERVISED, 2026-10-24)
+
+- **W4.3.2:** The operator approved Issue [#25](https://github.com/spyderbg/mx-admin-cloud/issues/25). A real Claude Worker verified its CLI task; PR #27 was opened and merged manually.
+- **W4.3.3:** The coordinator adopted that manually merged PR, verified its merge SHA `f631c57` and closed Issue #25. The implementation is merged in PR #28 (`0b62949`).
+- **W4.3.4:** A real Sonnet task from approved Issue [#29](https://github.com/spyderbg/mx-admin-cloud/issues/29) verified successfully. The running Worker integrated and pushed the branch and opened Draft PR [#30](https://github.com/spyderbg/mx-admin-cloud/pull/30), then waited for a human. PR #30 was manually marked ready and merged (`9861975`); after the Worker was stopped, the operator ran one manual publisher pass, which closed Issue #29 and moved Project #2 to `Done`.
+- **Boundary:** W4.3 validates the supervised happy path, **not** fault injection with real GitHub, overnight service operation, unattended auto-retry or systemd startup. See [phase-status.md](phase-status.md) and [github-intake.md §10.10](github-intake.md#1010-live-verification-record-2026-10-24).
+
 ## 15. Operational example (what really happens; offline-verified behaviour)
 
 The steps match tests E and A and the soak run. The example is **not** a real-agent run.
@@ -656,7 +663,7 @@ The steps match tests E and A and the soak run. The example is **not** a real-ag
 
 ## 16. Limitations
 
-- **Real agents only in one bounded smoke test.** W4.2 ran 4 real sessions in the foreground (§14.1). No unattended or overnight run took place. Real CLI usage-limit and outage messages were not observed, so the classification patterns may miss them; they would then fall into `unknown`, which means NEEDS_ATTENTION and is safe.
+- **Only bounded real-agent runs.** W4.2 ran 4 real sessions in one foreground smoke (§14.1); W4.3.4 ran one additional real Claude Sonnet CLI task, automatically publishing Draft PR #30. No unattended or overnight run took place. Real CLI usage-limit and outage messages were not observed, so classification patterns may miss them and conservatively fall into `unknown`/NEEDS_ATTENTION.
 - **Codex does not report its model.** The Frontend session ran the Codex CLI default, which is not independently verified.
 - **Host prerequisite for gates.** On Ubuntu 24.04 the gate sandbox needs bubblewrap to be allowed unprivileged user namespaces, through the distribution's `bwrap-userns-restrict` AppArmor profile (package `apparmor-profiles`), installed and loaded by the operator ([worker-host-setup.md](worker-host-setup.md)); the coordinator never changes AppArmor. Without it every gate is blocked, and since W4.2.1 that is reported as critical "gates could not run".
 - **That profile breaks nested sandboxes.** It runs everything bubblewrap starts under `unpriv_bwrap`, with all capabilities denied, so a bubblewrap started *inside* the coordinator's sandbox cannot create namespaces.
@@ -703,7 +710,7 @@ W4 has no AWS client, no distributed lock and no migration.
   - subscription waiting (simulated errors); health and status; pause, resume and stop;
   - the restart-loop guard; orphan handling; per-task isolation; redaction;
   - the unit template (rendered and verified, not installed).
-- **Verified with real agents (W4.2, bounded):** 4 real sessions (Claude Code `opus` ×2, `sonnet`, Codex) under the service: sequential execution, dependencies, checkpoints, a controlled restart, gates, idle exit and cleanup.
+- **Verified with real agents (bounded):** W4.2: 4 real sessions (Claude Code `opus` ×2, `sonnet`, Codex), controlled restart, gates and cleanup. W4.3.4: one real Sonnet CLI task, verified and automatically published as Draft PR #30 with human-controlled merge.
 - **Simulated:** long runs (accelerated clock), the soak (fake agents, minutes), usage-limit messages.
-- **Not verified:** overnight or unattended operation; real usage limits and outages; Codex's actual model; suspend/resume. The watchdog is verified offline with real hung, silent, killed and orphaned processes (W4.1), not with real agents.
+- **Not verified:** overnight or unattended operation; actual GitHub outages/interrupted publication; real usage limits; Codex's actual model; suspend/resume. The watchdog fault scenarios are verified offline with fake agents and real processes (W4.1), not with real-agent failures.
 - **Planned:** central coordinator, multiple machines, a feature queue, notifications.
