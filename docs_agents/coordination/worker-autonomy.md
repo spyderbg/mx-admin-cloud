@@ -378,7 +378,7 @@ The existing commands are unchanged: `checkpoints TASK` and `recover TASK` for a
 - `KillMode=mixed`, `KillSignal=SIGTERM`, `TimeoutStopSec=180`;
 - output to the journal.
 
-It contains no credentials and no `HOME` override: Claude Code and Codex keep using their own logins under the user's HOME, which the user manager provides. `PATH` is set to the directories of the found `claude`/`codex` executables plus the system defaults (no secrets).
+It contains no credentials and no `HOME` override: Claude Code and Codex keep using their own logins under the user's HOME, which the user manager provides. `PATH` is set to the directories where `claude`, `codex` and `gh` are found when the unit is rendered (as found, without resolving symlinks: a Snap `gh` adds `/snap/bin`), then the system defaults `/usr/local/bin:/usr/bin:/bin` in that order, without duplicates (no secrets). Render the unit in the shell whose `PATH` finds the CLIs the service should use.
 
 **Preconditions** (operator decisions):
 - a project configuration with `worker.autonomous.enabled: true`;

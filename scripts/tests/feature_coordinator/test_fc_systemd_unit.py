@@ -6,7 +6,11 @@ without them the unit is unchanged. The unit is only rendered (printed) and chec
 `systemd-analyze --user verify` where the host has a user manager; nothing is installed, enabled
 or started. The rendered ExecStart is parsed with the real CLI parser and run through
 `worker start` with the service replaced by a recorder, so no agent, model or GitHub connection
-is involved."""
+is involved.
+
+Environment=PATH holds the directories where claude, codex and gh are found (a Snap gh's
+/snap/bin included), then the system defaults in their order. Discovery is checked with a fake
+`which` and with real throwaway executables on a test PATH; none of them is ever run."""
 
 # pylint: disable=missing-function-docstring,redefined-outer-name
 
@@ -27,6 +31,28 @@ from feature_coordinator.cli import EXAMPLE_CONFIG, build_parser, main as cli_ma
 
 CONFIG = EXAMPLE_CONFIG.resolve()
 NOTE = "note: without --config (or the global --project-config)"
+SYSTEMD_ANALYZE, HOST_PATH = shutil.which("systemd-analyze"), os.environ.get("PATH", "")
+needs_systemd = pytest.mark.skipif(not SYSTEMD_ANALYZE or not os.environ.get("XDG_RUNTIME_DIR"),
+                                   reason="systemd-analyze --user needs systemd and a user manager")
+SYSTEM_PATH, HOME = "/usr/local/bin:/usr/bin:/bin", "/home/operator"
+
+# id: (where `which` finds each CLI, the expected Environment=PATH)
+DISCOVERY: dict[str, tuple[dict[str, str], str]] = {
+    "snap-gh": ({"claude": f"{HOME}/.local/bin/claude", "codex": f"{HOME}/.local/bin/codex", "gh": "/snap/bin/gh"},
+                f"{HOME}/.local/bin:/snap/bin:{SYSTEM_PATH}"),
+    "custom-gh": ({"claude": f"{HOME}/.local/bin/claude", "codex": f"{HOME}/.npm-global/bin/codex",
+                   "gh": "/home/linuxbrew/.linuxbrew/bin/gh"},
+                  f"{HOME}/.local/bin:{HOME}/.npm-global/bin:/home/linuxbrew/.linuxbrew/bin:{SYSTEM_PATH}"),
+    "gh-beside-an-agent": ({"claude": "/opt/cli/claude", "codex": f"{HOME}/.local/bin/codex", "gh": "/opt/cli/gh"},
+                           f"/opt/cli:{HOME}/.local/bin:{SYSTEM_PATH}"),
+    # A system directory keeps its place: an apt gh does not move /usr/bin ahead of /usr/local/bin.
+    "apt-gh": ({"claude": f"{HOME}/.local/bin/claude", "codex": f"{HOME}/.local/bin/codex", "gh": "/usr/bin/gh"},
+               f"{HOME}/.local/bin:{SYSTEM_PATH}"),
+    "agents-in-system-dirs": ({"claude": "/usr/bin/claude", "codex": "/usr/local/bin/codex"}, SYSTEM_PATH),
+    "no-gh": ({"claude": f"{HOME}/.local/bin/claude", "codex": f"{HOME}/.npm-global/bin/codex"},
+              f"{HOME}/.local/bin:{HOME}/.npm-global/bin:{SYSTEM_PATH}"),
+    "nothing-found": ({}, SYSTEM_PATH),
+}
 
 # id: (global options given with `systemd-unit`, its --config, global options expected in ExecStart).
 # Run from tmp_path: "state" is relative there; {state} is its absolute path, {config_rel} the
@@ -57,6 +83,40 @@ def exec_start(unit: str) -> list[str]:
     lines = [line for line in unit.splitlines() if line.startswith("ExecStart=")]
     assert len(lines) == 1
     return shlex.split(lines[0].removeprefix("ExecStart="))
+
+
+def unit_path(unit: str) -> str:
+    lines = [line for line in unit.splitlines() if line.startswith("Environment=PATH=")]
+    assert len(lines) == 1
+    return lines[0].removeprefix("Environment=PATH=")
+
+
+def systemd_verify(tmp_path: Path, unit: str) -> None:
+    path = tmp_path / "mx-admin-worker.service"  # verified where it is: never copied into a unit directory
+    path.write_text(unit + "\n", encoding="utf-8")
+    result = subprocess.run([str(SYSTEMD_ANALYZE), "--user", "verify", str(path)], capture_output=True, text=True,
+                            timeout=60, check=False, env={**os.environ, "PATH": HOST_PATH})
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def executable(path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+
+@pytest.fixture
+def cli_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Path]:
+    """A PATH of throwaway directories: claude and codex in their own, gh a Snap-style symlink."""
+    dirs = {"claude": tmp_path / "home/.local/bin", "codex": tmp_path / "home/.npm-global/bin",
+            "gh": tmp_path / "snap/bin"}
+    executable(dirs["claude"] / "claude")
+    executable(dirs["codex"] / "codex")
+    dirs["gh"].mkdir(parents=True)
+    (dirs["gh"] / "gh").symlink_to(executable(tmp_path / "usr/bin/snap"))  # like /snap/bin/gh -> /usr/bin/snap
+    monkeypatch.setenv("PATH", os.pathsep.join(str(dirs[name]) for name in ("gh", "codex", "claude")))
+    return dirs
 
 
 @pytest.fixture
@@ -132,8 +192,36 @@ def test_conflicting_project_configurations_are_refused(tmp_path: Path, capsys: 
                             "file to both\n")
 
 
-@pytest.mark.skipif(not shutil.which("systemd-analyze") or not os.environ.get("XDG_RUNTIME_DIR"),
-                    reason="systemd-analyze --user needs systemd and a user manager")
+@pytest.mark.parametrize("found, expected", DISCOVERY.values(), ids=DISCOVERY.keys())
+def test_path_has_the_directories_of_the_found_clis(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+                                                    capsys: pytest.CaptureFixture[str], found: dict[str, str],
+                                                    expected: str) -> None:
+    looked_up: list[str] = []
+
+    def which(name: str, *_args: Any, **_kwargs: Any) -> str | None:
+        looked_up.append(name)
+        return found.get(name)
+    monkeypatch.setattr(shutil, "which", which)
+    unit, _err = render(capsys, tmp_path / "repo")
+    assert unit_path(unit) == expected
+    assert looked_up == ["claude", "codex", "gh"]  # discovered, never a fixed directory
+
+
+def test_path_discovers_gh_in_a_custom_directory(tmp_path: Path, capsys: pytest.CaptureFixture[str],
+                                                 cli_dirs: dict[str, Path]) -> None:
+    unit, _err = render(capsys, tmp_path / "repo")
+    # The symlink's own directory, not its target's (tmp_path/usr/bin, where no gh is).
+    assert unit_path(unit) == f"{cli_dirs['claude']}:{cli_dirs['codex']}:{cli_dirs['gh']}:{SYSTEM_PATH}"
+
+
+def test_path_without_gh_keeps_the_claude_and_codex_directories(tmp_path: Path, capsys: pytest.CaptureFixture[str],
+                                                                cli_dirs: dict[str, Path]) -> None:
+    (cli_dirs["gh"] / "gh").unlink()
+    unit, _err = render(capsys, tmp_path / "repo")
+    assert unit_path(unit) == f"{cli_dirs['claude']}:{cli_dirs['codex']}:{SYSTEM_PATH}"  # as before gh was added
+
+
+@needs_systemd
 @pytest.mark.parametrize("given, config", [((), None), CASES["everything"][:2]], ids=["bare", "everything"])
 def test_systemd_analyze_verifies_the_rendered_unit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
                                                     capsys: pytest.CaptureFixture[str], given: tuple[str, ...],
@@ -142,8 +230,14 @@ def test_systemd_analyze_verifies_the_rendered_unit(tmp_path: Path, monkeypatch:
     repo = tmp_path / "repo"
     repo.mkdir()
     unit, _err = render(capsys, repo, *(arg.format(config=CONFIG) for arg in given), config=config)
-    path = tmp_path / "mx-admin-worker.service"  # verified where it is: never copied into a unit directory
-    path.write_text(unit + "\n", encoding="utf-8")
-    result = subprocess.run(["systemd-analyze", "--user", "verify", str(path)], capture_output=True, text=True,
-                            timeout=60, check=False)
-    assert result.returncode == 0, result.stdout + result.stderr
+    systemd_verify(tmp_path, unit)
+
+
+@needs_systemd
+def test_systemd_analyze_verifies_a_unit_with_a_custom_gh_directory(tmp_path: Path, capsys: pytest.CaptureFixture[str],
+                                                                    cli_dirs: dict[str, Path]) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    unit, _err = render(capsys, repo, "--tracker", "github")
+    assert f":{cli_dirs['gh']}:" in unit_path(unit)
+    systemd_verify(tmp_path, unit)
