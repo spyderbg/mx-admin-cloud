@@ -1,6 +1,6 @@
 # GitHub Issue Intake — Approved Issues as Worker Tasks (W4.3.1)
 
-> Owner role: **coordination**. Status: **W4.3.1 implemented and tested with mock GitHub responses** (2026-10-23), merged (PR #26); first real run on Issue #25 (W4.3.2: approval → Worker → verified task; its PR #27 was opened and merged by hand). **W4.3.3 (§10, 2026-10-24): automatic integration, push, Draft PR, human-merge detection and completion — implemented and verified offline only (disposable repositories, mock GitHub); never run against real GitHub; off by default.** **Approval impersonation through the shared GitHub identity is a known risk, accepted temporarily (§9).**
+> Owner role: **coordination**. **W4.3.1–W4.3.4 VERIFIED WITH REAL GITHUB (2026-10-24, bounded supervised tests)** after the original offline implementation. Issue #25/PR #27 exercised manual PR adoption and verified closure; Issue #29/PR #30 exercised a real Claude Code Worker, automatic integration, branch push, Draft PR creation and post-merge closure. Implementation: PRs #26 and #28, merged into `dev`. `github.publish.enabled` defaults **false**, but was enabled in the operator's external test configuration. Shared GitHub identity/approval impersonation remains an accepted temporary risk (§9).
 > Code: `scripts/feature_coordinator/intake.py` (records, approval grammar, digest, identity), `intake_poll.py` (the poll), `intake_commands.py`, `publish.py` and `publish_commands.py` (W4.3.3) · Tests: `scripts/tests/feature_coordinator/test_fc_intake.py`, `test_fc_publish.py` (W4.3.3) · Builds on: [github-integration.md](github-integration.md) (adapter, command authorization), [github-projects.md](github-projects.md) (Project #2), [worker-autonomy.md](worker-autonomy.md) (the Worker service).
 
 A task can start as a GitHub Issue. Nobody writes a YAML file: an operator approves the Issue with a comment, and the approved text becomes one task for the existing coordinator and Worker. Before approval nothing happens. After approval the text is fixed.
@@ -138,7 +138,7 @@ All of them are `feature.py github intake …`; `--tracker local` uses the local
 
 ## 9. Limitations
 
-- **No real approval yet:** the tests use mock Issue and comment responses and the local board; against real GitHub only the read-only commands have run.
+- **Real approvals tested, bounded:** the original W4.3.1 tests used mock Issues, but real approvals for Issues #25 and #29 were later accepted by intake and executed. This is supervised happy-path evidence, not evidence that shared credentials prevent approval impersonation or that live failures recover safely.
 - **One task per Issue.** Multi-step and multi-role work still needs a planned feature (`feature.py plan`).
 - **No `/feature hold|release` on approved Issues:** use the local commands. The coordinator closes the Issue only through W4.3.3 publication (§10), after the verified merge of its PR; with publication off, a person closes it.
 - **Detection delay while an agent runs:** the service re-reads the Issue every `poll_interval_seconds`, and a run without the service (`feature.py launch`) is not re-read until it ends. An edit in that window can therefore be verified and then immediately withdrawn by the read after the claim is released. The verification never reaches the board or integration, but it does appear in the task's history (`verified → ready → needs-human`).
@@ -171,7 +171,7 @@ Until then, an operator can audit approvals with `feature.py github intake statu
 
 ## 10. Automatic publication and completion (W4.3.3)
 
-> Status: **implemented and verified offline** (2026-10-24): disposable repositories with a real bare `origin`, mock GitHub Issue and pull-request responses, the local board. **Never run against real GitHub. Off by default.** Code: `publish.py`, `publish_commands.py`; push and fetch in `gitops.py`; the PR adapter in `github_api.py`. Tests: `test_fc_publish.py` (82).
+> Status (2026-10-24): **implemented; VERIFIED OFFLINE AND WITH REAL GITHUB**. Original disposable repositories, mock GitHub and bare-origin tests remain as regression evidence; a supervised live test exercised PR adoption (#27) and another exercised automatic push/Draft PR creation (#30), both followed by human merge/verified Issue closure. Off **by default** (`github.publish.enabled: false`), enabled only in the operator's local test configuration. Code: `publish.py`, `publish_commands.py`, `gitops.py`, `github_api.py`; publisher tests: 86 passed after PR #28 review fixes (reported test execution, not rerun here).
 
 With `github.publish.enabled: true`, a feature made from an approved Issue goes the rest of the way by itself, up to the one step that stays human: the merge.
 
@@ -279,9 +279,20 @@ Fixed, not configurable: Draft PRs only, the feature's base branch as the target
 
 ### 10.9 Limitations
 
-- **Offline only.** No real push, PR or completion has run. The Draft PR, merge detection and Issue closure are verified with mock GitHub responses and a local bare remote.
+- **Supervised live verification only.** Real adoption (PR #27), automatic integration/push/Draft PR creation (PR #30) and merged-Issue closure (#25, #29) succeeded. Simulated crashes/network loss are verified in isolated tests, **not** against live GitHub. No unattended 24/7 soak was performed.
 - **Merge commits only.** A squash or rebase merge stops for an operator. There is no command for a manual completion yet, so such a feature stays in review; the operator closes the Issue by hand.
 - **The next feature starts from the local `dev`.** The coordinator fetches `dev` into FETCH_HEAD and the remote-tracking ref only, and never updates the local `dev` branch. Update it before the next feature is activated, or the next branch starts from an older base.
 - **Detection delay:** a merge is seen at the next pass (up to `poll_interval_seconds`; the service may be idle longer between cycles).
 - **One shared GitHub identity.** The coordinator pushes, opens the PR and closes the Issue as the same `spyderbg` login an agent can reach under `native-cli`. An agent could therefore also push to the feature branch or edit or merge the PR. A changed head stops completion, and a merge is accepted only with the verified head on `dev`, but nothing stops a merge itself. This is part of the accepted risk in §9.
 - **No CI.** Remote CI is not configured; the PR states it.
+
+### 10.10 Live verification record (2026-10-24)
+
+| Scenario | Evidence and result |
+| --- | --- |
+| W4.3.2 / manual PR | Issue [#25](https://github.com/spyderbg/mx-admin-cloud/issues/25) approved as `issue-25.cli`, real agent verified head `8094a9c`; PR [#27](https://github.com/spyderbg/mx-admin-cloud/pull/27) was opened/merged **by a person**, merge `f631c5711803`. |
+| W4.3.3 / adoption | After PR #28 (`0b62949`) was merged, `github publish poll issue-25` dry-run found PR #27 with 3 reads/0 writes. `--apply` adopted it, verified merge ancestry, recorded `done`, posted one completion comment, closed #25 (`completed`), and Project #2 showed `Done`. |
+| W4.3.4 / first auto Draft PR | Operator approved Issue [#29](https://github.com/spyderbg/mx-admin-cloud/issues/29) using its exact spec SHA-256; Worker (real Claude Sonnet, foreground) verified `issue-29.cli` and automatically integrated/pushed `feature/issue-29`, then opened **Draft** PR [#30](https://github.com/spyderbg/mx-admin-cloud/pull/30) at head `932a9643f4d4`. The only changed file was `docs_agents/cli/w434-auto-pr-smoke.md`; required gates passed, GitGuardian passed. |
+| W4.3.4 / human merge and closure | PR #30 was reviewed, marked ready and **merge-committed** to `dev` as `9861975d0d37`. The Worker had already stopped normally. One manual `github publish poll issue-29 --apply` later verified the merge, closed Issue #29 (`completed`), posted one completion comment and put its Project #2 item in `Done`. |
+
+**Interpretation:** The full happy path is now **verified with real GitHub**, while interrupted live PR creation, GitHub API outages, 24/7 unattended operation, network and process failures remain W4.4 test candidates. Do not present the isolated recovery tests as live-failure evidence. The Coordinator does **not** auto-merge; merge must be human-authorized and be a merge commit, not squash/rebase.
