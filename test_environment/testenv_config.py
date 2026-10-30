@@ -8,8 +8,8 @@ docs/test_environment/implementation_plan.md §4 for the full rewrite table and 
 reasoning behind each entry.
 
 Usage:
-    python scripts/testenv_config.py --stub-base-url http://127.0.0.1:48002
-    python scripts/testenv_config.py --stub-base-url http://stub:8080 --force
+    python test_environment/testenv_config.py --stub-base-url http://127.0.0.1:48002
+    python test_environment/testenv_config.py --stub-base-url http://stub:8080 --force
 """
 
 from __future__ import annotations
@@ -158,7 +158,7 @@ def _copy_config_tree(*, force: bool) -> None:
         if not force:
             print(
                 f"{YELLOW}{paths.testenv_relative(paths.TEST_CONFIG_DIR)} already has content. "
-                f"Use --force to rebuild, or `python scripts/testenv.py reset`.{RESET}",
+                f"Use --force to rebuild, or `python test_environment/testenv.py reset`.{RESET}",
             )
             raise SystemExit(1)
         shutil.rmtree(paths.TEST_CONFIG_DIR)

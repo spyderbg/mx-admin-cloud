@@ -268,3 +268,60 @@ The real-agent harness `scripts/tests/feature_coordinator/fc_worker_smoke.py --a
 ### Hand-off for proposed W4.5 (not authorized)
 
 W4.4 is closed as **supervised bounded acceptance**. Do **not** install/enable systemd, switch on unattended scheduling, create test Issues, inject real network faults, or alter protected branches/Project #1 as part of this closeout. Proposed future acceptance adds: host-reboot/systemd recovery, a monitored multi-day run, measured resource and retry budgets, explicitly approved disposable live GitHub write-failure scenarios, and review of the shared-identity/W1 security exposure. Every new live or destructive step requires a separately reviewed rollback and authorization.
+
+## 11. Test environment relocation: updating the Desktop Worker (2026-10-30)
+
+The test environment moved from `scripts/` into `test_environment/`. The Worker's protected and approval-required paths moved with it. A machine-local project file written before the move still lists `scripts/mxfix/**`, `scripts/mxissues/**` and `testenv.toml`. Those entries protect nothing any more, and the automation role could write the moved files. From this change on, the Worker **refuses such a file**: every `feature.py` command exits with `error: pre-relocation test environment path(s) …`, and `worker start` exits **78**, which the systemd unit does not restart. `scripts/migrate_project_config.py` rewrites only the affected entries, keeps every other line, comment and setting, and backs the file up first.
+
+Each machine migrates its own project files **when it is upgraded** to a `dev` that contains this change. Nothing has to be migrated before the pull request is merged, and a machine still on older code keeps working with its current file. Upgrade the Desktop with no feature in progress and the service idle (§9 preconditions). The unit file does not change, so it is not rendered or installed again. The installed Desktop unit passes `--state-dir`, `--project-config` and `--tracker github`: every Worker command below uses exactly the global options shown in its `ExecStart`.
+
+```bash
+# 0. Read-only: copy the runtime arguments from the installed unit. Its ExecStart reads
+#    <PY> <REPO>/scripts/feature.py --repo <REPO> --state-dir <STATE> --project-config <CFG> --tracker github worker start
+systemctl --user cat mx-admin-worker | grep -E '^(WorkingDirectory|ExecStart)='
+PY=/interpreter/from/ExecStart        # its first word, e.g. <REPO>/.venv/bin/python
+REPO=/path/after/--repo               # the Worker's checkout (also WorkingDirectory)
+STATE=/path/after/--state-dir
+CFG=/path/after/--project-config      # e.g. ~/.config/mx-admin-agents/project.yaml
+WORKER=("$PY" "$REPO/scripts/feature.py" --repo "$REPO" --state-dir "$STATE" --project-config "$CFG" --tracker github)
+cd "$REPO"
+
+# 1. Check that the service is idle, then stop it BEFORE the checkout changes: a running Worker keeps the
+#    old policy in memory.
+"${WORKER[@]}" worker status                  # no active agent or running task
+"${WORKER[@]}" worker attention
+systemctl --user stop mx-admin-worker
+systemctl --user is-active mx-admin-worker    # expect "inactive"
+
+# 2. Update the checkout.
+git status --short --branch                   # must be clean
+git switch dev
+git pull --ff-only origin dev
+
+# 3. Expected: the old file is now refused (error: pre-relocation test environment path(s) …, exit 1).
+"${WORKER[@]}" worker status
+
+# 4. Find every machine-local file that needs it (read-only; 1 = needs migration, 0 = fine, 2 = look at it).
+for f in ~/.config/mx-admin-agents/*.yaml; do "$PY" scripts/migrate_project_config.py "$f" >/dev/null; echo "$? $f"; done
+
+# 5. Per file: dry run (shows the diff, exit 1), apply (prints the backup path), run again (nothing to change, exit 0).
+"$PY" scripts/migrate_project_config.py "$CFG"
+"$PY" scripts/migrate_project_config.py --apply "$CFG"
+"$PY" scripts/migrate_project_config.py "$CFG"
+
+# 6. Validate and inspect (read-only). "DIFFERENT from the built-in configuration" is normal for a local file.
+"$PY" scripts/feature.py config --config "$CFG"
+"${WORKER[@]}" worker status
+"${WORKER[@]}" worker attention
+
+# 7. Start the service again (operator decision).
+systemctl --user reset-failed mx-admin-worker
+systemctl --user start mx-admin-worker
+systemctl --user is-active mx-admin-worker
+journalctl --user -u mx-admin-worker --since "10 minutes ago"
+```
+
+- **What changes in the file:** in `protected_paths`, `scripts/mxfix/**` becomes `test_environment/mxfix/**` and `scripts/mxissues/**` becomes `test_environment/mxissues/**`, and `test_environment/testenv.local.toml` is added; in `approval_required_paths`, `testenv.toml` becomes `test_environment/testenv.toml`; in the automation role's `excluded_paths`, the same moves apply and both toml files are added. The backup is `$CFG.bak-<UTC timestamp>`, with the file's mode.
+- **If the script exits 2:** it wrote nothing. Make the same edits by hand, compare with [`project-config.example.yaml`](project-config.example.yaml), then check with `feature.py config --config "$CFG"`.
+- **If the service was started too early:** it exits 78 and stays failed; the journal names the stale entries. Migrate the file, then run step 7.
+- **Rollback:** the old file only works with the old code. Restore both together: `cp -p "$CFG.bak-<stamp>" "$CFG"`, and check out the commit before the relocation (`git switch --detach 2cf629a`).

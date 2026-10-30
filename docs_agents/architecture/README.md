@@ -13,7 +13,7 @@
 | `backend` | Claude Code | `backend/**` **except `backend/data/**`**; `docs_agents/backend/**` | everything else |
 | `cli` | Claude Code | `cli/**`; `docs_agents/cli/**` | everything else |
 | `frontend` | Codex | `frontend/**` (including **generated** TS destinations `frontend/src/{types,api,mocks}`); `docs_agents/frontend/**` | everything else |
-| `automation` | configurable; **preferred: remote Qwen** via an OpenAI-compatible Chat Completions API, driven by a local runner, after validation (§11.11) | `scripts/**` **except `scripts/mxfix/**`, `scripts/mxissues/**` and protected deployment scripts**; `test_environment/**`; `docs_agents/automation/**` | the separate bug workflow; generator *outputs* in other roles' trees |
+| `automation` | configurable; **preferred: remote Qwen** via an OpenAI-compatible Chat Completions API, driven by a local runner, after validation (§11.11) | `scripts/**` **except protected deployment scripts**; `test_environment/**` **except `test_environment/mxfix/**`, `test_environment/mxissues/**`, the protected `test_environment/testenv.local.toml` and the approval-required `test_environment/testenv.toml`**; `docs_agents/automation/**` | the separate bug workflow; generator *outputs* in other roles' trees |
 | `coordination` | configurable | `docs_agents/coordination/**`; the approved coordination runtime/config directory | application code |
 | `full-project` | explicitly authorized Claude Code or Codex | only task-approved paths; runs **exclusively** | protected data by default |
 
@@ -21,10 +21,10 @@ Paths requiring **explicit task-specific approval** (v4 §3; this resolves Phase
 
 - `docs_agents/architecture/**` and `docs_agents/README.md` — the designated docs owner during bootstrap; afterwards, an assigned coordination or approved integration owner.
 - Root agent instruction files (`CLAUDE.md`, `AGENTS.md`, `.claude/`, `.cursor/`, `.opencode/`, …).
-- `.github/**`, `docker/**`, `.gitlab-ci.yml`, `testenv.toml`, `scripts/deploy.sh`, and configuration outside the per-role trees.
+- `.github/**`, `docker/**`, `.gitlab-ci.yml`, `test_environment/testenv.toml`, `scripts/deploy.sh`, and configuration outside the per-role trees.
 - **Protected, never written without specific approval:** `content/**`, `data/**`, `backend/data/**`, `.env`, tracked credentials, production DBs, deployment settings.
 
-The **independent bug workflow** `scripts/mxissues/**` and `scripts/mxfix/**` belongs to no feature role. It is neither modified, imported, extended, scheduled nor required by the feature coordinator (§11.1).
+The **independent bug workflow** `test_environment/mxissues/**` and `test_environment/mxfix/**` belongs to no feature role. It is neither modified, imported, extended, scheduled nor required by the feature coordinator (§11.1).
 
 > **Superseded by v4 (historical v3 ownership, Phase 0):**
 > - The v3 table gave Automation `scripts/**` **including** `mxissues`/`mxfix`.
@@ -163,7 +163,7 @@ These are places where disjoint write scopes **do not** prevent breakage, so int
 
 ## 8. Existing bug-workflow automation and former v3 attachment points
 
-> **Superseded by v4.** `scripts/mxissues/**` and `scripts/mxfix/**` are a **separate, autonomous bug-detection and repair workflow intended for a different machine**. The feature-development coordinator must not change, refactor, extend, schedule, import from, depend on or repurpose them (v4 §1 rule 3, §7.1).
+> **Superseded by v4.** `test_environment/mxissues/**` and `test_environment/mxfix/**` are a **separate, autonomous bug-detection and repair workflow intended for a different machine**. The feature-development coordinator must not change, refactor, extend, schedule, import from, depend on or repurpose them (v4 §1 rule 3, §7.1).
 >
 > The "extension points" below were a **v3 proposal and will not be implemented**. They are kept only as a record of what the Phase 0 audit observed. The observed behavior remains accurate background (discovery §9).
 
@@ -240,7 +240,7 @@ This is a **design baseline**, not an implementation. Phase 2 turns it into `doc
 | | **Feature coordinator (new; built from Phase 2)** | **Bug workflow (existing; untouched)** |
 | --- | --- | --- |
 | Purpose | Operator-approved new features across Backend/CLI/Frontend | Autonomous bug detection and repair |
-| Code | New standalone package (location: D-13) | `scripts/mxissues/**`, `scripts/mxfix/**` |
+| Code | New standalone package (location: D-13) | `test_environment/mxissues/**`, `test_environment/mxfix/**` |
 | Host | The single Linux agent host | A different, dedicated machine |
 | Branches | One `feature/<slug>` per feature | `ai/<issue>` and `ai/batch-*` (`testenv.toml` `branch_prefix = "ai/"`) |
 | Checkout | One shared checkout per active feature | `.mxworktrees/<iid>` worktrees |
@@ -253,7 +253,7 @@ This is a **design baseline**, not an implementation. Phase 2 turns it into `doc
 - It never reads or writes issues labeled `mx-auto`.
 - It never pushes to `ai/*` branches, and the bug workflow never pushes into a live `feature/*` branch.
 - No `feature:*` label exists in the repository today (Phase 0 label list), so there is no collision **[V]**.
-- Generic tools are **called, not copied**: `scripts/testenv*.py`, `scripts/testenvlib/**`, `scripts/validate*.py`, `export_openapi.py`, `generate_ts_*.py`, `check_docs_agents.py`.
+- Generic tools are **called, not copied**: `test_environment/testenv*.py`, `test_environment/testenvlib/**`, `scripts/validate*.py`, `export_openapi.py`, `generate_ts_*.py`, `check_docs_agents.py`.
 
 ### 11.2 Topology
 

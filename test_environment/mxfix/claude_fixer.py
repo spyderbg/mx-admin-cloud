@@ -9,7 +9,7 @@ installed CLI (Claude Code 2.1.278) rather than assumed:
     `result: "<final text>"`, plus cost/turn/timing fields) — verified directly. There
     is no `--output-schema`-equivalent structured-output flag the way codex has one, so
     the prompt itself asks for a fenced ```json block in the final reply, parsed out of
-    `result` the same way scripts/mxissues/fingerprint.py parses the ```mx-meta block
+    `result` the same way test_environment/mxissues/fingerprint.py parses the ```mx-meta block
     embedded in an issue description — a pattern already used elsewhere in this project.
   - `--permission-mode bypassPermissions` is used instead of
     `--dangerously-skip-permissions`/`--allow-dangerously-skip-permissions`: it is a

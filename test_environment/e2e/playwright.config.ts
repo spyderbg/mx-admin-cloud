@@ -36,7 +36,7 @@ export default defineConfig({
     },
   },
 
-  // No webServer: the stack is externally managed by `python scripts/testenv.py up`, so
+  // No webServer: the stack is externally managed by `python test_environment/testenv.py up`, so
   // it can stay up all day while specs iterate against it in milliseconds.
 
   projects: [

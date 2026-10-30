@@ -271,7 +271,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--junit-xml", type=Path, default=None,
-        help="also write a JUnit XML report here (for scripts/issues.py sync --pytest) — the human table is unaffected",
+        help="also write a JUnit XML report here (for test_environment/issues.py sync --pytest) — "
+             "the human table is unaffected",
     )
     args = parser.parse_args()
 

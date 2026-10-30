@@ -28,6 +28,9 @@ from typing import Any
 import pytest
 
 from feature_coordinator.cli import EXAMPLE_CONFIG, build_parser, main as cli_main
+from migrate_project_config import main as migrate_main
+
+from fc_helpers import pre_relocation_example
 
 CONFIG = EXAMPLE_CONFIG.resolve()
 NOTE = "note: without --config (or the global --project-config)"
@@ -169,6 +172,25 @@ def test_exec_start_keeps_the_selected_global_options(
         assert recorded_service["state_dir"] == state
     else:  # the default (D-12) location, under the XDG_STATE_HOME the test redirected
         assert recorded_service["state_dir"].is_relative_to(tmp_path / "xdg-state")
+
+
+def test_a_stale_project_file_cannot_start_the_installed_unit(
+        tmp_path: Path, capsys: pytest.CaptureFixture[str], recorded_service: dict[str, Any]) -> None:
+    """A machine-local file from before the test_environment relocation leaves the moved paths writable:
+    ExecStart fails closed before any state, service or agent, with the exit code the unit does not
+    restart (78), until the file is migrated."""
+    repo, state, stale = tmp_path / "repo", tmp_path / "state", tmp_path / "project.yaml"
+    stale.write_text(pre_relocation_example(), encoding="utf-8")
+    unit, _ = render(capsys, repo, "--state-dir", str(state), config=str(stale))  # rendering does not load it
+    assert "RestartPreventExitStatus=73 78" in unit
+    options = exec_start(unit)[2:]
+    assert cli_main(options) == 78
+    err = capsys.readouterr().err
+    assert "pre-relocation test environment path(s)" in err and "scripts/migrate_project_config.py" in err
+    assert recorded_service == {} and not state.exists()
+    assert cli_main([*options[:-2], "worker", "status"]) == 1  # other commands: the usual error exit
+    assert migrate_main(["--apply", str(stale)]) == 0
+    assert cli_main(options) == 0 and recorded_service["project_config"] == str(stale)
 
 
 def test_exec_start_is_unchanged_without_options(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

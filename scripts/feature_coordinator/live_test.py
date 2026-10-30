@@ -499,9 +499,15 @@ class Lifecycle:  # pylint: disable=too-many-instance-attributes
                   not altered and all(n.startswith("feature:") for n in added), f"added {added}")
         pulls_after = {(p.number, p.state) for p in client.list_pull_requests()}
         check("Q3 no pull request created or changed", pulls_after == self.pulls_before, len(pulls_after))
-        status = subprocess.run(["git", "-C", str(REPO_ROOT), "status", "--porcelain", "--", "scripts/mxfix",
-                                 "scripts/mxissues"], capture_output=True, text=True, check=False).stdout
-        check("Q4 mxfix/mxissues untouched in the live checkout", status == "", status)
+        trees = ("test_environment/mxfix", "test_environment/mxissues")
+        tracked = subprocess.run(["git", "-C", str(REPO_ROOT), "ls-files", "--", *trees],
+                                 capture_output=True, text=True, check=False).stdout
+        status = subprocess.run(["git", "-C", str(REPO_ROOT), "status", "--porcelain", "--", *trees],
+                                capture_output=True, text=True, check=False).stdout
+        # An empty status also means "no such path", so both trees must be tracked to count.
+        check("Q4 mxfix/mxissues untouched in the live checkout",
+              status == "" and all(f"{tree}/" in tracked for tree in trees),
+              status or f"{len(tracked.split())} tracked")
 
     # -- end -----------------------------------------------------------------------------
 

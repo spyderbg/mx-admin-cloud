@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import copy
 import dataclasses
+import re
 from pathlib import Path
 
 import pytest
@@ -27,6 +28,8 @@ from feature_coordinator.providers import (
     redact,
     resolve_endpoint,
 )
+
+from fc_helpers import SCRIPTS_DIR, pre_relocation_example
 
 EXAMPLE = Path(__file__).resolve().parents[3] / "docs_agents" / "coordination" / "project-config.example.yaml"
 
@@ -64,6 +67,41 @@ def test_relaxing_a_safety_ceiling_is_rejected(mutate, match: str) -> None:
     mutate(data)
     with pytest.raises(ConfigError, match=match):
         config_from_mapping(data)
+
+
+LOCAL_TOML, TOML = "test_environment/testenv.local.toml", "test_environment/testenv.toml"
+
+
+@pytest.mark.parametrize("mutate,match", [
+    (lambda d: d.update(yaml.safe_load(pre_relocation_example())), "pre-relocation test environment path(s) "
+     "['scripts/mxfix/**', 'scripts/mxissues/**', 'testenv.toml']"),
+    (lambda d: d["protected_paths"].append("scripts/mxfix/**"), "pre-relocation"),  # old beside new: unmigrated
+    (lambda d: d["roles"]["automation"]["excluded_paths"].append("scripts/mxissues/**"), "pre-relocation"),
+    (lambda d: d["approval_required_paths"].append("testenv.toml"), "pre-relocation"),
+    (lambda d: d["protected_paths"].remove(LOCAL_TOML), f"protected_paths must cover '{LOCAL_TOML}'"),
+    (lambda d: d["protected_paths"].remove("test_environment/mxissues/**"),
+     "protected_paths must cover 'test_environment/mxissues/**'"),
+    (lambda d: d["approval_required_paths"].remove(TOML), f"approval_required_paths must cover '{TOML}'"),
+    (lambda d: d["roles"]["automation"]["excluded_paths"].remove(TOML), f"role 'automation' owns '{TOML}'"),
+], ids=["pre-relocation-file", "old-beside-new", "stale-exclusion", "stale-approval", "local-toml-unprotected",
+        "mxissues-unprotected", "toml-not-approval", "toml-owned"])
+def test_a_stale_or_incomplete_test_environment_policy_is_refused(mutate, match: str) -> None:
+    data = copy.deepcopy(example_data())
+    mutate(data)
+    with pytest.raises(ConfigError, match=re.escape(match)) as excinfo:
+        config_from_mapping(data)
+    assert "scripts/migrate_project_config.py" in str(excinfo.value)
+    assert (SCRIPTS_DIR / "migrate_project_config.py").is_file()
+
+
+def test_a_stricter_test_environment_policy_is_accepted() -> None:
+    data = copy.deepcopy(example_data())
+    data["roles"]["automation"]["excluded_paths"].remove(LOCAL_TOML)  # protected anyway
+    assert config_from_mapping(data).role("automation").excluded[-1] == "scripts/deploy.sh"
+    data["approval_required_paths"].remove(TOML)  # never writable instead of approval-only
+    data["roles"]["automation"]["excluded_paths"].remove(TOML)
+    data["protected_paths"].append(TOML)
+    assert TOML in config_from_mapping(data).protected
 
 
 def test_roles_must_be_exactly_the_five_specializations(config: ProjectConfig) -> None:

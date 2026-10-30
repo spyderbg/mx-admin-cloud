@@ -1,7 +1,7 @@
 /**
  * Talks directly to the stub's introspection routes (/__calls, /__reset) — the stub is
  * not behind the frontend's /api /internal /content proxy, so specs need its own URL.
- * Set by `python scripts/testenv.py e2e` (E2E_STUB_URL); defaults to native mode's
+ * Set by `python test_environment/testenv.py e2e` (E2E_STUB_URL); defaults to native mode's
  * standard port for ad-hoc `npx playwright test` runs.
  */
 

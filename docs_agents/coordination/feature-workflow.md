@@ -13,7 +13,7 @@ Phase 2 delivered the design and a skeleton with mock runners, a mock issue trac
 
 | Area | Rule | Evidence |
 | --- | --- | --- |
-| Bug workflow (`scripts/mxfix/**`, `scripts/mxissues/**`, `scripts/issues.py`, `testenv.py run`) | Independent system. Never imported, called, extended, scheduled or tested. Its paths are **protected** for every role; its issues and labels (`mx-auto`, `source::*`, `severity::*`) are never written | `test_the_coordinator_is_independent_of_the_bug_workflow_and_the_backend` (AST import scan + empty `git status` for both trees), `test_bug_workflow_issues_are_never_touched` **[V]** |
+| Bug workflow (`test_environment/mxfix/**`, `test_environment/mxissues/**`, `test_environment/issues.py`, `testenv.py run`) | Independent system. Never imported, called, extended, scheduled or tested. Its paths are **protected** for every role; its issues and labels (`mx-auto`, `source::*`, `severity::*`) are never written | `test_the_coordinator_is_independent_of_the_bug_workflow_and_the_backend` (AST import scan; both trees must be tracked, so a moved or deleted tree fails it, and their `git status` empty), `test_the_test_environment_does_not_import_the_coordinator`, `test_bug_workflow_issues_are_never_touched` **[V]** |
 | Application code (`backend/`, `cli/`, `frontend/`) | Not imported. Reached only as **gate commands** run in a subprocess (§11) and as role-owned paths the runners edit | Same AST scan (`backend`, `src`, `testenvlib` forbidden) **[V]** |
 | Generic scripts | Called as subprocess gates (`export_openapi.py --docs-agents --check`, `check_docs_agents.py`). Generators are owned by the destination's role (§6) | §11 |
 | Runtime state | Outside Git, under `$XDG_STATE_HOME/mx-admin-agents/` (D-12); never committed | §5 |
@@ -67,12 +67,12 @@ The documented example is [`project-config.example.yaml`](project-config.example
 | backend | `claude` (Claude Code) | `backend/**`, `docs_agents/backend/**` | `backend/data/**` |
 | cli | `claude` (Claude Code) | `cli/**`, `docs_agents/cli/**` | — |
 | frontend | `codex` (Codex) | `frontend/**`, `docs_agents/frontend/**` | — |
-| automation | `remote_qwen` (OpenAI-compatible) | `scripts/**`, `test_environment/**`, `docs_agents/automation/**` | `scripts/mxfix/**`, `scripts/mxissues/**`, `scripts/deploy.sh` |
+| automation | `remote_qwen` (OpenAI-compatible) | `scripts/**`, `test_environment/**`, `docs_agents/automation/**` | `test_environment/mxfix/**`, `test_environment/mxissues/**`, `test_environment/testenv.toml`, `test_environment/testenv.local.toml`, `scripts/deploy.sh` |
 | coordination | `claude` (configurable) | `docs_agents/coordination/**` | — |
 
-- **Protected** (no role, no grant): `.git/**`, `.env`, `.env.*`, `**/.env`, `**/.env.*` (any depth, Phase 3), `content/**`, `data/**`, `backend/data/**`, `scripts/mxfix/**`, `scripts/mxissues/**`.
+- **Protected** (no role, no grant): `.git/**`, `.env`, `.env.*`, `**/.env`, `**/.env.*` (any depth, Phase 3), `content/**`, `data/**`, `backend/data/**`, `test_environment/mxfix/**`, `test_environment/mxissues/**`, `test_environment/testenv.local.toml` (Git-ignored per-developer test-environment overrides; a run that creates or changes it is rejected).
 - Phase 3 configuration sections: `runtime` (containment fixed to `bwrap`, timeouts, heartbeat, Claude budget, secret patterns, per-role command allowlists; gates are always offline), `lint_gates` (policy fixed to `block-new`) and `unsafe_gates` (§11).
-- **Approval-required** (only with a task grant): root instruction files (`CLAUDE.md`, `AGENTS.md`, `README.md`), `.gitignore`, `.gitlab-ci.yml`, `testenv.toml`, `scripts/deploy.sh`, agent-tool configuration (`.claude/**`, `.cursor/**`, `.opencode/**`, `.aiassistant/**`, `.agents/**`), `.github/**`, `docker/**`, `docs_agents/architecture/**`, `docs_agents/README.md`.
+- **Approval-required** (only with a task grant): root instruction files (`CLAUDE.md`, `AGENTS.md`, `README.md`), `.gitignore`, `.gitlab-ci.yml`, `test_environment/testenv.toml` (also excluded from the automation role, which owns `test_environment/**`), `scripts/deploy.sh`, agent-tool configuration (`.claude/**`, `.cursor/**`, `.opencode/**`, `.aiassistant/**`, `.agents/**`), `.github/**`, `docker/**`, `docs_agents/architecture/**`, `docs_agents/README.md`.
 - Anything else, for example `package.json` at the root, is **unowned and denied**.
 
 ### 3.1 Ceilings the loader refuses to relax
@@ -443,7 +443,7 @@ The demo uses a loopback mock endpoint (`127.0.0.1`, never contacted; the transp
 | --- | --- |
 | A mock feature with Backend/CLI/Frontend tasks on **one branch** with the **one-PR** policy | `test_mock_feature_end_to_end_meets_the_phase2_exit_gate` and `feature.py demo`. Branches are `dev` and `feature/items-export` only; 3 serialized commits (backend, cli, frontend); 4 tasks verified, including the dynamically created Backend contract task; **1 PR**, and a second is refused; the foreign bug-workflow issue is untouched; a second backend writer is rejected; the feature ends in `review`, not `done` |
 | Mocked remote Qwen configuration and offline/error behavior documented; no live connection | §9.3–§9.4; 31 tests in `test_fc_config_providers.py` and 18 in `test_fc_runners_issues.py`; the default transport refuses every request |
-| No dependent calls to the independent bug systems | AST import scan; `git status` empty for `scripts/mxfix` and `scripts/mxissues`; foreign issues are read-only |
+| No dependent calls to the independent bug systems | AST import scan in both directions; `test_environment/mxfix` and `test_environment/mxissues` tracked and their `git status` empty; foreign issues are read-only |
 | Safety and approval model documented | §14 |
 | Coordinator transitions and Git serialization tested | `test_fc_model.py` (27), `test_fc_gitops.py` (12), `test_fc_claims.py` (14), `test_fc_statedir_locks.py` (16), `test_fc_paths.py` (34), `test_fc_workflow.py` (22) |
 | Phase 1 gates still pass | `check_docs_agents.py` 6/6; the 30 Phase 1 tests pass within the full `scripts/tests` run (204 passed) |

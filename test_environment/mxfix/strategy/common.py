@@ -80,7 +80,7 @@ def _run(cmd: list[str], *, cwd: Path, env: dict[str, str] | None = None) -> int
 
 
 def _testenv_cmd(repo_root: Path, *, mode: str | None) -> list[str]:
-    cmd = [sys.executable, str(repo_root / "scripts" / "testenv.py")]
+    cmd = [sys.executable, str(repo_root / "test_environment" / "testenv.py")]
     if mode:
         cmd += ["--mode", mode]
     return cmd

@@ -18,7 +18,7 @@ REPO_ROOT = SCRIPT_DIR.parent
 VENV_DIR = REPO_ROOT / '.venv'
 BACKEND_REQS = REPO_ROOT / 'backend' / 'requirements.txt'
 CLI_REQS = REPO_ROOT / 'cli' / 'requirements.txt'
-SCRIPTS_REQS = REPO_ROOT / 'scripts' / 'requirements.txt'
+TEST_ENVIRONMENT_REQS = REPO_ROOT / 'test_environment' / 'requirements.txt'
 FRONTEND_DIR = REPO_ROOT / 'frontend'
 
 
@@ -52,13 +52,13 @@ def install_cli_requirements(pip: Path) -> None:
     run([str(pip), 'install', '-r', str(CLI_REQS)], cwd=REPO_ROOT)
 
 
-def install_scripts_requirements(pip: Path) -> None:
-    # python-gitlab (scripts/issues.py) — deliberately not in backend/requirements.txt,
+def install_test_environment_requirements(pip: Path) -> None:
+    # python-gitlab (test_environment/issues.py) — deliberately not in backend/requirements.txt,
     # which docker/backend.Dockerfile ships into the production image.
-    if not SCRIPTS_REQS.exists():
-        print(f"Warning: {SCRIPTS_REQS} not found, skipping.")
+    if not TEST_ENVIRONMENT_REQS.exists():
+        print(f"Warning: {TEST_ENVIRONMENT_REQS} not found, skipping.")
         return
-    run([str(pip), 'install', '-r', str(SCRIPTS_REQS)], cwd=REPO_ROOT)
+    run([str(pip), 'install', '-r', str(TEST_ENVIRONMENT_REQS)], cwd=REPO_ROOT)
 
 
 def install_frontend_modules() -> None:
@@ -74,7 +74,7 @@ def main() -> None:
     upgrade_pip(pip)
     install_backend_requirements(pip)
     install_cli_requirements(pip)
-    install_scripts_requirements(pip)
+    install_test_environment_requirements(pip)
     install_frontend_modules()
     print('\nSetup complete.')
 

@@ -129,7 +129,7 @@ def open_pr(
     itself is closed by the *commit's* closing reference reaching the default branch,
     not by this PR merging.
     """
-    body = f"{summary.strip()}\n\n---\n{issue_link}\n\n_Opened automatically by scripts/testenv.py run — see test_environment/README.md's \"Execution strategies\" section._"
+    body = f"{summary.strip()}\n\n---\n{issue_link}\n\n_Opened automatically by test_environment/testenv.py run — see test_environment/README.md's \"Execution strategies\" section._"
 
     with httpx.Client(headers=_github_headers(token), timeout=30.0) as client:
         response = client.post(

@@ -54,7 +54,7 @@ DIM = "\033[2m"
 CYAN = "\033[96m"
 RESET = "\033[0m"
 
-APP_PY = paths.SCRIPTS_DIR / "app.py"
+APP_PY = paths.TEST_ENVIRONMENT_DIR / "app.py"
 BASE_COMPOSE = paths.DOCKER_DIR / "docker-compose.yml"
 TEST_COMPOSE = paths.DOCKER_DIR / "docker-compose.test.yml"
 
@@ -392,7 +392,7 @@ def cmd_shell(args: argparse.Namespace) -> int:
         target = {"backend": paths.BACKEND_DIR, "frontend": paths.FRONTEND_DIR, "stub": paths.STUB_PROVIDER_DIR}[args.service]
         print(f"{YELLOW}Native mode has no containers to exec into.{RESET}")
         print(f"The {args.service} process's own directory is {paths.testenv_relative(target)}; "
-              f"use `python scripts/app.py logs {args.service} --follow` to watch it.")
+              f"use `python test_environment/app.py logs {args.service} --follow` to watch it.")
         return 0
 
     env = _docker_child_env(confirm_mode="complex")
@@ -468,7 +468,7 @@ def cmd_e2e(args: argparse.Namespace) -> int:
 
 def cmd_run(args: argparse.Namespace) -> int:
     # Imported lazily, here only: python-gitlab/httpx are Workstream 2/3 dependencies
-    # (scripts/requirements.txt, NOT backend/requirements.txt) — every other testenv.py
+    # (test_environment/requirements.txt, NOT backend/requirements.txt) — every other testenv.py
     # subcommand must keep working in an environment that only ever installed
     # Workstream 1's deps.
     from mxfix import git_target, worktree  # noqa: PLC0415

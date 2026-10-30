@@ -4,12 +4,12 @@ token (.env).
 Two halves, deliberately kept apart:
   - IssuesConfig / GitLabIssuesConfig / GitHubIssuesConfig — the non-secret shape of
     testenv.toml's [issues] section (tracker choice, GitLab host/project, GitHub
-    repo/project settings). Parsed by scripts/mxfix/config.py along with the rest of
+    repo/project settings). Parsed by test_environment/mxfix/config.py along with the rest of
     testenv.toml, testenv.local.toml and CLI overrides included. testenv.toml is tracked
     in git, so nothing secret ever goes there.
   - load_gitlab_token() / load_github_token() — the tokens, from the repo-root .env.
 
-Deliberately reads the repo-root .env — the opposite of scripts/testenvlib/envfile.py's
+Deliberately reads the repo-root .env — the opposite of test_environment/testenvlib/envfile.py's
 child_env(), which exists specifically to keep real secrets like these *out* of the
 test-environment's child processes. issues.py is not part of that isolation boundary:
 it is the thing that legitimately needs these tokens.
@@ -154,7 +154,7 @@ def load_gitlab_config(settings: GitLabIssuesConfig) -> GitLabConfig:
 
 
 def load_github_token() -> str:
-    """GITHUB_PAT — the same token scripts/mxfix/git_target.py opens PRs with."""
+    """GITHUB_PAT — the same token test_environment/mxfix/git_target.py opens PRs with."""
     token = _resolver()("GITHUB_PAT")
     if not token:
         raise ConfigError(

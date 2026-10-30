@@ -9,6 +9,32 @@ import textwrap
 from pathlib import Path
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[2]
+EXAMPLE_CONFIG = SCRIPTS_DIR.parent / "docs_agents" / "coordination" / "project-config.example.yaml"
+
+# (current text, text before the test environment moved into test_environment/ on 2026-10-30)
+PRE_RELOCATION_EDITS = (
+    ('    # testenv.toml is inside test_environment/** but approval-required; owned paths need no grant, '
+     'so exclude it\n'
+     '    excluded_paths: ["test_environment/mxfix/**", "test_environment/mxissues/**", '
+     '"test_environment/testenv.toml",\n'
+     '                     "test_environment/testenv.local.toml", "scripts/deploy.sh"]\n',
+     '    excluded_paths: ["scripts/mxfix/**", "scripts/mxissues/**", "scripts/deploy.sh"]\n'),
+    ('  - "test_environment/mxfix/**"          # independent bug-finding/repair system\n'
+     '  - "test_environment/mxissues/**"       # independent bug-finding/repair system\n'
+     '  - "test_environment/testenv.local.toml"  # per-developer test-env overrides (Git-ignored)\n',
+     '  - "scripts/mxfix/**"                   # independent bug-finding/repair system\n'
+     '  - "scripts/mxissues/**"                # independent bug-finding/repair system\n'),
+    ('  - "test_environment/testenv.toml"\n', '  - "testenv.toml"\n'),
+)
+
+
+def pre_relocation_example() -> str:
+    """The example configuration as a machine-local copy made before the relocation reads (dev 2cf629a)."""
+    text = EXAMPLE_CONFIG.read_text(encoding="utf-8")
+    for current, before in PRE_RELOCATION_EDITS:
+        assert text.count(current) == 1, current
+        text = text.replace(current, before)
+    return text
 
 
 def git(repo: Path, *args: str) -> str:

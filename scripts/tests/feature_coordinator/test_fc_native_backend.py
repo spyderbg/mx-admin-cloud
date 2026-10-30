@@ -318,6 +318,19 @@ def test_protected_ignored_files_and_git_state_are_watched(repo3: Path, agent_co
     assert git(repo3, "rev-parse", "HEAD") != head  # reported, not undone: the operator decides
 
 
+def test_a_new_ignored_testenv_local_toml_rejects_the_run(repo3: Path, agent_config: ProjectConfig,
+                                                          tmp_path: Path, host: Path) -> None:
+    del host
+    (repo3 / ".gitignore").write_text("testenv.local.toml\n", encoding="utf-8")
+    from fc_helpers import git  # pylint: disable=import-outside-toplevel
+    git(repo3, "add", ".gitignore")
+    git(repo3, "commit", "-q", "-m", "ignore testenv.local.toml")
+    local = "test_environment/testenv.local.toml"  # Git-ignored, so only the protected-file watch sees it
+    result = run_native(repo3, agent_config, "backend",
+                        [{"do": "write", "path": local, "text": "[git]\npush = true\n"}], tmp_path)
+    assert result.status == "rejected" and local in result.error
+
+
 @pytest.mark.parametrize("control,words", [({"report_model": "claude-sonnet-x"}, "model substitution"),
                                            ({"api_key_source": "ANTHROPIC_API_KEY"}, "used an API key")])
 def test_substitution_or_api_key_use_fails_the_run(control, words: str, repo3: Path, agent_config: ProjectConfig,

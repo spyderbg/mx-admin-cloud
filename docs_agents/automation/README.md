@@ -1,13 +1,13 @@
 # Automation — Agent Documentation Index
 
 > Owner role: **automation**. Under v4 that means:
-> - writable: `scripts/**` **except `scripts/mxfix/**`, `scripts/mxissues/**` and protected deployment scripts**; `test_environment/**`; `docs_agents/automation/**`;
+> - writable: `scripts/**` **except protected deployment scripts**; `test_environment/**` **except `test_environment/mxfix/**`, `test_environment/mxissues/**`, the protected `test_environment/testenv.local.toml` and the approval-required `test_environment/testenv.toml`**; `docs_agents/automation/**`;
 > - generic tests, generators, environment and CI utilities;
 > - **not** the separate bug workflow.
 >
 > Evidence tags: **[V]** executed, **[S]** source-read, **[U]** unverified — see [discovery](../discovery/README.md).
 >
-> Pre-existing docs (preserved): [`test_environment/README.md`](../../test_environment/README.md) (execution strategies, issue tracking, test environment), [`docs/test_environment/implementation_plan.md`](../../docs/test_environment/implementation_plan.md), [`docs/test_environment/initial_spec.md`](../../docs/test_environment/initial_spec.md), [`docs/test_environment/what_next.md`](../../docs/test_environment/what_next.md), [`docker/README.md`](../../docker/README.md), [`testenv.toml`](../../testenv.toml) (commented settings)
+> Pre-existing docs (preserved): [`test_environment/README.md`](../../test_environment/README.md) (execution strategies, issue tracking, test environment), [`docs/test_environment/implementation_plan.md`](../../docs/test_environment/implementation_plan.md), [`docs/test_environment/initial_spec.md`](../../docs/test_environment/initial_spec.md), [`docs/test_environment/what_next.md`](../../docs/test_environment/what_next.md), [`docker/README.md`](../../docker/README.md), [`test_environment/testenv.toml`](../../test_environment/testenv.toml) (commented settings)
 >
 > **Superseded by v4:** this page originally announced `mxfix.md` and `mxissues.md` audits as Phase 2 deliverables. v4 withdraws them: `mxfix`/`mxissues` are an independent bug workflow that is not audited, extended or tested as part of feature development. v4 Phase 2 instead builds a **separate** feature coordinator ([architecture §11](../architecture/README.md#11-v4-feature-development-architecture-design-baseline-for-phases-27), [phase-status](../coordination/phase-status.md)). `testing.md` remains planned (generic tests only).
 
@@ -23,7 +23,7 @@
 | `scripts/generate_ts_client.py [service]` | Python routes (AST) → `frontend/src/api/<svc>Client.ts` + MSW stubs | Writes Frontend-owned files | Frontend role |
 | `scripts/generate_mockdata.py` | `content/` → `frontend/src/data/mockData.ts` | Writes a Frontend-owned file; reads real content | Frontend role |
 | `scripts/validate_build.py`, `validate_tests.py`, `validate_frontend_build.py`, `validate.sh` | Compile + pylint; pytest + frontend tests; type-check + build | **Create venvs and run `pip install` / `npm install`** in shared environments | Only with operator approval; feature gates call the component commands instead (see [backend](../backend/README.md#running-backend-checks), [frontend](../frontend/README.md#commands-all-exist-in-frontendpackagejson)) |
-| `scripts/testenv.py doctor\|seed\|up\|down\|reset\|logs\|status\|shell\|e2e`, `scripts/testenvlib/**` | Isolated `.testenv/` sandbox (dummy credentials), Docker or native stack, Playwright e2e | Creates/destroys `.testenv/`, starts processes and containers | Automation role; Docker is not installed on the current host (B-4) |
+| `test_environment/testenv.py doctor\|seed\|up\|down\|reset\|logs\|status\|shell\|e2e`, `test_environment/testenvlib/**` | Isolated `.testenv/` sandbox (dummy credentials), Docker or native stack, Playwright e2e | Creates/destroys `.testenv/`, starts processes and containers | Automation role; Docker is not installed on the current host (B-4) |
 | `scripts/feature.py`, `scripts/feature_coordinator/**` (Phases 2–4) | The feature coordinator and its CLI: inspection (`doctor`, `config`, `providers`, `runners`, `sandbox-check`, `status`, `demo`), sandboxed gates (`gate`, `lint-report`), feature operations (`plan`, `activate`, `launch`, `stop`, `recover`, `integrate`, `hold`, `release`) and GitHub Issue coordination (`github status/labels/sync/reconcile/inspect/owned/deps/test-lifecycle/cleanup-test`) ([feature-workflow](../coordination/feature-workflow.md), [operations](../coordination/operations.md), [github-integration](../coordination/github-integration.md)) | Every mutating command is a dry run unless `--apply`. `--apply` writes the state directory `~/.local/state/mx-admin-agents/` and, for feature operations, the feature branch via the Git coordinator; `launch --apply` starts a real, bubblewrap-contained Claude Code/Codex run. Gates run read-only and offline. GitHub writes (Phase 4) only with `--apply` and only for test features (`github.write_scope`), through the existing `gh` login; never a pull request; no remote model calls | Any role (read-only commands); operator for `--apply` |
 | `scripts/app.sh`, `deploy.sh`, `setup*.py/sh`, `cli.sh`, `sync_repo.py` | Local run, deployment, setup, CLI install, repo sync | Start/stop services, install packages, deploy | **Explicit task-specific approval** (v4 §3); `deploy.sh` is a protected deployment script |
 
@@ -31,8 +31,8 @@
 
 | Tool | What it is | v4 rule |
 | --- | --- | --- |
-| `scripts/mxissues/**`, `scripts/issues.py` | Finding → GitHub/GitLab issue sync with fingerprint dedup; statuses `open`/`in-progress`/`done`/`needs-human`; labels `mx-auto`, `source::*`, `severity::*` | **Do not modify, import, extend, schedule, test or depend on it.** Its issues and labels are never touched by the feature coordinator |
-| `scripts/mxfix/**`, `scripts/testenv.py run --strategy report\|heal\|work\|batch` | AI repair loop in `.mxworktrees/`, `ai/*` branches, its own PRs; intended for a **different, dedicated machine** | Same as above. Feature agents never run it, and it never pushes into a live `feature/*` branch |
+| `test_environment/mxissues/**`, `test_environment/issues.py` | Finding → GitHub/GitLab issue sync with fingerprint dedup; statuses `open`/`in-progress`/`done`/`needs-human`; labels `mx-auto`, `source::*`, `severity::*` | **Do not modify, import, extend, schedule, test or depend on it.** Its issues and labels are never touched by the feature coordinator |
+| `test_environment/mxfix/**`, `test_environment/testenv.py run --strategy report\|heal\|work\|batch` | AI repair loop in `.mxworktrees/`, `ai/*` branches, its own PRs; intended for a **different, dedicated machine** | Same as above. Feature agents never run it, and it never pushes into a live `feature/*` branch |
 
 Phase 0 described how these tools behave ([discovery §9](../discovery/README.md#9-automation-scripts)). That description is kept as background only. Their current state is verified untouched: `git status`/`git diff` are empty for both trees **[V]**.
 

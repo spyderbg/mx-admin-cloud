@@ -233,7 +233,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--json", type=Path, default=None,
-        help="also write pylint's raw JSON report here (for scripts/issues.py sync --pylint) — "
+        help="also write pylint's raw JSON report here (for test_environment/issues.py sync --pylint) — "
              "runs pylint a second time with --output-format=json; the human table is unaffected",
     )
     args = parser.parse_args()

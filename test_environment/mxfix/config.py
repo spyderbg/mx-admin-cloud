@@ -2,7 +2,7 @@
 
 tomllib is stdlib on Python 3.11+ (the repo venv is newer still) — no new dependency.
 See testenv.toml's own comments for what each setting means; this module is only the
-loader + the typed shape the rest of scripts/mxfix/ consumes.
+loader + the typed shape the rest of test_environment/mxfix/ consumes.
 """
 
 from __future__ import annotations
@@ -14,10 +14,12 @@ from typing import Any
 
 from mxissues.config import ConfigError as IssuesConfigError
 from mxissues.config import GitHubIssuesConfig, GitLabIssuesConfig, IssuesConfig
-from testenvlib.paths import REPO_ROOT
+from testenvlib.paths import REPO_ROOT, TEST_ENVIRONMENT_DIR
 
-TESTENV_TOML = REPO_ROOT / "testenv.toml"
-TESTENV_LOCAL_TOML = REPO_ROOT / "testenv.local.toml"
+TESTENV_TOML = TEST_ENVIRONMENT_DIR / "testenv.toml"
+TESTENV_LOCAL_TOML = TEST_ENVIRONMENT_DIR / "testenv.local.toml"
+# Where testenv.local.toml lived before the test environment moved into test_environment/.
+LEGACY_TESTENV_LOCAL_TOML = REPO_ROOT / "testenv.local.toml"
 
 STRATEGIES = ("report", "heal", "batch", "work")
 FIXER_ADAPTERS = ("codex", "claude")
@@ -99,8 +101,11 @@ def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]
 
 
 def load_raw(*, local_path: Path = TESTENV_LOCAL_TOML) -> dict[str, Any]:
+    # Refuse rather than silently drop a pre-move override (e.g. `[git] push = false`).
+    if LEGACY_TESTENV_LOCAL_TOML.is_file():
+        raise ConfigError(f"{LEGACY_TESTENV_LOCAL_TOML} is no longer read — move it to {TESTENV_LOCAL_TOML}.")
     if not TESTENV_TOML.is_file():
-        raise ConfigError(f"{TESTENV_TOML} not found — it should be tracked at the repo root. See testenv.toml's own comments.")
+        raise ConfigError(f"{TESTENV_TOML} not found — it should be tracked in test_environment/. See testenv.toml's own comments.")
     try:
         data = tomllib.loads(TESTENV_TOML.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
@@ -149,7 +154,7 @@ def build_config(raw: dict[str, Any]) -> RunConfig:
 
 
 def load_config(*, overrides: dict[str, Any] | None = None) -> RunConfig:
-    """The one entry point the rest of scripts/mxfix/ and testenv.py should use.
+    """The one entry point the rest of test_environment/mxfix/ and testenv.py should use.
 
     *overrides* is a raw dict in the same nested shape as testenv.toml itself (e.g.
     `{"strategy": "heal", "limits": {"concurrency": 1}}`), deep-merged on top of
@@ -166,7 +171,7 @@ def load_config(*, overrides: dict[str, Any] | None = None) -> RunConfig:
 
 def load_issues_config(*, tracker: str | None = None) -> IssuesConfig:
     """Just testenv.toml's [issues] section (+ testenv.local.toml, + a --tracker CLI
-    override) — what scripts/issues.py needs, validated the same way `run` validates it.
+    override) — what test_environment/issues.py needs, validated the same way `run` validates it.
     """
     raw = load_raw()
     if tracker is not None:

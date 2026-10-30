@@ -13,8 +13,8 @@ from pathlib import Path
 # Repo layout
 # ---------------------------------------------------------------------------
 
-SCRIPTS_DIR = Path(__file__).resolve().parent.parent
-REPO_ROOT = SCRIPTS_DIR.parent
+TEST_ENVIRONMENT_DIR = Path(__file__).resolve().parent.parent
+REPO_ROOT = TEST_ENVIRONMENT_DIR.parent
 
 BACKEND_DIR = REPO_ROOT / "backend"
 FRONTEND_DIR = REPO_ROOT / "frontend"
@@ -23,10 +23,10 @@ DOCKER_DIR = REPO_ROOT / "docker"
 REAL_CONTENT_DIR = REPO_ROOT / "content"
 REAL_CONFIG_DIR = BACKEND_DIR / "config"
 
-STUB_PROVIDER_DIR = REPO_ROOT / "test_environment" / "stub-provider"
+STUB_PROVIDER_DIR = TEST_ENVIRONMENT_DIR / "stub-provider"
 STUB_SERVER_SCRIPT = STUB_PROVIDER_DIR / "stub_server.py"
 
-E2E_DIR = REPO_ROOT / "test_environment" / "e2e"
+E2E_DIR = TEST_ENVIRONMENT_DIR / "e2e"
 
 # ---------------------------------------------------------------------------
 # .testenv/ — throwaway, gitignored, rebuilt by `testenv.py seed` / `reset`

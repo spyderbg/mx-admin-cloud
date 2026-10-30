@@ -1,7 +1,7 @@
 /**
- * TypeScript-side description of the fixture scripts/testenv_seed.py produces from the
+ * TypeScript-side description of the fixture test_environment/testenv_seed.py produces from the
  * real content/ directory. Single source of truth for specs, so a category/item id or
- * count never gets hardcoded twice — see scripts/testenvlib/paths.py for the Python side
+ * count never gets hardcoded twice — see test_environment/testenvlib/paths.py for the Python side
  * (KEPT_CATEGORY_ROWS / KEPT_ITEM_ROWS) that actually builds the tree this describes.
  *
  * Two corrections versus docs/test_environment/implementation_plan.md, confirmed by
