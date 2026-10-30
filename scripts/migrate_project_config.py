@@ -42,8 +42,13 @@ from typing import Any, Iterable
 
 import yaml
 
-from feature_coordinator.config import (RELOCATED_PATHS, TEST_ENVIRONMENT_APPROVAL_REQUIRED,
-                                        TEST_ENVIRONMENT_PROTECTED, ConfigError, config_from_mapping, matches)
+REPO_ROOT = Path(__file__).resolve().parents[1]  # feature_coordinator/ lives at the repository root
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from feature_coordinator.config import (  # pylint: disable=wrong-import-position
+    RELOCATED_PATHS, TEST_ENVIRONMENT_APPROVAL_REQUIRED, TEST_ENVIRONMENT_PROTECTED, ConfigError, config_from_mapping,
+    matches)
 
 LOCAL_TOML = "test_environment/testenv.local.toml"
 ANCHOR = "test_environment/mxissues/**"  # additions go right after it, as in the example configuration

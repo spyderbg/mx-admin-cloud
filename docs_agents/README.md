@@ -61,6 +61,6 @@ Existing agent-tool configuration (rules, prompts, plans) lives in `.claude/`, `
 ```bash
 python scripts/check_docs_agents.py                     # all checks (read-only)
 python scripts/export_openapi.py --docs-agents --check  # contract drift only
-python -m pytest -p no:cacheprovider scripts/tests      # tests of the docs tooling and the feature coordinator
-python scripts/feature.py config                        # the example configuration equals the built-in one
+python -m pytest -p no:cacheprovider scripts/tests feature_coordinator/tests      # the docs tooling and the feature coordinator
+python -m feature_coordinator config                        # the example configuration equals the built-in one
 ```

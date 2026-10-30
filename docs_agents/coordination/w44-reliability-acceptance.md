@@ -1,5 +1,7 @@
 # W4.4 — Reliability & Recovery Testing: acceptance record (2026-10-29)
 
+> **Migration note (2026-10-30):** this record is kept as written. Its commands use `python scripts/feature.py` and `scripts/tests/feature_coordinator/`; the CLI is now `python -m feature_coordinator`, run from the checkout root, and the tests are in `feature_coordinator/tests/` ([operations §12](operations.md#12-feature-coordinator-relocation-updating-a-worker-host-2026-10-30)).
+
 > Owner role: **coordination**. **CLOSED — bounded supervised acceptance VERIFIED.**
 > This is a verification/documentation milestone over existing W4 implementation, **not** a claim of proven 24/7 unattended reliability and **not** a new production-code implementation. Baseline: `dev` after documentation PR #31 (`06070029`).
 > Source of the observations: operator-supplied pytest output (2026-10-29), `soak-report.json` and the successful `fc_worker_smoke.py` JSON `report.json`. Historical W4.1–W4.3 evidence is preserved in [phase-status.md](phase-status.md).

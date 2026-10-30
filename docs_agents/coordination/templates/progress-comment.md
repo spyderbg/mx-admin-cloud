@@ -1,6 +1,6 @@
 # Template — Progress Comments
 
-> Rendered by the feature coordinator (`issue_sync.py`). This example was produced by the real renderer from the demo feature `items-export` against the mock tracker on 2026-10-17 (`#N` numbers are the mock's). Do not hand-write these Issues: `feature.py github sync FEATURE --apply` creates and maintains them.
+> Rendered by the feature coordinator (`issue_sync.py`). This example was produced by the real renderer from the demo feature `items-export` against the mock tracker on 2026-10-17 (`#N` numbers are the mock's). Do not hand-write these Issues: `python -m feature_coordinator github sync FEATURE --apply` creates and maintains them.
 
 Every coordinator comment starts with an operation marker (`feature-coordinator:op`). Its operation ID makes a retry after a crash find the comment instead of posting it twice ([github-integration §8](../github-integration.md#8-idempotency-and-recovery)).
 
@@ -41,4 +41,4 @@ Dependency probe for #5 `items-export.contract-items-export-endpoint` at feature
 
 ## Final verification of a test feature (`op=final`)
 
-Posted by `feature.py github cleanup-test` (and the live test) before the Issue is closed: the result of every check, the feature ID and the task IDs.
+Posted by `python -m feature_coordinator github cleanup-test` (and the live test) before the Issue is closed: the result of every check, the feature ID and the task IDs.

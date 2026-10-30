@@ -1,6 +1,6 @@
 # Template — The Single Feature PR (Candidate)
 
-> Rendered by the feature coordinator (`issue_sync.py`). This example was produced by the real renderer from the demo feature `items-export` against the mock tracker on 2026-10-17 (`#N` numbers are the mock's). Do not hand-write these Issues: `feature.py github sync FEATURE --apply` creates and maintains them.
+> Rendered by the feature coordinator (`issue_sync.py`). This example was produced by the real renderer from the demo feature `items-export` against the mock tracker on 2026-10-17 (`#N` numbers are the mock's). Do not hand-write these Issues: `python -m feature_coordinator github sync FEATURE --apply` creates and maintains them.
 
 `integrate()` renders exactly one PR candidate per feature after every component task is verified and the integration gates pass at the final HEAD (quiescent barrier). In Phase 4 it is **never opened**: the GitHub adapter refuses `create_pull_request`. When a later phase enables PR creation with operator approval, this body is used for the one PR `feature/<slug>` → base.
 

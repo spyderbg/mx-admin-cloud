@@ -47,8 +47,8 @@ Tasks **without** steps behave exactly as in W2: one run, at most one commit, an
 ## 2. Architecture
 
 ```text
-Worker (feature.py work)            — start: reclaim dead claims of this feature (never one with a live agent)
-  └─ feature.py launch TASK         — one process per task, holds the claim + role lock (unchanged)
+Worker (python -m feature_coordinator work)            — start: reclaim dead claims of this feature (never one with a live agent)
+  └─ python -m feature_coordinator launch TASK         — one process per task, holds the claim + role lock (unchanged)
        run_task ─┬─ no steps: the W2 path (one run → one commit → gates)
                  └─ steps:  reconcile checkpoints (checkpoints.reconcile_for_run)
                             for each REMAINING step:
@@ -61,7 +61,7 @@ Worker (feature.py work)            — start: reclaim dead claims of this featu
 | Module | W3 role |
 | --- | --- |
 | `checkpoints.py` (new) | Records, the protocol (`record_intent`, `settle`), reconciliation (`inspect`, `apply_actions`, `reconcile_for_run`), operator recovery (`recover_task`), context (`step_prompt`) |
-| `checkpoint_commands.py` (new) | `feature.py checkpoints TASK`, `feature.py recover TASK …` |
+| `checkpoint_commands.py` (new) | `python -m feature_coordinator checkpoints TASK`, `python -m feature_coordinator recover TASK …` |
 | `model.py` | `TaskStep`, `Task.steps`; task schema v2 with an explicit v1 migration |
 | `gitops.py` | `Feature-Checkpoint` trailer; idempotent checkpoint commit; read-only helpers (trailers, checkpoint commits, blob digests, ancestry) |
 | `workflow.py` | `TaskSpec.steps`; the step loop (`_run_steps`, `_run_step`, `_checkpoint`) |
@@ -247,7 +247,7 @@ The algorithm:
    - A conflict moves it to `needs-human` ("recovery conflict: …").
    - A `failed` stepped task with remaining work, or one held for a recovery conflict that is now resolved, becomes `ready`.
 
-   Recovery never starts an agent. `feature.py launch TASK --apply` or `work FEATURE --apply` resumes.
+   Recovery never starts an agent. `python -m feature_coordinator launch TASK --apply` or `work FEATURE --apply` resumes.
 
 ## 8. Context reconstruction
 
@@ -280,7 +280,7 @@ From the offline tests (`test_fc_checkpoints.py`, scenarios C and B; SHAs shorte
 3. The operator looks:
 
 ```text
-$ feature.py recover stats.api --show-prompt
+$ python -m feature_coordinator recover stats.api --show-prompt
 stats.api: in-progress — interrupted; role backend → claude, model opus
   steps (2/4 done, counting the safe actions): models ✓, service ✓, endpoints ← next, tests
   feature branch HEAD a09d985752ae…
@@ -301,8 +301,8 @@ stats.api: in-progress — interrupted; role backend → claude, model opus
 dry run — nothing was changed and no model was asked; pass --apply to recover
 ```
 
-4. `feature.py recover stats.api --apply` reclaims the stale claim and adopts `a09d98…` for checkpoint #2. No new commit is made. Running it a second time does nothing.
-5. `feature.py work content-statistics --apply` (or `launch stats.api --apply`) resumes. The Worker log shows `start stats.api (backend → claude, model opus); steps 2/4 done, next: endpoints`. Only `endpoints` and `tests` run.
+4. `python -m feature_coordinator recover stats.api --apply` reclaims the stale claim and adopts `a09d98…` for checkpoint #2. No new commit is made. Running it a second time does nothing.
+5. `python -m feature_coordinator work content-statistics --apply` (or `launch stats.api --apply`) resumes. The Worker log shows `start stats.api (backend → claude, model opus); steps 2/4 done, next: endpoints`. Only `endpoints` and `tests` run.
 6. Result:
    - four commits, one per step, `671398 ← a09d98 ← … ← …`;
    - no duplicate;
@@ -310,21 +310,21 @@ dry run — nothing was changed and no model was asked; pass --apply to recover
    - gates passed on the final HEAD, so the task is `verified`;
    - still one Issue for the task, and one PR for the feature.
 
-The real-process variant (scenario B) kills the Worker, the `launch` process and the fake agent at once, during step 3 (power loss). It restarts `feature.py work`: the Worker logs `recovered stats.api`, and only step 3 runs again. Its prompt lists `models` and `service` as completed.
+The real-process variant (scenario B) kills the Worker, the `launch` process and the fake agent at once, during step 3 (power loss). It restarts `python -m feature_coordinator work`: the Worker logs `recovered stats.api`, and only step 3 runs again. Its prompt lists `models` and `service` as completed.
 
 ## 10. Operator commands
 
 | Command | Effect |
 | --- | --- |
-| `feature.py checkpoints TASK` | Read-only: progress, every checkpoint (status, commit, base, files, attempt, note), resume point, claim and processes, safe actions, conflicts, warnings. Exit 1 on a conflict |
-| `feature.py checkpoints TASK --json` | The same as JSON, plus `portable_record` (the record without machine-specific data) |
-| `feature.py recover TASK [--show-prompt]` | **Preview** (default): what recovery would do, the exact checkpoint and Git revision a resume continues from, and optionally the next step's context. No state change, no model request |
-| `feature.py recover TASK --apply` | Reclaim the stale claim (only if no agent of the run survives), settle interrupted checkpoints, record conflicts (`needs-human`), make a failed stepped task resumable |
+| `python -m feature_coordinator checkpoints TASK` | Read-only: progress, every checkpoint (status, commit, base, files, attempt, note), resume point, claim and processes, safe actions, conflicts, warnings. Exit 1 on a conflict |
+| `python -m feature_coordinator checkpoints TASK --json` | The same as JSON, plus `portable_record` (the record without machine-specific data) |
+| `python -m feature_coordinator recover TASK [--show-prompt]` | **Preview** (default): what recovery would do, the exact checkpoint and Git revision a resume continues from, and optionally the next step's context. No state change, no model request |
+| `python -m feature_coordinator recover TASK --apply` | Reclaim the stale claim (only if no agent of the run survives), settle interrupted checkpoints, record conflicts (`needs-human`), make a failed stepped task resumable |
 | `… --apply --terminate-orphans` | Also stop the interrupted run's surviving agent processes (identified by run tag / process identity) |
 | `… --apply --abandon-pending` | Abandon pending checkpoints without a commit; files are kept, the step runs again |
 | `… --apply --redo-from STEP` | Supersede STEP and later steps (commits kept); they run again — e.g. after a failed verification |
-| `feature.py recover [--apply]` | (Phase 3, unchanged) reclaim every dead worker's claim; W3: an orphaned run is reported, not reclaimed |
-| `feature.py status`, `work FEATURE` | Show `steps n/m done, next: …` per multi-step task |
+| `python -m feature_coordinator recover [--apply]` | (Phase 3, unchanged) reclaim every dead worker's claim; W3: an orphaned run is reported, not reclaimed |
+| `python -m feature_coordinator status`, `work FEATURE` | Show `steps n/m done, next: …` per multi-step task |
 
 ## 11. Limitations
 
@@ -381,12 +381,12 @@ What is missing:
 
 ## 13. Tests
 
-`scripts/tests/feature_coordinator/test_fc_checkpoints.py` covers the W3 instruction's scenarios A–L and more. All of it is offline, with real temporary Git repositories and real process crashes.
+`feature_coordinator/tests/test_fc_checkpoints.py` covers the W3 instruction's scenarios A–L and more. All of it is offline, with real temporary Git repositories and real process crashes.
 
 | Scenario | Test(s) |
 | --- | --- |
 | A — multiple commits for one task | `test_a_one_task_produces_several_checkpoint_commits` (4 commits, order, trailers, metadata, task.commits, one Issue per task, one PR) |
-| B — interruption during a step, restart | `test_b_interrupted_step_resumes_without_repeating_completed_steps` (killed process, Worker restart); `test_b_worker_killed_during_a_step_resumes_after_restart` (real `feature.py work`, native backend, Worker + launch + agent SIGKILLed) |
+| B — interruption during a step, restart | `test_b_interrupted_step_resumes_without_repeating_completed_steps` (killed process, Worker restart); `test_b_worker_killed_during_a_step_resumes_after_restart` (real `python -m feature_coordinator work`, native backend, Worker + launch + agent SIGKILLed) |
 | C — crash after the Git commit | `test_c_crash_after_the_commit_is_adopted_never_duplicated`, `test_c_a_resumed_run_reconciles_by_itself` |
 | D — crash before the Git commit | `test_d_crash_before_the_commit_is_committed_from_the_intent`, `test_d_changed_files_after_the_intent_need_an_operator` |
 | E — repeated recovery | in C and D (second `recover` applies nothing) |
@@ -401,8 +401,8 @@ What is missing:
 | Context, CLI, redo, Worker start | `test_context_reconstruction_is_concise_untrusted_and_portable`, `test_cli_checkpoints_and_recover_preview_change_nothing`, `test_redo_from_reruns_steps_after_a_failed_verification`, `test_a_worker_restart_reclaims_a_dead_claim`, `test_step_definitions_are_validated` |
 
 ```bash
-.venv/bin/python -m pytest -p no:cacheprovider scripts/tests/feature_coordinator/test_fc_checkpoints.py   # W3
-.venv/bin/python -m pytest -p no:cacheprovider scripts/tests                                              # everything
+.venv/bin/python -m pytest -p no:cacheprovider feature_coordinator/tests/test_fc_checkpoints.py   # W3
+.venv/bin/python -m pytest -p no:cacheprovider scripts/tests feature_coordinator/tests                    # everything
 ```
 
 Results: [phase-status.md](phase-status.md#w3--multi-commit-checkpoints-and-task-recovery-record-2026-10-22).
@@ -436,7 +436,7 @@ Results: [phase-status.md](phase-status.md#w3--multi-commit-checkpoints-and-task
 **Harness:** `fc_recovery_smoke.py`, with the offline test `test_fc_recovery_smoke.py`.
 - One feature with one Backend task of three steps: model → service → validation.
 - A gate imports and runs the result.
-- It runs through the real path: `feature.py work` → `launch` → native-cli backend.
+- It runs through the real path: `python -m feature_coordinator work` → `launch` → native-cli backend.
 - **Interruption:** a test-only `sitecustomize` injector, on the first Worker's `PYTHONPATH`, freezes the `launch` process at the boundary *before* step 3 starts. Checkpoints #1 and #2 are durable at that point. The harness waits for the injector's marker (no sleeps), records the state, then SIGKILLs that Worker and its launch process.
 - **Audit:** a wrapper around the agent CLI logs every agent launch. Before handing a prompt to the CLI, it re-checks the claude.ai subscription, the absence of API-key variables, the model, the repository and the step. It refuses a fourth session or any repeated step.
 - **No production code was changed** for W3.2.

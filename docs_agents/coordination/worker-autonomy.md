@@ -2,7 +2,7 @@
 
 > Owner role: **coordination**. W4/W4.1 offline; W4.2 and W4.3 bounded real-agent/GitHub acceptance; **W4.4 supervised recovery regressions, fake-agent soak and four-session real-agent revalidation VERIFIED (2026-10-29)**. This does **not** demonstrate unattended/overnight or live GitHub-outage resilience. [W4.4 record](w44-reliability-acceptance.md).
 > - Historical implementation branch: `feature/worker-autonomy-w4`, integrated by merged PR [#23](https://github.com/spyderbg/mx-admin-cloud/pull/23) (`7ce3dbc`). W4.3 intake/publishing were merged separately via PRs #26 and #28; the latest supervised smoke merged PR #30 into `dev` (`9861975`).
-> - W4 and W4.1 were verified with fake agents: real temporary Git repositories, real `feature.py worker start` processes, real signals and SIGKILLs, and simulated time.
+> - W4 and W4.1 were verified with fake agents: real temporary Git repositories, real `python -m feature_coordinator worker start` processes, real signals and SIGKILLs, and simulated time.
 > - **W4.2** ran 4 real Claude/Codex sessions in the original bounded foreground smoke test; **W4.3.4** ran a real Claude Sonnet task and opened Draft PR #30; **W4.4.5-B** repeated the bounded 4-session Claude/Codex smoke (69/69) with a controlled stop/restart. W4.4.5-A also ran 48 fake-agent tasks (10/10 soak checks). None proves 24/7 reliability.
 > - The systemd user service is a **template**: it is not installed, enabled or started. Linger is not enabled.
 > Related: [worker-checkpoints.md](worker-checkpoints.md) (W3: checkpoints and recovery, which W4 runs automatically) · [worker-functional.md](worker-functional.md) (W2: the Worker and the native-cli backend) · [feature-workflow.md](feature-workflow.md) · [operations.md](operations.md) · [phase-status.md](phase-status.md)
@@ -17,7 +17,7 @@
 
 ## 1. What W4 adds
 
-Before W4, `feature.py work FEATURE --apply` drove one feature's tasks while an operator watched. It ran several agents at once (one per role), retried only on request, and stopped when the feature stopped.
+Before W4, `python -m feature_coordinator work FEATURE --apply` drove one feature's tasks while an operator watched. It ran several agents at once (one per role), retried only on request, and stopped when the feature stopped.
 
 W4 adds a **long-running local service** that runs a feature's tasks without a terminal. Each cycle it:
 1. starts, and runs W3 recovery for interrupted work;
@@ -32,7 +32,7 @@ Everything is **local**: no AWS, no new database, no new sandbox, no Git worktre
 
 | Capability | Status |
 | --- | --- |
-| Service loop `feature.py worker start` (foreground; systemd runs exactly this) | IMPLEMENTED, VERIFIED WITH REAL AGENTS in bounded W4.2/W4.3.4 smoke runs; not tested unattended |
+| Service loop `python -m feature_coordinator worker start` (foreground; systemd runs exactly this) | IMPLEMENTED, VERIFIED WITH REAL AGENTS in bounded W4.2/W4.3.4 smoke runs; not tested unattended |
 | One agent at a time by default, *enforced* at claim time; manual launches refused while the service runs | IMPLEMENTED, VERIFIED OFFLINE (tests A, P) |
 | W2 parallel scheduler kept as an explicit option (`work --max-parallel N`) | IMPLEMENTED, VERIFIED OFFLINE (test N + the W2 suite) |
 | Automatic W3 recovery at startup (stale claims, interrupted launches, checkpoint consistency) | IMPLEMENTED, VERIFIED OFFLINE (tests C, H, Q) |
@@ -52,7 +52,7 @@ Everything is **local**: no AWS, no new database, no new sandbox, no Git worktre
 
 What is unchanged:
 - the W2/W3 task state machine;
-- the claim, launch, checkpoint and gate paths: the service launches `feature.py launch TASK --apply`, exactly as `work` does;
+- the claim, launch, checkpoint and gate paths: the service launches `python -m feature_coordinator launch TASK --apply`, exactly as `work` does;
 - provider routing (Backend/CLI → Claude Code `opus`/`sonnet`, Frontend → Codex);
 - subscription-only authentication (W2 §6);
 - one active feature per checkout;
@@ -61,29 +61,29 @@ What is unchanged:
 ## 2. Architecture
 
 ```
-systemd --user (optional, operator-installed)        operator: feature.py worker status|pause|stop|…
+systemd --user (optional, operator-installed)        operator: python -m feature_coordinator worker status|pause|stop|…
         │ ExecStart                                            │ read-only, or control flag + signal
         ▼                                                      ▼
- feature.py worker start ──► WorkerService (service.py) ◄── state dir: flags/worker-control.json
+ python -m feature_coordinator worker start ──► WorkerService (service.py) ◄── state dir: flags/worker-control.json
         │   one cycle: heartbeat → control → active feature → workspace → claims (W3 recovery,
         │   orphan policy) → in-flight launches of earlier instances → eligible tasks (autonomy.py)
         │   → pre-launch checks → write-ahead launch count → spawn → watch → integrity → classify
         │   → retry policy → events + log line
         ▼
- feature.py launch TASK --apply  (one process per launch, W2/W3 path, unchanged)
+ python -m feature_coordinator launch TASK --apply  (one process per launch, W2/W3 path, unchanged)
         │ claim (refused if another claim exists: agent-exclusive flag) → native-cli backend
         ▼
  claude / codex CLI (subscription login, allowlisted environment, run tag)
 ```
 
 **Modules.**
-- `scripts/feature_coordinator/service.py`: the `WorkerService` loop.
+- `feature_coordinator/service.py`: the `WorkerService` loop.
 - `autonomy.py`: the policy.
   - The scheduling and service records, with strict schema-versioned serialization.
   - Outcome classification, backoff and the retry policy.
   - Task eligibility and status.
   - The health report and the control flag.
-- `service_commands.py`: `feature.py worker …`.
+- `service_commands.py`: `python -m feature_coordinator worker …`.
 - `systemd/mx-admin-worker.service.in`: the unit template.
 - Changes to existing modules:
   - `config.py`: the `worker:` block;
@@ -111,20 +111,20 @@ There is no second process supervisor. The launch process supervises its agent (
 
 ## 3. Sequential execution
 
-**Default: one AI agent at a time.** `worker.max_parallel` is `1`, and the service refuses any other value (exit 78). `feature.py work` now also defaults to `worker.max_parallel`.
+**Default: one AI agent at a time.** `worker.max_parallel` is `1`, and the service refuses any other value (exit 78). `python -m feature_coordinator work` now also defaults to `worker.max_parallel`.
 
 **Enforced, not just scheduled.**
 - While a sequential Worker runs (the service, or `work` with parallelism 1), it holds the **`agent-exclusive` flag** (`flags/agent-exclusive.json`: holder plus process identity).
 - `ClaimManager.claim` refuses any claim while *another* claim exists and a live exclusive holder exists. It raises `CheckoutBusyError` with "sequential mode …".
-- The check runs under `coordinator.lock`, atomically with the claim. A manual `feature.py launch OTHER --apply` beside the service is therefore refused before its agent starts (test P).
+- The check runs under `coordinator.lock`, atomically with the claim. A manual `python -m feature_coordinator launch OTHER --apply` beside the service is therefore refused before its agent starts (test P).
 - A stale flag (its holder dead) is ignored. The flag is dropped at shutdown.
 
 **Conflicting starts are refused:**
 - a second service on the same state directory: `worker-service.lock`, exit **73** (test P);
-- `feature.py work FEATURE --apply` while the service drives that feature: the feature's Worker lock (test P);
+- `python -m feature_coordinator work FEATURE --apply` while the service drives that feature: the feature's Worker lock (test P);
 - a live claim found by the service (a manual launch, or a launch of an earlier service instance): the service waits (WAITING) and never starts a second writer.
 
-**Explicit parallelism stays available.** `feature.py work FEATURE --apply --max-parallel 3` is the unchanged W2 scheduler: one writer per role, Git commits serialized. It does not take the exclusive flag. All W2 parallel tests still pass, including the real-overlap rendezvous test.
+**Explicit parallelism stays available.** `python -m feature_coordinator work FEATURE --apply --max-parallel 3` is the unchanged W2 scheduler: one writer per role, Git commits serialized. It does not take the exclusive flag. All W2 parallel tests still pass, including the real-overlap rendezvous test.
 
 **Why sequential?** One subscription session at a time keeps usage predictable. It also makes every commit attributable, and stops agents' file changes from interleaving on the shared checkout.
 
@@ -232,7 +232,7 @@ All of it survives restarts. A new service instance does not launch before `next
 
 **Retry requeue.** A retryable `FAILED` task is moved back to `READY` by the service (transition `failed → ready`, reason "worker service: retry scheduled after a … failure").
 
-**Reset.** `feature.py worker reset-retries TASK --apply` is the operator's explicit decision. It clears budgets, waits and attention, and moves a `FAILED` task back to `READY`. It is recorded in history and as the event `worker-retries-reset`.
+**Reset.** `python -m feature_coordinator worker reset-retries TASK --apply` is the operator's explicit decision. It clears budgets, waits and attention, and moves a `FAILED` task back to `READY`. It is recorded in history and as the event `worker-retries-reset`.
 
 **Subscriptions.** The CLI may report a reset time in machine-readable form: `limit reached|<epoch>`. When that time lies within 7 days, the service waits until then. Otherwise it rechecks every `recheck_interval_seconds` (900). While waiting, the task stays `READY`, the service is `WAITING`, and nothing launches.
 
@@ -266,7 +266,7 @@ After the deadline (`recovery.stop_orphans_after_deadline`, default true), it st
 
 ## 9. Health and watchdog
 
-`feature.py worker health [--json]` and `worker status` are **read-only**: no state is created, no work started, no model asked. The report includes:
+`python -m feature_coordinator worker health [--json]` and `worker status` are **read-only**: no state is created, no work started, no model asked. The report includes:
 - the worker id, recorded and derived state, reason, pid, host, start and heartbeat times (with age);
 - `current`: feature, task, step, agent, model, launch, start;
 - the last checkpoint and the last error, plus counters per category;
@@ -301,7 +301,7 @@ After the deadline (`recovery.stop_orphans_after_deadline`, default true), it st
   - a process carrying a random run or launch tag that this system set before the process started.
 - A PID whose start time differs is a different process. Its claim is recovered under the existing policy, and the process now using that PID is never signalled (tested with live processes and injected identities).
 - An unreadable identity (missing fields) fails closed. Nothing is recovered, stopped or started, the service reports NEEDS_ATTENTION and does not crash (W4 crashed with `KeyError`), and health still works.
-- **The window before the agent's identity is recorded.** The launch records the agent's identity in its claim just after starting it. If the launch dies within that short window, the orphan is known only by its run tag, and its run deadline cannot be timed. It is **held for the operator (NEEDS_ATTENTION) and never stopped automatically** (`feature.py recover TASK --apply --terminate-orphans` stops it by its run tag). The W4.1 full regression hit exactly this window once under load: a test had killed the launch too early. The service behaved as designed; the test now waits for the identity to be recorded.
+- **The window before the agent's identity is recorded.** The launch records the agent's identity in its claim just after starting it. If the launch dies within that short window, the orphan is known only by its run tag, and its run deadline cannot be timed. It is **held for the operator (NEEDS_ATTENTION) and never stopped automatically** (`python -m feature_coordinator recover TASK --apply --terminate-orphans` stops it by its run tag). The W4.1 full regression hit exactly this window once under load: a test had killed the launch too early. The service behaved as designed; the test now waits for the identity to be recorded.
 
 **Cleanup that cannot be confirmed.**
 - A process that survives SIGKILL keeps blocking: its claim stays, or its run tags stay in the attention record. Health says **cleanup-uncertain**.
@@ -352,16 +352,16 @@ After the deadline (`recovery.stop_orphans_after_deadline`, default true), it st
 
 | Command | Effect |
 | --- | --- |
-| `feature.py worker start [--max-cycles N] [--exit-when-idle]` | Run the service in the foreground (systemd runs this; the options are for tests and soak runs) |
-| `feature.py worker status` | One screen: state, current agent, last checkpoint/error, every task (read-only) |
-| `feature.py worker health [--json]` | Structured health; exit 1 unless healthy (read-only) |
-| `feature.py worker waiting` | Tasks waiting for a retry or a subscription, with times and attempts (read-only) |
-| `feature.py worker attention` | What needs an operator, with the **action** to take; exit 1 if anything (read-only) |
-| `feature.py worker pause [--reason R]` / `resume` | Stop / restart scheduling new work. An active agent finishes its bounded run. SIGUSR1 wakes the service at once |
-| `feature.py worker stop` | Graceful stop: SIGTERM to the verified service process. It cancels the active agent (completed checkpoints stay; the interrupted step runs again later) and exits 0 |
-| `feature.py worker stop --after-current` | Let the active task finish, then exit (nothing new starts) |
-| `feature.py worker reset-retries TASK [--apply]` | Clear a task's budgets, waits and attention (dry run without `--apply`) |
-| `feature.py [--state-dir DIR] [--project-config FILE] [--tracker github] worker systemd-unit [--config FILE]` | Print the unit for this checkout. `--config` defaults to the global `--project-config` (two different files are refused); an explicit `--state-dir` and `--tracker` are kept in `ExecStart` (without them: the default state directory and the local tracker). Nothing is installed |
+| `python -m feature_coordinator worker start [--max-cycles N] [--exit-when-idle]` | Run the service in the foreground (systemd runs this; the options are for tests and soak runs) |
+| `python -m feature_coordinator worker status` | One screen: state, current agent, last checkpoint/error, every task (read-only) |
+| `python -m feature_coordinator worker health [--json]` | Structured health; exit 1 unless healthy (read-only) |
+| `python -m feature_coordinator worker waiting` | Tasks waiting for a retry or a subscription, with times and attempts (read-only) |
+| `python -m feature_coordinator worker attention` | What needs an operator, with the **action** to take; exit 1 if anything (read-only) |
+| `python -m feature_coordinator worker pause [--reason R]` / `resume` | Stop / restart scheduling new work. An active agent finishes its bounded run. SIGUSR1 wakes the service at once |
+| `python -m feature_coordinator worker stop` | Graceful stop: SIGTERM to the verified service process. It cancels the active agent (completed checkpoints stay; the interrupted step runs again later) and exits 0 |
+| `python -m feature_coordinator worker stop --after-current` | Let the active task finish, then exit (nothing new starts) |
+| `python -m feature_coordinator worker reset-retries TASK [--apply]` | Clear a task's budgets, waits and attention (dry run without `--apply`) |
+| `python -m feature_coordinator [--state-dir DIR] [--project-config FILE] [--tracker github] worker systemd-unit [--config FILE]` | Print the unit for this checkout. `--config` defaults to the global `--project-config` (two different files are refused); an explicit `--state-dir` and `--tracker` are kept in `ExecStart` (without them: the default state directory and the local tracker). Nothing is installed |
 
 Control commands write `flags/worker-control.json` and signal only the **recorded** service process, after re-verifying its identity. The request stays recorded either way:
 - a pause also applies at the next start;
@@ -371,8 +371,8 @@ The existing commands are unchanged: `checkpoints TASK` and `recover TASK` for a
 
 ## 11. systemd (user service) — instructions; nothing is installed
 
-**Template.** `scripts/feature_coordinator/systemd/mx-admin-worker.service.in`:
-- `Type=simple`, with `ExecStart` running `feature.py --repo R [--state-dir DIR] [--project-config FILE] [--tracker T] worker start` (global options before the subcommand, as absolute paths; each only when given to `systemd-unit`);
+**Template.** `feature_coordinator/systemd/mx-admin-worker.service.in`:
+- `Type=simple`, with `ExecStart` running `python -m feature_coordinator --repo R [--state-dir DIR] [--project-config FILE] [--tracker T] worker start` (global options before the subcommand, as absolute paths; each only when given to `systemd-unit`);
 - `Restart=on-failure`, `RestartSec=60`, `RestartPreventExitStatus=73 78`;
 - `StartLimitIntervalSec=900`, `StartLimitBurst=5`;
 - `KillMode=mixed`, `KillSignal=SIGTERM`, `TimeoutStopSec=180`;
@@ -383,12 +383,12 @@ It contains no credentials and no `HOME` override: Claude Code and Codex keep us
 **Preconditions** (operator decisions):
 - a project configuration with `worker.autonomous.enabled: true`;
 - an activated feature;
-- a successful `feature.py worker start --exit-when-idle` in a terminal first.
+- a successful `python -m feature_coordinator worker start --exit-when-idle` in a terminal first.
 
 ```bash
 # 1. Render the unit for this checkout and configuration (prints only; global options such as
 #    --tracker github or --state-dir DIR go before `worker` and are kept in ExecStart):
-python scripts/feature.py worker systemd-unit --config /path/to/project.yaml > /tmp/mx-admin-worker.service
+python -m feature_coordinator worker systemd-unit --config /path/to/project.yaml > /tmp/mx-admin-worker.service
 systemd-analyze --user verify /tmp/mx-admin-worker.service
 
 # 2. Install (operator approval required):
@@ -403,10 +403,10 @@ systemctl --user enable mx-admin-worker        # starts at the next login
 # Status and logs:
 systemctl --user status mx-admin-worker
 journalctl --user -u mx-admin-worker --since "8 hours ago"
-python scripts/feature.py worker status
+python -m feature_coordinator worker status
 
 # Stop gracefully / disable / remove:
-python scripts/feature.py worker stop          # or: systemctl --user stop mx-admin-worker
+python -m feature_coordinator worker stop          # or: systemctl --user stop mx-admin-worker
 systemctl --user disable mx-admin-worker
 rm ~/.config/systemd/user/mx-admin-worker.service && systemctl --user daemon-reload
 ```
@@ -417,10 +417,10 @@ rm ~/.config/systemd/user/mx-admin-worker.service && systemctl --user daemon-rel
 
 **Recovery after a failure:**
 1. `systemctl --user status mx-admin-worker` shows the exit code.
-2. Exit **78**: run `feature.py worker health` and read the last reason, or `worker-startup.json`. Fix the cause, then `systemctl --user reset-failed mx-admin-worker && systemctl --user start mx-admin-worker`.
-3. Exit **73**: another service owns the state directory (`feature.py worker status` shows which pid).
+2. Exit **78**: run `python -m feature_coordinator worker health` and read the last reason, or `worker-startup.json`. Fix the cause, then `systemctl --user reset-failed mx-admin-worker && systemctl --user start mx-admin-worker`.
+3. Exit **73**: another service owns the state directory (`python -m feature_coordinator worker status` shows which pid).
    Exit **78** with `pre-relocation test environment path(s)` in the journal: the project file predates the `test_environment/` relocation; migrate it ([operations §11](operations.md#11-test-environment-relocation-updating-the-desktop-worker-2026-10-30)).
-4. Then `feature.py worker attention`, which names the action for each held task.
+4. Then `python -m feature_coordinator worker attention`, which names the action for each held task.
 
 ## 12. Logging, sanitization, retention
 
@@ -483,7 +483,7 @@ worker:
 
 ## 14. Tests and evidence
 
-**`scripts/tests/feature_coordinator/test_fc_autonomy.py`** (43 tests, in-process). It uses mock agents in launch threads, real Git and a **simulated clock**. Covered:
+**`feature_coordinator/tests/test_fc_autonomy.py`** (43 tests, in-process). It uses mock agents in launch threads, real Git and a **simulated clock**. Covered:
 - **classification:** 19 cases;
 - **policy:** backoff and budgets, strict configuration, the exclusive claim;
 - **A** one agent at a time, plus a manual claim refused;
@@ -499,7 +499,7 @@ worker:
 - **O** idle: no unapproved work, one bounded sleep per cycle;
 - **operations and safety:** disabled mode refused; read-only status and health (state files byte-identical); reset; secrets redacted; per-task isolation of broken state; a failing cycle; the **accelerated long run** (four tasks with transient and subscription failures, a pause, a restart and an attention case; invariants checked after every cycle).
 
-**`test_fc_service_process.py`** (11 tests). It uses real `feature.py worker start` processes, the native-cli backend with the fake agent CLI, real Git, signals and SIGKILLs:
+**`test_fc_service_process.py`** (11 tests). It uses real `python -m feature_coordinator worker start` processes, the native-cli backend with the fake agent CLI, real Git, signals and SIGKILLs:
 - **C** service and launch SIGKILLed at a step boundary: the restart resumes with only step 3, and the launch is counted twice;
 - **E** an API-key or unidentifiable login: the task is CRITICAL before any launch (no claim, no run, nothing counted);
 - **H** orphaned agent: waited for, stopped after its deadline, and the task reruns; an unidentified process is never killed;
@@ -513,7 +513,7 @@ worker:
 - The same test passed alone on the final code.
 - Details: [phase-status.md](phase-status.md#w4--autonomous-worker-operations-record-2026-10-22).
 
-**W4.1 watchdog evidence: `test_fc_watchdog.py`** (17 tests). Real `feature.py worker start` processes, real launch processes (native-cli backend, Supervisor) and the fake agent CLI. Timeouts are short and set in each test's own configuration only. Processes are synchronized by pid and marker files and bounded polling.
+**W4.1 watchdog evidence: `test_fc_watchdog.py`** (17 tests). Real `python -m feature_coordinator worker start` processes, real launch processes (native-cli backend, Supervisor) and the fake agent CLI. Timeouts are short and set in each test's own configuration only. Processes are synchronized by pid and marker files and bounded polling.
 
 Real-process tests:
 - **Hung agent:** SIGTERM ignored, no output, plus a setsid'd child that ignores SIGTERM. Stopped at its run deadline: one SIGTERM, then SIGKILL; the child is stopped by its run tag. The outcome is transient, and the retry starts only after both are gone (the retry's agent checks).
@@ -536,7 +536,7 @@ Every process test ends with cleanup assertions: no process of the test left, no
 
 **Repetition (final code and tests):** the W4.1 watchdog suite **together with** the W4 process suite passed **20 consecutive runs, 28/28 each** (560 test executions, 282–292 s per run). The code was checksummed before and after and was unchanged, and no test process was left. Earlier loops: 20/20 runs of the watchdog suite alone (17/17 each) on the previous test version, and one loop stopped by hand to apply a final change.
 
-**Optional soak.** `scripts/tests/feature_coordinator/fc_service_soak.py --workdir DIR [--tasks N] [--failure-every K] [--idle-seconds S]` runs the real service process over fake-agent tasks. It samples memory, file descriptors, threads and children every second, and checks invariants.
+**Optional soak.** `feature_coordinator/tests/fc_service_soak.py --workdir DIR [--tasks N] [--failure-every K] [--idle-seconds S]` runs the real service process over fake-agent tasks. It samples memory, file descriptors, threads and children every second, and checks invariants.
 
 The 2026-10-22 run (36 tasks, every 4th failing once, 120 s idle) passed every check:
 - 45 agent runs, one commit per task;
@@ -552,11 +552,11 @@ The 2026-10-22 run (36 tasks, every 4th failing once, 120 s idle) passed every c
 ### 14.1 W4.2 — real-agent smoke test (VERIFIED WITH REAL AGENTS, 2026-10-23)
 
 **Tooling (test-only, never imported by the coordinator):**
-- the harness `scripts/tests/feature_coordinator/fc_worker_smoke.py`;
+- the harness `feature_coordinator/tests/fc_worker_smoke.py`;
 - its offline tests `test_fc_worker_smoke.py` (38 tests).
 
 **What the harness does:**
-- **The real service path.** It drives `feature.py worker start --exit-when-idle` twice, in a disposable repository with its own state directory: launch, native-cli backend, the real CLI, then checkpoints and gates.
+- **The real service path.** It drives `python -m feature_coordinator worker start --exit-when-idle` twice, in a disposable repository with its own state directory: launch, native-cli backend, the real CLI, then checkpoints and gates.
 - **A controlled restart.** A test-only hook holds Backend's launch at the *production* cancel check after step 1. `worker stop` then defers the task before any step-2 agent exists, and a new service resumes it.
 - **An independent audit wrapper.** Every agent CLI call passes through it, and it refuses a session unless all of these hold:
   - the CLI binary is unchanged;
@@ -650,7 +650,7 @@ Details, command transcript summary and explicit unverified scenarios: [W4.4 acc
 The steps match tests E and A and the soak run. The example is **not** a real-agent run.
 
 1. **Worker starts.** systemd (or the operator) runs `worker start`. It takes the service lock, records its identity, holds `agent-exclusive` and runs RECOVERING: no stale claim, no in-flight launch. The feature is activated.
-2. **Backend begins.** `api` (Backend → Claude Code, `opus`) is eligible. The pre-launch checks pass (CLI present, subscription login), launch 1 is recorded write-ahead, `feature.py launch` starts, and the state is BUSY.
+2. **Backend begins.** `api` (Backend → Claude Code, `opus`) is eligible. The pre-launch checks pass (CLI present, subscription login), launch 1 is recorded write-ahead, `python -m feature_coordinator launch` starts, and the state is BUSY.
 3. **Two checkpoints complete.** Steps `models` and `service` each get a checkpoint commit (W3). `current.step` follows the claim's progress.
 4. **Subscription becomes unavailable.** In step 3 the CLI fails with "usage limit reached|<epoch>". The launch ends FAILED and the outcome is classified `subscription`.
 5. **Worker waits.** `api` is set back to READY with `next_attempt_at` = the reset time. The event `worker-subscription-unavailable` is recorded and the state is WAITING ("next attempt … (api: subscription)"). Nothing launches, and no API key or other model is tried. CLI and Frontend depend on `api`, so they wait too.
@@ -659,7 +659,7 @@ The steps match tests E and A and the soak run. The example is **not** a real-ag
 8. **Backend finishes.** Its gates pass and it is VERIFIED (`worker-task-verified`).
 9. **CLI begins.** `cmd` is now eligible and runs alone. Frontend is eligible too, but waits: one agent at a time.
 10. **Frontend finishes.** After CLI is verified, `view` (Codex) runs and is verified.
-11. **Feature becomes ready for integration.** All tasks are verified: "feature … is complete: ready for integration (`feature.py integrate … --apply`)". Integration and the PR remain operator steps.
+11. **Feature becomes ready for integration.** All tasks are verified: "feature … is complete: ready for integration (`python -m feature_coordinator integrate … --apply`)". Integration and the PR remain operator steps.
 12. **Worker becomes AVAILABLE** and idles: one bounded sleep per poll, no child processes, until an operator activates another feature.
 
 **Implemented and offline-verified:** every transition above, with the fake agent and the mock runners.

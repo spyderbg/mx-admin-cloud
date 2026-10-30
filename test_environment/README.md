@@ -32,7 +32,7 @@ Jump to: [Quick start](#quick-start) · [All available operations](#all-availabl
 
 Everything the test environment needs lives in this one directory — the sandbox, the
 issue tracking, and the execution strategies. It shares no code with the feature Worker
-(`scripts/feature.py`, `scripts/feature_coordinator/`):
+(`feature_coordinator/`, run as `python -m feature_coordinator`):
 
 ```
 test_environment/

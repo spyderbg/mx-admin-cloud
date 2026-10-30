@@ -17,8 +17,8 @@ configuration path (not stored in the repository).
 
 ```bash
 systemctl --user is-active mx-admin-worker
-python scripts/feature.py --project-config "$CFG" worker status
-python scripts/feature.py --project-config "$CFG" worker attention
+python -m feature_coordinator --project-config "$CFG" worker status
+python -m feature_coordinator --project-config "$CFG" worker attention
 ```
 
 ## Safety note

@@ -22,7 +22,7 @@ Phase 2 delivered the design and a skeleton with mock runners, a mock issue trac
 
 ## 2. Package map
 
-`scripts/feature_coordinator/` (D-13), entry point `scripts/feature.py`. Python 3.12 standard library, plus PyYAML only for loading the YAML example, and the installed GitHub CLI (`gh`) as an external program for live Issue operations **[V]**. Phase 3 modules are marked ³, Phase 4 modules ⁴, Phase 4 extension modules ⁴ˣ. `issues.py` was rewritten in Phase 4 (tracker types, ownership markers, the mock tracker).
+`feature_coordinator/` (D-13; at the repository root since 2026-10-30), run as `python -m feature_coordinator` (`__main__.py`) from the checkout root. Python 3.12 standard library, plus PyYAML only for loading the YAML example, and the installed GitHub CLI (`gh`) as an external program for live Issue operations **[V]**. Phase 3 modules are marked ³, Phase 4 modules ⁴, Phase 4 extension modules ⁴ˣ. `issues.py` was rewritten in Phase 4 (tracker types, ownership markers, the mock tracker).
 
 | Module | Responsibility |
 | --- | --- |
@@ -48,19 +48,19 @@ Phase 2 delivered the design and a skeleton with mock runners, a mock issue trac
 | `http_transport.py`³, `capabilities.py`³ | Loopback-only Chat Completions transport (streaming, partial tool calls, cancellation); capability validation |
 | `operations.py`³ | Containment self-test, real runner wiring per execution backend (W2), tracker selection (`make_tracker`)⁴ |
 | `native_backend.py`ᵂ² | The `native-cli` execution backend: subscription-only environment and status checks, supervision with run-tag cleanup, workspace-wide acceptance (NOT a sandbox) |
-| `worker.py`ᵂ², `worker_commands.py`ᵂ² | The Worker loop (`feature.py work`): dependencies, one writer per role, bounded launches; the `subscription-smoke` command |
+| `worker.py`ᵂ², `worker_commands.py`ᵂ² | The Worker loop (`python -m feature_coordinator work`): dependencies, one writer per role, bounded launches; the `subscription-smoke` command |
 | `workspace.py`ᵂ², `python_env.py`ᵂ², `native_smoke.py`ᵂ² | Workspace verification (identity, branch, base, no unfinished Git operation); Python interpreter discovery for `{python}` role commands; the bounded real-subscription smoke test |
-| `checkpoints.py`ᵂ³, `checkpoint_commands.py`ᵂ³ | Multi-step tasks: checkpoint records, the intent → commit → complete protocol, reconciliation and recovery, context reconstruction; `feature.py checkpoints` / `recover TASK` |
+| `checkpoints.py`ᵂ³, `checkpoint_commands.py`ᵂ³ | Multi-step tasks: checkpoint records, the intent → commit → complete protocol, reconciliation and recovery, context reconstruction; `python -m feature_coordinator checkpoints` / `recover TASK` |
 | `github_api.py`⁴ | The real GitHub adapter: `gh api --include` transport, retries, rate limits, pacing, pagination, response validation, sanitized errors |
 | `issue_sync.py`⁴ | Local state ⇄ Issues: create/adopt, managed block, labels, open/closed, progress comments, outbox, validated commands, reconciliation, test cleanup |
 | `escalation.py`⁴ | Human holds (`needs-human`) and releases |
 | `live_test.py`⁴, `github_commands.py`⁴ | The Phase 4 acceptance scenario; the `github`, `hold` and `release` commands |
 | `github_projects.py`⁴ˣ, `projects_local.py`⁴ˣ | Projects (v2) GraphQL client with the write guard; the local JSON board |
-| `project_sync.py`⁴ˣ, `project_commands.py`⁴ˣ, `live_projects.py`⁴ˣ | Board synchronization (status mapping, items, recovery); `feature.py github project …`; the live Projects test |
+| `project_sync.py`⁴ˣ, `project_commands.py`⁴ˣ, `live_projects.py`⁴ˣ | Board synchronization (status mapping, items, recovery); `python -m feature_coordinator github project …`; the live Projects test |
 
 ## 3. Configuration
 
-The documented example is [`project-config.example.yaml`](project-config.example.yaml). It must load **equal to** the built-in `default_config()` (`test_documented_example_equals_the_built_in_configuration` **[V]**; `python scripts/feature.py config`).
+The documented example is [`project-config.example.yaml`](project-config.example.yaml). It must load **equal to** the built-in `default_config()` (`test_documented_example_equals_the_built_in_configuration` **[V]**; `python -m feature_coordinator config`).
 
 | Role | Provider (runner) | Owned paths | Excluded |
 | --- | --- | --- | --- |
@@ -73,7 +73,7 @@ The documented example is [`project-config.example.yaml`](project-config.example
 - **Protected** (no role, no grant): `.git/**`, `.env`, `.env.*`, `**/.env`, `**/.env.*` (any depth, Phase 3), `content/**`, `data/**`, `backend/data/**`, `test_environment/mxfix/**`, `test_environment/mxissues/**`, `test_environment/testenv.local.toml` (Git-ignored per-developer test-environment overrides; a run that creates or changes it is rejected).
 - Phase 3 configuration sections: `runtime` (containment fixed to `bwrap`, timeouts, heartbeat, Claude budget, secret patterns, per-role command allowlists; gates are always offline), `lint_gates` (policy fixed to `block-new`) and `unsafe_gates` (§11).
 - **Approval-required** (only with a task grant): root instruction files (`CLAUDE.md`, `AGENTS.md`, `README.md`), `.gitignore`, `.gitlab-ci.yml`, `test_environment/testenv.toml` (also excluded from the automation role, which owns `test_environment/**`), `scripts/deploy.sh`, agent-tool configuration (`.claude/**`, `.cursor/**`, `.opencode/**`, `.aiassistant/**`, `.agents/**`), `.github/**`, `docker/**`, `docs_agents/architecture/**`, `docs_agents/README.md`.
-- Anything else, for example `package.json` at the root, is **unowned and denied**.
+- Anything else, for example `package.json` at the root, is **unowned and denied**. That includes the coordinator itself: `feature_coordinator/**` (its code, tests and systemd unit template) belongs to no role and is not approval-required, so no task grant can open it either (`test_the_coordinator_itself_is_writable_by_no_role`).
 
 ### 3.1 Ceilings the loader refuses to relax
 
@@ -204,7 +204,7 @@ Tests: 34 in `test_fc_paths.py` **[V]**.
 - **Lock order:** `coordinator → project → role → git`.
 - All locks are `flock(2)`: the kernel drops them when the holder dies, including on `SIGKILL` (`test_lock_held_by_another_process_and_released_when_it_crashes` **[V]**).
 - The state directory must be on a local filesystem. `fuse*` (including `fuseblk`, where this checkout lives), NFS/CIFS/SMB, sshfs and any unknown type are rejected (`test_unsupported_filesystems_are_rejected`, `test_the_repository_checkout_would_be_rejected_as_state_location` **[V]**).
-- `python scripts/feature.py doctor --apply` created `~/.local/state/mx-admin-agents` (ext4, mode 0700) on this host and passed the two-process `flock` contention self-test on 2026-10-17 **[V]**.
+- `python -m feature_coordinator doctor --apply` created `~/.local/state/mx-admin-agents` (ext4, mode 0700) on this host and passed the two-process `flock` contention self-test on 2026-10-17 **[V]**.
 
 ### 7.2 Claiming a task (atomic)
 
@@ -322,7 +322,7 @@ Plumbing runs no hooks. Commit trailers record `Feature:`, `Feature-Task:` and `
 | Transport | `require_tls: true`; `plain_http_exception: false` (D-15); `code_disclosure_allowed: false` (D-16) |
 
 - `chat_completions_url` appends `/chat/completions` exactly once and accepts a base URL with or without a trailing slash, or a full URL. It rejects duplicated `/v1` or suffixes, queries, fragments, embedded credentials and non-HTTP schemes.
-- Neither the endpoint address nor the key is printed (`feature.py providers`), and both are absent from tracked files.
+- Neither the endpoint address nor the key is printed (`python -m feature_coordinator providers`), and both are absent from tracked files.
 - The token estimate is deliberately conservative: UTF-8 bytes / 3.
 
 ### 9.4 Offline and error behavior (all mocked)
@@ -369,7 +369,7 @@ The demo uses a loopback mock endpoint (`127.0.0.1`, never contacted; the transp
 | `frontend-type-check` | `npm run type-check` | `frontend/` | 0 |
 | `frontend-build` | `npm run build -- --outDir /tmp/fc-frontend-dist --emptyOutDir` (output stays in the sandbox) | `frontend/` | 0 |
 | `frontend-tests` / `-content` / `-auth` | `npm run test:voices` / `test:content` / `test:auth` | `frontend/` | 0 — 29/29, 5/5, 8/8 |
-| `coordinator-tests` | `python -m pytest -q -p no:cacheprovider scripts/tests` | root | 0 — 290 passed, 4 opt-in skipped |
+| `coordinator-tests` | `python -m pytest -q -p no:cacheprovider scripts/tests feature_coordinator/tests` | root | 0 — 290 passed, 4 opt-in skipped |
 
 - The CLI has no test suite (Phase 0), so `cli-lint` and the per-task acceptance checks are its only gates. D-19: lint gates are **baseline-aware**: existing findings are reported, findings the feature introduces block (§17.5).
 
@@ -377,7 +377,7 @@ The demo uses a loopback mock endpoint (`127.0.0.1`, never contacted; the transp
 - Gate evidence is recorded with the HEAD it ran on. If HEAD moves while gates run, or between the gates and verification, they are re-run (bounded); then the task is deferred.
 - **Every gate runs in the gate sandbox** (Phase 3): the checkout read-only, no network, private HOME and `/tmp`, a timeout, and logs. There is no unsandboxed gate runner. `backend-tests` is listed in `unsafe_gates` and reported `blocked` without running until [B-7](backend-task-b7.md) is fixed.
 
-## 12. CLI (`python scripts/feature.py …`)
+## 12. CLI (`python -m feature_coordinator …`)
 
 | Command | Effect |
 | --- | --- |
@@ -429,7 +429,7 @@ The demo uses a loopback mock endpoint (`127.0.0.1`, never contacted; the transp
 
 ## 15. Limitations (as of Phase 3)
 
-- **Real agents run only through `feature.py launch --apply`** (directly or through the W2 Worker, `feature.py work`), with the configured execution backend. The default since W2 is `native-cli` — **no OS containment**, write scopes verified after each run ([worker-functional §3, §11](worker-functional.md#11-known-limitations)). With `bwrap` they are contained by bubblewrap; residual risks are in [agent-ownership §5](agent-ownership.md#5-residual-risks-operator-decisions-in-phase-status): readable runner credentials, network for Claude Code, protected-name creation inside a role's own root (rejected at commit), and unverified OAuth refresh.
+- **Real agents run only through `python -m feature_coordinator launch --apply`** (directly or through the W2 Worker, `python -m feature_coordinator work`), with the configured execution backend. The default since W2 is `native-cli` — **no OS containment**, write scopes verified after each run ([worker-functional §3, §11](worker-functional.md#11-known-limitations)). With `bwrap` they are contained by bubblewrap; residual risks are in [agent-ownership §5](agent-ownership.md#5-residual-risks-operator-decisions-in-phase-status): readable runner credentials, network for Claude Code, protected-name creation inside a role's own root (rejected at commit), and unverified OAuth refresh.
 - **No live remote model.** The HTTP transport reaches loopback servers only; capability validation has run only against the local fake server. `apply-patch` is declared by the profile but refused by the client.
 - **GitHub:** the live adapter exists (Phase 4) but writes only test features; no push or PR yet (Phase 5). Body updates are last-writer-wins, and relationships are Issue references, not GitHub sub-issues ([github-integration §14](github-integration.md#14-limitations)).
 - **`backend-tests` is blocked** until [B-7](backend-task-b7.md). Gates run against the working tree of the shared checkout; evidence is bound to the HEAD at verification time, and integration requires a clean tree.
@@ -441,7 +441,7 @@ The demo uses a loopback mock endpoint (`127.0.0.1`, never contacted; the transp
 
 | v5 Phase 2 exit criterion | Evidence **[V]** |
 | --- | --- |
-| A mock feature with Backend/CLI/Frontend tasks on **one branch** with the **one-PR** policy | `test_mock_feature_end_to_end_meets_the_phase2_exit_gate` and `feature.py demo`. Branches are `dev` and `feature/items-export` only; 3 serialized commits (backend, cli, frontend); 4 tasks verified, including the dynamically created Backend contract task; **1 PR**, and a second is refused; the foreign bug-workflow issue is untouched; a second backend writer is rejected; the feature ends in `review`, not `done` |
+| A mock feature with Backend/CLI/Frontend tasks on **one branch** with the **one-PR** policy | `test_mock_feature_end_to_end_meets_the_phase2_exit_gate` and `python -m feature_coordinator demo`. Branches are `dev` and `feature/items-export` only; 3 serialized commits (backend, cli, frontend); 4 tasks verified, including the dynamically created Backend contract task; **1 PR**, and a second is refused; the foreign bug-workflow issue is untouched; a second backend writer is rejected; the feature ends in `review`, not `done` |
 | Mocked remote Qwen configuration and offline/error behavior documented; no live connection | §9.3–§9.4; 31 tests in `test_fc_config_providers.py` and 18 in `test_fc_runners_issues.py`; the default transport refuses every request |
 | No dependent calls to the independent bug systems | AST import scan in both directions; `test_environment/mxfix` and `test_environment/mxissues` tracked and their `git status` empty; foreign issues are read-only |
 | Safety and approval model documented | §14 |
@@ -451,9 +451,9 @@ The demo uses a loopback mock endpoint (`127.0.0.1`, never contacted; the transp
 Run them:
 
 ```bash
-.venv/bin/python -m pytest -p no:cacheprovider scripts/tests      # 204 tests, all temporary repositories
-python scripts/feature.py demo                                     # the mock end-to-end feature
-python scripts/feature.py doctor                                   # state-dir suitability (read-only)
+.venv/bin/python -m pytest -p no:cacheprovider scripts/tests feature_coordinator/tests      # 204 tests then, all temporary repositories
+python -m feature_coordinator demo                                     # the mock end-to-end feature
+python -m feature_coordinator doctor                                   # state-dir suitability (read-only)
 ```
 
 ## 17. Phase 3 — runtime design
@@ -561,9 +561,9 @@ The transport is a minimal native Chat Completions client and the tool loop stay
 | No unproven enforcement assertions | Every claim above names a test or command; open items are marked **[U]** in [agent-ownership §5](agent-ownership.md#5-residual-risks-operator-decisions-in-phase-status) |
 
 ```bash
-.venv/bin/python -m pytest -p no:cacheprovider scripts/tests     # 294 collected: 290 passed, 4 opt-in skipped
-python scripts/feature.py sandbox-check --apply                   # the containment matrix (disposable repository)
-python scripts/feature.py runners                                 # installed CLIs and planned command lines
+.venv/bin/python -m pytest -p no:cacheprovider scripts/tests feature_coordinator/tests     # 294 collected then: 290 passed, 4 opt-in skipped
+python -m feature_coordinator sandbox-check --apply                   # the containment matrix (disposable repository)
+python -m feature_coordinator runners                                 # installed CLIs and planned command lines
 ```
 
 ## 19. Phase 4 — GitHub Issue coordination and task dependencies
@@ -586,7 +586,7 @@ Exit-gate evidence, live Issue numbers and test results: [phase-status](phase-st
 | Role of the board | A picture of the local state: GitHub Issues stay the tasks, the board shows their state. It is never a lock, a claim, a state source, a permission or an approval | [github-projects.md](github-projects.md) |
 | Target | `github.project` (owner, number, node ID; protected numbers). mx-admin-cloud: Project #2 `PVT_kwHOACEIPc4BndH-`; Project #1 (mxissues) protected. The generic default is disabled | `config.GitHubProjectConfig`, `MX_ADMIN_CLOUD_PROJECT` |
 | Status mapping | Derived from the existing task and feature state machines; Review = commit landed and gates running (claim checkpoint `verifying`) or feature review; Done only with evidence on the feature branch (tasks) or merge evidence (feature) | `ProjectSync.board_status`, [github-projects §3](github-projects.md#3-status-mapping-from-the-existing-state-machines) |
-| Synchronization | After every Issue sync, outside every coordinator lock; `run_task` shows In Progress and Review through a detached `feature.py github sync` process that holds no worker lock | `workflow.sync_board`, `operations.DetachedPublisher` |
+| Synchronization | After every Issue sync, outside every coordinator lock; `run_task` shows In Progress and Review through a detached `python -m feature_coordinator github sync` process that holds no worker lock | `workflow.sync_board`, `operations.DetachedPublisher` |
 | Ownership and protection | Feature authorization (`plan` or `associate`); the Issue ownership proof; item content verified; a write guard bound to the configured project; protected projects refused by node ID | `project_sync.py`, `github_projects.BoardGuard` |
 | Idempotency and recovery | `pending_add` + adoption by the Issue's project items; read-back after writes; drift restored | [github-projects §7](github-projects.md#7-recovery-and-reconciliation) |
 
@@ -601,7 +601,7 @@ Design, tests, limitations and the subscription smoke test: [worker-functional.m
 | Execution backend | `runtime.execution_backend`: `native-cli` (default; installed CLIs with the subscription logins, no OS sandbox) or `bwrap` (§17). Never a fallback between them | `operations.build_runners`, `native_backend.py` |
 | Subscription authentication | Allowlisted environment; the CLIs' status commands must report the claude.ai / ChatGPT subscription before a run; API keys refused; undetermined → operator confirmation; Claude Code's `init` event checked after the run | `native_backend.check_subscription`, `claude_session_problems` |
 | Role → agent → model | `roles.<r>.provider` + `roles.<r>.model` (`default` = CLI default), validated per agent kind; `roles.<r>.enabled` | `config.model_for`, `providers.check_model` |
-| Worker | `feature.py work`: READY tasks as separate `launch` processes, one per role, dependents after verification, bounded launches, graceful stop | `worker.py` |
+| Worker | `python -m feature_coordinator work`: READY tasks as separate `launch` processes, one per role, dependents after verification, bounded launches, graceful stop | `worker.py` |
 | Workspace | Identity recorded at activation, verified before every run, with branch, base revision and no unfinished Git operation | `workspace.py` |
 | Python | `{python}` in role commands → workspace `.venv`, else `python3` (Ubuntu 24.04 has no `python`) | `python_env.py` |
 | Commit messages | Coordinator-generated short subject (`<role>: <title>` or `<role>: task <id>`), never the task prompt or agent output; trailers unchanged | `gitops.commit_subject`, `workflow._commit` |
@@ -626,7 +626,7 @@ Design, policies, operator commands, systemd instructions, limitations: [worker-
 
 | Area | Design | Where |
 | --- | --- | --- |
-| Service | `feature.py worker start`: one long-running loop per state directory (`worker-service.lock`; a second service exits 73); one cycle = heartbeat → control → active feature → workspace → claims → in-flight launches → eligible task → launch → integrity → outcome | `service.py` |
+| Service | `python -m feature_coordinator worker start`: one long-running loop per state directory (`worker-service.lock`; a second service exits 73); one cycle = heartbeat → control → active feature → workspace → claims → in-flight launches → eligible task → launch → integrity → outcome | `service.py` |
 | Sequential | Default `worker.max_parallel: 1` (the service requires it; `work` defaults to it). The `agent-exclusive` flag makes `ClaimManager.claim` refuse a claim while another exists; `work --max-parallel N` keeps the W2 scheduler | `claims.py`, `worker_commands.py` |
 | Scheduling | `scheduling/<task>.json`: launches (write-ahead), attempts per category, next attempt, waiting, attention + action, in-flight launch (tagged `FC_WORKER_LAUNCH`), history; no new task states | `autonomy.py` |
 | Classification | transient / subscription / validation / critical / unknown (fails closed); not failures: verified, dependency, cancelled, interrupted, external | `autonomy.classify` |

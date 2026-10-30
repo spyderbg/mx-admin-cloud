@@ -96,7 +96,7 @@ In the **actual Worker shell** (the same terminal or service context):
 sysctl kernel.apparmor_restrict_unprivileged_userns          # must stay 1
 bash scripts/setup/setup-bwrap-apparmor.sh --check           # PASS, exit 0
 sudo aa-status | grep -E '^\s+(bwrap|unpriv_bwrap)$'         # both loaded in enforce mode
-python scripts/feature.py sandbox-check --apply              # the definitive test (project venv)
+python -m feature_coordinator sandbox-check --apply              # the definitive test (project venv)
 ```
 
 `sandbox-check --apply` runs the coordinator's own containment self-test in a disposable repository, inside every role's real sandbox, with a small Python probe (no AI model). A passing standalone `bwrap` smoke test **does not guarantee** every gate configuration is valid: use the project check, not an AI run, as the definitive environment test.
@@ -130,7 +130,7 @@ The profile lives in `/etc/apparmor.d/`, so `apparmor.service` loads it again at
 sysctl kernel.apparmor_restrict_unprivileged_userns          # still 1
 bash scripts/setup/setup-bwrap-apparmor.sh --check           # "installed by this script (receipt matches)" and PASS
 sudo aa-status | grep -E '^\s+(bwrap|unpriv_bwrap)$'
-python scripts/feature.py sandbox-check --apply
+python -m feature_coordinator sandbox-check --apply
 ```
 
 If an `apparmor-profiles` update changed the distribution file, `--check` still reports the installed copy as matching its receipt (the copy in `/etc/apparmor.d/` is not updated by the package). To move to the new version: `--rollback`, then `--apply`.
@@ -185,7 +185,7 @@ After a rollback, gates are blocked again on a restricted host (expected).
 - [ ] `kernel.apparmor_restrict_unprivileged_userns=1` remains in force.
 - [ ] No conflicting vendor or distro AppArmor bwrap profiles, and no local overrides.
 - [ ] `--check` passes in the intended runtime context (no confinement warning, or a deliberate one).
-- [ ] `python scripts/feature.py sandbox-check --apply` passes in that same context.
+- [ ] `python -m feature_coordinator sandbox-check --apply` passes in that same context.
 - [ ] Worker still treats sandbox setup failures as **critical** "gates could not run", not as validation errors.
 - [ ] Other bubblewrap users on the host still work (for example the Flatpak apps and GNOME features in use).
 - [ ] The execution backend is `native-cli`, or, with `bwrap`, no role uses Codex (nested sandbox limitation).

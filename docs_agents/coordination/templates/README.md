@@ -1,6 +1,6 @@
 # Coordination Templates (Phase 4)
 
-> Owner role: **coordination**. These are **examples of what the coordinator renders**, not forms to fill in by hand. The synchronizer (`scripts/feature_coordinator/issue_sync.py`) writes every Issue body, label and comment from the local state; the PR candidate comes from `workflow.FeatureCoordinator.integrate()`.
+> Owner role: **coordination**. These are **examples of what the coordinator renders**, not forms to fill in by hand. The synchronizer (`feature_coordinator/issue_sync.py`) writes every Issue body, label and comment from the local state; the PR candidate comes from `workflow.FeatureCoordinator.integrate()`.
 
 | Template | Rendered by | Used for |
 | --- | --- | --- |
