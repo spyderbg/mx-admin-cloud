@@ -1,7 +1,7 @@
 """The tracker-agnostic issue model and the IssueTracker interface every backend
 (trackers/gitlab.py, trackers/github.py) implements.
 
-Everything above this layer — issues.py, sync.py, scripts/mxfix/strategy/*.py — only
+Everything above this layer — issues.py, sync.py, test_environment/mxfix/strategy/*.py — only
 ever sees `Issue`/`Comment` and calls `IssueTracker` methods, never python-gitlab objects
 or raw GitHub API payloads. Selecting a backend is testenv.toml's [issues] tracker (see
 its comments), resolved by trackers.create().
@@ -214,7 +214,7 @@ class IssueTracker(ABC):
         TransitionError if the tracker doesn't show exactly that afterward.
         """
 
-    # -- cross-references for commits and PRs (scripts/mxfix/git_target.py) ----
+    # -- cross-references for commits and PRs (test_environment/mxfix/git_target.py) ----
 
     @abstractmethod
     def issue_url(self, number: int) -> str: ...

@@ -617,8 +617,9 @@ DEFAULT_PROTECTED = (
     "content/**",
     "data/**",
     "backend/data/**",
-    "scripts/mxfix/**",
-    "scripts/mxissues/**",
+    "test_environment/mxfix/**",
+    "test_environment/mxissues/**",
+    "test_environment/testenv.local.toml",
 )
 
 DEFAULT_APPROVAL_REQUIRED = (
@@ -627,7 +628,7 @@ DEFAULT_APPROVAL_REQUIRED = (
     "README.md",
     ".gitignore",
     ".gitlab-ci.yml",
-    "testenv.toml",
+    "test_environment/testenv.toml",
     "scripts/deploy.sh",
     ".claude/**",
     ".cursor/**",
@@ -689,7 +690,10 @@ def default_config() -> ProjectConfig:
         "automation": RoleConfig(
             "automation", "remote_qwen",
             ("scripts/**", "test_environment/**", "docs_agents/automation/**"),
-            ("scripts/mxfix/**", "scripts/mxissues/**", "scripts/deploy.sh"), enabled=False,
+            # testenv.toml sits inside test_environment/** but stays approval-required: an owned
+            # path needs no grant, so it is excluded here to keep the grant requirement.
+            ("test_environment/mxfix/**", "test_environment/mxissues/**", "test_environment/testenv.toml",
+             "test_environment/testenv.local.toml", "scripts/deploy.sh"), enabled=False,
         ),
         "coordination": RoleConfig("coordination", "claude", ("docs_agents/coordination/**",), model="sonnet"),
     }

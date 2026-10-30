@@ -243,18 +243,38 @@ def test_crash_during_a_task_is_recovered_and_the_task_reruns(coord: FeatureCoor
     assert coord.run_task("items-export.view").state is TaskState.VERIFIED
 
 
+def _absolute_imports(source: Path) -> list[str]:
+    names: list[str] = []
+    for node in ast.walk(ast.parse(source.read_text(encoding="utf-8"))):
+        names += [a.name for a in node.names] if isinstance(node, ast.Import) else \
+            [node.module or ""] if isinstance(node, ast.ImportFrom) and node.level == 0 else []
+    return names
+
+
 def test_the_coordinator_is_independent_of_the_bug_workflow_and_the_backend() -> None:
-    forbidden = ("mxfix", "mxissues", "src", "backend", "testenvlib")
-    for source in PACKAGE.glob("*.py"):
-        tree = ast.parse(source.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            names = [a.name for a in node.names] if isinstance(node, ast.Import) else \
-                [node.module or ""] if isinstance(node, ast.ImportFrom) and node.level == 0 else []
-            for name in names:
-                assert name.split(".")[0] not in forbidden, f"{source.name} imports {name}"
-    status = subprocess.run(["git", "-C", str(REPO_ROOT), "status", "--porcelain", "--", "scripts/mxfix",
-                             "scripts/mxissues"], capture_output=True, text=True, check=True).stdout
+    forbidden = ("mxfix", "mxissues", "src", "backend", "testenvlib", "testenv", "testenv_config", "testenv_seed",
+                 "issues")
+    sources = [*PACKAGE.rglob("*.py"), PACKAGE.parent / "feature.py"]
+    assert len(sources) > 40 and (PACKAGE / "workflow.py") in sources
+    for source in sources:
+        for name in _absolute_imports(source):
+            assert name.split(".")[0] not in forbidden, f"{source.name} imports {name}"
+    # `git status` of a path that no longer exists is empty as well, so the trees must be tracked here.
+    trees = ("test_environment/mxfix", "test_environment/mxissues")
+    tracked = subprocess.run(["git", "-C", str(REPO_ROOT), "ls-files", "--", *trees],
+                             capture_output=True, text=True, check=True).stdout.splitlines()
+    assert {"test_environment/mxfix/fixer.py", "test_environment/mxissues/tracker.py"} <= set(tracked), tracked
+    status = subprocess.run(["git", "-C", str(REPO_ROOT), "status", "--porcelain", "--", *trees],
+                            capture_output=True, text=True, check=True).stdout
     assert status == ""
+
+
+def test_the_test_environment_does_not_import_the_coordinator() -> None:
+    sources = [p for p in (REPO_ROOT / "test_environment").rglob("*.py") if "node_modules" not in p.parts]
+    assert len(sources) > 30 and REPO_ROOT / "test_environment" / "mxfix" / "fixer.py" in sources
+    for source in sources:
+        for name in _absolute_imports(source):
+            assert name.split(".")[0] not in ("feature_coordinator", "feature"), f"{source} imports {name}"
 
 
 # -- every run_task exit leaves the task in a defined, claimable state --------------------

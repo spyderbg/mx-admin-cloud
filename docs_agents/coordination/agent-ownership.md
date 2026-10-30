@@ -12,7 +12,7 @@
 | backend | Claude Code | `backend/`, `docs_agents/backend/` | `backend/data/` | `python -m pytest`, `python -m pylint`, `python -m compileall` |
 | cli | Claude Code | `cli/`, `docs_agents/cli/` | — | `python -m pytest`, `python -m pylint`, `kiddo-cli --help` |
 | frontend | Codex | `frontend/`, `docs_agents/frontend/` | `frontend/.env.development.local` (D-5: debug defaults unchanged) | Codex sandbox: commands run with **no network** |
-| automation | remote Qwen (local tool loop) | `scripts/`, `test_environment/`, `docs_agents/automation/` | `scripts/mxfix/`, `scripts/mxissues/`, `scripts/deploy.sh` | none; `find-replace` and `multi-find-replace` only, executed locally |
+| automation | remote Qwen (local tool loop) | `scripts/`, `test_environment/`, `docs_agents/automation/` | `test_environment/mxfix/`, `test_environment/mxissues/`, `test_environment/testenv.toml`, `test_environment/testenv.local.toml`, `scripts/deploy.sh` | none; `find-replace` and `multi-find-replace` only, executed locally |
 | coordination | Claude Code | `docs_agents/coordination/` | — | `python scripts/check_docs_agents.py` |
 
 - **Never writable by anyone:** `.git/**` and everything else outside the roots above. That includes:
@@ -39,7 +39,7 @@
 
 `test_containment_matrix_for_every_role` and `python scripts/feature.py sandbox-check --apply` run a probe **inside each role's real sandbox profile** in a disposable repository. The probe:
 
-- writes to 19 targets: every role's trees, a generated output, `.git`, protected and approval-required paths, the root, `scripts/mxfix`, `scripts/deploy.sh`;
+- writes to 19 targets: every role's trees, a generated output, `.git`, protected and approval-required paths, the root, `test_environment/mxfix`, `scripts/deploy.sh`;
 - reads the hidden `.env`;
 - writes outside the repository;
 - writes through a symlink into another role's tree;

@@ -22,50 +22,68 @@ Jump to: [Quick start](#quick-start) · [All available operations](#all-availabl
 [Execution strategies](#execution-strategies) ·
 [Known gaps](#known-gaps-sandbox) · [Troubleshooting](#troubleshooting)
 
+> **Moved from `scripts/` (2026-10-30).** `scripts/testenv.py`, `testenv.sh`, `testenv_config.py`,
+> `testenv_seed.py`, `app.py`, `issues.py`, `requirements.txt`, `testenvlib/`, `mxissues/` and
+> `mxfix/`, and the root `testenv.toml`, now live in this directory: run
+> `./test_environment/testenv.sh` instead of `./scripts/testenv.sh`. Move a root
+> `testenv.local.toml` here too: while the old file exists, `testenv.py run` and `issues.py`
+> refuse to run rather than silently ignore it. Runtime directories
+> (`.testenv/`, `.mxworktrees/`, `.mxissues/`, `.mxfix*`) stay at the repository root.
+
+Everything the test environment needs lives in this one directory — the sandbox, the
+issue tracking, and the execution strategies. It shares no code with the feature Worker
+(`scripts/feature.py`, `scripts/feature_coordinator/`):
+
 ```
 test_environment/
-  e2e/                  Playwright suite — its own npm package, deliberately outside frontend/
+  testenv.py             entry point for all three workstreams (every command below)
+  testenv.sh             its bash wrapper
+  testenv_seed.py        builds .testenv/ from the real content/ and backend/config/
+  testenv_config.py      rewrites the copied provider config to point at the stub
+  app.py                 native-mode runner: stub + uvicorn + built frontend/dist/ behind a proxy
+  testenvlib/            shared paths, ports, env-file allowlist, process and venv helpers
+  issues.py              issue tracking CLI, GitLab or GitHub (Workstream 2)
+  mxissues/              its implementation — tracker.py (interface), trackers/{gitlab,github}.py,
+                           config, sync, fingerprinting, sources/
+  mxfix/                 execution strategies implementation (Workstream 3) —
+                           fixer.py, codex_fixer.py, claude_fixer.py, worktree.py,
+                           git_target.py, strategy/
+  testenv.toml           execution strategies + issue tracker selection (tracked)
+  testenv.local.toml     your own overrides (gitignored, optional)
+  requirements.txt       python-gitlab + httpx for issues.py / mxfix (installed by scripts/setup_initial.py)
+  e2e/                   Playwright suite — its own npm package, deliberately outside frontend/
     playwright.config.ts
-    global-setup.ts      readiness probe, runs once before the suite
-    auth.setup.ts         real UI login, saves storageState for every other spec
-    fixtures/             selectors.ts, seed.ts, stub.ts, testEnv.ts, upload.png
-    specs/                02-login.spec.ts … 10-category-create.spec.ts (numbered — see below)
+    global-setup.ts        readiness probe, runs once before the suite
+    auth.setup.ts          real UI login, saves storageState for every other spec
+    fixtures/              selectors.ts, seed.ts, stub.ts, testEnv.ts, upload.png
+    specs/                 02-login.spec.ts … 10-category-create.spec.ts (numbered — see below)
   stub-provider/
     stub_server.py         stdlib-only HTTP stub for every redirected provider
 ```
 
-The issue tracking and execution strategies pieces this file also documents live
-elsewhere in the repo — this directory holds only the sandbox itself:
+What it uses from the rest of the repo, all read-only: the app itself (`backend/`,
+`frontend/`, `cli/requirements.txt`, `content/` as the seed source), the Docker stack
+(`docker/docker-compose.yml` plus its test overlay `docker/docker-compose.test.yml`), and
+the project's generic validators (`scripts/validate_build.py`, `validate_tests.py`,
+`validate_frontend_build.py`), which `run`'s check suite calls as subprocesses. Its
+runtime state stays at the repo root, all gitignored: `.testenv/`, `.mxworktrees/`,
+`.mxissues/`, `.mxfix*`.
 
-```
-scripts/testenv.py            entry point for all three workstreams (every command below)
-scripts/testenv.sh            its bash wrapper
-scripts/issues.py             issue tracking CLI, GitLab or GitHub (Workstream 2)
-scripts/mxissues/             its implementation — tracker.py (interface), trackers/{gitlab,github}.py,
-                               config, sync, fingerprinting, sources/
-scripts/mxfix/                execution strategies implementation (Workstream 3) —
-                               fixer.py, codex_fixer.py, claude_fixer.py, worktree.py,
-                               git_target.py, strategy/
-testenv.toml                  repo root — execution strategies + issue tracker selection (tracked)
-testenv.local.toml            repo root — your own overrides (gitignored, optional)
-```
-
-Everything is driven through **`scripts/testenv.py`** (or its `scripts/testenv.sh`
+Everything is driven through **`test_environment/testenv.py`** (or its `test_environment/testenv.sh`
 wrapper — same thing, picks a working Python for you). You should not normally need to
 invoke Docker, uvicorn, or Playwright directly.
 
 ## Quick start
 
 ```bash
-./scripts/testenv.sh doctor   # mode, ports, secret scan — run this first, always
-./scripts/testenv.sh up       # seeds .testenv/ if absent, starts the stack, waits for it
-./scripts/testenv.sh e2e      # installs Playwright once, runs the full 22-test suite
-./scripts/testenv.sh down     # stop
+./test_environment/testenv.sh doctor   # mode, ports, secret scan — run this first, always
+./test_environment/testenv.sh up       # seeds .testenv/ if absent, starts the stack, waits for it
+./test_environment/testenv.sh e2e      # installs Playwright, runs the 22-test suite (see "Known gaps (sandbox)")
+./test_environment/testenv.sh down     # stop
 ```
 
-(`python scripts/testenv.py <command>` works identically — `testenv.sh` only adds
-picking a Python interpreter and a stable `./scripts/testenv.sh` entry point matching
-the rest of `scripts/*.sh`.)
+(`python test_environment/testenv.py <command>` works identically — `testenv.sh` only adds
+picking a Python interpreter and a stable `./test_environment/testenv.sh` entry point.)
 
 ## All available operations
 
@@ -76,11 +94,11 @@ the rest of `scripts/*.sh`.)
 | `up [--build] [--simple-confirm] [--backend-port N] [--frontend-port N] [--stub-port N]` | Seeds if `.testenv/content` is empty, starts stub → backend → frontend (or the three containers, in Docker mode), waits for each to answer, prints the URLs. `--build` forces a Docker image rebuild (native mode always rebuilds the frontend bundle; there's no image to skip). |
 | `down [--purge]` | Stops everything. `--purge` also deletes `.testenv/` entirely (content, config, archive, the SQLite user DB, logs, Playwright artifacts) — the next `up`/`seed` starts from nothing. |
 | `reset [--simple-confirm] [--backend-port N] [--frontend-port N] [--stub-port N]` | `down` + wipe `.testenv/` + `seed` + `up`, in one call. The workhorse — run this between full E2E runs so every spec starts from the identical, byte-for-byte fixture. |
-| `e2e [--base-url URL] [--stub-url URL] [-- <playwright args>]` | Ensures the stack is up (starts it if not), installs `test_environment/e2e`'s npm deps and Playwright's Chromium on first use, then runs the suite. Anything after `--` is passed straight to `playwright test` — see [Running specs](#running-specs) below. |
+| `e2e [--base-url URL] [--stub-url URL] [-- <playwright args>]` | Ensures the stack is up (starts it if not), installs `test_environment/e2e`'s npm deps on first use, runs `npx playwright install chromium --with-deps` on **every** invocation, then runs the suite. On Linux, `--with-deps` installs OS packages through `sudo apt-get`, so it can stop at a sudo password prompt; to skip it, run `npx playwright test` from `test_environment/e2e` with `E2E_BASE_URL`/`E2E_STUB_URL` set yourself. Anything after `--` is passed straight to `playwright test` — see [Running specs](#running-specs) below. |
 | `logs [backend\|frontend\|stub] [--follow]` | Prints (or tails) that service's log. No argument prints all three. |
 | `status` | Shows what's currently running (pid + port in native mode, `docker compose ps` in Docker mode). |
 | `shell <backend\|frontend\|stub>` | Docker mode: opens a shell in that container. Native mode: there's no container — it tells you which directory the process runs from and how to tail its log instead. |
-| `run [--strategy report\|heal\|batch\|work] [--max-issues N] [--dry-run] [--print-config]` | Workstream 3: check → sync → select → (heal/work/batch) fix, driven by repo-root `testenv.toml`. `report` only files issues; `heal`/`work`/`batch` write code in `.mxworktrees/`, push branches, and open PRs — `work` skips the check/file step and goes straight to whatever's already filed. Full reference: [Execution strategies](#execution-strategies) below — read it, and run `--dry-run` first, before ever using `heal`/`work`/`batch` for real. |
+| `run [--strategy report\|heal\|batch\|work] [--max-issues N] [--dry-run] [--print-config]` | Workstream 3: check → sync → select → (heal/work/batch) fix, driven by `test_environment/testenv.toml`. `report` only files issues; `heal`/`work`/`batch` write code in `.mxworktrees/`, push branches, and open PRs — `work` skips the check/file step and goes straight to whatever's already filed. Full reference: [Execution strategies](#execution-strategies) below — read it, and run `--dry-run` first, before ever using `heal`/`work`/`batch` for real. |
 
 Every command accepts `--mode docker|native`, **placed before the command**
 (`testenv.py --mode docker up`, not `testenv.py up --mode docker`) — a subparser-defaults
@@ -88,8 +106,10 @@ quirk in Python's argparse makes the reverse silently discard the flag if it wer
 allowed at all, so it isn't; you'll get a clean argument-parsing error instead of a
 surprise. Omitted, it autodetects: Docker if the daemon answers, native otherwise.
 
-Both modes are validated end to end (all 22 specs green in each) against this repo's
-real backend and frontend.
+Both modes were validated end to end against this repo's real backend and frontend when
+the suite was written (all 22 specs green in each). **That is no longer true:** the
+frontend has changed since, and 11 of the 23 tests now fail. See
+[Known gaps (sandbox)](#known-gaps-sandbox).
 
 ## Configuration
 
@@ -117,7 +137,7 @@ just don't customize either and let both default together.
 `--mode docker` or `--mode native`, or omit it to autodetect (Docker if the daemon
 answers). Native mode needs no Docker at all — it runs the stub and `uvicorn` as plain
 subprocesses and serves a once-built `frontend/dist/` through a small stdlib
-static-file-plus-reverse-proxy server (`scripts/app.py`), mirroring `docker/nginx.conf`'s
+static-file-plus-reverse-proxy server (`test_environment/app.py`), mirroring `docker/nginx.conf`'s
 `/api/`, `/internal/`, `/content/` routing exactly. It deliberately never runs `npm run
 dev`: `frontend/vite.config.ts` serves `/content` from a **hardcoded `../content`** via
 `sirv`, which would silently expose the real content directory regardless of
@@ -135,7 +155,7 @@ costs a frontend rebuild, not something togglable per-request.
 `.testenv/test.env` (regenerated by every `seed`) holds dummy values only —
 `OPENAI_API_KEY=test-openai-key-not-real`, a fixed `DEFAULT_ADMIN_PASSWORD`, etc. Real
 values are never read: child processes get an **allowlist**-built environment
-(`scripts/testenvlib/envfile.py`'s `child_env()` — `PATH`/`HOME`/`LANG`/… plus whatever
+(`test_environment/testenvlib/envfile.py`'s `child_env()` — `PATH`/`HOME`/`LANG`/… plus whatever
 `.testenv/test.env` supplies, nothing else from your shell), specifically so a real key
 exported by having sourced `scripts/app.sh`/`scripts/deploy.sh` in the same shell can't
 leak in. `doctor` scans for this on every run and refuses to report success on a hit.
@@ -143,8 +163,8 @@ leak in. `doctor` scans for this on every run and refuses to report success on a
 Every provider key the backend reads is listed in `test.env`, as a dummy or as an empty
 value, never left out: the backend's `load_dotenv()` fills any unset variable from a real
 `backend/.env` or repo-root `.env`. A new provider key therefore needs an entry in
-`scripts/testenv_seed.py` (`_write_test_env`), with any dummy value defined in
-`scripts/testenvlib/paths.py`. `up` reuses an existing `test.env` rather than regenerating
+`test_environment/testenv_seed.py` (`_write_test_env`), with any dummy value defined in
+`test_environment/testenvlib/paths.py`. `up` reuses an existing `test.env` rather than regenerating
 it, so after such a change run `reset` (or `seed --force`) before the next `up`.
 
 ### The seeded fixture
@@ -153,7 +173,7 @@ it, so after such a change run `reset` (or `seed --force`) before the next `up`.
 slices only the row-aligned index CSVs — see
 [implementation_plan.md §3](../docs/test_environment/implementation_plan.md#3-seed-fixture--a-curated-subset-copied-from-the-real-content)
 for why. To change *which* categories/items are included, edit
-`scripts/testenvlib/paths.py`'s `KEPT_CATEGORY_ROWS` (root CSV row index → folder name)
+`test_environment/testenvlib/paths.py`'s `KEPT_CATEGORY_ROWS` (root CSV row index → folder name)
 and `KEPT_ITEM_ROWS` (per-category item row indices) — then update
 `test_environment/e2e/fixtures/seed.ts` to match, since that's what the specs assert
 against, and re-run `reset`. That file's header comment documents two behaviors that are
@@ -181,7 +201,7 @@ an image); a symlink there would follow straight through to real, tracked conten
 
 ### Issue tracker and execution-strategy configuration
 
-These have their own configuration — repo-root `testenv.toml`'s `[issues]` section
+These have their own configuration — `test_environment/testenv.toml`'s `[issues]` section
 (tracker choice, GitLab host/project, GitHub repo/project) plus the tracker's token in
 `.env`, and the rest of `testenv.toml` for execution strategies — documented where they're used rather than duplicated here: see
 [Issue tracking](#issue-tracking)'s [Choosing a tracker](#choosing-a-tracker) and
@@ -190,10 +210,10 @@ These have their own configuration — repo-root `testenv.toml`'s `[issues]` sec
 ## Running specs
 
 ```bash
-./scripts/testenv.sh e2e                                          # everything
-./scripts/testenv.sh e2e -- specs/06-item-create.spec.ts            # one file
-./scripts/testenv.sh e2e -- --headed specs/06-item-create.spec.ts   # watch it run
-./scripts/testenv.sh e2e -- --debug                                 # Playwright inspector
+./test_environment/testenv.sh e2e                                          # everything
+./test_environment/testenv.sh e2e -- specs/06-item-create.spec.ts            # one file
+./test_environment/testenv.sh e2e -- --headed specs/06-item-create.spec.ts   # watch it run
+./test_environment/testenv.sh e2e -- --debug                                 # Playwright inspector
 ```
 
 Spec files are numbered (`02-login.spec.ts` … `10-category-create.spec.ts`; `01` is
@@ -215,7 +235,7 @@ behind the frontend's `/api`/`/internal`/`/content` proxy, so it needs `E2E_STUB
 
 ## Issue tracking
 
-*(Workstream 2.)* `scripts/issues.py` replaces the origin document's `tasks.sqlite` (§2)
+*(Workstream 2.)* `test_environment/issues.py` replaces the origin document's `tasks.sqlite` (§2)
 with a real issue tracker — the self-hosted GitLab project or GitHub Issues — see
 [implementation_plan.md](../docs/test_environment/implementation_plan.md) Workstream 2
 for the original (GitLab-only) design and findings kept there for implementation
@@ -289,8 +309,8 @@ longer read. If `[issues.gitlab]` is ever empty while your environment still set
 move the values into `testenv.toml`/`testenv.local.toml` and delete them from `.env`.
 `GITLAB_TOKEN` stays in `.env`.
 
-Install `python-gitlab` via `scripts/requirements.txt` (already wired into
-`scripts/setup_initial.py`), or `pip install -r scripts/requirements.txt` directly into
+Install `python-gitlab` via `test_environment/requirements.txt` (already wired into
+`scripts/setup_initial.py`), or `pip install -r test_environment/requirements.txt` directly into
 whichever venv you're running `issues.py` from.
 
 **`issues.py doctor` runs first, always** (either tracker) — it's the only thing
@@ -377,7 +397,7 @@ GitLab's label names. **GitLab:** exactly one `status::*` label at a time, enfor
 computes the full label set and sends it as one replacement (`issue.labels = [...]`),
 never `add_labels`/`remove_labels` (separate calls that can race and leave two
 `status::` labels set). Every transition re-fetches the issue by `iid` afterward and
-asserts exactly the target status label survived — `mxissues/state.py`'s
+asserts exactly the target status label survived — `mxissues/tracker.py`'s
 `TransitionError` if it didn't. That read-back is the verification GitLab Free/Premium
 licensing doesn't give you client-side, and it costs one cheap GET.
 
@@ -496,10 +516,10 @@ python scripts/validate_build.py --json .testenv/artifacts/pylint.json
 Then:
 
 ```bash
-python scripts/issues.py sync --pytest .testenv/artifacts/pytest.xml            # dry run
-python scripts/issues.py sync --pytest .testenv/artifacts/pytest.xml --apply    # for real
-python scripts/issues.py sync --pylint .testenv/artifacts/pylint.json --apply
-python scripts/issues.py sync --e2e .testenv/artifacts/results.json --apply
+python test_environment/issues.py sync --pytest .testenv/artifacts/pytest.xml            # dry run
+python test_environment/issues.py sync --pytest .testenv/artifacts/pytest.xml --apply    # for real
+python test_environment/issues.py sync --pylint .testenv/artifacts/pylint.json --apply
+python test_environment/issues.py sync --e2e .testenv/artifacts/results.json --apply
 ```
 
 **`sync` defaults to a dry run** — creating issues in a shared tracker is outward-facing
@@ -555,8 +575,8 @@ issues.py reconcile                       set done on tool-owned issues somethin
 
 ## Execution strategies
 
-*(Workstream 3.)* `scripts/testenv.py run` is the origin document's executor (§3): it
-takes whatever `scripts/issues.py` has filed in the configured tracker
+*(Workstream 3.)* `test_environment/testenv.py run` is the origin document's executor (§3): it
+takes whatever `test_environment/issues.py` has filed in the configured tracker
 ([Issue tracking](#issue-tracking), above) and, depending on the selected
 **strategy**, either just reports on it or hands it to an AI coding agent running inside
 a throwaway git worktree. See
@@ -622,8 +642,8 @@ candidate broke it — see [The bisect fallback](#the-bisect-fallback-for-batch)
 
 ### `testenv.toml`
 
-Repo-root, tracked (deliberately not under `.testenv/`, which `reset --purge` deletes).
-Loaded via `tomllib` (stdlib), merged with a gitignored `testenv.local.toml` for
+Tracked, next to this README (deliberately not under `.testenv/`, which `reset --purge` deletes).
+Loaded via `tomllib` (stdlib), merged with a gitignored `test_environment/testenv.local.toml` for
 per-developer overrides (lower concurrency on a laptop, `push = false` while trusting a
 new fixer adapter, ...), then CLI flags, which always win:
 
@@ -642,13 +662,13 @@ that writes code should never execute against settings you haven't actually seen
 file's own comments document every setting in depth (especially the four strategy
 modes and why `max_new_issues` exists); this section doesn't repeat them.
 
-Unknown keys anywhere in the file are a hard error (`scripts/mxfix/config.py`'s
+Unknown keys anywhere in the file are a hard error (`test_environment/mxfix/config.py`'s
 `_from_dict`) — a typo'd setting fails loudly at load time instead of silently being
 ignored.
 
 ### The `Fixer` interface
 
-`scripts/mxfix/fixer.py` defines `FixTask`/`FixResult`/the `Fixer` Protocol so none of
+`test_environment/mxfix/fixer.py` defines `FixTask`/`FixResult`/the `Fixer` Protocol so none of
 `strategy/heal.py`, `strategy/work.py`, or `strategy/batch.py` hardcodes which CLI
 actually writes the fix — `[fixer] adapter` in `testenv.toml` picks `CodexFixer` or
 `ClaudeFixer`, and both
@@ -661,11 +681,11 @@ class Fixer(Protocol):
     def run(self, task: FixTask) -> FixResult: ...
 ```
 
-- **`CodexFixer`** (`scripts/mxfix/codex_fixer.py`) — `codex exec --cd <worktree>
+- **`CodexFixer`** (`test_environment/mxfix/codex_fixer.py`) — `codex exec --cd <worktree>
   --sandbox workspace-write --json --output-schema fix_result_schema.json
   --output-last-message <file> -` with the prompt piped via stdin. `preflight()` runs
   `codex doctor --json` and checks `overallStatus` and `checks["auth.credentials"]`.
-- **`ClaudeFixer`** (`scripts/mxfix/claude_fixer.py`) — `claude -p --output-format json
+- **`ClaudeFixer`** (`test_environment/mxfix/claude_fixer.py`) — `claude -p --output-format json
   --permission-mode bypassPermissions <prompt>`, cwd pinned to the worktree. Claude Code
   has no `--output-schema` equivalent, so the prompt itself asks for a fenced ` ```json `
   block in the final reply, parsed out the same way `mxissues/fingerprint.py` parses the
@@ -689,7 +709,7 @@ the enforcement layer that doesn't just trust the prompt.
 
 ### Worktrees
 
-`scripts/mxfix/worktree.py` creates every worktree under `.mxworktrees/`, branched off
+`test_environment/mxfix/worktree.py` creates every worktree under `.mxworktrees/`, branched off
 `[git] base_branch` (fetched fresh from `origin` first, never off a possibly-stale local
 branch of the same name). `.kilo/worktrees/` is a **different tool's** worktree
 directory, already in active use — `worktree.py` never lists, prunes, or touches
@@ -709,7 +729,7 @@ actually verified.
 ### Verifying a fix: reset, not just up
 
 Every heal/work attempt and every batch round's single verify runs `testenv.py reset`
-(not `up`) **inside the candidate's own worktree** — `scripts/mxfix/strategy/common.py`'s
+(not `up`) **inside the candidate's own worktree** — `test_environment/mxfix/strategy/common.py`'s
 `run_all_checks(..., reset_stack=True)`. Two reasons, both load-bearing, not just one:
 
 1. **The fixture must be byte-identical every time.** Earlier E2E specs delete items and
@@ -778,7 +798,7 @@ described under [State machine](#state-machine).
 
 **On GitLab it's a full GitLab issue URL, not a bare `#<iid>`** —
 this is a deliberate correction of the origin plan's literal example, not an oversight.
-The plan's pseudocode shows `Closes #<iid>`; `scripts/mxfix/git_target.py` uses
+The plan's pseudocode shows `Closes #<iid>`; `test_environment/mxfix/git_target.py` uses
 `Closes http://82.103.77.45/marxman/mx-admin/-/issues/<iid>` instead. Reason: the commit
 is pushed to **GitHub** (`spyderbg/mx-admin-cloud`) before it ever reaches GitLab, and
 GitHub parses that exact same `Closes #<number>` syntax against its **own** issue/PR
@@ -925,6 +945,20 @@ Nothing in this repository has run step 4 yet.
 
 ## Known gaps (sandbox)
 
+- **The specs have drifted from the frontend: 11 of 23 tests fail.** Measured 2026-10-30
+  in native mode after a fresh `reset`: 12 passed, 11 failed. The failing tests are all
+  four in `03-dashboard`, one each in `05-content-quirks`, `06-item-create`,
+  `07-item-images`, `09-category-archive-restore` and `10-category-create`, and both in
+  `08-item-delete`. Two causes have been confirmed:
+  - Selectors in `e2e/fixtures/selectors.ts` that no longer exist anywhere in
+    `frontend/src`, for example `.cd-card` (dashboard cards) and `.id-delete-item-btn`
+    (delete-item button).
+  - `06`/`10` expect stub TTS calls and get 0. Commit `84bc38e` made item voice and
+    image generation opt-in.
+
+  These are app/spec drift, not sandbox faults: the stack comes up and `02-login`,
+  `04-category-detail` and most of `05` still pass. Until the specs are refreshed, an
+  e2e failure is not evidence of a regression, and `run`'s e2e findings are noise.
 - **Four providers can't be redirected without a source change**: `elevenlabs_tts`,
   `static_tts`, `openai_tts` (hardcoded `API_BASE`/`ENDPOINT` module constants), and the
   `genai` SDK provider (`genai.Client(http_options=...)` never takes a base URL). Each is
@@ -947,7 +981,7 @@ Nothing in this repository has run step 4 yet.
 **`docker: command not found` right after installing/starting Docker Desktop.** Normal —
 Desktop adds `~/.docker/bin` to `PATH` via a shell-profile change that only takes effect
 in a *new* shell, even though the daemon is already up. `testenv.py`/`testenv.sh` fall
-back to the well-known install locations automatically (`scripts/testenvlib/dockerutil.py`)
+back to the well-known install locations automatically (`test_environment/testenvlib/dockerutil.py`)
 and `doctor` prints a note when it had to. If you invoke `docker`/`docker compose`
 yourself outside these scripts, either open a new terminal or
 `export PATH="$HOME/.docker/bin:$PATH"` first.
@@ -964,6 +998,6 @@ cleanly rather than stealing the port — but if something else on your machine 
 be using one of the ports above, pass `--backend-port`/`--frontend-port`/`--stub-port`.
 
 **A spec fails with counts or content that don't match this file's expectations.**
-Run `./scripts/testenv.sh seed --check-ts` — if `content/` changed since the last seed,
+Run `./test_environment/testenv.sh seed --check-ts` — if `content/` changed since the last seed,
 this reports exactly what drifted instead of leaving you to debug what looks like an app
 bug.

@@ -269,6 +269,6 @@ class GitLabTracker(IssueTracker):
         """The full issue URL, never a bare `#<iid>`: the fix commit is pushed to GitHub
         first, where a bare `Closes #7` would close an unrelated GitHub issue/PR numbered 7.
         GitLab's closing-pattern parser accepts a full URL; GitHub's ignores a non-github.com
-        one. See scripts/mxfix/git_target.py's module docstring.
+        one. See test_environment/mxfix/git_target.py's module docstring.
         """
         return self.issue_url(number)

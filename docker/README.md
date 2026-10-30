@@ -118,7 +118,7 @@ changed `requirements.txt`/`package.json`; use `--build` (as in the Quick start 
 A second, fully isolated stack for the sandbox test environment (Playwright E2E, the
 provider stub) — see `docs/test_environment/implementation_plan.md` for the design and
 `test_environment/README.md` for day-to-day commands. Everything below is driven
-through `python scripts/testenv.py` (or its `scripts/testenv.sh` wrapper); you should
+through `python test_environment/testenv.py` (or its `test_environment/testenv.sh` wrapper); you should
 not normally invoke `docker compose` directly, but the underlying invocation is:
 
 ```bash
@@ -139,8 +139,8 @@ instead of replacing, and the test stack silently double-publishes on the dev st
 dev and test stacks can run side by side without colliding.
 
 **Two run modes, same `.testenv/` tree.** Docker is not required — `python
-scripts/testenv.py` auto-detects whether a Docker daemon answers and falls back to
-**native mode** (`scripts/app.py`: stub + `uvicorn` + a built `frontend/dist/` served by
+test_environment/testenv.py` auto-detects whether a Docker daemon answers and falls back to
+**native mode** (`test_environment/app.py`: stub + `uvicorn` + a built `frontend/dist/` served by
 a small stdlib proxy) when it doesn't. Both modes share the identical seeded fixture,
 neutralised config, and stub — only how backend/frontend/stub run differs. Native mode's
 one hard rule: it never runs `npm run dev`, because `frontend/vite.config.ts` serves
@@ -149,7 +149,7 @@ real content directory regardless of `CONTENT_DIR`; `app.py` always builds
 `frontend/dist/` once and serves that instead.
 
 **Never symlink anything under `.testenv/`.** Every file there is a real copy
-(`scripts/testenv_seed.py`, `scripts/testenv_config.py`), asserted after every seed —
+(`test_environment/testenv_seed.py`, `test_environment/testenv_config.py`), asserted after every seed —
 the suite includes destructive specs (archive, delete item, delete image) that would
 follow a symlink straight into tracked, real content or `backend/config/`.
 

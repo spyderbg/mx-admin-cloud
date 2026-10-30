@@ -4,7 +4,7 @@
 Docker is not required to run the sandbox test environment. This script starts the
 same three logical services docker-compose.test.yml would (stub, backend, frontend),
 as plain subprocesses, isolated from any real dev stack by the absolute paths and
-dummy credentials in .testenv/test.env (see scripts/testenvlib/envfile.py's
+dummy credentials in .testenv/test.env (see test_environment/testenvlib/envfile.py's
 allowlist-based child_env()).
 
 The one trap this exists to avoid: frontend/vite.config.ts serves /content from a
@@ -15,11 +15,11 @@ build-time) and serves frontend/dist/ from a small stdlib static+proxy handler t
 forwards /api/, /internal/, /content/ to the backend, mirroring docker/nginx.conf.
 
 Usage:
-    python scripts/app.py start [--backend-port 48000] [--frontend-port 48001]
+    python test_environment/app.py start [--backend-port 48000] [--frontend-port 48001]
                                  [--stub-port 48002] [--simple-confirm] [--no-build]
-    python scripts/app.py stop
-    python scripts/app.py status
-    python scripts/app.py logs [backend|frontend|stub] [--follow]
+    python test_environment/app.py stop
+    python test_environment/app.py status
+    python test_environment/app.py logs [backend|frontend|stub] [--follow]
 """
 
 from __future__ import annotations

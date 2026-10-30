@@ -11,7 +11,7 @@ GitHub Issues are the **human-visible record** of feature work. They are never t
 
 | Rule | How it is enforced | Evidence |
 | --- | --- | --- |
-| Independent of `scripts/mxfix/` and `scripts/mxissues/` | Separate adapter (`github_api.py`) and synchronizer (`issue_sync.py`); no import, no shared tracker code, no shared state | AST import scan `test_the_coordinator_is_independent_of_the_bug_workflow_and_the_backend` **[V]**; `git status` of both trees empty (live check Q4) **[V]** |
+| Independent of `test_environment/mxfix/` and `test_environment/mxissues/` | Separate adapter (`github_api.py`) and synchronizer (`issue_sync.py`); no import, no shared tracker code, no shared state | AST import scan `test_the_coordinator_is_independent_of_the_bug_workflow_and_the_backend` **[V]**; both trees tracked and their `git status` empty (live check Q4) **[V]** |
 | Own label namespace `feature:*` | Every label write goes through `check_feature_labels`; labels are created only when missing and existing labels are never edited | `test_labels_are_feature_namespace_only_and_never_edited` **[V]**; live check Q2 **[V]** |
 | Bug-workflow Issues are never written | An Issue with `mx-auto`, `source::*` or `severity::*` fails ownership verification | `test_ownership_needs_every_proof`, `test_forged_and_foreign_issues_are_never_adopted_or_modified` **[V]** |
 | No bulk updates | The synchronizer only touches the Issues mapped to (or found by the exact idempotency key of) the records of one feature | live check Q compares every pre-existing Issue and PR before/after **[V]** |

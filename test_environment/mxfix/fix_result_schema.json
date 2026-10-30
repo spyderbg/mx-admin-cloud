@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "FixResult",
-  "description": "Final structured response for a Codex fix attempt (docs/test_environment/initial_spec.md §3's example, passed via `codex exec --output-schema`). Mapped onto scripts/mxfix/fixer.py's FixResult dataclass by CodexFixer.run().",
+  "description": "Final structured response for a Codex fix attempt (docs/test_environment/initial_spec.md §3's example, passed via `codex exec --output-schema`). Mapped onto test_environment/mxfix/fixer.py's FixResult dataclass by CodexFixer.run().",
   "type": "object",
   "required": ["status", "files_changed", "tests_added", "tests_passed", "tests_failed", "summary"],
   "additionalProperties": false,

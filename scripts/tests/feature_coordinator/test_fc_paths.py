@@ -38,8 +38,10 @@ def test_owned_paths_are_allowed(policy: PathPolicy, role: str, path: str) -> No
     ("cli", "backend/src/app.py", "owned by role 'backend'"),
     ("automation", "frontend/src/types/contentSchemas.ts", "generate_ts_schemas.py"),
     ("automation", "frontend/src/api/contentClient.ts", "generate_ts_client.py"),
-    ("automation", "scripts/mxfix/fixer.py", "protected"),
-    ("automation", "scripts/mxissues/sync.py", "protected"),
+    ("automation", "test_environment/mxfix/fixer.py", "protected"),
+    ("automation", "test_environment/mxissues/sync.py", "protected"),
+    ("automation", "test_environment/testenv.toml", "approval"),  # inside an owned tree, still needs a grant
+    ("automation", "test_environment/testenv.local.toml", "protected"),
     ("automation", "scripts/deploy.sh", "approval"),
     ("backend", "backend/data/users.db", "protected"),
     ("backend", "content/foods/items_ids.csv", "protected"),
@@ -86,6 +88,8 @@ def test_symlink_entries_themselves_are_denied(policy: PathPolicy, repo: Path) -
 
 def test_grants_only_for_approval_paths(policy: PathPolicy) -> None:
     assert policy.check("automation", "scripts/deploy.sh", grants=("scripts/deploy.sh",)).allowed
+    toml = "test_environment/testenv.toml"
+    assert policy.check("automation", toml, grants=(toml,)).allowed
     assert policy.check("coordination", "docs_agents/README.md", grants=("docs_agents/README.md",)).allowed
     with pytest.raises(ScopeViolationError, match="protected"):
         policy.validate_grants(("content/**",))
@@ -93,6 +97,29 @@ def test_grants_only_for_approval_paths(policy: PathPolicy) -> None:
         policy.validate_grants(("frontend/**",))
     # A grant never opens a protected path, even if passed straight to check().
     assert not policy.check("backend", ".env", grants=(".env",)).allowed
+
+
+@pytest.mark.parametrize("path", [
+    "test_environment/mxfix/fixer.py", "test_environment/mxfix/strategy/heal.py", "test_environment/mxfix/new.py",
+    "test_environment/mxissues/tracker.py", "test_environment/mxissues/trackers/github.py",
+    "test_environment/testenv.local.toml",
+])
+def test_the_test_environment_bug_workflow_is_protected_from_every_role(
+        policy: PathPolicy, config: ProjectConfig, path: str) -> None:
+    for role in (*config.roles, FULL_PROJECT):
+        decision = policy.check(role, path, grants=(path, "test_environment/**"))
+        assert not decision.allowed and "protected" in decision.reason, (role, decision.reason)
+    with pytest.raises(ScopeViolationError, match="protected"):
+        policy.validate_grants((path,))
+
+
+def test_testenv_toml_needs_a_grant_for_every_role(policy: PathPolicy, config: ProjectConfig) -> None:
+    toml = "test_environment/testenv.toml"
+    assert policy.owner_of(toml) is None
+    for role in (*config.roles, FULL_PROJECT):
+        decision = policy.check(role, toml)
+        assert not decision.allowed and "approval" in decision.reason, (role, decision.reason)
+    assert policy.validate_grants((toml,)) == (toml,)
 
 
 def test_full_project_needs_explicit_grants(policy: PathPolicy) -> None:

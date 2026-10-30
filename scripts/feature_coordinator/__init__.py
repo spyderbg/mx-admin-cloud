@@ -6,7 +6,7 @@ one coordinator, and exactly one final pull request per completed feature. See
 docs_agents/coordination/feature-workflow.md for the design and
 docs/multiple_agents/agents_prompt_v5.md for the governing assignment.
 
-This package is deliberately independent of scripts/mxfix/ and scripts/mxissues/ (a
+This package is deliberately independent of test_environment/mxfix/ and test_environment/mxissues/ (a
 separate bug-finding/repair system) and of the backend: it imports neither, and a test
 enforces that.
 

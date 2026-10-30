@@ -1,7 +1,7 @@
 # Test-stack override, layered on top of the untouched docker/docker-compose.yml.
 # NEVER edit docker-compose.yml for test purposes — this file only adds isolation.
 #
-# Invocation (see scripts/testenv.py / docs/test_environment/implementation_plan.md §1b):
+# Invocation (see test_environment/testenv.py / docs/test_environment/implementation_plan.md §1b):
 #
 #   docker compose \
 #     -f docker/docker-compose.yml \
@@ -15,7 +15,7 @@
 # the dev stack's 9000/9001 as well as its own.
 #
 # All paths here are absolute, sourced from .testenv/test.env (TEST_CONTENT_DIR etc,
-# written by scripts/testenv_seed.py) — never relative. --project-directory pins the
+# written by test_environment/testenv_seed.py) — never relative. --project-directory pins the
 # *base* file's own relative paths (../content, ../backend/config) to docker/
 # regardless of caller cwd; this file avoids relative paths entirely so that pin
 # cannot matter either way.

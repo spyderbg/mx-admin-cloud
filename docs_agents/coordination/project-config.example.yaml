@@ -59,7 +59,9 @@ roles:                                   # max_writers is fixed to 1 per role (v
     provider: remote_qwen
     enabled: false                       # disabled: its tasks are never run (no request to the remote Qwen)
     owned_paths: ["scripts/**", "test_environment/**", "docs_agents/automation/**"]
-    excluded_paths: ["scripts/mxfix/**", "scripts/mxissues/**", "scripts/deploy.sh"]
+    # testenv.toml is inside test_environment/** but approval-required; owned paths need no grant, so exclude it
+    excluded_paths: ["test_environment/mxfix/**", "test_environment/mxissues/**", "test_environment/testenv.toml",
+                     "test_environment/testenv.local.toml", "scripts/deploy.sh"]
     max_writers: 1
   coordination:
     provider: claude                     # configurable
@@ -77,8 +79,9 @@ protected_paths:
   - "content/**"
   - "data/**"
   - "backend/data/**"
-  - "scripts/mxfix/**"                   # independent bug-finding/repair system
-  - "scripts/mxissues/**"                # independent bug-finding/repair system
+  - "test_environment/mxfix/**"          # independent bug-finding/repair system
+  - "test_environment/mxissues/**"       # independent bug-finding/repair system
+  - "test_environment/testenv.local.toml"  # per-developer test-env overrides (Git-ignored)
 
 # Writable only with an explicit, task-specific operator grant (v5 §3).
 approval_required_paths:
@@ -87,7 +90,7 @@ approval_required_paths:
   - "README.md"
   - ".gitignore"
   - ".gitlab-ci.yml"
-  - "testenv.toml"
+  - "test_environment/testenv.toml"
   - "scripts/deploy.sh"
   - ".claude/**"
   - ".cursor/**"

@@ -1,5 +1,11 @@
 # Test Environment + GitLab Issue Tracking for mx-admin-cloud
 
+> **Migration note (2026-10-30):** this plan is kept as written. Its `scripts/testenv*.py`,
+> `scripts/testenvlib/`, `scripts/mxissues/`, `scripts/mxfix/`, `scripts/issues.py`,
+> `scripts/app.py`, `scripts/requirements.txt` and root `testenv.toml`/`testenv.local.toml`
+> now live under [`test_environment/`](../../test_environment/README.md), which is the
+> current reference.
+
 > **Status:** plan, not yet implemented. Nothing in the repo has been changed except the
 > addition of this file.
 > **Origin document:** [initial_spec.md](initial_spec.md) — the architecture proposal

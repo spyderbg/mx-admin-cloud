@@ -1,5 +1,5 @@
-# Configuration for `scripts/testenv.py run` (Workstream 3 — selectable execution
-# strategies), plus the [issues] tracker settings `scripts/issues.py` shares with it.
+# Configuration for `test_environment/testenv.py run` (Workstream 3 — selectable execution
+# strategies), plus the [issues] tracker settings `test_environment/issues.py` shares with it.
 # Tracked in git — so never put a token here (those stay in .env) — and deliberately NOT
 # under .testenv/, which `reset --purge` deletes; your settings here would otherwise
 # vanish the next time someone resets the sandbox. Per-developer overrides go in a
@@ -109,7 +109,7 @@ max_new_issues = 1
 
 [fixer]
 # "codex" or "claude" — which CLI actually writes the fix. Both implement the same
-# Fixer protocol (scripts/mxfix/fixer.py), so switching adapters needs no other change
+# Fixer protocol (test_environment/mxfix/fixer.py), so switching adapters needs no other change
 # here. See test_environment/README.md's "Execution strategies" section for exactly how
 # each is invoked (sandbox/permission flags, JSON output parsing) and what "preflight"
 # checks before either ever touches an issue.
@@ -160,7 +160,7 @@ open_pr = true
 
 [issues]
 # Which issue tracker findings are filed into and "heal"/"work"/"batch" pick issues from —
-# used by `testenv.py run` AND by `scripts/issues.py`. Both backends share the same
+# used by `testenv.py run` AND by `test_environment/issues.py`. Both backends share the same
 # workflow (open -> in-progress -> done, plus needs-human), labels (mx-auto, source::*,
 # severity::*), fingerprint dedup and ownership rule; they differ only in where the
 # workflow status is stored. See test_environment/README.md's "Issue tracking" section.

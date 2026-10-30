@@ -42,7 +42,7 @@ SELF_TEST_FILES = {
     "frontend/src/view.ts": "export const views = []\n",
     "frontend/src/types/contentSchemas.ts": "// generated\n",
     "scripts/e2e_check.py": "print('ok')\n",
-    "scripts/mxfix/fixer.py": "# independent bug workflow\n",
+    "test_environment/mxfix/fixer.py": "# independent bug workflow\n",
     "scripts/deploy.sh": "#!/bin/sh\n",
     "test_environment/README.md": "# test env\n",
     "content/foods/items.csv": "id\n",
@@ -58,7 +58,7 @@ SELF_TEST_FILES = {
 UNTRACKED_SECRETS = {".env": "SECRET=do-not-read\n", "backend/.env.local": "SECRET=nested\n"}
 WRITE_TARGETS = (
     "backend/src/probe.py", "backend/data/probe.db", "cli/src/probe.py", "frontend/src/probe.ts",
-    "frontend/src/types/probeSchemas.ts", "scripts/probe.py", "scripts/mxfix/probe.py", "scripts/deploy.sh",
+    "frontend/src/types/probeSchemas.ts", "scripts/probe.py", "test_environment/mxfix/probe.py", "scripts/deploy.sh",
     "test_environment/probe.md", "content/probe.csv", "docs_agents/backend/probe.md", "docs_agents/cli/probe.md",
     "docs_agents/frontend/probe.md", "docs_agents/automation/probe.md", "docs_agents/coordination/probe.md",
     "docs_agents/architecture/probe.md", "README.md", "probe-at-root.txt", ".git/probe",
@@ -195,7 +195,7 @@ def containment_self_test(config: ProjectConfig, workdir: Path | None = None) ->
             report.repo_unchanged_outside_roots = False
             report.mismatches.append("a write escaped the sandbox (outside file or a new commit)")
         protected_changed = [rel for rel in ("backend/data/users.db", "content/foods/items.csv", "README.md",
-                                             "scripts/mxfix/fixer.py", "scripts/deploy.sh")
+                                             "test_environment/mxfix/fixer.py", "scripts/deploy.sh")
                              if (repo / rel).read_text(encoding="utf-8") != SELF_TEST_FILES[rel]]
         if protected_changed:
             report.repo_unchanged_outside_roots = False

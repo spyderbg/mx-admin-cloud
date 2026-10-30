@@ -9,7 +9,7 @@ The v4 model:
 - one serialized Git coordinator;
 - exactly one PR per completed feature ([architecture §11](architecture/README.md#11-v4-feature-development-architecture-design-baseline-for-phases-27)).
 
-The `scripts/mxfix/` and `scripts/mxissues/` bug workflow is a **separate system** and is not part of it.
+The `test_environment/mxfix/` and `test_environment/mxissues/` bug workflow is a **separate system** and is not part of it.
 
 ## Rules for this tree
 
@@ -51,7 +51,7 @@ Planned later per the v4 layout (not created as placeholders; the Phase 2–4 an
 | Backend | [`backend/README.md`](../backend/README.md) | [`backend/CLAUDE.md`](../backend/CLAUDE.md), [`backend/code_improvements.md`](../backend/code_improvements.md), [`backend/docs/openapi.yaml`](../backend/docs/openapi.yaml) (stale snapshot) |
 | CLI | [`cli/README.md`](../cli/README.md) | [`cli/CLAUDE.md`](../cli/CLAUDE.md) |
 | Frontend | [`frontend/README.md`](../frontend/README.md) | [`frontend/CLAUDE.md`](../frontend/CLAUDE.md), [`frontend/code_improvements.md`](../frontend/code_improvements.md), [`frontend/docs/`](../frontend/docs/types-usage.md) (`types-usage.md`, `item-voices-api.md`, `backend-regeneration-agent-tasks.md`, legacy `openapi.yaml`) |
-| Test environment and automation | [`test_environment/README.md`](../test_environment/README.md) | [`docs/test_environment/implementation_plan.md`](../docs/test_environment/implementation_plan.md), [`docs/test_environment/initial_spec.md`](../docs/test_environment/initial_spec.md), [`docs/test_environment/what_next.md`](../docs/test_environment/what_next.md), [`testenv.toml`](../testenv.toml) |
+| Test environment and automation | [`test_environment/README.md`](../test_environment/README.md) | [`docs/test_environment/implementation_plan.md`](../docs/test_environment/implementation_plan.md), [`docs/test_environment/initial_spec.md`](../docs/test_environment/initial_spec.md), [`docs/test_environment/what_next.md`](../docs/test_environment/what_next.md), [`test_environment/testenv.toml`](../test_environment/testenv.toml) |
 | Docker | [`docker/README.md`](../docker/README.md) | — |
 
 Existing agent-tool configuration (rules, prompts, plans) lives in `.claude/`, `.cursor/`, `.opencode/`, `.aiassistant/`, `.agents/`, `backend/.claude/`, `backend/.cursor/` and `frontend/.cursor/`. It is preserved and not indexed page by page.

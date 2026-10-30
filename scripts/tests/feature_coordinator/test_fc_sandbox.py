@@ -44,15 +44,21 @@ def run_in(plan, *command: str, tmp: Path) -> subprocess.CompletedProcess[str]:
 
 def test_writable_roots_and_read_only_islands(repo3: Path, config: ProjectConfig) -> None:
     builder = SandboxBuilder(repo3, config)
+    for rel in ("test_environment/testenv.toml", "test_environment/testenv.local.toml"):
+        (repo3 / rel).write_text("strategy = \"report\"\n", encoding="utf-8")
     assert builder.writable_roots("backend") == ["backend", "docs_agents/backend"]
     assert builder.writable_roots("automation") == ["docs_agents/automation", "scripts", "test_environment"]
     overlays = builder.readonly_overlays("automation", builder.writable_roots("automation"))
-    assert "scripts/mxfix" in overlays and "scripts/deploy.sh" in overlays
+    assert {"test_environment/mxfix", "test_environment/testenv.toml", "test_environment/testenv.local.toml",
+            "scripts/deploy.sh"} <= set(overlays)
     assert "backend/data" in builder.readonly_overlays("backend", ["backend"])
     # A nested env file inside a role root is protected (D-5: debug defaults stay unchanged).
     assert "frontend/.env.development.local" in builder.readonly_overlays("frontend", ["frontend"])
     # Approval-required paths become writable only with a grant.
     assert builder.writable_roots("automation", ("scripts/deploy.sh",)).count("scripts/deploy.sh") == 1
+    granted = ("test_environment/testenv.toml",)
+    overlays = builder.readonly_overlays("automation", builder.writable_roots("automation", granted), granted)
+    assert "test_environment/testenv.toml" not in overlays and "test_environment/testenv.local.toml" in overlays
 
 
 def test_untracked_secrets_are_hidden_tracked_files_are_not(repo3: Path, config: ProjectConfig) -> None:
@@ -124,7 +130,7 @@ def test_containment_matrix_for_every_role(config: ProjectConfig) -> None:
     assert "frontend/src/types/probeSchemas.ts" not in written["automation"]  # the generator's role may not
     for role, result in report.roles.items():
         assert result["writes"][".git/probe"] != "written" and result["git_commit"] == "refused", role
-        assert result["writes"]["scripts/mxfix/probe.py"] != "written", role
+        assert result["writes"]["test_environment/mxfix/probe.py"] != "written", role
         assert result["secret_read"].startswith("denied"), role
 
 
