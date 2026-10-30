@@ -419,6 +419,7 @@ rm ~/.config/systemd/user/mx-admin-worker.service && systemctl --user daemon-rel
 1. `systemctl --user status mx-admin-worker` shows the exit code.
 2. Exit **78**: run `feature.py worker health` and read the last reason, or `worker-startup.json`. Fix the cause, then `systemctl --user reset-failed mx-admin-worker && systemctl --user start mx-admin-worker`.
 3. Exit **73**: another service owns the state directory (`feature.py worker status` shows which pid).
+   Exit **78** with `pre-relocation test environment path(s)` in the journal: the project file predates the `test_environment/` relocation; migrate it ([operations §11](operations.md#11-test-environment-relocation-updating-the-desktop-worker-2026-10-30)).
 4. Then `feature.py worker attention`, which names the action for each held task.
 
 ## 12. Logging, sanitization, retention

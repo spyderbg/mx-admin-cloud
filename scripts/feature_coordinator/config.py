@@ -48,8 +48,9 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 from .errors import ConfigError, ProviderError
 from .providers import (
@@ -378,6 +379,22 @@ def _check_pattern(pattern: str, *, allow_glob: bool) -> None:
             raise ConfigError(f"owned/excluded pattern {pattern!r} may only be '<dir>/**' or an exact path")
 
 
+@lru_cache(maxsize=None)
+def _regex(pattern: str) -> re.Pattern[str]:
+    any_depth = pattern.startswith("**/")
+    body = pattern[3:] if any_depth else pattern
+    subtree = body.endswith("/**")
+    body = body[:-3] if subtree else body
+    parts = [re.escape(seg).replace(r"\*", "[^/]*") for seg in body.split("/")]
+    prefix = "(?:.*/)?" if any_depth else ""
+    return re.compile(prefix + "/".join(parts) + ("(/.*)?" if subtree else "") + r"\Z")
+
+
+def matches(pattern: str, rel: str) -> bool:
+    """True if the repository-relative POSIX path *rel* matches *pattern*."""
+    return bool(_regex(pattern).match(rel))
+
+
 def _prefix(pattern: str) -> tuple[str, bool]:
     """(path, is_subtree) for an owned pattern."""
     if pattern.endswith("/**"):
@@ -437,12 +454,36 @@ def validate(config: ProjectConfig) -> None:
     for name, argv in config.gates.items():
         if not argv or not all(isinstance(arg, str) and arg for arg in argv):
             raise ConfigError(f"gate {name!r} must be a non-empty argv list of strings")
+    _validate_test_environment(config)
     _validate_gates_and_runtime(config)
     _validate_github(config.github)
     _validate_intake(config)
     _validate_worker(config.worker)
     if not config.allowed_state_filesystems or any(fs.startswith("fuse") for fs in config.allowed_state_filesystems):
         raise ConfigError("allowed_state_filesystems must be non-empty and must not include FUSE filesystems")
+
+
+def _validate_test_environment(config: ProjectConfig) -> None:
+    """Fail closed on a policy written before the test environment moved into test_environment/."""
+    def covered(patterns: Iterable[str], pattern: str) -> bool:
+        probe = pattern[:-2] + "probe" if pattern.endswith("/**") else pattern
+        return any(matches(p, probe) for p in patterns)
+    hint = "; migrate the file with scripts/migrate_project_config.py"
+    listed = (*config.protected, *config.approval_required, *(p for r in config.roles.values() for p in r.excluded))
+    stale = sorted(set(listed) & set(RELOCATED_PATHS))
+    if stale:
+        raise ConfigError(f"pre-relocation test environment path(s) {stale}, now under test_environment/{hint}")
+    for pattern in TEST_ENVIRONMENT_PROTECTED:
+        if not covered(config.protected, pattern):
+            raise ConfigError(f"protected_paths must cover {pattern!r}{hint}")
+    toml = TEST_ENVIRONMENT_APPROVAL_REQUIRED
+    if covered(config.protected, toml):
+        return
+    if not covered(config.approval_required, toml):
+        raise ConfigError(f"approval_required_paths must cover {toml!r}{hint}")
+    for name, role in config.roles.items():
+        if covered(role.owned, toml) and not covered(role.excluded, toml):
+            raise ConfigError(f"role {name!r} owns {toml!r} without excluding it, so it needs no approval grant{hint}")
 
 
 def _validate_gates_and_runtime(config: ProjectConfig) -> None:
@@ -621,6 +662,19 @@ DEFAULT_PROTECTED = (
     "test_environment/mxissues/**",
     "test_environment/testenv.local.toml",
 )
+
+# The test environment moved from scripts/ (and the repository root) into test_environment/ on
+# 2026-10-30. A machine-local project file written before that protects the old locations, which
+# leaves the new ones writable, so validation refuses it until it is migrated.
+RELOCATED_PATHS = {
+    "scripts/mxfix/**": "test_environment/mxfix/**",
+    "scripts/mxissues/**": "test_environment/mxissues/**",
+    "testenv.toml": "test_environment/testenv.toml",
+    "testenv.local.toml": "test_environment/testenv.local.toml",
+}
+TEST_ENVIRONMENT_PROTECTED = ("test_environment/mxfix/**", "test_environment/mxissues/**",
+                              "test_environment/testenv.local.toml")
+TEST_ENVIRONMENT_APPROVAL_REQUIRED = "test_environment/testenv.toml"
 
 DEFAULT_APPROVAL_REQUIRED = (
     "CLAUDE.md",

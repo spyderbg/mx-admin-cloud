@@ -23,13 +23,11 @@ same policy; the Git coordinator re-checks every committed path against it.
 from __future__ import annotations
 
 import os
-import re
 from dataclasses import dataclass
-from functools import lru_cache
 from pathlib import Path, PurePosixPath
 from typing import Iterable
 
-from .config import FULL_PROJECT, ProjectConfig
+from .config import FULL_PROJECT, ProjectConfig, matches
 from .errors import ScopeViolationError
 
 GENERATED_OUTPUTS: tuple[tuple[str, str], ...] = (
@@ -42,22 +40,6 @@ GENERATED_OUTPUTS: tuple[tuple[str, str], ...] = (
     ("docs_agents/backend/services/*/openapi.yaml", "scripts/export_openapi.py --docs-agents"),
     ("docs_agents/backend/api/openapi.yaml", "scripts/export_openapi.py --docs-agents"),
 )
-
-
-@lru_cache(maxsize=None)
-def _regex(pattern: str) -> re.Pattern[str]:
-    any_depth = pattern.startswith("**/")
-    body = pattern[3:] if any_depth else pattern
-    subtree = body.endswith("/**")
-    body = body[:-3] if subtree else body
-    parts = [re.escape(seg).replace(r"\*", "[^/]*") for seg in body.split("/")]
-    prefix = "(?:.*/)?" if any_depth else ""
-    return re.compile(prefix + "/".join(parts) + ("(/.*)?" if subtree else "") + r"\Z")
-
-
-def matches(pattern: str, rel: str) -> bool:
-    """True if the repository-relative POSIX path *rel* matches *pattern*."""
-    return bool(_regex(pattern).match(rel))
 
 
 def _matches_any(patterns: Iterable[str], rel: str) -> bool:

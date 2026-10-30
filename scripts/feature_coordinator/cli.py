@@ -63,9 +63,10 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
+from .autonomy import EXIT_DO_NOT_RESTART
 from .claims import heartbeat_age
 from .config import ProjectConfig, default_config, load_config
-from .errors import CoordinatorError
+from .errors import ConfigError, CoordinatorError
 from .locks import ProcessIdentity
 from .model import Task, validate_dag
 from .providers import OpenAICompatibleProfile, check_transport, resolve_endpoint
@@ -290,4 +291,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         return int(args.func(args, config))
     except (CoordinatorError, OSError, ValueError) as exc:
         sys.stderr.write(f"error: {exc}\n")
-        return 1
+        # A refused configuration (e.g. a stale project file) is not retried by the systemd unit.
+        worker_start = (args.command, getattr(args, "worker_command", None)) == ("worker", "start")
+        return EXIT_DO_NOT_RESTART if worker_start and isinstance(exc, ConfigError) else 1
