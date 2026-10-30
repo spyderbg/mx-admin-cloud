@@ -273,28 +273,33 @@ W4.4 is closed as **supervised bounded acceptance**. Do **not** install/enable s
 
 The test environment moved from `scripts/` into `test_environment/`. The Worker's protected and approval-required paths moved with it. A machine-local project file written before the move still lists `scripts/mxfix/**`, `scripts/mxissues/**` and `testenv.toml`. Those entries protect nothing any more, and the automation role could write the moved files. From this change on, the Worker **refuses such a file**: every `feature.py` command exits with `error: pre-relocation test environment path(s) …`, and `worker start` exits **78**, which the systemd unit does not restart. `scripts/migrate_project_config.py` rewrites only the affected entries, keeps every other line, comment and setting, and backs the file up first.
 
-Run this on the Desktop **after** `refactor/test-environment-separation` is merged into `dev`, with no feature in progress (§9 preconditions). The unit file itself does not change, so it is not rendered or installed again.
+Each machine migrates its own project files **when it is upgraded** to a `dev` that contains this change. Nothing has to be migrated before the pull request is merged, and a machine still on older code keeps working with its current file. Upgrade the Desktop with no feature in progress and the service idle (§9 preconditions). The unit file does not change, so it is not rendered or installed again. The installed Desktop unit passes `--state-dir`, `--project-config` and `--tracker github`: every Worker command below uses exactly the global options shown in its `ExecStart`.
 
 ```bash
-# 0. Read-only: the installed Worker's checkout, interpreter and project file.
+# 0. Read-only: copy the runtime arguments from the installed unit. Its ExecStart reads
+#    <PY> <REPO>/scripts/feature.py --repo <REPO> --state-dir <STATE> --project-config <CFG> --tracker github worker start
 systemctl --user cat mx-admin-worker | grep -E '^(WorkingDirectory|ExecStart)='
-REPO=/path/from/WorkingDirectory      # the Worker's checkout
-PY=/interpreter/from/ExecStart        # the first word of ExecStart, e.g. $REPO/.venv/bin/python
-CFG=/path/after/--project-config      # usually ~/.config/mx-admin-agents/project.yaml
+PY=/interpreter/from/ExecStart        # its first word, e.g. <REPO>/.venv/bin/python
+REPO=/path/after/--repo               # the Worker's checkout (also WorkingDirectory)
+STATE=/path/after/--state-dir
+CFG=/path/after/--project-config      # e.g. ~/.config/mx-admin-agents/project.yaml
+WORKER=("$PY" "$REPO/scripts/feature.py" --repo "$REPO" --state-dir "$STATE" --project-config "$CFG" --tracker github)
 cd "$REPO"
 
-# 1. Stop the Worker BEFORE the checkout changes: a running Worker keeps the old policy in memory.
-"$PY" scripts/feature.py --project-config "$CFG" worker status
-"$PY" scripts/feature.py --project-config "$CFG" worker stop --after-current
-systemctl --user is-active mx-admin-worker    # wait for "inactive" (or "failed"); else: systemctl --user stop mx-admin-worker
+# 1. Check that the service is idle, then stop it BEFORE the checkout changes: a running Worker keeps the
+#    old policy in memory.
+"${WORKER[@]}" worker status                  # no active agent or running task
+"${WORKER[@]}" worker attention
+systemctl --user stop mx-admin-worker
+systemctl --user is-active mx-admin-worker    # expect "inactive"
 
 # 2. Update the checkout.
 git status --short --branch                   # must be clean
 git switch dev
 git pull --ff-only origin dev
 
-# 3. Expected: the old file is now refused (exit 1).
-"$PY" scripts/feature.py config --config "$CFG"
+# 3. Expected: the old file is now refused (error: pre-relocation test environment path(s) …, exit 1).
+"${WORKER[@]}" worker status
 
 # 4. Find every machine-local file that needs it (read-only; 1 = needs migration, 0 = fine, 2 = look at it).
 for f in ~/.config/mx-admin-agents/*.yaml; do "$PY" scripts/migrate_project_config.py "$f" >/dev/null; echo "$? $f"; done
@@ -306,8 +311,8 @@ for f in ~/.config/mx-admin-agents/*.yaml; do "$PY" scripts/migrate_project_conf
 
 # 6. Validate and inspect (read-only). "DIFFERENT from the built-in configuration" is normal for a local file.
 "$PY" scripts/feature.py config --config "$CFG"
-"$PY" scripts/feature.py --project-config "$CFG" worker status
-"$PY" scripts/feature.py --project-config "$CFG" worker attention
+"${WORKER[@]}" worker status
+"${WORKER[@]}" worker attention
 
 # 7. Start the service again (operator decision).
 systemctl --user reset-failed mx-admin-worker
