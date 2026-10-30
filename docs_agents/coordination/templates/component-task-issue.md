@@ -1,6 +1,6 @@
 # Template — Component Task Issue
 
-> Rendered by the feature coordinator (`issue_sync.py`). This example was produced by the real renderer from the demo feature `items-export` against the mock tracker on 2026-10-17 (`#N` numbers are the mock's). Do not hand-write these Issues: `feature.py github sync FEATURE --apply` creates and maintains them.
+> Rendered by the feature coordinator (`issue_sync.py`). This example was produced by the real renderer from the demo feature `items-export` against the mock tracker on 2026-10-17 (`#N` numbers are the mock's). Do not hand-write these Issues: `python -m feature_coordinator github sync FEATURE --apply` creates and maintains them.
 
 - **Title:** `[Feature Coordinator Test] [<role>] <task title>` (prefix for test features only).
 - **Labels:** the role label (`feature:backend`, `feature:cli`, `feature:frontend`, `feature:automation`, `feature:coordination`), `feature:test` (test features), and the task's state label.

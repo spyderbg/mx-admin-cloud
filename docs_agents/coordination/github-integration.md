@@ -43,14 +43,14 @@ TrackerClient protocol (issues.py)
 | `issue_sync.py` | `IssueSync` (sync, reconcile, cleanup, inspect, find_owned), `IssueLink` and `OutboxEntry` records, command ingestion |
 | `escalation.py` | `hold_task` / `release_task` (needs-human), shared by the CLI and validated commands |
 | `live_test.py` | The Phase 4 acceptance scenario (§12) |
-| `github_commands.py` | `feature.py github …`, `hold`, `release` |
-| `github_projects.py`, `projects_local.py`, `project_sync.py`, `project_commands.py`, `live_projects.py` | The Projects board (Phase 4 extension): GraphQL client and write guard, local board, synchronization, `feature.py github project …`, live test — [github-projects.md](github-projects.md) |
+| `github_commands.py` | `python -m feature_coordinator github …`, `hold`, `release` |
+| `github_projects.py`, `projects_local.py`, `project_sync.py`, `project_commands.py`, `live_projects.py` | The Projects board (Phase 4 extension): GraphQL client and write guard, local board, synchronization, `python -m feature_coordinator github project …`, live test — [github-projects.md](github-projects.md) |
 
 **Why `gh api`:** the coordinator never requests, reads, stores or prints a token. `gh` uses its existing login (keyring or `GH_TOKEN`). `--include` returns the status line and headers, so errors and rate limits are classified exactly as with a REST client. No new Python dependency is needed.
 
 ## 3. Authentication and required capabilities
 
-`python scripts/feature.py github status` (read-only) verifies, and names precisely what is missing:
+`python -m feature_coordinator github status` (read-only) verifies, and names precisely what is missing:
 
 | Capability | Check |
 | --- | --- |
@@ -156,7 +156,7 @@ Each `sync` of a feature, for the parent and every task, in this order:
 4. **Reconcile:** managed block, labels, open/closed. A difference from what the coordinator *last wrote* (stored block hash, label set, state) is reported as **drift** and repaired from the local state.
 5. **Comments:** new state-history entries, then pending outbox entries.
 
-The workflow calls `sync` after every operation that changes state (`plan`, `activate`, `run_task` after the claim is released, `request_contract`, `probe_dependency`, `verify_task`, `reopen_task`, `integrate`, `hold`, `release`, `complete`). Failures are recorded as `tracker-sync-deferred` events; `feature.py github sync FEATURE --apply` completes them later. With a project board configured, each sync is followed by the board sync ([github-projects §5](github-projects.md#5-synchronization)), and `run_task` additionally starts a separate `feature.py github sync` process when it claims a task and when its commit is being verified, so that GitHub shows the running task without the worker making a request while it holds its role slot.
+The workflow calls `sync` after every operation that changes state (`plan`, `activate`, `run_task` after the claim is released, `request_contract`, `probe_dependency`, `verify_task`, `reopen_task`, `integrate`, `hold`, `release`, `complete`). Failures are recorded as `tracker-sync-deferred` events; `python -m feature_coordinator github sync FEATURE --apply` completes them later. With a project board configured, each sync is followed by the board sync ([github-projects §5](github-projects.md#5-synchronization)), and `run_task` additionally starts a separate `python -m feature_coordinator github sync` process when it claims a task and when its commit is being verified, so that GitHub shows the running task without the worker making a request while it holds its role slot.
 
 ### 7.2 GitHub → local (validated commands only)
 
@@ -216,24 +216,24 @@ Every write is paced by `min_write_interval_seconds` (1 s), following GitHub's g
 ## 11. Security
 
 - No token is requested, read, stored or printed. Tokens never appear in Git, Issue bodies, comments, logs, documentation or coordinator records; `gh auth status` was printed only with the token line redacted.
-- GitHub responses are untrusted. They are validated (§9), sanitized for display (`feature.py github inspect`), never executed, and never allowed to set permissions or paths.
+- GitHub responses are untrusted. They are validated (§9), sanitized for display (`python -m feature_coordinator github inspect`), never executed, and never allowed to set permissions or paths.
 - Command policy: §7.2. Rendered text is escaped against marker forgery (§4.1).
 - `AUTH_DISABLED`, `DEBUG_MODE`, production content and databases, the remote Qwen server and D-15/D-16/D-18 are untouched by Phase 4.
 
 ## 12. Live acceptance test
 
 ```bash
-python scripts/feature.py github status                                   # read-only capability check
+python -m feature_coordinator github status                                   # read-only capability check
 FC_GITHUB_LIVE=1 FC_GITHUB_LIVE_DIR=~/.local/state/mx-admin-agents/github-tests \
-  .venv/bin/python -m pytest -p no:cacheprovider scripts/tests/feature_coordinator/test_fc_github_live.py -v
+  .venv/bin/python -m pytest -p no:cacheprovider feature_coordinator/tests/test_fc_github_live.py -v
 # or, equivalently, the operator command (it prints every check):
-python scripts/feature.py github test-lifecycle --apply [--workdir DIR] [--no-cleanup]
-python scripts/feature.py --tracker local github test-lifecycle --apply   # rehearsal, no GitHub contact
+python -m feature_coordinator github test-lifecycle --apply [--workdir DIR] [--no-cleanup]
+python -m feature_coordinator --tracker local github test-lifecycle --apply   # rehearsal, no GitHub contact
 ```
 
 The scenario (`live_test.py`) uses a **new** feature ID (`fc-p4-<UTC timestamp>`), a disposable Git repository and a state directory under the work directory, and the real coordinator, Git coordinator and **bubblewrap-sandboxed gates**. Only the agents are scripted. It creates exactly four Issues (one parent, three components) and walks steps A–R of the assignment ([task-lifecycle §8](task-lifecycle.md#8-worked-example-the-phase-4-live-scenario)). The results of the run are recorded in [phase-status](phase-status.md).
 
-**Cleanup** (only if every check passed): a final verification comment (operation ID `final`) listing the checks, the feature ID and task IDs on each test Issue, then close with reason "completed", parent last. The Issues stay in GitHub for audit. `feature.py github cleanup-test FEATURE --apply --state-dir <work>/<feature>/state` repeats it safely: it refuses non-test features and Issues without `feature:test` or a valid ownership proof, skips closed Issues, and finds the final comment by its operation ID (a repeat sends no write). If a check fails, the Issues stay open with a failure comment on the parent, and the report lists their numbers and URLs.
+**Cleanup** (only if every check passed): a final verification comment (operation ID `final`) listing the checks, the feature ID and task IDs on each test Issue, then close with reason "completed", parent last. The Issues stay in GitHub for audit. `python -m feature_coordinator github cleanup-test FEATURE --apply --state-dir <work>/<feature>/state` repeats it safely: it refuses non-test features and Issues without `feature:test` or a valid ownership proof, skips closed Issues, and finds the final comment by its operation ID (a repeat sends no write). If a check fails, the Issues stay open with a failure comment on the parent, and the report lists their numbers and URLs.
 
 ## 13. Configuration (`github:` in [project-config.example.yaml](project-config.example.yaml))
 

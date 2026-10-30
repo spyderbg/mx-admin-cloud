@@ -1,8 +1,8 @@
 # Feature coordinator — documented example configuration for mx-admin-cloud (v5 §10).
 #
 # This file is DOCUMENTATION, not a live credential file. It loads into exactly the same
-# object as the coordinator's built-in configuration (scripts/feature_coordinator/config.py,
-# default_config()); `python scripts/feature.py config` and the test suite verify that.
+# object as the coordinator's built-in configuration (feature_coordinator/config.py,
+# default_config()); `python -m feature_coordinator config` and the test suite verify that.
 #
 # Never put endpoints, API keys or other secrets here. Provider endpoints and keys are read
 # from the runtime environment only (variable NAMES below). Paths are repository-relative
@@ -154,7 +154,7 @@ gates:
   frontend-tests: [npm, run, "test:voices"]
   frontend-tests-content: [npm, run, "test:content"]
   frontend-tests-auth: [npm, run, "test:auth"]
-  coordinator-tests: [python, -m, pytest, -q, -p, "no:cacheprovider", scripts/tests]
+  coordinator-tests: [python, -m, pytest, -q, -p, "no:cacheprovider", scripts/tests, feature_coordinator/tests]
 
 # Baseline-aware Pylint gates (D-19): findings already present at the feature's base commit
 # are reported; findings the feature introduces block. The only policy is block-new.
@@ -203,8 +203,8 @@ runtime:
 # An exhausted subscription is waited for: never another provider, model or billing method.
 worker:
   autonomous:
-    enabled: false                       # `feature.py worker start` refuses to run until this is true
-  max_parallel: 1                        # agents at a time (the service: fixed 1 in W4; `feature.py work` default)
+    enabled: false                       # `python -m feature_coordinator worker start` refuses to run until this is true
+  max_parallel: 1                        # agents at a time (the service: fixed 1 in W4; `python -m feature_coordinator work` default)
   idle_poll_seconds: 30                  # an idle or waiting service looks again this often
   heartbeat_seconds: 30                  # health record refresh
   max_launches_per_task: 10              # hard cap on agent launches per task, whatever the reason
@@ -285,7 +285,7 @@ github:
     item_settle_seconds: 2.0             # after adding an item, before setting fields (project workflows)
     max_field_attempts: 2                # field writes re-applied when a read-back differs
   # W4.3.1 GitHub Issue intake (docs_agents/coordination/github-intake.md). An Issue that a command
-  # author approves with `/worker approve <role> <spec-sha256>` (printed by `feature.py github intake
+  # author approves with `/worker approve <role> <spec-sha256>` (printed by `python -m feature_coordinator github intake
   # show N`) becomes ONE feature with ONE task of that role; the approved title and body are recorded
   # and never re-read. Nothing is written to an Issue before approval. Off until an operator enables it.
   intake:

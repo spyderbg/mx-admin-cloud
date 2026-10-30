@@ -39,7 +39,7 @@ A second `setup` changes nothing (`validate` reports **READY**). `setup` never d
 
 | Need | Scope | Check |
 | --- | --- | --- |
-| Read and write Projects (v2) | `project` | `feature.py github status` (row "token scopes (header)") and `feature.py github project inspect` read GitHub's `X-OAuth-Scopes` **response header**. The token itself is never read, printed or stored |
+| Read and write Projects (v2) | `project` | `python -m feature_coordinator github status` (row "token scopes (header)") and `python -m feature_coordinator github project inspect` read GitHub's `X-OAuth-Scopes` **response header**. The token itself is never read, printed or stored |
 | Issues, labels, comments | `repo` | as in Phase 4 |
 
 Observed 2026-10-17 **[V]**: `gist, project, read:org, repo, workflow`. If `project` is missing, every board operation stops with `GitHubPermissionError` ("… the operator must run `gh auth refresh -s project`"); there is no fallback. Changing the login is an operator action only.
@@ -99,11 +99,11 @@ FeatureCoordinator (workflow.py) — local state change in StateStore.transactio
 | --- | --- |
 | `plan` | The feature is **authorized** for the board, its Issues are created, and their items are added automatically (Backlog) |
 | `activate`, `request_contract`, `probe_dependency`, `verify_task`, `reopen_task`, `integrate`, `hold`, `release`, `complete` | the sync after the operation |
-| `run_task` claimed the task | `DetachedPublisher` starts `feature.py github sync FEATURE --apply` as a **separate process**: no inherited file descriptors (so none of the worker's flocks), its own session, never waited for. The board shows **In Progress** while the agent runs |
+| `run_task` claimed the task | `DetachedPublisher` starts `python -m feature_coordinator github sync FEATURE --apply` as a **separate process**: no inherited file descriptors (so none of the worker's flocks), its own session, never waited for. The board shows **In Progress** while the agent runs |
 | the run's commit landed, gates start | the claim's checkpoint becomes `verifying`, and a second detached sync shows **Review** |
 | the run finished and released its slot | the regular sync: Done, Blocked (failed) or Ready |
-| `feature.py github sync FEATURE --apply` | Issues, then the board (`--no-board` skips it) |
-| `feature.py github project sync/associate/reconcile … --apply` | the board only |
+| `python -m feature_coordinator github sync FEATURE --apply` | Issues, then the board (`--no-board` skips it) |
+| `python -m feature_coordinator github project sync/associate/reconcile … --apply` | the board only |
 
 **Item management** (`ProjectSync._ensure_item`):
 
@@ -116,7 +116,7 @@ Records: `<state>/project/<record-id>.json` (`ProjectLink`): authorization (feat
 
 ### 5.1 Authorization and ownership
 
-- **Which features appear.** A feature planned while the board is enabled is authorized by `plan`. A feature planned earlier — for example the Phase 4 test feature of Issues #11–#14 — is **not** associated automatically. It needs `feature.py github project associate FEATURE --apply` (an operator decision, recorded as a `github-project-authorized` event). Tests: `test_existing_features_are_associated_only_when_authorized` **[V]**; live B2/B3 **[V]**.
+- **Which features appear.** A feature planned while the board is enabled is authorized by `plan`. A feature planned earlier — for example the Phase 4 test feature of Issues #11–#14 — is **not** associated automatically. It needs `python -m feature_coordinator github project associate FEATURE --apply` (an operator decision, recorded as a `github-project-authorized` event). Tests: `test_existing_features_are_associated_only_when_authorized` **[V]**; live B2/B3 **[V]**.
 - **Which records.** Only records whose Issue passes the Phase 4 ownership proof: the marker, the coordinator account as author, and the recorded number and database ID. A record that fails is reported as **protected** and its item is untouched.
 - **Which items.** Only the item recorded for (or found on) the owned Issue. A recorded item that now shows another Issue is refused. Items a person added, drafts and other Issues' items are reported by `reconcile` as foreign, or as orphans (an owned Issue without a local record), and never modified. Test: `test_items_that_are_not_provably_ours_are_never_modified` **[V]**.
 - **Write scope.** The Phase 4 `github.write_scope` applies: against the real board, only `test: true` features are written (`test_write_scope_limits_live_boards_to_test_features` **[V]**).
@@ -125,7 +125,7 @@ Records: `<state>/project/<record-id>.json` (`ProjectLink`): authorization (feat
 
 The coordinator reads the board only to compare it with what it last wrote. A moved card, an edited field, a removed item or an archived item never changes a task state, never creates a claim or starts a worker, and never verifies, releases or approves anything. Claims check the local state (`ClaimManager.claim`), and the scheduler and `launch` read only the local state.
 
-Tests: `test_a_card_moved_on_the_board_never_releases_claims_or_completes` **[V]**. Live B6 and B7 **[V]**: a card moved to In Progress or Done started and completed nothing, and a held task moved to Ready could not be claimed. In each case the next sync reported the drift and restored the derived value. Because coordinator and operator share one account (D-26), field edits on the board are not an authorization channel either. Sensitive approvals stay with `feature.py` run by the operator.
+Tests: `test_a_card_moved_on_the_board_never_releases_claims_or_completes` **[V]**. Live B6 and B7 **[V]**: a card moved to In Progress or Done started and completed nothing, and a held task moved to Ready could not be claimed. In each case the next sync reported the drift and restored the derived value. Because coordinator and operator share one account (D-26), field edits on the board are not an authorization channel either. Sensitive approvals stay with `python -m feature_coordinator` run by the operator.
 
 ## 6. Protection of Project #1
 
@@ -145,7 +145,7 @@ Live **[V]**: Project #1 (fields, options, views, workflows, items with their va
 | Lost response of an add (timeout or 5xx after sending) | same | `GitHubUncertainWriteError` defers the sync; the next sync finds the item | `test_a_lost_add_response_is_recovered_without_a_duplicate`, `test_an_uncertain_add_is_never_blindly_resent` **[V]** |
 | A field update failed (5xx after retries, network) | — | Deferred (`tracker-sync-deferred` event with `board: true`); local state untouched; the next sync completes | `test_network_failures_never_corrupt_local_state_and_recover` **[V]** |
 | A GitHub workflow overwrote a value right after the write | — | Read-back → re-applied; if it keeps changing → deferred | `test_a_project_workflow_overwrite_is_detected_and_reapplied` **[V]** |
-| Coordinator restarted | links on disk | `feature.py github project reconcile --apply` in a new process: same item IDs, no write when nothing changed; foreign items and orphans reported only | `test_a_restarted_coordinator_reconciles_without_writes` **[V]**; live B13 **[V]** |
+| Coordinator restarted | links on disk | `python -m feature_coordinator github project reconcile --apply` in a new process: same item IDs, no write when nothing changed; foreign items and orphans reported only | `test_a_restarted_coordinator_reconciles_without_writes` **[V]**; live B13 **[V]** |
 | Two syncs at once | — | `github-sync.lock` serializes them | `test_concurrent_board_syncs_never_create_duplicate_items` (3 processes) **[V]** |
 | An item was removed from the board | — | Reported as drift, re-added (idempotent) | `_ensure_item` **[S]** |
 | GraphQL rate limit / secondary limit | — | `RATE_LIMITED` (HTTP 200) or 403/429: waits within `max_rate_limit_wait_seconds`, else deferred | `test_graphql_rate_limit_waits_then_retries_and_is_bounded` **[V]** |
@@ -179,7 +179,7 @@ The API can list these workflows but cannot switch them off (only delete them, w
 
 **D-28 verification (2026-10-17, 10:54–10:56 UTC) [V]:**
 
-- **Configuration.** `feature.py github project inspect` (read-only) reports `Auto-close issue: disabled` and `Item closed: disabled`.
+- **Configuration.** `python -m feature_coordinator github project inspect` (read-only) reports `Auto-close issue: disabled` and `Item closed: disabled`.
 - **Behavior.** A check through the coordinator's guarded clients (identity proven, write guard bound to Project #2, ownership of both test Issues verified):
   - **Auto-close issue:** test Issue #16 was reopened and its card moved Review → Done. It **stayed open** for 45 s, then was closed again as completed.
   - **Item closed:** test Issue #15 was reopened and closed again. Its card **stayed Review** for 45 s. In the live test, the same close had set it to Done.
@@ -190,17 +190,17 @@ Before Phase 5, consider also switching off the two pull-request workflows. They
 ## 10. Operator procedures
 
 ```bash
-python scripts/feature.py github status                       # gh, login, repository, scopes (incl. project)
-python scripts/feature.py github project inspect              # identity proof, protected projects, fields, views, workflows
-python scripts/feature.py github project validate             # READY? what would setup change? (exit 1 if not ready)
-python scripts/feature.py github project setup [--apply]      # create/reuse options, fields, views (never deletes)
-python scripts/feature.py github project associate F [--apply]   # show an existing feature on the board
-python scripts/feature.py github project sync F [--apply]     # converge one feature's items
-python scripts/feature.py github project reconcile [F…] [--apply]  # after a restart; foreign/orphan report
-python scripts/feature.py github project active [--feature F] # active tasks: local state vs board
-python scripts/feature.py github project task TASK_OR_FEATURE # one record: derived vs board values
-python scripts/feature.py github project test [--apply]       # the live Projects test (2 test Issues)
-python scripts/feature.py --tracker local github project …    # the same against a local JSON board
+python -m feature_coordinator github status                       # gh, login, repository, scopes (incl. project)
+python -m feature_coordinator github project inspect              # identity proof, protected projects, fields, views, workflows
+python -m feature_coordinator github project validate             # READY? what would setup change? (exit 1 if not ready)
+python -m feature_coordinator github project setup [--apply]      # create/reuse options, fields, views (never deletes)
+python -m feature_coordinator github project associate F [--apply]   # show an existing feature on the board
+python -m feature_coordinator github project sync F [--apply]     # converge one feature's items
+python -m feature_coordinator github project reconcile [F…] [--apply]  # after a restart; foreign/orphan report
+python -m feature_coordinator github project active [--feature F] # active tasks: local state vs board
+python -m feature_coordinator github project task TASK_OR_FEATURE # one record: derived vs board values
+python -m feature_coordinator github project test [--apply]       # the live Projects test (2 test Issues)
+python -m feature_coordinator --tracker local github project …    # the same against a local JSON board
 ```
 
 Which items a view shows, evaluated by GitHub (read-only; replace the filter with a view's `filter` from `inspect`):
@@ -218,14 +218,14 @@ Exit codes: 0 OK; 1 a problem was found (identity not proven, setup incomplete, 
 | `NOT VERIFIED` identity | Do not change the configuration to match an unexpected project. Compare `github.project.node_id` with the project's real node ID (`inspect`), and fix the configuration only if the project is the intended one |
 | `not set up` | `github project setup` (dry run), review it, then `--apply` |
 | `not authorized for the board` | Decide whether the feature belongs on the board; if yes, `github project associate F --apply` |
-| `drift` | Someone moved a card or edited a field; the derived value was restored. Change task state with `feature.py` (hold, release, reopen, …), not on the board |
+| `drift` | Someone moved a card or edited a field; the derived value was restored. Change task state with `python -m feature_coordinator` (hold, release, reopen, …), not on the board |
 | `protected` | The Issue or item failed ownership verification; it is untouched. Inspect it (`github inspect N`, `github project task R`) |
 | `foreign` / `orphan` in `reconcile` | Items the coordinator does not own, or owned Issues without a local record: never modified; review by hand |
 | `deferred: … kept changing` | A project workflow keeps changing a value: disable it (§9) and sync again |
 
 ## 11. Live integration test
 
-`live_projects.py` (`feature.py github project test --apply`, or `FC_GITHUB_PROJECTS_LIVE=1 … test_fc_projects_live.py`) creates **two** Issues: the parent of a new test feature `fc-p4x-<UTC>` and its single Backend task, both labeled `feature:test`. It drives the real coordinator, Git coordinator and sandboxed gates through steps B0–B14 (module docstring), reading every board value back through the Projects API. `--tracker local` rehearses the same scenario without GitHub; it is part of the regular suite (`test_projects_rehearsal_with_the_local_tracker` **[V]**).
+`live_projects.py` (`python -m feature_coordinator github project test --apply`, or `FC_GITHUB_PROJECTS_LIVE=1 … test_fc_projects_live.py`) creates **two** Issues: the parent of a new test feature `fc-p4x-<UTC>` and its single Backend task, both labeled `feature:test`. It drives the real coordinator, Git coordinator and sandboxed gates through steps B0–B14 (module docstring), reading every board value back through the Projects API. `--tracker local` rehearses the same scenario without GitHub; it is part of the regular suite (`test_projects_rehearsal_with_the_local_tracker` **[V]**).
 
 Results of the live run: [phase-status](phase-status.md#phase-4-extension--github-projects-board-record-approved-2026-10-17).
 

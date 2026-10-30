@@ -1,7 +1,7 @@
 # GitHub Issue Intake — Approved Issues as Worker Tasks (W4.3.1)
 
 > Owner role: **coordination**. **W4.3.1–W4.3.4 VERIFIED WITH REAL GITHUB (2026-10-24, bounded supervised tests)** after the original offline implementation. Issue #25/PR #27 exercised manual PR adoption and verified closure; Issue #29/PR #30 exercised a real Claude Code Worker, automatic integration, branch push, Draft PR creation and post-merge closure. Implementation: PRs #26 and #28, merged into `dev`. `github.publish.enabled` defaults **false**, but was enabled in the operator's external test configuration. Shared GitHub identity/approval impersonation remains an accepted temporary risk (§9).
-> Code: `scripts/feature_coordinator/intake.py` (records, approval grammar, digest, identity), `intake_poll.py` (the poll), `intake_commands.py`, `publish.py` and `publish_commands.py` (W4.3.3) · Tests: `scripts/tests/feature_coordinator/test_fc_intake.py`, `test_fc_publish.py` (W4.3.3) · Builds on: [github-integration.md](github-integration.md) (adapter, command authorization), [github-projects.md](github-projects.md) (Project #2), [worker-autonomy.md](worker-autonomy.md) (the Worker service).
+> Code: `feature_coordinator/intake.py` (records, approval grammar, digest, identity), `intake_poll.py` (the poll), `intake_commands.py`, `publish.py` and `publish_commands.py` (W4.3.3) · Tests: `feature_coordinator/tests/test_fc_intake.py`, `test_fc_publish.py` (W4.3.3) · Builds on: [github-integration.md](github-integration.md) (adapter, command authorization), [github-projects.md](github-projects.md) (Project #2), [worker-autonomy.md](worker-autonomy.md) (the Worker service).
 
 A task can start as a GitHub Issue. Nobody writes a YAML file: an operator approves the Issue with a comment, and the approved text becomes one task for the existing coordinator and Worker. Before approval nothing happens. After approval the text is fixed.
 
@@ -23,7 +23,7 @@ Never eligible: pull requests, closed Issues, Issues of the bug workflow (`mx-au
 1. Review the Issue, then print its digest and the exact approval line. This step is read-only:
 
    ```bash
-   python scripts/feature.py github intake show 25
+   python -m feature_coordinator github intake show 25
    ```
 
    It shows whether the Issue is eligible, the SHA-256 of its current title and body, and one `/worker approve` line per role with that role's gates.
@@ -40,7 +40,7 @@ The approval is accepted only if all of these hold:
 - **The role is usable.** It is a configured, enabled role with intake gates.
 - **The names are free.** No feature `issue-<N>` and no branch `feature/issue-<N>` exists yet.
 
-The coordinator never replies to a rejected or ignored approval: before approval nothing is written to the Issue. `feature.py github intake poll` and the events (`intake-approval-rejected`, `intake-approval-ignored`) give the reason.
+The coordinator never replies to a rejected or ignored approval: before approval nothing is written to the Issue. `python -m feature_coordinator github intake poll` and the events (`intake-approval-rejected`, `intake-approval-ignored`) give the reason.
 
 ## 3. After approval
 
@@ -68,7 +68,7 @@ The plan step authorizes the feature for the board, and the board sync adds **ex
 
 ## 5. How the Worker discovers the task
 
-With `github.intake.enabled: true`, the W4 service (`feature.py --tracker github worker start`) polls at most every `poll_interval_seconds` (60 s), at the start of a cycle and never while an agent runs or while paused. You can also poll by hand: `feature.py github intake poll --apply`.
+With `github.intake.enabled: true`, the W4 service (`python -m feature_coordinator --tracker github worker start`) polls at most every `poll_interval_seconds` (60 s), at the start of a cycle and never while an agent runs or while paused. You can also poll by hand: `python -m feature_coordinator github intake poll --apply`.
 
 A poll is bounded:
 
@@ -95,7 +95,7 @@ The Issue is checked at every boundary where work could start or be accepted. Gi
 | Every poll | fresh read | task held | poll deferred |
 | Before a launch (service) | fresh read | held, no launch | transient wait, no launch |
 | Start of every run (`launch`, `work`, service) | fresh read, before the claim | held, not started | not started (transient) |
-| While the agent runs (service, every poll interval) | fresh read | recorded; the run is stopped by the existing cancellation (as `feature.py stop`) | logged; the next boundaries check |
+| While the agent runs (service, every poll interval) | fresh read | recorded; the run is stopped by the existing cancellation (as `python -m feature_coordinator stop`) | logged; the next boundaries check |
 | Before the result is accepted (claim held) | local: is a withdrawal known? | `needs-human`, not verified | — |
 | Right after the claim is released | fresh read | a verification just made is withdrawn (re-opened, then held) before the board or the service sees it | re-opened for a later attempt (transient) |
 | `integrate` (the single PR candidate) | fresh read, before the barrier | refused | refused |
@@ -111,7 +111,7 @@ A running agent is stopped gracefully. Completed checkpoints and commits stay on
 
 **To continue,** an operator decides explicitly:
 1. restore the approved title and body (GitHub keeps the edit history), and reopen the Issue if it was closed;
-2. release the hold: `feature.py release issue-<N>.<role> --apply`.
+2. release the hold: `python -m feature_coordinator release issue-<N>.<role> --apply`.
 
 A release while the Issue is still changed or closed is held again at the next boundary. To change the task, open a new Issue.
 - **No duplicates.** There is one intake record per Issue number, created inside a state transaction. A second `/worker approve`, a repeated poll or a restarted coordinator changes nothing (`intake-duplicate-ignored`). Recovery after a crash at each step is tested (`test_a_restart_never_duplicates_the_task`).
@@ -124,7 +124,7 @@ A release while the Issue is still changed or closed is held again at the next b
 | `github intake poll [--apply] [--json]` | Discover approvals, plan and activate, verify approved texts. Without `--apply` it reads and reports only. `--apply` needs `github.intake.enabled` |
 | `github intake status [--json]` | Read-only, local: every intake record with its feature and task state |
 
-All of them are `feature.py github intake …`; `--tracker local` uses the local JSON tracker for rehearsals.
+All of them are `python -m feature_coordinator github intake …`; `--tracker local` uses the local JSON tracker for rehearsals.
 
 ## 8. Configuration (`github.intake` in [project-config.example.yaml](project-config.example.yaml))
 
@@ -139,9 +139,9 @@ All of them are `feature.py github intake …`; `--tracker local` uses the local
 ## 9. Limitations
 
 - **Real approvals tested, bounded:** the original W4.3.1 tests used mock Issues, but real approvals for Issues #25 and #29 were later accepted by intake and executed. This is supervised happy-path evidence, not evidence that shared credentials prevent approval impersonation or that live failures recover safely.
-- **One task per Issue.** Multi-step and multi-role work still needs a planned feature (`feature.py plan`).
+- **One task per Issue.** Multi-step and multi-role work still needs a planned feature (`python -m feature_coordinator plan`).
 - **No `/feature hold|release` on approved Issues:** use the local commands. The coordinator closes the Issue only through W4.3.3 publication (§10), after the verified merge of its PR; with publication off, a person closes it.
-- **Detection delay while an agent runs:** the service re-reads the Issue every `poll_interval_seconds`, and a run without the service (`feature.py launch`) is not re-read until it ends. An edit in that window can therefore be verified and then immediately withdrawn by the read after the claim is released. The verification never reaches the board or integration, but it does appear in the task's history (`verified → ready → needs-human`).
+- **Detection delay while an agent runs:** the service re-reads the Issue every `poll_interval_seconds`, and a run without the service (`python -m feature_coordinator launch`) is not re-read until it ends. An edit in that window can therefore be verified and then immediately withdrawn by the read after the claim is released. The verification never reaches the board or integration, but it does appear in the task's history (`verified → ready → needs-human`).
 - **The approved body is prompt text.** The role's path policy and the post-run checks still bound what an agent may change, but `native-cli` is not a filesystem sandbox ([worker-functional.md](worker-functional.md)).
 
 ### Accepted risk: shared GitHub identity and approval impersonation
@@ -167,7 +167,7 @@ Such an agent can post `/worker approve <role> <digest>`, or `/feature release �
 - an "approver is not the coordinator" check;
 - W1 isolation (D-20/D-21, draft PR #20).
 
-Until then, an operator can audit approvals with `feature.py github intake status` and the `intake-approved` events.
+Until then, an operator can audit approvals with `python -m feature_coordinator github intake status` and the `intake-approved` events.
 
 ## 10. Automatic publication and completion (W4.3.3)
 
@@ -183,11 +183,11 @@ approved Issue → task verified → integration barrier → push of feature/iss
 
 ### 10.1 Lifecycle
 
-The Worker service runs one publication pass at most every `poll_interval_seconds`, before its intake poll, between launches, never while paused. `feature.py github publish poll --apply` runs the same pass by hand. A pass handles **only features with an intake record**: nothing else is integrated, pushed or opened automatically. Each step first reads what is already true, so every step can be repeated:
+The Worker service runs one publication pass at most every `poll_interval_seconds`, before its intake poll, between launches, never while paused. `python -m feature_coordinator github publish poll --apply` runs the same pass by hand. A pass handles **only features with an intake record**: nothing else is integrated, pushed or opened automatically. Each step first reads what is already true, so every step can be repeated:
 
 | Feature state | The pass does | It refuses or waits when |
 | --- | --- | --- |
-| active | runs the existing **integration barrier** (`integrate`) once every task is verified | a task is not verified; a claim exists or a launch is still recorded in flight (waits); a withdrawn approval is known; the last integration failed and no task was verified since (an operator runs `feature.py integrate issue-<N> --apply` after fixing it). A failure publishes nothing |
+| active | runs the existing **integration barrier** (`integrate`) once every task is verified | a task is not verified; a claim exists or a launch is still recorded in flight (waits); a withdrawn approval is known; the last integration failed and no task was verified since (an operator runs `python -m feature_coordinator integrate issue-<N> --apply` after fixing it). A failure publishes nothing |
 | review, no PR yet | re-reads the approved Issue, **pushes** the feature's own branch, records `pending_create`, opens **one Draft PR** to the feature's base branch, records its number, posts one PR link comment on the Issue | the approval no longer holds; the remote or the branch is not what it must be (§10.2); a PR already exists on the branch but does not match (§10.3) |
 | review, PR recorded | reads the PR again by number | a draft or open PR: **waits** for a person; closed without merge: reports it and waits (never completes, never creates another PR; reopening resumes); a changed or mismatched PR: stops |
 | review, PR merged | verifies the merge (§10.4), then `complete()` records the evidence and moves the feature to **done** in one transaction | the evidence does not hold: stops |
@@ -246,7 +246,7 @@ A closed approved Issue no longer looks like a withdrawn approval once its featu
 
 Each crash point is tested with a restart on new coordinator objects over the same files, and further passes write nothing (`test_every_interruption_is_recovered_without_duplicates`, `test_repeated_completion_and_restarts_write_nothing`).
 
-**Stops:** doubtful evidence sets `attention` on the PR candidate. The stop is sticky: nothing about this feature runs automatically until an operator resolves the cause and runs `feature.py github publish reset issue-<N> --apply`. Causes: a wrong or rewritten remote; a moved branch; a mismatched or ambiguous PR; a rejected push; a withdrawn approval before publication; merge evidence that does not hold. Transient problems are reported and retried, not sticky: network, GitHub 5xx, a busy lock, an unclean checkout, a PR closed without merge.
+**Stops:** doubtful evidence sets `attention` on the PR candidate. The stop is sticky: nothing about this feature runs automatically until an operator resolves the cause and runs `python -m feature_coordinator github publish reset issue-<N> --apply`. Causes: a wrong or rewritten remote; a moved branch; a mismatched or ambiguous PR; a rejected push; a withdrawn approval before publication; merge evidence that does not hold. Transient problems are reported and retried, not sticky: network, GitHub 5xx, a busy lock, an unclean checkout, a PR closed without merge.
 
 ### 10.6 Adopting a PR opened by hand (Issue #25 / PR #27)
 

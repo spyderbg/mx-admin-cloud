@@ -10,11 +10,11 @@
 One **Worker** (a local process) drives one feature through several specialized AI agents, using the operator's existing **Claude Code** and **ChatGPT (Codex)** subscriptions. No API key, gateway or pay-per-token billing is involved. W2 has **no AWS dependency**: the AWS coordinator, multiple Workers and durable checkpoints are not part of it.
 
 ```text
-Worker (feature.py work FEATURE --apply)           ← one process, one feature, one checkout
+Worker (python -m feature_coordinator work FEATURE --apply)           ← one process, one feature, one checkout
   │  schedules READY tasks (dependencies, one writer per role, max_parallel)
-  ├── feature.py launch backend-task  →  Claude Code, model opus     (Backend role)
-  ├── feature.py launch cli-task      →  Claude Code, model sonnet   (CLI role)       ┐ concurrently, once
-  ├── feature.py launch frontend-task →  Codex, CLI default model    (Frontend role)  ┘ Backend is verified
+  ├── python -m feature_coordinator launch backend-task  →  Claude Code, model opus     (Backend role)
+  ├── python -m feature_coordinator launch cli-task      →  Claude Code, model sonnet   (CLI role)       ┐ concurrently, once
+  ├── python -m feature_coordinator launch frontend-task →  Codex, CLI default model    (Frontend role)  ┘ Backend is verified
   └── automation tasks                →  remote Qwen: role DISABLED (never run)
         each launch: claim → agent (execution backend) → acceptance → serialized commit → gates → release
 ```
@@ -144,20 +144,20 @@ The Worker operates on the checkout given by `--repo`. It never switches branche
 Lifecycle:
 
 ```bash
-feature.py plan spec.yaml --apply          # tasks with dependencies (DAG)
-feature.py activate <feature> --apply      # creates feature/<slug> (requires a clean checkout; operator-authorized)
-feature.py work <feature>                  # dry run: order, agent, model, backend, workspace check
-feature.py work <feature> --apply          # the Worker: dependencies first, independent roles concurrently
-feature.py integrate <feature> --apply     # or `work --integrate`: integration gates → PR candidate (not opened)
+python -m feature_coordinator plan spec.yaml --apply          # tasks with dependencies (DAG)
+python -m feature_coordinator activate <feature> --apply      # creates feature/<slug> (requires a clean checkout; operator-authorized)
+python -m feature_coordinator work <feature>                  # dry run: order, agent, model, backend, workspace check
+python -m feature_coordinator work <feature> --apply          # the Worker: dependencies first, independent roles concurrently
+python -m feature_coordinator integrate <feature> --apply     # or `work --integrate`: integration gates → PR candidate (not opened)
 ```
 
-The Worker launches each READY task as its own `feature.py launch` process, which is the existing single-task path. It starts at most one task per role and at most `--max-parallel` at once (default: one per enabled role in the feature). After each finish it re-reads the state, and dependents of a verified task become READY.
+The Worker launches each READY task as its own `python -m feature_coordinator launch` process, which is the existing single-task path. It starts at most one task per role and at most `--max-parallel` at once (default: one per enabled role in the feature). After each finish it re-reads the state, and dependents of a verified task become READY.
 
 Each task is launched at most `--max-attempts` times per run (default **1**). A task deferred because its agent was unavailable, it was stopped, or its commit was deferred is reported, not retried indefinitely. SIGTERM or Ctrl-C to the Worker stops every running task gracefully. A task that failed keeps its dependents blocked.
 
 ## 8. Supported versions
 
-Two environments are verified. **No other versions are claimed to be compatible.** A different version must pass the flag probe (`feature.py runners`), the status checks and, before real use, the smoke test.
+Two environments are verified. **No other versions are claimed to be compatible.** A different version must pass the flag probe (`python -m feature_coordinator runners`), the status checks and, before real use, the smoke test.
 
 | | Development workstation | Ubuntu laptop |
 | --- | --- | --- |
@@ -188,16 +188,16 @@ Offline, with fake agents and disposable repositories (no model, no GitHub, no A
 | `test_fc_gitops.py` (+10), `test_fc_workflow.py` (+1) | Commit subjects (§12): a short title is used, and prompt, long, multi-line, control-character and empty titles fall back to `<role>: task <id>`; a trailer-like title cannot change the trailers; through `run_task`, the exact messages of three commits (including a second commit of a reopened task), with trailers and author unchanged |
 
 ```bash
-.venv/bin/python -m pytest -p no:cacheprovider scripts/tests                     # everything (offline)
-.venv/bin/python -m pytest -p no:cacheprovider scripts/tests/feature_coordinator/test_fc_native_backend.py \
-    scripts/tests/feature_coordinator/test_fc_worker_loop.py                    # W2 only
+.venv/bin/python -m pytest -p no:cacheprovider scripts/tests feature_coordinator/tests  # everything (offline)
+.venv/bin/python -m pytest -p no:cacheprovider feature_coordinator/tests/test_fc_native_backend.py \
+    feature_coordinator/tests/test_fc_worker_loop.py                    # W2 only
 ```
 
 ## 10. Real subscription smoke test (operator approval required)
 
 ```bash
-feature.py subscription-smoke              # dry run: commands, agents, models, detected authentication — no model request
-feature.py subscription-smoke --apply      # REAL requests: 3 small sessions in a new disposable repository
+python -m feature_coordinator subscription-smoke              # dry run: commands, agents, models, detected authentication — no model request
+python -m feature_coordinator subscription-smoke --apply      # REAL requests: 3 small sessions in a new disposable repository
 ```
 
 - **Tasks:**
@@ -277,7 +277,7 @@ These remain open after W2. None of them is addressed by an architectural change
 
 Other constraints:
 - **Gates still need bubblewrap.** The Worker runs the integration gates the operator names; `contract-check`/`docs-check` are the defaults.
-- **`StateStore` is not thread-safe.** Concurrency is by process (`feature.py launch`), never threads sharing a store.
+- **`StateStore` is not thread-safe.** Concurrency is by process (`python -m feature_coordinator launch`), never threads sharing a store.
 - **Opus on the Pro plan is verified** (§10). If a plan cannot use the requested model, the Backend run fails ("model substitution" or an error) rather than silently using another model. Changing the Backend model is a configuration change.
 
 ## 12. Commits, checkpoints and W3

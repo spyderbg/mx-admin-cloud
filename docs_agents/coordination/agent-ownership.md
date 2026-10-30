@@ -20,7 +20,7 @@
   - protected paths (`.env*` at any depth, `content/`, `data/`, `backend/data/`, the bug workflow);
   - approval-required paths without a task grant.
 - **Generated outputs follow destination ownership:** Frontend may write `frontend/src/types/*Schemas.ts`; Automation, which owns the generator, may not.
-- The live checkout's roles are listed by `python scripts/feature.py sandbox-check` **[V]**.
+- The live checkout's roles are listed by `python -m feature_coordinator sandbox-check` **[V]**.
 
 ## 2. Enforcement layers
 
@@ -37,7 +37,7 @@
 
 ## 3. Containment matrix (exit-gate evidence)
 
-`test_containment_matrix_for_every_role` and `python scripts/feature.py sandbox-check --apply` run a probe **inside each role's real sandbox profile** in a disposable repository. The probe:
+`test_containment_matrix_for_every_role` and `python -m feature_coordinator sandbox-check --apply` run a probe **inside each role's real sandbox profile** in a disposable repository. The probe:
 
 - writes to 19 targets: every role's trees, a generated output, `.git`, protected and approval-required paths, the root, `test_environment/mxfix`, `scripts/deploy.sh`;
 - reads the hidden `.env`;

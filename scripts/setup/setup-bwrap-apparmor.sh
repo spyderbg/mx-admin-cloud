@@ -244,7 +244,7 @@ run_check() {
     log "Nested bubblewrap: denied. Expected with bwrap-userns-restrict: Codex's own sandbox cannot start inside the" \
         "coordinator's, so the optional execution_backend: bwrap cannot run Codex. native-cli (the default) and the gates are unaffected."
   fi
-  log "Definitive test: python scripts/feature.py sandbox-check --apply (project venv, from the Worker's context)."
+  log "Definitive test: python -m feature_coordinator sandbox-check --apply (project venv, from the checkout root, the Worker's context)."
   exit "$status"
 }
 
@@ -281,7 +281,7 @@ run_apply() {
   aa-status --enabled 2>/dev/null || fail "AppArmor is not enabled; this procedure does not apply."
   if bwrap_works; then
     log "Already working: no change required."
-    log "Definitive test: python scripts/feature.py sandbox-check --apply (project venv, from the Worker's context)."
+    log "Definitive test: python -m feature_coordinator sandbox-check --apply (project venv, from the checkout root, the Worker's context)."
     exit 0
   fi
   log "The Worker sandbox cannot start: ${PROBE_ERROR:-no error output}"
@@ -329,7 +329,7 @@ run_apply() {
   trap - INT TERM HUP
   log "PASS: the Worker sandbox starts. Script-owned installation recorded in $MARKER_FILE."
   log "Global AppArmor userns restriction: $(sysctl -n "$SYSCTL_KEY" 2>/dev/null || echo unknown) (unchanged)."
-  log "Definitive test: python scripts/feature.py sandbox-check --apply (project venv, from the Worker's context)."
+  log "Definitive test: python -m feature_coordinator sandbox-check --apply (project venv, from the checkout root, the Worker's context)."
 }
 
 run_rollback() {
