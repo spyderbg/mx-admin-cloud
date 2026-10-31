@@ -140,6 +140,29 @@ test('each generated voice exposes only its own stored synthesis text', () => {
   assert.equal(voiceGenerationText(voice()), '')
 })
 
+test('cache busting inserts the version before the fragment and preserves query separators', () => {
+  for (const [uri, expected] of [
+    ['/img.png', '/img.png?v=2'],
+    ['/img.png?lang=bg', '/img.png?lang=bg&v=2'],
+    ['/img.png#preview', '/img.png?v=2#preview'],
+    ['/img.png?lang=bg#preview', '/img.png?lang=bg&v=2#preview'],
+    ['/img.png#preview?mode=full', '/img.png?v=2#preview?mode=full'],
+    ['/img.png#', '/img.png?v=2#'],
+    ['/img.png#preview#detail', '/img.png?v=2#preview#detail'],
+  ]) {
+    assert.equal(cacheBustedUri(uri, 2), expected)
+  }
+})
+
+test('cache busting preserves empty URIs, preview URLs and falsy versions', () => {
+  for (const uri of ['', null, undefined]) assert.equal(cacheBustedUri(uri, 2), '')
+  for (const uri of ['blob:http://localhost/123#preview', 'data:audio/wav;base64,AAAA#preview', '/img.png?lang=bg#preview']) {
+    for (const version of [0, NaN]) assert.equal(cacheBustedUri(uri, version), uri)
+  }
+  assert.equal(cacheBustedUri('blob:http://localhost/123#preview', 2), 'blob:http://localhost/123#preview')
+  assert.equal(cacheBustedUri('data:audio/wav;base64,AAAA#preview', 2), 'data:audio/wav;base64,AAAA#preview')
+})
+
 test('cache busting refreshes real files and leaves uploaded preview URLs playable', () => {
   assert.equal(cacheBustedUri('/audio.mp3?format=mp3', 2), '/audio.mp3?format=mp3&v=2')
   assert.equal(cacheBustedUri('blob:http://localhost/123', 2), 'blob:http://localhost/123')
