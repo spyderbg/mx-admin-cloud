@@ -110,6 +110,8 @@ File-system model **[S]** (details in `backend/CLAUDE.md`, verified against sour
 | --- | --- | --- |
 | `cd backend && ../.venv/bin/python -m pytest -q src/services/content` | 12 files, 474 tests (`test_content_service*.py`, `test_content_filesystem_*.py`, `test_content_access.py`, `test_content_static_files.py`) | Passed as part of the 919-test baseline **[V]** |
 
+Issue #39 added `test_content_filesystem_category_helpers.py`, which has 21 tmp-path unit tests for `FileSystemCategoriesMixin._category_name_to_icon_prompt` and `_first_available_category_image_index`. The content suite now has 13 files and 495 tests, and all pass **[V]**.
+
 Fixtures:
 
 - `__tests__/conftest.py`: temp content trees; sets `AUTH_DISABLED=False` for the 401 paths.
