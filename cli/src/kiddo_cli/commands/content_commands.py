@@ -1,10 +1,9 @@
 """Content commands (backend routes_content): list-categories, category-details, create-item."""
 from pathlib import Path
+from urllib.parse import quote
 
 import requests
 import typer
-
-from urllib.parse import quote
 
 from kiddo_cli.api.client import delete, get, get_bytes, patch, post
 from kiddo_cli.auth_flow import run_with_auth
