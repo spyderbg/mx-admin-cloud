@@ -5,6 +5,7 @@
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "type-check": "vue-tsc --noEmit",
+    "test:cache-busted-uri": "node --experimental-strip-types --test tests/cacheBustedUri.test.ts",
     "test:voices": "node --experimental-strip-types --test tests/itemVoices.test.ts tests/itemVoicesApi.test.mjs",
     "test:content": "node --test tests/contentAvailability.test.mjs",
     "test:auth": "node --test tests/auth.test.mjs",
