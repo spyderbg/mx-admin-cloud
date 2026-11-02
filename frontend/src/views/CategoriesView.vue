@@ -16,9 +16,9 @@
       @rename-voice="onRenameVoice"
     />
     <section class="category-items-panel">
-      <div class="d-flex justify-content-between align-items-center mb-3">
+      <div class="d-flex flex-wrap justify-content-between align-items-center mb-3" style="gap: 0.75rem;">
         <h4 class="mb-0">{{ itemsLabel(contentLanguage) }}</h4>
-        <div class="d-flex align-items-center" style="gap: 1rem;">
+        <div class="d-flex flex-wrap align-items-center" style="gap: 0.75rem;">
           <div class="d-flex align-items-center" style="gap: 0.5rem;">
             <i class="mdi mdi-view-grid-outline text-muted" style="font-size: 1.1rem;"></i>
             <input
@@ -32,6 +32,16 @@
             />
             <i class="mdi mdi-view-grid text-muted" style="font-size: 1.4rem;"></i>
           </div>
+          <button
+            type="button"
+            class="btn btn-outline-primary btn-sm"
+            :disabled="exporting"
+            :aria-busy="exporting"
+            @click="exportItems(category.id)"
+          >
+            <span v-if="exporting" class="spinner-border spinner-border-sm mr-1" aria-hidden="true"></span>
+            <i v-else class="mdi mdi-download mr-1" aria-hidden="true"></i>{{ exportCsvLabel(contentLanguage) }}
+          </button>
           <button v-if="canEdit" class="btn btn-primary btn-sm" @click="openAddItemModal">
             <i class="mdi mdi-plus mr-1"></i>{{ addNewItemLabel(contentLanguage) }}
           </button>
@@ -87,8 +97,11 @@ import AddItemModal from '../components/AddItemModal.vue'
 import CategoryDetail from '../components/CategoryDetail.vue'
 import ItemGrid from '../components/ItemGrid.vue'
 import ViewBreadcrumb from '../components/ViewBreadcrumb.vue'
+import { useCategoryItemsExport } from '../composables/useCategoryItemsExport'
 import { useContentLanguage } from '../composables/useContentLanguage'
 import {
+  exportCsvLabel,
+  exportCsvErrorLabel,
   addNewItemLabel,
   categoriesLoadErrorLabel,
   itemCreatedLabel,
@@ -253,6 +266,10 @@ const onArchiveCategory = async (): Promise<void> => {
 const onRenameVoice = async (voice: Voice, name: string): Promise<void> => {
   await onRenameCategory(name, voice.language)
 }
+
+const { exporting, exportItems } = useCategoryItemsExport(() => {
+  showToast(exportCsvErrorLabel(contentLanguage.value), 'error')
+})
 
 type ToastVariant = 'success' | 'error' | 'warning'
 const toast = ref<{ message: string; variant: ToastVariant } | null>(null)
