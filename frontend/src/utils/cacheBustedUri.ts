@@ -8,6 +8,9 @@ export function cacheBustedUri(uri: string | null | undefined, version: number):
   // Browser upload previews are opaque URLs, not cacheable server filenames.
   if (uri.startsWith('blob:') || uri.startsWith('data:')) return uri
   if (!version) return uri
-  const sep = uri.includes('?') ? '&' : '?'
-  return `${uri}${sep}v=${version}`
+  const fragmentIndex = uri.indexOf('#')
+  const base = fragmentIndex === -1 ? uri : uri.slice(0, fragmentIndex)
+  const fragment = fragmentIndex === -1 ? '' : uri.slice(fragmentIndex)
+  const sep = base.includes('?') ? '&' : '?'
+  return `${base}${sep}v=${version}${fragment}`
 }
