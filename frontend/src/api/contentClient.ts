@@ -142,6 +142,12 @@ export const itemsList = async (categoryId: string): Promise<ItemListResponse> =
   return r.data
 }
 
+/** Download category items as UTF-8 CSV (text/csv, no JSON response schema). */
+export const itemsExport = async (categoryId: string): Promise<Blob> => {
+  const r = await client.get<Blob>(`/content/categories/${encodeURIComponent(categoryId)}/items/export`, { responseType: 'blob' })
+  return r.data
+}
+
 /** Create a new item in a category */
 export const itemsCreate = async (categoryId: string, formData: FormData): Promise<CreateItemResponse> => {
   const r = await client.post<CreateItemResponse>(`/content/categories/${categoryId}/items`, formData, { headers: { 'Content-Type': 'multipart/form-data' } })

@@ -523,6 +523,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/content/categories/{category_id}/items/export:
+    get:
+      tags:
+      - Items
+      summary: Export a category's items as CSV
+      description: 'Download the items of a category as a UTF-8 CSV attachment (with
+        a leading BOM for Excel). Columns: id,name_en,name_es,name_fr,name_bg,images_count;
+        one row per item sorted by id; the header row is always present. Text values
+        starting with =, +, -, @, tab, CR or LF are prefixed with a single quote to
+        block spreadsheet formula injection. Requires authentication.'
+      operationId: items_export_api_v1_content_categories__category_id__items_export_get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: category_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Category Id
+      responses:
+        '200':
+          description: CSV file
+          content:
+            text/csv: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/content/categories/{category_id}/items/{item_id}:
     get:
       tags:

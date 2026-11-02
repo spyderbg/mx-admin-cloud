@@ -231,6 +231,26 @@ def get(
     return r.json()
 
 
+def get_bytes(
+        path: str,
+        token: str | None = None,
+        params: dict | None = None,
+        timeout: int = 60,
+) -> bytes:
+    """GET from the API over HTTP and return the raw response body (not parsed as JSON)."""
+    _vprint(f"GET {API_V1}{path}")
+    h = headers(token)
+    h["Accept"] = "text/csv, */*"
+    r = requests.get(
+        f"{base_url()}{API_V1}{path}",
+        headers=h,
+        params=params,
+        timeout=timeout,
+    )
+    r.raise_for_status()
+    return r.content
+
+
 def delete(path: str, token: str | None = None, timeout: int = 30) -> dict:
     """Delete the data from the API."""
     _vprint(f"DELETE {API_V1}{path}")

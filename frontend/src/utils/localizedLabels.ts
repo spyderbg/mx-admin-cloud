@@ -1335,3 +1335,20 @@ const imageCardLabels = {
 export function imageCardLabel(key: keyof typeof imageCardLabels, lang: Language): string {
   return imageCardLabels[key][lang] ?? imageCardLabels[key].en
 }
+
+export function exportCsvLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'Export CSV', es: 'Exportar CSV', fr: 'Exporter CSV', bg: 'Експорт CSV',
+  }
+  return labels[lang] ?? labels.en
+}
+
+export function exportCsvErrorLabel(lang: Language): string {
+  const labels: Record<Language, string> = {
+    en: 'CSV download failed. Please try again.',
+    es: 'No se pudo descargar el CSV. Inténtalo de nuevo.',
+    fr: 'Le téléchargement du CSV a échoué. Veuillez réessayer.',
+    bg: 'Изтеглянето на CSV е неуспешно. Опитайте отново.',
+  }
+  return labels[lang] ?? labels.en
+}
