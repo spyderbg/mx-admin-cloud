@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import csv
+import io
+import logging
+import re
+
 from fastapi import (
     APIRouter,
     Depends,
     File,
     Form,
     HTTPException,
+    Response,
     UploadFile,
     status,
 )
@@ -15,6 +21,7 @@ from fastapi import (
 from src.api.dependencies import get_current_user
 from src.services.content.models import (
     CategoryConflictError,
+    CategoryDetails,
     CategoryNotFoundError,
     ContentError,
     GenerateItemVoice,
@@ -40,6 +47,7 @@ from src.services.content.schemas import (
 from src.services.content.routes.common import (
     CATEGORY_ITEM,
     CATEGORY_ITEMS,
+    CATEGORY_ITEMS_EXPORT,
     CATEGORY_ITEM_IMAGE,
     CATEGORY_ITEM_IMAGES,
     CATEGORY_ITEM_IMAGES_GENERATE,
@@ -65,6 +73,45 @@ from src.services.content.routes.common import (
 )
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
+
+# CSV export contract (documented in docs_agents/backend/services/content/README.md).
+ITEMS_EXPORT_LANGUAGES = ("en", "es", "fr", "bg")
+ITEMS_EXPORT_COLUMNS = ("id", *(f"name_{lang}" for lang in ITEMS_EXPORT_LANGUAGES), "images_count")
+ITEMS_EXPORT_MEDIA_TYPE = "text/csv; charset=utf-8"
+# Leading UTF-8 BOM so Excel detects the encoding (Cyrillic names); csv readers should use "utf-8-sig".
+ITEMS_EXPORT_BOM = chr(0xFEFF)
+_FORMULA_TRIGGERS = ("=", "+", "-", "@", "\t", "\r", "\n")
+_UNSAFE_FILENAME_CHARS = re.compile(r"[^A-Za-z0-9._-]+")
+_ITEMS_EXPORT_FAILED = "Failed to export the category items."
+
+
+def _csv_safe_text(value: str) -> str:
+    """Neutralize spreadsheet formula injection: prefix a text starting with a trigger with "'"."""
+    if value and value.startswith(_FORMULA_TRIGGERS):
+        return "'" + value
+    return value
+
+
+def _items_export_filename(category_id: str) -> str:
+    """An ASCII-only, header-safe attachment filename derived from the category id."""
+    stem = _UNSAFE_FILENAME_CHARS.sub("_", category_id).strip("._") or "category"
+    return f"{stem[:100]}_items.csv"
+
+
+def _items_export_csv(details: CategoryDetails) -> str:
+    """Render a category's items as CSV text (with BOM), sorted by item id."""
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, quoting=csv.QUOTE_MINIMAL, lineterminator="\r\n")
+    writer.writerow(ITEMS_EXPORT_COLUMNS)
+    for item in sorted(details.items, key=lambda i: i.id):
+        writer.writerow([
+            _csv_safe_text(item.id),
+            *(_csv_safe_text(item.name.get(lang, "")) for lang in ITEMS_EXPORT_LANGUAGES),
+            int(item.images_count),
+        ])
+    return ITEMS_EXPORT_BOM + buffer.getvalue()
 
 
 def _item_voices_response(item_id: str, item_name: LocalizedString, voices: ItemVoices) -> ItemVoicesResponse:
@@ -175,6 +222,51 @@ def items_create(
         result,
         voices_unavailable=generate_voices and not voice_generation_available,
         image_unavailable=generate_image and not image_generation_available,
+    )
+
+
+@router.get(
+    CATEGORY_ITEMS_EXPORT,
+    response_class=Response,
+    status_code=status.HTTP_200_OK,
+    tags=[TAG_ITEMS],
+    summary="Export a category's items as CSV",
+    description=(
+            "Download the items of a category as a UTF-8 CSV attachment (with a leading BOM for Excel). "
+            "Columns: id,name_en,name_es,name_fr,name_bg,images_count; one row per item sorted by id; "
+            "the header row is always present. Text values starting with =, +, -, @, tab, CR or LF are "
+            "prefixed with a single quote to block spreadsheet formula injection. "
+            "Requires authentication."
+    ),
+    responses={200: {"content": {"text/csv": {}}, "description": "CSV file"}},
+)
+def items_export(
+        category_id: str,
+        service: ContentServiceDep,
+        _user: dict = Depends(get_current_user),
+) -> Response:
+    """Export a category's items as a CSV attachment."""
+    try:
+        result = service.category_details_by_id(category_id)
+    except CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidCategoryNameError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        # Provider errors may carry filesystem paths: log them locally, answer with a fixed message.
+        logger.warning("Exporting items of category %r failed: %s", category_id, exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=_ITEMS_EXPORT_FAILED,
+        ) from exc
+    filename = _items_export_filename(category_id)
+    return Response(
+        content=_items_export_csv(result).encode("utf-8"),
+        media_type=ITEMS_EXPORT_MEDIA_TYPE,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "no-store",
+        },
     )
 
 
