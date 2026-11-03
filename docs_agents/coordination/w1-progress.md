@@ -9,8 +9,8 @@
 
 | Item | Status |
 | --- | --- |
-| Stage | 7 — **operator decision A implemented**: opt-in `runtime.native_hardening` for the `native-cli` backend, tested offline with the installed CLIs ([Stage 7](#stage-7--decision-a-hardened-native-cli-backend)). **W1 is NOT complete**: D-21 for the CLI processes is still unenforced (blocker B1) |
-| Branch head | Stage 6 (`9af9621`, `439b159`) plus the Stage 7 commits — **local only, not pushed** (see [Delivery](#delivery)) |
+| Stage | 8 — **Git command-execution vulnerability fixed** (`feature_coordinator/gitsafe.py`, [Stage 8](#stage-8--git-command-execution-defence)): the `.git/config` → `core.fsmonitor` class can no longer run a program during a Coordinator Git operation, on both backends. Stage 7 (opt-in `runtime.native_hardening`) remains. **W1 is NOT complete**: D-21 for the CLI processes stays unenforced (blocker B1); the autonomy demonstration (Priority 3) and the real-smoke-test plan (Priority 4) are **not yet done** |
+| Branch head | Stages 6–7 plus the Stage 8 commits `65e609d` (fix) and `aa1ce03` (tests) — **local only, not pushed** (see [Delivery](#delivery)) |
 | Active Worker | `mx-admin-worker.service` running from the operator's checkout on `dev` (`068d0b9`), `execution_backend: native-cli`, hardening not configured. **Not touched** by this work |
 | Ready for | An operator-approved, bounded, real authenticated smoke test of the hardened mode ([requirements](#7h-requirements-for-a-real-authenticated-smoke-test)) |
 | Open blockers | See [Open blockers and operator decisions](#open-blockers-and-operator-decisions) |
@@ -320,6 +320,82 @@ login (Codex) and the workspace secret (Claude) then reach the model provider.
 * The first manual Codex self-test ran with the operator's `~/.codex` as `CODEX_HOME` (`codex sandbox`, no
   model, no TCP possible); it left no file there. The self-test now always uses its own empty `CODEX_HOME`.
 * Experiment directories (`~/worktrees/.fcx`, `/tmp/claude-1000/fcx`) were deleted after the work.
+
+## Stage 8 — Git command-execution defence
+
+Priority 1 of the operator's follow-up: the repository's own Git configuration/attributes must not
+turn a Coordinator Git operation into an execution vector (the `.git/config` → `core.fsmonitor`
+attack found in [7a F2](#7a-investigation-results-what-decided-the-design), and its whole class:
+hooks, filters, `core.sshCommand`, `diff.external`, `credential.helper`, …). Verified on this host:
+a planted repo-local `core.fsmonitor=<program>` runs on a plain `git status`; a `clean` filter runs
+on `git add`; `-c core.fsmonitor=` stops the fsmonitor and a `-c` value beats an injected
+`GIT_CONFIG_PARAMETERS` **[V]**.
+
+**Implemented protection** (`feature_coordinator/gitsafe.py`, used by both execution backends; does
+not change the Git architecture):
+
+1. **Prevention on every Coordinator Git call** — `git_argv()` + `hardened_env()`. Command-line `-c`
+   overrides at the highest configuration precedence (above repo-local `.git/config`, its
+   `[include]`/`[includeIf]`, and global/system) force `core.fsmonitor=`, `core.hooksPath=/dev/null`
+   and `protocol.ext.allow=never` — keys the Coordinator never needs from any scope. The environment
+   is stripped of the Git variables that inject configuration (`GIT_CONFIG*`,
+   `GIT_CONFIG_PARAMETERS`, `GIT_CONFIG_COUNT`/`_KEY_*`/`_VALUE_*`) or name a program (`GIT_SSH*`,
+   `GIT_PROXY_COMMAND`, `GIT_EXTERNAL_DIFF`, `GIT_PAGER`, `GIT_EDITOR`, `GIT_SEQUENCE_EDITOR`,
+   `GIT_ASKPASS`, `GIT_ATTR_SOURCE`); trusted global/system config (identity, credential helper) is
+   kept, so pushes keep working. Routed through: `gitops` (every call, via `_gitc()` + the extended
+   `_env` scrub), `native_backend._git` and its post-run `merge-base`, `launchers.role_dirty_paths`,
+   `workspace`, `checkpoints`, `sandbox` ls-files, `commands`, `lint_baseline` (`_git` + `archive`).
+2. **Fail-closed gate** — `execution_findings()` / `assert_no_execution_config()` for the vectors a
+   single `-c` cannot force off: filters are keyed by an arbitrary name, and `sshCommand`,
+   `credential.helper`, `diff.external`, `*.textconv`, `gitProxy`, pager/editor are legitimately set
+   in the operator's **global** config. They are a boundary violation only in the **untrusted**
+   repository scope — `local`/`worktree`, with `[include]`s resolved through `git config
+   --show-scope` (which runs no program). `NativeCliRunner.run` calls it before it launches an agent
+   (returns `rejected`, so the agent never starts — **both** hardened and non-hardened); and
+   `GitCoordinator.commit` calls it before it builds or lands a commit (raises
+   `GitConfigExecutionError` → task `FAILED`, branch unmoved). It is not after-the-fact detection:
+   the agent is refused before it runs and the commit before it happens, and prevention (layer 1)
+   does not depend on it.
+
+Precedence, env overrides and inheritance are accounted for (layer 1 beats repo-local, includes and
+injected env; the scan resolves includes). git-lfs in the global scope is never flagged; a
+repo-local `filter.lfs.*` that shadows it is. The two after-the-fact checks already present for the
+hardened native backend (`git_control_digest` before/after the run) remain as defence in depth.
+
+**Priority 2 — security regression tests** (`test_fc_gitsafe.py`, 16 tests, offline, disposable
+repositories, harmless marker programs): a hostile `core.fsmonitor` runs on a raw `git status` but
+not through the Coordinator's helpers; a planted hook runs on a raw commit but not a hardened one; a
+`clean` filter runs on a raw `add` and the scan refuses the checkout; env-injected execution cannot
+survive `hardened_env`; `GitCoordinator.commit` refuses a tampered checkout (fsmonitor/filter/
+hooksPath) without moving the branch or running a program; the native backend refuses a tampered
+checkout before running, hardened and non-hardened; normal status/add/commit and a clean coordinator
+commit still work; `[include]`s are resolved and inert/builtin values are left alone. Each prevention
+test asserts the attack precondition (the marker IS created on the raw call), so it cannot silently
+pass; a mutation run that empties `SAFE_CONFIG_ARGS` and stubs the scan makes all 10 prevention/
+refusal/scan tests fail while the clean-workflow tests still pass **[V]**.
+
+**Results:** `test_fc_gitsafe.py` 16 passed; focused regression over every gitsafe-touched module
+(`gitops`, `workflow`, `checkpoints`, `native_backend`, `native_hardening`, `launchers`, `sandbox`,
+`autonomy`, plus the new file) **264 passed, 5 skipped** **[V]**; pylint 10.00/10 on the changed
+modules and the test. The **full** `feature_coordinator/tests` + `scripts/tests` sweep on the Stage 8
+commits is **not yet run** in this round (Stage 7 ran it green at 1025/23; the gitsafe change is
+additive and the focused subset is green). Commits: `65e609d` (fix), `aa1ce03` (tests), local only.
+
+### Not done this round (operator follow-up Priorities 3 and 4)
+
+- **Priority 3 — autonomy demonstration.** A representative task run end-to-end with hardened Claude
+  Code (no Bash tool): start, obtain code changes via file tools only, the Coordinator runs the
+  validation gates, a gate failure is reported, a correction is requested through the existing
+  validation retry, and a verified result is reached with no operator intervention. The pieces exist
+  (the `Rig` autonomy harness in `test_fc_autonomy.py` already proves gate-fail → auto-fix retry →
+  `VERIFIED` with mock runners; the hardened launcher gives Claude no Bash and routes gates
+  Coordinator-side), but a test that drives the **hardened native runner** through the full
+  `FeatureCoordinator` with a fail-once gate was not written before the session's usage limit.
+- **Priority 4 — bounded real-smoke-test plan.** Instructions, expected results, limits and rollback
+  for a ~3-session run with the existing Claude subscription and a separate Worker-only `CODEX_HOME`
+  (ChatGPT), hardened mode on, no API-key billing, no credential copying, no real calls initiated.
+  Stage 7 §7h sketches the shape; the full written plan is still owed.
+- **Full-suite sweep** on the Stage 8 commits.
 
 ## Open blockers and operator decisions
 
