@@ -9,8 +9,8 @@
 
 | Item | Status |
 | --- | --- |
-| Stage | 8 — **Git command-execution vulnerability fixed** (`feature_coordinator/gitsafe.py`, [Stage 8](#stage-8--git-command-execution-defence)): the `.git/config` → `core.fsmonitor` class can no longer run a program during a Coordinator Git operation, on both backends. Stage 7 (opt-in `runtime.native_hardening`) remains. **W1 is NOT complete**: D-21 for the CLI processes stays unenforced (blocker B1); the autonomy demonstration (Priority 3) and the real-smoke-test plan (Priority 4) are **not yet done** |
-| Branch head | Stages 6–7 plus the Stage 8 commits `65e609d` (fix) and `aa1ce03` (tests) — **local only, not pushed** (see [Delivery](#delivery)) |
+| Stage | 8 — **Git command-execution vulnerability fixed** (`feature_coordinator/gitsafe.py`, [Stage 8](#stage-8--git-command-execution-defence)): the `.git/config` → `core.fsmonitor` class can no longer run a program during a Coordinator Git operation, on both backends; plus the autonomy demonstration (Priority 3) and the bounded smoke-test plan (Priority 4, [w1-smoke-test-plan.md](w1-smoke-test-plan.md)). Stage 7 (opt-in `runtime.native_hardening`) remains. **W1 is NOT complete**: D-21 for the CLI processes stays unenforced (blocker B1); the smoke test awaits operator approval |
+| Branch head | Stages 6–7 plus the Stage 8 commits `65e609d` (Git fix), `aa1ce03` (Git tests), `96dc54f` (autonomy test) and the Priority-4/report commit — **local only, not pushed** (see [Delivery](#delivery)) |
 | Active Worker | `mx-admin-worker.service` running from the operator's checkout on `dev` (`068d0b9`), `execution_backend: native-cli`, hardening not configured. **Not touched** by this work |
 | Ready for | An operator-approved, bounded, real authenticated smoke test of the hardened mode ([requirements](#7h-requirements-for-a-real-authenticated-smoke-test)) |
 | Open blockers | See [Open blockers and operator decisions](#open-blockers-and-operator-decisions) |
@@ -381,21 +381,35 @@ modules and the test. The **full** `feature_coordinator/tests` + `scripts/tests`
 commits is **not yet run** in this round (Stage 7 ran it green at 1025/23; the gitsafe change is
 additive and the focused subset is green). Commits: `65e609d` (fix), `aa1ce03` (tests), local only.
 
-### Not done this round (operator follow-up Priorities 3 and 4)
+### Priority 3 — autonomy under hardened Claude (done)
 
-- **Priority 3 — autonomy demonstration.** A representative task run end-to-end with hardened Claude
-  Code (no Bash tool): start, obtain code changes via file tools only, the Coordinator runs the
-  validation gates, a gate failure is reported, a correction is requested through the existing
-  validation retry, and a verified result is reached with no operator intervention. The pieces exist
-  (the `Rig` autonomy harness in `test_fc_autonomy.py` already proves gate-fail → auto-fix retry →
-  `VERIFIED` with mock runners; the hardened launcher gives Claude no Bash and routes gates
-  Coordinator-side), but a test that drives the **hardened native runner** through the full
-  `FeatureCoordinator` with a fail-once gate was not written before the session's usage limit.
-- **Priority 4 — bounded real-smoke-test plan.** Instructions, expected results, limits and rollback
-  for a ~3-session run with the existing Claude subscription and a separate Worker-only `CODEX_HOME`
-  (ChatGPT), hardened mode on, no API-key billing, no credential copying, no real calls initiated.
-  Stage 7 §7h sketches the shape; the full written plan is still owed.
-- **Full-suite sweep** on the Stage 8 commits.
+`test_fc_autonomy_hardened.py` drives the **real** `NativeCliRunner` (the fake-agent CLI, no model, no
+network) through the real `FeatureCoordinator` and the autonomous `WorkerService`, with
+`runtime.native_hardening` enabled so Claude Code has **no Bash tool**. A one-step backend task: the
+agent edits the file (file tools only), the Coordinator runs the role's gate, the gate **fails once**,
+the existing validation auto-fix retry re-runs the step, the gate **passes**, and the task reaches
+**VERIFIED** with no operator intervention — asserted end to end, including that the launched Claude's
+`--tools` carried no `Bash` and `native.json` recorded `agent_shell: "none (no Bash tool)"` **[V]**. A
+second test covers the single-run slice (gate passes first time). Established offline: removing the
+agent's Bash tool does not break autonomy, because validation runs Coordinator-side. (Observed while
+building it: a **step-less** task's validation failure is terminal even with auto-fix — auto-fix redoes
+the last step of a **multi-step** task — so a representative task uses a step.)
+
+### Priority 4 — bounded real smoke test (planned, not executed)
+
+Written up in **[w1-smoke-test-plan.md](w1-smoke-test-plan.md)**: the operator-run steps, the hardened
+project config (hardening on, `claude_shell: disabled`, a Worker-only `CODEX_HOME`), the dry run then the
+approval-gated `--apply`, expected results, the hard limits (3 sessions, 1 attempt each, $0.50/Claude
+run, 300 s timeout, subscription-only, local tracker, disposable repo/state) and rollback. No
+authentication was initiated and no model request was made in preparing it; execution needs separate
+operator approval. Codex uses a Worker-only ChatGPT login the operator provisions by a fresh device-auth
+sign-in (no existing credential is copied in).
+
+### Not done this round
+
+- **Full-suite sweep** (`feature_coordinator/tests` + `scripts/tests`) on the final Stage 8 commits — a
+  focused subset over every touched module is green (264 passed); the 14-minute full run is noted where
+  it is confirmed below.
 
 ## Open blockers and operator decisions
 
