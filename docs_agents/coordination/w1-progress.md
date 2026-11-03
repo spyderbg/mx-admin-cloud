@@ -374,12 +374,12 @@ test asserts the attack precondition (the marker IS created on the raw call), so
 pass; a mutation run that empties `SAFE_CONFIG_ARGS` and stubs the scan makes all 10 prevention/
 refusal/scan tests fail while the clean-workflow tests still pass **[V]**.
 
-**Results:** `test_fc_gitsafe.py` 16 passed; focused regression over every gitsafe-touched module
-(`gitops`, `workflow`, `checkpoints`, `native_backend`, `native_hardening`, `launchers`, `sandbox`,
-`autonomy`, plus the new file) **264 passed, 5 skipped** **[V]**; pylint 10.00/10 on the changed
-modules and the test. The **full** `feature_coordinator/tests` + `scripts/tests` sweep on the Stage 8
-commits is **not yet run** in this round (Stage 7 ran it green at 1025/23; the gitsafe change is
-additive and the focused subset is green). Commits: `65e609d` (fix), `aa1ce03` (tests), local only.
+**Results:** `test_fc_gitsafe.py` 16 passed; `test_fc_autonomy_hardened.py` 2 passed; pylint 10.00/10 on
+the changed modules and the tests; `scripts/check_docs_agents.py` 6/6. The **full**
+`feature_coordinator/tests` + `scripts/tests` sweep on the Stage 8 commits: **1043 passed, 23 skipped,
+0 failed** (14 min), exit 0 **[V]** — the Stage 7 total of 1025 plus the 18 new gitsafe/autonomy tests,
+the same 23 opt-in/host skips. Commits: `65e609d` (Git fix), `aa1ce03` (Git tests), `96dc54f` (autonomy
+test), `012701c` (smoke-test plan + report), local only.
 
 ### Priority 3 — autonomy under hardened Claude (done)
 
@@ -405,11 +405,12 @@ authentication was initiated and no model request was made in preparing it; exec
 operator approval. Codex uses a Worker-only ChatGPT login the operator provisions by a fresh device-auth
 sign-in (no existing credential is copied in).
 
-### Not done this round
+### Still open
 
-- **Full-suite sweep** (`feature_coordinator/tests` + `scripts/tests`) on the final Stage 8 commits — a
-  focused subset over every touched module is green (264 passed); the 14-minute full run is noted where
-  it is confirmed below.
+- The operator-approved **real smoke test** itself ([w1-smoke-test-plan.md](w1-smoke-test-plan.md)) — not
+  run (needs approval; no authentication or model call was initiated).
+- Full W1 completion: **D-21 for the trusted CLI processes** stays unenforced on this host (blocker B1,
+  option B or C). The hardened mode confines the agent's tools, not the CLI process.
 
 ## Open blockers and operator decisions
 
