@@ -1,6 +1,6 @@
 /**
  * Readiness probe, run once before the whole suite (see playwright.config.ts's
- * `globalSetup`). The stack is externally managed (`python scripts/testenv.py up`) —
+ * `globalSetup`). The stack is externally managed (`python test_environment/testenv.py up`) —
  * this only confirms it is actually reachable before any spec (or auth.setup.ts) burns
  * time against a stack that never came up.
  *
@@ -40,7 +40,7 @@ async function globalSetup(): Promise<void> {
 
   throw new Error(
     `Test stack at ${BASE_URL} never became ready (${url} — last error: ${lastError}).\n` +
-    'Is it running? Try: python scripts/testenv.py up',
+    'Is it running? Try: python test_environment/testenv.py up',
   )
 }
 

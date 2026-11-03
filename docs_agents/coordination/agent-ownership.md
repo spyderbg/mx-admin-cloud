@@ -12,7 +12,7 @@
 | backend | Claude Code | `backend/`, `docs_agents/backend/` | `backend/data/` | `python -m pytest`, `python -m pylint`, `python -m compileall` |
 | cli | Claude Code | `cli/`, `docs_agents/cli/` | — | `python -m pytest`, `python -m pylint`, `kiddo-cli --help` |
 | frontend | Codex | `frontend/`, `docs_agents/frontend/` | `frontend/.env.development.local` (D-5: debug defaults unchanged) | Codex sandbox: commands run with **no network** |
-| automation | remote Qwen (local tool loop) | `scripts/`, `test_environment/`, `docs_agents/automation/` | `scripts/mxfix/`, `scripts/mxissues/`, `scripts/deploy.sh` | none; `find-replace` and `multi-find-replace` only, executed locally |
+| automation | remote Qwen (local tool loop) | `scripts/`, `test_environment/`, `docs_agents/automation/` | `test_environment/mxfix/`, `test_environment/mxissues/`, `test_environment/testenv.toml`, `test_environment/testenv.local.toml`, `scripts/deploy.sh` | none; `find-replace` and `multi-find-replace` only, executed locally |
 | coordination | Claude Code | `docs_agents/coordination/` | — | `python scripts/check_docs_agents.py` |
 
 - **Never writable by anyone:** `.git/**` and everything else outside the roots above. That includes:
@@ -20,13 +20,15 @@
   - protected paths (`.env*` at any depth, `content/`, `data/`, `backend/data/`, the bug workflow);
   - approval-required paths without a task grant.
 - **Generated outputs follow destination ownership:** Frontend may write `frontend/src/types/*Schemas.ts`; Automation, which owns the generator, may not.
-- The live checkout's roles are listed by `python scripts/feature.py sandbox-check` **[V]**.
+- The live checkout's roles are listed by `python -m feature_coordinator sandbox-check` **[V]**.
 
 ## 2. Enforcement layers
 
+> **W2 (2026-10-22): which layers apply depends on `runtime.execution_backend`.** With `bwrap`, all four layers below apply as described. With the default **`native-cli`** ([worker-functional.md](worker-functional.md)), layer 1 does **not** apply: the agent runs with the operator's full file-system and network access. Layer 2 applies to the CLIs' own permissions (Claude Code's allowlist, Codex's command sandbox). Layer 3 applies **workspace-wide**: any change outside the role, any protected ignored file and any Git-state change rejects the run, and the changes are left in place for review. Role write scopes are then verified *after* the run, not enforced while it runs.
+
 | Layer | Mechanism | Status |
 | --- | --- | --- |
-| 1. OS containment | bubblewrap per run (`sandbox.py`): new namespaces **including the network namespace (W1, D-21)**, a read-only shadow root with the role roots bound read-write, read-only overlays, `.git` read-only, private HOME and `/tmp`, untracked secrets hidden, **no runner credential mounted (W1, D-20)** | **Enforced and tested [V]**. bubblewrap 0.9.0, unprivileged. The model is reached only through the host-side broker ([worker-security](worker-security.md)) |
+| 1. OS containment | bubblewrap per run (`sandbox.py`): new namespaces **including the network namespace (W1, D-21)**, a read-only shadow root with the role roots bound read-write, read-only overlays, `.git` read-only, private HOME and `/tmp`, untracked secrets hidden, **no runner credential mounted (W1, D-20)** | **Enforced and tested [V]** for the `bwrap` backend. bubblewrap 0.9.0, unprivileged. The model is reached only through the host-side broker ([worker-security](worker-security.md)). **Not applied** by the `native-cli` backend (W2) |
 | 2. Runner permissions | Claude Code: `--restricted`, `--tools`, generated `--settings` allow/deny list, `--permission-prompts none`, `--strict-mcp-config`; since W1 also its own Bash sandbox in strict mode (nested command isolation). Codex: `--sandbox workspace-write` (nested bubblewrap), `--ignore-user-config`, `network_access=false`; since W1 also `--strict-config`, the broker provider, `web_search="disabled"` and a core-only command environment | **Enforced [V]**: flags probed on the installed CLIs; live smoke runs observed (§4); W1 nested isolation verified offline with the installed CLIs ([worker-security §5](worker-security.md#5-network-isolation-d-21)) |
 | 3. Commit gate | `RealCliRunner` rejects a run that created a path the role may not commit or wrote outside its roots. The Git coordinator re-validates every manifest path (`PathPolicy`) and refuses foreign staged content | **Enforced [V]** (Phase 2 and Phase 3 tests) |
 | 4. PR/CI gate | Changed-path re-verification across the whole feature diff | Phase 6 |
@@ -35,9 +37,9 @@
 
 ## 3. Containment matrix (exit-gate evidence)
 
-`test_containment_matrix_for_every_role` and `python scripts/feature.py sandbox-check --apply` run a probe **inside each role's real sandbox profile** in a disposable repository. The probe:
+`test_containment_matrix_for_every_role` and `python -m feature_coordinator sandbox-check --apply` run a probe **inside each role's real sandbox profile** in a disposable repository. The probe:
 
-- writes to 19 targets: every role's trees, a generated output, `.git`, protected and approval-required paths, the root, `scripts/mxfix`, `scripts/deploy.sh`;
+- writes to 19 targets: every role's trees, a generated output, `.git`, protected and approval-required paths, the root, `test_environment/mxfix`, `scripts/deploy.sh`;
 - reads the hidden `.env`;
 - writes outside the repository;
 - writes through a symlink into another role's tree;
@@ -83,8 +85,16 @@ Further negative tests **[V]**:
 
 ## 5. Residual risks (operator decisions in [phase-status](phase-status.md))
 
+The risks below concern the `bwrap` backend. The `native-cli` backend (W2) gives agents full access by design; its limitations are listed in [worker-functional §11](worker-functional.md#11-known-limitations). W1's credential and network isolation (D-20, D-21; [PR #20](https://github.com/spyderbg/mx-admin-cloud/pull/20), [worker-security](worker-security.md)) changes risks 1, 2 and 5 for the `bwrap` backend.
+
 1. ~~**The runner's own credentials are readable inside its sandbox.**~~ **Resolved in W1 (D-20; [worker-security](worker-security.md)):** no login file is mounted and no API key is forwarded; the host-side broker holds the upstream credential, and the runner receives only a per-run token that is revoked when the run ends **[V]**. Real runs now need an operator-chosen broker credential; a Claude or ChatGPT subscription login cannot be brokered (open part of D-20).
 2. ~~**Runner network.**~~ **Resolved in W1 (D-21):** every runner sandbox has its own network namespace whose only route is the broker endpoint, and agent commands run in the CLI's own nested sandbox without network, sockets or token **[V]**.
 3. **New protected-named files inside a role's own root** cannot be prevented by mounts, since nothing exists to mount over. The run is rejected and the commit gate refuses them (layer 3).
 4. **Codex needs a writable shadow root** for its nested sandbox. Root-level writes are discarded and reject the run; empty mount-point residue is ignored.
 5. ~~**OAuth token refresh** with read-only credentials~~ — no longer applicable since W1: the sandbox holds no OAuth token.
+6. **Codex's nested sandbox cannot start on hosts with Ubuntu's `bwrap-userns-restrict` AppArmor profile** (found 2026-10-23).
+   - **Why:** the profile runs everything bubblewrap starts as `unpriv_bwrap`, with every capability denied, so the bubblewrap that Codex starts inside the Frontend sandbox cannot create namespaces ("No permissions to create new namespace"; kernel audit `profile="unpriv_bwrap" capname="sys_admin"`). With `codex sandbox` the command did not run at all.
+   - **Affected:** only `runtime.execution_backend: bwrap` with Codex.
+   - **Not affected:** the default `native-cli` backend, which runs agents outside the coordinator's sandbox, and the gates, which are top-level sandboxes.
+   - **The test:** `test_fc_launchers.py::test_codex_own_sandbox_works_nested_inside_ours` is skipped, with that reason, only where a probe in the same Frontend sandbox shows both the `unpriv_bwrap` label and bubblewrap's namespace refusal. Any other failure still fails the test.
+   - **The fix is not to weaken the host:** never disable AppArmor or `kernel.apparmor_restrict_unprivileged_userns` for this. Use `native-cli`, or a host without that profile, until the `bwrap` backend has a Codex mode that does not nest bubblewrap (an open decision).

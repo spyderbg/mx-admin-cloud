@@ -1,6 +1,6 @@
 # Template — Feature (Parent) Issue
 
-> Rendered by the feature coordinator (`issue_sync.py`). This example was produced by the real renderer from the demo feature `items-export` against the mock tracker on 2026-10-17 (`#N` numbers are the mock's). Do not hand-write these Issues: `feature.py github sync FEATURE --apply` creates and maintains them.
+> Rendered by the feature coordinator (`issue_sync.py`). This example was produced by the real renderer from the demo feature `items-export` against the mock tracker on 2026-10-17 (`#N` numbers are the mock's). Do not hand-write these Issues: `python -m feature_coordinator github sync FEATURE --apply` creates and maintains them.
 
 - **Title:** `[Feature Coordinator Test] <feature title>` for test features, else the feature title. Not an identifier.
 - **Labels:** `feature:parent`, `feature:test` (test features), and the state label of the feature ([github-integration §6](../github-integration.md#6-labels-and-state-mapping)).

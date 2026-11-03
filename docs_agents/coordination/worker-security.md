@@ -1,9 +1,17 @@
 # Worker Security — Credential and Network Isolation (W1: D-20, D-21)
 
-> Owner role: **coordination**. Status: **W1 implemented and tested offline (2026-10-21); awaiting operator review.** Not committed.
+> Owner role: **coordination**. Status: **W1 implemented and tested offline (2026-10-21); reconciled with `dev` (2026-11-03); BLOCKED for real execution on the desktop Worker host** (§0). Draft PR #20; progress log: [w1-progress.md](w1-progress.md).
 > Related: [agent-ownership.md](agent-ownership.md) (write containment) · [operations.md](operations.md) (commands) · [feature-workflow.md](feature-workflow.md) §17 (runtime design) · [project-config.example.yaml](project-config.example.yaml) (`broker`, `runtime`) · [phase-status.md](phase-status.md) (decisions)
 >
 > Evidence tags: **[V]** verified by execution (the named test or command), **[S]** source-read, **[U]** unverified. Each protection below is also classed as **IMPLEMENTED**, **TESTED**, **NOT IMPLEMENTED** or **NOT VERIFIED**. Configuration alone never counts as a protection.
+
+## 0. Status update (2026-11-03)
+
+- **Scope.** W1 applies to `runtime.execution_backend: bwrap`. The default and currently running backend, `native-cli` (W2), is not a sandbox and is **unchanged** by W1: same command lines, settings, environment and probe (tests assert it). Commands below are now `python -m feature_coordinator …` (the package moved on `dev`).
+- **Compatibility.** Existing Worker configurations keep loading: `providers.*.credential_files` and `runtime.agent_network: true` are accepted but have **no effect** (nothing is mounted; no sandbox shares the host network) and are reported by `runners` and `worker-check` (`config.ignored_settings()`). The version floor is enforced by the bwrap runner, not by the shared probe.
+- **Subscriptions.** A subscription cannot be brokered (§4.4 stands), but it does not need to be: both CLIs document a subscription credential for unattended use that stays with the trusted CLI process (Claude Code `claude setup-token` → `CLAUDE_CODE_OAUTH_TOKEN`; Codex ChatGPT login in a dedicated `CODEX_HOME`), while their own sandboxes keep it away from agent-run commands (Claude Code `sandbox.credentials` deny + `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`; Codex permission profiles). The CLI's own egress can be limited to a CONNECT-only tunnel to fixed provider hosts (end-to-end TLS; the proxy never sees the credential). Research and offline evidence: [w1-progress §Stage 3](w1-progress.md#stage-3--subscription-authentication-research-done).
+- **Blocker.** W1 isolates agent commands by **nesting** the CLI's sandbox inside ours. The desktop Worker host has Ubuntu's `bwrap-userns-restrict` AppArmor profile ([worker-host-setup](worker-host-setup.md#nested-sandbox-limitation)), under which no bubblewrap can start inside a bubblewrap (verified 2026-11-03). Real `bwrap`-backend runs therefore fail closed on that host for **both** CLIs, whatever the credential source. Options and the decision needed: [w1-progress §Open blockers](w1-progress.md#open-blockers-and-operator-decisions).
+- The verdicts in §1 and the evidence in §5/§8 were obtained on 2026-10-21 on a host **without** that profile; they stand for such hosts.
 
 ## 1. Verdict
 
@@ -12,7 +20,7 @@
 | **D-20** credential isolation | **PARTIALLY VERIFIED** | No reusable credential reaches a runner sandbox: no login file is mounted, no API key is forwarded, and the upstream credential stays in the host-side broker. Negative tests prove this for both runners **[V]**. Real provider authentication through the broker is **NOT VERIFIED**: the only documented brokered mode for both CLIs uses a per-token-billed API key, and choosing one is an operator decision (§4). Until then real runners are **unavailable** (fail closed) |
 | **D-21** network isolation | **VERIFIED (offline)** | Every runner sandbox has its own empty network namespace. The CLI's only route is the broker endpoint inside that namespace, and the commands an agent runs are isolated again by the CLI's own sandbox. Verified on this host with the installed Claude Code 2.1.303 and Codex 0.163.0 against a fake provider **[V]** |
 
-**This Worker is INELIGIBLE for real agent execution** (`feature.py worker-check --apply`) until the operator provisions a broker credential.
+**This Worker is INELIGIBLE for real agent execution** (`python -m feature_coordinator worker-check --apply`) until the operator provisions a broker credential — and, on a host with `bwrap-userns-restrict`, until blocker B1 is decided (§0).
 
 ## 2. Vulnerabilities addressed
 

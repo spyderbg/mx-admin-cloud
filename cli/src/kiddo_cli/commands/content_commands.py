@@ -1,10 +1,11 @@
 """Content commands (backend routes_content): list-categories, category-details, create-item."""
 from pathlib import Path
+from urllib.parse import quote
 
 import requests
 import typer
 
-from kiddo_cli.api.client import delete, get, patch, post
+from kiddo_cli.api.client import delete, get, get_bytes, patch, post
 from kiddo_cli.auth_flow import run_with_auth
 from kiddo_cli.output import print_error, print_json, print_request_error
 
@@ -123,6 +124,32 @@ def register(app: typer.Typer) -> None:
         def run(t: str):
             result = get(f"/content/categories/{category_name}", token=t)
             print_json(result)
+
+        run_with_auth(url, token, run)
+
+    @app.command("export-items")
+    def export_items(
+            category_id: str = typer.Argument(..., help="Category id (e.g. C_Foods)"),
+            output: Path = typer.Option(..., "--output", help="Path of the CSV file to write", path_type=Path),
+            url: str = typer.Option(None, "--url", help="Backend base URL"),
+            token: str | None = typer.Option(None, "--token", help="Bearer token (else auth via CLI socket)"),
+    ):
+        """Download a category's items as CSV, saved exactly as the server sent it."""
+        def run(t: str):
+            try:
+                content = get_bytes(f"/content/categories/{quote(category_id, safe='')}/items/export", token=t)
+            except requests.HTTPError as e:
+                if e.response is not None and e.response.status_code == 404:
+                    print_error("Category not found", category_id)
+                    raise typer.Exit(1)
+                raise
+            # Write only after the full body arrived, so a failed request leaves no partial file.
+            try:
+                output.write_bytes(content)
+            except OSError as e:
+                print_error("Cannot write output file", f"{output}: {e}")
+                raise typer.Exit(1)
+            typer.echo(f"Wrote {len(content)} bytes to {output}")
 
         run_with_auth(url, token, run)
 

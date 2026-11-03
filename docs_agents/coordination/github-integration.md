@@ -1,7 +1,7 @@
 # GitHub Integration — Feature and Task Issues (Phase 4)
 
 > Owner role: **coordination**. Status: **Phase 4 deliverable, approved** (2026-10-17); the project board sections are the **Phase 4 extension**, also approved (same date).
-> Lifecycle and dependency rules: [task-lifecycle.md](task-lifecycle.md) · Rendered Issue and comment formats: [templates/](templates/README.md) · Commands: [operations §7](operations.md#7-github-issues-phase-4) · Project board (Phase 4 extension): [github-projects.md](github-projects.md) · Design baseline: [feature-workflow.md](feature-workflow.md) · Status and live evidence: [phase-status.md](phase-status.md)
+> Lifecycle and dependency rules: [task-lifecycle.md](task-lifecycle.md) · Rendered Issue and comment formats: [templates/](templates/README.md) · Commands: [operations §7](operations.md#7-github-issues-phase-4) · Project board (Phase 4 extension): [github-projects.md](github-projects.md) · Approved Issues as Worker tasks (W4.3.1): [github-intake.md](github-intake.md) · Design baseline: [feature-workflow.md](feature-workflow.md) · Status and live evidence: [phase-status.md](phase-status.md)
 >
 > Evidence tags: **[V]** verified by execution (the named test or command), **[S]** source-read, **[U]** unverified.
 
@@ -11,13 +11,13 @@ GitHub Issues are the **human-visible record** of feature work. They are never t
 
 | Rule | How it is enforced | Evidence |
 | --- | --- | --- |
-| Independent of `scripts/mxfix/` and `scripts/mxissues/` | Separate adapter (`github_api.py`) and synchronizer (`issue_sync.py`); no import, no shared tracker code, no shared state | AST import scan `test_the_coordinator_is_independent_of_the_bug_workflow_and_the_backend` **[V]**; `git status` of both trees empty (live check Q4) **[V]** |
+| Independent of `test_environment/mxfix/` and `test_environment/mxissues/` | Separate adapter (`github_api.py`) and synchronizer (`issue_sync.py`); no import, no shared tracker code, no shared state | AST import scan `test_the_coordinator_is_independent_of_the_bug_workflow_and_the_backend` **[V]**; both trees tracked and their `git status` empty (live check Q4) **[V]** |
 | Own label namespace `feature:*` | Every label write goes through `check_feature_labels`; labels are created only when missing and existing labels are never edited | `test_labels_are_feature_namespace_only_and_never_edited` **[V]**; live check Q2 **[V]** |
 | Bug-workflow Issues are never written | An Issue with `mx-auto`, `source::*` or `severity::*` fails ownership verification | `test_ownership_needs_every_proof`, `test_forged_and_foreign_issues_are_never_adopted_or_modified` **[V]** |
 | No bulk updates | The synchronizer only touches the Issues mapped to (or found by the exact idempotency key of) the records of one feature | live check Q compares every pre-existing Issue and PR before/after **[V]** |
 | GitHub Projects v2 only as a picture (Phase 4 extension) | Issues, labels and comments carry the record; the configured board (Project #2) only shows their state, and Project #1 (the bug workflow's) is never written. See [github-projects.md](github-projects.md) | `test_protected_projects_are_never_bound_or_written`, live B14 **[V]** |
-| No pull request creation in Phase 4 | `github_api.LIVE_PULL_REQUESTS_ENABLED = False`; `create_pull_request` refuses before any request | `test_pull_requests_are_flagged_and_never_created`, `test_the_live_adapter_never_creates_a_pull_request` **[V]**; live check R/Q3 **[V]** |
-| Writes limited to test features in Phase 4 | `github.write_scope: test-features-only`: a sync of a feature without `test: true` against the live adapter raises `SyncScopeError` before any write | `test_write_scope_limits_live_writes_to_test_features` **[V]** |
+| No pull request creation, except W4.3.3's one Draft PR | Phase 4: `create_pull_request` refused before any request. W4.3.3 replaced the `LIVE_PULL_REQUESTS_ENABLED` constant with a narrower rule: creation is refused before any request unless `github.publish.enabled` is true AND the publisher authorized exactly that head and base for one creation, after its checks for an approved GitHub Issue's feature. Draft PRs only, from `feature/…`; the client has no merge request. Every other caller (the Phase 2 `open_pull_request` included) is refused ([github-intake §10](github-intake.md#10-automatic-publication-and-completion-w433)) | `test_pull_requests_are_flagged_and_never_created`, `test_the_live_adapter_never_creates_a_pull_request` **[V]**; live check R/Q3 **[V]**; `test_the_live_client_creates_only_authorized_draft_prs` **[V]** (offline) |
+| Writes limited to test features in Phase 4 | `github.write_scope: test-features-only`: a sync of a feature without `test: true` against the live adapter raises `SyncScopeError` before any write. W4.3.1: a feature made from an operator-approved Issue may also write, but only comments on that Issue and its own board item ([github-intake.md](github-intake.md)) | `test_write_scope_limits_live_writes_to_test_features` **[V]** |
 
 ## 2. Architecture
 
@@ -43,14 +43,14 @@ TrackerClient protocol (issues.py)
 | `issue_sync.py` | `IssueSync` (sync, reconcile, cleanup, inspect, find_owned), `IssueLink` and `OutboxEntry` records, command ingestion |
 | `escalation.py` | `hold_task` / `release_task` (needs-human), shared by the CLI and validated commands |
 | `live_test.py` | The Phase 4 acceptance scenario (§12) |
-| `github_commands.py` | `feature.py github …`, `hold`, `release` |
-| `github_projects.py`, `projects_local.py`, `project_sync.py`, `project_commands.py`, `live_projects.py` | The Projects board (Phase 4 extension): GraphQL client and write guard, local board, synchronization, `feature.py github project …`, live test — [github-projects.md](github-projects.md) |
+| `github_commands.py` | `python -m feature_coordinator github …`, `hold`, `release` |
+| `github_projects.py`, `projects_local.py`, `project_sync.py`, `project_commands.py`, `live_projects.py` | The Projects board (Phase 4 extension): GraphQL client and write guard, local board, synchronization, `python -m feature_coordinator github project …`, live test — [github-projects.md](github-projects.md) |
 
 **Why `gh api`:** the coordinator never requests, reads, stores or prints a token. `gh` uses its existing login (keyring or `GH_TOKEN`). `--include` returns the status line and headers, so errors and rate limits are classified exactly as with a REST client. No new Python dependency is needed.
 
 ## 3. Authentication and required capabilities
 
-`python scripts/feature.py github status` (read-only) verifies, and names precisely what is missing:
+`python -m feature_coordinator github status` (read-only) verifies, and names precisely what is missing:
 
 | Capability | Check |
 | --- | --- |
@@ -156,7 +156,7 @@ Each `sync` of a feature, for the parent and every task, in this order:
 4. **Reconcile:** managed block, labels, open/closed. A difference from what the coordinator *last wrote* (stored block hash, label set, state) is reported as **drift** and repaired from the local state.
 5. **Comments:** new state-history entries, then pending outbox entries.
 
-The workflow calls `sync` after every operation that changes state (`plan`, `activate`, `run_task` after the claim is released, `request_contract`, `probe_dependency`, `verify_task`, `reopen_task`, `integrate`, `hold`, `release`, `complete`). Failures are recorded as `tracker-sync-deferred` events; `feature.py github sync FEATURE --apply` completes them later. With a project board configured, each sync is followed by the board sync ([github-projects §5](github-projects.md#5-synchronization)), and `run_task` additionally starts a separate `feature.py github sync` process when it claims a task and when its commit is being verified, so that GitHub shows the running task without the worker making a request while it holds its role slot.
+The workflow calls `sync` after every operation that changes state (`plan`, `activate`, `run_task` after the claim is released, `request_contract`, `probe_dependency`, `verify_task`, `reopen_task`, `integrate`, `hold`, `release`, `complete`). Failures are recorded as `tracker-sync-deferred` events; `python -m feature_coordinator github sync FEATURE --apply` completes them later. With a project board configured, each sync is followed by the board sync ([github-projects §5](github-projects.md#5-synchronization)), and `run_task` additionally starts a separate `python -m feature_coordinator github sync` process when it claims a task and when its commit is being verified, so that GitHub shows the running task without the worker making a request while it holds its role slot.
 
 ### 7.2 GitHub → local (validated commands only)
 
@@ -172,6 +172,7 @@ Policy:
 - A `release` never frees a dependency block ("released only by verified evidence"), and a release written before the current hold is **stale** and rejected. For holds that came from GitHub, comment IDs are compared, so no clock is involved; for local holds, timestamps are.
 - Each comment is processed once: the command, the ingestion cursor, the audit event (`github-command`) and the acknowledgement comment are written in one local transaction.
 - Coordinator comments (operation marker plus coordinator account) are never parsed as commands.
+- **W4.3.1:** on an Issue the coordinator does not own, `/worker approve <role> <spec-sha256>` from the same authors with the same permission makes the Issue one task, bound to the exact text approved ([github-intake.md](github-intake.md)).
 - **Nothing else is input:** labels, body edits, closing, reopening, project board cards and fields, and any other comment text never change local state. No command grants a path, a tool, shell access or any permission, and nothing in an Issue is executed.
 
 ## 8. Idempotency and recovery
@@ -215,24 +216,24 @@ Every write is paced by `min_write_interval_seconds` (1 s), following GitHub's g
 ## 11. Security
 
 - No token is requested, read, stored or printed. Tokens never appear in Git, Issue bodies, comments, logs, documentation or coordinator records; `gh auth status` was printed only with the token line redacted.
-- GitHub responses are untrusted. They are validated (§9), sanitized for display (`feature.py github inspect`), never executed, and never allowed to set permissions or paths.
+- GitHub responses are untrusted. They are validated (§9), sanitized for display (`python -m feature_coordinator github inspect`), never executed, and never allowed to set permissions or paths.
 - Command policy: §7.2. Rendered text is escaped against marker forgery (§4.1).
 - `AUTH_DISABLED`, `DEBUG_MODE`, production content and databases, the remote Qwen server and D-15/D-16/D-18 are untouched by Phase 4.
 
 ## 12. Live acceptance test
 
 ```bash
-python scripts/feature.py github status                                   # read-only capability check
+python -m feature_coordinator github status                                   # read-only capability check
 FC_GITHUB_LIVE=1 FC_GITHUB_LIVE_DIR=~/.local/state/mx-admin-agents/github-tests \
-  .venv/bin/python -m pytest -p no:cacheprovider scripts/tests/feature_coordinator/test_fc_github_live.py -v
+  .venv/bin/python -m pytest -p no:cacheprovider feature_coordinator/tests/test_fc_github_live.py -v
 # or, equivalently, the operator command (it prints every check):
-python scripts/feature.py github test-lifecycle --apply [--workdir DIR] [--no-cleanup]
-python scripts/feature.py --tracker local github test-lifecycle --apply   # rehearsal, no GitHub contact
+python -m feature_coordinator github test-lifecycle --apply [--workdir DIR] [--no-cleanup]
+python -m feature_coordinator --tracker local github test-lifecycle --apply   # rehearsal, no GitHub contact
 ```
 
 The scenario (`live_test.py`) uses a **new** feature ID (`fc-p4-<UTC timestamp>`), a disposable Git repository and a state directory under the work directory, and the real coordinator, Git coordinator and **bubblewrap-sandboxed gates**. Only the agents are scripted. It creates exactly four Issues (one parent, three components) and walks steps A–R of the assignment ([task-lifecycle §8](task-lifecycle.md#8-worked-example-the-phase-4-live-scenario)). The results of the run are recorded in [phase-status](phase-status.md).
 
-**Cleanup** (only if every check passed): a final verification comment (operation ID `final`) listing the checks, the feature ID and task IDs on each test Issue, then close with reason "completed", parent last. The Issues stay in GitHub for audit. `feature.py github cleanup-test FEATURE --apply --state-dir <work>/<feature>/state` repeats it safely: it refuses non-test features and Issues without `feature:test` or a valid ownership proof, skips closed Issues, and finds the final comment by its operation ID (a repeat sends no write). If a check fails, the Issues stay open with a failure comment on the parent, and the report lists their numbers and URLs.
+**Cleanup** (only if every check passed): a final verification comment (operation ID `final`) listing the checks, the feature ID and task IDs on each test Issue, then close with reason "completed", parent last. The Issues stay in GitHub for audit. `python -m feature_coordinator github cleanup-test FEATURE --apply --state-dir <work>/<feature>/state` repeats it safely: it refuses non-test features and Issues without `feature:test` or a valid ownership proof, skips closed Issues, and finds the final comment by its operation ID (a repeat sends no write). If a check fails, the Issues stay open with a failure comment on the parent, and the report lists their numbers and URLs.
 
 ## 13. Configuration (`github:` in [project-config.example.yaml](project-config.example.yaml))
 
@@ -244,6 +245,6 @@ The scenario (`live_test.py`) uses a **new** feature ID (`fc-p4-<UTC timestamp>`
 - **Discovery by label.** An Issue whose creation was interrupted *and* whose fixed label a human removed before the next sync would not be found by the key search, and a duplicate would be created. `reconcile` reports duplicates; it never deletes them.
 - **Relationships are Issue references** (task lists and `#N` links), not GitHub's sub-issue or "blocked by" APIs (not required; possible later).
 - **Project board workflows.** GitHub's "Auto-close issue" workflow on Project #2 closed an Issue whose card reached Done, and the Issue sync then reopened it with a drift comment, because only the local state closes Issues. Since D-28 (2026-10-17) the workflow is switched off, verified by configuration and by a behavior check ([github-projects §9](github-projects.md#9-githubs-built-in-project-workflows)). The repair still applies if it is ever switched on again.
-- **One account.** Coordinator and operator share the `spyderbg` account. Coordinator comments are told apart by their operation marker; a human comment that copies such a marker is ignored as a command, which is the safe direction.
-- **Pull requests** are refused until a later phase sets `LIVE_PULL_REQUESTS_ENABLED` with operator approval. The feature keeps its single local PR candidate.
+- **One account.** Coordinator and operator share the `spyderbg` account. Coordinator comments are told apart by their operation marker; a human comment that copies such a marker is ignored as a command, which is the safe direction. An agent with access to that login can post commands, and W4.3.1 approvals, as the operator. This is a known risk, accepted temporarily ([github-intake §9](github-intake.md#accepted-risk-shared-github-identity-and-approval-impersonation)).
+- **Pull requests** are refused, with one exception (W4.3.3, off by default): the ONE Draft PR of an approved GitHub Issue's feature, opened by the publisher when `github.publish.enabled` is true. A person merges it; the coordinator never merges ([github-intake §10](github-intake.md#10-automatic-publication-and-completion-w433)). Every other feature keeps its single local PR candidate. Pull requests are read through `list_pull_requests` and `get_pull_request`, with every field that an adoption or completion decision uses validated (`parse_pull`).
 - **Write scope:** test features only, until the operator approves `all-features` (Phase 5).

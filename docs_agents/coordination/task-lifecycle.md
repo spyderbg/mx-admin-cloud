@@ -73,12 +73,29 @@ Legal transitions: [feature-workflow §5.1](feature-workflow.md#51-task). Re-app
 
 Atomic under `coordinator.lock`: the task must be `ready`, unclaimed and of the caller's role; the claim takes `project.lock` shared and `role-<role>.lock` exclusive, records PID + start time + boot ID, and moves the task to `in-progress` ([feature-workflow §7](feature-workflow.md#7-locks-claims-and-recovery-d-3-d-12)). One writer per role; different roles run in parallel; full-project work is exclusive. Labels are never locks. Live I1 shows a duplicate claim and a second Backend writer rejected **[V]**.
 
+## 4a. Multi-step tasks and checkpoints (W3)
+
+A task may define ordered `steps` (`Task.steps`; task records are schema v2, and W2's v1 records are migrated on load). Each step is one bounded agent invocation, and its accepted changes become one **checkpoint**. The record lives in `checkpoints/<task>.json`, plus one commit with a `Feature-Checkpoint` trailer when files changed.
+
+The task's states are unchanged: progress is checkpoint metadata.
+- **interrupted:** `in-progress` with a dead claim;
+- **resumable:** `ready` with completed and remaining steps;
+- **blocked by a recovery conflict:** `needs-human`, reason `recovery conflict: …`.
+
+A resumed run reconciles first and runs only the remaining steps. Design, protocol and recovery: [worker-checkpoints.md](worker-checkpoints.md).
+
+W4 adds scheduling metadata beside the task, not new states: `scheduling/<task>.json` ([worker-autonomy.md](worker-autonomy.md) §7).
+- **waiting for a retry or a subscription:** `ready` with a future next attempt;
+- **needs attention:** an attention record (with the operator's action), or `needs-human`.
+
+The service moves a retryable `failed` task back to `ready`; `worker reset-retries` is the operator's explicit version of that.
+
 ## 5. Human escalation
 
 | Action | Local | GitHub (authorized operator, ≥ write permission) |
 | --- | --- | --- |
-| Hold for a human decision | `feature.py hold TASK --reason … --apply` | `/feature hold <task-id> <reason>` |
-| Release | `feature.py release TASK --apply` | `/feature release <task-id>` |
+| Hold for a human decision | `python -m feature_coordinator hold TASK --reason … --apply` | `/feature hold <task-id> <reason>` |
+| Release | `python -m feature_coordinator release TASK --apply` | `/feature release <task-id>` |
 
 A held task (`needs-human`) stays held when its dependencies become verified, across restarts and syncs, and against labels or a closed Issue. Only a release resumes it, and it is blocked again at once if its dependencies are unverified (`test_a_human_hold_survives_dependency_verification` **[V]**; live T3, J, J2 **[V]**). A running task cannot be held; stop it first. Full command policy: [github-integration §7.2](github-integration.md#72-github--local-validated-commands-only).
 
@@ -106,6 +123,6 @@ After every task is verified, `integrate()` runs the integration gates as a quie
 | K2, K3 | The contract is re-opened (v2): CLI and Frontend are blocked again; the re-verified contract unblocks them |
 | L, M | A repeated sync sends no write; exactly four owned Issues, one per key |
 | R, R1, R2 | CLI and Frontend verified; one PR candidate; a second refused; no remote PR; one branch with four single-role commits |
-| N, O, P | A new process runs `feature.py github reconcile --apply`: no drift, orphan, duplicate or write; Issue numbers unchanged |
+| N, O, P | A new process runs `python -m feature_coordinator github reconcile --apply`: no drift, orphan, duplicate or write; Issue numbers unchanged |
 | Q–Q4 | Every pre-existing Issue and PR, every pre-existing label and the bug-workflow trees are unchanged |
 | Cleanup | A final verification comment on each test Issue, then close |

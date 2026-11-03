@@ -1,0 +1,205 @@
+"""testenv.toml loading: this file -> testenv.local.toml -> CLI overrides.
+
+tomllib is stdlib on Python 3.11+ (the repo venv is newer still) — no new dependency.
+See testenv.toml's own comments for what each setting means; this module is only the
+loader + the typed shape the rest of test_environment/mxfix/ consumes.
+"""
+
+from __future__ import annotations
+
+import tomllib
+from dataclasses import asdict, dataclass, field, fields
+from pathlib import Path
+from typing import Any
+
+from mxissues.config import ConfigError as IssuesConfigError
+from mxissues.config import GitHubIssuesConfig, GitLabIssuesConfig, IssuesConfig
+from testenvlib.paths import REPO_ROOT, TEST_ENVIRONMENT_DIR
+
+TESTENV_TOML = TEST_ENVIRONMENT_DIR / "testenv.toml"
+TESTENV_LOCAL_TOML = TEST_ENVIRONMENT_DIR / "testenv.local.toml"
+# Where testenv.local.toml lived before the test environment moved into test_environment/.
+LEGACY_TESTENV_LOCAL_TOML = REPO_ROOT / "testenv.local.toml"
+
+STRATEGIES = ("report", "heal", "batch", "work")
+FIXER_ADAPTERS = ("codex", "claude")
+SEVERITIES = ("high", "medium", "low")
+
+
+class ConfigError(Exception):
+    """Raised for a missing/malformed testenv.toml, or an unknown key in it."""
+
+
+def _from_dict(cls: type, data: dict[str, Any], *, path: str) -> Any:
+    known = {f.name for f in fields(cls)}
+    unknown = set(data) - known
+    if unknown:
+        raise ConfigError(f"Unknown key(s) in [{path}]: {', '.join(sorted(unknown))} (expected one of {sorted(known)})")
+    defaults = cls()
+    return cls(**{**asdict(defaults), **data})
+
+
+@dataclass(frozen=True)
+class LimitsConfig:
+    max_fix_attempts: int = 3
+    concurrency: int = 3
+    severity_threshold: str = "medium"
+    max_new_issues: int = 20
+
+
+@dataclass(frozen=True)
+class FixerConfig:
+    adapter: str = "codex"
+    timeout_seconds: int = 1800
+
+
+@dataclass(frozen=True)
+class GitConfig:
+    base_branch: str = "dev"
+    branch_prefix: str = "ai/"
+    push: bool = True
+    open_pr: bool = True
+
+
+@dataclass(frozen=True)
+class RunConfig:
+    strategy: str = "report"
+    limits: LimitsConfig = field(default_factory=LimitsConfig)
+    fixer: FixerConfig = field(default_factory=FixerConfig)
+    git: GitConfig = field(default_factory=GitConfig)
+    issues: IssuesConfig = field(default_factory=IssuesConfig)
+
+    def validate(self) -> None:
+        if self.strategy not in STRATEGIES:
+            raise ConfigError(f"strategy must be one of {STRATEGIES}, got {self.strategy!r}")
+        if self.fixer.adapter not in FIXER_ADAPTERS:
+            raise ConfigError(f"[fixer] adapter must be one of {FIXER_ADAPTERS}, got {self.fixer.adapter!r}")
+        if self.limits.severity_threshold not in SEVERITIES:
+            raise ConfigError(f"[limits] severity_threshold must be one of {SEVERITIES}, got {self.limits.severity_threshold!r}")
+        if self.limits.max_fix_attempts < 1:
+            raise ConfigError("[limits] max_fix_attempts must be >= 1")
+        if self.limits.concurrency < 1:
+            raise ConfigError("[limits] concurrency must be >= 1")
+        if self.limits.max_new_issues < 0:
+            raise ConfigError("[limits] max_new_issues must be >= 0 (0 disables issue creation entirely)")
+        if self.fixer.timeout_seconds < 1:
+            raise ConfigError("[fixer] timeout_seconds must be >= 1")
+        try:
+            self.issues.validate()
+        except IssuesConfigError as exc:
+            raise ConfigError(str(exc)) from exc
+
+
+def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+    result = dict(base)
+    for key, value in overlay.items():
+        if isinstance(value, dict) and isinstance(result.get(key), dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
+def load_raw(*, local_path: Path = TESTENV_LOCAL_TOML) -> dict[str, Any]:
+    # Refuse rather than silently drop a pre-move override (e.g. `[git] push = false`).
+    if LEGACY_TESTENV_LOCAL_TOML.is_file():
+        raise ConfigError(f"{LEGACY_TESTENV_LOCAL_TOML} is no longer read — move it to {TESTENV_LOCAL_TOML}.")
+    if not TESTENV_TOML.is_file():
+        raise ConfigError(f"{TESTENV_TOML} not found — it should be tracked in test_environment/. See testenv.toml's own comments.")
+    try:
+        data = tomllib.loads(TESTENV_TOML.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(f"{TESTENV_TOML}: {exc}") from exc
+
+    if local_path.is_file():
+        try:
+            local_data = tomllib.loads(local_path.read_text(encoding="utf-8"))
+        except tomllib.TOMLDecodeError as exc:
+            raise ConfigError(f"{local_path}: {exc}") from exc
+        data = _deep_merge(data, local_data)
+
+    return data
+
+
+def _build_issues(raw: dict[str, Any]) -> IssuesConfig:
+    """[issues] + its nested [issues.gitlab] / [issues.github] (+
+    [issues.github.status_options]) — nested tables, so not _from_dict()'s flat merge.
+    status_options merges per key over the defaults: overriding one option name doesn't
+    require restating the other three.
+    """
+    gitlab = _from_dict(GitLabIssuesConfig, raw.get("gitlab", {}), path="issues.gitlab")
+    github_raw = dict(raw.get("github", {}))
+    status_options = github_raw.pop("status_options", {})
+    github = _from_dict(GitHubIssuesConfig, github_raw, path="issues.github")
+    if status_options:
+        github = GitHubIssuesConfig(**{**asdict(github), "status_options": {**github.status_options, **status_options}})
+    issues = _from_dict(IssuesConfig, {k: v for k, v in raw.items() if k not in ("gitlab", "github")}, path="issues")
+    return IssuesConfig(tracker=issues.tracker, gitlab=gitlab, github=github)
+
+
+def build_config(raw: dict[str, Any]) -> RunConfig:
+    limits = _from_dict(LimitsConfig, raw.get("limits", {}), path="limits")
+    fixer = _from_dict(FixerConfig, raw.get("fixer", {}), path="fixer")
+    git = _from_dict(GitConfig, raw.get("git", {}), path="git")
+    issues = _build_issues(raw.get("issues", {}))
+
+    known_top = {"strategy", "limits", "fixer", "git", "issues"}
+    unknown_top = set(raw) - known_top
+    if unknown_top:
+        raise ConfigError(f"Unknown top-level key(s) in testenv.toml: {', '.join(sorted(unknown_top))}")
+
+    config = RunConfig(strategy=raw.get("strategy", "report"), limits=limits, fixer=fixer, git=git, issues=issues)
+    config.validate()
+    return config
+
+
+def load_config(*, overrides: dict[str, Any] | None = None) -> RunConfig:
+    """The one entry point the rest of test_environment/mxfix/ and testenv.py should use.
+
+    *overrides* is a raw dict in the same nested shape as testenv.toml itself (e.g.
+    `{"strategy": "heal", "limits": {"concurrency": 1}}`), deep-merged on top of
+    testenv.toml + testenv.local.toml — the third and final step of the "Resolution
+    order" testenv.toml's own comments describe. testenv.py's `run` subcommand builds
+    this from whichever `--<setting>` CLI flags were actually passed; every setting has
+    one, so every setting is CLI-overridable, matching that promise exactly.
+    """
+    raw = load_raw()
+    if overrides:
+        raw = _deep_merge(raw, overrides)
+    return build_config(raw)
+
+
+def load_issues_config(*, tracker: str | None = None) -> IssuesConfig:
+    """Just testenv.toml's [issues] section (+ testenv.local.toml, + a --tracker CLI
+    override) — what test_environment/issues.py needs, validated the same way `run` validates it.
+    """
+    raw = load_raw()
+    if tracker is not None:
+        raw = _deep_merge(raw, {"issues": {"tracker": tracker}})
+    issues = _build_issues(raw.get("issues", {}))
+    try:
+        issues.validate()
+    except IssuesConfigError as exc:
+        raise ConfigError(str(exc)) from exc
+    return issues
+
+
+def render_config(config: RunConfig) -> str:
+    lines = [f"strategy = {config.strategy!r}", "", "[limits]"]
+    for f in fields(config.limits):
+        lines.append(f"  {f.name} = {getattr(config.limits, f.name)!r}")
+    lines.append("\n[fixer]")
+    for f in fields(config.fixer):
+        lines.append(f"  {f.name} = {getattr(config.fixer, f.name)!r}")
+    lines.append("\n[git]")
+    for f in fields(config.git):
+        lines.append(f"  {f.name} = {getattr(config.git, f.name)!r}")
+    lines.append("\n[issues]")
+    lines.append(f"  tracker = {config.issues.tracker!r}")
+    lines.append("\n[issues.gitlab]")
+    for f in fields(config.issues.gitlab):
+        lines.append(f"  {f.name} = {getattr(config.issues.gitlab, f.name)!r}")
+    lines.append("\n[issues.github]")
+    for f in fields(config.issues.github):
+        lines.append(f"  {f.name} = {getattr(config.issues.github, f.name)!r}")
+    return "\n".join(lines)

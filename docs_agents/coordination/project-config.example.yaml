@@ -1,8 +1,8 @@
 # Feature coordinator — documented example configuration for mx-admin-cloud (v5 §10).
 #
 # This file is DOCUMENTATION, not a live credential file. It loads into exactly the same
-# object as the coordinator's built-in configuration (scripts/feature_coordinator/config.py,
-# default_config()); `python scripts/feature.py config` and the test suite verify that.
+# object as the coordinator's built-in configuration (feature_coordinator/config.py,
+# default_config()); `python -m feature_coordinator config` and the test suite verify that.
 #
 # Never put endpoints, API keys or other secrets here. Provider endpoints and keys are read
 # from the runtime environment only (variable NAMES below). Paths are repository-relative
@@ -33,27 +33,39 @@ state:
   # Deny-by-default allowlist; FUSE and network filesystems are always rejected.
   allowed_filesystems: [ext4, ext3, ext2, xfs, btrfs, f2fs, tmpfs]
 
+# Role → agent → model (W2). `provider` is the agent; `model` overrides that provider's model
+# ("default" = the CLI's own default model; omitted = the provider's `model`). Both are plain
+# configuration: changing them needs no code change. An agent/model combination the agent kind
+# does not support (e.g. a Claude model for Codex) is rejected, never substituted. Write scopes
+# belong to the role and do not change with the agent.
 roles:                                   # max_writers is fixed to 1 per role (v5 ceiling)
   backend:
-    provider: claude
+    provider: claude                     # Claude Code
+    model: opus
     owned_paths: ["backend/**", "docs_agents/backend/**"]
     excluded_paths: ["backend/data/**"]
     max_writers: 1
   cli:
-    provider: claude
+    provider: claude                     # Claude Code; `provider: codex` (+ a Codex model or default) also works
+    model: sonnet
     owned_paths: ["cli/**", "docs_agents/cli/**"]
     max_writers: 1
   frontend:
     provider: codex
+    model: default                       # Codex's own default model, explicitly
     owned_paths: ["frontend/**", "docs_agents/frontend/**"]
     max_writers: 1
   automation:
     provider: remote_qwen
+    enabled: false                       # disabled: its tasks are never run (no request to the remote Qwen)
     owned_paths: ["scripts/**", "test_environment/**", "docs_agents/automation/**"]
-    excluded_paths: ["scripts/mxfix/**", "scripts/mxissues/**", "scripts/deploy.sh"]
+    # testenv.toml is inside test_environment/** but approval-required; owned paths need no grant, so exclude it
+    excluded_paths: ["test_environment/mxfix/**", "test_environment/mxissues/**", "test_environment/testenv.toml",
+                     "test_environment/testenv.local.toml", "scripts/deploy.sh"]
     max_writers: 1
   coordination:
     provider: claude                     # configurable
+    model: sonnet
     owned_paths: ["docs_agents/coordination/**"]
     max_writers: 1
 
@@ -67,8 +79,9 @@ protected_paths:
   - "content/**"
   - "data/**"
   - "backend/data/**"
-  - "scripts/mxfix/**"                   # independent bug-finding/repair system
-  - "scripts/mxissues/**"                # independent bug-finding/repair system
+  - "test_environment/mxfix/**"          # independent bug-finding/repair system
+  - "test_environment/mxissues/**"       # independent bug-finding/repair system
+  - "test_environment/testenv.local.toml"  # per-developer test-env overrides (Git-ignored)
 
 # Writable only with an explicit, task-specific operator grant (v5 §3).
 approval_required_paths:
@@ -77,7 +90,7 @@ approval_required_paths:
   - "README.md"
   - ".gitignore"
   - ".gitlab-ci.yml"
-  - "testenv.toml"
+  - "test_environment/testenv.toml"
   - "scripts/deploy.sh"
   - ".claude/**"
   - ".cursor/**"
@@ -93,9 +106,9 @@ providers:
   claude:
     kind: claude-code
     executable: claude
-    model: ""                            # empty: Claude Code's own default model
-    # No credential files (W1, D-20): nothing is mounted into a sandbox to authenticate; the
-    # host-side broker holds the upstream credential (see `broker` below). The key is refused.
+    model: ""                            # the provider default ("" or "default": Claude Code's own default)
+    # No credential files (W1, D-20): nothing is mounted into a sandbox to authenticate. A legacy
+    # `credential_files` key is accepted but has no effect (reported by worker-check).
   codex:
     kind: codex
     executable: codex
@@ -141,7 +154,7 @@ gates:
   frontend-tests: [npm, run, "test:voices"]
   frontend-tests-content: [npm, run, "test:content"]
   frontend-tests-auth: [npm, run, "test:auth"]
-  coordinator-tests: [python, -m, pytest, -q, -p, "no:cacheprovider", scripts/tests]
+  coordinator-tests: [python, -m, pytest, -q, -p, "no:cacheprovider", scripts/tests, feature_coordinator/tests]
 
 # Baseline-aware Pylint gates (D-19): findings already present at the feature's base commit
 # are reported; findings the feature introduces block. The only policy is block-new.
@@ -162,8 +175,13 @@ unsafe_gates: {}
 
 # How real runners and gates execute (Phase 3).
 runtime:
-  containment: bwrap                     # fixed: write-capable runs are never unconfined
-  agent_network: false                   # fixed (W1, D-21): runners reach their model only through the broker
+  containment: bwrap                     # fixed: gates and the bwrap backend are never unconfined
+  # W2: native-cli = the installed claude/codex CLIs with the operator's existing SUBSCRIPTION logins,
+  # run directly in the workspace (NOT a security sandbox); bwrap = the Phase 3 OS containment.
+  # Never a silent fallback from one to the other.
+  execution_backend: native-cli
+  python_interpreter: auto               # auto: <workspace>/.venv/bin/python, else python3; or an absolute path
+  agent_network: false                   # no effect since W1 (D-21): bwrap runners never share the host network
   gate_network: false                    # fixed
   task_timeout_seconds: 3600
   heartbeat_interval_seconds: 10
@@ -174,9 +192,41 @@ runtime:
   secret_patterns: ["**/.env", "**/.env.*"]    # untracked/ignored matches are hidden from agents
   secret_exempt_suffixes: [.example, .sample, .template]
   role_commands:                         # Claude Code Bash allowlist per role (prefix rules); all else denied
-    backend: ["python -m pytest:*", "python -m pylint:*", "python -m compileall:*"]
-    cli: ["python -m pytest:*", "python -m pylint:*", "kiddo-cli --help:*"]
-    coordination: ["python scripts/check_docs_agents.py:*"]
+    # {python} = the resolved interpreter (W2); a bare python/python3 is rejected (it may not exist)
+    backend: ["{python} -m pytest:*", "{python} -m pylint:*", "{python} -m compileall:*"]
+    cli: ["{python} -m pytest:*", "{python} -m pylint:*", "kiddo-cli --help:*"]
+    coordination: ["{python} scripts/check_docs_agents.py:*"]
+
+# The autonomous Worker service (W4; docs_agents/coordination/worker-autonomy.md). Safe defaults:
+# the service is OFF until autonomous.enabled is set; ONE agent at a time; bounded, category-specific
+# retries that survive restarts; validation auto-fix OFF; a conflict always stops the affected task.
+# An exhausted subscription is waited for: never another provider, model or billing method.
+worker:
+  autonomous:
+    enabled: false                       # `python -m feature_coordinator worker start` refuses to run until this is true
+  max_parallel: 1                        # agents at a time (the service: fixed 1 in W4; `python -m feature_coordinator work` default)
+  idle_poll_seconds: 30                  # an idle or waiting service looks again this often
+  heartbeat_seconds: 30                  # health record refresh
+  max_launches_per_task: 10              # hard cap on agent launches per task, whatever the reason
+  retry:
+    enabled: true
+    transient:                           # network errors, a CLI briefly missing, a deferred commit
+      max_attempts: 3
+      initial_delay_seconds: 60          # backoff: 60, 120, 240 … capped at max_delay_seconds
+      max_delay_seconds: 1800
+    subscription:                        # usage limit reached: WAITING, conservative bounded rechecks
+      enabled: true
+      recheck_interval_seconds: 900
+      max_rechecks: 16
+    validation:                          # failing gates: operator attention unless auto-fix is enabled
+      auto_fix_enabled: false
+      max_attempts: 2
+  recovery:
+    auto_recover_safe: true              # W3 safe recovery when the service starts
+    stop_on_conflict: true               # fixed: conflicts are never resolved automatically
+    stop_orphans_after_deadline: true    # an identified orphaned agent is stopped only after its run deadline
+  startup:
+    failure_limit: 3                     # identical consecutive startup failures → exit 78 (systemd: no restart)
 
 # Host-side authentication broker (W1: D-20, D-21; docs_agents/coordination/worker-security.md).
 # Every real runner sandbox has its own empty network namespace; its CLI reaches the model only
@@ -252,3 +302,26 @@ github:
     active_view: Active Tasks            # open Issues in Ready, In Progress, Blocked, Review (D-29)
     item_settle_seconds: 2.0             # after adding an item, before setting fields (project workflows)
     max_field_attempts: 2                # field writes re-applied when a read-back differs
+  # W4.3.1 GitHub Issue intake (docs_agents/coordination/github-intake.md). An Issue that a command
+  # author approves with `/worker approve <role> <spec-sha256>` (printed by `python -m feature_coordinator github intake
+  # show N`) becomes ONE feature with ONE task of that role; the approved title and body are recorded
+  # and never re-read. Nothing is written to an Issue before approval. Off until an operator enables it.
+  intake:
+    enabled: false
+    poll_interval_seconds: 60            # the Worker service polls GitHub at most this often (>= 10)
+    max_issues_per_poll: 30              # changed Issues whose comments are read per poll; the rest next time
+    max_spec_characters: 20000           # a longer Issue body is refused as a task specification
+    role_gates:                          # what an approved task of each role must pass (no gates: no approval)
+      backend: [backend-tests, backend-lint, docs-check]
+      cli: [cli-lint, docs-check]
+      frontend: [frontend-type-check, frontend-build, docs-check]
+      coordination: [docs-check]
+  # W4.3.3 automatic publication (docs_agents/coordination/github-intake.md §10). For a feature made from
+  # an approved Issue only: once every task is verified, the integration barrier runs, the feature's own
+  # branch is pushed (never dev or another protected branch, never forced), ONE Draft PR to its base branch
+  # is opened (or an existing matching PR adopted), and after a PERSON merged it the feature is done, the
+  # Issue closed and its Project #2 card moved to Done. The Worker never merges. Off until an operator enables it.
+  publish:
+    enabled: false
+    poll_interval_seconds: 60            # the Worker service checks the PR at most this often (>= 10)
+    git_timeout_seconds: 120             # one push, ls-remote or fetch (10..1800); a timeout is retried safely

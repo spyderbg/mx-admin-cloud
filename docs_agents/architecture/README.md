@@ -13,7 +13,7 @@
 | `backend` | Claude Code | `backend/**` **except `backend/data/**`**; `docs_agents/backend/**` | everything else |
 | `cli` | Claude Code | `cli/**`; `docs_agents/cli/**` | everything else |
 | `frontend` | Codex | `frontend/**` (including **generated** TS destinations `frontend/src/{types,api,mocks}`); `docs_agents/frontend/**` | everything else |
-| `automation` | configurable; **preferred: remote Qwen** via an OpenAI-compatible Chat Completions API, driven by a local runner, after validation (§11.11) | `scripts/**` **except `scripts/mxfix/**`, `scripts/mxissues/**` and protected deployment scripts**; `test_environment/**`; `docs_agents/automation/**` | the separate bug workflow; generator *outputs* in other roles' trees |
+| `automation` | configurable; **preferred: remote Qwen** via an OpenAI-compatible Chat Completions API, driven by a local runner, after validation (§11.11) | `scripts/**` **except protected deployment scripts**; `test_environment/**` **except `test_environment/mxfix/**`, `test_environment/mxissues/**`, the protected `test_environment/testenv.local.toml` and the approval-required `test_environment/testenv.toml`**; `docs_agents/automation/**` | the separate bug workflow; generator *outputs* in other roles' trees |
 | `coordination` | configurable | `docs_agents/coordination/**`; the approved coordination runtime/config directory | application code |
 | `full-project` | explicitly authorized Claude Code or Codex | only task-approved paths; runs **exclusively** | protected data by default |
 
@@ -21,10 +21,10 @@ Paths requiring **explicit task-specific approval** (v4 §3; this resolves Phase
 
 - `docs_agents/architecture/**` and `docs_agents/README.md` — the designated docs owner during bootstrap; afterwards, an assigned coordination or approved integration owner.
 - Root agent instruction files (`CLAUDE.md`, `AGENTS.md`, `.claude/`, `.cursor/`, `.opencode/`, …).
-- `.github/**`, `docker/**`, `.gitlab-ci.yml`, `testenv.toml`, `scripts/deploy.sh`, and configuration outside the per-role trees.
+- `.github/**`, `docker/**`, `.gitlab-ci.yml`, `test_environment/testenv.toml`, `scripts/deploy.sh`, and configuration outside the per-role trees.
 - **Protected, never written without specific approval:** `content/**`, `data/**`, `backend/data/**`, `.env`, tracked credentials, production DBs, deployment settings.
 
-The **independent bug workflow** `scripts/mxissues/**` and `scripts/mxfix/**` belongs to no feature role. It is neither modified, imported, extended, scheduled nor required by the feature coordinator (§11.1).
+The **independent bug workflow** `test_environment/mxissues/**` and `test_environment/mxfix/**` belongs to no feature role. It is neither modified, imported, extended, scheduled nor required by the feature coordinator (§11.1).
 
 > **Superseded by v4 (historical v3 ownership, Phase 0):**
 > - The v3 table gave Automation `scripts/**` **including** `mxissues`/`mxfix`.
@@ -163,7 +163,7 @@ These are places where disjoint write scopes **do not** prevent breakage, so int
 
 ## 8. Existing bug-workflow automation and former v3 attachment points
 
-> **Superseded by v4.** `scripts/mxissues/**` and `scripts/mxfix/**` are a **separate, autonomous bug-detection and repair workflow intended for a different machine**. The feature-development coordinator must not change, refactor, extend, schedule, import from, depend on or repurpose them (v4 §1 rule 3, §7.1).
+> **Superseded by v4.** `test_environment/mxissues/**` and `test_environment/mxfix/**` are a **separate, autonomous bug-detection and repair workflow intended for a different machine**. The feature-development coordinator must not change, refactor, extend, schedule, import from, depend on or repurpose them (v4 §1 rule 3, §7.1).
 >
 > The "extension points" below were a **v3 proposal and will not be implemented**. They are kept only as a record of what the Phase 0 audit observed. The observed behavior remains accurate background (discovery §9).
 
@@ -240,7 +240,7 @@ This is a **design baseline**, not an implementation. Phase 2 turns it into `doc
 | | **Feature coordinator (new; built from Phase 2)** | **Bug workflow (existing; untouched)** |
 | --- | --- | --- |
 | Purpose | Operator-approved new features across Backend/CLI/Frontend | Autonomous bug detection and repair |
-| Code | New standalone package (location: D-13) | `scripts/mxissues/**`, `scripts/mxfix/**` |
+| Code | New standalone package (location: D-13) | `test_environment/mxissues/**`, `test_environment/mxfix/**` |
 | Host | The single Linux agent host | A different, dedicated machine |
 | Branches | One `feature/<slug>` per feature | `ai/<issue>` and `ai/batch-*` (`testenv.toml` `branch_prefix = "ai/"`) |
 | Checkout | One shared checkout per active feature | `.mxworktrees/<iid>` worktrees |
@@ -253,7 +253,7 @@ This is a **design baseline**, not an implementation. Phase 2 turns it into `doc
 - It never reads or writes issues labeled `mx-auto`.
 - It never pushes to `ai/*` branches, and the bug workflow never pushes into a live `feature/*` branch.
 - No `feature:*` label exists in the repository today (Phase 0 label list), so there is no collision **[V]**.
-- Generic tools are **called, not copied**: `scripts/testenv*.py`, `scripts/testenvlib/**`, `scripts/validate*.py`, `export_openapi.py`, `generate_ts_*.py`, `check_docs_agents.py`.
+- Generic tools are **called, not copied**: `test_environment/testenv*.py`, `test_environment/testenvlib/**`, `scripts/validate*.py`, `export_openapi.py`, `generate_ts_*.py`, `check_docs_agents.py`.
 
 ### 11.2 Topology
 
@@ -313,8 +313,8 @@ Fallback runners are allowed only within the configured cost, privacy and access
 
 | Layer | Mechanism | Status on this host |
 | --- | --- | --- |
-| 1. OS sandbox per runner (containment) | `bwrap` mount namespace: whole checkout bound **read-only**, role roots bound read-write, `.git` read-only, protected paths never writable, private `/tmp` | `bwrap` works unprivileged **[V]** (`kernel.apparmor_restrict_unprivileged_userns=1` with a working AppArmor profile); the Landlock LSM is active as an alternative **[V]**. **Implemented in Phase 3 [V]:** the containment matrix (19 write targets × 5 roles, 0 mismatches), private HOME, cleared environment; fails closed without `bwrap` ([agent-ownership.md](../coordination/agent-ownership.md)) |
-| 2. Runner permissions | Claude Code permission settings / Codex sandbox flags set by the launcher | **Verified in Phase 3 [V]** (probed on the installed CLIs; live smoke runs observed). W1 (2026-10-21): no runner credential is mounted, runner sandboxes have their own network namespace, and agent commands run in the CLI's nested sandbox; the model is reached through a host-side broker ([worker-security](../coordination/worker-security.md)) |
+| 1. OS sandbox per runner (containment) | `bwrap` mount namespace: whole checkout bound **read-only**, role roots bound read-write, `.git` read-only, protected paths never writable, private `/tmp` | `bwrap` works unprivileged **[V]** (`kernel.apparmor_restrict_unprivileged_userns=1` with a working AppArmor profile); the Landlock LSM is active as an alternative **[V]**. **Implemented in Phase 3 [V]:** the containment matrix (19 write targets × 5 roles, 0 mismatches), private HOME, cleared environment; fails closed without `bwrap` ([agent-ownership.md](../coordination/agent-ownership.md)). **W2 (2026-10-22):** applies to the `bwrap` execution backend only; the default `native-cli` backend runs the CLIs with the operator's subscription logins and **no OS containment** ([worker-functional.md](../coordination/worker-functional.md)) |
+| 2. Runner permissions | Claude Code permission settings / Codex sandbox flags set by the launcher | **Verified in Phase 3 [V]** (probed on the installed CLIs; live smoke runs observed). Residual risk on `dev` before W1: runner credentials are bound read-only into the runner sandbox (D-20). W1 (PR #20): for the `bwrap` backend no runner credential is mounted, runner sandboxes have their own network namespace, and agent commands run in the CLI's nested sandbox; the model is reached through a host-side broker ([worker-security](../coordination/worker-security.md)) |
 | 3. Commit gate | Git coordinator validates each path in the manifest: normalized, symlink-resolved, inside the caller's roots, not protected, hash-stable | Phase 2 skeleton, **Phase 3 enforcement [V]** (concurrent single-role commits, no foreign capture, clean `git fsck`) |
 | 4. PR/CI gate | Changed-path re-verification across the whole feature diff | Phase 6 |
 
@@ -487,7 +487,7 @@ Facts for that assessment **[V]** (addresses deliberately not repeated):
 | D-8 | Phase 1 sequential, supervised | **Approved** (completed) |
 | D-11 | How bootstrap work reaches the feature base | **Approved 2026-10-16:** the bootstrap work is integrated into `dev` through a **human-reviewed PR before the first feature**. This bootstrap PR is not a feature PR (v5 §11) |
 | D-12 | Location of coordinator state and lock files | **Approved 2026-10-16:** outside Git, under `$XDG_STATE_HOME/mx-admin-agents/`. Filesystem verified suitable (local ext4) **[V]**; the `flock` contention self-test runs before first reliance (§10) |
-| D-13 | Coordinator package | **Approved 2026-10-16:** `scripts/feature_coordinator/` with entry point `scripts/feature.py` (automation-owned; no imports from `mxfix`/`mxissues`/backend) |
+| D-13 | Coordinator package | **Approved 2026-10-16:** `scripts/feature_coordinator/` with entry point `scripts/feature.py` (automation-owned; no imports from `mxfix`/`mxissues`/backend). **Relocated 2026-10-30:** to the root-level `feature_coordinator/`, run as `python -m feature_coordinator`; `scripts/feature.py` was removed and the package is owned by no role |
 | D-14 | Automation model | **Approved 2026-10-16:** Qwen is **not local**. It runs on a remote inference server behind an OpenAI-compatible Chat Completions API, using the exact operator profile (§11.11). Declared capabilities are unvalidated |
 | D-4 | Feature base branch | **Approved 2026-10-17:** `dev` is the base for future `feature/*` branches |
 | D-5 | Security remediation priority / authentication and debug defaults | **Approved 2026-10-17:** preserve the existing development authentication and debug defaults; unattended or parallel agent execution must use isolation and security controls (bubblewrap containment, Phase 3) |

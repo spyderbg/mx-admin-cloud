@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FixResult",
+  "description": "Final structured response for a Codex fix attempt (docs/test_environment/initial_spec.md §3's example, passed via `codex exec --output-schema`). Mapped onto test_environment/mxfix/fixer.py's FixResult dataclass by CodexFixer.run().",
+  "type": "object",
+  "required": ["status", "files_changed", "tests_added", "tests_passed", "tests_failed", "summary"],
+  "additionalProperties": false,
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["fixed", "failed", "no_change"],
+      "description": "'fixed': the issue is resolved and all acceptance criteria are met. 'failed': attempted but could not resolve it. 'no_change': determined no code change was needed (e.g. the issue no longer reproduces)."
+    },
+    "files_changed": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Repo-relative paths of every file modified, added, or deleted."
+    },
+    "tests_added": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Number of new tests added, or null if not applicable/unknown."
+    },
+    "tests_passed": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Number of tests passing after the fix, or null if not applicable/unknown."
+    },
+    "tests_failed": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Number of tests still failing after the fix, or null if not applicable/unknown."
+    },
+    "summary": {
+      "type": "string",
+      "description": "A few sentences: what was wrong, what changed, why it's believed correct."
+    }
+  }
+}

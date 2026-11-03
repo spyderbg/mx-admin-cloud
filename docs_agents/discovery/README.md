@@ -45,7 +45,7 @@ This document records what was **observed** in the live repository, not what the
 | `cli/` | Typer CLI `kiddo-cli` (`cli/src/kiddo_cli/`), editable-installed in root `.venv` | HTTP-only client |
 | `frontend/` | Vue 3 + TS + Vite SPA | Star Admin Bootstrap 4 theme vendored |
 | `scripts/` | Generators, validation, `mxissues`, `mxfix`, `testenv*`, deploy/app helpers | Automation-owned |
-| `test_environment/` | Playwright e2e (9 specs), stub provider server | Used by `scripts/testenv.py` |
+| `test_environment/` | Playwright e2e (9 specs), stub provider server | Used by `test_environment/testenv.py` |
 | `docker/` | Compose (backend, frontend, backend-cli on UDS, cli), test compose, Dockerfiles, nginx | |
 | `content/` | Real content tree (categories/items/images/voices + CSV registries), **tracked in git** | Production-like data |
 | `data/`, `backend/data/` | `users.db` (SQLite, **tracked in git**), `users.sql` | Sensitive state — never touched |

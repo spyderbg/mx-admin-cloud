@@ -52,7 +52,7 @@ import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
-sys.stdout.reconfigure(line_buffering=True)  # see scripts/testenv.py for why
+sys.stdout.reconfigure(line_buffering=True)  # see test_environment/testenv.py for why
 
 # ---------------------------------------------------------------------------
 # Language names -> codes. Mirrors backend/src/core/languages.py LANG_MAP.

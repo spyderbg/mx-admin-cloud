@@ -83,15 +83,45 @@ File-system model **[S]** (details in `backend/CLAUDE.md`, verified against sour
 
 ## HTTP API
 
-37 operations under `/api/v1/content`, plus the `/content/**` static mount (not part of the OpenAPI document). Every operation passes `require_write_access`: viewers may `GET`, while only `admin`/`internal` may change data. `api/__tests__/test_viewer_access.py` guards this **[V]**. Full contract: [`openapi.yaml`](openapi.yaml).
+38 operations under `/api/v1/content`, plus the `/content/**` static mount (not part of the OpenAPI document). Every operation passes `require_write_access`: viewers may `GET`, while only `admin`/`internal` may change data. `api/__tests__/test_viewer_access.py` guards this **[V]**. Full contract: [`openapi.yaml`](openapi.yaml).
 
 | Resource | Operations |
 | --- | --- |
 | Categories | `GET`/`POST /categories`, `POST /categories/restore`, `DELETE /categories/archive/{archive_name}`, `GET`/`PATCH`/`DELETE /categories/{category_id}` |
 | Category media | `POST`/`DELETE …/icon`; `GET`/`POST …/images`, `PUT`/`DELETE …/images/{image_id}`; `GET`/`POST …/voices`, `PUT`/`DELETE …/voices/{voice_id}`, `POST …/voices/{voice_id}/regenerate` |
-| Items | `GET`/`POST …/items`, `GET`/`PUT`/`DELETE …/items/{item_id}` |
+| Items | `GET`/`POST …/items`, `GET …/items/export` (CSV, see below), `GET`/`PUT`/`DELETE …/items/{item_id}` |
 | Item images | `GET`/`POST …/images`, `POST …/images/generate`, `PUT`/`DELETE …/images/{image_id}`, `PUT …/images/{image_id}/main` |
 | Item voices | `GET`/`POST …/voices`, `POST …/voices/generate`, `PUT`/`DELETE …/voices/{voice_id}`, `PUT …/voices/{voice_id}/main`, `POST …/voices/{voice_id}/optimize`, `POST …/voices/{voice_id}/regenerate` |
+
+### Items CSV export
+
+`GET /api/v1/content/categories/{category_id}/items/export` (`items_export` in `routes/items.py`) is a read-only
+download of the same data as the JSON `GET …/items` route. It calls `ContentService.category_details_by_id`, so it
+follows the content provider strategy and has no provider-specific code. The JSON route is unchanged. The route is
+registered before `GET …/items/{item_id}`, so `export` is never resolved as an item id.
+
+Response contract (pinned by `__tests__/test_content_items_export.py`):
+
+| Aspect | Contract |
+| --- | --- |
+| Status | `200` |
+| `Content-Type` | `text/csv; charset=utf-8` |
+| `Content-Disposition` | `attachment; filename="<category_id>_items.csv"`. Every character outside `[A-Za-z0-9._-]` becomes `_`, leading/trailing `.`/`_` are stripped, the stem is cut to 100 characters, and an empty stem becomes `category`. |
+| Other headers | `X-Content-Type-Options: nosniff`, `Cache-Control: no-store` |
+| Encoding | UTF-8 with a leading BOM (`EF BB BF`) so Excel detects Cyrillic/accented names. Programmatic readers should decode with `utf-8-sig`. |
+| Format | Python `csv.writer`: `,` delimiter, `"` quote char, minimal quoting (a field with `,`, `"`, CR or LF is quoted, `"` doubled), `\r\n` line ends |
+| Header row | `id,name_en,name_es,name_fr,name_bg,images_count`, always present, so an empty category returns only this row |
+| Rows | One per item, sorted by item `id` (plain string order) |
+| `name_<lang>` | The stored name for that language with **no** English fallback. A missing translation is an empty cell. |
+| `images_count` | The integer from `ItemDetail.images_count` |
+| Formula protection | Every text cell (`id`, `name_*`) that starts with `=`, `+`, `-`, `@`, tab, CR or LF gets a `'` prefix (for example `=1+1` → `'=1+1`, `-5` → `'-5`). `images_count` is never prefixed. |
+
+Errors work the same way as the JSON items route. A request without authentication gets `401` from `get_current_user`.
+`CategoryNotFoundError` returns `404` and `InvalidCategoryNameError` returns `400`, each with the provider message,
+which contains ids but no paths. With no active provider the route returns `503`, from `get_content_service`. Any
+other provider error (`ContentError` or an unexpected exception) returns `500` with the fixed detail
+`"Failed to export the category items."`. The original message, which may contain filesystem paths, is only logged
+locally.
 
 ## Errors, Observability and Security
 
@@ -109,6 +139,13 @@ File-system model **[S]** (details in `backend/CLAUDE.md`, verified against sour
 | Command | Scope | Baseline |
 | --- | --- | --- |
 | `cd backend && ../.venv/bin/python -m pytest -q src/services/content` | 12 files, 474 tests (`test_content_service*.py`, `test_content_filesystem_*.py`, `test_content_access.py`, `test_content_static_files.py`) | Passed as part of the 919-test baseline **[V]** |
+
+Issue #39 added `test_content_filesystem_category_helpers.py`, which has 21 tmp-path unit tests for `FileSystemCategoriesMixin._category_name_to_icon_prompt` and `_first_available_category_image_index`. The content suite now has 13 files and 495 tests, and all pass **[V]**.
+
+The items CSV export added `test_content_items_export.py`, which has 19 HTTP tests. They use the stub provider plus
+one real `file_system` provider test over a tmp content tree, and cover auth, 404/400/500 without paths, the empty
+category, localized names, quoting, formula injection, the filename and route shadowing. The full backend suite then
+passed with 959 tests **[V]**.
 
 Fixtures:
 

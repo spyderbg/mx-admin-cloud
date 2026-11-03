@@ -1,7 +1,7 @@
 /**
  * Reads the dummy admin password out of .testenv/test.env at run time, rather than
- * hardcoding it a second time in TypeScript — scripts/testenv_seed.py
- * (TEST_DEFAULT_ADMIN_PASSWORD in scripts/testenvlib/paths.py) is the one source of truth.
+ * hardcoding it a second time in TypeScript — test_environment/testenv_seed.py
+ * (TEST_DEFAULT_ADMIN_PASSWORD in test_environment/testenvlib/paths.py) is the one source of truth.
  */
 
 import { readFileSync } from 'node:fs'
@@ -30,7 +30,7 @@ export function loadTestEnv(): Record<string, string> {
     text = readFileSync(TEST_ENV_PATH, 'utf-8')
   } catch {
     throw new Error(
-      `${TEST_ENV_PATH} not found. Seed the test environment first: python scripts/testenv.py seed`,
+      `${TEST_ENV_PATH} not found. Seed the test environment first: python test_environment/testenv.py seed`,
     )
   }
   return parseEnvFile(text)
