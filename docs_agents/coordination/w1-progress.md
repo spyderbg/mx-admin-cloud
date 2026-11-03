@@ -2,15 +2,17 @@
 
 > Owner role: **coordination**. Durable progress log for the W1 completion task (started 2026-11-03).
 > Branch: `security/worker-d20-d21` (Draft PR #20 → `dev`). Design document: [worker-security.md](worker-security.md).
-> Evidence tags as in worker-security.md: **[V]** verified by execution, **[S]** source/documentation read, **[U]** unverified.
+> Evidence tags as in worker-security.md: **[V]** verified by execution, **[S]** source/documentation read, **[U]** unverified;
+> since Stage 7 also **[C]** set by configuration only (accepted by the CLI, effect not demonstrated).
 
 ## Current status
 
 | Item | Status |
 | --- | --- |
-| Stage | 6 — done for this round: W1 reconciled with `dev` and tested; **blocked on operator decision B1** |
-| Branch head | `9af9621` merge of `dev` `068d0b9` into W1 `19e9f6d`, plus this report's commit — **local only, not pushed** (see [Delivery](#delivery)) |
-| Active Worker | `mx-admin-worker.service` running from the operator's checkout on `dev` (`068d0b9`), `execution_backend: native-cli`. **Not touched** by this work |
+| Stage | 7 — **operator decision A implemented**: opt-in `runtime.native_hardening` for the `native-cli` backend, tested offline with the installed CLIs ([Stage 7](#stage-7--decision-a-hardened-native-cli-backend)). **W1 is NOT complete**: D-21 for the CLI processes is still unenforced (blocker B1) |
+| Branch head | Stage 6 (`9af9621`, `439b159`) plus the Stage 7 commits — **local only, not pushed** (see [Delivery](#delivery)) |
+| Active Worker | `mx-admin-worker.service` running from the operator's checkout on `dev` (`068d0b9`), `execution_backend: native-cli`, hardening not configured. **Not touched** by this work |
+| Ready for | An operator-approved, bounded, real authenticated smoke test of the hardened mode ([requirements](#7h-requirements-for-a-real-authenticated-smoke-test)) |
 | Open blockers | See [Open blockers and operator decisions](#open-blockers-and-operator-decisions) |
 
 ## Constraints followed
@@ -116,7 +118,7 @@ Additional fixes found while testing the merge:
 6. `dev`'s W4 soak harness imports `FAKE_CREDENTIAL`, which W1 had removed from the test helpers (not collected by pytest; found by pylint) — restored.
 7. W1's broker configuration moved to `broker_config.py`, because the merged `config.py` exceeded the 1000-line module limit.
 
-## Files changed
+## Files changed (Stage 4)
 
 Merge commit `9af9621` against `dev` (`068d0b9`): 37 files, +3558/−217.
 
@@ -129,7 +131,7 @@ Merge commit `9af9621` against `dev` (`068d0b9`): 37 files, +3558/−217.
 
 Unchanged by W1: `native_backend.py`, the service, checkpoints, GitHub intake/publish, the backend, CLI and frontend.
 
-## Tests executed
+## Tests executed (Stage 4)
 
 All with fake credentials and fake providers; the W1 isolation and compat tests run in their own network namespaces. Outbound contact to a model provider: only the incident above. Caveat: the first three `codex sandbox` experiments (top-level, no login, no model call) ran with the host network available; their output showed no network activity, but it was not monitored.
 
@@ -146,13 +148,192 @@ All with fake credentials and fake providers; the W1 isolation and compat tests 
 | Same, nested in bubblewrap | `No permissions to create new namespace` **[V]** |
 | Not run | Real authenticated smoke tests (need operator approval); backend/CLI/frontend suites (not touched by W1) |
 
+## Stage 7 — Decision A: hardened native-cli backend
+
+Operator decision (2026-11-03): option A — opt-in hardening of the existing `native-cli` backend, an
+incremental improvement that keeps the working Worker, its task lifecycle and GitHub integration. All
+work in the isolated clone; the active Worker, its checkout, state, service, AppArmor and the logins were
+not touched; `dev` unchanged; nothing pushed. The parked W1 experiments (`~/worktrees/w1-parked`: the
+CONNECT egress proxy and broker secret-file checks) belong to option B and were **not** used.
+
+Installed versions on the desktop: **Claude Code 2.1.317**, **Codex 0.163.0**, bubblewrap 0.9.0, kernel
+7.0 (Landlock ABI 8), `kernel.apparmor_restrict_unprivileged_userns = 1`. No managed policy files
+(`/etc/claude-code`, `/etc/codex` absent).
+
+### 7a. Investigation results (what decided the design)
+
+All experiments used fake credentials in a fake HOME and a local fake model provider; the CLIs ran
+top-level under a **Landlock** domain that allowed TCP connects only to the fake provider's port
+(`feature_coordinator/tests/fc_landlock.py`; Landlock needs no namespace, so the CLIs' own sandboxes
+still start). Every claim below is **[V]** on this host unless tagged.
+
+| # | Finding | Consequence |
+| --- | --- | --- |
+| F1 | **Today's native mode (dev, live Worker)**: an allowlisted Claude Code command (`{python} …`) read the fake Claude login, `~/.claude.json`, Codex `auth.json`, the SSH key and files outside the workspace (also via a planted symlink and `..`), saw 742 host PIDs and the CLI's environment, **connected to the D-Bus session bus**, and wrote `.git/config`, `.git/hooks/pre-commit` and `.mcp.json`. With dev's Codex flags (`:workspace` ≙ `workspace-write`) a command read every fake login and inherited the host variables | The risk option A addresses; unchanged while hardening is off |
+| F2 | A `core.fsmonitor` in `.git/config` **runs during exactly the `git status` the native backend makes**; `core.hooksPath=/dev/null` (gitops) does not stop it. With F1, agent code can make the Worker run code unsandboxed after the run | Hardened mode blocks the write (both CLIs) and rejects any run that changes Git control files |
+| F3 | **Claude Code's own Linux sandbox cannot run a command on this desktop, even with the CLI top-level.** Its `apply-seccomp` step needs a capability inside a nested user namespace; the kernel log shows `apparmor="DENIED" operation="capable" profile="unpriv_bwrap" capname="sys_admin"` for every attempt, with or without Landlock (a standalone `bwrap … unshare -U` reproduces it). The command never runs (fail closed) | Blocker B1 extends to option A for Claude Code: its Bash tool **cannot be sandboxed here**, so hardened mode removes it (`claude_shell: disabled`, the default) |
+| F4 | `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` (2.1.317, Linux) changes the sandbox's bwrap mounts: `/home`, `/root`, `/tmp`, `/var`, `/opt`, `/run`, `/mnt` become **writable** binds (without it: only the workspace and `/tmp/claude-<uid>`). With the scrub the sandbox also failed earlier (`Can't create file at .git/config.lock: Read-only file system`); it forces the permission mode to `default` | Not used with the sandbox. Not needed without Bash: the native environment is an allowlist without credential variables (existing tests) |
+| F5 | Even without the scrub, Claude's sandbox shares the writable `/tmp/claude-<uid>` (the temp area of **every** Claude session of the user, including the operator's interactive ones) and pre-creates guard files in the host's `.git` (`commondir` = `.`, empty `config.worktree`, `glab-cli/`, `modules/`, `worktrees/`, `remotes/`, `branches/`; harmless to Git) | Recorded for `claude_shell: sandboxed` (unverified, unavailable here) |
+| F6 | Claude Code's built-in file tools are already confined by `--restricted` (outside the working directory, `/proc`, settings/git/tool-config writes refused); the one gap was **untracked secrets inside the workspace** (`.env` read OK) | Hardened deny rules for the workspace's secret files; `block{Reads,Writes}OutsideWorkingDirectories` as a version-independent second layer |
+| F7 | Codex: passing `--sandbox` (or any `sandbox_mode`) **replaces** a permission profile (docs [S]); `codex exec` honours `default_permissions` (commands see `CODEX_PERMISSION_PROFILE=fc_worker`) | Hardened Codex drops `--sandbox workspace-write` and the legacy `sandbox_workspace_write.*` key |
+| F8 | Codex re-executes its own binary inside its sandbox, and its release lives **inside** the default `CODEX_HOME` (`~/.codex/packages/…`) next to `auth.json`. A profile that denies `CODEX_HOME` and re-opens a sub-path does **not** re-open it (EACCES); granting only the release and `CODEX_HOME/tmp/arg0-linux` (the `apply_patch` PATH helper) and denying the `auth.json` *file* works with the production layout | Profile built from narrow grants on `:minimal`, file-level denies |
+| F9 | Codex with `forced_login_method="chatgpt"` and an API key in its environment **deletes `CODEX_HOME/auth.json`** ("Logging out") | The allowlisted native environment never passes API keys (existing tests); a Worker-dedicated `CODEX_HOME` limits the blast radius to the Worker's own login |
+| F10 | Codex's `apply_patch` and `view_image` tools run under the profile (writes outside rejected; a file outside the grants is "No such file"); an escalation request is refused with `approval_policy = "never"`; a hostile workspace `.codex/config.toml` (`sandbox_mode = "danger-full-access"`, a hook, an MCP server) is ignored (untrusted project, user config ignored) | Covered by tests |
+| F11 | Codex has execution and data paths outside the command sandbox that are on by default: `hooks`, `apps` (ChatGPT connectors), `plugins`, `remote_plugin`, `multi_agent`, `browser_use*`, `computer_use`, `in_app_browser`, `skill_mcp_dependency_install`, `shell_snapshot` | Disabled with `features.*=false` (accepted by `--strict-config`) |
+
+### 7b. Exact implementation changes
+
+| File | Change |
+| --- | --- |
+| `feature_coordinator/native_hardening.py` (new) | `NativeHardening` config (`enabled`, `claude_shell`, `codex_home`, `read_paths`) with strict parsing/validation; the generated policy (`harden_claude_settings`, `codex_profile_args`, `codex_exec_args`); fail-closed checks (`preflight`: version floors 2.1.317 / 0.163.0, managed policy files, nested-userns probe for `sandboxed`, private Worker `CODEX_HOME`, `read_paths` that would expose HOME or credentials; `codex_enforcement_error`: canary self-test under `codex sandbox`); post-run checks (`git_control_digest`, `claude_init_problems`) |
+| `config.py` | `runtime.native_hardening` (field, parse, validate); refused on the `bwrap` backend. Docstring tightened to stay at the 1000-line limit |
+| `launchers.py` | Hardened Claude Code: `--tools Read,Glob,Grep,Edit,Write` (no Bash unless `sandboxed`), confining settings, a prompt that says shell commands are unavailable. Hardened Codex: no `--sandbox`, `--ignore-rules`, the `fc_worker` profile, private per-run `TMPDIR` (0700), optional `CODEX_HOME`. Unhardened command lines unchanged (tests) |
+| `native_backend.py` | Hardened runs: preflight → `unavailable` (never a fallback); Codex self-test before the agent starts; Git control files fingerprinted before/after (changed → `rejected`, left in place); Claude init event must show exactly the hardened tools and no MCP server (else `failed`); the dedicated `CODEX_HOME` is also used for the subscription check; `native.json`/details record the hardening |
+| `commands.py`, `native_smoke.py` | `runners` / `worker-check` show the hardening scope (still `INELIGIBLE` for W1); login checks use the hardened environment |
+| `project-config.example.yaml` | Documents `runtime.native_hardening` (disabled) |
+| Tests | `test_fc_native_hardening.py` (fast, fake agent), `test_fc_native_hardening_cli.py` (installed CLIs), `fc_landlock.py`; `fc_fake_provider.py` gains multi-step scripts (`FAKE-STEP:`, incl. Codex `apply_patch`/`view_image`, escalation); `fc_fake_agent.py` reports tools/MCP/permission mode in its init event |
+
+The generated policy, as built for this desktop:
+
+* **Claude Code** — `--restricted --tools Read,Glob,Grep,Edit,Write --strict-mcp-config --permission-prompts none …`;
+  settings add deny rules `Read(//proc/**)`, `Read(//sys/**)`, `Edit(./.git/**)`, `Edit(./.claude/**)`,
+  `Edit(./.mcp.json)`, `Edit(./.codex/**)`, `Edit(./.agents/**)`, `Read/Edit(./<untracked secret>)`;
+  `blockReadsOutsideWorkingDirectories`, `blockWritesOutsideWorkingDirectories`,
+  `disableBypassPermissionsMode: disable`, `disableAllHooks`, `disableClaudeAiConnectors`,
+  `disableBundledSkills`, `disableSkillShellExecution`, `enableAllProjectMcpServers: false`.
+* **Codex** — `codex exec --json --strict-config --ephemeral --ignore-user-config --ignore-rules -C <repo> -o <run>/last-message.txt
+  -c forced_login_method="chatgpt" -c default_permissions="fc_worker"
+  -c permissions.fc_worker.filesystem={":minimal"="read", "<release>"="read", "<CODEX_HOME>/tmp/arg0-linux"="read",
+  <read_paths>="read", "<CODEX_HOME>/auth.json"="deny", "~/.codex/auth.json"="deny", "~/.claude"="deny", "~/.claude.json"="deny",
+  "<run>/tmp"="write", ":workspace_roots"={"."="write", ".git"="read", ".claude"="read", ".mcp.json"="read", ".codex"="read",
+  ".agents"="read", "<untracked secret>"="deny"}} -c permissions.fc_worker.network.enabled=false -c approval_policy="never"
+  -c web_search="disabled" -c allow_login_shell=false -c shell_environment_policy.inherit="core"
+  -c shell_environment_policy.ignore_default_excludes=false -c features.<F11 list>=false [-m <model>] -`,
+  environment `TMPDIR=<run>/tmp` (+ `CODEX_HOME` when configured).
+
+### 7c. Security boundaries — enforced and tested
+
+Tests: `test_fc_native_hardening_cli.py` (the installed CLIs, the production hardened command lines,
+fake HOME/provider, Landlock) and `test_fc_native_hardening.py` (fake agent). Each negative test asserts
+that the access is **denied by the CLI's enforcement** and, in addition, that no fake secret appears in
+any request the model provider received.
+
+| Agent path | Claude Code 2.1.317 (`claude_shell: disabled`) | Codex 0.163.0 (`fc_worker`) |
+| --- | --- | --- |
+| Shell commands, subprocesses | **No Bash tool** ("No such tool available: Bash"), also with `dangerouslyDisableSandbox` **[V]** | Run under the profile: fake Claude login, `~/.claude.json`, `auth.json`, SSH key, GitHub login, files outside the workspace, the untracked `.env`, a planted symlink and a `..` path all unreadable (EACCES/ENOENT); `cat auth.json` → Permission denied **[V]** |
+| Writes | Write/Edit outside the workspace, to `.git/config`, `.git/hooks`, `.claude/settings.json`, `.mcp.json`, HOME refused; workspace write OK **[V]** | `.git`, `.codex` read-only (EROFS); writes outside never reach the host; only the workspace and the private TMPDIR persist **[V]** |
+| Built-in file tools | Read of the login, the symlink, `..`, `/proc/self/environ`, the workspace `.env` refused; Grep of the workspace or of HOME returns no secret; Glob of HOME refused **[V]** | `apply_patch` outside / into `.git/hooks` / HOME refused, inside OK; `view_image` of a login or an outside file refused **[V]** |
+| Network | No command path at all **[V]** (the CLI process itself: not confined, 7d) | `socket()` EPERM, also to the one port the host allowed (so the sandbox, not Landlock, denied it); DNS fails **[V]** |
+| Unix sockets (D-Bus, agents, keyrings) | No command path **[V]** | EPERM for a socket in HOME and for the D-Bus session bus **[V]** |
+| Environment / `/proc` | No command path **[V]** | No fake key, token or provider key in a command's environment; no marker in any visible `/proc/*/environ`; ≤ 4 PIDs visible **[V]** |
+| Escalation | `bypassPermissions` refused (`--restricted`, setting) **[C]**; no prompt can be answered (`--permission-prompts none`) **[V]** | `require_escalated` request refused ("approval policy is Never") **[V]**; a hostile project config (full access, hook, MCP) ignored **[V]** |
+| Subagents | `Agent` tool unavailable **[V]** | No subagent tool offered (`multi_agent` off) **[V]** |
+| MCP / web | No MCP server (init event checked after every run) **[V]**; WebFetch unavailable **[V]** | No MCP tool and no `web_search` offered **[V]** |
+| Hooks | No hook source: `--restricted` ignores user/project/local settings **[S]** (CLI help), managed policy refused by the preflight **[V]**; `disableAllHooks` **[C]** | Project hook not run **[V]**; `features.hooks=false` **[C]** |
+| Git control files | Run **rejected** when `.git/config`, hooks or info change (fake agent) **[V]** | same **[V]** |
+| Fail closed | Version floor, managed policy, init-event mismatch (Bash/MCP present → run failed) **[V]** (fakes) | Version floor, managed policy, Worker `CODEX_HOME` not private / a symlink / inside the workspace, `read_paths` exposing HOME or credentials, **self-test failure → runner unavailable, agent never started** **[V]**; the self-test itself runs with no TCP at all and detects a weakened profile **[V]** |
+| `claude_shell: sandboxed` on this host | Preflight refuses (nested user namespace probe) **[V]**; started anyway, Claude Code's own sandbox refuses the command and it never runs **[V]** | — |
+
+Mutation checks (not committed): with the hardening switched off, or with a weakened policy (Codex
+profile granting `:root` read; Claude without the added rules), the negative tests **fail** — the fake
+login (Codex) and the workspace secret (Claude) then reach the model provider.
+
+### 7d. Boundaries that remain unenforced
+
+1. **The trusted CLI processes** (both) keep the host network and read their own login — D-21 for the CLI
+   process is not met (B1). A compromised CLI binary, or a defect in its in-process tool checks, could
+   reach any host and use the credential.
+2. **Exfiltration through the model**: anything the agent may read — the whole workspace except the
+   untracked secret files, and for Codex the `:minimal` system paths such as `/etc` — can be sent to the
+   provider. Untracked secrets whose names do not match `runtime.secret_patterns` are readable.
+3. **Agent-written code still runs later**: in the gates (Phase 3 bwrap containment: own network
+   namespace, private HOME, no logins — unchanged), and when people review or use the branch.
+4. **Claude Code agents cannot run tests** in hardened mode (no Bash); the gates verify afterwards. A
+   sandboxed Bash needs a host where Claude Code's sandbox can start (not this desktop) and is unverified.
+5. **Not enforced while hardening is off** (the default, and the live Worker today): F1 and F2 apply.
+6. Codex commands get no `/tmp` (a private TMPDIR instead): tools that hard-code `/tmp` fail (functional).
+7. Server-managed Claude settings (claude.ai organisations) cannot be checked locally (not used by this
+   personal subscription).
+
+### 7e. Claude Code and Codex compatibility
+
+* **Claude Code** — verified with 2.1.317 (floor in hardened mode; `blockWritesOutsideWorkingDirectories`
+  needs ≥ 2.1.314). Subscription login unchanged: the CLI reads its own login as before; the hardening
+  touches only the generated `--settings` file and the tool list. `apiKeySource: none`, the init event and
+  model checks of W2 still apply. Permission mode is `acceptEdits` as before.
+* **Codex** — verified with 0.163.0 (floor). `--strict-config` accepts every key used, so an unknown key in
+  a future version fails the run instead of being ignored. ChatGPT login unchanged (`forced_login_method`);
+  optional Worker-dedicated `CODEX_HOME` (must exist, be owned by the Worker user, mode 0700, outside the
+  workspace; provisioned by the operator with `CODEX_HOME=<dir> codex login --device-auth`, never
+  automatically). The per-run self-test uses its own empty `CODEX_HOME` (`codex sandbox` has no
+  `--ignore-user-config`), so neither the operator's configuration nor any login takes part.
+* Hardening off: both command lines are byte-for-byte the W2 ones (tests).
+
+### 7f. Test results
+
+| Check | Result |
+| --- | --- |
+| New tests `test_fc_native_hardening.py` (38, fakes) + `test_fc_native_hardening_cli.py` (5, installed CLIs) | **43 passed**, none skipped on this desktop (the real-CLI tests take ~7 s: the fake provider answers at once) **[V]** |
+| Coordinator regression `feature_coordinator/tests` + `scripts/tests` on `bfaae1c` | **1025 passed, 23 skipped, 0 failed** (14 min), exit 0 **[V]** — 982 before + 43 new; the 23 skips are unchanged: 14 live GitHub/Projects (opt-in), 2 host login checks (opt-in), 2 paid smoke (opt-in), 1 FUSE-only, 4 nested-sandbox (B1) |
+| Mutation checks (7c) | 4/4 mutants detected |
+| Pylint | package 10.00/10; new tests 10.00/10 |
+| `scripts/check_docs_agents.py` | 6/6 |
+| `runners` with hardening on (fake HOME, Landlock, no TCP) | Hardened command lines and the hardening line shown; logins reported "not logged in" (fake HOME), exit 1 as expected |
+| Not run | Any real authenticated session (needs approval, 7h); backend/CLI/frontend suites (not touched) |
+
+### 7g. Remaining AppArmor limitations
+
+* Ubuntu's `bwrap-userns-restrict` (`kernel.apparmor_restrict_unprivileged_userns = 1`) confines every
+  process started by bubblewrap as `unpriv_bwrap`: **no capability inside a nested user namespace**.
+* Consequences: (1) W1's outer network namespace around the CLI cannot be combined with any inner
+  sandbox (B1); (2) **Claude Code's own Bash sandbox cannot start a command even top-level** (its
+  `apply-seccomp` step) — so hardened Claude Code has no shell here; (3) Codex's sandbox is unaffected
+  (bwrap + seccomp without a nested namespace), which is why its commands can be hardened.
+* Anthropic's documented remedy (an AppArmor profile granting `bwrap` unconfined `userns`) is a host
+  policy change and was not made.
+
+### 7h. Requirements for a real authenticated smoke test
+
+1. Explicit operator approval, bounded: the existing `subscription-smoke` harness (one disposable repository,
+   local tracker, no GitHub, no gates, no PR, one attempt per task, Claude budget cap, short timeout; 3
+   model sessions: Backend and CLI on Claude Code, Frontend on Codex) run with a project config that sets
+   `runtime.native_hardening.enabled: true`; dry run first (`subscription-smoke` without `--apply`).
+2. Run from this clone, with its own state directory — **not** the live Worker's checkout, state or
+   service; the live Worker keeps running unchanged.
+3. Operator choice for Codex: the existing login (`~/.codex`) or a Worker-dedicated `CODEX_HOME` provisioned
+   by the operator beforehand (device-code login, mode 0700). For Claude Code the existing claude.ai login.
+4. Preconditions checked by the harness: both status commands report the subscription; no API key;
+   versions at the floors; the Codex self-test passes.
+5. Pass criteria: the three files on the feature branch; every run `completed` with the hardening recorded
+   in `native.json`; the Claude init event shows only the five file tools and no MCP server; no Git control
+   change; no unexpected network access attempts in the transcripts.
+6. Optional second step (separate approval): enable the hardening in the live Worker's configuration — a
+   change of the active Worker, not made by this work.
+
+### 7i. Incidents and deviations
+
+* During the unsandboxed **baseline** of today's native mode (F1), the probe's DNS lookup of `example.com`
+  resolved through the host resolver (Landlock does not cover UDP). No TCP connection was possible (Landlock),
+  no provider was contacted, nothing was sent. The probe uses `fc-probe.invalid` since.
+* `codex features list` was run once to list the feature flags; it reads the operator's Codex configuration
+  (no login, no model call; its network use was not monitored).
+* The first manual Codex self-test ran with the operator's `~/.codex` as `CODEX_HOME` (`codex sandbox`, no
+  model, no TCP possible); it left no file there. The self-test now always uses its own empty `CODEX_HOME`.
+* Experiment directories (`~/worktrees/.fcx`, `/tmp/claude-1000/fcx`) were deleted after the work.
+
 ## Open blockers and operator decisions
 
 ### Blocker B1 — W1's nested isolation is incompatible with this host's AppArmor policy
 
 The requirements — (1) subscription authentication, (2) agent-controlled commands and code cannot read credentials, (3) **no** network for the runner sandbox except approved model endpoints (W1's D-21, which also covers the CLI process), (4) autonomous runs, (5) the desktop's `bwrap-userns-restrict` policy unchanged — **cannot all be met on this desktop at the same time**. (3) needs an outer namespace around the CLI; (2) with a subscription credential inside that namespace needs a second, nested namespace for commands; (5) forbids the nesting. This is a property of the host policy, not of the authentication method: W1's API-key broker hits the same wall here.
 
-Narrowly scoped alternatives (each needs operator approval; none is implemented on this branch):
+**Status after Stage 7:** the operator chose option A; it is implemented as `runtime.native_hardening`
+(opt-in). The row for A below is the Stage 3 plan; what was actually built and verified differs for
+Claude Code — its Bash sandbox cannot start on this desktop (F3) and the env scrub weakens it (F4), so
+hardened Claude Code has **no** Bash tool here (see [7a](#7a-investigation-results-what-decided-the-design)).
+B1 itself is unchanged: D-21 for the CLI process still needs option B or C.
+
+Narrowly scoped alternatives (each needs operator approval; Stage 7 implemented A):
 
 | Option | What changes | D-20 (agent tools) | D-21 (agent tools) | D-21 (CLI process) | Subscription | Runs on this desktop |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -165,15 +346,17 @@ Every option still needs (a) the operator-approved real authenticated smoke test
 
 ### Other decisions
 
-1. **Real authenticated smoke test** (subscription usage) — required before W1 can be called verified, for whichever option is chosen.
-2. **Switching the running Worker's configuration** (backend or hardening flag) — a change of the active Worker, which this task does not make.
-3. **Live risk on `dev` today (unchanged by this branch):** the running `native-cli` Worker gives agent-run code the operator's files, logins and network. Verified here: with `dev`'s Codex flags (`--sandbox workspace-write`), an agent command **can read `CODEX_HOME/auth.json`** (fake file, offline) **[V]**; Claude Code's allowlisted commands such as `{python} -m pytest` run agent-written code unsandboxed (by design, [worker-functional](worker-functional.md)). Option A addresses exactly this.
+1. **Real authenticated smoke test** (subscription usage) of the hardened mode — bounded, as in [7h](#7h-requirements-for-a-real-authenticated-smoke-test); required before the hardened mode is used for real work.
+2. **Switching the running Worker's configuration** (enabling `runtime.native_hardening`) — a change of the active Worker, which this task does not make. Note the functional cost: hardened Claude Code agents cannot run commands (tests), only the gates do.
+3. **Codex login for the Worker**: keep the operator's `~/.codex` or provision a Worker-dedicated `CODEX_HOME` (recommended, F9).
+4. **Live risk on `dev` today (unchanged by this branch, hardening off):** the running `native-cli` Worker gives agent-run code the operator's files, logins, D-Bus session and network, and lets it write `.git/config`, whose `core.fsmonitor` the Worker then executes during `git status` (F1, F2) **[V]**. The hardened mode closes these paths; with hardening off a separate fix (e.g. `-c core.fsmonitor=false` and related keys on the coordinator's Git calls) would still be worth an operator decision.
 
 ## Delivery
 
-- Commits are on the local branch `security/worker-d20-d21` in the isolated clone, **not pushed**: the delivery rule allows updating PR #20 only when the implementation is complete, and W1 is blocked (B1). The update is a plain fast-forward of `origin/security/worker-d20-d21` (`19e9f6d`) whenever the operator wants it published: `git push origin security/worker-d20-d21`.
+- Commits are on the local branch `security/worker-d20-d21` in the isolated clone, **not pushed**: the delivery rule allows updating PR #20 only when the implementation is complete, and W1 is not complete (B1). The update is a plain fast-forward of `origin/security/worker-d20-d21` (`19e9f6d`) whenever the operator wants it published: `git push origin security/worker-d20-d21`.
+- Stage 7 adds focused commits on top of Stage 6 (see `git log 439b159..`).
 - PR #20 is unchanged (Draft). Nothing was merged; `dev` and the running Worker were not touched.
 
 ## Next action
 
-Operator decision on blocker B1 (recommended: option A as an opt-in, then the approved real smoke test), then implementation of the chosen option in a separate, focused change.
+Operator approval of the bounded hardened smoke test ([7h](#7h-requirements-for-a-real-authenticated-smoke-test)); after it passes, the operator decides whether the live Worker enables `runtime.native_hardening`. Full W1 (D-21 for the CLI process) still needs option B or C.
