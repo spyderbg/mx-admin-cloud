@@ -57,6 +57,10 @@ live in the run directory instead of a private HOME, nothing is bound, and Codex
 above (broker, nested sandbox settings, version floor) applies to the `bwrap` backend only; the
 native backend is NOT a security sandbox (native_backend.py). In both backends the model is the
 ROLE's (`config.model_for(role)`), and role commands use `{python}`, resolved by python_env.py.
+
+W1 decision A — with `runtime.native_hardening` enabled (native_hardening.py) the native command
+lines change: Claude Code gets no Bash tool (unless `claude_shell: sandboxed`) and confining
+settings; Codex gets the `fc_worker` permission profile and a private TMPDIR instead of `--sandbox`.
 """
 
 from __future__ import annotations
@@ -74,6 +78,13 @@ from typing import Any, Callable, Mapping, Sequence
 from .broker import ROUTES, AuthBroker, configured_credential
 from .config import ProjectConfig
 from .errors import BrokerError
+from .native_hardening import (
+    claude_shell_enabled,
+    codex_exec_args,
+    codex_home,
+    codex_profile_args,
+    harden_claude_settings,
+)
 from .netns_channel import BROKER_PORT, SANDBOX_PYTHON, BrokerChannel
 from .paths import PathPolicy
 from .providers import CliRunnerProfile, ProviderKind
@@ -230,13 +241,16 @@ def _check_forbidden(argv: Sequence[str]) -> None:
 
 
 def role_prompt(request: RunRequest, writable: Sequence[str], *, python: PythonInterpreter | None = None,
-                native: bool = False) -> str:
-    """The task prompt with the role's operating rules."""
+                native: bool = False, shell: bool = True) -> str:
+    """The task prompt with the role's operating rules (*shell* False: hardened Claude Code without Bash)."""
     roots = ", ".join(writable) or "(none)"
     scope = ("Changes anywhere else make the coordinator reject this whole run." if native
              else "Everything else is read-only and writes there fail.")
     interpreter = (f"Run Python as `{python.path}` from the repository root (for example "
                    f"`{python.path} -m pytest`); `python` may not exist.\n") if python else ""
+    if not shell:
+        interpreter = ("Shell commands are not available in this run; the coordinator runs the role's checks "
+                       "after you finish.\n")
     return (
         f"You are the {request.role} agent working on feature task {request.task_id} in this repository.\n"
         f"You may write ONLY inside: {roots}. {scope}\n"
@@ -264,6 +278,15 @@ class _Launcher:  # pylint: disable=too-few-public-methods
         self.config = config
         self.executable = executable
         self.native = native
+
+    @property
+    def hardened(self) -> bool:
+        """True for a native run with `runtime.native_hardening` enabled (native_hardening.py)."""
+        return self.native and self.config.runtime.native_hardening.enabled
+
+    def secrets(self, workspace: Path) -> list[str]:
+        """The workspace's untracked secret files (relative paths), denied to hardened agents."""
+        return SandboxBuilder(workspace, self.config).secret_files() if self.hardened else []
 
     def model(self, role: str) -> str:
         """The role's model ('' = the CLI's own default)."""
@@ -299,7 +322,16 @@ class ClaudeCodeLauncher(_Launcher):
                                                     "deny": list(CLAUDE_DENY), "defaultMode": "acceptEdits"}}
         if not self.native:
             settings["sandbox"] = json.loads(json.dumps(CLAUDE_SANDBOX))
+        elif self.hardened:
+            harden_claude_settings(settings, self.config.runtime.native_hardening, workspace=workspace,
+                                   secrets=self.secrets(workspace), home=_home())
         return settings
+
+    def tools(self, role: str) -> list[str]:
+        """The built-in tools of the run (`--tools`): file tools, and Bash when the role has commands
+        (hardened: only with `claude_shell: sandboxed`)."""
+        shell = not self.hardened or claude_shell_enabled(self.config.runtime.native_hardening)
+        return [*CLAUDE_FILE_TOOLS, *(["Bash"] if shell and self.config.runtime.role_commands.get(role) else [])]
 
     @staticmethod
     def broker_environment(token: str) -> dict[str, str]:
@@ -313,11 +345,10 @@ class ClaudeCodeLauncher(_Launcher):
         (written / "claude-settings.json").write_text(json.dumps(self.settings(request.role, workspace), indent=2),
                                                       encoding="utf-8")
         prompt_path = run_dir / "prompt.txt"
+        tools = self.tools(request.role)
         prompt_path.write_text(role_prompt(request, writable, python=self.interpreter(request.role, workspace),
-                                           native=self.native), encoding="utf-8")
-        tools = list(CLAUDE_FILE_TOOLS)
-        if self.config.runtime.role_commands.get(request.role):
-            tools.append("Bash")
+                                           native=self.native, shell=not self.hardened or "Bash" in tools),
+                               encoding="utf-8")
         settings_sandbox = str(visible / "claude-settings.json")
         argv = [self.executable, "-p", "--output-format", "stream-json", "--verbose", "--restricted",
                 "--tools", ",".join(tools), "--settings", settings_sandbox, "--strict-mcp-config",
@@ -371,9 +402,12 @@ class CodexLauncher(_Launcher):
         last_message = str(visible / "last-message.txt")
         repo = str(workspace)
         # unknown -c keys fail in both backends (--strict-config)
-        argv = [self.executable, "exec", "--json", "--strict-config", "--sandbox", "workspace-write", "--ephemeral",
+        sandbox = [] if self.hardened else ["--sandbox", "workspace-write"]  # --sandbox would replace the profile
+        argv = [self.executable, "exec", "--json", "--strict-config", *sandbox, "--ephemeral",
                 "--ignore-user-config", "-C", repo, "-o", last_message]
-        if self.native:  # W2: the operator's ChatGPT login or nothing
+        if self.hardened:  # decision A: the operator's (or the Worker's) ChatGPT login; the fc_worker profile
+            argv += ["-c", 'forced_login_method="chatgpt"', *codex_exec_args(self.profile_args(workspace, run_dir))]
+        elif self.native:  # W2: the operator's ChatGPT login or nothing
             argv += ["-c", "sandbox_workspace_write.network_access=false", "-c", 'forced_login_method="chatgpt"']
         else:  # W1: the broker provider; no web search; no token in the commands' environment
             argv += self.isolation_args()
@@ -381,6 +415,13 @@ class CodexLauncher(_Launcher):
             argv += ["-m", self.model(request.role)]
         argv.append("-")
         _check_forbidden(argv)
+        if self.hardened:
+            hardening = self.config.runtime.native_hardening
+            env = {"TMPDIR": str(self.run_tmp(run_dir))}
+            if hardening.codex_home:
+                env["CODEX_HOME"] = hardening.codex_home
+            return LaunchSpec(argv, prompt_path, env, [], shadow_writable=False,
+                              files={last_message: "Codex last message"})
         if self.native:
             return LaunchSpec(argv, prompt_path, {}, [], shadow_writable=False,
                               files={last_message: "Codex last message"})
@@ -388,6 +429,20 @@ class CodexLauncher(_Launcher):
         binds = [Bind(str(install_prefix(self.executable)), str(install_prefix(self.executable)), "ro")]
         return LaunchSpec(argv, prompt_path, env, binds, shadow_writable=True,
                           files={last_message: "Codex last message"})
+
+    @staticmethod
+    def run_tmp(run_dir: Path) -> Path:
+        """The hardened run's private TMPDIR (the only writable path outside the workspace)."""
+        path = run_dir / "tmp"
+        path.mkdir(mode=0o700, exist_ok=True)
+        return path
+
+    def profile_args(self, workspace: Path, run_dir: Path) -> list[str]:
+        """The `fc_worker` permission profile for this run (native_hardening.py)."""
+        hardening = self.config.runtime.native_hardening
+        return codex_profile_args(release=install_prefix(self.executable), home=_home(),
+                                  codex_dir=codex_home(hardening, os.environ), run_tmp=self.run_tmp(run_dir),
+                                  secrets=self.secrets(workspace), read_paths=hardening.read_paths)
 
     @staticmethod
     def isolation_args() -> list[str]:

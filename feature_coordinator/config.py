@@ -22,10 +22,9 @@ every Issue it owns, the write scope (test features only during Phase 4), the op
 whose Issue-comment commands are accepted, and retry/rate-limit bounds. It holds no
 credentials: the adapter uses the existing `gh` login.
 
-The Phase 4 extension adds `github.project`: the GitHub Projects (v2) board that shows the
-coordinator's Issues (owner, number and GraphQL node ID, the projects that must never be
-written, the Status options and the Agent / Feature ID / Blocked Reason fields). It is
-disabled by default; `default_config()` points it at the mx-admin-cloud board.
+The Phase 4 extension adds `github.project`: the GitHub Projects (v2) board that shows the coordinator's
+Issues (owner, number and GraphQL node ID, the projects that must never be written, the Status options and
+the Agent / Feature ID / Blocked Reason fields); off by default, `default_config()` uses the mx-admin-cloud board.
 
 W4.3.1 adds `github.intake` (intake.py): a GitHub Issue that a command author approves with
 `/worker approve <role> <spec-sha256>` becomes one feature with one task of that role, verified by
@@ -35,15 +34,12 @@ W4.3.3 adds `github.publish` (publish.py): such a feature is integrated, its own
 Draft PR opened to its base branch, and — after a person merged it — completed, its Issue closed and its
 Project #2 card moved to Done. Off by default; the Worker never merges.
 
-W2 (functional Worker) makes the routing role → agent → model configurable: a role names its
-agent (`provider`) and may override that provider's model (`model`, validated per agent kind;
-"default" = the CLI's own default), and a role can be disabled (`enabled: false`, Automation).
-`runtime.execution_backend` selects how real runners execute: `native-cli` (the installed CLIs
-with their existing subscription logins, no OS sandbox) or `bwrap` (the Phase 3 containment).
-Role command allowlists use the `{python}` placeholder, resolved to a discovered or configured
-interpreter (`runtime.python_interpreter`), never to a bare `python` on PATH.
-
-W1 (D-20/D-21, `bwrap` only): `broker` (broker_config.py); legacy `agent_network`/`credential_files`: no effect.
+W2 (functional Worker): a role names its agent (`provider`), may override its model (`model`,
+validated per agent kind; "default" = the CLI's own default) and can be disabled (`enabled: false`).
+`runtime.execution_backend`: `native-cli` (the installed CLIs with their subscription logins, no OS
+sandbox; opt-in `runtime.native_hardening` confines their agent tools, native_hardening.py) or `bwrap`
+(Phase 3 containment; W1 `broker`, broker_config.py). Role commands use `{python}` (python_env.py).
+Legacy `agent_network`/`credential_files`: no effect.
 """
 
 from __future__ import annotations
@@ -56,6 +52,7 @@ from typing import Any, Iterable, Mapping
 
 from .broker_config import BrokerConfig, broker_from_mapping, validate_broker
 from .errors import ConfigError, ProviderError
+from .native_hardening import NativeHardening, hardening_from_mapping, validate_hardening
 from .providers import (
     CLAUDE_CODE,
     CODEX,
@@ -121,6 +118,7 @@ class RuntimeConfig:  # pylint: disable=too-many-instance-attributes
     secret_patterns: tuple[str, ...] = ("**/.env", "**/.env.*")
     secret_exempt_suffixes: tuple[str, ...] = (".example", ".sample", ".template")
     role_commands: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    native_hardening: NativeHardening = field(default_factory=NativeHardening)  # W1 decision A (opt-in)
 
 
 @dataclass(frozen=True)
@@ -178,7 +176,6 @@ CONTAINMENT_MODES = ("bwrap",)  # gates and the bwrap backend are never unconfin
 # subscription logins and is NOT a security sandbox; `bwrap` is the Phase 3 OS containment.
 EXECUTION_BACKENDS = ("native-cli", "bwrap")
 PYTHON_PLACEHOLDER = "{python}"
-
 
 
 GITHUB_TRANSPORTS = ("gh-cli",)
@@ -530,6 +527,7 @@ def _validate_runtime(config: ProjectConfig) -> None:
         raise ConfigError(f"runtime.role_commands names unknown roles: {sorted(unknown_roles)}")
     if runtime.execution_backend not in EXECUTION_BACKENDS:
         raise ConfigError(f"runtime.execution_backend must be one of {EXECUTION_BACKENDS}")
+    validate_hardening(runtime)
     interpreter = runtime.python_interpreter
     if interpreter != "auto" and (not interpreter.startswith("/") or any(c.isspace() for c in interpreter)):
         raise ConfigError("runtime.python_interpreter must be 'auto' or an absolute path without whitespace")
@@ -865,6 +863,8 @@ def _runtime_from_mapping(data: Mapping[str, Any]) -> RuntimeConfig:
         raw = data[key]
         if key == "role_commands":
             values[key] = {str(r): tuple(str(c) for c in cmds) for r, cmds in dict(raw).items()}
+        elif key == "native_hardening":
+            values[key] = hardening_from_mapping(dict(raw or {}))
         elif isinstance(default, tuple):
             values[key] = tuple(str(v) for v in raw)
         elif isinstance(default, bool):

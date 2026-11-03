@@ -5,7 +5,10 @@ THIS IS NOT A SECURITY SANDBOX. The CLI and every command it runs have the opera
 file-system and network access. Role write scopes are checked AFTER the run (and Claude Code's
 own permission rules apply while it runs); they do not prevent access outside the workspace.
 For OS-level containment use the `bwrap` backend (launchers.RealCliRunner); W1 (PR #20)
-explores credential and network isolation separately.
+explores credential and network isolation separately. Opt-in `runtime.native_hardening`
+(native_hardening.py, W1 decision A) confines the agent TOOLS — Claude Code without Bash, Codex
+commands in a credential-free, offline permission profile — and fails closed when that cannot be
+enforced; the CLI processes themselves stay unconfined.
 
 What the backend guarantees:
 
@@ -61,6 +64,13 @@ from .config import ProjectConfig
 from .errors import CoordinatorError
 from .launchers import LAUNCHERS, RunnerProbe, probe_runner, snapshot
 from .locks import ProcessIdentity
+from .native_hardening import (
+    claude_init_problems,
+    codex_enforcement_error,
+    git_control_digest,
+    preflight,
+)
+from .native_hardening import summary as hardening_summary
 from .paths import PathPolicy, matches
 from .providers import CliRunnerProfile, ProviderKind, model_family
 from .python_env import PythonInterpreter
@@ -295,15 +305,32 @@ class NativeCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-p
 
     backend = BACKEND
 
-    def __init__(self, profile: CliRunnerProfile, config: ProjectConfig, *, probe: RunnerProbe | None = None,
-                 auth_check: Callable[..., SubscriptionCheck] = check_subscription) -> None:
+    def __init__(self, profile: CliRunnerProfile, config: ProjectConfig, *, probe: RunnerProbe | None = None,  # pylint: disable=too-many-arguments
+                 auth_check: Callable[..., SubscriptionCheck] = check_subscription,
+                 hardening_check: Callable[..., str] = preflight,
+                 enforcement_check: Callable[..., str] = codex_enforcement_error) -> None:
         self.profile = profile
         self.name = profile.name
         self.kind = profile.kind
         self.config = config
         self.auth_check = auth_check
+        self.hardening_check = hardening_check      # native hardening: host / version / policy preflight
+        self.enforcement_check = enforcement_check  # native hardening: Codex permission-profile self-test
         self._probe = probe
         self._auth: SubscriptionCheck | None = None
+
+    @property
+    def hardened(self) -> bool:
+        """True when `runtime.native_hardening` is enabled (native_hardening.py)."""
+        return self.config.runtime.native_hardening.enabled
+
+    def environment(self, interpreter: PythonInterpreter | None = None, tag: str = "") -> dict[str, str]:
+        """native_environment(), with a hardened Codex's Worker-dedicated CODEX_HOME."""
+        env = native_environment(interpreter, tag=tag)
+        hardening = self.config.runtime.native_hardening
+        if self.hardened and self.kind is ProviderKind.CODEX and hardening.codex_home:
+            env["CODEX_HOME"] = hardening.codex_home
+        return env
 
     def probe(self) -> RunnerProbe:
         """The (cached) capability probe: --version and --help only."""
@@ -314,7 +341,7 @@ class NativeCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-p
     def subscription(self) -> SubscriptionCheck:
         """The (cached) subscription check, with exactly the environment runs get."""
         if self._auth is None:
-            self._auth = self.auth_check(self.kind, self.probe().resolved, native_environment())
+            self._auth = self.auth_check(self.kind, self.probe().resolved, self.environment())
         return self._auth
 
     def _unavailable(self) -> str:
@@ -324,7 +351,7 @@ class NativeCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-p
         auth = self.subscription()
         return "" if auth.ok else f"subscription authentication: {auth.detail}"
 
-    def run(self, request: RunRequest) -> RunResult:  # pylint: disable=too-many-locals
+    def run(self, request: RunRequest) -> RunResult:  # pylint: disable=too-many-locals,too-many-return-statements
         """Launch the CLI for one task in the workspace, supervise it and judge what it changed."""
         reason = self._unavailable()
         if reason:
@@ -342,19 +369,51 @@ class NativeCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-p
         ongoing = git_operation_in_progress(root)
         if ongoing:
             return RunResult(self.name, "failed", error=f"the workspace has an unfinished Git operation {ongoing}")
+        hardening = self.config.runtime.native_hardening
+        if self.hardened:  # fail closed: never a silent fallback to the unhardened command line
+            reason = self.hardening_check(self.kind, self.probe().version, hardening, env=self.environment(),
+                                          workspace=root)
+            if reason:
+                return RunResult(self.name, "unavailable", error=f"native hardening: {reason}")
         writable = SandboxBuilder(root, self.config, policy).writable_roots(request.role, request.workspace.grants)
         spec = launcher.prepare(request, ctx.run_dir, writable)
         tag = secrets.token_hex(8)
-        env = {**native_environment(interpreter, tag=tag), **spec.env}
+        env = {**self.environment(interpreter, tag=tag), **spec.env}
+        if self.hardened and self.kind is ProviderKind.CODEX:
+            reason = self.enforcement_check(self.probe().resolved, launcher.profile_args(root, ctx.run_dir),
+                                            ctx.run_dir / "selftest", env)
+            if reason:
+                return RunResult(self.name, "unavailable", error=f"native hardening: {reason}")
         model = launcher.model(request.role)
         (ctx.run_dir / "native.json").write_text(json.dumps({
-            "backend": BACKEND, "security_sandbox": False, "argv": spec.argv, "cwd": str(root), "run_tag": tag,
+            "backend": BACKEND, "security_sandbox": False, "hardening": hardening_summary(self.kind, hardening),
+            "argv": spec.argv, "cwd": str(root), "run_tag": tag,
             "environment_names": sorted(env), "model": model or "CLI default", "writable": writable,
             "authentication": self.subscription().method}, indent=2), encoding="utf-8")
         before = self._state(root, ctx)
+        control = git_control_digest(root) if self.hardened else ""
         sup = self._supervise(spec.argv, root, env, spec.stdin_path, ctx, tag)
         leftovers = kill_tagged(RUN_TAG, tag)
-        return self._judge(request, ctx, launcher, model, before, sup, leftovers, writable)
+        result = self._judge(request, ctx, launcher, model, before, sup, leftovers, writable)
+        return self._judge_hardened(result, root, control, launcher, request.role) if self.hardened else result
+
+    def _judge_hardened(self, result: RunResult, root: Path, control: str, launcher: Any,  # pylint: disable=too-many-arguments
+                        role: str) -> RunResult:
+        """Native hardening's own post-run checks: the Git control files are unchanged (an agent
+        could otherwise run code in a later unsandboxed Git command, e.g. `core.fsmonitor`), and
+        Claude Code ran with exactly the hardened tools and no MCP server."""
+        result.details["hardening"] = hardening_summary(self.kind, self.config.runtime.native_hardening)
+        problems = []
+        if self.kind is ProviderKind.CLAUDE_CODE:
+            problems = claude_init_problems(_init_event(Path(result.details["run_dir"]) / "stdout.jsonl"),
+                                            launcher.tools(role))
+        if git_control_digest(root) != control:
+            result.status, result.error = "rejected", ("the run changed Git control files (.git/config, hooks or "
+                                                       "info); left as is for the operator — review before any Git "
+                                                       "command runs in this checkout")
+        elif problems and result.status not in ("timeout", "cancelled", "rejected"):
+            result.status, result.error = "failed", "native hardening: " + "; ".join(problems)
+        return result
 
     def _state(self, root: Path, ctx: RunContext) -> WorkspaceState:
         """A workspace snapshot taken while no Git coordinator commit is in flight (a commit

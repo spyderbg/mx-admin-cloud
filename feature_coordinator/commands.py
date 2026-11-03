@@ -15,12 +15,17 @@ from .errors import BrokerUnavailableError, CoordinatorError
 from .gates import GateContext, SandboxedGateRunner, gate_cwd
 from .launchers import LAUNCHERS, missing_dependencies, probe_runner, version_floor_error
 from .lint_baseline import lint_report
-from .native_backend import check_subscription, native_environment
+from .native_backend import NativeCliRunner, check_subscription
+
 from .paths import PathPolicy, ScopedWorkspace
 from .providers import CliRunnerProfile, OpenAICompatibleProfile
 from .runners import RunRequest
 from .sandbox import SandboxBuilder, SandboxUnavailableError, bwrap_version, check_bwrap
 from .statedir import ensure_state_dir, resolve_state_dir
+
+# What `runtime.native_hardening` covers (native_hardening.py), for `runners` and `worker-check`.
+HARDENING_SCOPE = ("agent tools confined: Claude Code without Bash, Codex commands in the credential-free, "
+                   "offline fc_worker profile; the CLI processes keep host network and their own logins")
 
 
 def _print(text: str = "") -> None:
@@ -72,8 +77,8 @@ def cmd_runners(args: argparse.Namespace, config: ProjectConfig) -> int:
         _print(f"{role:12s} → {profile.name}: {probe.version or '-'} at {probe.resolved or '-'}: {status}; "
                f"model {config.model_for(role) or 'CLI default'}")
         if probe.ok and native:
-            auth = probed.setdefault(f"auth:{profile.name}", check_subscription(profile.kind, probe.resolved,
-                                                                                native_environment()))
+            env = NativeCliRunner(profile, config, probe=probe).environment()  # a hardened Codex's own CODEX_HOME
+            auth = probed.setdefault(f"auth:{profile.name}", check_subscription(profile.kind, probe.resolved, env))
             ok = ok and auth.ok
             _print(f"{'':15s}authentication: {auth.method}{'' if auth.ok else ' — REFUSED: ' + auth.detail}")
         if probe.ok:
@@ -82,6 +87,8 @@ def cmd_runners(args: argparse.Namespace, config: ProjectConfig) -> int:
             request = RunRequest(f"example.{role}", role, "(task prompt)", ScopedWorkspace(policy, role))
             spec = launcher.prepare(request, Path(args.scratch or _state(args, config) / "tmp" / f"plan-{role}"), roots)
             _print(f"{'':15s}argv: {' '.join(spec.argv)}")
+    if native and config.runtime.native_hardening.enabled:
+        _print(f"native hardening: ON ({HARDENING_SCOPE}); checked again before every run, fail closed")
     if native:
         _print("W1 isolation (D-20/D-21): NOT APPLIED — the native-cli backend runs agents with the operator's "
                "files, logins and network; see `worker-check --apply` for the bwrap backend")
@@ -189,6 +196,8 @@ def cmd_worker_check(args: argparse.Namespace, config: ProjectConfig) -> int:
         reasons.append(f"runtime.execution_backend is {config.runtime.execution_backend!r}: agents run without the "
                        "W1 sandbox (credentials and network of the operator); isolated execution needs `bwrap` "
                        "(an operator decision)")
+        if config.runtime.native_hardening.enabled:
+            _print(f"native hardening: ON ({HARDENING_SCOPE}) — not W1 isolation (D-21 for the CLI process)")
     for note in ignored_settings(config):
         _print(f"note: {note}")
     for name in sorted({config.providers[r.provider].name for r in config.roles.values()

@@ -30,7 +30,7 @@ from typing import Any, Callable
 from .config import ProjectConfig
 from .demo import init_demo_repo
 from .launchers import LAUNCHERS, probe_runner
-from .native_backend import check_subscription, native_environment
+from .native_backend import NativeCliRunner, check_subscription
 from .paths import PathPolicy, ScopedWorkspace
 from .providers import CliRunnerProfile
 from .runners import RunRequest
@@ -87,7 +87,8 @@ def smoke_plan(config: ProjectConfig, workdir: Path) -> dict[str, Any]:
                                      "cli_ok": probe.ok, "expected_change": f"{path} = '{text}'"}
             if probe.ok:
                 if profile.name not in auth_cache:
-                    auth_cache[profile.name] = check_subscription(profile.kind, probe.resolved, native_environment())
+                    env = NativeCliRunner(profile, config, probe=probe).environment()  # hardening's CODEX_HOME
+                    auth_cache[profile.name] = check_subscription(profile.kind, probe.resolved, env)
                 entry["authentication"] = auth_cache[profile.name].method
                 entry["authentication_ok"] = auth_cache[profile.name].ok
                 launcher = LAUNCHERS[profile.kind](profile, config, probe.resolved, native=True)

@@ -196,6 +196,15 @@ runtime:
     backend: ["{python} -m pytest:*", "{python} -m pylint:*", "{python} -m compileall:*"]
     cli: ["{python} -m pytest:*", "{python} -m pylint:*", "kiddo-cli --help:*"]
     coordination: ["{python} scripts/check_docs_agents.py:*"]
+  # W1 decision A: opt-in hardening of the native-cli backend (feature_coordinator/native_hardening.py,
+  # w1-progress.md). It confines the AGENT TOOLS, not the CLI processes, and fails closed (the runner is
+  # unavailable) when this host or CLI version cannot enforce it. Off: native-cli behaves exactly as above.
+  native_hardening:
+    enabled: false
+    claude_shell: disabled               # disabled: no Bash tool | sandboxed: Claude Code's Bash sandbox
+                                         # (UNVERIFIED; needs nested user namespaces, denied on Ubuntu 24.04)
+    codex_home: ""                       # optional Worker-dedicated CODEX_HOME (own ChatGPT login, mode 0700)
+    read_paths: []                       # extra read-only paths for Codex commands, e.g. the node toolchain
 
 # The autonomous Worker service (W4; docs_agents/coordination/worker-autonomy.md). Safe defaults:
 # the service is OFF until autonomous.enabled is set; ONE agent at a time; bounded, category-specific
