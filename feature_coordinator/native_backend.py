@@ -61,7 +61,8 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from .config import ProjectConfig
-from .errors import CoordinatorError
+from .errors import CoordinatorError, GitConfigExecutionError
+from .gitsafe import assert_no_execution_config, git_argv, hardened_env
 from .launchers import LAUNCHERS, RunnerProbe, probe_runner, snapshot
 from .locks import ProcessIdentity
 from .native_hardening import (
@@ -178,8 +179,9 @@ def check_subscription(kind: ProviderKind, executable: str, env: Mapping[str, st
 # ---------------------------------------------------------------------------
 
 def _git(root: Path, *args: str, check: bool = True) -> str:
-    return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, check=check,
-                          env={**os.environ, "GIT_OPTIONAL_LOCKS": "0", "LC_ALL": "C"}).stdout
+    # gitsafe: repository-provided fsmonitor/hooks/filters can never run during these queries.
+    return subprocess.run(git_argv(root, *args), capture_output=True, text=True, check=check,
+                          env=hardened_env()).stdout
 
 
 @dataclass(frozen=True)
@@ -238,8 +240,8 @@ def git_problems(root: Path, before: GitState, after: GitState) -> list[str]:
     if after.stash != before.stash:
         problems.append("the stash changed")
     if after.head != before.head and not problems:
-        if subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", before.head, after.head],
-                          capture_output=True, check=False).returncode != 0:
+        if subprocess.run(git_argv(root, "merge-base", "--is-ancestor", before.head, after.head),
+                          capture_output=True, env=hardened_env(), check=False).returncode != 0:
             problems.append("the branch history was rewritten")
         else:
             for sha in _git(root, "rev-list", f"{before.head}..{after.head}").split():
@@ -369,6 +371,10 @@ class NativeCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-p
         ongoing = git_operation_in_progress(root)
         if ongoing:
             return RunResult(self.name, "failed", error=f"the workspace has an unfinished Git operation {ongoing}")
+        try:  # gitsafe: refuse a checkout whose own Git config would run a program (both backends)
+            assert_no_execution_config(root, where="the workspace")
+        except GitConfigExecutionError as exc:
+            return RunResult(self.name, "rejected", error=str(exc))
         hardening = self.config.runtime.native_hardening
         if self.hardened:  # fail closed: never a silent fallback to the unhardened command line
             reason = self.hardening_check(self.kind, self.probe().version, hardening, env=self.environment(),

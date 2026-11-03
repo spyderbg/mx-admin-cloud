@@ -41,6 +41,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 
+from .gitsafe import SAFE_CONFIG_ARGS, hardened_env
 from .config import ProjectConfig
 from .errors import CoordinatorError
 from .paths import PathPolicy, matches
@@ -252,8 +253,9 @@ class SandboxBuilder:
                     found.append(rel)
         if not found:
             return []
-        tracked = set(subprocess.run(["git", "-C", str(self.root), "ls-files", "-z", "--", *found],
-                                     capture_output=True, text=True, check=False).stdout.split("\0"))
+        tracked = set(subprocess.run(["git", "-C", str(self.root), *SAFE_CONFIG_ARGS, "ls-files", "-z", "--",
+                                      *found], capture_output=True, text=True, env=hardened_env(),
+                                     check=False).stdout.split("\0"))
         return sorted(rel for rel in found if rel not in tracked)
 
     # -- the plan ------------------------------------------------------------------

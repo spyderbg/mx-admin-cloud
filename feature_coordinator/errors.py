@@ -64,6 +64,11 @@ class GitOperationError(CoordinatorError):
     """A Git command failed or a Git safety check refused the operation."""
 
 
+class GitConfigExecutionError(GitOperationError):
+    """The repository's own Git configuration or attributes would run a program during a Coordinator
+    Git operation (W1: the `.git/config` core.fsmonitor / hooks / filter class). Fail closed."""
+
+
 class HeadMismatchError(GitOperationError):
     """The branch or HEAD is not what the request expected (or moved concurrently)."""
 

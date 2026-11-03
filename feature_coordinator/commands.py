@@ -10,6 +10,7 @@ from typing import Any
 
 from .broker import ROUTES, configured_credential
 from .broker_config import ignored_settings
+from .gitsafe import SAFE_CONFIG_ARGS, hardened_env
 from .config import ProjectConfig
 from .errors import BrokerUnavailableError, CoordinatorError
 from .gates import GateContext, SandboxedGateRunner, gate_cwd
@@ -38,8 +39,8 @@ def _state(args: argparse.Namespace, config: ProjectConfig) -> Path:
 
 
 def _git(repo: Path, *args: str) -> str:
-    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, check=True,
-                          env={"GIT_OPTIONAL_LOCKS": "0", "PATH": "/usr/bin:/bin"}).stdout.strip()
+    return subprocess.run(["git", "-C", str(repo), *SAFE_CONFIG_ARGS, *args], capture_output=True, text=True,
+                          check=True, env=hardened_env({"PATH": "/usr/bin:/bin"})).stdout.strip()
 
 
 # -- inspection -----------------------------------------------------------------------

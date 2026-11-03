@@ -76,6 +76,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 from .broker import ROUTES, AuthBroker, configured_credential
+from .gitsafe import SAFE_CONFIG_ARGS, hardened_env
 from .config import ProjectConfig
 from .errors import BrokerError
 from .native_hardening import (
@@ -517,9 +518,9 @@ def role_dirty_paths(repo_root: Path, roots: Sequence[str]) -> list[str]:
     """Modified, deleted or untracked (not ignored) paths under *roots* — read-only query."""
     if not roots:
         return []
-    env = {**os.environ, "GIT_OPTIONAL_LOCKS": "0", "LC_ALL": "C"}
-    out = subprocess.run(["git", "-C", str(repo_root), "status", "--porcelain=v1", "-z", "--untracked-files=all",
-                          "--", *roots], capture_output=True, text=True, env=env, check=True).stdout
+    out = subprocess.run(["git", "-C", str(repo_root), *SAFE_CONFIG_ARGS, "status", "--porcelain=v1", "-z",
+                          "--untracked-files=all",
+                          "--", *roots], capture_output=True, text=True, env=hardened_env(), check=True).stdout
     tokens = [t for t in out.split("\0") if t]
     paths: list[str] = []
     i = 0
