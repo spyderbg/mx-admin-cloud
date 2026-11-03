@@ -34,6 +34,8 @@ TEXT" instruction (the subscription smoke test's prompt) when the prompt has no 
 (e.g. a rendezvous of two agents whose prompts the tests cannot change). W4.2: it also follows a
 multi-line "Create the file PATH with exactly the content below" instruction with a fenced block,
 taken from the CURRENT STEP section only (the real-agent smoke test's prompt, unchanged).
+Native hardening: the init event also echoes `--tools` and `--permission-mode` (no MCP server),
+unless the control file says "report_tools" / "report_mcp".
 """
 
 # pylint: disable=missing-function-docstring
@@ -304,8 +306,14 @@ def init_event():
     model = requested_model()
     reported = control().get("report_model") or (f"claude-{model}-fake-1" if model in ("opus", "sonnet", "haiku")
                                                  else model or "claude-default-fake-1")
+    args = sys.argv[1:]
+    tools = args[args.index("--tools") + 1].split(",") if "--tools" in args else []
+    mode = args[args.index("--permission-mode") + 1] if "--permission-mode" in args else "default"
     return {"type": "system", "subtype": "init", "model": reported,
-            "apiKeySource": control().get("api_key_source", "none")}
+            "apiKeySource": control().get("api_key_source", "none"),
+            # what the real CLI reports; a control file can override it (native hardening tests)
+            "tools": control().get("report_tools", tools), "mcp_servers": control().get("report_mcp", []),
+            "permissionMode": mode}
 
 
 def status():

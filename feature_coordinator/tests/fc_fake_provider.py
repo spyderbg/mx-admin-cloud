@@ -10,6 +10,13 @@ Scripted agent behavior, so the REAL CLIs can be driven offline:
     Bash tool call; `FAKE-SHELL:<command>` makes the Responses side answer with one
     `exec_command` call; once the tool result comes back, the answer is `TOOLRESULT:<result>`;
   * otherwise the answer is the text `ok`.
+Multi-step scripts (native hardening tests): every line `FAKE-STEP:<tool>:<argument>` of the
+first user message is one tool call, issued in order, one per model turn; after the last tool
+result the answer is `TOOLRESULT:` + the JSON list of all results. Anthropic tools: `Bash`,
+`BashUnsandboxed` (Bash with `dangerouslyDisableSandbox`), `Read`, `Write`, `Glob`, `Grep`,
+`Agent`/`Task` (a subagent), `WebFetch`, any other name (input `{"arg": ...}`). Responses tools:
+`shell` (exec_command), `shell_escalated` (exec_command asking for escalated permissions),
+`apply_patch` (adds the file named by the argument), `view_image` (the file named by the argument).
 Test knobs: `hang` (seconds before answering), `status` (error status), `body_bytes` (an
 oversized body). Every request is recorded (method, path, query, lower-case headers, body).
 """
@@ -54,6 +61,61 @@ def anthropic_events(blocks: list[dict[str, Any]], stop: str) -> list[dict[str, 
 def _marker(text: str, marker: str) -> str:
     """The command after *marker* in a JSON-encoded transcript, up to the end of its line."""
     return text.split(marker, 1)[1].split("\\n", 1)[0].split('"', 1)[0]
+
+
+STEP = "FAKE-STEP:"
+
+
+def _steps(first_user_text: str) -> list[tuple[str, str]]:
+    """The scripted (tool, argument) steps of a multi-step prompt (see the module docstring)."""
+    steps = []
+    for line in first_user_text.splitlines():
+        if line.startswith(STEP):
+            tool, _, arg = line[len(STEP):].partition(":")
+            steps.append((tool, arg))
+    return steps
+
+
+def _first_user_text(messages: list[dict[str, Any]]) -> str:
+    """The text of the first user message that holds a scripted step (the task prompt; Codex
+    may send its environment context as an earlier user message)."""
+    for message in messages:
+        content = message.get("content") if message.get("role") == "user" else None
+        if isinstance(content, list):
+            content = "\n".join(str(p.get("text", "")) for p in content if isinstance(p, dict))
+        if isinstance(content, str) and STEP in content:
+            return content
+    return ""
+
+
+def anthropic_tool_input(tool: str, arg: str) -> tuple[str, dict[str, Any]]:
+    """(tool name, input) for one scripted Anthropic step."""
+    if tool in ("Bash", "BashUnsandboxed"):
+        data: dict[str, Any] = {"command": arg, "description": "probe"}
+        if tool == "BashUnsandboxed":
+            data["dangerouslyDisableSandbox"] = True
+        return "Bash", data
+    inputs = {"Read": {"file_path": arg}, "Write": {"file_path": arg, "content": "FAKE-WRITTEN\n"},
+              "Glob": {"pattern": arg}, "Grep": {"pattern": "FAKE", "path": arg, "output_mode": "content"},
+              "WebFetch": {"url": arg, "prompt": "summarize"}}
+    if tool in ("Agent", "Task"):
+        return tool, {"description": "probe", "prompt": arg, "subagent_type": "general-purpose"}
+    return tool, inputs.get(tool, {"arg": arg})
+
+
+def responses_tool_call(tool: str, arg: str, index: int) -> dict[str, Any]:
+    """One scripted Responses output item: `shell`/`shell_escalated` (exec_command), `apply_patch`
+    (Codex's freeform tool, adding the file *arg*) or `view_image` (the local file *arg*)."""
+    ids = {"id": f"fc_s{index}", "call_id": f"call_s{index}"}
+    if tool == "apply_patch":
+        patch = f"*** Begin Patch\n*** Add File: {arg}\n+FAKE-PATCHED\n*** End Patch\n"
+        return {"type": "custom_tool_call", "name": "apply_patch", "input": patch, **ids}
+    if tool == "view_image":
+        return {"type": "function_call", "name": "view_image", "arguments": json.dumps({"path": arg}), **ids}
+    args: dict[str, Any] = {"cmd": arg}
+    if tool == "shell_escalated":
+        args.update(sandbox_permissions="require_escalated", justification="probe needs the host")
+    return {"type": "function_call", "name": "exec_command", "arguments": json.dumps(args), **ids}
 
 
 class FakeProvider:
@@ -131,8 +193,13 @@ class FakeProvider:
                    if isinstance(message.get("content"), list)
                    for part in message["content"] if part.get("type") == "tool_result"]
         transcript = json.dumps(request.get("messages", []))
-        if results:
-            blocks, stop = [{"type": "text", "text": "TOOLRESULT:" + json.dumps(results)[:20000]}], "end_turn"
+        steps = _steps(_first_user_text(request.get("messages", [])))
+        if steps and len(results) < len(steps):
+            name, data = anthropic_tool_input(*steps[len(results)])
+            blocks = [{"type": "tool_use", "id": f"toolu_step{len(results)}", "name": name, "input": data}]
+            stop = "tool_use"
+        elif results:
+            blocks, stop = [{"type": "text", "text": "TOOLRESULT:" + json.dumps(results)[:60000]}], "end_turn"
         elif "FAKE-TOOL:" in transcript:
             blocks = [{"type": "tool_use", "id": "toolu_fake1", "name": "Bash",
                        "input": {"command": _marker(transcript, "FAKE-TOOL:"), "description": "probe"}}]
@@ -150,11 +217,15 @@ class FakeProvider:
 
     def responses(self, handler: BaseHTTPRequestHandler, request: dict[str, Any]) -> None:
         items = request.get("input", [])
-        outputs = [i for i in items if isinstance(i, dict) and i.get("type") == "function_call_output"]
+        outputs = [i for i in items if isinstance(i, dict)
+                   and i.get("type") in ("function_call_output", "custom_tool_call_output")]
         transcript = json.dumps(items)
-        if outputs:
+        steps = _steps(_first_user_text([i for i in items if isinstance(i, dict)]))
+        if steps and len(outputs) < len(steps):
+            out = [responses_tool_call(*steps[len(outputs)], len(outputs))]
+        elif outputs:
             out = [{"type": "message", "role": "assistant", "id": "msg_2",
-                    "content": [{"type": "output_text", "text": "TOOLRESULT:" + json.dumps(outputs)[:20000]}]}]
+                    "content": [{"type": "output_text", "text": "TOOLRESULT:" + json.dumps(outputs)[:60000]}]}]
         elif "FAKE-SHELL:" in transcript:
             out = [{"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "exec_command",
                     "arguments": json.dumps({"cmd": _marker(transcript, "FAKE-SHELL:")})}]
