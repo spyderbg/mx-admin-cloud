@@ -8,13 +8,14 @@
 
 | Item | Status |
 | --- | --- |
-| Stage | 4 — reconciling W1 with `dev` (in progress) |
+| Stage | 6 — done for this round: W1 reconciled with `dev` and tested; **blocked on operator decision B1** |
+| Branch head | `9af9621` merge of `dev` `068d0b9` into W1 `19e9f6d`, plus this report's commit — **local only, not pushed** (see [Delivery](#delivery)) |
 | Active Worker | `mx-admin-worker.service` running from the operator's checkout on `dev` (`068d0b9`), `execution_backend: native-cli`. **Not touched** by this work |
 | Open blockers | See [Open blockers and operator decisions](#open-blockers-and-operator-decisions) |
 
 ## Constraints followed
 
-- All development happens in an independent clone, `/home/spyder/worktrees/mx-admin-cloud-w1` (ext4), cloned from `origin` at `security/worker-d20-d21` (`19e9f6d`). Reason: the running Worker imports `feature_coordinator` straight from its checkout's working tree and commits there (`feature-coordinator:` reflog entries), so even `git worktree add` would have shared its `.git` (refs, locks, packed-refs). A separate clone writes nothing into the Worker's repository.
+- All development happens in an independent clone outside the operator's checkout (on ext4), cloned from `origin` at `security/worker-d20-d21` (`19e9f6d`). Reason: the running Worker imports `feature_coordinator` straight from its checkout's working tree and commits there (`feature-coordinator:` reflog entries), so even `git worktree add` would have shared its `.git` (refs, locks, packed-refs). A separate clone writes nothing into the Worker's repository.
 - The Worker's checkout, `.venv`, state directory, service, credentials and configuration were only **read** (unit `ExecStart`, `git status`, configuration key names). No branch switch, no service change, no `dev` change.
 - No authentication token was printed, copied, read or committed. CLI checks used `--version`/`--help` only; Codex sandbox experiments used a throwaway `CODEX_HOME` with a fake `auth.json`.
 - No paid API request and no real authenticated smoke test.
@@ -71,7 +72,7 @@ Sources are the vendors' current documentation (fetched 2026-11-03) and offline 
 | Profile: `":minimal"="read"` + Codex release dir `read` + `":workspace_roots"={"."="write"}` | No (path absent); workspace read/write OK; `socket()` EPERM; own PID namespace; writes outside the workspace land in a throwaway tmpfs |
 | Same + `"<CODEX_HOME>"="deny"` | No (`Permission denied`) |
 
-**Conclusion (design chosen for implementation):** keep the subscription credential with the **trusted CLI process**, isolate it from **agent-controlled tools**, and restrict the CLI's own egress:
+**Design for subscriptions (it keeps W1's nesting — see the blocker below):** keep the subscription credential with the **trusted CLI process**, isolate it from **agent-controlled tools**, and restrict the CLI's own egress:
 
 | Layer | Claude Code | Codex |
 | --- | --- | --- |
@@ -92,30 +93,58 @@ W1 isolates agent commands by **nesting**: the CLI runs inside the Worker's bubb
 
 Consequences on this host:
 
-- **Claude Code** (strict nested Bash sandbox, `failIfUnavailable`): the CLI cannot start its command sandbox inside ours, so every `bwrap`-backend Claude run fails closed. `dev`'s host-setup table ("bwrap backend, Claude Code: Works") describes `dev`'s bwrap backend, which has **no** nested sandbox and therefore mounts the login file readable to agent commands.
+- **Claude Code** (strict nested Bash sandbox, no unsandboxed retry): its Linux sandbox is bubblewrap (documented **[S]**), so it cannot start inside ours either and its commands are refused — fail closed. This is inferred from the generic denial above; the end-to-end test with the real CLI is skipped on this host by design. Observed: with W1's strict settings inside an outer no-network sandbox, the CLI did **not** exit at start-up (a sandbox failure after start-up refuses commands instead, per the docs). `dev`'s host-setup table ("bwrap backend, Claude Code: Works") describes `dev`'s bwrap backend, which has **no** nested sandbox and therefore mounts the login file readable to agent commands.
 - **Codex**: its nested sandbox cannot start (already recorded on `dev`, [agent-ownership §5](agent-ownership.md#5-residual-risks-operator-decisions-in-phase-status) item 6). Its namespace-free fallback, legacy Landlock, is documented as *rejected for filesystem-restricted policies*, so it could not keep `auth.json` away from agent commands either.
-- Therefore the subscription egress design above, which keeps W1's nesting, **cannot run on the production desktop** without changing the host's AppArmor policy — which this task must not do. Its implementation was started and then **parked**, not committed (`/home/spyder/worktrees/w1-parked/`).
+- Therefore the subscription egress design above, which keeps W1's nesting, **cannot run on the production desktop** without changing the host's AppArmor policy — which this task must not do. Its implementation (a CONNECT-only egress module and private-file checks for a `setup-token` file and a Worker `CODEX_HOME`) was started and then **parked outside the repository**, not committed; it can be resumed if option B or C below is chosen.
 
 ### Incident note — one unauthenticated request to OpenAI
 
 While checking that `codex exec --strict-config` accepts permission-profile keys (2026-11-03 ~08:45 UTC), Codex was started with an **empty** throwaway `CODEX_HOME` (not logged in). Instead of stopping, it opened `wss://api.openai.com/v1/responses` with **no credential**; OpenAI answered `401 Missing bearer or basic authentication` at the WebSocket handshake. No prompt was sent, nothing was billed, and no credential existed or was used. Every later CLI experiment ran inside `bwrap --unshare-net` (verified: `ENETUNREACH`, no DNS). Lesson for the Worker: Codex does not fail closed on a missing login by itself — the native backend's pre-run `codex login status` check matters.
 
-## Stage 4 — reconcile W1 with `dev` (in progress)
+## Stage 4 — reconcile W1 with `dev` (done, `9af9621`)
 
 Merge of `origin/dev` (`068d0b9`) into the W1 branch, no history rewrite. Resolution rules:
 
 1. `dev` is the base for W2–W4.5 behaviour; W1 applies to the **`bwrap` backend only**. The `native-cli` backend's command lines, settings, environment and probe are unchanged (tests assert it).
-2. Legacy keys stay loadable: `credential_files` and `runtime.agent_network: true` are accepted, have **no effect** (nothing is mounted, no sandbox shares the network) and are reported by `runners` and `worker-check` (`config.ignored_settings()`).
+2. Legacy keys stay loadable: `credential_files` and `runtime.agent_network: true` are accepted, have **no effect** (nothing is mounted, no sandbox shares the network) and are reported by `runners` and `worker-check` (`broker_config.ignored_settings()`).
 3. The version floor moved from `probe_runner()` to the bwrap runner's preflight (`version_floor_error()`).
 4. `worker-check` reports `INELIGIBLE` while `runtime.execution_backend` is `native-cli` (agents are not isolated there).
 
+Additional fixes found while testing the merge:
+
+5. `worker-check` would have reported **ELIGIBLE** on this desktop with a credential configured, although every `bwrap` run fails closed here. It now probes the nested command sandbox (`isolation_check.nested_sandbox_check`) and reports blocker B1. The installed-CLI compatibility tests skip **only** where that AppArmor policy is demonstrated (label `bwrap//&unpriv_bwrap` plus bubblewrap's namespace refusal); any other nested failure still fails.
+6. `dev`'s W4 soak harness imports `FAKE_CREDENTIAL`, which W1 had removed from the test helpers (not collected by pytest; found by pylint) — restored.
+7. W1's broker configuration moved to `broker_config.py`, because the merged `config.py` exceeded the 1000-line module limit.
+
 ## Files changed
 
-To be completed per commit.
+Merge commit `9af9621` against `dev` (`068d0b9`): 37 files, +3558/−217.
+
+| Area | Files |
+| --- | --- |
+| New (W1, moved to the package) | `broker.py`, `netns_channel.py`, `sandbox_bootstrap.py`, `isolation_check.py` (+ `nested_sandbox_check`), tests `test_fc_broker.py`, `test_fc_isolation.py`, `test_fc_runner_compat.py`, `fc_fake_provider.py`, `worker-security.md` |
+| New (this round) | `broker_config.py`, `w1-progress.md` |
+| Resolved / adapted | `launchers.py` (W1 for bwrap only; `version_floor_error`), `providers.py` (`ignored_keys`), `config.py`, `commands.py` (`runners`, `worker-check`), `operations.py`, `cli.py`, tests `fc_helpers.py`, `fc_fake_agent.py`, `test_fc_launchers.py`, `test_fc_sandbox.py`, `test_fc_parallel.py`, `test_fc_worker_lifecycle.py`, `test_fc_worker_smoke.py` (fake-agent version string) |
+| Docs | `README.md`, `architecture/README.md`, `agent-ownership.md`, `feature-workflow.md` (W1 is now §24), `operations.md`, `phase-status.md`, `project-config.example.yaml` |
+
+Unchanged by W1: `native_backend.py`, the service, checkpoints, GitHub intake/publish, the backend, CLI and frontend.
 
 ## Tests executed
 
-To be completed.
+All with fake credentials and fake providers; the W1 isolation and compat tests run in their own network namespaces. Outbound contact to a model provider: only the incident above. Caveat: the first three `codex sandbox` experiments (top-level, no login, no model call) ran with the host network available; their output showed no network activity, but it was not monitored.
+
+| Check | Result |
+| --- | --- |
+| Coordinator regression `feature_coordinator/tests` + `scripts/tests`, on the committed merge | **982 passed, 23 skipped, 0 failed** (14 min), exit 0 **[V]** |
+| — skips | 14 live GitHub / Projects (opt-in), 2 host login checks (opt-in), 2 paid smoke (opt-in), 1 FUSE-only state-directory test (this clone is on ext4), **4 nested-sandbox tests: denied by this host's AppArmor policy** (blocker B1) |
+| First run on the uncommitted merge | 979 passed, 7 failed → fixed: 2 stale W1 tests (`python3` role commands vs W2's `{python}`), 2 expected after the compatibility changes, 1 `worker-check` verdict (fix 5), 2 "live checkout untouched" checks that only pass on a committed tree |
+| W1 suites alone | `test_fc_broker.py`, `test_fc_isolation.py` (18), `test_fc_launchers.py`, `test_fc_sandbox.py`: passed; `test_fc_runner_compat.py`: 3 skipped (B1) **[V]** |
+| Native backend unchanged | `test_fc_native_backend.py` and the W2–W4 suites pass unmodified; new assertions: native Claude settings have no `sandbox` block; legacy config keys are accepted and mount nothing **[V]** |
+| Pylint | package 10.00/10, no messages; tests 10.00/10 apart from `wrong-import-order` notes that depend on `PYTHONPATH` and also occur in untouched `dev` files **[V]** |
+| `scripts/check_docs_agents.py` | 6/6 (links, services, providers, openapi, readmes, drift) **[V]** |
+| Codex permission profile, installed 0.163.0, top-level `codex sandbox` | fake `auth.json` hidden/denied; workspace read/write; `socket()` EPERM; own PID namespace **[V]** |
+| Same, nested in bubblewrap | `No permissions to create new namespace` **[V]** |
+| Not run | Real authenticated smoke tests (need operator approval); backend/CLI/frontend suites (not touched by W1) |
 
 ## Open blockers and operator decisions
 
@@ -127,7 +156,7 @@ Narrowly scoped alternatives (each needs operator approval; none is implemented 
 
 | Option | What changes | D-20 (agent tools) | D-21 (agent tools) | D-21 (CLI process) | Subscription | Runs on this desktop |
 | --- | --- | --- | --- | --- | --- | --- |
-| **A. CLI-native tool sandboxes, CLI top-level** (recommended first step) | Opt-in hardening of the `native-cli` backend: Claude Code `sandbox` settings (strict, `failIfUnavailable`, no unsandboxed retry, empty strict domain allowlist, `filesystem.denyRead` for home secrets, `credentials` deny) + `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` + `permissions.blockReadsOutsideWorkingDirectories`; Codex permission profile (`:minimal` read, workspace write, deny `CODEX_HOME` and home secrets, no network) instead of `workspace-write` | **Yes** — Codex verified offline here **[V]**; Claude documented **[S]**, same settings verified nested by W1 on another host | **Yes** (CLIs' own sandboxes; top-level bubblewrap is allowed by the profile) | **No** — the trusted CLI keeps host network; its in-process tools (Read/Edit, WebFetch denied) are bounded by permission rules, not an OS sandbox | Yes — existing logins, or a Worker-dedicated `setup-token` / `CODEX_HOME` | Yes |
+| **A. CLI-native tool sandboxes, CLI top-level** (recommended first step) | Opt-in hardening of the `native-cli` backend: Claude Code `sandbox` settings (strict, `failIfUnavailable`, no unsandboxed retry, empty strict domain allowlist, `filesystem.denyRead` for home secrets, `credentials` deny) + `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` + `permissions.blockReadsOutsideWorkingDirectories`; Codex permission profile (`:minimal` read, workspace write, deny `CODEX_HOME` and home secrets, no network) instead of `workspace-write` | **Yes** — Codex verified offline here **[V]**; Claude: strict mode, empty network allowlist and env-variable deny verified nested by W1 on another host (2.1.303) **[V]**, `denyRead`/credential-file deny documented only **[S]** | **Yes** (CLIs' own sandboxes; top-level bubblewrap is allowed by the profile) | **No** — the trusted CLI keeps host network; its in-process tools (Read/Edit, WebFetch denied) are bounded by permission rules, not an OS sandbox | Yes — existing logins, or a Worker-dedicated `setup-token` / `CODEX_HOME` | Yes |
 | **B. W1 as designed on a host without `bwrap-userns-restrict`** (e.g. a dedicated Worker VM) plus subscription egress | The parked CONNECT-only egress (end-to-end TLS to fixed hosts) + `CLAUDE_CODE_OAUTH_TOKEN` via the channel + Worker `CODEX_HOME` with the permission profile | Yes (design) | Yes | **Yes** | Yes | No — needs another host |
 | **C. A narrowly scoped AppArmor rule** allowing nested user namespaces only for the Worker's outer sandbox | Host security policy (root, reviewed profile) | as B | as B | as B | Yes | Yes, after the policy change |
 | D. W1's API-key broker | Per-token API billing | Yes | Yes | Yes | **No** | **No** (same nesting) |
@@ -140,6 +169,11 @@ Every option still needs (a) the operator-approved real authenticated smoke test
 2. **Switching the running Worker's configuration** (backend or hardening flag) — a change of the active Worker, which this task does not make.
 3. **Live risk on `dev` today (unchanged by this branch):** the running `native-cli` Worker gives agent-run code the operator's files, logins and network. Verified here: with `dev`'s Codex flags (`--sandbox workspace-write`), an agent command **can read `CODEX_HOME/auth.json`** (fake file, offline) **[V]**; Claude Code's allowlisted commands such as `{python} -m pytest` run agent-written code unsandboxed (by design, [worker-functional](worker-functional.md)). Option A addresses exactly this.
 
+## Delivery
+
+- Commits are on the local branch `security/worker-d20-d21` in the isolated clone, **not pushed**: the delivery rule allows updating PR #20 only when the implementation is complete, and W1 is blocked (B1). The update is a plain fast-forward of `origin/security/worker-d20-d21` (`19e9f6d`) whenever the operator wants it published: `git push origin security/worker-d20-d21`.
+- PR #20 is unchanged (Draft). Nothing was merged; `dev` and the running Worker were not touched.
+
 ## Next action
 
-Run the regression suite on the merge, fix failures, commit the merge.
+Operator decision on blocker B1 (recommended: option A as an opt-in, then the approved real smoke test), then implementation of the chosen option in a separate, focused change.
