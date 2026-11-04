@@ -412,6 +412,47 @@ sign-in (no existing credential is copied in).
 - Full W1 completion: **D-21 for the trusted CLI processes** stays unenforced on this host (blocker B1,
   option B or C). The hardened mode confines the agent's tools, not the CLI process.
 
+## Stage 9 — bounded smoke test execution (operator-approved 2026-11-04)
+
+The operator approved the bounded smoke test ([w1-smoke-test-plan.md](w1-smoke-test-plan.md)): up to three
+short real-agent sessions on the existing Claude Code and ChatGPT subscriptions, no API-key billing, in the
+isolated clone with its own state. Decision A hardening on for every run.
+
+**Isolation re-verified first** (no change to the live Worker): work is in `~/worktrees/mx-admin-cloud-w1`
+on `security/worker-d20-d21` at `e509f80` (clean); the live Worker (PID 1357745) runs from the main
+checkout and was untouched; CLI versions meet the hardened floor — Claude Code 2.1.318 (≥ 2.1.317), Codex
+0.166.0 (≥ 0.163.0).
+
+**Dry run — clean for Claude, blocked on Codex (no model request, nothing written to disk).** Ran
+`subscription-smoke` (without `--apply`) with hardening on and `codex_home` pointed at the Worker-only
+login. It calls only each CLI's status command:
+
+| Role | Agent | Authentication reported | Hardened command line |
+| --- | --- | --- | --- |
+| Backend | Claude Code (opus) | **`claude.ai subscription (pro)` — ok** | `--restricted`, `--tools Read,Glob,Grep,Edit,Write` (**no `Bash`**), `--max-budget-usd 0.5`, `--permission-prompts none` **[V]** |
+| CLI | Claude Code (sonnet) | **`claude.ai subscription (pro)` — ok** | same, model `sonnet` **[V]** |
+| Frontend | Codex (default) | **`undetermined` — BLOCKER** | `default_permissions="fc_worker"`, `permissions.fc_worker.network.enabled=false`, `approval_policy="never"`, **no `--sandbox`**, both `auth.json` + `~/.claude` denied **[V]** |
+
+- **Claude subscription authentication: verified** for both Claude roles (`claude.ai` Pro, not an API key),
+  with the correct hardened argv (no Bash tool).
+- **Codex ChatGPT authentication: not verifiable** — the Worker-only `CODEX_HOME`
+  (`/home/spyder/.config/mx-admin-worker-codex`) **does not exist**, so `codex login status` reports a
+  configuration error and the harness classifies the role `undetermined` and fails closed. The Codex
+  hardening command line itself is correct; only the login is missing.
+
+**Stopped at the Codex blocker — operator action required.** The three sessions cannot run because the
+harness fails closed while any role is a blocker (it launches no session), and provisioning the Codex login
+is an **interactive device-auth** that this task must not perform (plan requirement 6: no credential copy;
+if interactive login is necessary, stop and request operator action). No authentication was initiated, no
+model request was made, no billing occurred; `/tmp/w1-smoke` and the Worker `CODEX_HOME` were not created.
+
+**To resume (operator):** provision the Worker-only login once, interactively —
+`install -d -m 700 ~/.config/mx-admin-worker-codex` then
+`CODEX_HOME=~/.config/mx-admin-worker-codex codex login --device-auth` (fresh ChatGPT sign-in; do **not**
+copy `~/.codex/auth.json`), confirm `codex login status` says "Logged in using ChatGPT", then re-run the dry
+run (now clean for all three roles) and approve the `--apply`. Claude needs no provisioning — its
+subscription login is already verified above.
+
 ## Open blockers and operator decisions
 
 ### Blocker B1 — W1's nested isolation is incompatible with this host's AppArmor policy
@@ -450,4 +491,9 @@ Every option still needs (a) the operator-approved real authenticated smoke test
 
 ## Next action
 
-Operator approval of the bounded hardened smoke test ([7h](#7h-requirements-for-a-real-authenticated-smoke-test)); after it passes, the operator decides whether the live Worker enables `runtime.native_hardening`. Full W1 (D-21 for the CLI process) still needs option B or C.
+The bounded smoke test is approved and under way, but is **paused on one operator step**: provision the
+Worker-only Codex login (interactive device-auth, no credential copy — see [Stage 9](#stage-9--bounded-smoke-test-execution-operator-approved-2026-11-04)).
+Claude subscription auth and the hardened command lines are already verified by the dry run. Once the Codex
+login exists, the dry run goes clean and the operator-approved `--apply` runs the three sessions. Publishing
+the functional hardening through Draft PR #20 is deferred until that smoke test passes and needs separate
+operator approval; full W1 (D-21 for the CLI process) still needs option B or C.
