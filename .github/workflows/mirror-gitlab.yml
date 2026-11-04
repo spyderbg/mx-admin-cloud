@@ -1,21 +1,37 @@
 name: Mirror to GitLab
 
+# Selective mirror: only main, dev, release/* and tags are synchronized to GitLab.
+# Ordinary branches (feature/*, fix/*, codex/*, ...) are never pushed, so they never appear in GitLab.
+# A release branch or tag deleted on GitHub is pruned on GitLab; branches outside these namespaces
+# are never touched by the mirror.
 on:
   push:
     branches:
       - main
+      - dev
+      - "release/**"
     tags:
       - "**"
-
+  # A deleted release branch or tag (runs the default branch's copy of this workflow).
+  delete:
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# One mirror run at a time: every run synchronizes the complete current state, so queued runs are safe.
+concurrency:
+  group: mirror-gitlab
+  cancel-in-progress: false
+
 jobs:
   mirror:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' ||
+      startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/'))) ||
+      (github.event_name == 'delete' && (github.event.ref_type == 'tag' || startsWith(github.event.ref, 'release/')))
 
     steps:
       - name: Configure SSH for GitLab
@@ -32,7 +48,7 @@ jobs:
           printf '%s\n' "$GITLAB_KNOWN_HOSTS" > "$HOME/.ssh/gitlab_known_hosts"
           chmod 600 "$HOME/.ssh/gitlab_known_hosts"
 
-      - name: Mirror repository to GitLab
+      - name: Mirror main, dev, release/* and tags to GitLab
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -51,10 +67,15 @@ jobs:
 
           cd repo.git
 
+          # Branches: only main, dev and release/*. --prune deletes a GitLab release/* branch that no
+          # longer exists on GitHub; it never deletes a branch outside these refspecs.
           git push --prune \
             "git@${GITLAB_HOST}:${GITLAB_PROJECT_PATH}.git" \
-            "+refs/heads/*:refs/heads/*"
+            "+refs/heads/main:refs/heads/main" \
+            "+refs/heads/dev:refs/heads/dev" \
+            "+refs/heads/release/*:refs/heads/release/*"
 
+          # Tags: all of them, deletions included.
           git push --prune \
             "git@${GITLAB_HOST}:${GITLAB_PROJECT_PATH}.git" \
             "+refs/tags/*:refs/tags/*"
