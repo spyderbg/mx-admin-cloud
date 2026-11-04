@@ -87,14 +87,15 @@ def test_runtime_ceilings(config: ProjectConfig, change, match: str) -> None:
 
 def test_sandbox_command_line_invariants(repo3: Path, config: ProjectConfig) -> None:
     builder = SandboxBuilder(repo3, config, bwrap="bwrap")
-    agent = builder.plan(run_dir=repo3.parent / "a", role="frontend", network=True, shadow_writable=True).argv(["x"])
+    agent = builder.plan(run_dir=repo3.parent / "a", role="frontend", shadow_writable=True).argv(["x"])
     gate = builder.plan(run_dir=repo3.parent / "g", role=None).argv(["x"])
     for argv in (agent, gate):
         for flag in ("--die-with-parent", "--new-session", "--unshare-all", "--clearenv"):
             assert flag in argv
         assert argv[argv.index("--remount-ro") + 1] == "/"
         assert [argv[i + 1] for i, a in enumerate(argv) if a == "--ro-bind" and argv[i + 2] == str(repo3 / ".git")]
-    assert "--share-net" in agent and "--share-net" not in gate
+    assert "--share-net" not in agent and "--share-net" not in gate  # W1 (D-21): never the host network
+    assert not any(a.startswith("/run/systemd/resolve") for a in agent)
     triples = [tuple(agent[i:i + 3]) for i in range(len(agent) - 2)]
     frontend = str(repo3 / "frontend")
     assert triples.index(("--bind", frontend, frontend)) > triples.index(("--ro-bind", frontend, frontend))
@@ -186,7 +187,8 @@ def test_private_home_tmp_and_no_state_dir(repo3: Path, config: ProjectConfig, t
 
 
 @pytest.mark.usefixtures("needs_bwrap")
-def test_gate_profile_has_no_network_and_agent_profile_does(repo3: Path, config: ProjectConfig, tmp_path: Path) -> None:
+def test_no_sandbox_profile_reaches_the_host_network(repo3: Path, config: ProjectConfig, tmp_path: Path) -> None:
+    """W1 (D-21): neither a gate nor a runner sandbox can reach a server on the host's loopback."""
     import socket  # pylint: disable=import-outside-toplevel
     server = socket.socket()
     server.bind(("127.0.0.1", 0))
@@ -196,12 +198,12 @@ def test_gate_profile_has_no_network_and_agent_profile_does(repo3: Path, config:
               f"try:\n    s.connect(('127.0.0.1', {port}))\n    print('connected')\nexcept OSError as exc:\n"
               f"    print('refused', exc.errno)\n")
     builder = SandboxBuilder(repo3, config)
-    gate = run_in(builder.plan(run_dir=tmp_path / "g", role=None, network=False), "/usr/bin/python3", "-c", script,
+    gate = run_in(builder.plan(run_dir=tmp_path / "g", role=None), "/usr/bin/python3", "-c", script,
                   tmp=tmp_path).stdout
-    agent = run_in(builder.plan(run_dir=tmp_path / "a", role="backend", network=True), "/usr/bin/python3", "-c",
+    agent = run_in(builder.plan(run_dir=tmp_path / "a", role="backend"), "/usr/bin/python3", "-c",
                    script, tmp=tmp_path).stdout
     server.close()
-    assert gate.startswith("refused") and agent.startswith("connected")
+    assert gate.startswith("refused") and agent.startswith("refused")
 
 
 def test_policy_and_sandbox_agree_on_ownership(repo3: Path, config: ProjectConfig) -> None:

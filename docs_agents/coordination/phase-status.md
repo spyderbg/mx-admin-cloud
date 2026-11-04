@@ -25,7 +25,7 @@
 | 5 | First End-to-End Feature (vertical slice) | not-started | Not authorized. Prerequisites: [Phase 5 prerequisites](#phase-5-prerequisites-and-remaining-security-restrictions) |
 | 6 | CI, API Drift and Final PR Quality Gates | not-started | Constrained by B-2 |
 | 7 | Budget-Aware Optional Continuous Feature Delivery | not-started | Needs separate authorization |
-| W1 | Worker security: D-20 credential isolation, D-21 network isolation | **postponed** | Implemented and tested offline on `security/worker-d20-d21`, draft [PR #20](https://github.com/spyderbg/mx-admin-cloud/pull/20) (D-20 partially verified, D-21 verified offline; real execution blocked); not merged, not part of W2 |
+| W1 | Worker security: D-20 credential isolation, D-21 network isolation | **reconciled with `dev`; blocked on an operator decision** | Implemented and tested offline on `security/worker-d20-d21`, draft [PR #20](https://github.com/spyderbg/mx-admin-cloud/pull/20) (D-20 partially verified, D-21 verified offline on a host without `bwrap-userns-restrict`). 2026-11-03: merged with `dev` (native-cli unchanged; legacy configuration keys accepted without effect); subscription path researched; **blocker B1**: its nested sandboxes cannot start under the desktop's AppArmor policy ([w1-progress](w1-progress.md)). Not merged into `dev` |
 | W3 | **Multi-commit checkpoints and task recovery** (steps, checkpoint commits, crash-safe protocol, local recovery, context reconstruction) | **verified with real-agent recovery test** | Offline acceptance met; W3.1 stabilized the flaky W2 test; W3.2 real Claude Code recovery test PASSED (41/41) ([record](#w3--multi-commit-checkpoints-and-task-recovery-record-2026-10-22)); merged into `dev` (PR #22, `3019d37`) |
 | W4 | **Autonomous Worker operations** (service loop, sequential agents, bounded retry, recovery, health, watchdog and controls) | **implemented; real-agent smoke verified; merged** | Original 599-pass offline baseline and later W4.2 live tests retained below; PR #23 merged (`7ce3dbc`). **No overnight/unattended run verified.** |
 | W4.1 | **Watchdog reliability and process recovery** | **verified offline; merged** | Process-level fault tests with fake agents, timeout and orphan recovery; included in merged PR #23. Real-agent watchdog failures remain untested. |
@@ -270,6 +270,32 @@ W2 decisions for the operator:
 2. W3 scope and approval: per-role workspaces, durable checkpoints and recovery ([worker-functional §11–§12](worker-functional.md#11-known-limitations)).
 3. Later stage: Worker maintenance and controlled updates of the installed CLIs (limitation F).
 
+## W1 — Worker security (D-20, D-21): record (2026-10-21)
+
+> Historical record of the W1 branch before its reconciliation with `dev` (2026-11-03): it predates W2–W4.5, the `native-cli` backend and the move to `feature_coordinator/`; commands named `feature.py …` are now `python -m feature_coordinator …`.
+
+**Instruction:** "W1 — D-20 Credential Isolation + D-21 Network Isolation" for the local Worker (the AWS coordinator is postponed). Started on `dev` at `bfd55a7` (clean, equal to `origin/dev`; no unfinished D1 work found), on the new branch `security/worker-d20-d21`. Nothing committed or pushed; no real model session, no provider API call, no credential file read.
+
+**Design and evidence:** [worker-security.md](worker-security.md).
+
+| Item | Result |
+| --- | --- |
+| Credential files mounted / API keys forwarded | **Removed**; `credential_files` rejected by the loader; a control test proves the probes would catch a reintroduced mount or key **[V]** |
+| Host-side broker | `broker.py`: a per-run token (expiry, revocation at run end), approved routes (Claude Code → `api.anthropic.com` `/v1/messages`[`/count_tokens`]; Codex → `api.openai.com` `/v1/responses`), the upstream credential added on the host, limits, a redacted log **[V]** |
+| Runner network | Own network namespace for every sandbox; the broker endpoint is handed over from inside it and verified to be in a different namespace (`SO_NETNS_COOKIE`); there is no `--share-net` path; `runtime.agent_network` fixed to `false` **[V]** |
+| Nested command isolation | Claude Code strict Bash sandbox; Codex workspace-write sandbox with no network; both verified with the **installed** CLIs against a fake provider **[V]** |
+| Desktop socket (the earlier finding) | `@/tmp/.X11-unix/X0` → ECONNREFUSED inside the sandbox (`sandbox-check --apply`) **[V]** |
+| Real provider authentication | **NOT VERIFIED.** The documented brokered mode of both CLIs uses a per-token-billed API key; the operator's subscription logins cannot be brokered (Anthropic: gateway credentials replace the claude.ai login and are billed per token) |
+| Worker eligibility | `feature.py worker-check --apply` → **INELIGIBLE** (blocker: no broker credential) — fail closed |
+| Regression | `scripts/tests` **517 passed, 18 opt-in skipped** (baseline 455/18), exit 0; Pylint 10.00/10 (package and tests); docs check 6/6; `feature.py config` identical; `sandbox-check --apply` PASSED (containment and isolation); opt-in `FC_HOST_RUNNER_CHECKS=1`: no real login visible in the sandbox **[V]** |
+| Files | New: `broker.py`, `netns_channel.py`, `sandbox_bootstrap.py`, `isolation_check.py`, `worker-security.md`, tests `test_fc_broker.py`, `test_fc_isolation.py`, `test_fc_runner_compat.py`, `fc_fake_provider.py`. Changed: `launchers.py`, `sandbox.py`, `supervisor.py`, `config.py`, `providers.py`, `operations.py`, `commands.py`, `cli.py`, `errors.py`, `gates.py`, `__init__.py`, the example configuration, the existing tests that assumed the login mount or the shared network, and the coordination and architecture docs |
+
+W1 decisions for the operator (also under [Human decisions required](#human-decisions-required)):
+
+1. **D-20 credential source:** provision provider API keys for the broker (`broker.credential_source: api-key-file`, per-token billing), or keep real runners disabled.
+2. **Review and commit** the W1 changes (branch `security/worker-d20-d21`), then authorize the real authenticated smoke stage separately.
+3. **W2 input:** `/usr/bin/python` does not exist on this host, so the Backend/CLI Bash allowlists (`python -m pytest`, `python -m pylint`) cannot run inside the sandbox (pre-existing; not changed in W1).
+
 ## Phase 4 finalization — record (2026-10-17)
 
 **Instruction** (2026-10-17): "Phase 4 and the GitHub Projects V2 extension are approved. This is a Phase 4 finalization task. Do not start Phase 5." Approved decisions:
@@ -424,7 +450,7 @@ Phase 5 is **not started** and needs an explicit authorization. Before it:
 4. **D-23:** the Phase 5 gate set. Recommended: the full catalog with D-19 lint baselines and `backend-tests` after B-7.
 5. **D-24:** `github.write_scope: all-features`, only together with the Phase 5 feature approval.
 6. **D-25:** the Git coordinator's non-force push of `feature/<slug>`, and `LIVE_PULL_REQUESTS_ENABLED` for **one** PR per feature, each with explicit approval; never merge.
-7. **D-20 and D-21** for supervised runs. Recommended: (a) for both in Phase 5; credential brokering and an egress proxy before unattended runs.
+7. ~~**D-20 and D-21** for supervised runs~~ **Implemented in W1** (2026-10-21; credential brokering and network namespaces, [worker-security](worker-security.md)). Still open: the broker's credential source (D-20).
 8. **Optional:** D-26 (a separate GitHub identity), and switching off Project #2's two pull-request workflows. They would move the parent's card when the single PR is linked or merged; the coordinator restores the value.
 9. **The feature:** an operator-approved **new** feature spanning Backend, CLI and Frontend, with its spec (tasks, contract, acceptance criteria, gates).
 10. **Only if the Automation role should use the remote Qwen model:** D-15, D-16, D-18 and an approved live validation. Otherwise Automation stays off or on an approved default runner.
@@ -437,7 +463,7 @@ Phase 5 is **not started** and needs an explicit authorization. Before it:
 - The board and GitHub comments are never authority. Locks, claims, permissions and approvals come only from the local state and the operator's own commands. The shared `spyderbg` account means a GitHub edit or comment can never authorize a sensitive operation (D-26).
 - No request to the remote Qwen server (`LIVE_REMOTE_ENABLED = False`; D-15/D-16/D-18 open).
 - Runner sandboxes:
-  - runner credentials are bound read-only (D-20) and the runner shares the host network for its API (D-21);
+  - *(superseded by W1, 2026-10-21)* runner credentials were bound read-only (D-20) and Claude Code shared the host network (D-21). Since W1 no credential is mounted and no sandbox shares the host network; real runs need a broker credential;
   - every other credential path stays invisible;
   - gate sandboxes are offline and read-only.
 - `backend-tests` is blocked against real checkouts (B-7).
@@ -1085,8 +1111,8 @@ See the tables above and [architecture §12](../architecture/README.md#12-decisi
 | D-15 | Transport for the remote Qwen endpoint (plain HTTP today) | Secure it (TLS reverse proxy, HTTPS with certificate verification, or a WireGuard/Tailscale tunnel), **or** record an explicit plain-HTTP exception after a network security assessment. Until decided, **no source code or repository context is sent** | Before any live Qwen use with code (Phase 3 at the earliest) |
 | D-16 | Disclosure policy for the remote model | Approve which code/context categories may be sent; never `.env`, production data, tokens or whole repositories | Same as D-15 |
 | D-18 | Qwen API authentication | Whether the server requires `AGENT_QWEN_API_KEY`; if yes, provision it via a private secret store only | Before any live request |
-| D-20 | Runner credentials inside the sandbox | The CLIs need their credentials, bound read-only, so commands an agent runs can read them (residual risk 1). Options: (a) accept with the current mitigations (deny rules, Bash allowlist, Codex offline commands); (b) credential brokering, e.g. a Claude Code `apiKeyHelper` or an API key in a helper outside the sandbox, and short-lived tokens. **Recommended: (b) before unattended runs (Phase 7); (a) acceptable for supervised Phase 5.** Also: rotate the Claude token exposed in this session (security note above) **2026-10-22:** isolation implemented in W1 (draft PR #20, postponed); the W2 `native-cli` backend deliberately runs agents with the operator's full access and subscription logins (functionality first; see worker-functional §3) | Before Phase 5 |
-| D-21 | Network policy for runner sandboxes | Claude Code's sandbox shares the host network (its API is needed), so allowlisted Bash commands could reach the network. Options: (a) keep the Bash allowlist only; (b) a network namespace with an allowlisting egress proxy; (c) enable Claude Code's own sandboxed Bash, nested like Codex [U]. **Recommended: (a) for supervised Phase 5, then (b)** **2026-10-22:** network isolation implemented in W1 (PR #20, postponed); the W2 `native-cli` backend gives agents the host network | Before unattended runs |
+| D-20 | Runner credentials inside the sandbox | The CLIs need their credentials, bound read-only, so commands an agent runs can read them (residual risk 1). Options: (a) accept with the current mitigations (deny rules, Bash allowlist, Codex offline commands); (b) credential brokering, e.g. a Claude Code `apiKeyHelper` or an API key in a helper outside the sandbox, and short-lived tokens. **Recommended: (b) before unattended runs (Phase 7); (a) acceptable for supervised Phase 5.** Also: rotate the Claude token exposed in this session (security note above) **2026-10-22:** isolation implemented in W1 (draft PR #20, postponed); the W2 `native-cli` backend deliberately runs agents with the operator's full access and subscription logins (functionality first; see worker-functional §3) **2026-11-03:** W1 reconciled with `dev`; the subscription-compatible credential path is tracked in [w1-progress.md](w1-progress.md) | Before Phase 5 |
+| D-21 | Network policy for runner sandboxes | Claude Code's sandbox shares the host network (its API is needed), so allowlisted Bash commands could reach the network. Options: (a) keep the Bash allowlist only; (b) a network namespace with an allowlisting egress proxy; (c) enable Claude Code's own sandboxed Bash, nested like Codex [U]. **Recommended: (a) for supervised Phase 5, then (b)** **2026-10-22:** network isolation implemented in W1 (PR #20, postponed); the W2 `native-cli` backend gives agents the host network **2026-11-03:** see [w1-progress.md](w1-progress.md) | Before unattended runs |
 | D-22 | ~~Update the architecture page and the docs index~~ **Approved and done 2026-10-17** (finalization record) | — | — |
 | D-24 | GitHub write scope for Phase 5 | `github.write_scope` is `test-features-only`. Recommended: switch to `all-features` only together with the Phase 5 feature approval (one config line) | Phase 5 |
 | D-25 | Push and the single real PR | Recommended for Phase 5: allow the Git coordinator's non-force push of `feature/<slug>` and set `LIVE_PULL_REQUESTS_ENABLED` for **one** PR per feature, each with explicit operator approval; never merge | Phase 5 |
@@ -1306,6 +1332,7 @@ Execution remains **sequential and supervised** until Phase 3 proves enforcement
 
 ## Exact next action (updated 2026-10-29)
 
+0. **W1 (2026-11-03):** W1 (Draft PR #20) is being reconciled with `dev`; status, blockers and operator decisions are in [w1-progress.md](w1-progress.md).
 1. **W4.4 documentation is merged.** PR #32 merged `docs/w44-reliability-closeout` into `dev` at `212500af48344007a4651e1f5e3c5cfe3b5baa68` (2026-10-29). This W4.5 handoff is a separate, explicitly requested **single-file direct documentation update**; do not redo PR #32.
 2. Begin W4.5 **on the Ubuntu 24.04 desktop** with **read-only host discovery**: systemd user manager, current `dev` and clean Git state, venv, CLI subscription login, GitHub auth, bubblewrap/AppArmor, current Worker/service status and the existing local monitoring webpage. Do not copy laptop Worker state or credentials. See [W4.5 handoff](#w45--desktop-first-operations-handoff-2026-10-29).
 3. Plan desktop-local configuration and safe **systemd user service** supervision; **reuse the existing monitoring page** via secure remote access from the laptop (verify access, do not rebuild monitoring). Check host/security prerequisites and a supervised foreground run before enabling unattended real features.

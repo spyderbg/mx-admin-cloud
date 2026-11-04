@@ -525,7 +525,7 @@ def test_wrapper_starts_a_verified_session_and_logs_its_end(tmp_path: Path) -> N
 
 def test_wrapper_passes_known_status_calls_through_and_refuses_other_calls(tmp_path: Path) -> None:
     rig = Rig(tmp_path)
-    assert rig.run(["--version"], prompt="").stdout.strip() == "fake-agent 1.0"
+    assert rig.run(["--version"], prompt="").stdout.strip() == "fake-agent 9.9.9"
     assert json.loads(rig.run(["auth", "status", "--json"], prompt="").stdout)["authMethod"] == "claude.ai"
     refused = rig.run(["mcp", "list"], prompt="")
     assert refused.returncode == 97 and "not a known non-session call" in refused.stderr

@@ -26,7 +26,7 @@ from .gates import SandboxedGateRunner
 from .http_transport import HttpChatTransport
 from .issue_sync import IssueSync
 from .issues import MockIssueTracker, TrackerClient
-from .launchers import RealCliRunner
+from .launchers import BrokerFactory, RealCliRunner
 from .paths import PathPolicy
 from .providers import CliRunnerProfile, OpenAICompatibleProfile
 from .runners import DisabledRoleRunner, OpenAICompatibleRunner, Runner
@@ -170,8 +170,7 @@ def containment_self_test(config: ProjectConfig, workdir: Path | None = None) ->
                     "victim": victim}
             # The Frontend role runs Codex, whose nested sandbox needs a writable shadow root.
             shadow_writable = config.provider_for(role).kind.value == "codex"
-            plan = builder.plan(run_dir=base / "runs" / role, role=role, network=False,
-                                shadow_writable=shadow_writable)
+            plan = builder.plan(run_dir=base / "runs" / role, role=role, shadow_writable=shadow_writable)
             out_path = base / "runs" / role / "probe.json"
             sup = supervise(plan.argv(["/usr/bin/python3", "-c", PROBE, json.dumps(spec)]), cwd=repo,
                             env={"PATH": os.environ.get("PATH", "")}, stdout_path=out_path,
@@ -203,11 +202,13 @@ def containment_self_test(config: ProjectConfig, workdir: Path | None = None) ->
         return report
 
 
-def build_runners(config: ProjectConfig, env: Mapping[str, str] | None = None) -> dict[str, Runner]:
+def build_runners(config: ProjectConfig, env: Mapping[str, str] | None = None, *,
+                  broker_factory: BrokerFactory | None = None) -> dict[str, Runner]:
     """Real runners per role. Claude Code / Codex through the configured execution backend
     (W2: `native-cli` with the subscription logins, or `bwrap` — never a fallback from one to the
-    other); OpenAI-compatible over the loopback-only HTTP transport (remote execution stays
-    disabled); a disabled role gets a runner that refuses."""
+    other; `bwrap` is network-isolated and brokered, W1, with `broker_factory` defaulting to the
+    configured credential — tests pass a fake one); OpenAI-compatible over the loopback-only HTTP
+    transport (remote execution stays disabled); a disabled role gets a runner that refuses."""
     from .native_backend import NativeCliRunner  # pylint: disable=import-outside-toplevel
     runners: dict[str, Runner] = {}
     native = config.runtime.execution_backend == "native-cli"
@@ -216,7 +217,8 @@ def build_runners(config: ProjectConfig, env: Mapping[str, str] | None = None) -
         if not role.enabled:
             runners[name] = DisabledRoleRunner(name, profile.name, profile.kind)
         elif isinstance(profile, CliRunnerProfile):
-            runners[name] = NativeCliRunner(profile, config) if native else RealCliRunner(profile, config)
+            runners[name] = (NativeCliRunner(profile, config) if native
+                             else RealCliRunner(profile, config, broker_factory=broker_factory))
         elif isinstance(profile, OpenAICompatibleProfile):
             runners[name] = OpenAICompatibleRunner(profile, dict(env if env is not None else os.environ),
                                                    HttpChatTransport())

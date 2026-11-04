@@ -49,11 +49,11 @@ class ProviderKind(str, Enum):
     OPENAI_COMPATIBLE = "openai-compatible"
 
 
-DEFAULT_CREDENTIAL_FILES = {
-    # Home-relative files the runner needs to authenticate; bound READ-ONLY into the sandbox.
-    "claude-code": (".claude/.credentials.json",),
-    "codex": (".codex/auth.json",),
-}
+# W1 (D-20): a runner profile never names credential files; nothing is ever mounted into a sandbox
+# to authenticate. A key below is still ACCEPTED (so an existing Worker configuration keeps loading)
+# but has no effect: the profile records it in `ignored_keys`, and `worker-check` reports it.
+IGNORED_PROFILE_KEYS = {"credential_files": "login files are never mounted into a runner sandbox (D-20); "
+                                            "see `broker` in the project configuration"}
 
 
 # W2: which model names each agent kind accepts. A model outside these is REJECTED, never
@@ -98,15 +98,12 @@ class CliRunnerProfile:
     kind: ProviderKind
     executable: str
     model: str = ""  # empty or "default": the CLI's own default model (a role may override it)
-    credential_files: tuple[str, ...] = ()
+    ignored_keys: tuple[str, ...] = ()  # W1: configuration keys accepted but without effect (IGNORED_PROFILE_KEYS)
 
     def __post_init__(self) -> None:
         if self.kind not in (ProviderKind.CLAUDE_CODE, ProviderKind.CODEX):
             raise ProviderError(f"provider {self.name!r}: {self.kind} is not a CLI runner kind")
         check_model(self.kind, self.model, where=f"provider {self.name!r}")
-        for rel in self.credential_files:
-            if rel.startswith("/") or ".." in rel.split("/"):
-                raise ProviderError(f"provider {self.name!r}: credential file {rel!r} must be home-relative")
 
 
 @dataclass(frozen=True)
@@ -177,10 +174,8 @@ class OpenAICompatibleProfile:  # pylint: disable=too-many-instance-attributes
 
 ProviderProfile = Union[CliRunnerProfile, OpenAICompatibleProfile]
 
-CLAUDE_CODE = CliRunnerProfile(name="claude", kind=ProviderKind.CLAUDE_CODE, executable="claude",
-                               credential_files=DEFAULT_CREDENTIAL_FILES["claude-code"])
-CODEX = CliRunnerProfile(name="codex", kind=ProviderKind.CODEX, executable="codex",
-                         credential_files=DEFAULT_CREDENTIAL_FILES["codex"])
+CLAUDE_CODE = CliRunnerProfile(name="claude", kind=ProviderKind.CLAUDE_CODE, executable="claude")
+CODEX = CliRunnerProfile(name="codex", kind=ProviderKind.CODEX, executable="codex")
 REMOTE_QWEN = OpenAICompatibleProfile(
     name="remote_qwen",
     default_model="Qwen3.6-35B-A3B-Q4_K_M.gguf",
@@ -208,8 +203,7 @@ def profile_from_mapping(name: str, data: Mapping[str, Any]) -> ProviderProfile:
         default_exe = "claude" if kind is ProviderKind.CLAUDE_CODE else "codex"
         return CliRunnerProfile(name=name, kind=kind, executable=str(data.get("executable", default_exe)),
                                 model=str(data.get("model", "")),
-                                credential_files=tuple(str(f) for f in data.get(
-                                    "credential_files", DEFAULT_CREDENTIAL_FILES[kind.value])))
+                                ignored_keys=tuple(key for key in IGNORED_PROFILE_KEYS if key in data))
     try:
         return OpenAICompatibleProfile(
             name=name,

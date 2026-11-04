@@ -5,7 +5,10 @@ THIS IS NOT A SECURITY SANDBOX. The CLI and every command it runs have the opera
 file-system and network access. Role write scopes are checked AFTER the run (and Claude Code's
 own permission rules apply while it runs); they do not prevent access outside the workspace.
 For OS-level containment use the `bwrap` backend (launchers.RealCliRunner); W1 (PR #20)
-explores credential and network isolation separately.
+explores credential and network isolation separately. Opt-in `runtime.native_hardening`
+(native_hardening.py, W1 decision A) confines the agent TOOLS — Claude Code without Bash, Codex
+commands in a credential-free, offline permission profile — and fails closed when that cannot be
+enforced; the CLI processes themselves stay unconfined.
 
 What the backend guarantees:
 
@@ -58,9 +61,18 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from .config import ProjectConfig
-from .errors import CoordinatorError
+from .errors import CoordinatorError, GitConfigExecutionError
+from .gitsafe import assert_no_execution_config, git_argv, hardened_env
 from .launchers import LAUNCHERS, RunnerProbe, probe_runner, snapshot
 from .locks import ProcessIdentity
+from .native_hardening import (
+    claude_init_problems,
+    codex_enforcement_error,
+    git_control_digest,
+    inert_launcher_anchor,
+    preflight,
+)
+from .native_hardening import summary as hardening_summary
 from .paths import PathPolicy, matches
 from .providers import CliRunnerProfile, ProviderKind, model_family
 from .python_env import PythonInterpreter
@@ -168,8 +180,9 @@ def check_subscription(kind: ProviderKind, executable: str, env: Mapping[str, st
 # ---------------------------------------------------------------------------
 
 def _git(root: Path, *args: str, check: bool = True) -> str:
-    return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, check=check,
-                          env={**os.environ, "GIT_OPTIONAL_LOCKS": "0", "LC_ALL": "C"}).stdout
+    # gitsafe: repository-provided fsmonitor/hooks/filters can never run during these queries.
+    return subprocess.run(git_argv(root, *args), capture_output=True, text=True, check=check,
+                          env=hardened_env()).stdout
 
 
 @dataclass(frozen=True)
@@ -228,8 +241,8 @@ def git_problems(root: Path, before: GitState, after: GitState) -> list[str]:
     if after.stash != before.stash:
         problems.append("the stash changed")
     if after.head != before.head and not problems:
-        if subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", before.head, after.head],
-                          capture_output=True, check=False).returncode != 0:
+        if subprocess.run(git_argv(root, "merge-base", "--is-ancestor", before.head, after.head),
+                          capture_output=True, env=hardened_env(), check=False).returncode != 0:
             problems.append("the branch history was rewritten")
         else:
             for sha in _git(root, "rev-list", f"{before.head}..{after.head}").split():
@@ -295,15 +308,32 @@ class NativeCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-p
 
     backend = BACKEND
 
-    def __init__(self, profile: CliRunnerProfile, config: ProjectConfig, *, probe: RunnerProbe | None = None,
-                 auth_check: Callable[..., SubscriptionCheck] = check_subscription) -> None:
+    def __init__(self, profile: CliRunnerProfile, config: ProjectConfig, *, probe: RunnerProbe | None = None,  # pylint: disable=too-many-arguments
+                 auth_check: Callable[..., SubscriptionCheck] = check_subscription,
+                 hardening_check: Callable[..., str] = preflight,
+                 enforcement_check: Callable[..., str] = codex_enforcement_error) -> None:
         self.profile = profile
         self.name = profile.name
         self.kind = profile.kind
         self.config = config
         self.auth_check = auth_check
+        self.hardening_check = hardening_check      # native hardening: host / version / policy preflight
+        self.enforcement_check = enforcement_check  # native hardening: Codex permission-profile self-test
         self._probe = probe
         self._auth: SubscriptionCheck | None = None
+
+    @property
+    def hardened(self) -> bool:
+        """True when `runtime.native_hardening` is enabled (native_hardening.py)."""
+        return self.config.runtime.native_hardening.enabled
+
+    def environment(self, interpreter: PythonInterpreter | None = None, tag: str = "") -> dict[str, str]:
+        """native_environment(), with a hardened Codex's Worker-dedicated CODEX_HOME."""
+        env = native_environment(interpreter, tag=tag)
+        hardening = self.config.runtime.native_hardening
+        if self.hardened and self.kind is ProviderKind.CODEX and hardening.codex_home:
+            env["CODEX_HOME"] = hardening.codex_home
+        return env
 
     def probe(self) -> RunnerProbe:
         """The (cached) capability probe: --version and --help only."""
@@ -314,7 +344,7 @@ class NativeCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-p
     def subscription(self) -> SubscriptionCheck:
         """The (cached) subscription check, with exactly the environment runs get."""
         if self._auth is None:
-            self._auth = self.auth_check(self.kind, self.probe().resolved, native_environment())
+            self._auth = self.auth_check(self.kind, self.probe().resolved, self.environment())
         return self._auth
 
     def _unavailable(self) -> str:
@@ -324,7 +354,7 @@ class NativeCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-p
         auth = self.subscription()
         return "" if auth.ok else f"subscription authentication: {auth.detail}"
 
-    def run(self, request: RunRequest) -> RunResult:  # pylint: disable=too-many-locals
+    def run(self, request: RunRequest) -> RunResult:  # pylint: disable=too-many-locals,too-many-return-statements
         """Launch the CLI for one task in the workspace, supervise it and judge what it changed."""
         reason = self._unavailable()
         if reason:
@@ -342,19 +372,55 @@ class NativeCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-p
         ongoing = git_operation_in_progress(root)
         if ongoing:
             return RunResult(self.name, "failed", error=f"the workspace has an unfinished Git operation {ongoing}")
+        try:  # gitsafe: refuse a checkout whose own Git config would run a program (both backends)
+            assert_no_execution_config(root, where="the workspace")
+        except GitConfigExecutionError as exc:
+            return RunResult(self.name, "rejected", error=str(exc))
+        hardening = self.config.runtime.native_hardening
+        if self.hardened:  # fail closed: never a silent fallback to the unhardened command line
+            reason = self.hardening_check(self.kind, self.probe().version, hardening, env=self.environment(),
+                                          workspace=root)
+            if reason:
+                return RunResult(self.name, "unavailable", error=f"native hardening: {reason}")
         writable = SandboxBuilder(root, self.config, policy).writable_roots(request.role, request.workspace.grants)
         spec = launcher.prepare(request, ctx.run_dir, writable)
         tag = secrets.token_hex(8)
-        env = {**native_environment(interpreter, tag=tag), **spec.env}
+        env = {**self.environment(interpreter, tag=tag), **spec.env}
+        if self.hardened and self.kind is ProviderKind.CODEX:
+            reason = self.enforcement_check(self.probe().resolved, launcher.profile_args(root, ctx.run_dir),
+                                            ctx.run_dir / "selftest", env)
+            if reason:
+                return RunResult(self.name, "unavailable", error=f"native hardening: {reason}")
         model = launcher.model(request.role)
         (ctx.run_dir / "native.json").write_text(json.dumps({
-            "backend": BACKEND, "security_sandbox": False, "argv": spec.argv, "cwd": str(root), "run_tag": tag,
+            "backend": BACKEND, "security_sandbox": False, "hardening": hardening_summary(self.kind, hardening),
+            "argv": spec.argv, "cwd": str(root), "run_tag": tag,
             "environment_names": sorted(env), "model": model or "CLI default", "writable": writable,
             "authentication": self.subscription().method}, indent=2), encoding="utf-8")
         before = self._state(root, ctx)
+        control = git_control_digest(root) if self.hardened else ""
         sup = self._supervise(spec.argv, root, env, spec.stdin_path, ctx, tag)
         leftovers = kill_tagged(RUN_TAG, tag)
-        return self._judge(request, ctx, launcher, model, before, sup, leftovers, writable)
+        result = self._judge(request, ctx, launcher, model, before, sup, leftovers, writable)
+        return self._judge_hardened(result, root, control, launcher, request.role) if self.hardened else result
+
+    def _judge_hardened(self, result: RunResult, root: Path, control: str, launcher: Any,  # pylint: disable=too-many-arguments
+                        role: str) -> RunResult:
+        """Native hardening's own post-run checks: the Git control files are unchanged (an agent
+        could otherwise run code in a later unsandboxed Git command, e.g. `core.fsmonitor`), and
+        Claude Code ran with exactly the hardened tools and no MCP server."""
+        result.details["hardening"] = hardening_summary(self.kind, self.config.runtime.native_hardening)
+        problems = []
+        if self.kind is ProviderKind.CLAUDE_CODE:
+            problems = claude_init_problems(_init_event(Path(result.details["run_dir"]) / "stdout.jsonl"),
+                                            launcher.tools(role))
+        if git_control_digest(root) != control:
+            result.status, result.error = "rejected", ("the run changed Git control files (.git/config, hooks or "
+                                                       "info); left as is for the operator — review before any Git "
+                                                       "command runs in this checkout")
+        elif problems and result.status not in ("timeout", "cancelled", "rejected"):
+            result.status, result.error = "failed", "native hardening: " + "; ".join(problems)
+        return result
 
     def _state(self, root: Path, ctx: RunContext) -> WorkspaceState:
         """A workspace snapshot taken while no Git coordinator commit is in flight (a commit
@@ -392,6 +458,14 @@ class NativeCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-p
         not_ours = {p for p in touched if not policy.check(request.role, p, grants=grants).allowed}
         theirs = sorted(p for p in not_ours if policy.owner_of(p) in concurrent)  # protected paths have no owner
         denied = sorted((not_ours - set(theirs)) | set(protected_touched))
+        # Hardened runs: the trusted CLI materialises inert, read-only agent-config anchors
+        # (.claude, .mcp.json, .codex, .agents) in the shared checkout to carry its own permission
+        # rules; concurrent roles see each other's. The agent is denied writing these, so an inert
+        # instance is never an agent change — exclude it (a non-inert one, i.e. real content, stays
+        # denied). This neither ignores the paths globally nor commits them (they are not writable).
+        anchors = sorted(p for p in denied if self.hardened and inert_launcher_anchor(root, p))
+        if anchors:
+            denied = [p for p in denied if p not in set(anchors)]
         git_issues = git_problems(root, before.git, after.git)
         from .launchers import role_dirty_paths  # pylint: disable=import-outside-toplevel
         allowed = [p for p in role_dirty_paths(root, writable)
@@ -404,7 +478,7 @@ class NativeCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-p
                        duration_seconds=round(sup.duration_seconds, 1), escalated_to_kill=sup.escalated_to_kill,
                        run_dir=str(ctx.run_dir), changed_during_run=touched, ignored_entries_created=new_ignored,
                        left_to_concurrent_roles=theirs, concurrent_roles=sorted(concurrent),
-                       leftover_processes_killed=len(leftovers))
+                       launcher_anchors_ignored=anchors, leftover_processes_killed=len(leftovers))
         result = RunResult(self.name, "completed", allowed, transcript=[summary] if summary else [], details=details)
         if sup.status in ("timeout", "cancelled"):
             result.status, result.error = sup.status, f"runner {sup.status} after {sup.duration_seconds:.0f}s"

@@ -19,12 +19,12 @@ claims and role locks, and by the Worker's own per-feature lock (worker.py).
 
 from __future__ import annotations
 
-import os
 import subprocess
 from pathlib import Path
 from typing import Any
 
 from .errors import GitOperationError
+from .gitsafe import SAFE_CONFIG_ARGS, hardened_env
 from .model import Feature
 
 GIT_OPERATION_MARKERS = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_LOG", "rebase-merge", "rebase-apply")
@@ -35,8 +35,8 @@ class WorkspaceError(GitOperationError):
 
 
 def _git(repo: Path, *args: str, check: bool = True) -> str:
-    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, check=check,
-                          env={**os.environ, "GIT_OPTIONAL_LOCKS": "0", "LC_ALL": "C"}).stdout.strip()
+    return subprocess.run(["git", "-C", str(repo), *SAFE_CONFIG_ARGS, *args], capture_output=True, text=True,
+                          check=check, env=hardened_env()).stdout.strip()
 
 
 def git_operation_in_progress(repo: Path) -> list[str]:
@@ -71,8 +71,9 @@ def workspace_problems(repo: Path, feature: Feature) -> list[str]:
     if branch != feature.branch:
         problems.append(f"the checkout is on {branch or 'a detached HEAD'!r}, not the feature branch "
                         f"{feature.branch!r} (it is never switched automatically)")
-    if feature.base_sha and subprocess.run(["git", "-C", str(repo), "merge-base", "--is-ancestor", feature.base_sha,
-                                            "HEAD"], capture_output=True, check=False).returncode != 0:
+    if feature.base_sha and subprocess.run(["git", "-C", str(repo), *SAFE_CONFIG_ARGS, "merge-base",
+                                            "--is-ancestor", feature.base_sha, "HEAD"], capture_output=True,
+                                           env=hardened_env(), check=False).returncode != 0:
         problems.append(f"HEAD does not contain the feature's base revision {feature.base_sha[:12]}")
     ongoing = git_operation_in_progress(repo)
     if ongoing:

@@ -8,17 +8,25 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from .broker import ROUTES, configured_credential
+from .broker_config import ignored_settings
+from .gitsafe import SAFE_CONFIG_ARGS, hardened_env
 from .config import ProjectConfig
-from .errors import CoordinatorError
+from .errors import BrokerUnavailableError, CoordinatorError
 from .gates import GateContext, SandboxedGateRunner, gate_cwd
-from .launchers import LAUNCHERS, probe_runner
+from .launchers import LAUNCHERS, missing_dependencies, probe_runner, version_floor_error
 from .lint_baseline import lint_report
-from .native_backend import check_subscription, native_environment
+from .native_backend import NativeCliRunner, check_subscription
+
 from .paths import PathPolicy, ScopedWorkspace
 from .providers import CliRunnerProfile, OpenAICompatibleProfile
 from .runners import RunRequest
 from .sandbox import SandboxBuilder, SandboxUnavailableError, bwrap_version, check_bwrap
 from .statedir import ensure_state_dir, resolve_state_dir
+
+# What `runtime.native_hardening` covers (native_hardening.py), for `runners` and `worker-check`.
+HARDENING_SCOPE = ("agent tools confined: Claude Code without Bash, Codex commands in the credential-free, "
+                   "offline fc_worker profile; the CLI processes keep host network and their own logins")
 
 
 def _print(text: str = "") -> None:
@@ -31,8 +39,8 @@ def _state(args: argparse.Namespace, config: ProjectConfig) -> Path:
 
 
 def _git(repo: Path, *args: str) -> str:
-    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, check=True,
-                          env={"GIT_OPTIONAL_LOCKS": "0", "PATH": "/usr/bin:/bin"}).stdout.strip()
+    return subprocess.run(["git", "-C", str(repo), *SAFE_CONFIG_ARGS, *args], capture_output=True, text=True,
+                          check=True, env=hardened_env({"PATH": "/usr/bin:/bin"})).stdout.strip()
 
 
 # -- inspection -----------------------------------------------------------------------
@@ -63,13 +71,15 @@ def cmd_runners(args: argparse.Namespace, config: ProjectConfig) -> int:
             continue
         assert isinstance(profile, CliRunnerProfile)
         probe = probed.setdefault(profile.name, probe_runner(profile))
-        status = "OK" if probe.ok else f"UNAVAILABLE ({probe.error or 'missing ' + ', '.join(probe.missing_flags)})"
-        ok = ok and probe.ok
+        floor = "" if native or not probe.ok else version_floor_error(probe)  # W1: the bwrap backend's floor
+        status = ("OK" if probe.ok and not floor else
+                  f"UNAVAILABLE ({floor or probe.error or 'missing ' + ', '.join(probe.missing_flags)})")
+        ok = ok and probe.ok and not floor
         _print(f"{role:12s} → {profile.name}: {probe.version or '-'} at {probe.resolved or '-'}: {status}; "
                f"model {config.model_for(role) or 'CLI default'}")
         if probe.ok and native:
-            auth = probed.setdefault(f"auth:{profile.name}", check_subscription(profile.kind, probe.resolved,
-                                                                                native_environment()))
+            env = NativeCliRunner(profile, config, probe=probe).environment()  # a hardened Codex's own CODEX_HOME
+            auth = probed.setdefault(f"auth:{profile.name}", check_subscription(profile.kind, probe.resolved, env))
             ok = ok and auth.ok
             _print(f"{'':15s}authentication: {auth.method}{'' if auth.ok else ' — REFUSED: ' + auth.detail}")
         if probe.ok:
@@ -78,7 +88,39 @@ def cmd_runners(args: argparse.Namespace, config: ProjectConfig) -> int:
             request = RunRequest(f"example.{role}", role, "(task prompt)", ScopedWorkspace(policy, role))
             spec = launcher.prepare(request, Path(args.scratch or _state(args, config) / "tmp" / f"plan-{role}"), roots)
             _print(f"{'':15s}argv: {' '.join(spec.argv)}")
+    if native and config.runtime.native_hardening.enabled:
+        _print(f"native hardening: ON ({HARDENING_SCOPE}); checked again before every run, fail closed")
+    if native:
+        _print("W1 isolation (D-20/D-21): NOT APPLIED — the native-cli backend runs agents with the operator's "
+               "files, logins and network; see `worker-check --apply` for the bwrap backend")
+    else:
+        for name, reason in _real_run_blockers(config, repo).items():
+            _print(f"{name:12s} real runs: UNAVAILABLE — {reason}")
+        _print("network: every runner sandbox has its own namespace; the model is reached only through the broker")
+    for note in ignored_settings(config):
+        _print(f"note: {note}")
     return 0 if ok else 1
+
+
+def _real_run_blockers(config: ProjectConfig, repo: Path) -> dict[str, str]:
+    """Per CLI provider used by a role: why a real run cannot start (sandbox dependencies, no broker
+    credential). Checks the credential file's existence and permissions only; never prints it."""
+    blockers: dict[str, str] = {}
+    for role_cfg in config.roles.values():
+        profile = config.providers[role_cfg.provider]
+        if not isinstance(profile, CliRunnerProfile) or profile.name in blockers:
+            continue
+        missing = missing_dependencies(profile.kind)
+        try:
+            configured_credential(config.broker, profile.name, ROUTES[profile.kind], forbidden_roots=(repo,))
+            credential = ""
+        except BrokerUnavailableError as exc:
+            credential = str(exc)
+        reasons = [f"missing sandbox dependencies {missing}"] if missing else []
+        reasons += [credential] if credential else []
+        if reasons:
+            blockers[profile.name] = "; ".join(reasons)
+    return blockers
 
 
 def cmd_sandbox_check(args: argparse.Namespace, config: ProjectConfig) -> int:
@@ -96,8 +138,14 @@ def cmd_sandbox_check(args: argparse.Namespace, config: ProjectConfig) -> int:
     secrets = builder.secret_files()
     _print(f"secret files hidden from every sandbox: {secrets or 'none'}")
     if not args.apply:
-        _print("dry run — pass --apply to run the containment self-test in a disposable repository")
+        _print("dry run — pass --apply to run the containment and isolation self-tests in a disposable repository")
         return 0
+    return 0 if _self_tests(config) else 1
+
+
+def _self_tests(config: ProjectConfig) -> bool:
+    """The containment matrix and the network/credential isolation self-test (W1), printed."""
+    from .isolation_check import isolation_self_test  # pylint: disable=import-outside-toplevel
     from .operations import containment_self_test  # pylint: disable=import-outside-toplevel
     report = containment_self_test(config)
     for role, result in report.roles.items():
@@ -107,7 +155,71 @@ def cmd_sandbox_check(args: argparse.Namespace, config: ProjectConfig) -> int:
     for mismatch in report.mismatches:
         _print(f"MISMATCH: {mismatch}")
     _print(f"containment self-test: {'PASSED' if report.ok else 'FAILED'}")
-    return 0 if report.ok else 1
+    isolation = isolation_self_test(config)
+    for name, check in isolation.checks.items():
+        _print(f"[isolation] {'ok  ' if check['ok'] else 'FAIL'} {name}: {check['observed']}")
+    for failure in isolation.failures:
+        _print(f"ISOLATION FAILURE: {failure}")
+    _print(f"isolation self-test: {'PASSED' if isolation.ok else 'FAILED'}")
+    return report.ok and isolation.ok
+
+
+def _nested_sandbox_blocker(config: ProjectConfig) -> str:
+    """'' when the CLIs' own command sandboxes can start inside a runner sandbox, else why not."""
+    from .isolation_check import nested_sandbox_check  # pylint: disable=import-outside-toplevel
+    try:
+        nested = nested_sandbox_check(config)
+    except SandboxUnavailableError as exc:
+        return str(exc)
+    _print(f"nested command sandbox: {'available' if nested.available else 'DENIED'} "
+           f"(AppArmor label {nested.label or 'unreadable'!r}{'' if nested.available else '; ' + nested.detail})")
+    if nested.available:
+        return ""
+    why = ("this host's bwrap-userns-restrict AppArmor policy runs sandboxed processes as unpriv_bwrap, which "
+           "may not create namespaces" if nested.host_policy else nested.detail)
+    return ("the CLIs' own command sandboxes cannot start inside a runner sandbox here (" + why + "); every bwrap "
+            "run would fail closed. Do not weaken AppArmor; see w1-progress.md, blocker B1")
+
+
+def cmd_worker_check(args: argparse.Namespace, config: ProjectConfig) -> int:
+    """Is this Worker eligible for REAL agent execution? (W1: D-20, D-21; no model call)."""
+    if not args.apply:
+        _print("dry run — --apply checks: bubblewrap; each CLI's version and flags; the sandbox dependencies; a "
+               "broker credential per CLI provider; the containment and isolation self-tests (disposable "
+               "repository, no model call, no credential is read or printed)")
+        return 0
+    reasons: list[str] = []
+    try:
+        _print(f"bubblewrap: {bwrap_version(check_bwrap())}")
+    except SandboxUnavailableError as exc:
+        reasons.append(str(exc))
+    if config.runtime.execution_backend != "bwrap":
+        reasons.append(f"runtime.execution_backend is {config.runtime.execution_backend!r}: agents run without the "
+                       "W1 sandbox (credentials and network of the operator); isolated execution needs `bwrap` "
+                       "(an operator decision)")
+        if config.runtime.native_hardening.enabled:
+            _print(f"native hardening: ON ({HARDENING_SCOPE}) — not W1 isolation (D-21 for the CLI process)")
+    for note in ignored_settings(config):
+        _print(f"note: {note}")
+    for name in sorted({config.providers[r.provider].name for r in config.roles.values()
+                        if isinstance(config.providers[r.provider], CliRunnerProfile)}):
+        probe = probe_runner(config.providers[name])  # type: ignore[arg-type]
+        floor = version_floor_error(probe) if probe.ok else ""
+        _print(f"{name}: {probe.version or '-'} at {probe.resolved or '-'}: "
+               f"{'OK' if probe.ok and not floor else 'UNAVAILABLE'}")
+        if not probe.ok or floor:
+            reasons.append(f"{name}: {floor or probe.error or 'missing flags ' + ', '.join(probe.missing_flags)}")
+    reasons += [f"{name}: {why}" for name, why in _real_run_blockers(config, Path(args.repo)).items()]
+    nested = _nested_sandbox_blocker(config)
+    if nested:
+        reasons.append(nested)
+    if not reasons and not _self_tests(config):
+        reasons.append("a sandbox self-test failed (see above)")
+    for reason in reasons:
+        _print(f"BLOCKER: {reason}")
+    _print("Worker: ELIGIBLE for real agent execution" if not reasons
+           else "Worker: INELIGIBLE for real agent execution (fail closed)")
+    return 0 if not reasons else 1
 
 
 # -- gates ------------------------------------------------------------------------------
@@ -250,10 +362,14 @@ def register(sub: Any) -> None:
     runners = sub.add_parser("runners", help="probe the claude/codex CLIs and bwrap (no model call)")
     runners.add_argument("--scratch", default=None, help="directory for the generated example files")
     runners.set_defaults(func=cmd_runners)
-    check = sub.add_parser("sandbox-check", help="show role sandboxes; --apply runs the containment self-test")
+    check = sub.add_parser("sandbox-check", help="show role sandboxes; --apply runs the containment and "
+                                                 "isolation self-tests")
     check.add_argument("--role", default=None)
     check.add_argument("--apply", action="store_true")
     check.set_defaults(func=cmd_sandbox_check)
+    worker = sub.add_parser("worker-check", help="is this Worker eligible for real agent execution? (W1)")
+    worker.add_argument("--apply", action="store_true")
+    worker.set_defaults(func=cmd_worker_check)
     gate = sub.add_parser("gate", help="run one gate in the offline read-only sandbox")
     gate.add_argument("name")
     gate.add_argument("--base", default=None, help="base commit for lint gates (default: merge-base with base)")

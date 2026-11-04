@@ -25,7 +25,7 @@ from feature_coordinator.statedir import ensure_state_dir
 from feature_coordinator.store import StateStore
 from feature_coordinator.workflow import FeatureCoordinator
 from feature_coordinator.sandbox import SandboxUnavailableError, check_bwrap
-from fc_helpers import FAKE_CREDENTIAL, Holder, config_with_agents, install_fake_agent
+from fc_helpers import FAKE_HOME_FILES, FAKE_HOST_LOGIN, Holder, config_with_agents, install_fake_agent
 
 
 @pytest.fixture(autouse=True)
@@ -88,11 +88,12 @@ def needs_bwrap(bwrap_ok: bool) -> None:
 
 @pytest.fixture
 def fake_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """HOME with FAKE runner credential files — tests never read the real ones."""
+    """HOME with FAKE login, SSH, GitHub, browser and keyring files (each holding FAKE_HOST_LOGIN)
+    — tests never read the real ones."""
     home = tmp_path / "home"
-    for rel in (".claude/.credentials.json", ".codex/auth.json"):
+    for rel in FAKE_HOME_FILES:
         (home / rel).parent.mkdir(parents=True, exist_ok=True)
-        (home / rel).write_text(f'{{"token": "{FAKE_CREDENTIAL}"}}', encoding="utf-8")
+        (home / rel).write_text(f'{{"token": "{FAKE_HOST_LOGIN}"}}', encoding="utf-8")
     monkeypatch.setenv("HOME", str(home))
     return home
 

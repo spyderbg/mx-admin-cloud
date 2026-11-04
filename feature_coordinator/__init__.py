@@ -27,6 +27,13 @@ The Phase 4 extension adds a GitHub Projects (v2) board as a picture of that sta
 GraphQL client with a write guard (github_projects.py), a local board (projects_local.py),
 board synchronization with the status mapping (project_sync.py), `python -m feature_coordinator github project`
 (project_commands.py) and the live board test (live_projects.py). The board is never input.
+
+W1 (Worker security, D-20/D-21) keeps every reusable credential out of the runner sandboxes
+and every sandbox off the host network: a host-side authentication broker (broker.py) holds
+the upstream credential and serves a per-run token on an endpoint the sandbox bootstrap opens
+inside the sandbox's own network namespace (netns_channel.py, sandbox_bootstrap.py); the CLIs'
+own sandboxes isolate agent commands again; isolation_check.py and `feature.py worker-check`
+decide whether a Worker is eligible for real agent execution.
 """
 
 import sys

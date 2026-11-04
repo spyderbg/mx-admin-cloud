@@ -1,7 +1,7 @@
 # Agent Ownership and Write Enforcement (Phase 3)
 
 > Owner role: **coordination**. Status: **Phase 3 deliverable, approved** (2026-10-17; committed as `b3f3691`).
-> Design: [feature-workflow.md](feature-workflow.md) · Operations: [operations.md](operations.md) · Configuration: [project-config.example.yaml](project-config.example.yaml) · Status: [phase-status.md](phase-status.md)
+> Design: [feature-workflow.md](feature-workflow.md) · Operations: [operations.md](operations.md) · Configuration: [project-config.example.yaml](project-config.example.yaml) · Status: [phase-status.md](phase-status.md) · Credentials and network (W1): [worker-security.md](worker-security.md)
 >
 > Evidence tags: **[V]** verified by execution (the named test or command), **[S]** source-read, **[U]** unverified.
 
@@ -28,8 +28,8 @@
 
 | Layer | Mechanism | Status |
 | --- | --- | --- |
-| 1. OS containment | bubblewrap per run (`sandbox.py`): new namespaces, a read-only shadow root with the role roots bound read-write, read-only overlays, `.git` read-only, private HOME and `/tmp`, untracked secrets hidden | **Enforced and tested [V]** for the `bwrap` backend. bubblewrap 0.9.0, unprivileged. **Not applied** by the `native-cli` backend (W2) |
-| 2. Runner permissions | Claude Code: `--restricted`, `--tools`, generated `--settings` allow/deny list, `--permission-prompts none`, `--strict-mcp-config`. Codex: `--sandbox workspace-write` (nested bubblewrap), `--ignore-user-config`, `network_access=false` | **Enforced [V]**: flags probed on the installed CLIs; live smoke runs observed (§4) |
+| 1. OS containment | bubblewrap per run (`sandbox.py`): new namespaces **including the network namespace (W1, D-21)**, a read-only shadow root with the role roots bound read-write, read-only overlays, `.git` read-only, private HOME and `/tmp`, untracked secrets hidden, **no runner credential mounted (W1, D-20)** | **Enforced and tested [V]** for the `bwrap` backend. bubblewrap 0.9.0, unprivileged. The model is reached only through the host-side broker ([worker-security](worker-security.md)). **Not applied** by the `native-cli` backend (W2) |
+| 2. Runner permissions | Claude Code: `--restricted`, `--tools`, generated `--settings` allow/deny list, `--permission-prompts none`, `--strict-mcp-config`; since W1 also its own Bash sandbox in strict mode (nested command isolation). Codex: `--sandbox workspace-write` (nested bubblewrap), `--ignore-user-config`, `network_access=false`; since W1 also `--strict-config`, the broker provider, `web_search="disabled"` and a core-only command environment | **Enforced [V]**: flags probed on the installed CLIs; live smoke runs observed (§4); W1 nested isolation verified offline with the installed CLIs ([worker-security §5](worker-security.md#5-network-isolation-d-21)) |
 | 3. Commit gate | `RealCliRunner` rejects a run that created a path the role may not commit or wrote outside its roots. The Git coordinator re-validates every manifest path (`PathPolicy`) and refuses foreign staged content | **Enforced [V]** (Phase 2 and Phase 3 tests) |
 | 4. PR/CI gate | Changed-path re-verification across the whole feature diff | Phase 6 |
 
@@ -73,6 +73,8 @@ Further negative tests **[V]**:
 
 ## 4. Real runner verification (2026-10-17)
 
+> The login checks and live smoke runs in this table used the Phase 3 launch, which bound the runner's login read-only. Since W1 no login is mounted: `test_real_login_is_not_visible_inside_the_sandbox` (opt-in) asserts the opposite, and real runs need a broker credential ([worker-security §4.4](worker-security.md#44-credential-sources--and-why-subscriptions-cannot-be-brokered)). The W1 offline compatibility of Claude Code 2.1.303 and Codex 0.163.0 is recorded in [worker-security §8](worker-security.md#8-security-self-tests).
+
 | Check | Claude Code 2.1.302 | Codex 0.163.0 |
 | --- | --- | --- |
 | Required flags present (`--help`) | yes **[V]** | yes **[V]** |
@@ -83,16 +85,13 @@ Further negative tests **[V]**:
 
 ## 5. Residual risks (operator decisions in [phase-status](phase-status.md))
 
-The risks below concern the `bwrap` backend. The `native-cli` backend (W2) gives agents full access by design; its limitations are listed in [worker-functional §11](worker-functional.md#11-known-limitations). W1's credential and network isolation work (D-20, D-21) is postponed in [PR #20](https://github.com/spyderbg/mx-admin-cloud/pull/20).
+The risks below concern the `bwrap` backend. The `native-cli` backend (W2) gives agents full access by design; its limitations are listed in [worker-functional §11](worker-functional.md#11-known-limitations). W1's credential and network isolation (D-20, D-21; [PR #20](https://github.com/spyderbg/mx-admin-cloud/pull/20), [worker-security](worker-security.md)) changes risks 1, 2 and 5 for the `bwrap` backend.
 
-1. **The runner's own credentials are readable inside its sandbox.** The CLI needs them, and they are bound read-only. Commands an agent runs could read them; a Phase 3 smoke probe demonstrated this.
-   - Claude Code's file tools are denied (`Read(~/.claude/**)`, `Read(~/.codex/**)`).
-   - Claude's Bash is limited to the role's command prefixes; Codex's commands have no network.
-   - A test written by an agent and run via `python -m pytest` could still read and print the file, and the model would see its output. Full mitigation needs credential brokering, for example an API-key helper outside the sandbox (decision D-20).
-2. **Runner network.** Claude Code needs its API, so its sandbox shares the host network, and Bash commands allowed by the role allowlist could reach the network. Codex commands are offline (nested sandbox). Options: a network namespace with an allowlisting proxy, or Claude Code's own sandboxed Bash (D-21).
+1. ~~**The runner's own credentials are readable inside its sandbox.**~~ **Resolved in W1 (D-20; [worker-security](worker-security.md)):** no login file is mounted and no API key is forwarded; the host-side broker holds the upstream credential, and the runner receives only a per-run token that is revoked when the run ends **[V]**. Real runs now need an operator-chosen broker credential; a Claude or ChatGPT subscription login cannot be brokered (open part of D-20).
+2. ~~**Runner network.**~~ **Resolved in W1 (D-21):** every runner sandbox has its own network namespace whose only route is the broker endpoint, and agent commands run in the CLI's own nested sandbox without network, sockets or token **[V]**.
 3. **New protected-named files inside a role's own root** cannot be prevented by mounts, since nothing exists to mount over. The run is rejected and the commit gate refuses them (layer 3).
 4. **Codex needs a writable shadow root** for its nested sandbox. Root-level writes are discarded and reject the run; empty mount-point residue is ignored.
-5. **OAuth token refresh** with read-only credentials is unverified **[U]**. A long run whose token expires would fail authentication, and the operator re-logs in on the host.
+5. ~~**OAuth token refresh** with read-only credentials~~ — no longer applicable since W1: the sandbox holds no OAuth token.
 6. **Codex's nested sandbox cannot start on hosts with Ubuntu's `bwrap-userns-restrict` AppArmor profile** (found 2026-10-23).
    - **Why:** the profile runs everything bubblewrap starts as `unpriv_bwrap`, with every capability denied, so the bubblewrap that Codex starts inside the Frontend sandbox cannot create namespaces ("No permissions to create new namespace"; kernel audit `profile="unpriv_bwrap" capname="sys_admin"`). With `codex sandbox` the command did not run at all.
    - **Affected:** only `runtime.execution_backend: bwrap` with Codex.

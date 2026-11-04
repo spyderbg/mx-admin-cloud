@@ -432,8 +432,8 @@ _STATE = {"armed": None, "done": False}
 def _patch(module):
     cls = module.FeatureCoordinator
     run_step, cancel = cls._run_step, cls._cancel_requested
-    def run_step_then_arm(self, feature, task, claim, mark, step, record, progress):
-        run = run_step(self, feature, task, claim, mark, step, record, progress)
+    def run_step_then_arm(self, feature, task, claim, mark, coincident, step, record, progress):
+        run = run_step(self, feature, task, claim, mark, coincident, step, record, progress)
         if step.key == _AFTER and not _STATE["done"] and run.state.name == "IN_PROGRESS":
             _STATE["armed"] = step.key
         return run
