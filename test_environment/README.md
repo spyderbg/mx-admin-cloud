@@ -364,6 +364,10 @@ value — visible as a board column if you group the project by that field.
    GITHUB_PAT=your-github-personal-access-token
    ```
 
+   Matching single or double quotes around the value are also accepted. Process
+   environment variables take precedence over `.env`, so unset an old exported
+   `GITHUB_PAT` if you want to use a replacement from the file.
+
 4. `issues.py --tracker github doctor`, then `issues.py --tracker github init` — creates
    the labels below (minus the `status::*` ones) and the `mx-status` field with its four
    options.
