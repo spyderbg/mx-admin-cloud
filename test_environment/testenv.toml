@@ -149,7 +149,7 @@ branch_prefix = "ai/"
 # CLI override: --push / --no-push
 push = true
 
-# Open a GitHub PR (via the REST API + GITHUB_PATH — no `gh` CLI dependency) once the
+# Open a GitHub PR (via the REST API + GITHUB_PAT — no `gh` CLI dependency) once the
 # branch is pushed. Requires `push = true`; has no effect otherwise. The tracked issue is
 # cross-linked from the PR body and stays in-progress (never auto-closed by PR
 # creation) until the PR actually merges — see test_environment/README.md's "Landing the
@@ -170,7 +170,7 @@ open_pr = true
 #
 #   "github"  GitHub Issues on [issues.github] repo below. Status is NOT a label: it's a
 #             single-select field on a GitHub Project (Projects are free on every GitHub
-#             plan), plus the issue's native open/closed state. Token: .env's GITHUB_PATH
+#             plan), plus the issue's native open/closed state. Token: .env's GITHUB_PAT
 #             (the same one PRs are opened with). Run `issues.py --tracker github doctor`
 #             then `init` once after configuring [issues.github].
 #

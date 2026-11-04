@@ -245,7 +245,7 @@ class GitHubTracker(IssueTracker):
             user = self._client.rest("GET", "/user")
         except GitHubAPIError as exc:
             if exc.status_code == 401:
-                raise TrackerError("GitHub authentication failed — GITHUB_PATH is invalid or expired.") from exc
+                raise TrackerError("GitHub authentication failed — GITHUB_PAT is invalid or expired.") from exc
             raise TrackerError(f"Could not reach GitHub: {exc}") from exc
         except httpx.HTTPError as exc:
             raise TrackerError(f"Could not reach GitHub: {exc}") from exc

@@ -1,5 +1,5 @@
 """Landing a fix: commit (with a close-on-merge reference the issue tracker will act on),
-push to GitHub, open a PR via the REST API (no `gh` CLI dependency — GITHUB_PATH +
+push to GitHub, open a PR via the REST API (no `gh` CLI dependency — GITHUB_PAT +
 httpx), and cross-link both ways. See implementation_plan.md §17 "Landing the fix".
 
 The closing reference and the PR's back-link come from the configured issue tracker

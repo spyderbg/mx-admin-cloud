@@ -190,13 +190,13 @@ Contract findings:
 - `IssueTracker` ABC with GitHub (REST + GraphQL) and GitLab backends. Statuses: **`open`, `in-progress`, `done`, `needs-human`** (4 only). On GitHub, status is a Projects v2 single-select field (`mx-status`, project `spyderbg/1`); on GitLab it is exclusive `status::*` labels.
 - Ownership: the tool creates and rewrites only issues labeled `mx-auto`.
 - `set_status()` is write-then-read-back-assert, **not compare-and-swap**.
-- Tokens: `GITHUB_PATH` / `GITLAB_TOKEN` from the repo-root `.env`. **Neither key is present in the local `.env`** (key names checked) **[V]**.
+- Tokens: `GITHUB_PAT` / `GITLAB_TOKEN` from the repo-root `.env`. **Neither key is present in the local `.env`** (key names checked) **[V]**.
 
 ### 9.2 `mxfix` (fix automation)
 
 - `Fixer` protocol + `ClaudeFixer` (`claude -p --output-format json --permission-mode bypassPermissions`, cwd = worktree) + `CodexFixer` (`codex exec --json --output-schema …`, `-C <worktree>`, `--sandbox workspace-write`).
 - `worktree.py` touches only `.mxworktrees/<name>` (created from `origin/<base>`) and never runs `git worktree prune`.
-- `git_target.py`: `git add -A` + commit with `Closes <ref>`, push, PR via REST + `GITHUB_PATH`; the PR body avoids closing keywords.
+- `git_target.py`: `git add -A` + commit with `Closes <ref>`, push, PR via REST + `GITHUB_PAT`; the PR body avoids closing keywords.
 - Strategies (`testenv.py run`):
   - `report` — check → sync; no code changes.
   - `heal` — check → sync → one issue at a time.

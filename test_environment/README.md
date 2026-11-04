@@ -264,7 +264,7 @@ They differ only in **where the workflow status lives**:
 |---|---|---|
 | Status | exclusive `status::*` label | single-select field on a GitHub Project — **no status labels** |
 | `done` | `status::done` + issue closed | field = `Done` + issue closed (`state_reason: completed`) |
-| Config | `testenv.toml` `[issues.gitlab]` + `.env`: `GITLAB_TOKEN` | `testenv.toml` `[issues.github]` + `.env`: `GITHUB_PATH` |
+| Config | `testenv.toml` `[issues.gitlab]` + `.env`: `GITLAB_TOKEN` | `testenv.toml` `[issues.github]` + `.env`: `GITHUB_PAT` |
 | Fix commit closes via | `Closes <full GitLab issue URL>` | `Closes owner/repo#N` |
 
 Code-wise, everything goes through `mxissues/tracker.py`'s `IssueTracker` interface;
@@ -348,7 +348,7 @@ value — visible as a board column if you group the project by that field.
    `[issues.github.status_options]` maps each status to an option name (defaults:
    `Open`, `In progress`, `Needs human`, `Done`); override any subset to reuse an
    existing field's option names.
-3. **Token** — `.env`'s `GITHUB_PATH`, the same one PRs are opened with
+3. **Token** — `.env`'s `GITHUB_PAT`, the same one PRs are opened with
    ([Landing the fix](#landing-the-fix)). It needs to read/write issues and labels on the
    repo **and** read/write the project: a classic PAT with the `repo` and `project`
    scopes, or a fine-grained PAT with repository *Issues: read and write* plus Projects
@@ -361,7 +361,7 @@ value — visible as a board column if you group the project by that field.
    Set the token in the repo-root `.env`:
 
    ```dotenv
-   GITHUB_PATH=your-github-personal-access-token
+   GITHUB_PAT=your-github-personal-access-token
    ```
 
 4. `issues.py --tracker github doctor`, then `issues.py --tracker github init` — creates
@@ -822,7 +822,7 @@ Sequence, once a candidate's checks are green:
 
 1. `git add -A && git commit` in the worktree — message ends with `Closes <tracker reference>`.
 2. `git push` the branch to `origin` (GitHub) — **only if `[git] push = true`**.
-3. Open a GitHub PR via the REST API (`httpx` + `GITHUB_PATH` from `.env` — no `gh` CLI
+3. Open a GitHub PR via the REST API (`httpx` + `GITHUB_PAT` from `.env` — no `gh` CLI
    dependency) — **only if `[git] push = true` and `[git] open_pr = true`**. PR base is
    `[git] base_branch`; body cross-links the tracked issue.
 4. An issue comment links back to the PR. **The issue is not closed here** — it stays
@@ -841,11 +841,11 @@ Inherent to the current topology, not something `run` can fix on its own; see
 implementation_plan.md's "Out of scope" section on native GitLab MRs.
 
 `run` refuses to start `heal`/`work`/`batch` for real (not under `--dry-run`) when
-`[git] open_pr = true` but `GITHUB_PATH` is empty or unset in `.env`. `GITHUB_PATH` is
+`[git] open_pr = true` but `GITHUB_PAT` is empty or unset in `.env`. `GITHUB_PAT` is
 configured and verified working (a live, read-only `GET /repos/{owner_repo}` call
 confirmed the token authenticates with `push`/`admin` permissions on the repo) — but the
 PR-opening path itself still hasn't been exercised end-to-end by an actual fixer run.
-`git push` itself doesn't need `GITHUB_PATH` at all (it uses whatever git credential you
+`git push` itself doesn't need `GITHUB_PAT` at all (it uses whatever git credential you
 already push with); the PAT is only for the REST API call that opens the PR.
 
 ### The bisect fallback for batch
@@ -924,7 +924,7 @@ skips all of it):
    here, before anything is filed.
 4. `report` stops here (after its own check→sync). `heal`/`work`/`batch` additionally:
    run the selected fixer's `preflight()`, and — only if `[git] open_pr = true` —
-   confirm `GITHUB_PATH` is set and the `origin` remote looks like a `github.com` remote.
+   confirm `GITHUB_PAT` is set and the `origin` remote looks like a `github.com` remote.
 
 ### Trying it for the first time
 
