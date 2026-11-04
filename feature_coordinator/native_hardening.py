@@ -154,6 +154,28 @@ def agent_config_anchors() -> frozenset[str]:
     return _AGENT_CONFIG_ANCHORS
 
 
+def inert_launcher_anchor(root: Path, rel_path: str) -> bool:
+    """True when *rel_path* (workspace-relative, as Git reports it) is one of the agent-config anchor
+    paths AND is present in inert form — absent, an empty regular file, or a directory. Such an entry
+    is a trusted launcher rule placeholder (the agent is denied writing these paths), never an agent
+    modification: a symlink or a NON-empty file is not inert and is treated as a real change. Used by
+    both the per-run judge and the integration cleanliness check so neither blames the agent, stages
+    or commits them. Any real content an agent puts *under* a directory anchor is a separate path and
+    is judged on its own."""
+    if rel_path not in _AGENT_CONFIG_ANCHORS:
+        return False
+    path = root / rel_path
+    try:
+        st = path.lstat()
+    except OSError:
+        return True  # absent
+    if stat.S_ISLNK(st.st_mode):
+        return False
+    if stat.S_ISDIR(st.st_mode):
+        return True
+    return stat.S_ISREG(st.st_mode) and st.st_size == 0
+
+
 def harden_claude_settings(settings: dict[str, Any], hardening: NativeHardening, *, workspace: Path,
                            secrets: Sequence[str], home: Path) -> dict[str, Any]:
     """Add the hardened rules to the native Claude Code settings (*settings* is changed and returned)."""

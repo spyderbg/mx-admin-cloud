@@ -21,9 +21,10 @@ from pathlib import Path
 import pytest
 
 from feature_coordinator.config import ProjectConfig
-from feature_coordinator.model import TaskState
+from feature_coordinator.errors import PullRequestPolicyError
+from feature_coordinator.model import FeatureState, TaskState
 from feature_coordinator.native_backend import NativeCliRunner
-from feature_coordinator.native_hardening import NativeHardening, agent_config_anchors
+from feature_coordinator.native_hardening import NativeHardening, agent_config_anchors, inert_launcher_anchor
 from feature_coordinator.workflow import TaskSpec
 
 import test_fc_autonomy as autonomy
@@ -134,6 +135,51 @@ def test_two_concurrent_hardened_runs_are_not_falsely_rejected(hardened_cfg, rep
         assert task.state is TaskState.VERIFIED, (task_id, task.state, task.blocked_reason)
         assert _tracked(repo, path) == [path]
     assert _tracked(repo, ".claude", ".mcp.json") == []        # anchors committed by neither run
+
+
+def test_integration_is_not_blocked_by_inert_anchors(hardened_cfg, repo, state_dir, fake_home) -> None:
+    """The integration cleanliness guard ignores the inert anchors left in the shared checkout, so a
+    hardened feature can still render its PR candidate (they are never committed either)."""
+    del fake_home
+    rig = _rig_with_native(repo, state_dir, hardened_cfg, ("backend",))
+    actions = [{"do": "write", "path": "backend/app.py", "text": "ROUTES = []\n"}, *ANCHORS]
+    feature = rig.activate(TaskSpec("api", "backend", actions_prompt(actions)))
+    rig.coord.run_task("w4.api")
+    assert rig.task("w4.api").state is TaskState.VERIFIED
+    assert (repo / ".claude").exists() and (repo / ".mcp.json").exists()  # anchors still physically present
+
+    integrated = rig.coord.integrate(feature.id, gates=())
+    assert integrated.state is FeatureState.REVIEW
+    assert _tracked(repo, ".claude", ".mcp.json") == []        # never committed into the candidate
+
+
+def test_integration_still_blocks_on_a_real_foreign_file(hardened_cfg, repo, state_dir, fake_home) -> None:
+    """A real untracked file (not an anchor) still blocks integration — the guard is not weakened."""
+    del fake_home
+    rig = _rig_with_native(repo, state_dir, hardened_cfg, ("backend",))
+    actions = [{"do": "write", "path": "backend/app.py", "text": "ROUTES = []\n"}, *ANCHORS]
+    feature = rig.activate(TaskSpec("api", "backend", actions_prompt(actions)))
+    rig.coord.run_task("w4.api")
+    assert rig.task("w4.api").state is TaskState.VERIFIED
+    (repo / "stray.txt").write_text("foreign\n", encoding="utf-8")  # a real uncommitted file appears
+
+    with pytest.raises(PullRequestPolicyError, match="stray.txt"):
+        rig.coord.integrate(feature.id, gates=())
+
+
+def test_inert_launcher_anchor_predicate(tmp_path) -> None:
+    """The provenance predicate: only the known agent-config anchor paths, and only in inert form."""
+    root = tmp_path
+    (root / ".claude").write_text("", encoding="utf-8")           # empty file -> inert anchor
+    (root / ".codex").mkdir()                                     # directory -> inert anchor
+    (root / ".mcp.json").write_text("x", encoding="utf-8")        # non-empty -> NOT inert
+    (root / "notes.txt").write_text("", encoding="utf-8")         # empty but not an anchor path
+    assert inert_launcher_anchor(root, ".claude") is True
+    assert inert_launcher_anchor(root, ".codex") is True
+    assert inert_launcher_anchor(root, ".agents") is True          # absent anchor is inert
+    assert inert_launcher_anchor(root, ".mcp.json") is False       # real content is a real change
+    assert inert_launcher_anchor(root, "notes.txt") is False       # not an anchor path
+    assert inert_launcher_anchor(root, ".git") is False            # the real Git dir is never an anchor
 
 
 def test_concurrent_roles_counts_a_sibling_that_finished_before_judgment(hardened_cfg, repo, state_dir) -> None:

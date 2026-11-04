@@ -111,6 +111,7 @@ from .model import (
 from .paths import PathPolicy, ScopedWorkspace
 from .gates import GateContext, SandboxedGateRunner
 from .launchers import run_context
+from .native_hardening import inert_launcher_anchor
 from .runners import RunRequest, RunResult, Runner
 from .store import StateStore
 from .supervisor import stop_requested
@@ -835,7 +836,12 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
             raise PullRequestPolicyError(f"integration needs an active feature with every task verified; "
                                          f"not verified: {pending}")
         dirty = self.git.tracked_changes()
-        untracked = self.git.untracked_files()
+        # Inert, read-only agent-config anchors the hardened CLIs leave in the shared checkout
+        # (.claude, .mcp.json, …) are trusted launcher placeholders, not uncommitted work: they are
+        # never committed and must not block integration (same provenance rule as the per-run judge).
+        hardened = self.config.runtime.native_hardening.enabled
+        untracked = [u for u in self.git.untracked_files()
+                     if not (hardened and inert_launcher_anchor(self.root, u))]
         if dirty or untracked:
             raise PullRequestPolicyError(f"the shared checkout has uncommitted or foreign changes: {dirty + untracked}")
         evidence = self.gate_evidence(feature, gates)

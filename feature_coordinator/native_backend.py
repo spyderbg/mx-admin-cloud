@@ -54,7 +54,6 @@ import hashlib
 import json
 import os
 import secrets
-import stat
 import subprocess
 from contextlib import nullcontext
 from dataclasses import dataclass
@@ -67,10 +66,10 @@ from .gitsafe import assert_no_execution_config, git_argv, hardened_env
 from .launchers import LAUNCHERS, RunnerProbe, probe_runner, snapshot
 from .locks import ProcessIdentity
 from .native_hardening import (
-    agent_config_anchors,
     claude_init_problems,
     codex_enforcement_error,
     git_control_digest,
+    inert_launcher_anchor,
     preflight,
 )
 from .native_hardening import summary as hardening_summary
@@ -271,22 +270,6 @@ def changed_paths(before: WorkspaceState, after: WorkspaceState) -> tuple[list[s
     return changed, protected, sorted(after.ignored - before.ignored)
 
 
-def _inert_anchor(path: Path) -> bool:
-    """True when *path* is a trusted hardened-launcher rule anchor in inert form: absent, an empty
-    regular file, or a directory (any real content an agent put *under* a directory anchor shows up
-    as its own path and is judged separately). A symlink or a non-empty file is NOT inert — it is a
-    real change and stays denied, so a genuine write to a protected path is never excused."""
-    try:
-        st = path.lstat()
-    except OSError:
-        return True  # absent — nothing was left behind
-    if stat.S_ISLNK(st.st_mode):
-        return False
-    if stat.S_ISDIR(st.st_mode):
-        return True
-    return stat.S_ISREG(st.st_mode) and st.st_size == 0
-
-
 # ---------------------------------------------------------------------------
 # The runner
 # ---------------------------------------------------------------------------
@@ -480,8 +463,7 @@ class NativeCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-p
         # rules; concurrent roles see each other's. The agent is denied writing these, so an inert
         # instance is never an agent change — exclude it (a non-inert one, i.e. real content, stays
         # denied). This neither ignores the paths globally nor commits them (they are not writable).
-        anchors = sorted(p for p in denied
-                         if self.hardened and p in agent_config_anchors() and _inert_anchor(root / p))
+        anchors = sorted(p for p in denied if self.hardened and inert_launcher_anchor(root, p))
         if anchors:
             denied = [p for p in denied if p not in set(anchors)]
         git_issues = git_problems(root, before.git, after.git)
