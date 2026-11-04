@@ -440,18 +440,51 @@ login. It calls only each CLI's status command:
   configuration error and the harness classifies the role `undetermined` and fails closed. The Codex
   hardening command line itself is correct; only the login is missing.
 
-**Stopped at the Codex blocker — operator action required.** The three sessions cannot run because the
-harness fails closed while any role is a blocker (it launches no session), and provisioning the Codex login
-is an **interactive device-auth** that this task must not perform (plan requirement 6: no credential copy;
-if interactive login is necessary, stop and request operator action). No authentication was initiated, no
-model request was made, no billing occurred; `/tmp/w1-smoke` and the Worker `CODEX_HOME` were not created.
+(That first dry run was before provisioning; it correctly failed closed on the missing Codex login.)
 
-**To resume (operator):** provision the Worker-only login once, interactively —
-`install -d -m 700 ~/.config/mx-admin-worker-codex` then
-`CODEX_HOME=~/.config/mx-admin-worker-codex codex login --device-auth` (fresh ChatGPT sign-in; do **not**
-copy `~/.codex/auth.json`), confirm `codex login status` says "Logged in using ChatGPT", then re-run the dry
-run (now clean for all three roles) and approve the `--apply`. Claude needs no provisioning — its
-subscription login is already verified above.
+**Codex login provisioned by the operator (2026-11-04).** The Worker-only `CODEX_HOME`
+(`/home/spyder/.config/mx-admin-worker-codex`) now exists as a real directory, mode `0700`, owned by the
+Worker user, with its own `auth.json`; `codex login status` reports **"Logged in using ChatGPT"**. No
+credential was copied in (requirement 6 respected).
+
+**Second dry run — clean for all three roles** (no model request): Backend/CLI → `claude.ai subscription
+(pro)`; Frontend → **`ChatGPT subscription`**; all `authentication_ok`, hardened argv unchanged (Claude: no
+Bash; Codex: `fc_worker`, network off, approval never, no `--sandbox`).
+
+**Bounded `--apply` executed — 3 real subscription sessions, 1 attempt each, disposable repo `/tmp/w1-smoke`.
+Result: FAILED (1 of 3 tasks verified).** Wall time ~24 s; Claude spend ≈ $0.01/run (far under the $0.50
+cap); no API key was ever passed (subscription only).
+
+| Role | Agent | Auth used | Agent did its task? | Coordinator verdict | Why |
+| --- | --- | --- | --- | --- | --- |
+| Backend | Claude (opus) | `claude.ai` Pro | yes — wrote `backend/smoke/backend.txt` | **verified**, committed `e214725` | ran first, alone |
+| CLI | Claude (sonnet) | `claude.ai` Pro | yes — `apiKeySource: none`, no Bash, wrote `cli/smoke/cli.txt`, result `success` | **rejected → failed**, not committed | `rejected: changed paths the role may not write: ['.claude', '.mcp.json']` |
+| Frontend | Codex (default) | ChatGPT | yes — wrote `frontend/smoke/frontend.txt`, "done" | **rejected → failed**, not committed | `… ['.claude', '.mcp.json', 'cli/smoke/cli.txt']` |
+
+**Root cause (not auth, not the agents, not gitsafe).** The native **hardened** launcher plants read-only
+credential-shadow placeholders in the **shared** checkout root — `.claude` and `.mcp.json` (files),
+`.agents` / `.aws` / `.codex` (dirs) — so the permission profile can mark them read/deny. `.claude` and
+`.mcp.json` are `approval_required_paths` with no role owner. Backend ran alone and was fine. CLI and
+Frontend ran **concurrently in the one shared checkout** (`max_concurrency: 2`), so each run's before/after
+workspace diff caught the *other* run's placeholder creation (and, once CLI had finished, its
+`cli/smoke/cli.txt` was no longer "a concurrent role's file" for Frontend). The pre-existing path-policy
+judge (`native_backend._judge`, reason "changed paths the role may not write") then **rejected** both and,
+correctly, did **not** commit them. So the security judgment fails closed as designed — but it
+**over-rejects valid parallel work** because of the launcher's root placeholders. This is a functional
+defect in hardened *parallel* native execution, surfaced by the smoke test; it is independent of the Stage 8
+gitsafe gate (which stayed quiet on the clean disposable repo) and of authentication (all three logins
+worked and were used).
+
+**Validation / recovery behavior.** The harness runs one attempt per task (no retries), so no recovery was
+attempted; the autonomous validation-retry loop was not exercised here (it is covered offline by
+[Priority 3](#priority-3--autonomy-under-hardened-claude-done)). Backend demonstrates the full hardened path
+end-to-end on a real subscription: agent edits → Coordinator commits → verified.
+
+**Conclusion.** Real subscription authentication (both Claude Pro and ChatGPT) and single-role hardened
+execution are proven on real sessions. The smoke test as a whole **did not pass**, so the hardened native
+backend is **not** ready for multi-role/parallel feature work until the placeholder-vs-path-policy
+interaction is fixed. No fix was attempted here (out of scope for this run). The disposable repo and state
+remain under `/tmp/w1-smoke` for inspection; teardown: `rm -rf /tmp/w1-smoke`.
 
 ## Open blockers and operator decisions
 
@@ -491,9 +524,12 @@ Every option still needs (a) the operator-approved real authenticated smoke test
 
 ## Next action
 
-The bounded smoke test is approved and under way, but is **paused on one operator step**: provision the
-Worker-only Codex login (interactive device-auth, no credential copy — see [Stage 9](#stage-9--bounded-smoke-test-execution-operator-approved-2026-11-04)).
-Claude subscription auth and the hardened command lines are already verified by the dry run. Once the Codex
-login exists, the dry run goes clean and the operator-approved `--apply` runs the three sessions. Publishing
-the functional hardening through Draft PR #20 is deferred until that smoke test passes and needs separate
-operator approval; full W1 (D-21 for the CLI process) still needs option B or C.
+The bounded smoke test ran ([Stage 9](#stage-9--bounded-smoke-test-execution-operator-approved-2026-11-04)):
+real subscription auth works for all three roles and one role completed end-to-end, but the run **FAILED
+(1/3)** because hardened *parallel* roles in the shared checkout are over-rejected over the launcher's
+root placeholder dotfiles. **The Worker is not ready for the next stage (Autonomous Approval & Merge).**
+Before that stage: fix the placeholder-vs-path-policy interaction (exclude the launcher-planted
+credential-shadow placeholders from the per-run workspace diff, and/or keep concurrently-finished siblings
+in the "theirs" set) and re-run the bounded smoke test to a clean pass. Publishing the hardening through
+Draft PR #20 stays deferred (the smoke test has not passed) and needs separate operator approval; full W1
+(D-21 for the CLI process) still needs option B or C.
