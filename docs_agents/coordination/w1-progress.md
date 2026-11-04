@@ -486,6 +486,59 @@ backend is **not** ready for multi-role/parallel feature work until the placehol
 interaction is fixed. No fix was attempted here (out of scope for this run). The disposable repo and state
 remain under `/tmp/w1-smoke` for inspection; teardown: `rm -rf /tmp/w1-smoke`.
 
+## Stage 10 — fix hardened parallel execution + authorized repeat smoke (operator-approved 2026-11-04)
+
+The operator authorized fixing the parallel bug and **one** repeat of the smoke test.
+
+### The fix (two causes, both repository-provenance, no path globally ignored)
+
+1. **Inert launcher anchors.** The hardened CLIs materialise inert, read-only credential-shadow anchors in
+   the shared checkout to carry their own permission rules — `.claude`, `.mcp.json` (empty files),
+   `.codex`, `.agents` (empty dirs): `PROTECTED_AGENT_CONFIG` without `.git`. The agent is **denied**
+   writing these paths, so an *inert* instance (absent / empty file / directory; a symlink or a non-empty
+   file is **not** inert) is always the trusted CLI's doing. A single predicate,
+   `native_hardening.inert_launcher_anchor(root, rel_path)`, now recognises them, and two guards exclude
+   them **only when hardening is on**: `native_backend._judge` (the per-run workspace diff) and
+   `FeatureCoordinator._integrate` (the pre-PR cleanliness check). A non-inert instance, or any other path,
+   is still rejected; the anchors are never in a role's writable scope, so they are never staged, committed
+   or deleted.
+2. **Concurrent-role attribution.** `_concurrent_roles` missed a sibling that was running when a task
+   claimed but finished before it was judged, so the sibling's own file could be blamed on this agent.
+   `run_task` now captures the coincident roles at claim time and folds them into the concurrent set.
+
+The gitsafe gate and parallel execution are untouched. Commits `b44b296` (judge + attribution),
+`9af61db` (integration gate). New offline regression tests — `test_fc_hardened_parallel.py` (8),
+mutation-checked: inert anchors excused; real protected-path write still rejected; out-of-scope write still
+rejected; two simultaneous hardened runs both VERIFIED; integration not blocked by anchors but still blocked
+by a real foreign file; the predicate across shapes; the attribution fix. Full suite
+`feature_coordinator/tests` + `scripts/tests`: **1051 passed, 23 skipped, 0 failed** (prior 1043 + 8 new).
+
+### Authorized repeat smoke test — three sessions VERIFIED (disposable repo `/tmp/w1-smoke-2`)
+
+Dry run clean for all three roles, then the one approved `--apply`. **All three real subscription sessions
+reached VERIFIED and were committed by the Git coordinator**, concurrently (`max_concurrency: 2`):
+
+| Role | Agent / auth | Result | Commit |
+| --- | --- | --- | --- |
+| Backend | Claude opus — `claude.ai` Pro | **verified** | `7de0eb5` → `backend/smoke/backend.txt` = "backend ok" |
+| CLI | Claude sonnet — `claude.ai` Pro | **verified** | `9de684d` → `cli/smoke/cli.txt` = "cli ok" |
+| Frontend | Codex — ChatGPT subscription | **verified** | `380e33e` → `frontend/smoke/frontend.txt` = "frontend ok" |
+
+The parallel path-policy failure from Stage 9 is **gone** — CLI and Frontend, which failed before, now both
+verify. The harness then exited 1 only at the very last step: `_integrate` raised on the leftover inert
+anchors while rendering the (never-opened) PR candidate. That guard is fixed and covered by the offline
+tests above; confirming the integration step end-to-end on real sessions would need a **new** smoke
+authorization (the single authorized repeat is used, so it was not re-run). Spend ≈ $0.01/Claude run, no API
+key; live Worker, `dev`, services and AppArmor untouched; nothing pushed. Teardown: `rm -rf /tmp/w1-smoke-2`.
+
+### Readiness
+
+The functional parallel blocker is **fixed and proven on real subscription sessions** (three concurrent
+hardened roles → VERIFIED + committed). Full W1 is still **not** complete and **D-21 compliance is not
+claimed**: D-21 for the trusted CLI process remains unenforced on this host (blocker B1). So the Worker is
+not yet at full W1; the functional native-cli hardening milestone is ready for publication review once the
+operator approves (and, if wanted, one more authorized smoke run to see the integration step finish cleanly).
+
 ## Open blockers and operator decisions
 
 ### Blocker B1 — W1's nested isolation is incompatible with this host's AppArmor policy
@@ -524,12 +577,11 @@ Every option still needs (a) the operator-approved real authenticated smoke test
 
 ## Next action
 
-The bounded smoke test ran ([Stage 9](#stage-9--bounded-smoke-test-execution-operator-approved-2026-11-04)):
-real subscription auth works for all three roles and one role completed end-to-end, but the run **FAILED
-(1/3)** because hardened *parallel* roles in the shared checkout are over-rejected over the launcher's
-root placeholder dotfiles. **The Worker is not ready for the next stage (Autonomous Approval & Merge).**
-Before that stage: fix the placeholder-vs-path-policy interaction (exclude the launcher-planted
-credential-shadow placeholders from the per-run workspace diff, and/or keep concurrently-finished siblings
-in the "theirs" set) and re-run the bounded smoke test to a clean pass. Publishing the hardening through
-Draft PR #20 stays deferred (the smoke test has not passed) and needs separate operator approval; full W1
-(D-21 for the CLI process) still needs option B or C.
+The parallel bug is **fixed** ([Stage 10](#stage-10--fix-hardened-parallel-execution--authorized-repeat-smoke-operator-approved-2026-11-04)):
+the authorized repeat smoke test ran all **three** hardened subscription sessions to **VERIFIED**,
+committed, concurrently — the Stage 9 failure is resolved. The run exited 1 only at the final, never-opened
+PR-candidate step, on the leftover inert anchors; that guard is fixed too and covered offline (full suite
+1051 passed). The functional native-cli hardening milestone is ready for a **publication review** of Draft
+PR #20 — **pending separate operator approval** and, if wanted, one more authorized smoke run to watch the
+integration step finish. **Full W1 is not complete and D-21 compliance is not claimed**: D-21 for the
+trusted CLI process still needs option B or C (blocker B1).
