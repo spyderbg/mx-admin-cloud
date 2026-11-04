@@ -11,6 +11,7 @@ runs: a withdrawn approval holds the task, or stops its run through the existing
 
 from __future__ import annotations
 
+import time
 from dataclasses import asdict, dataclass, field
 from typing import Any, Iterable
 
@@ -36,6 +37,7 @@ from .intake import (
 from .issue_sync import IssueSync, SimulatedCrash, enqueue_comment
 from .issues import RemoteComment, RemoteIssue, normalize_body, parse_op
 from .model import FeatureState, utc_now
+from .planning import load_plan, task_instructions
 from .workflow import ACTIVE_FEATURE_STATES, CANCEL_FLAG, FeatureSpec, TaskSpec
 
 CURSOR_FLAG = "intake-poll"
@@ -63,6 +65,7 @@ class IntakeReport:  # pylint: disable=too-many-instance-attributes
     restored: list[str] = field(default_factory=list)
     writes: list[str] = field(default_factory=list)               # dry run: what would be written
     deferred: list[str] = field(default_factory=list)
+    plans: list[dict[str, Any]] = field(default_factory=list)     # W4.5: plan versions published on Issues
 
     @property
     def ok(self) -> bool:
@@ -83,6 +86,8 @@ class IntakeReport:  # pylint: disable=too-many-instance-attributes
         out += [f"ignored /worker command on #{r['issue']} by {r['author']}: {r['reason']}" for r in self.ignored]
         out += [f"duplicate approval on #{d['issue']} (comment {d['comment']}) ignored: {d['reason']}"
                 for d in self.duplicates]
+        out += [f"published plan v{p['version']} on #{p['issue']}: {', '.join(p['tasks'])} (sha256 {p['sha256'][:16]})"
+                for p in self.plans]
         out += [f"planned {f}" for f in self.planned] + [f"activated {f}" for f in self.activated]
         out += [f"waiting: {w}" for w in self.waiting]
         out += [f"CHANGED after approval: #{c['issue']} ({c['task']}): {c['reason']}" for c in self.changed]
@@ -95,7 +100,8 @@ class IntakeReport:  # pylint: disable=too-many-instance-attributes
 class IntakePoller:
     """One bounded poll of the GitHub intake for one coordinator (see the module docstring)."""
 
-    def __init__(self, coord: Any, *, faults: Iterable[str] = ()) -> None:
+    def __init__(self, coord: Any, *, faults: Iterable[str] = (), planner: Any = None,  # pylint: disable=too-many-arguments
+                 heartbeat: Any = None, cancelled: Any = None, clock: Any = None) -> None:
         self.coord = coord
         self.store = coord.store
         self.config = coord.config
@@ -104,6 +110,9 @@ class IntakePoller:
         # A fresh synchronizer per poll: the author permissions it caches are re-read every poll.
         self.authority = IssueSync(coord.store, self.client, coord.config)
         self.faults = set(faults)
+        # W4.5 (intake_plan.py): the planner and the Worker service's hooks while it runs (heartbeat, stop/pause)
+        self.planning_hooks = {"planner": planner, "heartbeat": heartbeat, "cancelled": cancelled,
+                               **({"clock": clock} if clock is not None else {})}
 
     def _fault(self, name: str) -> None:
         if name in self.faults:
@@ -128,13 +137,25 @@ class IntakePoller:
                 return report
         try:
             self._discover(report, apply)
+            planning = self._planning()
+            if planning is not None:
+                planning.review(report, apply)        # W4.5: label approvals become intake records
             self._advance(report, apply)
+            if planning is not None:
+                planning.plan_requests(report, apply)  # W4.5: at most one planner run, last
         except GitHubError as exc:
             report.deferred.append(sanitize(str(exc)))
         finally:
             if lock is not None:
                 lock.release()
         return report
+
+    def _planning(self) -> Any:
+        """W4.5: the label-driven planning pass, when `github.planning.enabled`."""
+        if not self.config.github.planning.enabled:
+            return None
+        from .intake_plan import IssuePlanning  # pylint: disable=import-outside-toplevel
+        return IssuePlanning(self, **self.planning_hooks)
 
     def _discover(self, report: IntakeReport, apply: bool) -> None:
         before = dict((self.store.get_flag(CURSOR_FLAG) or {}).get("issues") or {})
@@ -284,12 +305,11 @@ class IntakePoller:
             return
         if not apply:
             report.writes.append(f"acknowledge the approval on #{record.issue_number}" if exists else
-                                 f"plan feature {record.id} with task {record.task_id} for #{record.issue_number}")
+                                 f"plan feature {record.id} with tasks {', '.join(record.all_task_ids)} for "
+                                 f"#{record.issue_number}")
             return
         if not exists:
-            spec = FeatureSpec(slug=record.id, title=sanitize(record.title, 200), tasks=(TaskSpec(
-                key=record.role, role=record.role, title=sanitize(record.title, 200),
-                acceptance=(self._instructions(record),), required_gates=tuple(record.gates)),))
+            spec = self._feature_spec(record)
             try:
                 self.coord.plan(spec)
             except CoordinatorError as exc:
@@ -305,11 +325,30 @@ class IntakePoller:
                 return
             current.status = "planned"
             self.store.save_record("intake", current)
-            enqueue_comment(self.store, record.task_id, self._acknowledgement(current))
+            enqueue_comment(self.store, record.anchor_id, self._acknowledgement(current))
             self.store.append_event("intake-planned", issue=record.issue_number, feature=record.id,
-                                    task=record.task_id)
+                                    task=record.task_id, tasks=record.all_task_ids)
         report.planned.append(record.id)
         self.coord.sync_issues(record.id)  # posts the acknowledgement; refreshes the board
+
+    def _feature_spec(self, record: IntakeRecord) -> FeatureSpec:
+        """The feature of an approval: ONE task of the approved role (`/worker approve`), or (W4.5) the
+        approved plan's tasks with their roles, dependencies and gates."""
+        if not record.planned:
+            return FeatureSpec(slug=record.id, title=sanitize(record.title, 200), tasks=(TaskSpec(
+                key=record.role, role=record.role, title=sanitize(record.title, 200),
+                acceptance=(self._instructions(record),), required_gates=tuple(record.gates)),))
+        assert record.plan is not None
+        plan = record.plan["canonical"]
+        tasks = tuple(TaskSpec(
+            key=t["id"], role=t["role"], title=sanitize(t["title"], 200), depends_on=tuple(t["depends_on"]),
+            required_gates=tuple(t["gates"]),
+            acceptance=(task_instructions(plan, t, approval_sha=record.plan["approval_sha256"],
+                                          approved_by=record.approved_by, title=record.title, body=record.body),))
+            for t in plan["tasks"])
+        return FeatureSpec(slug=record.id, title=sanitize(plan["feature"]["title"], 200), tasks=tasks,
+                           acceptance=tuple(plan["feature"]["acceptance_criteria"]),
+                           base_branch=plan["feature"]["base_branch"])
 
     def _instructions(self, record: IntakeRecord) -> str:
         return (f"Implement GitHub Issue #{record.issue_number} as approved by {record.approved_by} (specification "
@@ -319,6 +358,17 @@ class IntakePoller:
     def _acknowledgement(self, record: IntakeRecord) -> str:
         project = self.config.github.project
         board = f"Project #{project.number}" if project.enabled else "the coordinator state"
+        if record.planned:
+            assert record.plan is not None
+            tasks = ", ".join(f"`{t}`" for t in record.all_task_ids)
+            return (f"**Approved for the Worker** by `{record.approved_by}` (label `worker:approve`, receipt comment "
+                    f"{record.approval_comment_id}, validated by the coordinator). This Issue's title and body (spec "
+                    f"sha256 `{record.digest[:16]}…`) and execution plan v{record.plan['version']} (approval sha256 "
+                    f"`{record.plan['approval_sha256'][:16]}…`) are now feature `{record.id}`, branch "
+                    f"`{self.config.branch_for(record.id)}`, with tasks {tasks}.\n\n"
+                    "The approved text and plan are recorded locally and do not change: later edits to this Issue are "
+                    "never used, and an edit stops every task of the feature for an operator. Progress is shown on "
+                    f"{board}; moving the card there changes nothing.")
         return (f"**Approved for the Worker** by `{record.approved_by}` (comment {record.approval_comment_id}). "
                 f"This Issue's title and body (spec sha256 `{record.digest[:16]}…`) are now the specification of task "
                 f"`{record.task_id}` (role `{record.role}`, gates {', '.join(f'`{g}`' for g in record.gates)}) in "
@@ -411,33 +461,46 @@ class IntakePoller:
                     self.store.save_record("intake", fresh)
                     self.store.append_event("intake-spec-changed", feature=record.id, issue=record.issue_number,
                                             task=record.task_id, reason=sanitize(reason, 300))
-                    if first and current:  # changed or closed; an Issue that is no longer ours gets no comment
-                        enqueue_comment(self.store, record.task_id, (
+                    if first and current and record.planned:  # W4.5: every task of the plan is held
+                        tasks = ", ".join(f"`{t}`" for t in record.all_task_ids)
+                        enqueue_comment(self.store, record.anchor_id, (
+                            f"**Approval withdrawn**: {sanitize(reason, 300)}. Tasks {tasks} are stopped and held "
+                            "for an operator; they only ever run the approved text and plan, and this Issue is never "
+                            "reopened or edited by the coordinator. To continue, restore the approved title and body "
+                            "(reopen the Issue if it was closed), then release each held task "
+                            "(`python -m feature_coordinator release <task> --apply`); to change the work, open a "
+                            "new Issue."))
+                    elif first and current:  # changed or closed; an Issue that is no longer ours gets no comment
+                        enqueue_comment(self.store, record.anchor_id, (
                             f"**Approval withdrawn**: {sanitize(reason, 300)}. Task `{record.task_id}` is stopped and "
                             "held for an operator; it only ever runs the approved text, and this Issue is never "
                             "reopened or edited by the coordinator. To continue, restore the approved title and body "
                             "(reopen the Issue if it was closed), then release the task "
                             f"(`python -m feature_coordinator release {record.task_id} --apply`); to change the "
                             "task, open a new Issue."))
-        self._stop_running(record, reason)
-        if self.store.load_task(record.task_id).state in HOLDABLE:
-            try:
-                self.coord.hold_task(record.task_id, reason=f"approved Issue #{record.issue_number} changed: "
-                                                            f"{sanitize(reason, 200)}", actor=ACTOR)
-                return
-            except (ClaimError, IllegalTransitionError):
-                pass  # it was launched meanwhile: the hold follows once it can be applied
-        self.coord.sync_issues(record.id)  # the notice
+        held = False
+        for task_id in record.all_task_ids:  # W4.5: every task of a planned feature
+            self._stop_running(record, reason, task_id)
+            if self.store.load_task(task_id).state in HOLDABLE:
+                try:
+                    self.coord.hold_task(task_id, reason=f"approved Issue #{record.issue_number} changed: "
+                                                         f"{sanitize(reason, 200)}", actor=ACTOR)
+                    held = True
+                except (ClaimError, IllegalTransitionError):
+                    pass  # it was launched meanwhile: the hold follows once it can be applied
+        if not held:
+            self.coord.sync_issues(record.id)  # the notice (hold_task synchronizes by itself)
 
-    def _stop_running(self, record: IntakeRecord, reason: str) -> None:
+    def _stop_running(self, record: IntakeRecord, reason: str, task_id: str | None = None) -> None:
         """A running intake task: ask its run to stop (`request_cancel`, the operator's
         `python -m feature_coordinator stop`), once per claim."""
-        claim = self.store.load_claim(record.task_id)
-        flag = self.store.get_flag(CANCEL_FLAG.format(task=record.task_id))
+        task_id = task_id or record.task_id
+        claim = self.store.load_claim(task_id)
+        flag = self.store.get_flag(CANCEL_FLAG.format(task=task_id))
         if claim is None or (flag and flag.get("token") == claim.get("token")):
             return
         try:
-            self.coord.request_cancel(record.task_id, reason=sanitize(f"approval withdrawn: {reason}", 300))
+            self.coord.request_cancel(task_id, reason=sanitize(f"approval withdrawn: {reason}", 300))
         except ClaimError:
             pass  # released meanwhile
 
@@ -446,7 +509,7 @@ class IntakePoller:
         must not start or continue (it is then held, or its run is asked to stop), or None. Not an
         intake task: None, no request. GitHub errors propagate: never proceed unchecked."""
         record = load_intake(self.store, task.feature_id)
-        if record is None or record.task_id != task.id:
+        if record is None or task.id not in record.all_task_ids:
             return None
         current, reason = issue_problem(self.client, record)
         if not reason:
@@ -474,8 +537,33 @@ class IntakePoller:
         if record is not None:
             data["approved"] = {"by": record.approved_by, "at": record.approved_at, "role": record.role,
                                 "digest": record.digest, "status": record.status, "task": record.task_id,
-                                "matches_issue": record.digest == digest, "spec_changed": record.spec_changed}
+                                "tasks": record.all_task_ids, "matches_issue": record.digest == digest,
+                                "spec_changed": record.spec_changed,
+                                "plan_version": record.plan["version"] if record.plan else None}
+        plan = load_plan(self.store, feature_id)
+        data["plan"] = None if plan is None else {
+            "status": plan.status, "version": plan.latest["version"] if plan.latest else None,
+            "sha256": plan.latest["sha256"] if plan.latest else None,
+            "comment": plan.latest.get("comment_url") if plan.latest else None,
+            "tasks": [f"{t['id']} ({t['role']})" for t in plan.latest["plan"]["tasks"]] if plan.latest else [],
+            "attention": plan.attention, "planning_enabled": self.config.github.planning.enabled}
         return data
+
+
+def planning_hooks(store: Any, heartbeat: Any) -> dict[str, Any]:
+    """W4.5: the Worker service's hooks for a planner run inside its intake poll (minutes): the service record
+    keeps its *heartbeat*, and a stop signal, `worker stop` or `worker pause` ends the run (retried later)."""
+    from .autonomy import read_control  # pylint: disable=import-outside-toplevel
+    from .supervisor import stop_requested  # pylint: disable=import-outside-toplevel
+    last = {"at": float("-inf"), "stop": False}
+
+    def cancelled() -> bool:
+        now = time.monotonic()
+        if now - float(last["at"]) >= 1.0:  # the control file is read at most once a second
+            control = read_control(store)
+            last.update(at=now, stop=bool(control.get("stop") or control.get("pause")))
+        return stop_requested() or bool(last["stop"])
+    return {"heartbeat": heartbeat, "cancelled": cancelled}
 
 
 def intake_status(store: Any) -> list[dict[str, Any]]:
@@ -484,7 +572,9 @@ def intake_status(store: Any) -> list[dict[str, Any]]:
     for raw in store.list_records("intake"):
         record = IntakeRecord.from_dict(raw)
         row: dict[str, Any] = {"issue": record.issue_number, "feature": record.id, "task": record.task_id,
-                               "role": record.role, "status": record.status, "approved_by": record.approved_by,
+                               "tasks": record.all_task_ids,
+                               "role": record.role or (f"plan v{record.plan['version']}" if record.plan else ""),
+                               "status": record.status, "approved_by": record.approved_by,
                                "approved_at": record.approved_at, "digest": record.digest,
                                "spec_changed": record.spec_changed, "activation_error": record.activation_error,
                                "feature_state": None, "task_state": None}

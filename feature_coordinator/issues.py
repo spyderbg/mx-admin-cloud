@@ -130,6 +130,30 @@ class RemoteComment:
     url: str = ""
 
 
+@dataclass(frozen=True)
+class RemoteIssueEvent:
+    """W4.5: one Issue event (`labeled`, `unlabeled`, ...) as returned by the tracker; *label* is the
+    label name of a label event ("" otherwise)."""
+
+    id: int
+    event: str
+    actor: str
+    created_at: str
+    label: str = ""
+
+
+WORKER_LABEL_NAMES = ("worker:plan", "worker:ready-for-review", "worker:approve", "worker:approved")  # plan_digest
+
+
+def check_worker_labels(labels: Iterable[str]) -> list[str]:
+    """W4.5: the labels, de-duplicated; TrackerError unless each is one of the four `worker:*` labels."""
+    labels = list(dict.fromkeys(labels))
+    bad = [lbl for lbl in labels if lbl not in WORKER_LABEL_NAMES]
+    if bad:
+        raise TrackerError(f"labels {bad} are not Worker planning labels {list(WORKER_LABEL_NAMES)}")
+    return labels
+
+
 @dataclass
 class PullRequest:  # pylint: disable=too-many-instance-attributes
     """A tracker pull request. W4.3.3: the identity and merge fields every adoption and completion
@@ -204,6 +228,26 @@ class TrackerClient(Protocol):
 
     def get_pull_request(self, number: int) -> PullRequest:
         """W4.3.3: one PR by number, with its merge state (GitHubNotFoundError if absent)."""
+
+    # W4.5 (intake_plan.py): label-driven planning and approval.
+
+    def list_issue_events(self, number: int) -> list[RemoteIssueEvent]:
+        """The Issue's events (label additions with their actor), oldest first."""
+
+    def add_worker_labels(self, number: int, labels: Iterable[str]) -> tuple[str, ...]:
+        """Add `worker:*` planning labels (idempotent; no other label)."""
+
+    def remove_worker_label(self, number: int, label: str) -> None:
+        """Remove one `worker:*` planning label (absent is fine)."""
+
+    def ensure_worker_label(self, name: str, color: str, description: str) -> str:
+        """Create a `worker:*` planning label if missing ('exists' or 'created'; never edits one)."""
+
+    def repository_info(self) -> dict[str, Any]:
+        """Repository facts: at least `full_name`, `id` and `default_branch`."""
+
+    def get_workflow_run(self, run_id: int) -> dict[str, Any]:
+        """One GitHub Actions run: id, event, path, head_branch, actor, repository (GitHubNotFoundError)."""
 
 
 # ---------------------------------------------------------------------------
@@ -398,6 +442,10 @@ class MockIssueTracker:  # pylint: disable=too-many-public-methods,too-many-inst
         self.authorized: list[tuple[str, str]] = []
         self._next = 1
         self._next_comment = 1000
+        self._next_event = 5000
+        self.runs: dict[int, dict[str, Any]] = {}   # W4.5: GitHub Actions runs (get_workflow_run)
+        self.repository_id = 4242
+        self.default_branch = "main"
         self._clock = 0
         if path is not None and path.exists():
             self._load()
@@ -412,6 +460,8 @@ class MockIssueTracker:  # pylint: disable=too-many-public-methods,too-many-inst
         self.labels = dict(data.get("labels", {}))
         self._next = int(data["next"])
         self._next_comment = int(data.get("next_comment", 1000))
+        self.runs = {int(k): v for k, v in data.get("runs", {}).items()}
+        self._next_event = int(data.get("next_event", 5000))
         self._clock = int(data.get("clock", 0))
         self.writes = int(data.get("writes", 0))
 
@@ -420,7 +470,8 @@ class MockIssueTracker:  # pylint: disable=too-many-public-methods,too-many-inst
             return
         data = {"next": self._next, "next_comment": self._next_comment, "clock": self._clock, "writes": self.writes,
                 "issues": {str(n): i for n, i in self.issues.items()},
-                "prs": {str(n): asdict(p) for n, p in self.prs.items()}, "labels": self.labels}
+                "prs": {str(n): asdict(p) for n, p in self.prs.items()}, "labels": self.labels,
+                "runs": {str(n): r for n, r in self.runs.items()}, "next_event": self._next_event}
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
         tmp.replace(self.path)
@@ -633,6 +684,87 @@ class MockIssueTracker:  # pylint: disable=too-many-public-methods,too-many-inst
         """Test helper: a person merged the PR on GitHub as *merge_sha*."""
         return self.update_pull_request(number, state="closed", merged=True, merge_commit_sha=merge_sha,
                                         merged_at=self._tick(), merged_by=merged_by)
+
+    # -- W4.5: planning labels, Issue events, Actions runs --------------------------------
+
+    def _event(self, rec: dict[str, Any], event: str, actor: str, label: str = "") -> dict[str, Any]:
+        self._next_event += 1
+        entry = {"id": self._next_event, "event": event, "actor": actor, "created_at": self._tick(), "label": label}
+        rec.setdefault("events", []).append(entry)
+        rec["updated_at"] = entry["created_at"]
+        return entry
+
+    def _set_label(self, number: int, label: str, actor: str, *, add: bool) -> None:
+        rec = self._record(number)
+        self._guard(rec)
+        if add and label not in rec["labels"]:
+            rec["labels"].append(label)
+            self._event(rec, "labeled", actor, label)
+        elif not add and label in rec["labels"]:
+            rec["labels"].remove(label)
+            self._event(rec, "unlabeled", actor, label)
+
+    def list_issue_events(self, number: int) -> list[RemoteIssueEvent]:
+        """The Issue's events, oldest first."""
+        with self._op(f"list_issue_events:{number}", write=False):
+            return [RemoteIssueEvent(**e) for e in self._record(number).get("events", [])]
+
+    def add_worker_labels(self, number: int, labels: Iterable[str]) -> tuple[str, ...]:
+        """Add `worker:*` labels as the viewer."""
+        labels = check_worker_labels(labels)
+        with self._op(f"add_worker_labels:{number}", write=True):
+            for label in labels:
+                self._set_label(number, label, self.viewer, add=True)
+            return tuple(self._record(number)["labels"])
+
+    def remove_worker_label(self, number: int, label: str) -> None:
+        """Remove a `worker:*` label as the viewer (absent is fine)."""
+        check_worker_labels([label])
+        with self._op(f"remove_worker_label:{number}", write=True):
+            self._set_label(number, label, self.viewer, add=False)
+
+    def ensure_worker_label(self, name: str, color: str, description: str) -> str:
+        """Create a `worker:*` label once."""
+        check_worker_labels([name])
+        with self._op(f"ensure_worker_label:{name}", write=name not in self.labels):
+            if name in self.labels:
+                return "exists"
+            self.labels[name] = [color, description]
+            return "created"
+
+    def repository_info(self) -> dict[str, Any]:
+        """The mock repository."""
+        with self._op("repository_info", write=False):
+            return {"full_name": self.repository, "id": self.repository_id, "default_branch": self.default_branch,
+                    "node_id": f"R_mock{self.repository_id}", "private": True, "has_issues": True,
+                    "archived": False, "permissions": {"admin": True, "push": True, "triage": True, "pull": True}}
+
+    def get_workflow_run(self, run_id: int) -> dict[str, Any]:
+        """A recorded Actions run (GitHubNotFoundError if unknown)."""
+        with self._op(f"get_workflow_run:{run_id}", write=False):
+            try:
+                return dict(self.runs[int(run_id)])
+            except KeyError as exc:
+                raise GitHubNotFoundError(f"unknown workflow run {run_id}", status=404) from exc
+
+    def label_as(self, number: int, label: str, actor: str) -> dict[str, Any]:
+        """Test helper: a person (or the Worker's shared identity) adds a label; returns the event."""
+        with self._op(f"label_as:{number}", write=True):
+            rec = self._record(number)
+            if label in rec["labels"]:
+                rec["labels"].remove(label)  # re-adding: GitHub records a new `labeled` event
+            rec["labels"].append(label)
+            return dict(self._event(rec, "labeled", actor, label))
+
+    def unlabel_as(self, number: int, label: str, actor: str) -> None:
+        """Test helper: a person removes a label."""
+        with self._op(f"unlabel_as:{number}", write=True):
+            self._set_label(number, label, actor, add=False)
+
+    def add_workflow_run(self, run: dict[str, Any]) -> None:
+        """Test helper: record an Actions run (what the receipt step's run looks like on GitHub)."""
+        with self._op("add_workflow_run", write=True):
+            self.runs[int(run["id"])] = dict(run)
 
     # -- test helpers and the Phase 2 API --------------------------------------------
 

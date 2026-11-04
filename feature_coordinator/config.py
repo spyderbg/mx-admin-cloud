@@ -26,9 +26,9 @@ The Phase 4 extension adds `github.project`: the GitHub Projects (v2) board that
 Issues (owner, number and GraphQL node ID, the projects that must never be written, the Status options and
 the Agent / Feature ID / Blocked Reason fields); off by default, `default_config()` uses the mx-admin-cloud board.
 
-W4.3.1 adds `github.intake` (intake.py): a GitHub Issue that a command author approves with
-`/worker approve <role> <spec-sha256>` becomes one feature with one task of that role, verified by
-the role's `role_gates`. Off by default (the Worker service polls only when it is enabled).
+W4.3.1 adds `github.intake` (intake.py): an Issue a command author approves with `/worker approve <role>
+<spec-sha256>` becomes one feature with one task of that role, verified by its `role_gates`. Off by default.
+W4.5 adds `github.planning` (planning_config.py): label-approved, multi-task execution plans (intake_plan.py).
 
 W4.3.3 adds `github.publish` (publish.py): such a feature is integrated, its own branch pushed, ONE
 Draft PR opened to its base branch, and — after a person merged it — completed, its Issue closed and its
@@ -53,6 +53,7 @@ from typing import Any, Iterable, Mapping
 from .broker_config import BrokerConfig, broker_from_mapping, validate_broker
 from .errors import ConfigError, ProviderError
 from .native_hardening import NativeHardening, hardening_from_mapping, validate_hardening
+from .planning_config import GitHubPlanningConfig, planning_from_mapping, validate_planning
 from .providers import (
     CLAUDE_CODE,
     CODEX,
@@ -295,6 +296,7 @@ class GitHubConfig:  # pylint: disable=too-many-instance-attributes
     project: GitHubProjectConfig = field(default_factory=GitHubProjectConfig)
     intake: GitHubIntakeConfig = field(default_factory=GitHubIntakeConfig)
     publish: GitHubPublishConfig = field(default_factory=GitHubPublishConfig)
+    planning: GitHubPlanningConfig = field(default_factory=GitHubPlanningConfig)
 
     @property
     def owner(self) -> str:
@@ -462,6 +464,7 @@ def validate(config: ProjectConfig) -> None:
     validate_broker(config.broker, config.providers)
     _validate_github(config.github)
     _validate_intake(config)
+    validate_planning(config)
     _validate_worker(config.worker)
     if not config.allowed_state_filesystems or any(fs.startswith("fuse") for fs in config.allowed_state_filesystems):
         raise ConfigError("allowed_state_filesystems must be non-empty and must not include FUSE filesystems")
@@ -910,15 +913,12 @@ def _github_from_mapping(data: Mapping[str, Any]) -> GitHubConfig:
     if unknown:
         raise ConfigError(f"unknown github keys: {sorted(unknown)} (tokens and endpoints never belong here)")
     values: dict[str, Any] = {}
+    nested = {"project": _project_from_mapping, "intake": _intake_from_mapping, "publish": _publish_from_mapping,
+              "planning": planning_from_mapping}
     for key in known & set(data):
-        default = getattr(defaults, key)
-        raw = data[key]
-        if key == "project":
-            values[key] = _project_from_mapping(dict(raw or {}))
-        elif key == "intake":
-            values[key] = _intake_from_mapping(dict(raw or {}))
-        elif key == "publish":
-            values[key] = _publish_from_mapping(dict(raw or {}))
+        default, raw = getattr(defaults, key), data[key]
+        if key in nested:
+            values[key] = nested[key](dict(raw or {}))
         else:
             values[key] = tuple(str(v) for v in raw) if isinstance(default, tuple) else type(default)(raw)
     return GitHubConfig(**values)

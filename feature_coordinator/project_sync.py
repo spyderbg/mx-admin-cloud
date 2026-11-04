@@ -545,7 +545,14 @@ class ProjectSync:  # pylint: disable=too-many-instance-attributes,too-many-publ
         """(status key, blocked reason) for a record. See the module docstring."""
         notes = notes if notes is not None else []
         if task is None:
-            return self._feature_status(feature, notes)
+            status = self._feature_status(feature, notes)
+            intake = load_intake(self.store, feature.id) if status[0] == "in_progress" else None
+            if intake is not None and intake.planned:  # W4.5: the Issue's card is the whole planned feature
+                stuck = [t for t in self.store.load_tasks(feature).values()
+                         if t.state in (TaskState.NEEDS_HUMAN, TaskState.FAILED)]
+                if stuck:
+                    return "blocked", sanitize(f"{stuck[0].id}: {self._blocked_reason(stuck[0])}", 200)
+            return status
         state = task.state
         if state is TaskState.VERIFIED:
             return self._verified_status(feature, task, notes), ""
@@ -645,9 +652,13 @@ class ProjectSync:  # pylint: disable=too-many-instance-attributes,too-many-publ
         record_id = task.id if task else feature.id
         ilink = self.issues.load_link(record_id)
         if ilink is None or ilink.issue_number is None or ilink.issue_id is None:
-            report.skipped[record_id] = ("from an approved Issue: that Issue is shown as its task's card"
-                                         if task is None and load_intake(self.store, feature.id) is not None
-                                         else "no Issue yet (the Issue sync creates it first)")
+            intake = load_intake(self.store, feature.id)
+            report.skipped[record_id] = (
+                "planned from an approved Issue: that Issue is shown as the feature's card"
+                if task is not None and intake is not None and intake.planned else
+                "from an approved Issue: that Issue is shown as its task's card"
+                if task is None and intake is not None and not intake.planned
+                else "no Issue yet (the Issue sync creates it first)")
             return None
         issue = self.issues.client.get_issue(ilink.issue_number)
         try:

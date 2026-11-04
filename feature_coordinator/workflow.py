@@ -411,7 +411,7 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
         """Why the approved Issue of an intake task no longer authorizes it (a fresh read: the caller
         holds no lock), or None — without a request for every other task. Unreadable: CoordinatorError."""
         record = load_intake(self.store, task.feature_id)
-        if record is None or record.task_id != task.id:
+        if record is None or task.id not in record.all_task_ids:  # W4.5: every task of a planned feature
             return None
         return issue_problem(self.sync.client, record)[1] or None
 

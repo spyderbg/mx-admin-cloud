@@ -509,20 +509,20 @@ class IssueSync:  # pylint: disable=too-many-instance-attributes,too-many-public
                          for rid, i in issues.items()}
 
     def _sync_intake(self, feature: Feature, intake: Any, report: SyncReport, apply: bool) -> None:
-        """W4.3.1: no Issue is created; the task maps to the approved Issue, which only gets queued
-        comments (its comments are not commands; title, body, labels and state are never changed)."""
-        task, link = self.store.load_task(intake.task_id), self.load_link(intake.task_id)
+        """W4.3.1: no Issue is created; the task (W4.5: a planned feature) maps to the approved Issue, which only
+        gets queued comments (its comments are not commands; title, body, labels and state are never changed)."""
+        task, link = None if intake.planned else self.store.load_task(intake.task_id), self.load_link(intake.anchor_id)
         try:
             issue = self.client.get_issue(intake.issue_number)
-            self.verify_issue(feature.id, task.id, issue, link)
-            if apply and (link is None or link.issue_id is None or task.issue_number is None):
+            self.verify_issue(feature.id, task.id if task else None, issue, link)
+            if apply and (link is None or link.issue_id is None or (task or feature).issue_number is None):
                 self._record_mapping(feature, task, issue)
         except (GitHubNotFoundError, OwnershipError) as exc:
-            report.protected[task.id] = f"the approved Issue #{intake.issue_number}: {sanitize(str(exc))}"
+            report.protected[intake.anchor_id] = f"the approved Issue #{intake.issue_number}: {sanitize(str(exc))}"
             return
-        self._post_outbox(task.id, issue, {task.id: issue.number}, report, apply)
-        report.issues = {task.id: {"number": issue.number, "url": issue.url, "state": issue.state,
-                                   "labels": sorted(issue.labels)}}
+        self._post_outbox(intake.anchor_id, issue, {intake.anchor_id: issue.number}, report, apply)
+        report.issues = {intake.anchor_id: {"number": issue.number, "url": issue.url, "state": issue.state,
+                                            "labels": sorted(issue.labels)}}
 
     def verify_issue(self, feature_id: str, task_id: str | None, issue: RemoteIssue,
                      link: IssueLink | None) -> None:
@@ -799,9 +799,9 @@ class IssueSync:  # pylint: disable=too-many-instance-attributes,too-many-public
         return changed
 
     def authorize(self, comment: RemoteComment) -> str | None:
-        """None if the author may issue commands (also W4.3.1 `/worker approve`), else why not."""
+        """None if the author may issue commands (also W4.3.1 `/worker approve`, W4.5 labels), else why not."""
         if comment.author not in self.gh.command_authors:
-            return f"{comment.author} is not a configured command author"
+            return f"{comment.author or '(unknown)'} is not a configured command author"
         permission = self._permission(comment.author)
         if PERMISSION_RANK.get(permission, -1) < PERMISSION_RANK[self.gh.command_min_permission]:
             return f"{comment.author} has repository permission {permission!r}"

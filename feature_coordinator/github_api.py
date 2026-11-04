@@ -57,7 +57,7 @@ from .errors import (
     GitHubValidationError,
     PullRequestPolicyError,
 )
-from .issues import PullRequest, RemoteComment, RemoteIssue, check_feature_labels
+from .issues import PullRequest, RemoteComment, RemoteIssue, RemoteIssueEvent, check_feature_labels, check_worker_labels
 
 API_VERSION = "2022-11-28"
 PER_PAGE = 100
@@ -282,6 +282,49 @@ def parse_comment(data: Any) -> RemoteComment:
     url = data.get("html_url") or ""
     return RemoteComment(id=comment_id, author=_login(data.get("user"), where), body=body, created_at=created,
                          url=url if isinstance(url, str) else "")
+
+
+def parse_issue_event(data: Any) -> RemoteIssueEvent:
+    """W4.5: a validated Issue event (`GET .../issues/{n}/events`). A deleted actor ("ghost") or a missing
+    label stays "" — such an event never authorizes anything."""
+    if not isinstance(data, dict):
+        raise GitHubResponseError("issue event: not an object")
+    event_id = _field(data, "id", int, "issue event")
+    where = f"issue event {event_id}"
+    kind = _field(data, "event", str, where)
+    created = _field(data, "created_at", str, where)
+    if not _ISO_RE.fullmatch(created):
+        raise GitHubResponseError(f"{where}: unexpected created_at")
+    actor = data.get("actor")
+    login = actor.get("login") if isinstance(actor, dict) else None
+    label = data.get("label")
+    name = label.get("name") if isinstance(label, dict) else None
+    return RemoteIssueEvent(id=event_id, event=kind[:60],
+                            actor=login if isinstance(login, str) and _LOGIN_RE.fullmatch(login) else "",
+                            created_at=created, label=name if isinstance(name, str) and len(name) <= 100 else "")
+
+
+def parse_workflow_run(data: Any) -> dict[str, Any]:
+    """W4.5: the fields of a GitHub Actions run that an approval receipt is checked against."""
+    if not isinstance(data, dict):
+        raise GitHubResponseError("workflow run: not an object")
+    run_id = _field(data, "id", int, "workflow run")
+    where = f"workflow run {run_id}"
+    repo = data.get("repository") if isinstance(data.get("repository"), dict) else {}
+
+    def text(name: str) -> str:
+        value = data.get(name)
+        return value[:300] if isinstance(value, str) else ""
+
+    def login(name: str) -> str:
+        user = data.get(name)
+        value = user.get("login") if isinstance(user, dict) else None
+        return value if isinstance(value, str) and _LOGIN_RE.fullmatch(value) else ""
+    attempt = data.get("run_attempt")
+    return {"id": run_id, "event": text("event"), "path": text("path"), "head_branch": text("head_branch"),
+            "status": text("status"), "actor": login("actor"), "triggering_actor": login("triggering_actor"),
+            "run_attempt": attempt if isinstance(attempt, int) and not isinstance(attempt, bool) else 0,
+            "repository": str(repo.get("full_name", ""))[:200], "where": where}
 
 
 def _optional_text(data: Mapping[str, Any], name: str, pattern: re.Pattern[str], where: str) -> str:
@@ -558,7 +601,11 @@ class GitHubClient:  # pylint: disable=too-many-instance-attributes,too-many-pub
         if not isinstance(data, dict):
             raise GitHubResponseError("repository: not an object")
         perms = data.get("permissions") if isinstance(data.get("permissions"), dict) else {}
+        repo_id = data.get("id")
         return {"full_name": str(data.get("full_name", "")), "private": bool(data.get("private")),
+                "id": repo_id if isinstance(repo_id, int) and not isinstance(repo_id, bool) else 0,
+                "default_branch": str(data.get("default_branch") or "")[:200],
+                "node_id": str(data.get("node_id") or "")[:120],
                 "has_issues": bool(data.get("has_issues")), "archived": bool(data.get("archived")),
                 "permissions": {k: bool(v) for k, v in perms.items()}}
 
@@ -638,6 +685,42 @@ class GitHubClient:  # pylint: disable=too-many-instance-attributes,too-many-pub
         """`POST .../comments` (not idempotent: callers embed an operation marker)."""
         return parse_comment(self._call("POST", f"{self.repo_path}/issues/{int(number)}/comments", {"body": body},
                                         idempotent=False).data)
+
+    # -- W4.5: planning labels, Issue events, Actions runs ---------------------------------
+
+    def list_issue_events(self, number: int) -> list[RemoteIssueEvent]:
+        """`GET .../issues/{number}/events`, every page, oldest first."""
+        return [parse_issue_event(item) for item in self._pages(f"{self.repo_path}/issues/{int(number)}/events", {})]
+
+    def add_worker_labels(self, number: int, labels: Iterable[str]) -> tuple[str, ...]:
+        """`POST .../labels` with the four `worker:*` planning labels only."""
+        payload = {"labels": check_worker_labels(labels)}
+        data = self._call("POST", f"{self.repo_path}/issues/{int(number)}/labels", payload, idempotent=True).data
+        if not isinstance(data, list):
+            raise GitHubResponseError("labels: expected a list")
+        return tuple(str(item.get("name", "")) for item in data if isinstance(item, dict))
+
+    def remove_worker_label(self, number: int, label: str) -> None:
+        """`DELETE .../labels/{name}` for one `worker:*` label; absent (404) counts as removed."""
+        check_worker_labels([label])
+        self._call("DELETE", f"{self.repo_path}/issues/{int(number)}/labels/{quote(label, safe='')}",
+                   idempotent=True, ok=(404,))
+
+    def ensure_worker_label(self, name: str, color: str, description: str) -> str:
+        """Create a `worker:*` planning label if it is missing. Existing labels are never edited."""
+        check_worker_labels([name])
+        resp = self._call("GET", f"{self.repo_path}/labels/{quote(name, safe='')}", idempotent=True, ok=(404,))
+        if resp.status != 404:
+            return "exists"
+        resp = self._call("POST", f"{self.repo_path}/labels", {"name": name, "color": color,
+                                                               "description": description},
+                          idempotent=True, ok=(422,))
+        return "exists" if resp.status == 422 else "created"
+
+    def get_workflow_run(self, run_id: int) -> dict[str, Any]:
+        """`GET .../actions/runs/{id}` (validated fields only)."""
+        return parse_workflow_run(self._call("GET", f"{self.repo_path}/actions/runs/{int(run_id)}",
+                                             idempotent=True).data)
 
     # -- labels --------------------------------------------------------------------
 

@@ -1,0 +1,51 @@
+name: Worker issue labels
+
+# W4.5 (docs_agents/coordination/github-intake.md §12): the GitHub side of the Feature Coordinator's
+# planning labels. It never runs a model or project code, holds no secret but this job's own
+# GITHUB_TOKEN, and decides nothing by itself: the Desktop Worker re-verifies everything it posts.
+#   worker:plan     refuses (and removes) a request from an account below `write` permission
+#   worker:approve  posts ONE approval receipt (as github-actions[bot]) binding the Issue text and the
+#                   published plan version — or a refusal, and removes the label
+# The labels the coordinator sets itself (worker:ready-for-review, worker:approved) are skipped by the
+# job condition. Issue events run the DEFAULT BRANCH's copy of this file: it has no effect until it is
+# on `main` (see the activation steps in the documentation).
+on:
+  issues:
+    types: [labeled]
+
+permissions: {}
+
+# One run per Issue at a time; repeated events and re-runs find the earlier receipt (idempotent).
+concurrency:
+  group: worker-issue-labels-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  label:
+    if: >-
+      github.event.issue.pull_request == null &&
+      (github.event.label.name == 'worker:plan' || github.event.label.name == 'worker:approve')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Check out the receipt code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/scripts/worker_issue_labels.py
+            feature_coordinator/__init__.py
+            feature_coordinator/plan_digest.py
+
+      - name: Check the request or post the approval receipt
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          WORKER_MIN_PERMISSION: write
+          # Logins whose comments may carry a published plan (default: the repository owner, the account the
+          # Desktop Worker's gh login uses). Comma-separated; set a repository variable to override.
+          WORKER_PLAN_AUTHORS: ${{ vars.WORKER_PLAN_AUTHORS }}
+        run: python3 -I .github/scripts/worker_issue_labels.py
