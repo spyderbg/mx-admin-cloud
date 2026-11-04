@@ -54,6 +54,7 @@ import hashlib
 import json
 import os
 import secrets
+import stat
 import subprocess
 from contextlib import nullcontext
 from dataclasses import dataclass
@@ -66,6 +67,7 @@ from .gitsafe import assert_no_execution_config, git_argv, hardened_env
 from .launchers import LAUNCHERS, RunnerProbe, probe_runner, snapshot
 from .locks import ProcessIdentity
 from .native_hardening import (
+    agent_config_anchors,
     claude_init_problems,
     codex_enforcement_error,
     git_control_digest,
@@ -269,6 +271,22 @@ def changed_paths(before: WorkspaceState, after: WorkspaceState) -> tuple[list[s
     return changed, protected, sorted(after.ignored - before.ignored)
 
 
+def _inert_anchor(path: Path) -> bool:
+    """True when *path* is a trusted hardened-launcher rule anchor in inert form: absent, an empty
+    regular file, or a directory (any real content an agent put *under* a directory anchor shows up
+    as its own path and is judged separately). A symlink or a non-empty file is NOT inert — it is a
+    real change and stays denied, so a genuine write to a protected path is never excused."""
+    try:
+        st = path.lstat()
+    except OSError:
+        return True  # absent — nothing was left behind
+    if stat.S_ISLNK(st.st_mode):
+        return False
+    if stat.S_ISDIR(st.st_mode):
+        return True
+    return stat.S_ISREG(st.st_mode) and st.st_size == 0
+
+
 # ---------------------------------------------------------------------------
 # The runner
 # ---------------------------------------------------------------------------
@@ -457,6 +475,15 @@ class NativeCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-p
         not_ours = {p for p in touched if not policy.check(request.role, p, grants=grants).allowed}
         theirs = sorted(p for p in not_ours if policy.owner_of(p) in concurrent)  # protected paths have no owner
         denied = sorted((not_ours - set(theirs)) | set(protected_touched))
+        # Hardened runs: the trusted CLI materialises inert, read-only agent-config anchors
+        # (.claude, .mcp.json, .codex, .agents) in the shared checkout to carry its own permission
+        # rules; concurrent roles see each other's. The agent is denied writing these, so an inert
+        # instance is never an agent change — exclude it (a non-inert one, i.e. real content, stays
+        # denied). This neither ignores the paths globally nor commits them (they are not writable).
+        anchors = sorted(p for p in denied
+                         if self.hardened and p in agent_config_anchors() and _inert_anchor(root / p))
+        if anchors:
+            denied = [p for p in denied if p not in set(anchors)]
         git_issues = git_problems(root, before.git, after.git)
         from .launchers import role_dirty_paths  # pylint: disable=import-outside-toplevel
         allowed = [p for p in role_dirty_paths(root, writable)
@@ -469,7 +496,7 @@ class NativeCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-p
                        duration_seconds=round(sup.duration_seconds, 1), escalated_to_kill=sup.escalated_to_kill,
                        run_dir=str(ctx.run_dir), changed_during_run=touched, ignored_entries_created=new_ignored,
                        left_to_concurrent_roles=theirs, concurrent_roles=sorted(concurrent),
-                       leftover_processes_killed=len(leftovers))
+                       launcher_anchors_ignored=anchors, leftover_processes_killed=len(leftovers))
         result = RunResult(self.name, "completed", allowed, transcript=[summary] if summary else [], details=details)
         if sup.status in ("timeout", "cancelled"):
             result.status, result.error = sup.status, f"runner {sup.status} after {sup.duration_seconds:.0f}s"

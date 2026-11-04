@@ -145,7 +145,7 @@ _MARKER = os.environ.get("FC_TEST_HALT_MARKER", "")
 
 def _patch(module):
     original = module.FeatureCoordinator._run_step
-    def halting(self, feature, task, claim, mark, step, record, progress):
+    def halting(self, feature, task, claim, mark, coincident, step, record, progress):
         if step.key == _STEP:
             data = {"pid": os.getpid(), "task": task.id, "step": step.key, "done_steps": record.done_steps(),
                     "checkpoints": [[c.id, c.status, c.commit] for c in record.checkpoints], "at": time.time()}
@@ -158,7 +158,7 @@ def _patch(module):
             while time.monotonic() < deadline:  # frozen at the boundary until the harness kills it
                 time.sleep(0.5)
             os._exit(99)
-        return original(self, feature, task, claim, mark, step, record, progress)
+        return original(self, feature, task, claim, mark, coincident, step, record, progress)
     module.FeatureCoordinator._run_step = halting
 
 class _Finder:

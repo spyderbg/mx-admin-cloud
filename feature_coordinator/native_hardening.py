@@ -140,6 +140,20 @@ def claude_shell_enabled(hardening: NativeHardening) -> bool:
     return hardening.claude_shell == "sandboxed"
 
 
+# Workspace-relative paths the hardened policy anchors as inert, read-only rule placeholders:
+# PROTECTED_AGENT_CONFIG without `.git` (which is the real Git dir, never a placeholder). The Codex
+# `fc_worker` profile marks each as `:workspace_roots` read and materialises it at start-up (an empty
+# file or an empty directory) so its Landlock rule has a target; Claude Code's generated settings deny
+# the agent `Edit(./<entry>)` outright. The agent therefore cannot write these paths, so an inert
+# instance of one is always the trusted CLI's doing, never an agent modification.
+_AGENT_CONFIG_ANCHORS = frozenset(PROTECTED_AGENT_CONFIG) - {".git"}
+
+
+def agent_config_anchors() -> frozenset[str]:
+    """The workspace-relative agent-config placeholder paths (see `_AGENT_CONFIG_ANCHORS`)."""
+    return _AGENT_CONFIG_ANCHORS
+
+
 def harden_claude_settings(settings: dict[str, Any], hardening: NativeHardening, *, workspace: Path,
                            secrets: Sequence[str], home: Path) -> dict[str, Any]:
     """Add the hardened rules to the native Claude Code settings (*settings* is changed and returned)."""

@@ -370,6 +370,9 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
         head = self._head(feature)
         mark = len(self.store.events())
         claim = self.claims.claim(task_id, role=task.role, branch=feature.branch, head_sha=head)
+        # Roles already holding a claim as we start: they overlap this run even if they finish before
+        # it is judged, so their owned paths must stay attributed to them, never to this agent.
+        coincident = {c.get("role") for c in self.store.list_claims().values()} - {task.role}
         self._publish(feature.id)  # "In Progress" on the board while the agent runs (another process)
         try:
             def verifying(commit: str | None) -> None:
@@ -377,14 +380,14 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
                 self.claims.heartbeat(claim, {"phase": "verifying", "commit": commit or ""})
                 self._publish(feature.id)
             if task.steps:
-                result = self._run_steps(feature, task, claim, mark, verifying)
+                result = self._run_steps(feature, task, claim, mark, coincident, verifying)
             else:
                 workspace = ScopedWorkspace(self.policy, task.role, grants=task.grants)
                 context = run_context(
                     self.store.root / "runs", task_id, timeout_seconds=self.config.runtime.task_timeout_seconds,
                     heartbeat=lambda checkpoint: self.claims.heartbeat(claim, dict(checkpoint)),
                     cancelled=lambda: self._cancel_requested(task_id, claim.token),
-                    concurrent_roles=lambda: self._concurrent_roles(mark, task.role),
+                    concurrent_roles=lambda: self._concurrent_roles(mark, task.role, coincident),
                     git_quiet=lambda: self.store.locks.git().acquire(timeout=self.git.lock_timeout))
                 request = RunRequest(task_id, task.role, prompt or self._task_prompt(task), workspace, context=context)
                 run = TaskRun(task_id, TaskState.IN_PROGRESS, self.runners[task.role].run(request))
@@ -474,7 +477,7 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
 
     # -- W3: multi-step tasks and checkpoints -----------------------------------------
 
-    def _run_steps(self, feature: Feature, task: Task, claim: Claim, mark: int,
+    def _run_steps(self, feature: Feature, task: Task, claim: Claim, mark: int, coincident: set[str],  # pylint: disable=too-many-arguments
                    verifying: Callable[[str | None], None]) -> TaskRun:
         """Reconcile, run every remaining step (one invocation + one checkpoint each), verify."""
         runner_name = self.runners[task.role].name
@@ -491,7 +494,7 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
                 continue  # completed by an earlier run: never repeated
             if self._cancel_requested(task.id, claim.token) or stop_requested():
                 return self._defer(run, "run-cancelled", task.role, f"stopped before step {step.key!r}")
-            run = self._run_step(feature, task, claim, mark, step, record, progress)
+            run = self._run_step(feature, task, claim, mark, coincident, step, record, progress)
             if run.state is not TaskState.IN_PROGRESS:
                 return run
             current = self.store.load_task(task.id)
@@ -506,7 +509,7 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
         record_verification(self.store, task.id, run.evidence)
         return result
 
-    def _run_step(self, feature: Feature, task: Task, claim: Claim, mark: int,  # pylint: disable=too-many-arguments,too-many-return-statements
+    def _run_step(self, feature: Feature, task: Task, claim: Claim, mark: int, coincident: set[str],  # pylint: disable=too-many-arguments,too-many-return-statements
                   step: TaskStep, record: CheckpointRecord, progress: dict[str, Any]) -> TaskRun:
         """One bounded agent invocation for *step*, judged like a W2 run, then its checkpoint."""
         base = self._head(feature)
@@ -517,7 +520,7 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
             self.store.root / "runs", f"{task.id}.{step.key}", timeout_seconds=self.config.runtime.task_timeout_seconds,
             heartbeat=lambda data: self.claims.heartbeat(claim, {**progress, **dict(data)}),
             cancelled=lambda: self._cancel_requested(task.id, claim.token),
-            concurrent_roles=lambda: self._concurrent_roles(mark, task.role),
+            concurrent_roles=lambda: self._concurrent_roles(mark, task.role, coincident),
             git_quiet=lambda: self.store.locks.git().acquire(timeout=self.git.lock_timeout))
         request = RunRequest(task.id, task.role, step_prompt(feature, task, record, step, uncommitted=leftovers),
                              ScopedWorkspace(self.policy, task.role, grants=task.grants), context=context,
@@ -583,10 +586,14 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
             lines += ["", f"The coordinator will verify with these checks: {', '.join(task.required_gates)}."]
         return "\n".join(lines)
 
-    def _concurrent_roles(self, mark: int, own: str) -> set[str]:
-        """Roles other than *own* that held a claim since event *mark* (W2: native attribution)."""
+    def _concurrent_roles(self, mark: int, own: str, coincident: set[str] | None = None) -> set[str]:
+        """Roles other than *own* whose run overlapped this one (W2: native attribution): those that
+        claimed after event *mark* (while this run was active), those still holding a claim now, and
+        *coincident* — the roles already running when this run claimed, which may since have finished
+        and dropped out of both other sets but still own the paths they wrote."""
         roles = {e.get("role") for e in self.store.events()[mark:] if e.get("kind") == "claim"}
         roles |= {c.get("role") for c in self.store.list_claims().values()}
+        roles |= coincident or set()
         return {r for r in roles if r and r != own}
 
     def _cancel_requested(self, task_id: str, token: str) -> bool:
