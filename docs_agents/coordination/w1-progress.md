@@ -539,6 +539,39 @@ claimed**: D-21 for the trusted CLI process remains unenforced on this host (blo
 not yet at full W1; the functional native-cli hardening milestone is ready for publication review once the
 operator approves (and, if wanted, one more authorized smoke run to see the integration step finish cleanly).
 
+## Stage 11 — publication to Draft PR #20 (operator-approved 2026-11-04)
+
+The operator approved publishing the verified changes to the existing Draft PR #20, with full D-21/B1
+isolation **explicitly deferred** and **no** further real-agent smoke tests authorized. What is published,
+by category:
+
+- **Functionally verified native-cli hardening** — Decision A (Stage 7): opt-in `runtime.native_hardening`;
+  hardened Claude Code (no Bash tool here, F3) and hardened Codex (`fc_worker` profile, no network, no
+  `--sandbox`); fails closed. Verified by the offline suite and, for authentication and execution, by the
+  real smoke sessions below.
+- **Real subscription smoke-test results** — the authorized repeat ([Stage 10](#stage-10--fix-hardened-parallel-execution--authorized-repeat-smoke-operator-approved-2026-11-04))
+  ran **three** concurrent hardened sessions (Claude Pro ×2, ChatGPT ×1) to **VERIFIED** and committed. The
+  integration step was not re-run end-to-end (single authorization used); that is a harness post-step, not
+  agent execution.
+- **Offline-verified integration guard** — `_integrate` now accepts **only inert** launcher anchors
+  (`inert_launcher_anchor`); a real foreign file still blocks it. Covered by `test_fc_hardened_parallel.py`,
+  not by a real session.
+- **Deferred D-21 / B1** — D-21 for the trusted CLI **process** is **not** enforced on this host. The
+  **original W1 security requirements are NOT fully satisfied**; this milestone is the functional
+  (agent-tool) hardening only.
+- **Changes from synchronizing with `dev`** — merged `origin/dev` (`b1537ba`) into the branch as a merge
+  commit (no rebase, published history preserved). dev contributed only `.claude/settings.local.json`
+  (monitoring service name fix); no code overlap, clean merge, no conflicts to resolve.
+
+**Verification after the merge** (unchanged code; the merge touched one config file only): full suite
+`feature_coordinator/tests` + `scripts/tests` **1051 passed, 23 skipped, 0 failed**; Pylint 10.00/10 on the
+changed modules; docs checks 6/6. Confirmed: native-cli is unchanged with hardening off (opt-in only),
+Claude/Codex subscription auth still supported, parallel hardened execution works, the gitsafe Git-execution
+protection is still enforced, the integration guard excuses only inert anchors, and no protected-path
+restriction was weakened. Published as a fast-forward of `origin/security/worker-d20-d21` (`19e9f6d`); PR #20
+stays **Draft**; not merged into `dev`; the live Worker, services and AppArmor untouched; hardening not
+enabled on the live Worker.
+
 ## Open blockers and operator decisions
 
 ### Blocker B1 — W1's nested isolation is incompatible with this host's AppArmor policy
@@ -571,17 +604,17 @@ Every option still needs (a) the operator-approved real authenticated smoke test
 
 ## Delivery
 
-- Commits are on the local branch `security/worker-d20-d21` in the isolated clone, **not pushed**: the delivery rule allows updating PR #20 only when the implementation is complete, and W1 is not complete (B1). The update is a plain fast-forward of `origin/security/worker-d20-d21` (`19e9f6d`) whenever the operator wants it published: `git push origin security/worker-d20-d21`.
-- Stage 7 adds focused commits on top of Stage 6 (see `git log 439b159..`).
-- PR #20 is unchanged (Draft). Nothing was merged; `dev` and the running Worker were not touched.
+- **Published 2026-11-04** to the existing Draft PR #20 by a fast-forward push of
+  `security/worker-d20-d21` (the previously published `origin/security/worker-d20-d21` `19e9f6d` remained an
+  ancestor; no force-push, no rebase, no new PR, not merged into `dev`). PR #20 stays **Draft** — W1 is not
+  complete (B1).
+- The branch includes `origin/dev` (`b1537ba`) via a merge commit (see [Stage 11](#stage-11--publication-to-draft-pr-20-operator-approved-2026-11-04)).
+- `dev`, the running Worker, its service and AppArmor were not touched; hardening is not enabled on the live
+  Worker.
 
 ## Next action
 
-The parallel bug is **fixed** ([Stage 10](#stage-10--fix-hardened-parallel-execution--authorized-repeat-smoke-operator-approved-2026-11-04)):
-the authorized repeat smoke test ran all **three** hardened subscription sessions to **VERIFIED**,
-committed, concurrently — the Stage 9 failure is resolved. The run exited 1 only at the final, never-opened
-PR-candidate step, on the leftover inert anchors; that guard is fixed too and covered offline (full suite
-1051 passed). The functional native-cli hardening milestone is ready for a **publication review** of Draft
-PR #20 — **pending separate operator approval** and, if wanted, one more authorized smoke run to watch the
-integration step finish. **Full W1 is not complete and D-21 compliance is not claimed**: D-21 for the
-trusted CLI process still needs option B or C (blocker B1).
+Operator review of Draft PR #20 (functional native-cli hardening + gitsafe + parallel fix, verified offline
+and by the three real subscription sessions). **Full W1 remains incomplete and D-21 compliance is not
+claimed**: D-21 for the trusted CLI process still needs option B or C (blocker B1). Optional, with a new
+authorization: one more bounded smoke run to watch the integration step finish end-to-end.
