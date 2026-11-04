@@ -154,11 +154,11 @@ def load_gitlab_config(settings: GitLabIssuesConfig) -> GitLabConfig:
 
 
 def load_github_token() -> str:
-    """GITHUB_PAT — the same token test_environment/mxfix/git_target.py opens PRs with."""
-    token = _resolver()("GITHUB_PAT")
+    """GITHUB_PATH — the same token test_environment/mxfix/git_target.py opens PRs with."""
+    token = _resolver()("GITHUB_PATH")
     if not token:
         raise ConfigError(
-            f"GITHUB_PAT is missing from {ENV_FILE} (or the process environment) — the GitHub issue "
+            f"GITHUB_PATH is missing from {ENV_FILE} (or the process environment) — the GitHub issue "
             "tracker needs it. See test_environment/README.md's \"Issue tracking\" section for the "
             "scopes it needs.",
         )

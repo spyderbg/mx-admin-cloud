@@ -483,7 +483,7 @@ above that line — seeding, config neutralisation, the stub, the E2E suite — 
 ### Secrets: a dedicated local env file, and an allowlist
 
 The repo `.env` holds live `OPENAI_API_KEY`, `ELEVENLABS_API_KEY`, `SPEAKTOR_API_KEY` and
-`GITHUB_PAT`. Two paths would leak them into the test environment:
+`GITHUB_PATH`. Two paths would leak them into the test environment:
 
 1. **Compose precedence** — host environment variables beat `--env-file`, so already-exported
    real keys silently win over the test file.
@@ -589,7 +589,7 @@ third install step there.
 
 ## 9. Configuration
 
-Three new keys in the repo-root `.env` (already gitignored, already holds `GITHUB_PAT`):
+Three new keys in the repo-root `.env` (already gitignored, already holds `GITHUB_PATH`):
 
 ```
 # Via SSH tunnel (recommended — see finding 1):
@@ -761,7 +761,7 @@ pile of issues filed into the wrong repository.
 ## Key findings
 
 **`codex` and `claude` are both installed** (`/Users/spyder/.local/bin/`). **`gh` is not** —
-so opening a PR goes through the GitHub REST API with the `GITHUB_PAT` already in `.env`, via
+so opening a PR goes through the GitHub REST API with the `GITHUB_PATH` already in `.env`, via
 `httpx` (already in the venv). No new dependency, and no MCP: scripts can't call MCP servers.
 
 **`tomllib` is stdlib** on the repo venv (3.12.14), so the config file needs nothing new.
@@ -903,7 +903,7 @@ retried alone in a later run.
 
 - Commit message ends with `Closes #<iid>` and the GitLab issue URL
   (`http://82.103.77.45/marxman/mx-admin/-/issues/<iid>`).
-- Branch pushed to the **GitHub** origin; PR opened via the REST API with `GITHUB_PAT`.
+- Branch pushed to the **GitHub** origin; PR opened via the REST API with `GITHUB_PATH`.
   PR body cross-links the GitLab issue; a GitLab comment links back to the PR.
 - **The issue is not closed when the PR opens.** It stays `status::in-progress` until the PR
   merges — closing on "PR opened" would mark unreviewed work as done.
@@ -987,7 +987,7 @@ can start now.
 | C3 | `CodexFixer` (`codex exec --json --output-schema`) + `preflight()` | C2 |
 | C4 | `ClaudeFixer` (`claude -p`) — proves the interface isn't Codex-shaped | C3 |
 | C5 | `scripts/mxfix/worktree.py` — create/prune under `.mxworktrees/`, dirty-tree refusal | C2 |
-| C6 | `scripts/mxfix/git_target.py` — commit with `Closes #<iid>`, push to GitHub, open PR via REST + `GITHUB_PAT`, cross-link both ways | C5, B6 |
+| C6 | `scripts/mxfix/git_target.py` — commit with `Closes #<iid>`, push to GitHub, open PR via REST + `GITHUB_PATH`, cross-link both ways | C5, B6 |
 | C7 | `strategy/report.py` — check → sync → stop | B7, B8, B9 |
 | C8 | `strategy/heal.py` — sequential loop with `reset` between attempts and feedback re-entry | C3, C5, C6, C7 |
 | C9 | `strategy/batch.py` — parallel fix, merge, single verify | C8 |

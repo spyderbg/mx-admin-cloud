@@ -575,10 +575,10 @@ def cmd_run(args: argparse.Namespace) -> int:
         except git_target.GitTargetError as exc:
             print(f"{RED}Refusing to start {config.strategy} — [git] open_pr is true but {exc}{RESET}", file=sys.stderr)
             return 1
-        github_token = load_env_file(paths.REPO_ROOT / ".env").get("GITHUB_PAT", "")
+        github_token = load_env_file(paths.REPO_ROOT / ".env").get("GITHUB_PATH", "")
         if not github_token and not args.dry_run:
             print(
-                f"{RED}Refusing to start {config.strategy} for real — [git] open_pr is true but GITHUB_PAT is not "
+                f"{RED}Refusing to start {config.strategy} for real — [git] open_pr is true but GITHUB_PATH is not "
                 f"set in .env. Add it, or set open_pr = false / push = false in testenv.toml, or pass --dry-run.{RESET}",
                 file=sys.stderr,
             )
