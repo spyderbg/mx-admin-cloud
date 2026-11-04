@@ -5,6 +5,9 @@
 `stub_server.py` readiness checks, and `testenv.py`). Keep the format to plain
 `KEY=VALUE` lines, one per line, no quoting, no export, no comments-after-value — the
 lowest common denominator both parsers agree on.
+
+The loader also reads the repo-root .env for issue-tracker credentials, where
+matching single or double quotes around values are accepted.
 """
 
 from __future__ import annotations
@@ -31,7 +34,11 @@ SUSPICIOUS_KEY_PREFIXES = ("sk-", "sk_", "glpat-", "ghp_")
 
 
 def parse_env_text(text: str) -> dict[str, str]:
-    """Parse `KEY=VALUE` lines into a dict. Blank lines and `#` comments are skipped."""
+    """Parse `KEY=VALUE` lines, removing matching surrounding value quotes.
+
+    Blank lines and full-line `#` comments are skipped. Quoted contents are literal:
+    no variable expansion or escape processing is performed.
+    """
     result: dict[str, str] = {}
     for raw_line in text.splitlines():
         line = raw_line.strip()
@@ -43,7 +50,10 @@ def parse_env_text(text: str) -> dict[str, str]:
         key = key.strip()
         if not key:
             continue
-        result[key] = value.strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+            value = value[1:-1]
+        result[key] = value
     return result
 
 
