@@ -1,4 +1,5 @@
-"""Real Claude Code / Codex launchers: flag probe, command lines, sandboxed runs (fake agent + fake HOME)."""
+"""Real Claude Code / Codex launchers: flag probe, command lines, sandboxed runs (fake agent + fake HOME;
+brokered through a fake broker since W1 — no runner login is ever mounted)."""
 
 # pylint: disable=missing-function-docstring,redefined-outer-name
 
@@ -18,15 +19,19 @@ import pytest
 from feature_coordinator.config import ProjectConfig
 from feature_coordinator.demo import init_demo_repo
 from feature_coordinator.launchers import (
+    CLAUDE_BROKER_ENV,
     FORBIDDEN_ARGS,
     LAUNCHERS as LAUNCHERS_BY_KIND,
+    MIN_VERSIONS,
     REQUIRED_FLAGS,
     ClaudeCodeLauncher,
     CodexLauncher,
     RealCliRunner,
     _check_forbidden,
+    parse_version,
     probe_runner,
     run_context,
+    version_floor_error,
 )
 from feature_coordinator.operations import SELF_TEST_FILES
 from feature_coordinator.paths import PathPolicy, ScopedWorkspace
@@ -35,7 +40,7 @@ from feature_coordinator.runners import RunRequest
 from feature_coordinator.sandbox import SandboxBuilder, SandboxPlan, install_prefix
 from feature_coordinator.supervisor import supervise
 
-from fc_helpers import FAKE_CREDENTIAL, actions_prompt
+from fc_helpers import FAKE_HOST_LOGIN, actions_prompt, fake_broker_factory
 
 
 @pytest.fixture
@@ -58,7 +63,7 @@ def report_of(result) -> dict:
 
 def test_probe_accepts_a_cli_with_every_required_flag(fake_agent: Path) -> None:
     probe = probe_runner(type(CLAUDE_CODE)(name="claude", kind=ProviderKind.CLAUDE_CODE, executable=str(fake_agent)))
-    assert probe.ok and probe.version == "fake-agent 1.0"
+    assert probe.ok and probe.version == "fake-agent 9.9.9"
 
 
 def test_probe_fails_closed_when_a_flag_is_missing(tmp_path: Path, agent_config: ProjectConfig) -> None:
@@ -81,6 +86,52 @@ def test_bypass_flags_can_never_be_emitted() -> None:
             _check_forbidden(["claude", "-p", flag])
 
 
+def test_versions_below_the_verified_minimum_are_unavailable(tmp_path: Path, agent_config: ProjectConfig) -> None:
+    assert parse_version("2.1.303 (Claude Code)") == (2, 1, 303) and parse_version("codex-cli 0.163.0") == (0, 163, 0)
+    assert MIN_VERSIONS[ProviderKind.CLAUDE_CODE] == (2, 1, 303) and MIN_VERSIONS[ProviderKind.CODEX] == (0, 163, 0)
+    from fc_helpers import FAKE_AGENT  # pylint: disable=import-outside-toplevel
+    old = tmp_path / "old-claude"
+    old.write_text(FAKE_AGENT.read_text(encoding="utf-8").replace('print("fake-agent 9.9.9")', 'print("2.1.200")'),
+                   encoding="utf-8")
+    old.chmod(0o755)
+    profile = type(CLAUDE_CODE)(name="claude", kind=ProviderKind.CLAUDE_CODE, executable=str(old))
+    probe = probe_runner(profile)
+    # The floor is the bwrap backend's (W1); the probe itself (shared with native-cli, W2) stays as before.
+    floor = version_floor_error(probe)
+    assert probe.ok and not probe.missing_flags and "older than the verified minimum 2.1.303" in floor
+    result = RealCliRunner(profile, agent_config, broker_factory=fake_broker_factory()).run(
+        RunRequest("t", "backend", "x", None))  # type: ignore[arg-type]
+    assert result.status == "unavailable" and "2.1.303" in result.error
+
+
+
+def test_legacy_worker_configuration_still_loads_but_mounts_nothing(repo3: Path, tmp_path: Path) -> None:
+    """A W2-W4 Worker configuration names `credential_files` and `runtime.agent_network: true`. It must keep
+    loading (the running Worker's config is never edited by W1), but neither key has any effect on the bwrap
+    backend: no login file is bound and the sandbox never shares the host network (D-20, D-21)."""
+    import yaml  # pylint: disable=import-outside-toplevel
+    from feature_coordinator.cli import EXAMPLE_CONFIG  # pylint: disable=import-outside-toplevel
+    from feature_coordinator.broker_config import ignored_settings  # pylint: disable=import-outside-toplevel
+    from feature_coordinator.config import config_from_mapping  # pylint: disable=import-outside-toplevel
+    data = yaml.safe_load(EXAMPLE_CONFIG.read_text(encoding="utf-8"))
+    data["providers"]["claude"]["credential_files"] = [".claude/.credentials.json"]
+    data["providers"]["codex"]["credential_files"] = [".codex/auth.json"]
+    data["runtime"]["agent_network"] = True
+    legacy = config_from_mapping(data)
+    notes = ignored_settings(legacy)
+    assert any(n.startswith("runtime.agent_network") for n in notes)
+    assert {n.split(" ")[0] for n in notes if n.startswith("providers.")} == {
+        "providers.claude.credential_files", "providers.codex.credential_files"}
+    for role, name in (("backend", "claude"), ("frontend", "codex")):
+        launcher = LAUNCHERS_BY_KIND[legacy.providers[name].kind](legacy.providers[name], legacy, f"/opt/{name}")  # type: ignore[union-attr]
+        spec = launcher.prepare(request_for(repo3, legacy, role, [], tmp_path), tmp_path / f"run-{name}", [role])
+        assert all(".credentials" not in b.source and "auth.json" not in b.source for b in spec.binds)
+        plan = SandboxBuilder(repo3, legacy).plan(run_dir=tmp_path / f"plan-{name}", role=role, env=spec.env,
+                                                   extra=spec.binds)
+        argv = plan.argv(spec.argv)
+        assert "--share-net" not in argv and not any(".credentials" in a or "auth.json" in a for a in argv)
+    assert not ignored_settings(config_from_mapping(yaml.safe_load(EXAMPLE_CONFIG.read_text(encoding="utf-8"))))
+
 def test_claude_settings_allow_only_file_tools_and_role_commands(agent_config: ProjectConfig, tmp_path: Path) -> None:
     launcher = ClaudeCodeLauncher(agent_config.providers["claude"], agent_config, "claude")  # type: ignore[arg-type]
     venv_python = tmp_path / ".venv/bin/python"
@@ -96,6 +147,17 @@ def test_claude_settings_allow_only_file_tools_and_role_commands(agent_config: P
     assert "Read(~/.claude/**)" in deny and "Bash(git commit:*)" in deny and "WebFetch" in deny
     assert launcher.settings("frontend", tmp_path)["permissions"]["allow"] == ["Read", "Glob", "Grep", "Edit", "Write"]
     assert launcher.settings("backend", tmp_path)["permissions"]["defaultMode"] == "acceptEdits"
+    # W1: every Bash command runs in Claude Code's own sandbox, strictly (D-21 nested isolation).
+    sandbox = launcher.settings("backend", tmp_path)["sandbox"]
+    assert sandbox["enabled"] and sandbox["failIfUnavailable"] and sandbox["allowUnsandboxedCommands"] is False
+    assert sandbox["autoAllowBashIfSandboxed"] is False and "enableWeakerNestedSandbox" not in json.dumps(sandbox)
+    assert sandbox["network"] == {"allowedDomains": [], "strictAllowlist": True}
+    assert [e["name"] for e in sandbox["credentials"]["envVars"]] == list(CLAUDE_BROKER_ENV)
+    assert {e["mode"] for e in sandbox["credentials"]["envVars"]} == {"deny"}
+    # The native-cli backend (W2) is not changed by W1: no nested sandbox settings.
+    native = ClaudeCodeLauncher(agent_config.providers["claude"], agent_config, "claude",  # type: ignore[arg-type]
+                                native=True)
+    assert "sandbox" not in native.settings("backend", tmp_path)
 
 
 def test_claude_command_line(repo3: Path, agent_config: ProjectConfig, tmp_path: Path, fake_home: Path) -> None:
@@ -116,8 +178,11 @@ def test_claude_command_line(repo3: Path, agent_config: ProjectConfig, tmp_path:
     prompt = spec.stdin_path.read_text(encoding="utf-8")
     assert "You may write ONLY inside: backend" in prompt and "Do not run Git commands" in prompt
     assert spec.env["DISABLE_AUTOUPDATER"] == "1" and not spec.shadow_writable
-    assert [b.dest for b in spec.binds if b.dest.endswith(".credentials.json")] == [
-        str(fake_home / ".claude/.credentials.json")]
+    # W1 (D-20): nothing is mounted to authenticate, no key or proxy variable is forwarded.
+    assert [b.dest for b in spec.binds] == [str(install_prefix("/opt/claude"))]
+    assert set(spec.env) == {"DISABLE_AUTOUPDATER", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"}
+    assert ClaudeCodeLauncher.broker_environment("T") == {"ANTHROPIC_BASE_URL": "http://127.0.0.1:47613",
+                                                          "ANTHROPIC_AUTH_TOKEN": "T"}
 
 
 def test_codex_command_line(repo3: Path, agent_config: ProjectConfig, tmp_path: Path, fake_home: Path) -> None:
@@ -130,7 +195,15 @@ def test_codex_command_line(repo3: Path, agent_config: ProjectConfig, tmp_path: 
     assert argv[argv.index("-C") + 1] == str(repo3)
     assert "sandbox_workspace_write.network_access=false" in argv
     assert not set(argv) & FORBIDDEN_ARGS
-    assert spec.shadow_writable and spec.env["CODEX_HOME"] == str(fake_home / ".codex")
+    assert spec.shadow_writable and spec.env == {"CODEX_HOME": str(fake_home / ".codex")}
+    # W1: the broker is a custom Responses provider; unknown keys fail (--strict-config); no hosted web search.
+    for override in ('model_provider="fc_broker"', 'model_providers.fc_broker.base_url="http://127.0.0.1:47613/v1"',
+                     'model_providers.fc_broker.env_key="FC_BROKER_TOKEN"',
+                     'model_providers.fc_broker.wire_api="responses"',
+                     'web_search="disabled"', 'shell_environment_policy.inherit="core"'):
+        assert override in argv, override
+    assert "--strict-config" in argv and [b.dest for b in spec.binds] == [str(install_prefix("/opt/codex"))]
+    assert CodexLauncher.broker_environment("T") == {"FC_BROKER_TOKEN": "T"}
 
 
 def test_install_prefix() -> None:
@@ -150,7 +223,8 @@ def test_claude_style_run_is_contained(repo3: Path, agent_config: ProjectConfig,
                {"do": "try_read", "path": str(fake_home / ".claude/.credentials.json")},
                {"do": "try_write", "path": str(fake_home / ".claude/.credentials.json")},
                {"do": "git", "args": ["commit", "--allow-empty", "-m", "x"]}]
-    runner = RealCliRunner(agent_config.providers["claude"], agent_config)  # type: ignore[arg-type]
+    runner = RealCliRunner(agent_config.providers["claude"], agent_config,  # type: ignore[arg-type]
+                           broker_factory=fake_broker_factory())
     result = runner.run(request_for(repo3, agent_config, "backend", actions, tmp_path))
     assert result.status == "completed", result.error
     assert result.changed_paths == ["backend/src/feature.py"]
@@ -158,15 +232,20 @@ def test_claude_style_run_is_contained(repo3: Path, agent_config: ProjectConfig,
     for denied in ("try_write frontend/src/view.ts", "try_write .git/HEAD", "try_write backend/data/users.db"):
         assert not outcomes[denied]["ok"] and "Errno 30" in outcomes[denied]["error"], denied
     assert not outcomes["read .env"]["ok"]
-    # The runner's own credential file is readable (the CLI needs it) but never writable.
-    assert FAKE_CREDENTIAL in outcomes[f"read {fake_home}/.claude/.credentials.json"]["value"]
-    assert not outcomes[f"try_write {fake_home}/.claude/.credentials.json"]["ok"]
+    # W1 (D-20): the runner's login file is not in the sandbox at all (the CLI uses the broker).
+    login = outcomes[f"read {fake_home}/.claude/.credentials.json"]
+    assert not login["ok"] and "FileNotFoundError" in login["error"] and FAKE_HOST_LOGIN not in json.dumps(outcomes)
+    # A write to that path lands in the private HOME (the run directory); the host file is untouched.
+    assert outcomes[f"try_write {fake_home}/.claude/.credentials.json"]["ok"]
+    assert FAKE_HOST_LOGIN in (fake_home / ".claude/.credentials.json").read_text(encoding="utf-8")
+    assert (Path(result.details["run_dir"]) / "home/.claude/.credentials.json").read_text(encoding="utf-8") == "x\n"
     assert not outcomes["git commit --allow-empty -m x"]["ok"]
     assert (repo3 / "frontend/src/view.ts").read_text(encoding="utf-8") == SELF_TEST_FILES["frontend/src/view.ts"]
     env_keys = report_of(result)["env_keys"]
     assert "XDG_STATE_HOME" not in env_keys and "AGENT_QWEN_API_KEY" not in env_keys
     sandbox = json.loads((Path(result.details["run_dir"]) / "sandbox.json").read_text(encoding="utf-8"))
     assert sandbox["writable"] == ["backend", "docs_agents/backend"] and ".env" in sandbox["hidden"]
+    assert "--share-net" not in sandbox["argv"] and not any(".credentials.json" in a for a in sandbox["argv"])
 
 
 @pytest.mark.usefixtures("needs_bwrap")
@@ -175,7 +254,8 @@ def test_codex_style_run_stray_root_write_is_rejected(repo3: Path, agent_config:
     del fake_home
     actions = [{"do": "write", "path": "frontend/src/view.ts", "text": "export const views = ['x']\n"},
                {"do": "write", "path": "NOTES.md", "text": "agent notes at the root\n"}]
-    runner = RealCliRunner(agent_config.providers["codex"], agent_config)  # type: ignore[arg-type]
+    runner = RealCliRunner(agent_config.providers["codex"], agent_config,  # type: ignore[arg-type]
+                           broker_factory=fake_broker_factory())
     result = runner.run(request_for(repo3, agent_config, "frontend", actions, tmp_path))
     assert result.status == "rejected" and result.stray_writes == ["NOTES.md"]
     assert not (repo3 / "NOTES.md").exists()  # it only ever reached the discarded shadow
@@ -187,7 +267,8 @@ def test_new_protected_or_symlink_entries_are_rejected_but_preexisting_secrets_a
         repo3: Path, agent_config: ProjectConfig, tmp_path: Path, fake_home: Path) -> None:
     del fake_home
     (repo3 / "backend/.env.local").write_text("S=1\n", encoding="utf-8")  # pre-existing, untracked
-    runner = RealCliRunner(agent_config.providers["claude"], agent_config)  # type: ignore[arg-type]
+    runner = RealCliRunner(agent_config.providers["claude"], agent_config,  # type: ignore[arg-type]
+                           broker_factory=fake_broker_factory())
     clean = runner.run(request_for(repo3, agent_config, "backend",
                                    [{"do": "write", "path": "backend/src/a.py", "text": "A = 1\n"}], tmp_path))
     assert clean.status == "completed" and clean.changed_paths == ["backend/src/a.py"]
@@ -200,7 +281,8 @@ def test_new_protected_or_symlink_entries_are_rejected_but_preexisting_secrets_a
 @pytest.mark.usefixtures("needs_bwrap")
 def test_failed_run_is_reported(repo3: Path, agent_config: ProjectConfig, tmp_path: Path, fake_home: Path) -> None:
     del fake_home
-    runner = RealCliRunner(agent_config.providers["claude"], agent_config)  # type: ignore[arg-type]
+    runner = RealCliRunner(agent_config.providers["claude"], agent_config,  # type: ignore[arg-type]
+                           broker_factory=fake_broker_factory())
     result = runner.run(request_for(repo3, agent_config, "backend", [{"do": "exit", "code": 3}], tmp_path))
     assert result.status == "failed" and "exit 3" in result.error
 
@@ -262,9 +344,10 @@ def nested_sandbox_decision(label: str, returncode: int | None, stderr: str) -> 
             f"nested bubblewrap is denied on this host: inside the coordinator's sandbox processes run as AppArmor "
             f"{label.strip()!r} (Ubuntu's bwrap-userns-restrict profile) and the nested bwrap failed: "
             f"{refusal[:160]!r}. "
-            "Codex's own sandbox cannot start inside ours; this affects only runtime.execution_backend: bwrap with "
-            "Codex (native-cli and the gates are unaffected). Run this test on a host without that profile; do not "
-            "disable AppArmor or the user-namespace restriction to make it pass (agent-ownership.md §5)"))
+            "Codex's own sandbox — and, since W1, Claude Code's nested Bash sandbox — cannot start inside ours; this "
+            "affects runtime.execution_backend: bwrap (native-cli and the gates are unaffected). Run this test on a "
+            "host without that profile; do not disable AppArmor or the user-namespace restriction to make it pass "
+            "(agent-ownership.md §5, w1-progress.md blocker B1)"))
     return NestedSandbox(False, False, f"nested bubblewrap failed (exit {returncode}, AppArmor label "
                                        f"{label.strip() or 'unreadable'!r}), not the known restriction: "
                                        f"{stderr.strip()[:300]}")
@@ -329,7 +412,7 @@ def frontend_codex_plan(repo3: Path, config: ProjectConfig, run_dir: Path, real:
     """The Frontend sandbox the Codex integration test uses (`real`: the codex binary, bound read-only)."""
     from feature_coordinator.sandbox import Bind  # pylint: disable=import-outside-toplevel
     return SandboxBuilder(repo3, config).plan(
-        run_dir=run_dir, role="frontend", network=True, shadow_writable=True,
+        run_dir=run_dir, role="frontend", shadow_writable=True,
         env={"CODEX_HOME": f"{os.environ['HOME']}/.codex"},
         extra=[Bind(str(install_prefix(real)), str(install_prefix(real)), "ro")] if real else [])
 
@@ -394,9 +477,13 @@ def test_codex_own_sandbox_works_nested_inside_ours(repo3: Path, config: Project
 # -- opt-in host checks (never run by default) ------------------------------------------------
 
 HOST_CHECKS = pytest.mark.skipif(os.environ.get("FC_HOST_RUNNER_CHECKS") != "1",
-                                 reason="set FC_HOST_RUNNER_CHECKS=1 to check real runner logins (no model call)")
-LIVE_SMOKE = pytest.mark.skipif(os.environ.get("FC_LIVE_RUNNER_SMOKE") != "1",
-                                reason="set FC_LIVE_RUNNER_SMOKE=1 for one tiny PAID run per runner (needs approval)")
+                                 reason="set FC_HOST_RUNNER_CHECKS=1 to check that real runner logins stay outside "
+                                        "the sandbox (no model call)")
+LIVE_SMOKE = pytest.mark.skipif(os.environ.get("FC_LIVE_RUNNER_SMOKE") != "1" or
+                                not os.environ.get("FC_LIVE_PROJECT_CONFIG"),
+                                reason="set FC_LIVE_RUNNER_SMOKE=1 and FC_LIVE_PROJECT_CONFIG (a configuration with an "
+                                       "operator-provisioned broker credential) for one tiny PAID run per runner "
+                                       "(needs approval)")
 
 
 def _real_home() -> Path:
@@ -406,22 +493,23 @@ def _real_home() -> Path:
 
 @HOST_CHECKS
 @pytest.mark.usefixtures("needs_bwrap")
-@pytest.mark.parametrize("profile,argv,expect", [
-    (CLAUDE_CODE, ["auth", "status"], '"loggedIn": true'), (CODEX, ["login", "status"], "Logged in")],
-    ids=["claude", "codex"])
-def test_real_login_is_visible_inside_the_sandbox(profile, argv, expect, repo3: Path, config: ProjectConfig,
-                                                  tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The real credentials are bound READ-ONLY into the private HOME; only a boolean is asserted."""
+@pytest.mark.parametrize("profile,argv,logged_in,logged_out", [
+    (CLAUDE_CODE, ["auth", "status"], '"loggedIn": true', '"loggedIn": false'),
+    (CODEX, ["login", "status"], "Logged in", "Not logged in")], ids=["claude", "codex"])
+def test_real_login_is_not_visible_inside_the_sandbox(profile, argv, logged_in, logged_out,  # pylint: disable=too-many-arguments
+                                                      repo3: Path, config: ProjectConfig, tmp_path: Path,
+                                                      monkeypatch: pytest.MonkeyPatch) -> None:
+    """W1 (D-20): with the REAL HOME path, the CLI inside the sandbox sees no login (the operator's
+    files are not mounted and are never read by this test); only the absence is asserted."""
     monkeypatch.setenv("HOME", str(_real_home()))
     real = str(Path(shutil.which(profile.executable)).resolve())
     launcher = LAUNCHERS_BY_KIND[profile.kind](profile, config, real)
     spec = launcher.prepare(request_for(repo3, config, "backend", [], tmp_path), tmp_path / "run", ["backend"])
-    plan = SandboxBuilder(repo3, config).plan(run_dir=tmp_path / "run", role="backend", network=True,
-                                              env=spec.env, extra=spec.binds)
-    sup = supervise(plan.argv([real, *argv]), cwd=repo3, env={"PATH": os.environ["PATH"]},
-                    stdout_path=tmp_path / "s.out", stderr_path=tmp_path / "s.err", timeout_seconds=60)
+    plan = SandboxBuilder(repo3, config).plan(run_dir=tmp_path / "run", role="backend", env=spec.env, extra=spec.binds)
+    supervise(plan.argv([real, *argv]), cwd=repo3, env={"PATH": os.environ["PATH"]},
+              stdout_path=tmp_path / "s.out", stderr_path=tmp_path / "s.err", timeout_seconds=60)
     output = (tmp_path / "s.out").read_text(encoding="utf-8") + (tmp_path / "s.err").read_text(encoding="utf-8")
-    assert sup.exit_code == 0 and expect in output
+    assert logged_in not in output and logged_out in output
 
 
 @LIVE_SMOKE
@@ -430,9 +518,12 @@ def test_real_login_is_visible_inside_the_sandbox(profile, argv, expect, repo3: 
                                                (CODEX, "frontend", "frontend/hello.txt")], ids=["claude", "codex"])
 def test_live_runner_smoke(profile, role: str, path: str, repo3: Path, config: ProjectConfig, tmp_path: Path,
                            monkeypatch: pytest.MonkeyPatch) -> None:
-    """ONE tiny real model run per runner in a disposable repository (operator approval required)."""
+    """ONE tiny real model run per runner in a disposable repository, through the broker with the
+    operator's provisioned credential (operator approval required; separate stage after W1)."""
     import dataclasses  # pylint: disable=import-outside-toplevel
+    from feature_coordinator.config import load_config  # pylint: disable=import-outside-toplevel
     monkeypatch.setenv("HOME", str(_real_home()))
+    config = load_config(Path(os.environ["FC_LIVE_PROJECT_CONFIG"]))
     config = dataclasses.replace(config, runtime=dataclasses.replace(config.runtime, claude_max_budget_usd=0.5,
                                                                      task_timeout_seconds=300))
     runner = RealCliRunner(profile, config)

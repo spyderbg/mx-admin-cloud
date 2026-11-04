@@ -68,7 +68,7 @@ _CRASH = os.environ.get("FC_TEST_SERVICE_CRASH", "")
 
 def _patch_workflow(module):
     original = module.FeatureCoordinator._run_step
-    def pausing(self, feature, task, claim, mark, step, record, progress):
+    def pausing(self, feature, task, claim, mark, coincident, step, record, progress):
         if step.key == _STEP and not os.path.exists(_MARKER):
             with open(_MARKER + ".tmp", "w", encoding="utf-8") as handle:
                 json.dump({"pid": os.getpid(), "step": step.key, "at": time.time()}, handle)
@@ -78,7 +78,7 @@ def _patch_workflow(module):
                 time.sleep(0.05)
             if not _SECONDS:
                 os._exit(99)
-        return original(self, feature, task, claim, mark, step, record, progress)
+        return original(self, feature, task, claim, mark, coincident, step, record, progress)
     module.FeatureCoordinator._run_step = pausing
 
 def _patch_service(module):

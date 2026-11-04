@@ -19,10 +19,10 @@ from feature_coordinator.config import ProjectConfig
 from feature_coordinator.demo import RecordingGates, init_demo_repo
 from feature_coordinator.errors import ClaimError
 from feature_coordinator.model import TaskState
-from feature_coordinator.operations import build_coordinator, build_runners
+from feature_coordinator.operations import build_coordinator
 from feature_coordinator.workflow import FeatureSpec, TaskSpec
 
-from fc_helpers import Holder, actions_prompt, contained, git, start_worker, worker_result
+from fc_helpers import Holder, actions_prompt, fake_runners, git, start_worker, worker_result
 
 SLOW = [{"do": "write", "path": "backend/src/partial.py", "text": "PARTIAL = True\n"},
         {"do": "daemon", "path": "backend/beat.log", "interval": 0.05},
@@ -34,7 +34,7 @@ def lifecycle(tmp_path: Path, state_dir: Path, agent_config: ProjectConfig, fake
     del fake_home
     repo = tmp_path / "life"
     init_demo_repo(repo)
-    coord = build_coordinator(agent_config, repo, state_dir, runners=build_runners(contained(agent_config)))
+    coord = build_coordinator(agent_config, repo, state_dir, runners=fake_runners(agent_config))
     coord.gate_runner = RecordingGates()
     coord.activate(coord.plan(FeatureSpec("life", "Lifecycle", (TaskSpec("api", "backend", "API"),))).id)
     return repo, coord

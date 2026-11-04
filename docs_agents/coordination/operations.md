@@ -9,9 +9,10 @@
 | Step | Command | What it proves |
 | --- | --- | --- |
 | State directory | `python -m feature_coordinator doctor --apply` | Local filesystem (FUSE and network rejected), mode 0700, two-process `flock` contention test |
-| Runners | `python -m feature_coordinator runners` | `claude` and `codex` exist, support every required flag, and get no bypass flag; prints the execution backend, each role's agent, model and exact command line, and — for `native-cli` (W2) — the subscription login each CLI's status command reports. **No model call** |
+| Runners | `python -m feature_coordinator runners` | `claude` and `codex` exist, support every required flag, and get no bypass flag; prints the execution backend, each role's agent, model and exact command line, and — for `native-cli` (W2) — the subscription login each CLI's status command reports; for `bwrap` (W1) also the verified minimum versions, sandbox dependencies and broker credential. **No model call** |
 | Containment | `python -m feature_coordinator sandbox-check` (dry run) | Each role's writable roots, read-only islands and hidden secrets on `--repo` |
-| | `python -m feature_coordinator sandbox-check --apply` | The full containment matrix in a **disposable** repository ([agent-ownership §3](agent-ownership.md#3-containment-matrix-exit-gate-evidence)) |
+| | `python -m feature_coordinator sandbox-check --apply` | The full containment matrix **and the network/credential isolation self-test** (W1) in a **disposable** repository ([agent-ownership §3](agent-ownership.md#3-containment-matrix-exit-gate-evidence), [worker-security §8](worker-security.md#8-security-self-tests)) |
+| Worker eligibility (W1) | `python -m feature_coordinator worker-check --apply` | For the `bwrap` backend: `Worker: ELIGIBLE` only when bwrap, the CLIs, the sandbox dependencies, a broker credential per CLI provider and both self-tests pass; otherwise `INELIGIBLE` with the blockers (exit 1). Never reads or prints a credential value. **No model call** |
 
 ## 2. One feature, step by step
 
@@ -41,7 +42,8 @@ Each run gets `<state>/runs/<task>.<stamp>.<id>/` containing:
 | File | Content |
 | --- | --- |
 | `prompt.txt` | The role prompt |
-| `sandbox.json` | The exact `bwrap` command line, writable roots, overlays, masked and hidden paths |
+| `sandbox.json` | The exact `bwrap` command line, writable roots, overlays, masked and hidden paths, the network mode and the broker endpoint and upstream (never the token) |
+| `broker.log` | One JSON line per model request: method, path, status, reason, sizes, duration (W1; never headers or bodies) |
 | `stdout.jsonl`, `stderr.log` | The runner's output |
 | `home/` | The private HOME |
 
@@ -129,8 +131,10 @@ Enabling the remote server needs, in order:
 | Variable / command | Test | Cost |
 | --- | --- | --- |
 | `python -m feature_coordinator subscription-smoke [--apply]` | W2: three small real tasks (Backend Claude Code `opus`, CLI Claude Code `sonnet`, Frontend Codex default) through the Worker in a new disposable repository; dry run without `--apply` | subscription usage only (no API key); **operator approval required** ([worker-functional §10](worker-functional.md#10-real-subscription-smoke-test-operator-approval-required)); approved and **passed** once on 2026-10-22 (Ubuntu laptop) |
-| `FC_HOST_RUNNER_CHECKS=1` | Real `claude auth status` / `codex login status` inside the sandbox with read-only real credentials; asserts only "logged in" | none (no model call) |
-| `FC_LIVE_RUNNER_SMOKE=1` | One tiny real run per runner in a disposable repository (create `hello.txt`); Claude capped at $0.50 | small; **operator approval required** (approved and run once on 2026-10-17) |
+| `FC_HOST_RUNNER_CHECKS=1` | W1: real `claude auth status` / `codex login status` inside the sandbox with the real HOME path; asserts that **no** login is visible (nothing is mounted or read) | none (no model call) |
+| `FC_LIVE_RUNNER_SMOKE=1` + `FC_LIVE_PROJECT_CONFIG=<config with a broker credential>` (bwrap backend) | One tiny real run per runner through the broker in a disposable repository (create `hello.txt`); Claude capped at $0.50 | per-token API billing; **operator approval required** (the Phase 3 run on 2026-10-17 used the pre-W1 login mount and is not evidence for the broker) |
+
+The installed-CLI compatibility tests (`test_fc_runner_compat.py`) are **not** opt-in: they run the real CLIs offline against a fake provider, at no cost ([worker-security §8](worker-security.md#8-security-self-tests)).
 
 ```bash
 FC_HOST_RUNNER_CHECKS=1 .venv/bin/python -m pytest -p no:cacheprovider feature_coordinator/tests/test_fc_launchers.py -k real_login

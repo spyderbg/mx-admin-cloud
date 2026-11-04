@@ -9,10 +9,12 @@ Inspection:
     doctor [--apply]        state directory checks; --apply creates it and runs the flock self-test
     config [--config FILE]  validate a configuration; check it equals the built-in one
     providers               provider per role; remote Qwen limits and gates (never connects)
-    runners                 probe the installed claude/codex CLIs (--version/--help only) and bwrap
+    runners                 probe the installed claude/codex CLIs (--version/--help only) and bwrap;
+                            report what blocks real runs (sandbox dependencies, broker credential)
     sandbox-check [--role R] [--apply]
-                            show each role's sandbox; --apply runs the containment self-test
-                            in a DISPOSABLE repository
+                            show each role's sandbox; --apply runs the containment and the network/
+                            credential isolation self-tests in a DISPOSABLE repository
+    worker-check [--apply]  W1: is this Worker eligible for real agent execution? (no model call)
     status                  features, tasks, claims (live / stale / heartbeat age), cancel requests
     demo                    the mock end-to-end feature in a temporary repository
     subscription-smoke [--apply] [--workdir DIR]
@@ -52,6 +54,8 @@ Only `github publish poll --apply` (and the Worker service), with github.publish
 branch or opens a pull request — the feature branch and Draft PR of an approved GitHub Issue, never
 anything else; nothing ever merges. Nothing is sent to the remote Qwen server. GitHub Issue writes
 need --apply and stay within github.write_scope (test features only in Phase 4).
+`bwrap` runner sandboxes never share the host network, and no runner login or API key is placed in
+them: the CLI reaches its model only through the host-side broker (W1, D-20/D-21).
 """
 
 from __future__ import annotations

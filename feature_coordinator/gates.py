@@ -112,7 +112,7 @@ class SandboxedGateRunner:
         sandbox_env = dict(GATE_ENV)
         sandbox_env["PATH"] = ":".join([*path_dirs, "/usr/local/bin", "/usr/bin", "/bin"])
         sandbox_env.update(env or {})
-        plan = builder.plan(run_dir=run_dir, role=None, network=False, env=sandbox_env,
+        plan = builder.plan(run_dir=run_dir, role=None, env=sandbox_env,
                             extra=[*binds, *extra], cwd=cwd, hide=[self.log_root.parent])
         stdout, stderr = run_dir / "stdout.log", run_dir / "stderr.log"
         try:

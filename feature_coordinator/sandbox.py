@@ -1,14 +1,19 @@
-"""OS-level write containment with bubblewrap (Phase 3; architecture §11.6, layer 1).
+"""OS-level containment with bubblewrap (Phase 3; architecture §11.6, layer 1; network W1, D-21).
 
 Every real runner and every gate runs inside `bwrap`:
 
-  * new mount, PID, IPC, UTS, cgroup and user namespaces (`--unshare-all`); network only
-    for runners that must reach their model API (`--share-net`), never for gates;
+  * new mount, PID, IPC, UTS, cgroup, user AND network namespaces (`--unshare-all`). The
+    host network is never shared (there is no `--share-net` path in this module): a sandbox
+    has only its own loopback interface, so it cannot reach the internet, the LAN, services
+    on the host's localhost, or host abstract Unix sockets such as the X11 display. A runner
+    reaches its model only through the broker endpoint that netns_channel.py puts into its
+    namespace; gates have no endpoint at all;
   * the sandbox dies with its supervisor (`--die-with-parent`) and gets its own session
     (`--new-session`, no terminal injection); the environment is cleared and rebuilt;
   * /usr and /etc read-only; a private HOME and private /tmp; the rest of the user's home
-    — including the coordinator state directory and other credentials — is not mounted.
-    A runner's own credential files are bound in READ-ONLY;
+    — including the coordinator state directory and every credential (runner logins, SSH,
+    GitHub, browser profiles) — is not mounted. Nothing is mounted to authenticate a runner
+    (D-20): the upstream credential stays with the host-side broker;
   * the repository root is a private SHADOW directory. Every top-level entry of the real
     checkout is bind-mounted into it read-only; then only the role's writable roots are
     bind-mounted read-write on top; then everything inside those roots that the role must
@@ -36,13 +41,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 
+from .gitsafe import SAFE_CONFIG_ARGS, hardened_env
 from .config import ProjectConfig
 from .errors import CoordinatorError
 from .paths import PathPolicy, matches
 
 PRUNE_DIRS = frozenset({"node_modules", ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache", "dist"})
 SYSTEM_DIRS = ("/bin", "/sbin", "/lib", "/lib32", "/lib64", "/libx32")
-DNS_DIRS = ("/run/systemd/resolve",)
 
 
 class SandboxUnavailableError(CoordinatorError):
@@ -66,7 +71,6 @@ class SandboxPlan:  # pylint: disable=too-many-instance-attributes
     repo_root: Path
     shadow: Path
     shadow_writable: bool
-    network: bool
     home: Path
     binds: list[Bind]
     env: dict[str, str]
@@ -81,19 +85,13 @@ class SandboxPlan:  # pylint: disable=too-many-instance-attributes
 
     def argv(self, command: Sequence[str]) -> list[str]:
         """The complete bwrap command line running *command*."""
-        args = [self.bwrap, "--die-with-parent", "--new-session", "--unshare-all"]
-        if self.network:
-            args.append("--share-net")
-        args += ["--ro-bind", "/usr", "/usr"]
+        args = [self.bwrap, "--die-with-parent", "--new-session", "--unshare-all", "--ro-bind", "/usr", "/usr"]
         for path in SYSTEM_DIRS:
             if os.path.islink(path):
                 args += ["--symlink", os.readlink(path), path]
             elif os.path.isdir(path):
                 args += ["--ro-bind", path, path]
         args += ["--ro-bind", "/etc", "/etc"]
-        if self.network:
-            for path in DNS_DIRS:
-                args += ["--ro-bind-try", path, path]
         args += ["--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", "--dir", "/var", "--tmpfs", "/var/tmp"]
         args += ["--bind", str(self.home), os.environ.get("HOME", str(self.home))]
         for bind in self.extra:
@@ -255,16 +253,17 @@ class SandboxBuilder:
                     found.append(rel)
         if not found:
             return []
-        tracked = set(subprocess.run(["git", "-C", str(self.root), "ls-files", "-z", "--", *found],
-                                     capture_output=True, text=True, check=False).stdout.split("\0"))
+        tracked = set(subprocess.run(["git", "-C", str(self.root), *SAFE_CONFIG_ARGS, "ls-files", "-z", "--",
+                                      *found], capture_output=True, text=True, env=hardened_env(),
+                                     check=False).stdout.split("\0"))
         return sorted(rel for rel in found if rel not in tracked)
 
     # -- the plan ------------------------------------------------------------------
 
-    def plan(self, *, run_dir: Path, role: str | None, grants: Sequence[str] = (), network: bool = False,
+    def plan(self, *, run_dir: Path, role: str | None, grants: Sequence[str] = (),
              shadow_writable: bool = False, env: Mapping[str, str] | None = None,
              extra: Sequence[Bind] = (), cwd: Path | None = None, hide: Sequence[Path] = ()) -> SandboxPlan:
-        """A sandbox for *role* (None: everything read-only, e.g. gates)."""
+        """A sandbox for *role* (None: everything read-only, e.g. gates). Always network-isolated."""
         run_dir.mkdir(parents=True, exist_ok=True)
         home, shadow = run_dir / "home", run_dir / "shadow"
         home.mkdir(exist_ok=True)
@@ -299,7 +298,7 @@ class SandboxBuilder:
         # Never expose the coordinator state (claims, tokens) through a bound toolchain prefix.
         hidden_dirs = [str(h) for h in hide if any(_inside(Path(h), Path(b.source)) for b in extra)]
         return SandboxPlan(bwrap=self.bwrap, repo_root=self.root, shadow=shadow, shadow_writable=shadow_writable,
-                           network=network, home=home, binds=binds, env=base_env, cwd=cwd or self.root,
+                           home=home, binds=binds, env=base_env, cwd=cwd or self.root,
                            top_level=frozenset(top_level), writable=tuple(roots), readonly_overlays=tuple(overlays),
                            masked=tuple(masked), hidden=tuple(hidden), extra=list(extra),
                            hidden_dirs=tuple(hidden_dirs))

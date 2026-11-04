@@ -107,12 +107,12 @@ providers:
     kind: claude-code
     executable: claude
     model: ""                            # the provider default ("" or "default": Claude Code's own default)
-    credential_files: [.claude/.credentials.json]   # bwrap backend only: bound READ-ONLY into the sandbox
+    # No credential files (W1, D-20): nothing is mounted into a sandbox to authenticate. A legacy
+    # `credential_files` key is accepted but has no effect (reported by worker-check).
   codex:
     kind: codex
     executable: codex
     model: ""
-    credential_files: [.codex/auth.json]
   remote_qwen:
     # Exact operator profile (v5 §10.1.1). Configuration input, NOT verified behavior.
     kind: openai-compatible
@@ -181,7 +181,7 @@ runtime:
   # Never a silent fallback from one to the other.
   execution_backend: native-cli
   python_interpreter: auto               # auto: <workspace>/.venv/bin/python, else python3; or an absolute path
-  agent_network: true                    # runners need their model API; gates never get network
+  agent_network: false                   # no effect since W1 (D-21): bwrap runners never share the host network
   gate_network: false                    # fixed
   task_timeout_seconds: 3600
   heartbeat_interval_seconds: 10
@@ -196,6 +196,15 @@ runtime:
     backend: ["{python} -m pytest:*", "{python} -m pylint:*", "{python} -m compileall:*"]
     cli: ["{python} -m pytest:*", "{python} -m pylint:*", "kiddo-cli --help:*"]
     coordination: ["{python} scripts/check_docs_agents.py:*"]
+  # W1 decision A: opt-in hardening of the native-cli backend (feature_coordinator/native_hardening.py,
+  # w1-progress.md). It confines the AGENT TOOLS, not the CLI processes, and fails closed (the runner is
+  # unavailable) when this host or CLI version cannot enforce it. Off: native-cli behaves exactly as above.
+  native_hardening:
+    enabled: false
+    claude_shell: disabled               # disabled: no Bash tool | sandboxed: Claude Code's Bash sandbox
+                                         # (UNVERIFIED; needs nested user namespaces, denied on Ubuntu 24.04)
+    codex_home: ""                       # optional Worker-dedicated CODEX_HOME (own ChatGPT login, mode 0700)
+    read_paths: []                       # extra read-only paths for Codex commands, e.g. the node toolchain
 
 # The autonomous Worker service (W4; docs_agents/coordination/worker-autonomy.md). Safe defaults:
 # the service is OFF until autonomous.enabled is set; ONE agent at a time; bounded, category-specific
@@ -227,6 +236,24 @@ worker:
     stop_orphans_after_deadline: true    # an identified orphaned agent is stopped only after its run deadline
   startup:
     failure_limit: 3                     # identical consecutive startup failures → exit 78 (systemd: no restart)
+
+# Host-side authentication broker (W1: D-20, D-21; docs_agents/coordination/worker-security.md).
+# Every real runner sandbox has its own empty network namespace; its CLI reaches the model only
+# through this broker, which holds the upstream credential on the host and forwards approved
+# provider operations to the provider's fixed HTTPS endpoint. No secrets here — at most the
+# absolute HOST paths of API key files (mode 0600, outside every checkout).
+broker:
+  credential_source: none                # none: real runners are UNAVAILABLE (fail closed). api-key-file:
+                                         # a per-token-billed provider API key — an operator decision (D-20);
+                                         # a Claude/ChatGPT subscription login cannot be brokered
+  api_key_files: {}                      # provider name -> absolute host path (api-key-file only)
+  max_request_bytes: 33554432            # 32 MiB per request
+  max_response_bytes: 67108864           # 64 MiB per response; a longer stream is cut off (the run fails)
+  upstream_idle_timeout_seconds: 300.0   # connect / read idle timeout towards the provider
+  max_request_seconds: 1800.0            # total time of one request
+  max_requests_per_run: 1000             # then 429: the run's request budget is spent
+  max_concurrent_requests: 8
+  handshake_timeout_seconds: 30.0        # the sandbox must hand over its broker endpoint within this time
 
 # GitHub Issues adapter (Phase 4). No credentials here: the adapter calls the installed
 # GitHub CLI (`gh api`), which uses its existing login. Issues and labels are the human-

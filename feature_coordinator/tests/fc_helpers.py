@@ -7,11 +7,13 @@ import os
 import subprocess
 import sys
 import textwrap
+import uuid
 from pathlib import Path
 from types import ModuleType
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = REPO_ROOT / "scripts"
+TESTS_DIR = Path(__file__).resolve().parent
 EXAMPLE_CONFIG = REPO_ROOT / "docs_agents" / "coordination" / "project-config.example.yaml"
 
 # (current text, text before the test environment moved into test_environment/ on 2026-10-30)
@@ -57,7 +59,7 @@ def git(repo: Path, *args: str) -> str:
 def child_env() -> dict[str, str]:
     """The environment for worker processes: the coordinator package is importable."""
     env = dict(os.environ)
-    env["PYTHONPATH"] = str(REPO_ROOT) + os.pathsep + env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = os.pathsep.join([str(REPO_ROOT), str(TESTS_DIR), env.get("PYTHONPATH", "")])
     return env
 
 
@@ -99,7 +101,17 @@ class Holder:
 
 
 FAKE_AGENT = Path(__file__).with_name("fc_fake_agent.py")
-FAKE_CREDENTIAL = "FAKE-CREDENTIAL-FOR-TESTS"
+FAKE_CREDENTIAL = "FAKE-CREDENTIAL-FOR-TESTS"  # W4 soak harness (fc_service_soak.py)
+# W1: unique per test session (shared with worker subprocesses through the environment), so a
+# hit anywhere can only come from this run's fakes. None of these is a real credential.
+_SESSION = os.environ.setdefault("FC_TEST_SESSION", uuid.uuid4().hex)
+FAKE_UPSTREAM_KEY = f"FAKE-UPSTREAM-KEY-{_SESSION}"       # what the broker sends upstream
+FAKE_HOST_LOGIN = f"FAKE-HOST-LOGIN-{_SESSION}"           # fake ~/.claude, ~/.codex, ~/.ssh, gh files
+FAKE_ENV_KEY = f"FAKE-ENV-API-KEY-{_SESSION}"             # fake ANTHROPIC_API_KEY / OPENAI_API_KEY on the host
+# The fake HOME (conftest.fake_home): runner logins, SSH, GitHub, Git, browser and keyring files.
+FAKE_HOME_FILES = (".claude/.credentials.json", ".claude.json", ".codex/auth.json", ".ssh/id_ed25519",
+                   ".config/gh/hosts.yml", ".git-credentials", ".netrc", ".mozilla/firefox/profiles.ini",
+                   ".config/google-chrome/Default/Login Data", ".local/share/keyrings/login.keyring")
 
 
 def install_fake_agent(directory: Path, name: str = "fake-agent") -> Path:
@@ -127,6 +139,30 @@ def contained(config):
     return dataclasses.replace(config, runtime=dataclasses.replace(config.runtime, execution_backend="bwrap"))
 
 
+def fake_broker_factory(upstream_port: int | None = None, created: list | None = None):
+    """A broker factory for tests: the FAKE upstream key and a loopback fake provider (by default
+    a port nothing listens on). Every broker it makes is appended to *created*."""
+    from feature_coordinator.broker import ROUTES, AuthBroker, StaticCredential, Upstream  # pylint: disable=import-outside-toplevel
+
+    def factory(profile, config, ctx, repo_root):
+        del repo_root
+        route = ROUTES[profile.kind]
+        broker = AuthBroker(route, StaticCredential(*route.credential(FAKE_UPSTREAM_KEY)), config.broker,
+                            ttl_seconds=(ctx.timeout_seconds or config.runtime.task_timeout_seconds) + 60,
+                            upstream=Upstream("http", "127.0.0.1", upstream_port or 9),
+                            allow_loopback_upstream=True, log_path=ctx.run_dir / "broker.log")
+        if created is not None:
+            created.append(broker)
+        return broker
+    return factory
+
+
+def fake_runners(config, **kwargs):
+    """build_runners() on the `bwrap` backend (contained) with a fake broker (see fake_broker_factory)."""
+    from feature_coordinator.operations import build_runners  # pylint: disable=import-outside-toplevel
+    return build_runners(contained(config), broker_factory=fake_broker_factory(**kwargs))
+
+
 def actions_prompt(actions) -> str:
     """A prompt carrying a fake-agent action list."""
     import json  # pylint: disable=import-outside-toplevel
@@ -145,6 +181,7 @@ from feature_coordinator.operations import build_runners
 from feature_coordinator.store import StateStore
 from feature_coordinator.supervisor import install_termination_handlers
 from feature_coordinator.workflow import FeatureCoordinator
+from fc_helpers import fake_broker_factory
 repo, state, agent, task, prompt = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3], sys.argv[4], sys.argv[5]
 overrides = {"execution_backend": "bwrap", **(json.loads(sys.argv[6]) if len(sys.argv) > 6 else {})}
 config = default_config()
@@ -154,7 +191,8 @@ for name in ("claude", "codex"):
 config = dataclasses.replace(config, providers=providers, runtime=dataclasses.replace(config.runtime, **overrides))
 install_termination_handlers()
 coord = FeatureCoordinator(config, repo, StateStore(state), tracker=MockIssueTracker(state / "tracker.json"),
-                           runners=build_runners(config), gate_runner=RecordingGates())
+                           runners=build_runners(config, broker_factory=fake_broker_factory()),
+                           gate_runner=RecordingGates())
 print("started", flush=True)
 try:
     run = coord.run_task(task, prompt=prompt)
