@@ -424,7 +424,7 @@ src/
 │           └── users.py
 ├── core/                         # No src.services imports (HTTP boundary)
 │   ├── config.py                 # Settings + output path helpers
-│   ├── models.py                 # e.g. GeneratedAudio, RunSummary (service-only types live in the service)
+│   ├── models.py                 # RunSummary, ProviderRunRecord (service types live in each service's models.py)
 │   ├── languages.py
 │   ├── localization.py           # LocalizedString: multilingual str with property access + Pydantic support
 │   ├── result_writer.py
@@ -466,7 +466,7 @@ src/
     │   └── providers/            # file_system provider
     ├── text_to_speech/           # Co-located service (routes + schemas live next to service.py)
     │   ├── __init__.py           # SERVICE_CLASS, SERVICE_NAME, SERVICE_ACCEPT_CRITERIA
-    │   ├── models.py
+    │   ├── models.py             # TTSRequest, GeneratedAudio, TTSProvider base
     │   ├── schemas.py            # Pydantic bodies for /internal/generators/*
     │   ├── routes.py             # /internal/generators/, /{provider}/generate, /generate-word
     │   ├── service.py
@@ -499,7 +499,7 @@ src/
     │   └── providers/             # ffmpeg_optimizer, pydub_optimizer
     ├── evaluation/               # Co-located service (routes + schemas live next to service.py)
     │   ├── __init__.py            # Re-exports engine + score stores
-    │   ├── models.py              # EvaluationServiceProvider base
+    │   ├── models.py              # EvaluationResult, ProviderAggregate, ScoreRecord, EvaluationServiceProvider base
     │   ├── schemas.py             # Pydantic bodies for /internal/evaluators/*
     │   ├── routes.py              # /internal/evaluators, /evaluators/evaluate
     │   ├── service.py             # EvaluationService + EvaluationProviderFactory

@@ -14,11 +14,11 @@ Its configurations also carry the `evaluate` block the [evaluation](../evaluatio
 | --- | --- |
 | [`backend/src/services/text_to_speech/__init__.py`](../../../../backend/src/services/text_to_speech/__init__.py) | Registration (`config_subdir="text_to_speech"`) |
 | [`service.py`](../../../../backend/src/services/text_to_speech/service.py) | `TextToSpeechService`, `TextToSpeechProviderFactory`, `NoActiveTTSProvidersError`, `TTSProviderNotFoundError` |
-| [`models.py`](../../../../backend/src/services/text_to_speech/models.py) | `TTSRequest`, `TTSProvider` contract (`:39`) |
+| [`models.py`](../../../../backend/src/services/text_to_speech/models.py) | `TTSRequest`, `GeneratedAudio` (the generation result; also used by evaluation and voice_optimization), `TTSProvider` contract (`:61`) |
 | [`providers/`](../../../../backend/src/services/text_to_speech/providers/) | Concrete providers |
 | [`routes.py`](../../../../backend/src/services/text_to_speech/routes.py), [`schemas.py`](../../../../backend/src/services/text_to_speech/schemas.py) | HTTP API (`GenerateRequest`, `GenerateWordRequest`, `VoiceSettingsOverride`, `TtsGenerateResult`, `GeneratorProviderInfo`) |
 
-Depends on: `httpx` (the routes pass a shared client into providers), `pyttsx3`, `core.models.GeneratedAudio`, `core.config.settings.raw_output_dir()` (`<OUTPUT_DIR>/tts_audio_<lang>/<provider>/`), `core.log_client`.
+Depends on: `httpx` (the routes pass a shared client into providers), `pyttsx3`, `core.config.settings.raw_output_dir()` (`<OUTPUT_DIR>/tts_audio_<lang>/<provider>/`), `core.log_client`.
 
 ## Service Interface / ServiceProvider Contract
 
@@ -31,7 +31,7 @@ Depends on: `httpx` (the routes pass a shared client into providers), `pyttsx3`,
 | `configured_provider(configuration_name)` → `TTSProvider` | Lookup by configuration name, enabled or not |
 | `generation_parameters(provider_name, request)` → `dict` | Effective parameters (recorded in sidecars and headers) |
 
-**Provider contract:** `TTSProvider(ServiceProvider, ABC)` — `models.py:39` **[V]**.
+**Provider contract:** `TTSProvider(ServiceProvider, ABC)` — `models.py:61` **[V]**.
 
 - **Abstract:** `async generate(request: TTSRequest, client) -> GeneratedAudio`.
 - **Shared, concrete:**

@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, status  # pylint: disable=import-error
 from src.api.dependencies import get_registry, require_internal
 from src.api.service_resolver import get_typed_service
 from src.core.config import settings
-from src.core.models import GeneratedAudio
+from src.services.text_to_speech.models import GeneratedAudio
 from src.services import text_to_speech
 from src.services.evaluation import EvaluationEngine, JsonScoreStore, MultiScoreStore, SQLiteScoreStore
 from src.services.evaluation.schemas import EvaluateRequest

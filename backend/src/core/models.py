@@ -1,33 +1,12 @@
-"""Core dataclasses: audio results shared across services, and TTS pipeline run records.
+"""Core dataclasses: TTS pipeline run records (used by ``result_writer``).
 
-A type that only one service uses belongs in that service's ``models.py``.
+Service value types live in their service's ``models.py`` (e.g. ``GeneratedAudio`` in ``text_to_speech``).
 """
 
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from pathlib import Path
 from typing import Any
-
-
-@dataclass(slots=True)
-class GeneratedAudio:  # pylint: disable=too-many-instance-attributes
-    """Result of a single TTS generation attempt by one provider."""
-
-    provider: str  # provider produced this audio
-    request_id: str  # matching TTSRequest.request_id
-    language_code: str  # ISO language code
-    language_name: str  # human-readable language name
-    expected_text: str  # reference text for evaluation
-    filename_text: str  # sanitized text for the output filename
-    output_format: str  # audio format, e.g. "mp3"
-    raw_path: Path  # path to the raw generated audio file
-    raw_extension: str  # file extension of the raw audio
-    latency_seconds: float  # wall-clock generation time
-    success: bool  # whether generation succeeded
-    error: str | None = None  # error message on failure
-    normalized_path: Path | None = None  # path after normalization (if any)
-    normalization_error: str | None = None  # normalization error (if any)
 
 
 @dataclass(slots=True)

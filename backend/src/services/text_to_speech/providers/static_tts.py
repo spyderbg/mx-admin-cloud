@@ -10,8 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from src.core.config import settings
-from src.core.models import GeneratedAudio
-from src.services.text_to_speech.models import TTSProvider, TTSRequest
+from src.services.text_to_speech.models import GeneratedAudio, TTSProvider, TTSRequest
 from src.services.text_to_speech.service import TextToSpeechProviderFactory
 
 _VOICE_LANGUAGE = "en"

@@ -25,7 +25,7 @@ It was designed as the last step of the TTS pipeline (`Translate → Generate �
 | [`models.py`](../../../../backend/src/services/evaluation/models.py) | `EvaluationResult`, `ProviderAggregate`, `ScoreRecord` value types; `EvaluationServiceProvider` — **no implementations** |
 | [`routes.py`](../../../../backend/src/services/evaluation/routes.py), [`schemas.py`](../../../../backend/src/services/evaluation/schemas.py) | HTTP API, `EvaluateRequest` |
 
-Depends on: `src.services.text_to_speech` (its configurations hold the `evaluate` blocks), `core.models.GeneratedAudio`, `core.log_client.log_provider_request`, `httpx`, external STT APIs.
+Depends on: `src.services.text_to_speech` (its configurations hold the `evaluate` blocks), `text_to_speech.models.GeneratedAudio`, `core.log_client.log_provider_request`, `httpx`, external STT APIs.
 
 ## Service Interface / ServiceProvider Contract
 

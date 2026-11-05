@@ -73,8 +73,7 @@ domains separable. The issues are where the boundaries are not actually respecte
 ### 2.1 The documented `core/ → services/` boundary is violated
 - README/CLAUDE.md state "`core/` has **zero** imports from `services/`". In reality
   `src/core/log_client.py:17–31` imports route constants and schemas from
-  `src.services.logging.routes` / `.schemas`, and `src/core/config.py:9` imports
-  `GeneratedAudio` from `src.core.models` (fine) but also gets imported *by* nearly every service —
+  `src.services.logging.routes` / `.schemas`, while `core` also gets imported *by* nearly every service —
   making `core` both below and above services in practice.
 - Either enforce the boundary (move the logging wire-contract into `core/` or into a shared
   `contracts/` package, and have the services import it) or drop the claim from the docs. An

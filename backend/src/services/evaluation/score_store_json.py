@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from src.core.utils import JsonObjectReadError, read_json_object
-from src.core.models import GeneratedAudio
+from src.services.text_to_speech.models import GeneratedAudio
 from src.services.evaluation.models import EvaluationResult, ProviderAggregate, ScoreRecord
 from .score_store import ScoreStore
 

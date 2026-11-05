@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from src.core.models import GeneratedAudio
+from src.services.text_to_speech.models import GeneratedAudio
 from src.services.voice_optimization import normalizer
 
 

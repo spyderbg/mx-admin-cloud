@@ -8,7 +8,7 @@ from typing import Any
 
 from src.services.logging.schemas import LogProviderRequest
 from src.core.log_client import log_provider_request
-from src.core.models import GeneratedAudio
+from src.services.text_to_speech.models import GeneratedAudio
 from ..models import TTSProvider, TTSRequest
 from ..service import TextToSpeechProviderFactory
 

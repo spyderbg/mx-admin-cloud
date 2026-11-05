@@ -9,9 +9,8 @@ from typing import Any
 
 import pytest
 
-from src.core.models import GeneratedAudio
 from src.services.provider_strategy import AllProvidersFailedError, ProviderSelectionStrategy
-from src.services.text_to_speech.models import TTSProvider, TTSRequest
+from src.services.text_to_speech.models import GeneratedAudio, TTSProvider, TTSRequest
 from src.services.text_to_speech.service import (
     NoActiveTTSProvidersError,
     TTSProviderNotFoundError,

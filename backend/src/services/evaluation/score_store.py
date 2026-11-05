@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from src.core.models import GeneratedAudio
+from src.services.text_to_speech.models import GeneratedAudio
 from src.services.evaluation.models import EvaluationResult, ProviderAggregate, ScoreRecord
 
 

@@ -7,7 +7,7 @@ import shutil
 from pathlib import Path
 
 from src.core.config import settings
-from src.core.models import GeneratedAudio
+from src.services.text_to_speech.models import GeneratedAudio
 
 
 def _build_output_stem_from_result(generated_audio: GeneratedAudio) -> str:
