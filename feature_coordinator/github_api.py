@@ -366,7 +366,7 @@ def parse_pull(data: Any) -> PullRequest:
     if number <= 0 or state not in ("open", "closed"):
         raise GitHubResponseError(f"{where}: invalid number or state")
     head, head_sha, head_repo = _pull_end(data.get("head"), "head", where)
-    base, _base_sha, base_repo = _pull_end(data.get("base"), "base", where)
+    base, base_sha, base_repo = _pull_end(data.get("base"), "base", where)
     merged_at = _optional_text(data, "merged_at", _ISO_RE, where)
     merged = data.get("merged", bool(merged_at))
     url, body = data.get("html_url") or "", data.get("body") or ""
@@ -382,7 +382,8 @@ def parse_pull(data: Any) -> PullRequest:
                        merged_by=_login(merged_by, where) if merged_by else "",
                        merge_commit_sha=_optional_text(data, "merge_commit_sha", _SHA_RE, where),
                        author=_login(data.get("user"), where), url=url,
-                       node_id=_optional_text(data, "node_id", _NODE_ID_RE, where), id=_field(data, "id", int, where))
+                       node_id=_optional_text(data, "node_id", _NODE_ID_RE, where), id=_field(data, "id", int, where),
+                       base_sha=base_sha)
 
 
 def _operation_name(query: str) -> str:

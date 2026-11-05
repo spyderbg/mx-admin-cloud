@@ -353,3 +353,19 @@ github:
     receipt_wait_seconds: 900            # a `worker:approve` label without a receipt for this long is refused
     conventions_files: [AGENTS.md, CLAUDE.md]  # read by the coordinator into the planning prompt
     max_conventions_characters: 6000
+  # W4.6.1 (R1) independent AI review of a published Draft PR (docs_agents/coordination/github-intake.md §13).
+  # An OPERATOR runs `python -m feature_coordinator github review run FEATURE --apply`: the Desktop Worker's
+  # Claude Code (subscription login, NO tools, outside the checkout) reviews the PR's diff at its verified head
+  # against the approved Issue and plan; the coordinator validates the answer, records the outcome (PASS,
+  # PASS_WITH_NOTES, REQUEST_CHANGES or ERROR) and posts one comment on the PR. Advisory only: nothing merges.
+  # The Worker service never starts a review in R1. Needs github.intake and github.publish. Off by default.
+  review:
+    enabled: false
+    provider: claude                     # a Claude Code provider (R1: no Codex reviewer, no fallback provider)
+    model: opus                          # validated like a role model; "default" = the CLI's own default
+    independence: prefer                 # prefer | require (require: ERROR when reviewer = an implementer's model)
+    timeout_seconds: 600                 # one reviewer invocation (60..1800)
+    max_attempts: 1                      # reviewer invocations per review (1..3)
+    unavailable_wait_seconds: 3600       # a reviewer unavailable this long makes the review ERROR (60..86400)
+    max_diff_characters: 150000          # a larger diff is not reviewed (ERROR), never truncated
+    max_findings: 30                     # more findings is invalid reviewer output (1..100)

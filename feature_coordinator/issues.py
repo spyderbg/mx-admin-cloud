@@ -178,6 +178,7 @@ class PullRequest:  # pylint: disable=too-many-instance-attributes
     url: str = ""
     node_id: str = ""
     id: int = 0
+    base_sha: str = ""           # W4.6.1: GitHub's `base.sha` (audit only; the review binds its own merge base)
 
 
 class TrackerClient(Protocol):
@@ -434,6 +435,7 @@ class MockIssueTracker:  # pylint: disable=too-many-public-methods,too-many-inst
         self.legacy_coordinator = legacy_coordinator
         self.issues: dict[int, dict[str, Any]] = {}
         self.prs: dict[int, PullRequest] = {}
+        self.pr_comments: dict[int, list[dict[str, Any]]] = {}  # W4.6.1: a PR's conversation comments
         self.labels: dict[str, list[str]] = {}
         self.calls: list[str] = []
         self.writes = 0
@@ -458,6 +460,7 @@ class MockIssueTracker:  # pylint: disable=too-many-public-methods,too-many-inst
         data = json.loads(self.path.read_text(encoding="utf-8"))
         self.issues = {int(k): v for k, v in data["issues"].items()}
         self.prs = {int(k): PullRequest(**v) for k, v in data["prs"].items()}
+        self.pr_comments = {int(k): v for k, v in data.get("pr_comments", {}).items()}
         self.labels = dict(data.get("labels", {}))
         self._next = int(data["next"])
         self._next_comment = int(data.get("next_comment", 1000))
@@ -472,7 +475,8 @@ class MockIssueTracker:  # pylint: disable=too-many-public-methods,too-many-inst
         data = {"next": self._next, "next_comment": self._next_comment, "clock": self._clock, "writes": self.writes,
                 "issues": {str(n): i for n, i in self.issues.items()},
                 "prs": {str(n): asdict(p) for n, p in self.prs.items()}, "labels": self.labels,
-                "runs": {str(n): r for n, r in self.runs.items()}, "next_event": self._next_event}
+                "runs": {str(n): r for n, r in self.runs.items()}, "next_event": self._next_event,
+                "pr_comments": {str(n): c for n, c in self.pr_comments.items()}}
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
         tmp.replace(self.path)
@@ -597,6 +601,8 @@ class MockIssueTracker:  # pylint: disable=too-many-public-methods,too-many-inst
     def list_comments(self, number: int) -> list[RemoteComment]:
         """Comments, oldest first."""
         with self._op(f"list_comments:{number}", write=False):
+            if number in self.prs:  # W4.6.1: a pull request's conversation
+                return [RemoteComment(**c) for c in self.pr_comments.get(number, [])]
             return [RemoteComment(**c) for c in self._record(number)["comments"]]
 
     def create_comment(self, number: int, body: str) -> RemoteComment:
@@ -606,6 +612,13 @@ class MockIssueTracker:  # pylint: disable=too-many-public-methods,too-many-inst
     def add_comment_as(self, number: int, body: str, author: str) -> RemoteComment:
         """Comment as *author* (tests: a human operator or a stranger)."""
         with self._op(f"create_comment:{number}", write=True):
+            if number in self.prs:  # W4.6.1: a comment on a pull request's conversation
+                self._next_comment += 1
+                comment = {"id": self._next_comment, "author": author, "body": body, "created_at": self._tick(),
+                           "url": f"mock://pull/{number}#issuecomment-{self._next_comment}"}
+                comment["updated_at"] = comment["created_at"]
+                self.pr_comments.setdefault(number, []).append(comment)
+                return RemoteComment(**comment)
             rec = self._record(number)
             self._guard(rec)
             self._next_comment += 1
@@ -640,7 +653,9 @@ class MockIssueTracker:  # pylint: disable=too-many-public-methods,too-many-inst
             head_sha = (self.ref_resolver(head) or "") if self.ref_resolver is not None else ""
             if self.ref_resolver is not None and not head_sha:
                 raise GitHubValidationError(f"POST pulls: HTTP 422: no head branch {head!r}", status=422)
-            return self._new_pull(head, base, title, body, author=self.viewer, head_sha=head_sha, draft=draft)
+            base_sha = (self.ref_resolver(base) or "") if self.ref_resolver is not None else ""
+            return self._new_pull(head, base, title, body, author=self.viewer, head_sha=head_sha, draft=draft,
+                                  base_sha=base_sha)
 
     def _new_pull(self, head: str, base: str, title: str, body: str, **fields: Any) -> PullRequest:  # pylint: disable=too-many-arguments
         number = self._next

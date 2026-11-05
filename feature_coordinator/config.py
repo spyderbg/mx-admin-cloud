@@ -1,26 +1,22 @@
 """Project configuration: roles, write scopes, protected paths, providers and gates.
 
-`default_config()` is the mx-admin-cloud configuration. The documented example
-docs_agents/coordination/project-config.example.yaml must load into exactly the same
-object (a test enforces that), so the example can never drift from the code.
+`default_config()` is the mx-admin-cloud configuration. The documented example docs_agents/coordination/
+project-config.example.yaml must load into exactly the same object (a test enforces that): it can never drift.
 
 Fixed v5 safety ceilings are validated, not configurable: one writer per role, one
 execution host, one shared checkout per feature, one final PR per feature, and a single
 serialized Git mutation coordinator. A configuration that tries to relax them is rejected.
 
-Path patterns are deliberately simple so that disjointness between roles is provable:
-owned/excluded paths are either `<dir>/**` (a subtree) or an exact relative file path.
-Protected and approval-required lists may additionally use `*` within one path segment
-and a leading `**/` (any depth, e.g. `**/.env`).
+Path patterns are deliberately simple so that disjointness between roles is provable: owned/excluded paths are
+either `<dir>/**` (a subtree) or an exact relative file path. Protected and approval-required lists may
+additionally use `*` within one path segment and a leading `**/` (any depth, e.g. `**/.env`).
 
-Phase 3 adds the runtime section (OS containment, timeouts, heartbeats, per-role command
-allowlists for Claude Code), baseline-aware lint gates (D-19) and the list of gates that
-are unsafe to run against a real checkout (B-7).
+Phase 3 adds the runtime section (OS containment, timeouts, heartbeats, per-role command allowlists for Claude
+Code), baseline-aware lint gates (D-19) and the list of gates that are unsafe to run against a real checkout (B-7).
 
-Phase 4 adds the `github` section: the repository, the coordinator identity written into
-every Issue it owns, the write scope (test features only during Phase 4), the operators
-whose Issue-comment commands are accepted, and retry/rate-limit bounds. It holds no
-credentials: the adapter uses the existing `gh` login.
+Phase 4 adds the `github` section: the repository, the coordinator identity written into every Issue it owns,
+the write scope (test features only during Phase 4), the operators whose Issue-comment commands are accepted,
+and retry/rate-limit bounds. It holds no credentials: the adapter uses the existing `gh` login.
 
 The Phase 4 extension adds `github.project`: the GitHub Projects (v2) board that shows the coordinator's
 Issues (owner, number and GraphQL node ID, the projects that must never be written, the Status options and
@@ -29,6 +25,7 @@ the Agent / Feature ID / Blocked Reason fields); off by default, `default_config
 W4.3.1 adds `github.intake` (intake.py): an Issue a command author approves with `/worker approve <role>
 <spec-sha256>` becomes one feature with one task of that role, verified by its `role_gates`. Off by default.
 W4.5 adds `github.planning` (planning_config.py): label-approved, multi-task execution plans (intake_plan.py).
+W4.6.1 adds `github.review` (review_config.py): the advisory, independent AI review of a published Draft PR.
 
 W4.3.3 adds `github.publish` (publish.py): such a feature is integrated, its own branch pushed, ONE
 Draft PR opened to its base branch, and — after a person merged it — completed, its Issue closed and its
@@ -54,6 +51,7 @@ from .broker_config import BrokerConfig, broker_from_mapping, validate_broker
 from .errors import ConfigError, ProviderError
 from .native_hardening import NativeHardening, hardening_from_mapping, validate_hardening
 from .planning_config import GitHubPlanningConfig, planning_from_mapping, validate_planning
+from .review_config import GitHubReviewConfig, review_from_mapping, validate_review
 from .providers import (
     CLAUDE_CODE,
     CODEX,
@@ -297,6 +295,7 @@ class GitHubConfig:  # pylint: disable=too-many-instance-attributes
     intake: GitHubIntakeConfig = field(default_factory=GitHubIntakeConfig)
     publish: GitHubPublishConfig = field(default_factory=GitHubPublishConfig)
     planning: GitHubPlanningConfig = field(default_factory=GitHubPlanningConfig)
+    review: GitHubReviewConfig = field(default_factory=GitHubReviewConfig)
 
     @property
     def owner(self) -> str:
@@ -465,6 +464,7 @@ def validate(config: ProjectConfig) -> None:
     _validate_github(config.github)
     _validate_intake(config)
     validate_planning(config)
+    validate_review(config)
     _validate_worker(config.worker)
     if not config.allowed_state_filesystems or any(fs.startswith("fuse") for fs in config.allowed_state_filesystems):
         raise ConfigError("allowed_state_filesystems must be non-empty and must not include FUSE filesystems")
@@ -914,7 +914,7 @@ def _github_from_mapping(data: Mapping[str, Any]) -> GitHubConfig:
         raise ConfigError(f"unknown github keys: {sorted(unknown)} (tokens and endpoints never belong here)")
     values: dict[str, Any] = {}
     nested = {"project": _project_from_mapping, "intake": _intake_from_mapping, "publish": _publish_from_mapping,
-              "planning": planning_from_mapping}
+              "planning": planning_from_mapping, "review": review_from_mapping}
     for key in known & set(data):
         default, raw = getattr(defaults, key), data[key]
         if key in nested:
