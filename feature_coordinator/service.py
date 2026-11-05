@@ -7,7 +7,7 @@
      integrated, pushed, opened as ONE Draft PR, and completed once a person merged it); W4.3.1: when
      `github.intake.enabled`, at most every `poll_interval_seconds` a GitHub intake poll (intake.py):
      an Issue an operator approved with `/worker approve` is planned and, on a free checkout,
-     activated — the approval is the operator's plan and activation;
+     activated — the approval is the operator's plan and activation (W4.5: also `worker:*` labels);
   2. the active feature — only one an operator planned AND activated; nothing else is started;
   3. the checkout: workspace identity/branch/base (W2), the feature's Worker lock (so
      `python -m feature_coordinator work` cannot drive it at the same time), and claims: a LIVE claim (a manual
@@ -321,15 +321,16 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
         is seen before a closed Issue could look like a withdrawn approval — then the W4.3.1 intake poll
         (newly approved Issues become tasks; approved texts are checked, intake.py). A failure is recorded
         once per distinct error; the service goes on (the next poll retries)."""
-        from .intake_poll import IntakePoller  # pylint: disable=import-outside-toplevel
+        from .intake_poll import IntakePoller, planning_hooks  # pylint: disable=import-outside-toplevel
         from .publish import PullRequestPublisher  # pylint: disable=import-outside-toplevel
+        hooks = planning_hooks(self.store, lambda: self._beat(self.clock()))  # W4.5: while a planner runs
         for name, cfg, poller in (("publish", self.config.github.publish, PullRequestPublisher),
                                   ("intake", self.config.github.intake, IntakePoller)):
             if not cfg.enabled or now - self._polled_at.get(name, float("-inf")) < cfg.poll_interval_seconds:
                 continue
             self._polled_at[name] = now
             try:
-                report = poller(self.coord).poll(apply=True)
+                report = poller(self.coord, **(hooks if name == "intake" else {})).poll(apply=True)
                 lines, error = report.lines(), "; ".join(report.deferred)
                 if name == "publish":
                     self._publication = report.service_state()
@@ -712,8 +713,7 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
         return self._checkpoint_problem(task) if task.steps else None
 
     def _checkpoint_problem(self, task: Task) -> Outcome | None:
-        """W3 consistency of a multi-step task's checkpoints (an unreadable record is CRITICAL for
-        this task only)."""
+        """W3 consistency of a multi-step task's checkpoints (an unreadable record is CRITICAL for this task only)."""
         try:
             conflicts = inspect(self.coord, task.id).conflicts
         except CoordinatorError as exc:

@@ -5,6 +5,8 @@
 
 A task can start as a GitHub Issue. Nobody writes a YAML file: an operator approves the Issue with a comment, and the approved text becomes one task for the existing coordinator and Worker. Before approval nothing happens. After approval the text is fixed.
 
+W4.5 (§12, offline-tested, off by default) adds a label-driven path: `worker:plan` asks the Desktop Worker for a validated multi-task execution plan, published on the Issue, and `worker:approve` approves that exact Issue text and plan version without copying a digest.
+
 ## 1. Create the Issue
 
 Open an Issue by hand or with any tool. The **title** names the task. The **body** is the complete task specification: it is given to the agent as written. Before approval:
@@ -139,7 +141,7 @@ All of them are `python -m feature_coordinator github intake …`; `--tracker lo
 ## 9. Limitations
 
 - **Real approvals tested, bounded:** the original W4.3.1 tests used mock Issues, but real approvals for Issues #25 and #29 were later accepted by intake and executed. This is supervised happy-path evidence, not evidence that shared credentials prevent approval impersonation or that live failures recover safely.
-- **One task per Issue.** Multi-step and multi-role work still needs a planned feature (`python -m feature_coordinator plan`).
+- **One task per `/worker approve`.** Multi-role work from one Issue needs a label-approved execution plan (W4.5, §12) or a planned feature (`python -m feature_coordinator plan`).
 - **No `/feature hold|release` on approved Issues:** use the local commands. The coordinator closes the Issue only through W4.3.3 publication (§10), after the verified merge of its PR; with publication off, a person closes it.
 - **Detection delay while an agent runs:** the service re-reads the Issue every `poll_interval_seconds`, and a run without the service (`python -m feature_coordinator launch`) is not re-read until it ends. An edit in that window can therefore be verified and then immediately withdrawn by the read after the claim is released. The verification never reaches the board or integration, but it does appear in the task's history (`verified → ready → needs-human`).
 - **The approved body is prompt text.** The role's path policy and the post-run checks still bound what an agent may change, but `native-cli` is not a filesystem sandbox ([worker-functional.md](worker-functional.md)).
@@ -303,3 +305,162 @@ Fixed, not configurable: Draft PRs only, the feature's base branch as the target
 The operator re-ran **4/4** selected Git/GitHub transient-error tests and **11/11** selected publisher-interruption tests on the W4.4 baseline. Verified cases include an unreachable Git remote, HTTP 503 on PR create, an uncertain PR-create response recovered by adoption, transient GitHub waits, an uncertain push, a crash after PR creation, **eight** crash points before/after push, create, completion, comment and Issue closure, and idempotent re-polling/restarts. The tests use **disposable local Git and mock GitHub**, checking exactly one PR and completion comment where applicable; **they do not reproduce a failure against the real GitHub service**.
 
 W4.4's separate four-session real Claude/Codex smoke used a **no-remote** disposable repository and a GitHub shim that was never called. Its 69/69 success is evidence of agent and checkpoint recovery, **not** live GitHub outage handling. See [W4.4 acceptance](w44-reliability-acceptance.md). No new real GitHub Issue, PR or Project #2 item was created for W4.4 testing.
+
+## 12. Label-driven planning and approval (W4.5)
+
+> Status: **implemented and tested offline only** (mock GitHub, fake planner, the Action's real receipt code against the mock). Not activated: `github.planning.enabled` defaults **false**, and the workflow runs only once it is on the default branch (`main`). Code: `feature_coordinator/plan_digest.py` (canonical JSON, digests, markers; standard library only), `planning.py` (plan schema, deterministic validation, plan record, rendering), `planner.py` (the AI Feature Planner), `intake_plan.py` (the labels), `planning_commands.py`; `.github/workflows/worker-issue-labels.yml` and `.github/scripts/worker_issue_labels.py`. Tests: `feature_coordinator/tests/test_fc_issue_planning.py`.
+
+A second way to approve an Issue, next to `/worker approve` (§2), which stays unchanged. The person never chooses a role or copies a digest: the Desktop Worker proposes an execution plan, the person reviews it on the Issue and approves it with a label.
+
+### 12.1 The labels
+
+| Label | Set by | Meaning |
+| --- | --- | --- |
+| `worker:plan` | a person | Plan this Issue (again). Each new label event is one request. |
+| `worker:ready-for-review` | the coordinator | Plan version N is published on the Issue and waits for review. |
+| `worker:approve` | a person | Approve exactly the current Issue text and the newest published plan version. |
+| `worker:approved` | the coordinator | The approval was validated; the feature is planned (and activated when the checkout is free). |
+
+`python -m feature_coordinator github planning labels --apply` creates the four labels once (existing labels are never edited).
+
+### 12.2 What a person sees
+
+1. Open and discuss the Issue as usual. Nothing happens.
+2. Add **`worker:plan`**. Within a poll interval the Worker posts **one** comment, "Execution plan vN": the feature title and acceptance criteria, a table of tasks (ID, title, role, dependencies, gates), each task's instructions and intended paths, the integration gates, the plan digest, and how to approve or revise. `worker:plan` is replaced by `worker:ready-for-review`.
+3. Review it. To change it, edit the Issue if needed, then remove and re-add `worker:plan`: a new version is published; any earlier approval no longer applies. Editing the Issue's title or body makes the published plan **stale** (one notice; `worker:ready-for-review` removed).
+4. Add **`worker:approve`**. The workflow posts an *Approval receipt* (as `github-actions[bot]`); the Worker validates it, records the approval, replaces the labels with `worker:approved`, posts one acknowledgement and plans the feature with the plan's tasks. From here on it is the ordinary intake lifecycle (§3–§6, §10): recorded text, fail closed on any change, one feature per checkout, Draft PR, human merge.
+
+A refused request or approval gets **one** notice saying why, and its label is removed. If the planner cannot assign the work within the role policies (a disabled role, a protected or approval-required path, unclear scope), it is **not** forced: the Issue gets a "Plan needs an operator" notice and nothing is published.
+
+Example single-task plan (Issue "Export category items as CSV"):
+
+| Task | Role | Depends on | Gates |
+|---|---|---|---|
+| `cli-export` — Add `content export-items` | cli | — | `cli-lint`, `docs-check` |
+
+Example multi-role plan (Issue "Category export across the stack"):
+
+| Task | Role | Depends on | Gates |
+|---|---|---|---|
+| `api` — CSV export endpoint | backend | — | `backend-tests`, `backend-lint`, `docs-check` |
+| `ui` — Export button | frontend | `api` | `frontend-type-check`, `frontend-build`, `docs-check` |
+| `cli` — `content export-items` | cli | `api` | `cli-lint`, `docs-check` |
+| `docs` — Coordination notes | coordination | `api`, `cli`, `ui` | `docs-check` |
+
+### 12.3 Planning (Desktop Worker only)
+
+The intake poll (Worker service, or `github intake poll --apply`) runs at most **one** planner invocation per poll, after approvals are processed. The planner is the installed **Claude Code with the operator's subscription login**, under the native backend's rules: allowlisted environment (no API key, token or base URL is passed), `claude auth status` must report the claude.ai subscription before the request, and the session's `init` event must show `apiKeySource: none` afterwards. It gets **no tools** (`--tools ""`, `--permission-mode dontAsk`, `--restricted`, `--strict-mcp-config`, no session persistence) and runs in an empty directory under the state directory, so planning cannot read or change the checkout; the coordinator puts the Issue text, the available roles with their owned/excluded paths and required gates, the protected and approval-required paths, the gate list and an excerpt of `AGENTS.md`/`CLAUDE.md` into the prompt. The Issue text is marked as data. While it runs, the service record keeps heartbeating, and a stop signal, `worker stop` or `worker pause` ends the run (the request is retried later). No GitHub-hosted runner ever runs a model.
+
+Every proposal is validated deterministically (`planning.canonical_plan`); nothing the model says is trusted:
+
+- exactly the documented keys — `grants`, `steps`, `provides_contract` or any other key is refused (a plan cannot widen a permission);
+- 1..`max_tasks` tasks, unique IDs, **at most one task per role** (no splitting for its own sake);
+- every role enabled and with intake gates (the hand-approvable roles; `automation` is disabled);
+- every intended path an exact path or `<dir>/**` inside the role's owned paths, outside its exclusions, never protected or approval-required;
+- dependencies on known tasks, no self-dependency, no cycle;
+- the role's intake gates always present (first, in configured order); a plan may only **add** configured gates. Integration gates are the coordinator's (`contract-check`, `docs-check`).
+
+A refused proposal is fed back to the planner once (`max_attempts: 2`), then the request needs an operator. Attempts are counted **before** each run, so a crash loop cannot exceed the budget; an unavailable planner (not logged in, API-key login) defers without using an attempt.
+
+### 12.4 The approval digest
+
+`plan_digest.py` serializes canonically (UTF-8 JSON, sorted keys, no whitespace, no floats). The **plan digest** is the SHA-256 of the canonical plan, which carries its schema (`mx-feature-plan/v1`), **version**, repository, Issue identity (number, database ID, node ID), the Issue's spec digest at planning time, the feature and the tasks. The **approval digest** is the SHA-256 of the approval statement (`mx-worker-approval/v1`): repository name and ID, Issue identity, the exact normalized title and body with the legacy spec digest, the plan's schema, version and digest, every task's role, dependencies and gates, and the integration gates. Nobody types it; it is shown as `mx-worker-approval/v1:sha256:<hex>`.
+
+### 12.5 What the coordinator validates before anything is planned
+
+The receipt is **evidence only**. `github-actions[bot]` is **not** added to `command_authors`; only a well-formed receipt from `receipt_author` is read, and the approval is accepted only if all of these hold, re-read at validation time:
+
+- exactly one receipt for the newest `worker:approve` label event; repository (name, ID) and Issue (number, database ID, node ID) match;
+- GitHub's own Issue events show that label event (ID, actor, time), the label is still present, and no newer `worker:plan` request exists;
+- the actor is a command author with at least `command_min_permission` **now**;
+- the receipt names the latest version, its digest and its published comment; that comment still carries exactly the recorded plan; the plan was published before the label was added, is still `published`, and is still valid under the current configuration;
+- the Issue's title and body are unchanged since planning; the locally recomputed approval digest equals the receipt's;
+- the receipt comment was never edited (its `updated_at` equals its `created_at`: anyone with write access can edit a bot's comment, and GitHub keeps the bot as author);
+- the Actions run named by the receipt exists, ran `.github/workflows/worker-issue-labels.yml` for an `issues` event on the default branch, triggered by the same actor, and was **created between the label event and the receipt** (5 s tolerance for GitHub's whole-second timestamps), so an older run of the workflow cannot be reused;
+- **one run, one receipt:** no other receipt on the Issue names the same run, and no approval accepted before (any Issue, local intake records) was backed by it.
+
+Anything else — forged, stale, malformed, mismatched, edited, a receipt from a person, two receipts, a reused or out-of-window run, no receipt after `receipt_wait_seconds` — refuses the approval with one notice; nothing is recorded or started. A valid approval becomes `intake/issue-<N>.json` with **schema 2** (`plan`, `task_ids`, `anchor`, `integration_gates`), written before anything else.
+
+### 12.6 The GitHub Action
+
+`.github/workflows/worker-issue-labels.yml` runs on `issues: labeled`, only for `worker:plan` and `worker:approve`, with `permissions: {}` at the top and `contents: read`, `issues: write` for its one job, a sparse, credential-less checkout pinned by commit SHA, and one step: `python3 -I .github/scripts/worker_issue_labels.py` (standard library plus `plan_digest.py`). Nothing from the event is placed on a command line. For `worker:plan` it only refuses (and removes) a request from an account below `write`. For `worker:approve` it checks the newest plan comment (by `WORKER_PLAN_AUTHORS`, default the repository owner — the Worker's `gh` account) against the Issue **as it was when the label was added** (the event payload) and posts one receipt, or one refusal and removes the label. Comments and labels written with the job token trigger no further workflow runs.
+
+**Which label event.** The event payload carries no event ID, so the step answers the newest `labeled` event of its label. GitHub's events API can lag the webhook, so the newest *visible* event may be an earlier one that was already answered. An answered event (or a newer one by someone else) therefore never ends the wait: the step looks again after 5, 10, 15, 20 and 30 s for an **unanswered** event by the label's sender. If none appears it posts nothing and the job **fails** with the reason (re-run it once the event is visible; the coordinator refuses a label without a receipt after `receipt_wait_seconds`). Every receipt and refusal names its label event and its workflow run, so a re-run of the run that answered (same run ID, any attempt) recognizes its own answer and succeeds without posting; a second, different run for an already-answered event (a duplicate delivery) fails explicitly and posts nothing. No receipt or refusal is ever posted twice.
+
+**Concurrency.** The `concurrency` group is set on the **job**, so only events that pass the job's condition (`worker:plan` or `worker:approve` on an Issue) join it; other labels, including the two the coordinator sets, never queue and cannot cancel approval work. The group is per Issue **and** label: runs that could answer the same event are serialized, a plan request never replaces a pending approval, and a pending approval run can only be replaced by a newer approval run on the same Issue, which answers the newest approval event — the only one the coordinator considers.
+
+### 12.7 Compatibility, recovery, idempotency
+
+- `/worker approve <role> <spec-sha256>` works exactly as before and keeps writing **schema 1** records with exactly the schema-1 fields, so the current Worker (or a rollback) reads them; schema-1 records written earlier load unchanged. Schema-2 records (label approvals) and `plan/` records are **not** readable by pre-W4.5 code: see §12.11 before any rollback. With `github.planning.enabled: false` (the default) the labels are ignored and nothing here runs.
+- A planned feature uses the established lifecycle: `workflow.plan` (DAG validated), activation, claims, checkpoints, Git ownership checks, retries, the fail-closed Issue checks for **every** task, automatic Draft PR (integrated with the approved integration gates), Project #2. The approved Issue belongs to the **feature**: its tasks get no Issues of their own, the queued comments of the feature and all tasks go to the approved Issue, and its Project #2 card shows the feature's status (Blocked while a task needs a person).
+- Write-ahead everywhere: the request and each planner attempt are recorded before the run; a plan version before its comment; the comment carries an operation marker and is found again after a crash; the approval record before the labels. Repeated polls, duplicate label events, repeated approvals and restarts create no second plan, comment, receipt, record or feature.
+
+### 12.8 Configuration (`github.planning`)
+
+`enabled` (false; needs `github.intake.enabled`), `provider` (`claude`, must be Claude Code), `model` (`opus`), `timeout_seconds` (900), `max_attempts` (2), `max_tasks` (4), `max_instructions_characters` (6000), `receipt_author` (`github-actions[bot]`, must be a bot login), `receipt_workflow`, `receipt_wait_seconds` (900), `conventions_files` (`AGENTS.md`, `CLAUDE.md`), `max_conventions_characters` (6000). See [project-config.example.yaml](project-config.example.yaml).
+
+Commands: `github planning status`, `github planning show N` (read-only, local), `github planning labels [--apply]`; `github intake show N` also shows the plan state.
+
+### 12.9 Limitations and actual guarantees
+
+- **Shared identity (accepted risk, unchanged, §9).** The Worker and the operator share the `spyderbg` login. A `worker:approve` label added with that token is indistinguishable from the operator's, so the actor and permission checks do **not** prevent approval impersonation; nothing in W4.5 changes that, and no check below claims to. The coordinator itself never adds `worker:approve`. Agent sessions do not get the login while `runtime.native_hardening` is on (it hides `.config/gh`); with it **off — the production setting today** — an agent with shell access under the operator's HOME may reach the `gh` login and could add the label, exactly as it could post `/worker approve` (§9). Closing this needs a separate Worker identity; credentials, accounts and hardening are deliberately left as they are.
+- **What the receipt checks guarantee.** `github-actions[bot]` is shared by every workflow of the repository, on any branch: any workflow with `issues: write` can post as that bot, and anyone with write access can edit a bot comment. The receipt is therefore never the authority. What the coordinator verifies itself (§12.5) — GitHub's own label event, the actor's command-author status and permission now, the recorded and published plan, the current Issue text, the recomputed approval digest — decides. The run checks add that an accepted receipt names a run of this workflow on the default branch, by the approver, **created for this approval** (between label and receipt), **unedited**, and backing **no other receipt or approval**. They cannot prove that this run posted the comment: a receipt forged by another workflow could still name the genuine run of the same approval while it has not posted yet. Forging needs write access (to push a workflow), which today only the shared identity has, and a forged receipt can at most corroborate facts the coordinator checks anyway; the one Action check it could skip is "the Issue text at the moment of labeling" (the coordinator checks the current text).
+- **An edited receipt is refused** even when the edit changes nothing visible (GitHub reports a new `updated_at`). Re-add `worker:approve` to get a fresh receipt.
+- **GitHub is trusted for facts** (label events, permissions, run metadata and timestamps); a compromised GitHub account defeats every check here.
+- **The plan is model output.** Validation bounds roles, paths and gates, and a person approves it, but the instructions themselves are only as good as the review. Intended `paths` are guidance: a `<dir>/**` subtree may contain protected paths, which the role policy still refuses at run time.
+- **Offline only.** No real Claude Code planning run and no real Actions run were made for W4.5.
+
+### 12.10 Operational impact: the planner runs inside the Worker's loop
+
+A planner invocation runs synchronously inside the Worker service's GitHub poll (`_poll_github`, before the active feature's step). While it runs, the service keeps heartbeating and honours stop, `worker stop` and `worker pause` (a paused service does not poll at all), but **the active feature does not advance**: no task is launched, settled or retried. One poll can take up to `max_attempts × timeout_seconds` — 2 × 900 s = **30 minutes** with the defaults — and at most one plan request is planned per poll. Agent runs are not affected mid-run (they are not polled concurrently).
+
+Conservative settings for the first supervised trial:
+
+```yaml
+github:
+  planning:
+    enabled: true
+    max_attempts: 1          # one subscription request per plan request; a refused plan goes to an operator
+    timeout_seconds: 300     # a no-tools planning answer normally takes well under a minute
+    max_tasks: 2             # start with single- and two-role plans
+```
+
+Trial with no feature active, so a long planner run delays nothing. Raise the values only after observing real planning times.
+
+### 12.11 Rollback to pre-W4.5 code
+
+`/worker approve` records (schema 1) stay readable by older code. Records written by label approvals are not: pre-W4.5 code refuses `intake/issue-<N>.json` with **schema 2** (strict loader) and does not know `plan/issue-<N>.json`. Before reverting the code:
+
+1. Set `github.planning.enabled: false` and restart (labels are ignored from then on; this alone needs no code rollback).
+2. Let every planned feature finish (Draft PR merged, Issue closed) or stop it (`python -m feature_coordinator stop <task>` for running tasks, then hold them).
+3. With the service stopped, move every intake record with `"schema_version": 2` and the whole `plan/` directory out of the state directory (keep them as evidence; do not edit them), together with the local features they created if those must not be resumed by the old code.
+4. Revert the code, start the service and check `github intake status`.
+
+Re-applying W4.5 later reads the archived records again if they are moved back.
+
+### 12.12 Before activation: compare the shared approval code on `main` and `dev` (read-only)
+
+The Action runs `main`'s copy of `plan_digest.py`; the Worker runs its own checkout's (`dev`). The two must be byte-identical, or every approval is refused with a digest mismatch (fail closed, but confusing). Check, without changing anything:
+
+```sh
+git fetch origin
+for f in feature_coordinator/plan_digest.py .github/scripts/worker_issue_labels.py \
+         .github/workflows/worker-issue-labels.yml feature_coordinator/__init__.py; do
+  printf '%-48s main=%s dev=%s\n' "$f" "$(git rev-parse --short origin/main:"$f" 2>/dev/null || echo MISSING)" \
+         "$(git rev-parse --short origin/dev:"$f" 2>/dev/null || echo MISSING)"
+done
+git diff --stat origin/main origin/dev -- feature_coordinator/plan_digest.py .github/scripts/worker_issue_labels.py \
+         .github/workflows/worker-issue-labels.yml      # must print nothing
+git -C <worker checkout> rev-parse HEAD:feature_coordinator/plan_digest.py   # the Worker's copy: same blob
+```
+
+Every pair of blob IDs must match (until step 2 of §12.13, `main` shows `MISSING` for the three W4.5 files). Repeat after every release that touches `plan_digest.py` or the Action, and after every dev → main merge.
+
+### 12.13 Production activation (operator steps; not done by W4.5)
+
+1. Review and merge the W4.5 PR into `dev`; update the Worker's checkout as usual (pause → stop → fast-forward → start → resume). Planning stays disabled.
+2. Bring `.github/workflows/worker-issue-labels.yml`, `.github/scripts/worker_issue_labels.py` and `feature_coordinator/plan_digest.py` to `main` **without deploying**: a commit reaching GitLab `main` deploys production, so use a dedicated `[skip ci]` commit that copies exactly those three files from `dev` (never fast-forward `main` to `dev` for this). Then run the read-only comparison of §12.12.
+3. Create the labels: `python -m feature_coordinator github planning labels --apply`.
+4. Optionally set the repository variable `WORKER_PLAN_AUTHORS` (default: the repository owner, which is the Worker's `gh` account).
+5. Enable `github.planning` in the Worker's project configuration with the conservative settings of §12.10 (intake must be enabled) and restart the service.
+6. Run one supervised test on a throwaway Issue, with no feature active: `worker:plan` → review → `worker:approve`; check the receipt and its run, `github planning status` and `github intake status`.
