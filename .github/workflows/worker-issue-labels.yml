@@ -15,16 +15,19 @@ on:
 
 permissions: {}
 
-# One run per Issue at a time; repeated events and re-runs find the earlier receipt (idempotent).
-concurrency:
-  group: worker-issue-labels-${{ github.event.issue.number }}
-  cancel-in-progress: false
-
 jobs:
   label:
     if: >-
       github.event.issue.pull_request == null &&
       (github.event.label.name == 'worker:plan' || github.event.label.name == 'worker:approve')
+    # Job-level, so only events that pass the `if` above join a group: other labels (including the two the
+    # coordinator sets) never queue here and can never cancel pending approval work. One group per Issue AND
+    # label serializes the runs that could answer the same event (no duplicate receipt or refusal). A pending
+    # run is only ever replaced by a newer run of the same label on the same Issue, which answers the newest
+    # such event, the only one the coordinator considers.
+    concurrency:
+      group: worker-issue-labels-${{ github.event.issue.number }}-${{ github.event.label.name }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

@@ -170,8 +170,10 @@ class PlanRig(Rig):
             assert self.action(number, pd.LABEL_APPROVE, actor, **kwargs) == 0
         return event
 
-    def action(self, number: int, label: str, actor: str, *, snapshot=None, run: dict | None = None) -> int:
-        """What the workflow does for this label event: the real script, the mock as GitHub."""
+    def action(self, number: int, label: str, actor: str, *, snapshot=None, run: dict | None = None,  # pylint: disable=too-many-arguments
+               api: Any = None, run_id: int | None = None, attempt: int = 1) -> int:
+        """What the workflow does for this label event: the real script, the mock as GitHub. *run_id*: re-run
+        that recorded run (attempt *attempt*) instead of a new one; *api*: another REST adapter."""
         remote = snapshot or self.remote(number)
         payload = {"action": "labeled", "label": {"name": label},
                    "issue": {"number": remote.number, "id": remote.id, "node_id": remote.node_id, "title": remote.title,
@@ -181,13 +183,14 @@ class PlanRig(Rig):
                                   "owner": {"login": OPERATOR}}}
         path = self.state / f"event-{next(self.events_written)}.json"
         path.write_text(json.dumps(payload), encoding="utf-8")
-        run_id = next(self.run_ids)
-        self.tracker.add_workflow_run({"id": run_id, "event": "issues", "path": WORKFLOW, "head_branch": "main",
-                                       "actor": actor, "triggering_actor": actor, "repository": REPO_NAME,
-                                       "run_attempt": 1, **(run or {})})
-        env = {"GITHUB_EVENT_PATH": str(path), "GITHUB_RUN_ID": str(run_id), "GITHUB_RUN_ATTEMPT": "1",
+        if run_id is None:
+            run_id = next(self.run_ids)
+            self.tracker.add_workflow_run({"id": run_id, "event": "issues", "path": WORKFLOW, "head_branch": "main",
+                                           "actor": actor, "triggering_actor": actor, "repository": REPO_NAME,
+                                           "run_attempt": 1, **(run or {})})
+        env = {"GITHUB_EVENT_PATH": str(path), "GITHUB_RUN_ID": str(run_id), "GITHUB_RUN_ATTEMPT": str(attempt),
                "WORKER_PLAN_AUTHORS": self.tracker.viewer, "WORKER_MIN_PERMISSION": "write"}
-        return ACTION.run(env, MockApi(self.tracker), out=self.out.append)
+        return ACTION.run(env, api or MockApi(self.tracker), out=self.out.append)
 
     def plan_record(self, number: int):
         return load_plan(self.store, feature_id_for(number))
@@ -558,7 +561,10 @@ def test_duplicate_events_repeated_polls_and_repeated_approvals_are_idempotent(p
     prig.published(number)
     event = prig.approve_label(number)
     snapshot = prig.remote(number)
-    assert prig.action(number, pd.LABEL_APPROVE, OPERATOR, snapshot=snapshot) == 0   # a re-run / duplicate event
+    run_id = pd.decode_marker(pd.RECEIPT_MARKER, prig.bot_comments(number)[0])["workflow_run"]["id"]
+    # a re-run of that run finds its own receipt; a duplicate run for the same event fails explicitly
+    assert prig.action(number, pd.LABEL_APPROVE, OPERATOR, snapshot=snapshot, run_id=run_id, attempt=2) == 0
+    assert prig.action(number, pd.LABEL_APPROVE, OPERATOR, snapshot=snapshot) == 1
     assert len(prig.bot_comments(number)) == 1
     del event
     first = prig.poll()
@@ -853,11 +859,14 @@ def test_the_action_refuses_an_approval_without_a_plan_and_answers_each_event_on
     number = prig.issue()
     prig.approve_label(number, action=False)
     assert prig.action(number, pd.LABEL_APPROVE, OPERATOR) == 0
-    assert prig.action(number, pd.LABEL_APPROVE, OPERATOR) == 0
     bodies = prig.bot_comments(number)
     assert len(bodies) == 1 and "no published plan" in bodies[0]
     refusal = pd.decode_marker(pd.REJECTION_MARKER, bodies[0])
     assert refusal["label_event_id"] and pd.LABEL_APPROVE not in prig.labels(number)
+    run_id = refusal["workflow_run_id"]
+    assert prig.action(number, pd.LABEL_APPROVE, OPERATOR, run_id=run_id, attempt=2) == 0   # a re-run
+    assert prig.action(number, pd.LABEL_APPROVE, OPERATOR) == 1   # another run: the event is answered already
+    assert len(prig.bot_comments(number)) == 1
     assert prig.action(number, "worker:approved", OPERATOR) == 0 and len(prig.bot_comments(number)) == 1
 
 

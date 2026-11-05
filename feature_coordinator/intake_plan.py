@@ -26,8 +26,9 @@ before approved features are planned and activated by the existing intake lifecy
 Approval evidence (the receipt) is never trusted as such. The coordinator accepts an approval only if
 ALL of these hold, re-read from GitHub and its own state at validation time:
 
-  * the receipt comment's author is `receipt_author` (`github-actions[bot]`; no person can use that
-    login) and it is the only receipt for its label event; it is a well-formed `RECEIPT_FORMAT` object;
+  * the receipt comment's author is `receipt_author` (`github-actions[bot]`; no person can post as that
+    login, but every workflow of the repository can) and it is the only receipt for its label event; it
+    is a well-formed `RECEIPT_FORMAT` object and was never edited (`updated_at` = `created_at`);
   * repository (name and ID) and Issue (number, database ID, node ID) match;
   * GitHub's own Issue events show that label event: `labeled` `worker:approve`, same ID, actor and
     time, and it is the NEWEST approval label event; the label is still present;
@@ -38,16 +39,23 @@ ALL of these hold, re-read from GitHub and its own state at validation time:
   * the Issue's title and body are unchanged since planning (spec digest);
   * the approval digest recomputed locally (plan_digest.approval_statement) equals the receipt's;
   * the GitHub Actions run named by the receipt exists, ran `receipt_workflow` for an `issues`
-    event on the default branch, and was triggered by the same actor.
+    event on the default branch, was triggered by the same actor, and was CREATED between the label
+    event and the receipt comment (RUN_CLOCK_TOLERANCE); it backs no other receipt on the Issue and no
+    approval accepted before (any Issue, local records): one run, one receipt.
 
 The receipt author is NOT added to `command_authors`: it is accepted only as this one structured
-receipt, and only as corroboration of facts the coordinator checks itself.
+receipt, and only as corroboration of facts the coordinator checks itself. The run checks bind a
+receipt to a run of this workflow made for this approval; they cannot prove that run posted it, because
+any workflow of the repository (on any branch) posts as the same bot. A forged receipt needs write access
+(to push a workflow), and can at most corroborate facts the coordinator verifies anyway.
 
-KNOWN LIMITATION (documented, not solved): the Worker and the operator share one GitHub identity.
-GitHub records a label added by the Worker's token exactly like one added by the operator, so actor and
-permission checks cannot tell them apart. The coordinator itself never adds `worker:approve`, and agents
-get no GitHub credential, but anything holding that token could approve. A separate Worker identity
-(GitHub App or machine user) is needed to close this.
+KNOWN LIMITATION (documented, accepted, not solved): the Worker and the operator share one GitHub
+identity. GitHub records a label added by the Worker's token exactly like one added by the operator, so
+actor and permission checks cannot tell them apart; anything holding that token could approve. The
+coordinator itself never adds `worker:approve`. Agent sessions do not get the token while
+`runtime.native_hardening` is on (it hides `.config/gh`); with it off (the production default today), an
+agent with shell access under the real HOME may reach the `gh` login, exactly as for `/worker approve`.
+A separate Worker identity (GitHub App or machine user) is needed to close this.
 """
 
 from __future__ import annotations
@@ -85,6 +93,7 @@ from .planning import PlanRecord, canonical_plan, load_plan, plan_problems, prop
 
 MAX_COMMENT = 65000
 ACTOR = "github-planning"
+RUN_CLOCK_TOLERANCE = 5  # seconds: GitHub's whole-second timestamps come from different services
 
 
 def _epoch(stamp: str) -> float:
@@ -488,6 +497,9 @@ class IssuePlanning:  # pylint: disable=too-many-instance-attributes
             return [f"malformed receipt: {'; '.join(problems[:5])}"]
         if comment.author != self.cfg.receipt_author:
             return [f"the receipt was posted by {comment.author!r}, not {self.cfg.receipt_author!r}"]
+        if comment.updated_at != comment.created_at:
+            problems.append("the receipt comment was edited after it was posted (anyone with write access can edit "
+                            "a bot's comment)")
         repo = self.repository()
         if payload["repository"] != {"full_name": repo["full_name"], "id": repo["id"]}:
             problems.append("the receipt names another repository")
@@ -527,16 +539,27 @@ class IssuePlanning:  # pylint: disable=too-many-instance-attributes
                                        title=issue.title, body=issue.body, plan=latest["plan"])
         if payload["approval"] != {"format": APPROVAL_FORMAT, "sha256": approval_sha256(statement)}:
             problems.append("the approval digest does not match this Issue text and plan version")
-        problems += self._run_problems(payload, event, repo)
+        problems += self._run_problems(payload, event, repo, comment)
+        problems += self._run_reused(issue, comment, payload["workflow_run"]["id"])
         return problems
 
-    def _run_problems(self, payload: Any, event: dict[str, Any], repo: dict[str, Any]) -> list[str]:
+    def _run_problems(self, payload: Any, event: dict[str, Any], repo: dict[str, Any],  # pylint: disable=too-many-arguments
+                      comment: RemoteComment) -> list[str]:
         run_id = payload["workflow_run"]["id"]
         try:
             run = self.client.get_workflow_run(run_id)
         except GitHubNotFoundError:
             return [f"the receipt's workflow run {run_id} does not exist"]
         problems = []
+        created = str(run.get("created_at") or "")
+        if not created:
+            problems.append(f"workflow run {run_id} reports no creation time")
+        elif _epoch(created) + RUN_CLOCK_TOLERANCE < _epoch(event["created_at"]):
+            problems.append(f"workflow run {run_id} was created at {created}, before the label event "
+                            f"({event['created_at']}): it was not made for this approval")
+        elif _epoch(created) > _epoch(comment.created_at) + RUN_CLOCK_TOLERANCE:
+            problems.append(f"workflow run {run_id} was created at {created}, after the receipt was posted "
+                            f"({comment.created_at})")
         path, wanted = str(run.get("path", "")), self.cfg.receipt_workflow
         if path != wanted and not path.startswith(wanted + "@"):
             problems.append(f"workflow run {run_id} ran {path!r}, not {wanted!r}")
@@ -549,6 +572,20 @@ class IssuePlanning:  # pylint: disable=too-many-instance-attributes
         if run.get("repository") and str(run["repository"]).lower() != repo["full_name"]:
             problems.append(f"workflow run {run_id} belongs to another repository")
         return problems
+
+    def _run_reused(self, issue: RemoteIssue, comment: RemoteComment, run_id: int) -> list[str]:
+        """One workflow run backs at most one receipt: another receipt naming it on this Issue, or an approval
+        accepted with it before (any Issue; the local intake records), refuses this one."""
+        for other in self.comments(issue.number):
+            if other.id != comment.id and other.author == self.cfg.receipt_author:
+                data = decode_marker(RECEIPT_MARKER, other.body)
+                if isinstance(data, dict) and (data.get("workflow_run") or {}).get("id") == run_id:
+                    return [f"workflow run {run_id} also backs receipt comment {other.id}: one run, one receipt"]
+        for raw in self.store.list_records("intake"):
+            evidence = (raw.get("plan") or {}).get("evidence") or {}
+            if evidence.get("workflow_run_id") == run_id and evidence.get("receipt_comment_id") != comment.id:
+                return [f"workflow run {run_id} already authorized the approval of #{raw.get('issue_number')}"]
+        return []
 
     def _reject(self, issue: RemoteIssue, event: dict[str, Any], problems: list[str], report: Any,  # pylint: disable=too-many-arguments
                 apply: bool, *, comment: int = 0, notify: bool = True) -> None:

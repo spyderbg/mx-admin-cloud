@@ -128,6 +128,7 @@ class RemoteComment:
     body: str
     created_at: str
     url: str = ""
+    updated_at: str = ""   # W4.5: differs from created_at once the comment was edited ("" if not reported)
 
 
 @dataclass(frozen=True)
@@ -247,7 +248,7 @@ class TrackerClient(Protocol):
         """Repository facts: at least `full_name`, `id` and `default_branch`."""
 
     def get_workflow_run(self, run_id: int) -> dict[str, Any]:
-        """One GitHub Actions run: id, event, path, head_branch, actor, repository (GitHubNotFoundError)."""
+        """One GitHub Actions run: id, event, path, head_branch, created_at, actor, repository (GitHubNotFoundError)."""
 
 
 # ---------------------------------------------------------------------------
@@ -610,6 +611,7 @@ class MockIssueTracker:  # pylint: disable=too-many-public-methods,too-many-inst
             self._next_comment += 1
             comment = {"id": self._next_comment, "author": author, "body": body, "created_at": self._tick(),
                        "url": f"mock://issues/{number}#comment-{self._next_comment}"}
+            comment["updated_at"] = comment["created_at"]
             rec["comments"].append(comment)
             rec["updated_at"] = comment["created_at"]
             return RemoteComment(**comment)
@@ -762,9 +764,16 @@ class MockIssueTracker:  # pylint: disable=too-many-public-methods,too-many-inst
             self._set_label(number, label, actor, add=False)
 
     def add_workflow_run(self, run: dict[str, Any]) -> None:
-        """Test helper: record an Actions run (what the receipt step's run looks like on GitHub)."""
+        """Test helper: record an Actions run (what the receipt step's run looks like on GitHub); created now
+        unless *run* says when."""
         with self._op("add_workflow_run", write=True):
-            self.runs[int(run["id"])] = dict(run)
+            self.runs[int(run["id"])] = {"created_at": self._tick(), **run}
+
+    def edit_comment_as(self, number: int, comment_id: int, body: str) -> None:
+        """Test helper: a person with write access edits any comment (GitHub keeps its author)."""
+        with self._op(f"edit_comment_as:{number}", write=True):
+            comment = next(c for c in self._record(number)["comments"] if c["id"] == comment_id)
+            comment["body"], comment["updated_at"] = body, self._tick()
 
     # -- test helpers and the Phase 2 API --------------------------------------------
 

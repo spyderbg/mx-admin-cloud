@@ -280,8 +280,10 @@ def parse_comment(data: Any) -> RemoteComment:
     if not isinstance(body, str):
         raise GitHubResponseError(f"{where}: body is not text")
     url = data.get("html_url") or ""
+    updated = data.get("updated_at")
     return RemoteComment(id=comment_id, author=_login(data.get("user"), where), body=body, created_at=created,
-                         url=url if isinstance(url, str) else "")
+                         url=url if isinstance(url, str) else "",
+                         updated_at=updated if isinstance(updated, str) and _ISO_RE.fullmatch(updated) else "")
 
 
 def parse_issue_event(data: Any) -> RemoteIssueEvent:
@@ -321,7 +323,9 @@ def parse_workflow_run(data: Any) -> dict[str, Any]:
         value = user.get("login") if isinstance(user, dict) else None
         return value if isinstance(value, str) and _LOGIN_RE.fullmatch(value) else ""
     attempt = data.get("run_attempt")
+    created = text("created_at")
     return {"id": run_id, "event": text("event"), "path": text("path"), "head_branch": text("head_branch"),
+            "created_at": created if _ISO_RE.fullmatch(created) else "",
             "status": text("status"), "actor": login("actor"), "triggering_actor": login("triggering_actor"),
             "run_attempt": attempt if isinstance(attempt, int) and not isinstance(attempt, bool) else 0,
             "repository": str(repo.get("full_name", ""))[:200], "where": where}

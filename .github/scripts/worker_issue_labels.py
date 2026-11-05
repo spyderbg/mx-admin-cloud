@@ -17,9 +17,17 @@ decides nothing by itself: the Desktop Worker's coordinator re-verifies everythi
                   failed check → one refusal comment (marker `feature-coordinator:approval-rejected`)
                   and the label is removed.
 
-Idempotent: a receipt or refusal for the same label event is never posted twice (a re-run or a duplicate
-event finds it). Untrusted input (titles, bodies, comments) is only ever data: it is never interpolated into
-a shell command, and the workflow passes nothing from the event on a command line.
+Which label event: the event payload carries no event ID, so the step answers the newest `labeled` event
+of its label on the Issue. GitHub's events API can lag the webhook, so the newest VISIBLE event may be an
+earlier one, possibly answered already: an answered event never ends the wait. The step waits (bounded,
+EVENT_RETRY_SECONDS) for an UNANSWERED event by the label's sender; if none appears it posts nothing and
+fails (exit 1) with the reason, so a person can re-run it. A re-run of the run that already answered the
+event (same GITHUB_RUN_ID, any attempt) finds its own answer and succeeds without posting.
+
+Idempotent: a receipt or refusal for the same label event is never posted twice (receipts and refusals name
+their label event and this run's ID; runs of one label on one Issue are serialized by the workflow).
+Untrusted input (titles, bodies, comments) is only ever data: it is never interpolated into a shell command,
+and the workflow passes nothing from the event on a command line.
 """
 
 from __future__ import annotations
@@ -44,6 +52,7 @@ BOT = "github-actions[bot]"
 REJECTION_FORMAT = "mx-worker-approval-rejection/v1"
 PER_PAGE = 100
 MAX_PAGES = 30
+EVENT_RETRY_SECONDS = (5, 10, 15, 20, 30)  # waits between looks for the label event (80 s in all; job: 5 min)
 
 
 class Api:
@@ -106,24 +115,57 @@ def label_events(api: Api, repo: str, number: int) -> list[dict[str, Any]]:
     return out
 
 
-def answered(comments: list[dict[str, Any]], event_id: int) -> bool:
-    """True when this job already posted a receipt or refusal for the label event."""
+def answered_by(comments: list[dict[str, Any]], event_id: int) -> int | None:
+    """The ID of the workflow run that already posted a receipt or refusal for the label event (0: an answer
+    that names no run), or None when the event has no answer yet."""
     for comment in comments:
         if _login(comment.get("user")) != BOT:
             continue
         body = str(comment.get("body") or "")
         receipt = pd.decode_marker(pd.RECEIPT_MARKER, body)
+        if isinstance(receipt, dict) and (receipt.get("label_event") or {}).get("id") == event_id:
+            run_id = (receipt.get("workflow_run") or {}).get("id")
+            return run_id if isinstance(run_id, int) else 0
         refusal = pd.decode_marker(pd.REJECTION_MARKER, body)
-        if (isinstance(receipt, dict) and (receipt.get("label_event") or {}).get("id") == event_id) or \
-                (isinstance(refusal, dict) and refusal.get("label_event_id") == event_id):
-            return True
-    return False
+        if isinstance(refusal, dict) and refusal.get("label_event_id") == event_id:
+            run_id = refusal.get("workflow_run_id")
+            return run_id if isinstance(run_id, int) else 0
+    return None
 
 
-def refuse(api: Api, repo: str, number: int, label: str, event_id: int, reason: str) -> None:
-    """One refusal comment, then the label is removed."""
+def find_event(api: Api, repo: str, number: int, label: str, sender: str,  # pylint: disable=too-many-arguments
+               run_id: int) -> tuple[dict[str, Any] | None, list[dict[str, Any]], str]:
+    """(event, comments, note): the newest *label* event, by *sender*, that has no answer yet — or one this
+    run answered before (note "answered by this run"). An answered or foreign event never ends the wait (it
+    may be an earlier event shown while the API lags); after EVENT_RETRY_SECONDS: (None, [], why)."""
+    why = ""
+    for attempt in range(len(EVENT_RETRY_SECONDS) + 1):
+        if attempt:
+            api.sleep(EVENT_RETRY_SECONDS[attempt - 1])
+        event = pd.latest_label_event(label_events(api, repo, number), label)
+        if event is None:
+            why = f"no `{label}` label event is visible"
+            continue
+        if event["actor"] != sender:
+            why = f"the newest visible `{label}` event {event['id']} is by `{event['actor']}`"
+            continue
+        comments = api.pages(f"repos/{repo}/issues/{number}/comments")
+        answerer = answered_by(comments, event["id"])
+        if answerer is None:
+            return event, comments, ""
+        if answerer == run_id:
+            return event, comments, "answered by this run"
+        why = (f"the newest visible `{label}` event {event['id']} was already answered by run "
+               f"{answerer or '(unknown)'}")
+    return None, [], why
+
+
+def refuse(api: Api, repo: str, number: int, label: str, event_id: int,  # pylint: disable=too-many-arguments
+           run_id: int, reason: str) -> None:
+    """One refusal comment (naming the label event and this run), then the label is removed."""
     marker = pd.encode_marker(pd.REJECTION_MARKER, {"format": REJECTION_FORMAT, "label_event_id": event_id,
-                                                     "label": label, "reason": reason[:500]})
+                                                     "label": label, "reason": reason[:500],
+                                                     "workflow_run_id": run_id})
     api.request("POST", f"repos/{repo}/issues/{number}/comments", {"body": (
         f"**`{label}` not accepted** by the approval workflow: {reason}\n\nThe label was removed; nothing was "
         f"approved or started.\n\n{marker}")})
@@ -153,25 +195,21 @@ def run(env: Mapping[str, str], api: Api, out: Callable[[str], None] = print) ->
         out("not an open Issue: nothing to do")
         return 0
     repo, number, sender = str(repository["full_name"]), int(issue["number"]), _login(event.get("sender"))
-    label_event = None
-    for attempt in range(4):  # the events API may lag the webhook by a few seconds
-        label_event = pd.latest_label_event(label_events(api, repo, number), label)
-        if label_event is not None and label_event["actor"] == sender:
-            break
-        api.sleep(5 * (attempt + 1))
-    if label_event is None or label_event["actor"] != sender:
-        out(f"the `{label}` label event by {sender} is not visible yet; re-run this job")
+    run_id = int(env["GITHUB_RUN_ID"])
+    label_event, comments, note = find_event(api, repo, number, label, sender, run_id)
+    if label_event is None:
+        out(f"the `{label}` label event by {sender} did not become visible within {sum(EVENT_RETRY_SECONDS)}s "
+            f"({note}); nothing was posted. If it still has no receipt or refusal, re-run this job.")
         return 1
-    comments = api.pages(f"repos/{repo}/issues/{number}/comments")
-    if answered(comments, label_event["id"]):
-        out(f"label event {label_event['id']} was already answered")
+    if note:
+        out(f"label event {label_event['id']} was already answered by this run")
         return 0
     minimum = env.get("WORKER_MIN_PERMISSION", "write")
     status, data = api.request("GET", f"repos/{repo}/collaborators/{urllib.parse.quote(sender)}/permission",
                                ok=(404,))
     permission = str((data or {}).get("permission", "none")) if status == 200 else "none"
     if pd.PERMISSION_RANK.get(permission, -1) < pd.PERMISSION_RANK.get(minimum, 2):
-        refuse(api, repo, number, label, label_event["id"],
+        refuse(api, repo, number, label, label_event["id"], run_id,
                f"`{sender}` has repository permission `{permission}`; `{minimum}` is required")
         return 0
     if label == pd.LABEL_PLAN:
@@ -181,18 +219,19 @@ def run(env: Mapping[str, str], api: Api, out: Callable[[str], None] = print) ->
         or {_login(repository.get("owner"))}
     plans = _plan_comments(comments, authors, label_event["created_at"])
     if not plans:
-        refuse(api, repo, number, label, label_event["id"], "there is no published plan to approve")
+        refuse(api, repo, number, label, label_event["id"], run_id, "there is no published plan to approve")
         return 0
     comment, plan = plans[-1]
     identity = {"number": number, "id": int(issue["id"]), "node_id": str(issue["node_id"])}
     if plan.get("schema") != pd.PLAN_SCHEMA or plan.get("issue") != identity \
             or plan.get("repository") != repo.lower():
-        refuse(api, repo, number, label, label_event["id"], "the newest plan comment is not a plan of this Issue")
+        refuse(api, repo, number, label, label_event["id"], run_id,
+               "the newest plan comment is not a plan of this Issue")
         return 0
     title, body = str(issue.get("title") or ""), str(issue.get("body") or "")
     spec = pd.spec_sha256(title, body)
     if spec != plan.get("spec_sha256"):
-        refuse(api, repo, number, label, label_event["id"],
+        refuse(api, repo, number, label, label_event["id"], run_id,
                f"the Issue's title or body changed after plan v{plan.get('version')} was made; remove and re-add "
                f"`{pd.LABEL_PLAN}` for a revised plan")
         return 0
@@ -201,14 +240,14 @@ def run(env: Mapping[str, str], api: Api, out: Callable[[str], None] = print) ->
         approval = pd.approval_sha256(pd.approval_statement(repository=repo_identity, issue=identity, title=title,
                                                             body=body, plan=plan))
     except (KeyError, TypeError, ValueError):
-        refuse(api, repo, number, label, label_event["id"], "the newest plan comment cannot be read")
+        refuse(api, repo, number, label, label_event["id"], run_id, "the newest plan comment cannot be read")
         return 0
     receipt = {
         "format": pd.RECEIPT_FORMAT, "repository": {"full_name": repo.lower(), "id": int(repository["id"])},
         "issue": identity, "label_event": label_event, "actor_permission": permission,
         "plan": {"comment_id": int(comment["id"]), "version": int(plan["version"]), "sha256": pd.plan_sha256(plan)},
         "spec_sha256": spec, "approval": {"format": pd.APPROVAL_FORMAT, "sha256": approval},
-        "workflow_run": {"id": int(env["GITHUB_RUN_ID"]), "attempt": int(env.get("GITHUB_RUN_ATTEMPT", "1"))},
+        "workflow_run": {"id": run_id, "attempt": int(env.get("GITHUB_RUN_ATTEMPT", "1"))},
     }
     problems = pd.receipt_problems(receipt)
     if problems:  # pragma: no cover - built above
