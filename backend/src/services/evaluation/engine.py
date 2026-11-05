@@ -18,7 +18,8 @@ from typing import Any
 from src.services.logging.schemas import LogProviderRequest
 from src.core.languages import to_bcp47
 from src.core.log_client import log_provider_request
-from src.core.models import EvaluationResult, GeneratedAudio
+from src.core.models import GeneratedAudio
+from src.services.evaluation.models import EvaluationResult
 
 
 def levenshtein_distance(left: str, right: str) -> int:

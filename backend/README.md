@@ -199,7 +199,7 @@ Base URL for all routes below: `/api/v1`. Protected routes require `Authorizatio
 | `GET`  | [/ping](src/api/v1/routes_common.py#L11)       | No   | Health check; returns PONG with backend platform info.                                   |
 | `GET`  | [/status](src/api/v1/routes_common.py#L16)     | Yes  | Service status.                                                                          |
 | `POST` | [/operation](src/api/v1/routes_common.py#L21)  | Yes (not viewers) | Perform a service operation. Query param: `name`.                           |
-| `POST` | [/list-files](src/api/v1/routes_common.py#L30) | Yes  | List files in the configured directory. Body: `{"depth": int}` (depth < 1 treated as 1). |
+| `POST` | [/list-files](src/api/v1/routes_common.py#L30) | Yes  | List the content directory down to `depth` folder levels (1 = top level). Body: `{"depth": int}` (depth < 1 treated as 1). `files` holds paths relative to the content directory in tree order; folders end with `/`, symlinks are not followed. |
 
 ### Content
 

@@ -22,17 +22,17 @@ It was designed as the last step of the TTS pipeline (`Translate → Generate �
 | [`score_store.py`](../../../../backend/src/services/evaluation/score_store.py) | `ScoreStore` (ABC: `save`, `get_best_score`, …) and `MultiScoreStore` (fan-out) |
 | [`score_store_json.py`](../../../../backend/src/services/evaluation/score_store_json.py), [`score_store_sqlite.py`](../../../../backend/src/services/evaluation/score_store_sqlite.py) | `JsonScoreStore`, `SQLiteScoreStore` (tables `evaluations`, `provider_aggregates`) |
 | [`service.py`](../../../../backend/src/services/evaluation/service.py) | `EvaluationService`, `EvaluationProviderFactory` — **defined but unused** |
-| [`models.py`](../../../../backend/src/services/evaluation/models.py) | `EvaluationServiceProvider` — **no implementations** |
+| [`models.py`](../../../../backend/src/services/evaluation/models.py) | `EvaluationResult`, `ProviderAggregate`, `ScoreRecord` value types; `EvaluationServiceProvider` — **no implementations** |
 | [`routes.py`](../../../../backend/src/services/evaluation/routes.py), [`schemas.py`](../../../../backend/src/services/evaluation/schemas.py) | HTTP API, `EvaluateRequest` |
 
-Depends on: `src.services.text_to_speech` (its configurations hold the `evaluate` blocks), `core.models` (`GeneratedAudio`, `EvaluationResult`, `ProviderAggregate`, `ScoreRecord`), `core.log_client.log_provider_request`, `httpx`, external STT APIs.
+Depends on: `src.services.text_to_speech` (its configurations hold the `evaluate` blocks), `core.models.GeneratedAudio`, `core.log_client.log_provider_request`, `httpx`, external STT APIs.
 
 ## Service Interface / ServiceProvider Contract
 
 What exists is **not** a working `ServiceProvider` model **[V][S]**:
 
 - `EvaluationService(Service)` — `service.py:18`. It implements only the four `Service` provider accessors; no evaluation method; `SUPPORTED_STRATEGIES = ()`.
-- `EvaluationServiceProvider(ServiceProvider)` — `models.py:11`. It declares `@abstractmethod async evaluate_text(text, input_lang_code, target_lang_code, category=None) -> str | None` and a static `language_name(lang_code)`.
+- `EvaluationServiceProvider(ServiceProvider)` — `models.py:57`. It declares `@abstractmethod async evaluate_text(text, input_lang_code, target_lang_code, category=None) -> str | None` and a static `language_name(lang_code)`.
   - Its docstrings are copied from the translator base ("Base class for translator service providers", "Translate a single word/phrase").
   - It does **not** inherit `ABC`, so the abstract method is not enforced.
 - `EvaluationProviderFactory` has **no registered builders**.

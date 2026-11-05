@@ -5,7 +5,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from src.core.models import EvaluationResult, GeneratedAudio, ProviderAggregate, ScoreRecord
+from src.core.models import GeneratedAudio
+from src.services.evaluation.models import EvaluationResult, ProviderAggregate, ScoreRecord
 from .score_store import ScoreStore
 
 _RECORD_COLUMNS = (

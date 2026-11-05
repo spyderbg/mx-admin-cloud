@@ -51,7 +51,7 @@ Run `kiddo-cli --help`, `kiddo-cli common --help`, `kiddo-cli content --help`, `
 | [`common ping`](cli/src/kiddo_cli/commands/common_commands.py#L14)           | Ping the backend (expected response PONG; no auth). |
 | [`common status`](cli/src/kiddo_cli/commands/common_commands.py#L21)         | Check service status. |
 | [`common operation <name>`](cli/src/kiddo_cli/commands/common_commands.py#L34) | Perform a service operation. |
-| [`common list-files`](cli/src/kiddo_cli/commands/common_commands.py#L48)       | List files in the configured directory (`--depth`, default 1). |
+| [`common list-files`](cli/src/kiddo_cli/commands/common_commands.py#L48)       | List the content directory down to `--depth` folder levels (default 1 = top level; folders end with `/`). |
 
 ### Content (backend routes_content)
 

@@ -46,7 +46,8 @@ docker compose -f docker/docker-compose.yml up -d --build
   (requires internal service token or admin JWT)
 - **`core/`** — Shared infrastructure with **zero** `src.services` imports (HTTP boundary enforced):
   - `config.py` — Pydantic Settings; all env vars and defaults
-  - `models.py` — Core dataclasses (TTSRequest, GeneratedAudio, EvaluationResult, etc.)
+  - `models.py` — Dataclasses used by `core/` itself or shared across services (GeneratedAudio,
+    TranslationSourceWord, RunSummary); a type only one service uses lives in that service's `models.py`
   - `content_naming.py` — Slugification and output filename helpers
   - `languages.py` — Language code/name lookups and BCP-47 conversion
   - `input_loader.py` — `load_words()` parses CSV/XLSX/TXT for translation

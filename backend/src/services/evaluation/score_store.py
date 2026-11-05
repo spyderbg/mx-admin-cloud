@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from src.core.models import EvaluationResult, GeneratedAudio, ProviderAggregate, ScoreRecord
+from src.core.models import GeneratedAudio
+from src.services.evaluation.models import EvaluationResult, ProviderAggregate, ScoreRecord
 
 
 class ScoreStore(ABC):

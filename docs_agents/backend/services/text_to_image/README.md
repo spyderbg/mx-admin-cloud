@@ -14,7 +14,7 @@ The content service is the main caller (`POST /internal/image-generators/generat
 | --- | --- |
 | [`backend/src/services/text_to_image/__init__.py`](../../../../backend/src/services/text_to_image/__init__.py) | Registration (`config_subdir="text_to_image"`) |
 | [`service.py`](../../../../backend/src/services/text_to_image/service.py) | `TextToImageService`, `TextToImageProviderFactory`, `NoActiveImageProvidersError`, `ImageProviderNotFoundError` |
-| [`models.py`](../../../../backend/src/services/text_to_image/models.py) | `ImageRequest`, `ImagePayload`, `TextToImageProvider` contract (`:142`) |
+| [`models.py`](../../../../backend/src/services/text_to_image/models.py) | `ImageRequest`, `GeneratedImage`, `ImagePayload`, `TextToImageProvider` contract (`:163`) |
 | [`governor.py`](../../../../backend/src/services/text_to_image/governor.py) | `TrafficPolicy`, `RequestGovernor`, `RetryableError` / `NonRetryableError`; retryable HTTP statuses 408, 409, 425, 429, 500, 502, 503, 504; honors `Retry-After` |
 | [`pricing.py`](../../../../backend/src/services/text_to_image/pricing.py) | `PriceTable`; an unknown model yields `None`, not `0.0` |
 | [`templating.py`](../../../../backend/src/services/text_to_image/templating.py) | Typed placeholder rendering for ComfyUI workflow graphs |
@@ -32,7 +32,7 @@ Depends on: `openai` and `google-genai` SDKs, `httpx`, `core.log_client` (`log_p
 | `async generate(request: ImageRequest, client, *, provider_name=None)` → `GeneratedImage` | With `provider_name`, only that **active** provider runs. Without it, active providers are tried in priority order until one succeeds (`first_success`) |
 | `generation_parameters(provider_name, request)` → `dict` | Settings the named provider would use (recorded in sidecars and headers) |
 
-**Provider contract:** `TextToImageProvider(ServiceProvider, ABC)` — `models.py:142`, "Common interface and shared machinery for image providers" **[V]**.
+**Provider contract:** `TextToImageProvider(ServiceProvider, ABC)` — `models.py:163`, "Common interface and shared machinery for image providers" **[V]**.
 
 - **Abstract:** `async fetch_image(request, client) -> ImagePayload`, which performs exactly one attempt against the external service.
 - **Shared, concrete:** `async generate(request, client)` (runs `fetch_image` under the governor and logs the attempt), `resolve_model`, `resolve_size`, `resolve_quality`, `resolve_negative_prompt`, `build_prompt` (prefix/suffix), `build_output_path`, `generation_parameters`, `estimate_cost`.

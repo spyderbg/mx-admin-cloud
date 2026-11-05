@@ -50,7 +50,7 @@ The runtime surface is **91 operations on 70 paths**. Every one is owned by exac
 | `POST /api/v1/cli-login` | public, **UDS checked in the handler** | Short-lived CLI JWT (`CLI_TOKEN_EXPIRE_SECONDS`, default 30); 403 over TCP. The handler check is *not* bypassed by the `DEBUG_MODE` dependency override |
 | `GET /api/v1/ping` | public | Health text with platform |
 | `GET /api/v1/status` | any authenticated | Status plus all settings, with secrets masked (`core/tasks.py`) |
-| `POST /api/v1/list-files` | any authenticated | Lists the content directory (read-only; allowed for viewers) |
+| `POST /api/v1/list-files` | any authenticated | Lists the content directory down to body `depth` folder levels as relative paths, folders ending in `/` (read-only; allowed for viewers) |
 | `POST /api/v1/operation` | write access | Placeholder that echoes success |
 | `GET`/`POST /api/v1/users`, `DELETE /api/v1/users/{username}`, `PATCH …/{username}/password`, `PATCH …/{username}/role` | **UDS + admin** (router-level dependencies) | Roles restricted to `admin`/`viewer` by schema pattern; 404 unknown user; 409 conflicts |
 | `POST /internal/generate`, `GET /internal/generate/{job_id}/status` | internal | Async TTS pipeline job. **`POST` is broken**: `_run_job` is commented out, so the endpoint raises `NameError` after saving the upload (discovery F-1) |
