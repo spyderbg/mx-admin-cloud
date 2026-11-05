@@ -63,6 +63,9 @@ def cmd_show(args: argparse.Namespace, config: ProjectConfig) -> int:
         lines += [f"    - {f['severity']}: {f['file']}:{f['line_start'] or ''} {f['title']}" for f in entry["findings"]]
         lines += [f"    attempt {a['attempt']}: {a['status']} {a.get('error') or ''}".rstrip()
                   for a in entry["attempt_log"]]
+        if entry.get("held") and entry["status"] == "pending":
+            lines.append(f"    held: {entry['held']['outcome']} not recorded yet ({entry['held']['error']}); the next "
+                         "`run` confirms or discards it")
         if entry.get("invalidated"):
             lines.append(f"    invalidated: {entry['invalidated']['reason']}")
         for slot in ("comment", "notice"):

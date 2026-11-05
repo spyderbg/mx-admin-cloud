@@ -15,9 +15,12 @@ The reviewer has no tools (reviewer.py), so this prompt is ALL it sees:
 Everything taken from the repository or the Issue is untrusted DATA: control characters are removed, strings that
 look like credentials (GitHub, Anthropic, OpenAI, AWS, Slack tokens, private keys, bearer tokens) are replaced with
 `[redacted]`, the content of files matching `runtime.secret_patterns` or the protected paths is withheld (the file
-is listed, its diff is not), and each block is fenced with a random nonce the data cannot predict. Every such
-measure becomes a coordinator note on the review, so a review with withheld content is never a plain PASS. A diff
-larger than `max_diff_characters` is not reviewed at all (never truncated).
+is listed, its diff is not), and each block is fenced with a random nonce the data cannot predict. `clean()` runs
+over EVERY part of the finished prompt (each line or fenced block on its own) — the Issue, the plan with its task
+titles, instructions and acceptance criteria, the gates, the commits, the conventions, the file list, the diff —
+so no section, including one added later, can bypass it. Every such measure becomes a coordinator note on the
+review, so a review with withheld content is never a plain PASS. A diff larger than `max_diff_characters` is not
+reviewed at all (never truncated).
 """
 
 from __future__ import annotations
@@ -118,9 +121,9 @@ def file_facts(root: Path, base: str, head: str, status: str, path: str) -> File
 # ---------------------------------------------------------------------------
 
 def clean(text: str) -> tuple[str, int]:
-    """(text without control characters and with credential-like strings redacted, number of redactions)."""
-    text, count = _CREDENTIALS.subn("[redacted]", text)
-    return _CONTROL.sub("", text), count
+    """(text without control characters and with credential-like strings redacted, number of redactions).
+    Control characters go first: a token split by one would otherwise be joined again after the redaction."""
+    return _CREDENTIALS.subn("[redacted]", _CONTROL.sub("", text))
 
 
 def withheld(config: ProjectConfig, path: str) -> bool:
@@ -210,27 +213,15 @@ def build_context(config: ProjectConfig, root: Path, *, feature: Feature, record
     shown = [p for _s, p in changed if p not in secret]
     raw = _git(root, "diff", "--no-ext-diff", "--no-textconv", "--no-color", "-M", "--unified=3", base, head, "--",
                *(f":(literal){p}" for p in shown)).decode("utf-8", errors="replace") if shown else ""
-    diff, count = clean(raw)
+    diff, count = clean(raw)  # first: the length of the diff the reviewer would see decides whether it is reviewed
     ctx.diff_sha256 = hashlib.sha256(raw.encode("utf-8")).hexdigest()
     if len(diff) > cfg.max_diff_characters:
         ctx.problem = (f"the diff has {len(diff)} characters; at most {cfg.max_diff_characters} are reviewed "
                        "(it is never truncated)")
         return ctx
     binary = sorted(p for p, f in ctx.files.items() if f.lines is None and p not in secret and f.status != "D")
-    title, n_title = clean(record.title)
-    body, n_body = clean(record.body)
-    commits, n_commits = clean(_git(root, "log", "--no-color", f"--max-count={MAX_COMMITS}", "--format=%h %s",
-                                    f"{base}..{head}").decode("utf-8", errors="replace"))
-    conventions = [(name, *clean(text)) for name, text in conventions_at(root, base)]
-    ctx.redactions = count + n_title + n_body + n_commits + sum(n for _name, _text, n in conventions)
-    if ctx.redactions:
-        ctx.notes.append(f"{ctx.redactions} credential-like string(s) were withheld from the reviewer")
-    if secret:
-        ctx.notes.append(f"the content of {len(secret)} secret or protected file(s) was withheld: "
-                         + ", ".join(sanitize(p, 80) for p in secret[:10]))
-    if binary:
-        ctx.notes.append(f"{len(binary)} binary or non-text file(s) were listed by name only: "
-                         + ", ".join(sanitize(p, 80) for p in binary[:10]))
+    commits = _git(root, "log", "--no-color", f"--max-count={MAX_COMMITS}", "--format=%h %s",
+                   f"{base}..{head}").decode("utf-8", errors="replace")
     nonce = secrets.token_hex(6)
     roles = sorted({t.role for t in tasks})
     rules = [f"- role `{r}`: owns {', '.join(config.roles[r].owned)}"
@@ -262,7 +253,7 @@ def build_context(config: ProjectConfig, root: Path, *, feature: Feature, record
         f"`{binding['base_branch']}`. Reviewed head: {head}. Diff base (merge base): {base}.",
         "",
         f"Approved specification (GitHub Issue #{record.issue_number}, spec sha256 {record.digest}):",
-        *_block("ISSUE_TITLE", nonce, title), *_block("ISSUE_BODY", nonce, body), "",
+        *_block("ISSUE_TITLE", nonce, record.title), *_block("ISSUE_BODY", nonce, record.body), "",
         *_block("PLAN", nonce, _plan_text(record, tasks)), "",
         "Path rules (the coordinator enforces them; report a change that contradicts them):", *rules,
         f"- protected (never changed): {', '.join(config.protected)}",
@@ -274,7 +265,7 @@ def build_context(config: ProjectConfig, root: Path, *, feature: Feature, record
         "",
         "Commits (subjects):", *_block("COMMITS", nonce, commits.strip()), "",
     ]
-    for name, text, _n in conventions:
+    for name, text in conventions_at(root, base):
         parts += [f"Project conventions from `{name}` at the base commit (excerpt):",
                   *_block("CONVENTIONS", nonce, text), ""]
     parts.append("Changed files:")
@@ -283,7 +274,19 @@ def build_context(config: ProjectConfig, root: Path, *, feature: Feature, record
                 else f"{facts.lines} lines")
         parts.append(f"- {sanitize(path, 300)} ({facts.status}, {kind})")
     parts += ["", "Diff:", *_block("DIFF", nonce, diff), "", "Answer with the JSON object only."]
-    ctx.prompt = "\n".join(parts)
+    # every part, one at a time (a line or one fenced block: an unterminated private key cannot swallow the parts
+    # after it); the diff is clean already, so it counts once
+    cleaned = [clean(part) for part in parts]
+    ctx.prompt = "\n".join(text for text, _n in cleaned)
+    ctx.redactions = count + sum(n for _text, n in cleaned)
+    if ctx.redactions:
+        ctx.notes.append(f"{ctx.redactions} credential-like string(s) were withheld from the reviewer")
+    if secret:
+        ctx.notes.append(f"the content of {len(secret)} secret or protected file(s) was withheld: "
+                         + ", ".join(sanitize(p, 80) for p in secret[:10]))
+    if binary:
+        ctx.notes.append(f"{len(binary)} binary or non-text file(s) were listed by name only: "
+                         + ", ".join(sanitize(p, 80) for p in binary[:10]))
     ctx.schema = review_schema(cfg.max_findings)
     ctx.input_sha256 = hashlib.sha256(ctx.prompt.encode("utf-8")).hexdigest()
     return ctx

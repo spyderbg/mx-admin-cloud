@@ -21,7 +21,7 @@ from feature_coordinator.config import config_from_mapping, default_config
 from feature_coordinator.errors import ConfigError
 from feature_coordinator.intake import IntakeRecord
 from feature_coordinator.launchers import RunnerProbe
-from feature_coordinator.model import Feature
+from feature_coordinator.model import Feature, Task
 from feature_coordinator.native_backend import SubscriptionCheck
 from feature_coordinator.providers import ProviderKind
 from feature_coordinator.review_config import GitHubReviewConfig
@@ -386,3 +386,43 @@ def test_the_prompt_is_built_from_the_base_conventions_and_sanitized_data(tmp_pa
     big = {**binding, "head_sha": git(root, "rev-parse", "HEAD").strip()}
     too_large = build_context(small, root, feature=feature, record=record, tasks=[], binding=big)
     assert "at most 1000 are reviewed (it is never truncated)" in too_large.problem and not too_large.prompt
+
+
+def test_a_token_split_by_control_characters_is_still_redacted() -> None:
+    text, count = clean("token ghp_" + "A" * 8 + "\x07\x1b[0m" + "A" * 28 + " end")
+    assert count == 1 and "ghp_" not in text and text == "token [redacted] end"
+
+
+def test_every_section_of_the_prompt_is_sanitized(tmp_path: Path) -> None:
+    root, base, head = history(tmp_path)
+    raw = {"summary": "AKIA" + "F" * 16, "criteria": "sk-ant-" + "c" * 30, "task_title": "github_pat_" + "T" * 30,
+           "instructions": "ghp_" + "I" * 36, "task_criteria": "xoxb-" + "9" * 12, "gates": "Bearer " + "g" * 30}
+    canonical = {"feature": {"title": "Export", "summary": f"Use {raw['summary']}.",
+                             "acceptance_criteria": [f"the key {raw['criteria']} is unused"]},
+                 "tasks": [{"id": "cli", "title": f"CLI {raw['task_title']}", "role": "cli",
+                            "instructions": f"Call it with {raw['instructions']}.",
+                            "acceptance_criteria": [f"the hook {raw['task_criteria']} is not called"],
+                            "paths": ["cli/**"], "depends_on": [], "gates": []}],
+                 "integration_gates": [f"cli-lint {raw['gates']}"]}
+    record = IntakeRecord(id="issue-7", issue_number=7, issue_id=907, node_id="I_7", url="mock://issues/7",
+                          issue_author="someone", title="Export items", body="Do it. ghp_" + "A" * 36,
+                          digest="d" * 64, role="cli", gates=["cli-lint"], task_id="issue-7.cli",
+                          approved_by="spyderbg", approval_comment_id=1, approval_comment_url="mock://c/1",
+                          approved_at="2026-11-05T10:00:00Z")
+    planned = dataclasses.replace(record, task_ids=["issue-7.cli"], anchor="issue-7", plan={
+        "version": 1, "sha256": "p" * 64, "approval_sha256": "a" * 64, "canonical": canonical})
+    feature = Feature(id="issue-7", slug="issue-7", title="Export", base_branch="dev", branch="feature/issue-7",
+                      base_sha=base)
+    binding = {"repository": "spyderbg/mx-admin-cloud", "pr": 9, "head_branch": "feature/issue-7",
+               "base_branch": "dev", "head_sha": head, "merge_base": base}
+    config = enabled_config()
+    ctx = build_context(config, root, feature=feature, record=planned, tasks=[], binding=binding)
+    assert "Approved execution plan v1" in ctx.prompt and not ctx.problem
+    for name, value in raw.items():  # the plan: summary, criteria, task title, instructions, task criteria, gates
+        assert value not in ctx.prompt, name
+    assert ctx.redactions == len(raw) + 2  # + the Issue body and the diff (history())
+    assert ctx.notes[0] == f"{len(raw) + 2} credential-like string(s) were withheld from the reviewer"
+    task = Task(id="issue-7.cli", feature_id="issue-7", role="cli", title="Export with sk-ant-" + "t" * 30)
+    legacy = build_context(config, root, feature=feature, record=record, tasks=[task], binding=binding)
+    assert "Task title: Export with [redacted]" in legacy.prompt and "sk-ant-" not in legacy.prompt
+    assert legacy.redactions == 3 and legacy.notes[0].startswith("3 credential-like")

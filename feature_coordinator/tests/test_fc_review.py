@@ -7,6 +7,7 @@ runners for the agents, recorded gates and FAKE reviewers. No model, no real Git
 
 from __future__ import annotations
 
+import copy
 import dataclasses
 import json
 import re
@@ -19,7 +20,12 @@ import yaml
 from feature_coordinator import review as review_module
 from feature_coordinator.cli import EXAMPLE_CONFIG
 from feature_coordinator.cli import main as cli_main
-from feature_coordinator.errors import CoordinatorError, GitOperationError
+from feature_coordinator.errors import (
+    CoordinatorError,
+    GitHubUnavailableError,
+    GitOperationError,
+    RemoteUnavailableError,
+)
 from feature_coordinator.intake import feature_id_for, load_intake
 from feature_coordinator.issue_sync import SimulatedCrash
 from feature_coordinator.issues import parse_op
@@ -183,6 +189,8 @@ def test_findings_decide_the_outcome(rig: PubRig, result: Any, outcome: str, tex
     for text in texts:
         assert text in comment, text
     assert rig.feature(feature_id).state is FeatureState.REVIEW
+    evidence = review_evidence(rig.store, feature_id, pr, current(rig, feature_id)["binding"]["head_sha"])
+    assert evidence is not None and evidence["outcome"] == outcome  # evidence of a review, never approval to merge
 
 
 # -- answers that are not a review -------------------------------------------------------------------------------
@@ -207,7 +215,7 @@ def test_invalid_answers_timeouts_and_failures_are_error_never_pass(rig: PubRig,
     assert "no valid review in 1 attempt(s)" in entry["reason"] and entry["attempt_log"][0]["status"] != "ok"
     (comment,) = pr_comments(rig, pr)
     assert "Independent AI review: ERROR" in comment and "could not be completed" in comment
-    assert review_evidence(rig.store, feature_id, pr, entry["binding"]["head_sha"])["outcome"] == "ERROR"  # type: ignore
+    assert review_evidence(rig.store, feature_id, pr, entry["binding"]["head_sha"]) is None  # completed, no evidence
 
 
 def test_attempts_are_bounded_and_a_later_valid_answer_counts(repo: Path, state_dir: Path,
@@ -322,6 +330,136 @@ def test_a_closed_issue_before_review_is_error_without_a_reviewer(rig: PubRig) -
     assert "was closed" in current(rig, feature_id)["reason"] or "closed" in current(rig, feature_id)["reason"]
 
 
+# -- the binding is checked again when the reviewer has finished ---------------------------------------------------
+
+def _merge_base_moved(_rig: PubRig, _number: int, _pr: int, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(review_module, "merge_base", lambda _root, _a, _b: "e" * 40)
+
+
+CHANGES: dict[str, tuple[Callable[..., Any], str, int]] = {  # what changes while the reviewer runs → why; entries
+    "pr-head": (lambda rig, _n, pr, _m: rig.tracker.update_pull_request(pr, head_sha="f" * 40),
+                "is not the verified", 1),
+    "pr-closed": (lambda rig, _n, pr, _m: rig.tracker.update_pull_request(pr, state="closed"), "is closed", 1),
+    "issue-edited": (lambda rig, number, _p, _m: outside(rig, number, body=BODY + "\nAlso export images."),
+                     "the approval no longer holds", 2),
+    "issue-closed": (lambda rig, number, _p, _m: outside(rig, number, state="closed"),
+                     "the approval no longer holds", 2),
+    "merge-base": (_merge_base_moved, "the binding changed (merge_base)", 2),
+}
+
+
+@pytest.mark.parametrize("change", sorted(CHANGES))
+def test_a_change_during_the_review_keeps_its_answer_as_history_only(rig: PubRig, monkeypatch: pytest.MonkeyPatch,
+                                                                     change: str) -> None:
+    number, _task_id, feature_id, pr = published(rig)
+    head = rig.candidate(feature_id).head_sha
+    act, why, entries = CHANGES[change]
+
+    def meanwhile(request: ReviewRequest) -> ReviewResult:
+        act(rig, number, pr, monkeypatch)  # while the reviewer runs (minutes, live)
+        return ok("pass")(request)
+    report = review(rig, feature_id, FakeReviewer(meanwhile))
+    entry = current(rig, feature_id)
+    assert report.status == "stale" and not report.ok and report.outcome is None and report.reviewer_runs == 1
+    assert "history only" in report.attention[0] and why in report.attention[0], report.attention
+    assert (entry["status"], entry["outcome"], entry["verdict"]) == ("invalidated", "PASS", "pass")
+    assert entry["binding"]["head_sha"] == head and entry["binding_sha256"] == binding_digest(entry["binding"])
+    assert "stale when the review finished" in entry["invalidated"]["reason"] and why in entry["invalidated"]["reason"]
+    assert not pr_comments(rig, pr) and entry["comment"] is None and entry["notice"] is None  # never published
+    assert review_evidence(rig.store, feature_id, pr, head) is None
+    assert "review-stale" in [e["kind"] for e in rig.store.events()]
+    if change == "pr-head":  # both heads are named; the record keeps the reviewed one
+        assert "head commit ffffffffffff is not the verified " + head[:12] in entry["invalidated"]["reason"]
+    # the next operator run reviews nothing unverified: an unverified head or a closed PR stops; a withdrawn
+    # approval or a moved base is ERROR without a reviewer run — never a PASS
+    later = review(rig, feature_id, (fake := FakeReviewer(ok("pass"))))
+    record = load_review(rig.store, feature_id)
+    assert record is not None and len(record.entries) == entries and not fake.requests
+    assert later.outcome == (None if entries == 1 else "ERROR") and not later.ok
+    assert record.entries[0]["status"] == "invalidated" and record.entries[0]["outcome"] == "PASS"
+    assert review_evidence(rig.store, feature_id, pr, head) is None
+
+
+def outage(rig: PubRig, patch: pytest.MonkeyPatch, failure: str) -> None:
+    """From now on (inside *patch*'s context): GitHub's PR read or the base branch fetch fails transiently."""
+    if failure == "github":
+        def down(_number: int) -> Any:
+            raise GitHubUnavailableError("GitHub returned 502")
+        patch.setattr(rig.coord.sync.client, "get_pull_request", down)
+    else:
+        def offline(*_args: Any, **_kwargs: Any) -> str:
+            raise RemoteUnavailableError("git fetch origin dev failed: network is unreachable")
+        patch.setattr(rig.coord.git, "fetch_branch", offline)
+
+
+@pytest.mark.parametrize("failure", ["github", "fetch"])
+def test_a_failed_re_read_holds_the_answer_until_a_run_confirms_it(rig: PubRig, monkeypatch: pytest.MonkeyPatch,
+                                                                   failure: str) -> None:
+    _number, _task_id, feature_id, pr = published(rig)
+    head = rig.candidate(feature_id).head_sha
+    with monkeypatch.context() as patch:
+        def meanwhile(request: ReviewRequest) -> ReviewResult:
+            outage(rig, patch, failure)  # while the reviewer runs
+            return ok("pass_with_notes", finding("minor"))(request)
+        report = review(rig, feature_id, FakeReviewer(meanwhile))
+    entry = current(rig, feature_id)
+    assert report.status == "deferred" and not report.ok and report.outcome is None and "is held" in \
+        report.deferred[0]
+    assert (entry["status"], entry["outcome"], entry["attempts"]) == ("pending", None, 1)
+    assert entry["held"]["outcome"] == "PASS_WITH_NOTES" and entry["attempt_log"][-1]["status"] == "held"
+    assert not pr_comments(rig, pr) and review_evidence(rig.store, feature_id, pr, head) is None
+    dry = review(rig, feature_id, FakeReviewer(), apply=False)
+    assert any("confirm the held answer" in w for w in dry.writes)
+    again = FakeReviewer()
+    report = review(rig, feature_id, again)  # this run's own fresh binding check passes: recorded, no reviewer run
+    entry = current(rig, feature_id)
+    assert report.outcome == "PASS_WITH_NOTES" and report.ok and not again.requests and report.reviewer_runs == 0
+    assert entry["status"] == "complete" and entry["findings"][0]["severity"] == "minor" and entry["attempts"] == 1
+    (comment,) = pr_comments(rig, pr)
+    assert "PASS_WITH_NOTES" in comment and review_evidence(rig.store, feature_id, pr, head) == entry
+    assert review(rig, feature_id, FakeReviewer()).status == "unchanged" and len(pr_comments(rig, pr)) == 1
+
+
+def test_a_held_answer_is_discarded_when_the_approval_no_longer_holds(rig: PubRig,
+                                                                      monkeypatch: pytest.MonkeyPatch) -> None:
+    number, _task_id, feature_id, pr = published(rig)
+    with monkeypatch.context() as patch:
+        def meanwhile(request: ReviewRequest) -> ReviewResult:
+            outage(rig, patch, "github")
+            return ok("pass")(request)
+        assert review(rig, feature_id, FakeReviewer(meanwhile)).status == "deferred"
+    outside(rig, number, body=BODY + "\nAlso export images.")
+    report = review(rig, feature_id, (fake := FakeReviewer(ok("pass"))))
+    entry = current(rig, feature_id)
+    assert report.outcome == "ERROR" and not fake.requests and "the approval no longer holds" in entry["reason"]
+    assert entry["held"]["outcome"] == "PASS" and entry["verdict"] is None  # kept as history only
+    (comment,) = pr_comments(rig, pr)
+    assert "Independent AI review: ERROR" in comment
+    assert review_evidence(rig.store, feature_id, pr, entry["binding"]["head_sha"]) is None
+
+
+def test_review_evidence_is_a_current_published_review_of_exactly_that_head(rig: PubRig) -> None:
+    _number, _task_id, feature_id, pr = published(rig)
+    head = rig.candidate(feature_id).head_sha
+    with pytest.raises(SimulatedCrash):  # recorded, its comment not posted yet
+        review(rig, feature_id, FakeReviewer(ok("request_changes", finding("major"))),
+               faults=(f"crash-after-review-recorded:{feature_id}",))
+    assert current(rig, feature_id)["outcome"] == "REQUEST_CHANGES"  # a completed outcome …
+    assert review_evidence(rig.store, feature_id, pr, head) is None  # … but not published: no evidence yet
+    review(rig, feature_id, FakeReviewer())
+    evidence = review_evidence(rig.store, feature_id, pr, head)
+    assert evidence is not None and evidence["outcome"] == "REQUEST_CHANGES"  # evidence of findings, not approval
+    assert review_evidence(rig.store, feature_id, pr + 1, head) is None
+    assert review_evidence(rig.store, feature_id, pr, "f" * 40) is None
+    with rig.store.transaction():  # a stored binding that no longer matches its digest is not evidence
+        record = load_review(rig.store, feature_id)
+        assert record is not None
+        record.entries[0]["binding"]["merge_base"] = "e" * 40
+        rig.store.save_record("review", record)
+    assert review_evidence(rig.store, feature_id, pr, head) is None
+    assert current(rig, feature_id)["status"] == "complete"  # still the latest completed outcome in the history
+
+
 # -- planned (W4.5) features --------------------------------------------------------------------------------------
 
 def test_a_planned_feature_binds_its_plan_and_approval(repo: Path, state_dir: Path, github_origin: Path) -> None:
@@ -377,6 +515,37 @@ def test_credentials_in_the_spec_are_withheld_and_rule_out_pass(rig: PubRig) -> 
     assert entry["coordinator_notes"] == ["1 credential-like string(s) were withheld from the reviewer"]
     pr = rig.candidate(feature_id).number
     assert pr is not None and "credential-like" in pr_comments(rig, pr)[0] and token not in pr_comments(rig, pr)[0]
+
+
+def test_credentials_in_the_approved_plan_never_reach_the_prompt(repo: Path, state_dir: Path,
+                                                                github_origin: Path) -> None:
+    raw = {"summary": "AKIA" + "R" * 16, "criteria": "sk-ant-" + "q" * 30, "title": "github_pat_" + "S" * 30,
+           "instructions": "ghp_" + "P" * 36, "task_criteria": "xoxb-" + "4" * 12}
+    plan = copy.deepcopy(MULTI)
+    plan["feature"]["summary"] += f" Deploy key {raw['summary']}."
+    plan["feature"]["acceptance_criteria"].append(f"the key {raw['criteria']} is never logged")
+    plan["tasks"][2]["title"] += f" ({raw['title']})"
+    plan["tasks"][0]["instructions"] += f" Call the API with the token {raw['instructions']}."
+    plan["tasks"][0]["acceptance_criteria"].append(f"the webhook {raw['task_criteria']} is not called")
+    config = with_review(planned_publish_config())
+    rig = scripted(PlannedPubRig(repo, state_dir, github_origin, planner=FakePlanner(plan), config=config), plan)
+    _number, feature_id, approved = approved_and_verified(rig, title="Category export across the stack",
+                                                          body="Backend API, UI, CLI and docs.")
+    assert raw["instructions"] in approved["tasks"][0]["instructions"]  # the approved plan holds them as written
+    assert rig.publish().created
+    fake = FakeReviewer(ok("pass"))
+    report = review(rig, feature_id, fake)  # type: ignore[arg-type]
+    prompt = fake.requests[0].prompt
+    for name, value in raw.items():
+        assert value not in prompt, name
+    # (the cli commit's subject repeats its task title; the coordinator redacted it when it committed)
+    assert "Approved execution plan v1" in prompt and "cli: The cli part ([redacted])" in prompt
+    assert prompt.count("[redacted]") == len(raw) + 1
+    entry = current(rig, feature_id)  # type: ignore[arg-type]
+    assert report.outcome == entry["outcome"] == "PASS_WITH_NOTES"  # never a plain PASS
+    assert entry["coordinator_notes"] == [f"{len(raw)} credential-like string(s) were withheld from the reviewer"]
+    comment = pr_comments(rig, entry["binding"]["pr"])[0]  # type: ignore[arg-type]
+    assert "credential-like" in comment and not any(value in comment for value in raw.values())
 
 
 # -- duplicates, crashes, retry ---------------------------------------------------------------------------------

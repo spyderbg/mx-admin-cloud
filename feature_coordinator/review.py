@@ -24,8 +24,18 @@ R1 runs only when an operator starts it; the Worker service never does. One run,
      an attempt a crash interrupted stays counted). An unavailable reviewer or a cancelled run gives the attempt
      back (after `unavailable_wait_seconds` of unavailability: ERROR); a refused run (a rule violation) is ERROR at
      once; an invalid or contradictory answer uses the attempt, and when none is left the entry is ERROR;
-  6. the outcome is recorded, then ONE comment is posted on the PR: an operation marker, the operation recorded
+  6. a valid answer is checked AGAIN before it is recorded (`recheck`: the reviewer may have run for minutes): the
+     PR re-read and still the publisher's verified, open candidate, the binding re-derived (head, merge base,
+     approval, plan) and unchanged. A stale answer is kept as history only (the entry is invalidated with the
+     original reviewed head, never published, never evidence) and nothing new is reviewed in this run; when the
+     re-read fails (GitHub, `git fetch`, a busy lock) the answer is HELD — nothing is current — and the next run,
+     whose own fresh binding check must pass, records it without another reviewer run;
+  7. the outcome is recorded, then ONE comment is posted on the PR: an operation marker, the operation recorded
      before the request and looked for before any repost, so a crash never duplicates it.
+
+History, outcome and evidence are different things: the record keeps every entry (history); `review_rows` and
+`show` report the latest completed outcome, ERROR included (for people); `review_evidence()` returns only a current,
+complete, real review outcome of exactly one PR head — and even that is advisory input, never approval to merge.
 
 `retry` supersedes the current entry (an operator decision, recorded with its reason) and starts a new generation
 for the same head. Records: `state/review/<feature>.json`. Nothing here merges, approves, marks a PR ready, changes
@@ -45,6 +55,7 @@ from typing import Any, Callable, Iterable, Mapping, NoReturn
 
 from .errors import (
     CoordinatorError,
+    GitHubError,
     GitHubNotFoundError,
     GitHubUncertainWriteError,
     GitOperationError,
@@ -59,13 +70,14 @@ from .model import Feature, FeatureState, utc_now
 from .plan_digest import canonical_json, plan_sha256
 from .publish import PullRequestPublisher
 from .review_context import ReviewContext, build_context, independence, merge_base, provider_kind
-from .review_result import decide, render_comment, render_invalidation, validate_output
+from .review_result import Review, decide, render_comment, render_invalidation, validate_output
 from .reviewer import ReviewRequest, ReviewResult, Reviewer
 
 REVIEW_RECORD_SCHEMA = 1
 ENTRY_STATUSES = ("pending", "running", "complete", "invalidated")
 BINDING_KEYS = ("repository", "feature", "issue", "pr", "pr_node_id", "head_branch", "head_sha", "base_branch",
                 "merge_base", "spec_sha256", "plan_sha256", "approval_sha256", "approval_ref", "reviewer", "subject")
+EVIDENCE_OUTCOMES = ("PASS", "PASS_WITH_NOTES", "REQUEST_CHANGES")  # ERROR: no review happened, no evidence
 _RECORD_FIELDS = frozenset({"schema_version", "id", "issue_number", "entries", "current", "updated_at", "revision"})
 
 
@@ -110,13 +122,26 @@ def load_review(store: Any, feature_id: str) -> ReviewRecord | None:
 
 
 def review_evidence(store: Any, feature_id: str, pr: int, head_sha: str) -> dict[str, Any] | None:
-    """The completed, still valid review of exactly PR *pr* at *head_sha* (for later phases), else None."""
+    """The CURRENT review evidence of exactly PR *pr* at *head_sha*, from the local record only; else None.
+
+    Not the history (`load_review`: every entry, invalidated and stale ones included) and not merely the latest
+    completed outcome (`review_rows`, ERROR included): evidence is the record's current entry, complete, with a
+    real review outcome (`EVIDENCE_OUTCOMES`, never ERROR), its stored binding intact (`binding_sha256`), bound to
+    exactly this PR and head, and its comment posted on the PR.
+
+    Evidence is ADVISORY and never approval to merge — REQUEST_CHANGES is evidence too. Nothing acts on it in R1. A
+    later caller that does must itself, at that moment: re-derive the binding from fresh reads
+    (`ReviewRunner.recheck(feature, entry)` must return []), apply its own rule for which outcome it accepts, keep
+    the deterministic gates authoritative, and treat the local record as forgeable while the shared identity and
+    native hardening limitations stand (github-intake.md §13.6)."""
     record = load_review(store, feature_id)
     entry = record.entry(record.current) if record else None
-    if entry and entry["status"] == "complete" and entry["binding"]["pr"] == pr \
-            and entry["binding"]["head_sha"] == head_sha:
-        return entry
-    return None
+    if entry is None or entry["status"] != "complete" or entry["outcome"] not in EVIDENCE_OUTCOMES:
+        return None
+    binding = entry["binding"]
+    if binding_digest(binding) != entry["binding_sha256"] or binding["pr"] != pr or binding["head_sha"] != head_sha:
+        return None
+    return entry if (entry.get("comment") or {}).get("status") == "posted" else None
 
 
 def binding_digest(binding: Mapping[str, Any]) -> str:
@@ -224,10 +249,7 @@ class ReviewRunner:  # pylint: disable=too-many-instance-attributes,too-few-publ
             pr = self.client.get_pull_request(cand.number)
         except GitHubNotFoundError:
             pr = None
-        problem = ("the recorded PR no longer exists" if pr is None else
-                   self.publisher._repository_problem(feature)  # pylint: disable=protected-access
-                   or self.publisher._head_problem(feature, cand)  # pylint: disable=protected-access
-                   or self.publisher._pr_problem(feature, cand, pr))  # pylint: disable=protected-access
+        problem = "the recorded PR no longer exists" if pr is None else self._identity_problem(feature, cand, pr)
         if problem:
             self._invalidate_current(feature_id, f"PR #{cand.number} is no longer the verified candidate: {problem}",
                                      report, apply)
@@ -254,14 +276,56 @@ class ReviewRunner:  # pylint: disable=too-many-instance-attributes,too-few-publ
         if entry is None:  # dry run, or the current entry is complete and published
             return
         if entry["status"] != "complete":
-            self._update(feature_id, entry["key"], lambda e: e.update(
-                independence=level, input_sha256=context.input_sha256, diff_sha256=context.diff_sha256,
-                coordinator_notes=context.notes, files=len(context.files)))
+            held = entry.get("held")
+            if not held:  # a held answer keeps the digests of the prompt it answered
+                self._update(feature_id, entry["key"], lambda e: e.update(
+                    independence=level, input_sha256=context.input_sha256, diff_sha256=context.diff_sha256,
+                    coordinator_notes=context.notes, files=len(context.files)))
             if problems:
                 self._complete(feature_id, entry["key"], "ERROR", "; ".join(problems), report)
+            elif held:  # this run re-read the PR and re-derived the binding (above): unchanged, so it is confirmed
+                self._complete(feature_id, entry["key"], held["outcome"], held["reason"], report, review=Review(
+                    held["verdict"], held["summary"], held["findings"], held["limitations"]),
+                               output_sha=held["output_sha256"])
             else:
                 self._attempts(feature_id, entry["key"], context, report)
         self._publish(feature_id, entry["key"], report)
+
+    def _identity_problem(self, feature: Feature, cand: Any, pr: Any) -> str | None:
+        """The publisher's own checks: publish.py stays authoritative for the PR's identity and verified head."""
+        return (self.publisher._repository_problem(feature)  # pylint: disable=protected-access
+                or self.publisher._head_problem(feature, cand)  # pylint: disable=protected-access
+                or self.publisher._pr_problem(feature, cand, pr))  # pylint: disable=protected-access
+
+    def recheck(self, feature_id: str, entry: Mapping[str, Any]) -> list[str]:
+        """Why *entry*'s binding no longer holds, from fresh reads NOW ([]: it holds): the feature still in review
+        with the same PR, that PR still the publisher's verified, open candidate, publication not stopped, and the
+        binding re-derived (head, merge base, approval, plan) equal to the entry's. A failed read (GitHub,
+        `git fetch`, a busy lock) raises: nothing is confirmed. Run after the reviewer, before a valid answer is
+        recorded; a later step must run it too before it relies on `review_evidence`."""
+        bound = entry["binding"]
+        feature = self.store.load_feature(feature_id)
+        intake = load_intake(self.store, feature_id)
+        cand = feature.pull_request
+        if intake is None or feature.state is not FeatureState.REVIEW or cand is None or cand.number != bound["pr"]:
+            return [f"the feature is no longer in review with PR #{bound['pr']} (now {feature.state.value})"]
+        try:
+            pr = self.client.get_pull_request(cand.number)
+        except GitHubNotFoundError:
+            return [f"PR #{cand.number} no longer exists"]
+        problem = self._identity_problem(feature, cand, pr)
+        if problem:
+            return [f"PR #{cand.number} is no longer the verified candidate: {problem}"]
+        if pr.state != "open":
+            return [f"PR #{pr.number} is {'merged' if pr.merged else 'closed'}"]
+        if cand.attention:
+            return [f"publication of {feature_id} is stopped ({cand.attention.get('reason')})"]
+        binding, problems = self._bind(feature, intake, pr, True)
+        changed = [k for k in BINDING_KEYS if bound.get(k) != binding.get(k)]
+        if changed:
+            problems.insert(0, f"the binding changed ({', '.join(changed)})" + (
+                f": head {bound['head_sha'][:12]} → {binding['head_sha'][:12]}" if "head_sha" in changed else ""))
+        return problems
 
     # -- binding ------------------------------------------------------------------------------------
 
@@ -365,8 +429,9 @@ class ReviewRunner:  # pylint: disable=too-many-instance-attributes,too-few-publ
                     if (current.get("comment") or {}).get("status") == "posted":
                         return None
                 if not apply:
-                    report.writes.append(f"{'post the comment of' if current['status'] == 'complete' else 'continue'}"
-                                         f" review {current['key']}")
+                    step = ("post the comment of" if current["status"] == "complete" else
+                            "confirm the held answer of" if current.get("held") else "continue")
+                    report.writes.append(f"{step} review {current['key']}")
                     return None
                 return current
         pr, head = binding["pr"], binding["head_sha"]
@@ -383,8 +448,8 @@ class ReviewRunner:  # pylint: disable=too-many-instance-attributes,too-few-publ
                  "binding": binding, "binding_sha256": digest, "independence": None, "input_sha256": "",
                  "diff_sha256": "", "files": 0, "coordinator_notes": [], "attempts": 0, "attempt_log": [],
                  "running": None, "unavailable_since": None, "verdict": None, "summary": "", "findings": [],
-                 "limitations": [], "output_sha256": "", "comment": None, "invalidated": None, "notice": None,
-                 "retry": dict(retry) if retry else None, "created_at": utc_now(), "completed_at": ""}
+                 "limitations": [], "output_sha256": "", "held": None, "comment": None, "invalidated": None,
+                 "notice": None, "retry": dict(retry) if retry else None, "created_at": utc_now(), "completed_at": ""}
         with self.store.transaction():  # write-ahead: the entry exists before anything runs
             record = self._record(feature_id, intake.issue_number)
             record.entries.append(entry)
@@ -394,21 +459,33 @@ class ReviewRunner:  # pylint: disable=too-many-instance-attributes,too-few-publ
                                     binding=digest, retry=bool(retry))
         return entry
 
-    def _complete(self, feature_id: str, key: str, outcome: str, reason: str, report: ReviewReport,
-                  review: Any = None, output_sha: str = "") -> None:
+    def _complete(self, feature_id: str, key: str, outcome: str, reason: str, report: ReviewReport,  # pylint: disable=too-many-arguments
+                  review: Any = None, output_sha: str = "", stale: str = "") -> None:
+        """Record the outcome. *stale* (why the binding no longer held after the review): in the same write the
+        entry is invalidated — the outcome and the original reviewed head stay as history, never current."""
         def done(e: dict[str, Any]) -> None:
             e.update(status="complete", outcome=outcome, reason=sanitize(reason, 1500), running=None,
                      completed_at=utc_now(), output_sha256=output_sha)
             if review is not None:
                 e.update(verdict=review.verdict, summary=review.summary, findings=review.findings,
                          limitations=review.limitations)
-        self._update(feature_id, key, done, event=("review-completed", {"outcome": outcome,
-                                                                         "reason": sanitize(reason, 300)}))
-        report.status = "error" if outcome == "ERROR" else "reviewed"
-        report.outcome = outcome
-        report.lines.append(f"{feature_id}: review {key}: {outcome} — {sanitize(reason, 300)}")
-        if outcome == "ERROR":
-            report.attention.append(f"{feature_id}: review {key} is ERROR: {sanitize(reason, 300)}")
+            if stale:
+                e.update(status="invalidated", invalidated={
+                    "reason": sanitize(f"stale when the review finished: {stale}", 600), "at": utc_now()})
+        self._update(feature_id, key, done, event=("review-stale" if stale else "review-completed", {
+            "outcome": outcome, "reason": sanitize(stale or reason, 300)}))
+        if stale:
+            report.status = "stale"
+            report.attention.append(f"{feature_id}: the {outcome} answer of review {key} is history only — the "
+                                    f"binding no longer held when the reviewer finished: {sanitize(stale, 400)}. "
+                                    "Nothing was published and nothing new was reviewed; run again once the "
+                                    "publisher has verified the current head")
+        else:
+            report.status = "error" if outcome == "ERROR" else "reviewed"
+            report.outcome = outcome
+            report.lines.append(f"{feature_id}: review {key}: {outcome} — {sanitize(reason, 300)}")
+            if outcome == "ERROR":
+                report.attention.append(f"{feature_id}: review {key} is ERROR: {sanitize(reason, 300)}")
         self._fault(f"crash-after-review-recorded:{feature_id}")
 
     # -- the reviewer --------------------------------------------------------------------------------
@@ -491,12 +568,34 @@ class ReviewRunner:  # pylint: disable=too-many-instance-attributes,too-few-publ
         if review is not None:
             outcome, reason = decide(review, context.notes)
             if outcome != "ERROR":
-                self._log(feature_id, key, log)
-                self._complete(feature_id, key, outcome, reason, report, review=review, output_sha=output_sha)
+                self._confirm(feature_id, key, (outcome, reason, review, output_sha), log, report)
                 return True
             problems = [reason]
         log.update(status="invalid", error=sanitize("; ".join(problems[:8]), 600), output_sha256=output_sha)
         return False
+
+    def _confirm(self, feature_id: str, key: str, answer: tuple[str, str, Review, str], log: dict[str, Any],
+                 report: ReviewReport) -> None:
+        """A valid answer becomes the current review only if its binding still holds NOW (`recheck`); a stale one
+        is history only; a failed re-read HOLDS it (nothing current) for the next run to confirm or discard."""
+        outcome, reason, review, output_sha = answer
+        try:
+            stale = self.recheck(feature_id, self._now(feature_id, key))
+        except (GitHubError, GitOperationError, LockBusyError) as exc:
+            held = {"outcome": outcome, "reason": reason, "verdict": review.verdict, "summary": review.summary,
+                    "findings": review.findings, "limitations": review.limitations, "output_sha256": output_sha,
+                    "error": sanitize(exc, 300), "at": utc_now()}
+            self._update(feature_id, key, lambda e: (e["attempt_log"].append({**log, "status": "held"}), e.update(
+                held=held, running=None, status="pending")), event=("review-held", {"outcome": outcome,
+                                                                                    "error": held["error"]}))
+            report.status = "deferred"
+            report.deferred.append(f"{feature_id}: the {outcome} answer of review {key} is held, not recorded: the "
+                                   f"binding could not be re-read after the review ({held['error']}); run again — "
+                                   "the next run checks the binding first and records it without a reviewer run")
+            return
+        self._log(feature_id, key, log)
+        self._complete(feature_id, key, outcome, reason, report, review=review, output_sha=output_sha,
+                       stale="; ".join(stale))
 
     def _default_reviewer(self) -> Reviewer:
         from .reviewer import ClaudeCodeReviewer  # pylint: disable=import-outside-toplevel
