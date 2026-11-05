@@ -112,10 +112,20 @@ text_to_speech/providers/
   concrete provider.
 - Registration stays with the owning service: `<Factory>.register("<id>", cls)` runs only inside the provider's
   package, and adding a provider needs no other edit. A facade never exports a provider class.
+- The service's own code selects providers through its factory (`<Factory>.create(...)`), never by importing a
+  concrete provider package. Outside `providers/` it imports at most the loader `src.services.<name>.providers`,
+  which the facade imports so that every provider registers itself.
+- `evaluation`'s speech-to-text backends follow the same layout without being configured providers:
+  `evaluation/providers/{openai,elevenlabs,speaktor}_stt/` implement `STTProvider` and register with
+  `SpeechToTextProviderFactory` under the id that a TTS configuration names in `evaluate.stt_provider`;
+  `EvaluationEngine` looks that id up. Details and how to add one:
+  `docs_agents/backend/services/evaluation/README.md`.
 
 **Exceptions** (`ALLOWED_DEEP_IMPORTS` in the test — keep it short): `main.py` imports each
 `src.services.<name>.routes` to mount its router; `core/log_client.py` imports the route paths from
-`src.services.logging.routes` (re-exporting them from the facade would load the router on every logging import).
+`src.services.logging.routes` (re-exporting them from the facade would load the router on every logging import);
+`services/configuration/__init__.py` imports `providers.file_system` because that provider is built at runtime
+from the registry builder, which no configuration file can supply.
 
 ### TTS Pipeline
 

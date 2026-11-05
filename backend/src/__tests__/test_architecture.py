@@ -10,6 +10,8 @@ The rules are documented in backend/CLAUDE.md ("Service and provider encapsulati
    registered with their factory only from inside their package.
 4. A service facade declares ``__all__``, every listed name exists, and none is a provider implementation.
 5. The import-time dependency graph between services has no cycles.
+6. A service's own code selects its providers through its factory: outside ``providers/`` (and tests) it never
+   imports a concrete provider package, only the provider loader ``src.services.<svc>.providers``.
 
 Sources are read with ``ast``; nothing is imported, so a violation is reported even where the import
 would only fail at runtime. Imports are resolved like Python does (relative imports, ``from pkg import
@@ -33,13 +35,16 @@ import pytest
 
 SRC = Path(__file__).resolve().parents[1]
 
-# Deliberate exceptions to rule 1 — (importing file relative to src/, predicate on the imported module) and
-# the reason. Keep this list short; every entry is also listed in backend/CLAUDE.md.
+# Deliberate exceptions to rules 1 and 6 — (importing file relative to src/, predicate on the imported module)
+# and the reason. Keep this list short; every entry is also listed in backend/CLAUDE.md.
 ALLOWED_DEEP_IMPORTS: list[tuple[str, str, str]] = [
     ("main.py", "src.services.*.routes",
      "the application entry point mounts each service's router module"),
     ("core/log_client.py", "src.services.logging.routes",
      "the logging HTTP client uses the route paths defined next to the logging router"),
+    ("services/configuration/__init__.py", "src.services.configuration.providers.file_system",
+     "the file-system configuration provider is built at runtime from the registry builder, "
+     "which no configuration file can supply"),
 ]
 
 
@@ -291,6 +296,26 @@ def facade_problems(cb: Codebase) -> list[str]:
     return out
 
 
+def concrete_provider_imports(cb: Codebase) -> list[str]:
+    """Rule 6: a service's own code reaches its providers through its factory, not by importing one.
+
+    Exempt: files under ``providers/`` (rule 2 governs them, and the loader ``providers/__init__.py`` imports
+    every provider) and tests. Importing the loader package itself is how a facade registers the providers.
+    """
+    out = []
+    for path in cb.files():
+        rel_parts, svc = path.relative_to(cb.src).parts, cb.owner(path)
+        if svc is None or "__tests__" in rel_parts or rel_parts[2] == "providers":
+            continue
+        for imp in cb.imports(path):
+            there = _provider_of(tuple(imp.target.split(".")[1:]))
+            if there is None or there[0] != svc or there[1].startswith("_") or _allowed(cb.rel(path), imp.target):
+                continue
+            out.append(f"{cb.rel(path)}:{imp.line} imports concrete provider '{there[1]}' ({imp.target}); "
+                       "select it through the service's provider factory")
+    return sorted(set(out))
+
+
 def service_dependency_graph(cb: Codebase) -> dict[str, set[str]]:
     """Service -> services it imports at import time (runtime code only, tests excluded)."""
     graph: dict[str, set[str]] = {svc: set() for svc in cb.services}
@@ -362,6 +387,10 @@ def test_service_facades_declare_a_public_interface() -> None:
     assert not (problems := facade_problems(CODEBASE)), _report(problems)
 
 
+def test_services_select_providers_through_their_factory() -> None:
+    assert not (problems := concrete_provider_imports(CODEBASE)), _report(problems)
+
+
 def test_services_have_no_import_time_dependency_cycles() -> None:
     graph = service_dependency_graph(CODEBASE)
     assert not (cycles := dependency_cycles(graph)), f"service import cycles: {cycles}\ngraph: {graph}"
@@ -372,6 +401,8 @@ def test_the_checks_see_the_whole_codebase() -> None:
     assert {"content", "text_to_speech", "evaluation", "logging"} <= set(CODEBASE.services)
     graph = service_dependency_graph(CODEBASE)
     assert "text_to_speech" in graph["evaluation"] and "logging" in graph["text_to_speech"]
+    providers = {_provider_of(path.relative_to(SRC).parts) for path in CODEBASE.files()}
+    assert {("evaluation", "openai_stt"), ("text_to_speech", "openai_tts")} <= providers
 
 
 # --- the checks themselves, on a small synthetic codebase ----------------------------------------------------
@@ -396,6 +427,11 @@ def fixture_bad(tmp_path: Path) -> Codebase:
             "__all__ = ['AlphaService', 'OneProvider', 'Missing']\n"
         ),
         "services/alpha/service.py": "from src.services import beta\nclass AlphaService: ...\n",
+        "services/alpha/engine.py": (
+            "import src.services.alpha.providers\n"
+            "from src.services.alpha.providers import one\n"
+            "from src.services.alpha.providers._shared import OneProvider\n"
+        ),
         "services/alpha/providers/__init__.py": "",
         "services/alpha/providers/_shared.py": "from src.services.alpha.providers.one.provider import OneProvider\n",
         "services/alpha/providers/one/__init__.py": "from .provider import OneProvider\n",
@@ -444,6 +480,16 @@ def test_checker_flags_facade_exports(bad: Codebase) -> None:
     problems = facade_problems(bad)
     assert "services/alpha/__init__.py exports provider implementation 'OneProvider'" in problems
     assert "services/alpha/__init__.py exports 'Missing', which it never defines" in problems
+
+
+def test_checker_flags_service_code_importing_a_concrete_provider(bad: Codebase) -> None:
+    problems = concrete_provider_imports(bad)
+    assert problems == [
+        "services/alpha/__init__.py:2 imports concrete provider 'one' (src.services.alpha.providers.one); "
+        "select it through the service's provider factory",
+        "services/alpha/engine.py:2 imports concrete provider 'one' (src.services.alpha.providers.one); "
+        "select it through the service's provider factory",
+    ]  # the provider loader (engine.py:1), shared helpers (engine.py:3) and providers themselves are fine
 
 
 def test_checker_finds_import_time_cycles_but_ignores_function_level_imports(bad: Codebase) -> None:

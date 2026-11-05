@@ -503,17 +503,19 @@ src/
     │   │   └── __init__.py
     │   └── providers/             # one package each: ffmpeg_optimizer/, pydub_optimizer/
     ├── evaluation/               # Co-located service (routes + schemas live next to service.py)
-    │   ├── __init__.py            # Re-exports engine + score stores
-    │   ├── models.py              # EvaluationResult, ProviderAggregate, ScoreRecord, EvaluationServiceProvider base
+    │   ├── __init__.py            # Re-exports engine + score stores; imports the STT providers
+    │   ├── models.py              # EvaluationResult, ProviderAggregate, ScoreRecord, STTProvider, EvaluationServiceProvider base
     │   ├── schemas.py             # Pydantic bodies for /internal/evaluators/*
     │   ├── routes.py              # /internal/evaluators, /evaluators/evaluate
-    │   ├── service.py             # EvaluationService + EvaluationProviderFactory
-    │   ├── engine.py
+    │   ├── service.py             # SpeechToTextProviderFactory, EvaluationService + EvaluationProviderFactory
+    │   ├── engine.py              # EvaluationEngine: picks the STT backend by evaluate.stt_provider, scores
     │   ├── score_store.py
     │   ├── score_store_json.py
     │   ├── score_store_sqlite.py
-    │   └── __tests__/             # Pytest tree (co-located with service)
-    │       └── __init__.py
+    │   ├── __tests__/             # Pytest tree (co-located with service)
+    │   │   ├── test_evaluation_engine.py
+    │   │   └── test_stt_providers.py
+    │   └── providers/             # STT backends, one package each: openai_stt/, elevenlabs_stt/, speaktor_stt/
     └── logging/                  # Logging service (structlog + stdlib + request logger)
         ├── __init__.py           # SERVICE_CLASS, SERVICE_NAME, SERVICE_ACCEPT_CRITERIA
         ├── models.py             # LoggingServiceProvider base class

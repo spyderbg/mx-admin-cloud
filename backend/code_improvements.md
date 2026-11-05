@@ -104,12 +104,12 @@ domains separable. The issues are where the boundaries are not actually respecte
   `routes.py` never touches `EvaluationService`: it lists evaluator configs from the
   **text_to_speech** service and instantiates `EvaluationEngine` ad hoc per request. There is also
   no `config/evaluation/` directory, so the registered service always holds zero providers.
-- The engine itself hardcodes STT backends in an `if/elif` chain
-  (`engine.py:96–104`) — the one place in the codebase where "provider" logic is not
-  provider-classes-plus-factory.
-- **Improvement:** make STT backends real `EvaluationServiceProvider`s (openai/elevenlabs/speaktor)
-  configured under `config/evaluation/`, let `EvaluationService` pick by priority, and delete the
-  engine's dispatch chain. That aligns evaluation with every other service and makes the
+- *Done:* the engine's `if/elif` chain over STT backends is gone. Each backend is a provider package
+  (`evaluation/providers/<name>_stt/`, contract `STTProvider`) registered with
+  `SpeechToTextProviderFactory`, and the engine looks up the id named in `evaluate.stt_provider`.
+- **Remaining improvement:** configure the STT backends under `config/evaluation/` as
+  `EvaluationServiceProvider`s and let `EvaluationService` pick by priority, instead of the per-TTS-config
+  `evaluate.stt_provider` id. That aligns evaluation with every other service and makes the
   "evaluators" listed by `/internal/evaluators` the ones actually used.
 
 ### 2.4 Duplicate service-resolution idioms
@@ -132,7 +132,7 @@ Each service currently implements a *different* cooperation model, only some of 
 | content | First active; **falls back to a disabled provider** if none active (`_select_provider`, `service.py:243–250`) | Fallback to a disabled provider contradicts `enabled` semantics — drop it or log loudly |
 | configuration | Hardcoded `get_provider("file_system")` then first provider | Fine (single impl), but the name lookup defeats the factory abstraction |
 | logging | Priority groups with fallback, plus name-routed `log()` | Most elaborate model; OK, but see 3.3 |
-| evaluation | if/elif on `stt_provider` string | Not a provider model at all (see 2.3) |
+| evaluation | STT backend looked up by the `evaluate.stt_provider` id (`SpeechToTextProviderFactory`) | Provider packages, but configured inside TTS configs, not as service providers (see 2.3) |
 
 ### 3.1 Translation chaining is a correctness and cost bug
 `TextTranslationService.translate_text` (`service.py:64–107`) feeds each provider's *output* into
