@@ -424,10 +424,9 @@ src/
 │           └── users.py
 ├── core/                         # No src.services imports (HTTP boundary)
 │   ├── config.py                 # Settings + output path helpers
-│   ├── models.py                 # e.g. TranslationSourceWord, GeneratedAudio, RunSummary
+│   ├── models.py                 # e.g. GeneratedAudio, RunSummary (service-only types live in the service)
 │   ├── languages.py
 │   ├── localization.py           # LocalizedString: multilingual str with property access + Pydantic support
-│   ├── input_loader.py           # load_words() for translate-file (TXT/CSV/XLSX)
 │   ├── result_writer.py
 │   ├── content_naming.py         # Content folder / image id naming
 │   ├── job_store.py
@@ -478,7 +477,8 @@ src/
     │   └── providers/            # openai_tts, elevenlabs_tts, speaktor_tts, pyttsx3_tts
     ├── text_translation/         # Co-located service (routes + schemas live next to service.py)
     │   ├── __init__.py            # SERVICE_CLASS, SERVICE_NAME, SERVICE_ACCEPT_CRITERIA
-    │   ├── models.py
+    │   ├── input_loader.py        # load_words() for translate-file (TXT/CSV/XLSX)
+    │   ├── models.py              # TranslationSourceWord, TranslateResult, provider base
     │   ├── schemas.py             # Pydantic bodies for /internal/translators/* routes
     │   ├── routes.py              # /internal/translators/, /translate, /translate-file (under that prefix)
     │   ├── service.py

@@ -1,4 +1,4 @@
-"""Text translation service base provider class."""
+"""Text translation service: base provider class and translation value types."""
 
 from __future__ import annotations
 
@@ -7,6 +7,23 @@ from dataclasses import dataclass, field
 
 from src.core.languages import LANG_MAP
 from src.services.models import LangCodeText, ServiceProvider
+
+
+@dataclass(slots=True)
+class TranslationSourceWord:  # pylint: disable=too-many-instance-attributes
+    """One text segment from an input file intended for translation.
+
+    Holds file-derived fields only (no TTS "request_id" or HTTP request metadata).
+    """
+
+    text: str
+    source_language_code: str
+    filename_text: str
+    expected_text: str
+    row_index: int
+    column_index: int | None
+    source_file: str
+    source_type: str
 
 
 @dataclass

@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-# Field layout mirrors core.models.TranslationSourceWord for the translate-file HTTP contract.
+# Field layout mirrors models.TranslationSourceWord for the translate-file HTTP contract.
 # pylint: disable=duplicate-code
 
 from pydantic import BaseModel, field_validator
 
 from src.core.languages import normalize_language_code
-from src.core.models import TranslationSourceWord
+from src.services.text_translation.models import TranslationSourceWord
 
 
 class TranslationFileSourceWord(BaseModel):

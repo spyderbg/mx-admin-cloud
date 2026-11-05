@@ -17,11 +17,12 @@ It also translates the words of an uploaded TXT/CSV/XLSX file. The content servi
 | --- | --- |
 | [`backend/src/services/text_translation/__init__.py`](../../../../backend/src/services/text_translation/__init__.py) | Registration (`config_subdir="text_translation"`) |
 | [`service.py`](../../../../backend/src/services/text_translation/service.py) | `TextTranslationService`, `TextTranslationProviderFactory` |
-| [`models.py`](../../../../backend/src/services/text_translation/models.py) | `TranslateResult`, `TranslateTextRequest`, `TextTranslationServiceProvider` contract (`:35`) |
+| [`models.py`](../../../../backend/src/services/text_translation/models.py) | `TranslationSourceWord`, `TranslateResult`, `TranslateTextRequest`, `TextTranslationServiceProvider` contract (`:52`) |
+| [`input_loader.py`](../../../../backend/src/services/text_translation/input_loader.py) | `load_words()`: parses TXT/CSV/XLSX into `TranslationSourceWord`s for `translate-file`, skipping segments already in the target language |
 | [`providers/`](../../../../backend/src/services/text_translation/providers/) | Concrete providers |
 | [`routes.py`](../../../../backend/src/services/text_translation/routes.py), [`schemas.py`](../../../../backend/src/services/text_translation/schemas.py) | HTTP API (`TranslateRequest`, `TranslateResponse`, `TranslateFileResponse`, `TranslationFileSourceWord`) |
 
-Depends on: `core.input_loader.load_words` (file parsing), `core.languages`, the OpenAI-compatible Chat Completions API (`openai`/`qwen`), and the content directory (`static`).
+Depends on: `core.languages`, `openpyxl` (XLSX parsing in `input_loader.py`), the OpenAI-compatible Chat Completions API (`openai`/`qwen`), and the content directory (`static`).
 
 ## Service Interface / ServiceProvider Contract
 
@@ -33,7 +34,7 @@ Depends on: `core.input_loader.load_words` (file parsing), `core.languages`, the
 
 `TranslateResult`: `success`, `lang_text` (`lang_code`, `text`), `errors`.
 
-**Provider contract:** `TextTranslationServiceProvider(ServiceProvider, ABC)` — `models.py:35` **[V]**.
+**Provider contract:** `TextTranslationServiceProvider(ServiceProvider, ABC)` — `models.py:52` **[V]**.
 
 - **Abstract:** `supports(input_lang_code, target_lang_code) -> bool` and `async translate_text(request: TranslateTextRequest) -> str | None`.
 - **Concrete helpers:** `default_input_language()`, `default_output_language()` (from the `input_language` / `output_language` config), and a static `language_name(lang_code)`.

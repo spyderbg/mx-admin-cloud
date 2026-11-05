@@ -46,11 +46,10 @@ docker compose -f docker/docker-compose.yml up -d --build
   (requires internal service token or admin JWT)
 - **`core/`** — Shared infrastructure with **zero** `src.services` imports (HTTP boundary enforced):
   - `config.py` — Pydantic Settings; all env vars and defaults
-  - `models.py` — Dataclasses used by `core/` itself or shared across services (GeneratedAudio,
-    TranslationSourceWord, RunSummary); a type only one service uses lives in that service's `models.py`
+  - `models.py` — Dataclasses shared across services or used by `core/` itself (GeneratedAudio,
+    RunSummary); a type only one service uses lives in that service's `models.py`
   - `content_naming.py` — Slugification and output filename helpers
   - `languages.py` — Language code/name lookups and BCP-47 conversion
-  - `input_loader.py` — `load_words()` parses CSV/XLSX/TXT for translation
   - `result_writer.py` — Write per-run JSON and CSV reports
   - `pipeline.py` — Async TTS pipeline orchestration (calls internal HTTP endpoints)
   - `job_store.py` — In-memory store for async pipeline jobs
@@ -63,7 +62,8 @@ docker compose -f docker/docker-compose.yml up -d --build
   - `text_to_speech/` — TTS provider implementations (OpenAI, ElevenLabs, Speaktor, Static)
   - `text_to_image/` — Image provider implementations (OpenAI SDK/HTTP, Google GenAI SDK/HTTP,
     ComfyUI) with a shared traffic governor (concurrency, spacing, retries) and cost estimates
-  - `text_translation/` — Translator implementations (OpenAI, Static CSV)
+  - `text_translation/` — Translator implementations (OpenAI, Static CSV); `input_loader.py` —
+    `load_words()` parses CSV/XLSX/TXT for `translate-file`
   - `voice_optimization/` — Audio post-processing (FFmpeg, Pydub, Normalizer)
   - `evaluation/` — STT transcription and Levenshtein-based scoring
   - `logging/` — Logging service (structlog provider, HTTP emit client, request logger)

@@ -10,6 +10,21 @@ from src.core.config import settings
 from src.core.models import GeneratedAudio
 
 
+def _build_output_stem_from_result(generated_audio: GeneratedAudio) -> str:
+    """Build the output stem from a generated audio result."""
+    request_stub = type(
+        "RequestStub",
+        (),
+        {
+            "filename_text": generated_audio.filename_text,
+            "language_code": generated_audio.language_code,
+            "text": generated_audio.expected_text,
+            "request_id": generated_audio.request_id,
+        },
+    )()
+    return settings.build_output_stem(request_stub)
+
+
 async def normalize_audio(_base_dir: Path, generated_audio: GeneratedAudio) -> GeneratedAudio:
     """Normalize raw provider output to a common WAV format for evaluation."""
     ffmpeg_path = shutil.which("ffmpeg")
@@ -19,7 +34,7 @@ async def normalize_audio(_base_dir: Path, generated_audio: GeneratedAudio) -> G
 
     output_dir = settings.normalized_output_dir(generated_audio.language_code, generated_audio.provider)
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / f"{settings.build_output_stem_from_result(generated_audio)}.wav"
+    output_path = output_dir / f"{_build_output_stem_from_result(generated_audio)}.wav"
 
     process = await asyncio.create_subprocess_exec(
         ffmpeg_path,

@@ -8,7 +8,7 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 from src.core.languages import normalize_language_code
-from src.core.models import TranslationSourceWord
+from src.services.text_translation.models import TranslationSourceWord
 
 
 def load_words(

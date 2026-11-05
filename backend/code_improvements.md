@@ -357,7 +357,7 @@ Suggestion: add a doc-check step to `/verify` that at minimum greps documented r
 - **Registry `dump()`** prints with Rich directly to stdout on startup and on every hot reload —
   route it through logging (respecting `LOG_PROFILE`) so prod logs stay structured; same for
   `_log_apply_result`.
-- **`build_output_stem_from_result`** creates a dynamic `type("RequestStub", ...)` — replace with a
+- **`_build_output_stem_from_result`** (`services/voice_optimization/normalizer.py`) creates a dynamic `type("RequestStub", ...)` — replace with a
   small dataclass or accept keyword args.
 - **Naked pass-through orchestrators:** `ContentService` is ~200 lines of one-line delegations to
   `_select_provider()`. Fine as a seam, but every new provider method needs three edits (ABC,

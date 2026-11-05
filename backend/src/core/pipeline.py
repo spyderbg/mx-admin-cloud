@@ -31,7 +31,7 @@ logger = logging.getLogger("core.pipeline")
 #         ) from exc
 #
 #     # File rows for TTS must be built as list[GenerateRequest] (see api/internal/schemas); load_words is
-#     # translation-only (core.input_loader.load_words).
+#     # translation-only (services.text_translation.input_loader.load_words).
 #     requests: list[Any] = []
 #     ensure_requests_log(output_dir)
 #
