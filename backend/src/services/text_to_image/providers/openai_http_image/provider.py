@@ -14,7 +14,7 @@ from typing import Any
 from src.services.text_to_image.governor import NonRetryableError
 from src.services.text_to_image.models import ImagePayload, ImageRequest, TextToImageProvider
 from src.services.text_to_image.service import TextToImageProviderFactory
-from ._openai_payload import ENDPOINT, build_openai_kwargs, mime_for_kwargs
+from src.services.text_to_image.providers._openai_payload import ENDPOINT, build_openai_kwargs, mime_for_kwargs
 
 logger = logging.getLogger(__name__)
 

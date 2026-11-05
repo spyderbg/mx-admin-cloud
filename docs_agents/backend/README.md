@@ -22,6 +22,8 @@ Each service package under `backend/src/services/` may export:
 
 `ServiceRegistry` discovers these packages with `pkgutil`. `ServiceRegistryBuilder` turns each `backend/config/<subdir>/*.json` file into a `ServiceProvider` envelope, which a per-service `ServiceProviderFactory` materializes into a concrete provider class registered at import time. Providers are then sorted by priority and dispatched with `ALL_PROVIDERS` or `FIRST_SUCCESS` according to `backend/config/_service_strategies.json`. Config changes are hot-reloaded. Details: [architecture §4](../architecture/README.md#4-service-and-provider-model-sv).
 
+Each package's `__init__.py` is also its public facade (`__all__`): other services import only from it, and every concrete provider is its own package under `providers/`. The rules and their automated check are in [`backend/CLAUDE.md`](../../backend/CLAUDE.md) ("Service and provider encapsulation").
+
 ## Service catalog
 
 | Service | Registered | Provider contract | Implemented providers | Instances (active/total) | Strategy | Ops | Tests |

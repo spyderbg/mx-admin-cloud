@@ -21,7 +21,7 @@ from fastapi import HTTPException, Request, Response  # pylint: disable=import-e
 from fastapi.routing import APIRoute
 
 from src.core.log_client import emit_event, log_event
-from src.services.logging.models import LogLevel
+from src.services.logging import LogLevel
 
 # Endpoint tracing goes to the dedicated "trace" logger config.
 TRACE_LOGGER = "trace"

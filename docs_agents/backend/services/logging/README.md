@@ -15,7 +15,7 @@ Usage from code (see [core](../../core/README.md#core-modules)): `await log_clie
 | [`backend/src/services/logging/__init__.py`](../../../../backend/src/services/logging/__init__.py) | Registration (`config_subdir="logging"`) |
 | [`service.py`](../../../../backend/src/services/logging/service.py) | `LoggingService`, `LoggingProviderFactory` |
 | [`models.py`](../../../../backend/src/services/logging/models.py) | `LogLevel`, `LogMessage`, `LoggingServiceProvider` contract |
-| [`providers/struct_log.py`](../../../../backend/src/services/logging/providers/struct_log.py) | `StructLogProvider` |
+| [`providers/struct_log/`](../../../../backend/src/services/logging/providers/struct_log/) | `StructLogProvider` |
 | [`routes.py`](../../../../backend/src/services/logging/routes.py), [`schemas.py`](../../../../backend/src/services/logging/schemas.py) | HTTP API and wire contract (`LogRequest`, `LogApiRequest`, `LogServiceRequest`, `LogProviderRequest`, …) |
 
 Depends on: `structlog`, the standard `logging` module, optionally `seqlog` (Seq handlers are disabled when the package or server is unavailable), and `provider_strategy.dispatch_each`. `backend/src/main.py` calls `LoggingService.configure(output_dir, profile)` at start-up. That call is the documented exception to the out-of-process rule.
@@ -40,7 +40,7 @@ Depends on: `structlog`, the standard `logging` module, optionally `seqlog` (Seq
 
 | Class | Registered name | Path | Capabilities |
 | --- | --- | --- | --- |
-| `StructLogProvider` | `struct_log` | `providers/struct_log.py:86` | Builds stdlib handlers from the config (console, file, rotating file, Seq), structlog rendering, request-log field filtering, reset of file handlers |
+| `StructLogProvider` | `struct_log` | `providers/struct_log/provider.py:86` | Builds stdlib handlers from the config (console, file, rotating file, Seq), structlog rendering, request-log field filtering, reset of file handlers |
 
 ## Configured Provider Instances
 

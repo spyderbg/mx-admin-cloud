@@ -14,12 +14,11 @@ from fastapi import APIRouter, Depends, status  # pylint: disable=import-error
 from src.api.dependencies import get_registry, require_internal
 from src.api.service_resolver import get_typed_service
 from src.core.config import settings
-from src.services.text_to_speech.models import GeneratedAudio
 from src.services import text_to_speech
 from src.services.evaluation import EvaluationEngine, JsonScoreStore, MultiScoreStore, SQLiteScoreStore
 from src.services.evaluation.schemas import EvaluateRequest
 from src.services.service_registry import ServiceRegistry
-from src.services.text_to_speech.service import TextToSpeechService
+from src.services.text_to_speech import GeneratedAudio, TextToSpeechService
 
 router = APIRouter(prefix="/internal/evaluators", tags=["internal-evaluators"])
 

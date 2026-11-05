@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from src.services.logging.service import LoggingService
+from src.services.logging import LoggingService
 from src.services.provider_strategy import (
     STRATEGIES_FILE,
     AllProvidersFailedError,
@@ -22,7 +22,7 @@ from src.services.provider_strategy import (
     read_strategies,
 )
 from src.services.service_registry import ServiceRegistry, ServiceRegistryBuilder
-from src.services.text_to_speech.service import TextToSpeechService
+from src.services.text_to_speech import TextToSpeechService
 
 ALL = ProviderSelectionStrategy.ALL_PROVIDERS
 FIRST = ProviderSelectionStrategy.FIRST_SUCCESS

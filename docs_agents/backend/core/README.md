@@ -25,10 +25,10 @@ Shared infrastructure used by the API layer and the services: settings, core dat
 
 `core/` imports from `src.services.logging` **[V]**:
 
-- `core/log_client.py` imports route path constants from `src.services.logging.routes`, plus `models.LogLevel` and the `schemas` request models.
-- `core/logging_route.py` imports `src.services.logging.models.LogLevel`.
+- `core/log_client.py` imports the wire contract (`LogLevel` and the `Log*Request` models) from the `src.services.logging` facade, plus the route path constants from `src.services.logging.routes`.
+- `core/logging_route.py` imports `LogLevel` from the `src.services.logging` facade.
 
-`backend/CLAUDE.md` allows importing logging `schemas`/`models` as the wire contract. **Importing `routes` goes beyond that exception**, because `routes` pulls in FastAPI router code and dependencies. No other `src.services` imports exist in `core/` **[V]**. This confirms part of `backend/code_improvements.md` §2.1. No change was made in Phase 1.
+The wire contract is part of the logging facade (`backend/CLAUDE.md`, "Service and provider encapsulation"). **The `routes` import is the one documented exception** (`ALLOWED_DEEP_IMPORTS` in `src/__tests__/test_architecture.py`): re-exporting the paths from the facade would pull FastAPI router code and dependencies into every logging import. No other `src.services` imports exist in `core/` **[V]**. This confirms part of `backend/code_improvements.md` §2.1. No change was made in Phase 1.
 
 ## Testing
 

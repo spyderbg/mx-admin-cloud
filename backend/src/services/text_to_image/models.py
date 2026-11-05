@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from src.core.log_client import log_provider_request
-from src.services.logging.schemas import LogProviderRequest
+from src.services.logging import LogProviderRequest
 from src.services.models import ServiceProvider
 from src.services.text_to_image.governor import RequestGovernor, TrafficPolicy
 from src.services.text_to_image.pricing import PriceTable

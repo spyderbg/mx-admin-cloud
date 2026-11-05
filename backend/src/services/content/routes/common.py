@@ -20,9 +20,9 @@ from src.services.content.models import CategoryImage, CategoryVoice, CreateItem
 from src.services.content.schemas import CreateItemResponse, ImageResponse, VoiceResponse
 from src.services.content.service import ContentService
 from src.services.service_registry import ServiceRegistry
-from src.services.text_to_image.service import TextToImageService
-from src.services.text_to_speech.service import TextToSpeechService
-from src.services.voice_optimization.service import VoiceOptimizationService
+from src.services.text_to_image import TextToImageService
+from src.services.text_to_speech import TextToSpeechService
+from src.services.voice_optimization import VoiceOptimizationService
 
 TAG_CATEGORIES = "Categories"
 TAG_CATEGORIES_IMAGES = "Categories Images"

@@ -25,7 +25,7 @@ from uuid import uuid4
 from src.services.text_to_image.governor import NonRetryableError
 from src.services.text_to_image.models import ImagePayload, ImageRequest, TextToImageProvider
 from src.services.text_to_image.service import TextToImageProviderFactory
-from src.services.text_to_image.templating import render_template
+from src.services.text_to_image.providers.comfyui_image.templating import render_template
 
 logger = logging.getLogger(__name__)
 

@@ -15,10 +15,10 @@ import time
 from pathlib import Path
 from typing import Any
 
-from src.services.logging.schemas import LogProviderRequest
+from src.services.logging import LogProviderRequest
 from src.core.languages import to_bcp47
 from src.core.log_client import log_provider_request
-from src.services.text_to_speech.models import GeneratedAudio
+from src.services.text_to_speech import GeneratedAudio
 from src.services.evaluation.models import EvaluationResult
 
 

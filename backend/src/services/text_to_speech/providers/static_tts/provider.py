@@ -43,7 +43,7 @@ class StaticTTSProvider(TTSProvider):
     def _find_english_voice(cls, text: str, language_code: str) -> Path | None:
         """Return the existing English voice of the item whose *language_code* word is *text*."""
         # Imported here: the content service depends on this one, not the other way round.
-        from src.services.content.models import ContentProvider  # pylint: disable=import-outside-toplevel
+        from src.services.content import ContentProvider  # pylint: disable=import-outside-toplevel
 
         word = text.strip().lower()
         root = settings.content_path

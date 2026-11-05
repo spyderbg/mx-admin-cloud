@@ -13,7 +13,7 @@ Post-processes generated voice files: resampling, mono down-mix and VBR re-encod
 | [`backend/src/services/voice_optimization/__init__.py`](../../../../backend/src/services/voice_optimization/__init__.py) | Registration (`config_subdir="voice_optimizers"` — note: **not** the package name) |
 | [`service.py`](../../../../backend/src/services/voice_optimization/service.py) | `VoiceOptimizationService`, `AudioOptimizerFactory` |
 | [`models.py`](../../../../backend/src/services/voice_optimization/models.py) | `AudioOptimizerBase` contract (`:18`) |
-| [`providers/ffmpeg_optimizer.py`](../../../../backend/src/services/voice_optimization/providers/ffmpeg_optimizer.py), [`providers/pydub_optimizer.py`](../../../../backend/src/services/voice_optimization/providers/pydub_optimizer.py) | Concrete optimizers |
+| [`providers/ffmpeg_optimizer/`](../../../../backend/src/services/voice_optimization/providers/ffmpeg_optimizer/), [`providers/pydub_optimizer/`](../../../../backend/src/services/voice_optimization/providers/pydub_optimizer/) | Concrete optimizers |
 | [`normalizer.py`](../../../../backend/src/services/voice_optimization/normalizer.py) | `normalize_audio()` — converts raw provider output to WAV for evaluation; a **function, not a provider**; re-exported from `__init__.py`, with no other live caller **[S]** |
 | [`routes.py`](../../../../backend/src/services/voice_optimization/routes.py), [`schemas.py`](../../../../backend/src/services/voice_optimization/schemas.py) | HTTP API (`OptimizeRequest`: `raw_path`, `output_path`) |
 
@@ -34,8 +34,8 @@ Depends on: the `ffmpeg` executable on `PATH` (ffmpeg optimizer) and the `pydub`
 
 | Class | Registered name | Path | Mechanism |
 | --- | --- | --- | --- |
-| `FfmpegAudioOptimizer` | `ffmpeg` | `providers/ffmpeg_optimizer.py:13` | Runs `ffmpeg -y -i <in> …` via `asyncio.create_subprocess_exec` with the configured sample rate, channels and VBR quality; raises if `ffmpeg` is not on `PATH` |
-| `PydubAudioOptimizer` | `pydub` | `providers/pydub_optimizer.py:12` | Re-encodes through `pydub` |
+| `FfmpegAudioOptimizer` | `ffmpeg` | `providers/ffmpeg_optimizer/provider.py:13` | Runs `ffmpeg -y -i <in> …` via `asyncio.create_subprocess_exec` with the configured sample rate, channels and VBR quality; raises if `ffmpeg` is not on `PATH` |
+| `PydubAudioOptimizer` | `pydub` | `providers/pydub_optimizer/provider.py:12` | Re-encodes through `pydub` |
 
 ## Configured Provider Instances
 
@@ -78,4 +78,4 @@ The CLI has `list optimizers`, but no optimize command.
 
 ## Testing
 
-`backend/src/services/voice_optimization/__tests__/` contains only `__init__.py`. **There are no voice-optimization tests** **[V]**. The content tests cover the *caller* side: `test_content_filesystem_item_voices.py` patches `FileSystemContentProvider._active_voice_optimizers` and the optimize call with fakes **[S]**. Neither optimizer class is tested.
+`backend/src/services/voice_optimization/__tests__/test_voice_optimization_service.py` covers only the normalizer's output file naming **[V]**. The content tests cover the *caller* side: `test_content_filesystem_item_voices.py` patches `FileSystemContentProvider._active_voice_optimizers` and the optimize call with fakes **[S]**. Neither optimizer class is tested.

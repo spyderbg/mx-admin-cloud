@@ -16,7 +16,7 @@ import httpx
 import pytest
 
 from src.core import log_client
-from src.services.logging.models import LogLevel
+from src.services.logging import LogLevel
 
 
 @pytest.fixture

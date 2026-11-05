@@ -43,9 +43,9 @@ Depends on: `core.languages`, `openpyxl` (XLSX parsing in `input_loader.py`), th
 
 | Class | Registered name | Path | Mechanism | Credential env var |
 | --- | --- | --- | --- | --- |
-| `StaticTextTranslate` | `static_translate` | `providers/static_translate.py:18` | Row-aligned lookup in `items_<lang>.csv` files under the configured `content_dir` (same line = same concept) | none |
-| `OpenAITextTranslate` | `openai_translate` | `providers/openai_translate.py:18` | OpenAI Chat Completions with the configured model, prompt and temperature | `OPENAI_API_KEY` (fixed override, because there is one config file per language pair) |
-| `QwenTextTranslate` | `qwen_translate` | `providers/qwen_translate.py:19` | Self-hosted Qwen through an OpenAI-compatible Chat Completions API at the configured `base_url` | `QWEN_API_KEY` |
+| `StaticTextTranslate` | `static_translate` | `providers/static_translate/provider.py:18` | Row-aligned lookup in `items_<lang>.csv` files under the configured `content_dir` (same line = same concept) | none |
+| `OpenAITextTranslate` | `openai_translate` | `providers/openai_translate/provider.py:18` | OpenAI Chat Completions with the configured model, prompt and temperature | `OPENAI_API_KEY` (fixed override, because there is one config file per language pair) |
+| `QwenTextTranslate` | `qwen_translate` | `providers/qwen_translate/provider.py:19` | Self-hosted Qwen through an OpenAI-compatible Chat Completions API at the configured `base_url` | `QWEN_API_KEY` |
 
 ## Configured Provider Instances
 

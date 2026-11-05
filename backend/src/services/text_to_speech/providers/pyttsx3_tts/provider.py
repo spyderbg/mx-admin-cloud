@@ -12,9 +12,9 @@ from typing import Any
 
 from src.core.log_client import log_provider_request
 from src.services.text_to_speech.models import GeneratedAudio
-from src.services.logging.schemas import LogProviderRequest
-from ..models import TTSProvider, TTSRequest
-from ..service import TextToSpeechProviderFactory
+from src.services.logging import LogProviderRequest
+from src.services.text_to_speech.models import TTSProvider, TTSRequest
+from src.services.text_to_speech.service import TextToSpeechProviderFactory
 
 logger = logging.getLogger(__name__)
 

@@ -8,7 +8,7 @@ from typing import Any
 from src.services.text_to_image.governor import NonRetryableError
 from src.services.text_to_image.models import ImagePayload, ImageRequest, TextToImageProvider
 from src.services.text_to_image.service import TextToImageProviderFactory
-from ._genai_common import (
+from src.services.text_to_image.providers._genai_common import (
     API_IMAGEN,
     DEFAULT_MIME_TYPE,
     optional_str,

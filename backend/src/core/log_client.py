@@ -16,6 +16,16 @@ from typing import Any, Coroutine
 
 import httpx
 
+from src.services.logging import (
+    LogApiRequest,
+    LogLevel,
+    LogProviderRequest,
+    LogRequest,
+    LogServiceRequest,
+)
+# Architecture exception (see test_architecture.py): this module *is* the logging API's HTTP client,
+# so it uses the route paths defined next to the router. Re-exporting them from the facade would make
+# every logging import load the FastAPI router and its src.api dependencies.
 from src.services.logging.routes import (
     LOGGING_API_REQUEST,
     LOGGING_EMIT,
@@ -24,13 +34,6 @@ from src.services.logging.routes import (
     LOGGING_PROVIDER,
     LOGGING_SERVICE,
     ROUTER_PREFIX,
-)
-from src.services.logging.models import LogLevel
-from src.services.logging.schemas import (
-    LogApiRequest,
-    LogRequest,
-    LogServiceRequest,
-    LogProviderRequest,
 )
 
 _client: httpx.AsyncClient | None = None  # pylint: disable=invalid-name

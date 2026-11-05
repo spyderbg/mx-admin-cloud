@@ -16,7 +16,7 @@ from src.security.google import (
     verify_google_credential,
 )
 from src.security.tokens import create_access_token
-from src.services.logging.models import LogLevel
+from src.services.logging import LogLevel
 
 LOG_SOURCE = "auth"
 # Role of the users that logging in with Google registers automatically.

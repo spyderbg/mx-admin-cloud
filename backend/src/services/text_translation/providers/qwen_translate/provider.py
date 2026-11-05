@@ -9,7 +9,7 @@ from typing import Any
 from openai import AsyncOpenAI
 
 from src.core.log_client import log_provider_request
-from src.services.logging.schemas import LogProviderRequest
+from src.services.logging import LogProviderRequest
 from src.services.text_translation.models import TextTranslationServiceProvider, TranslateTextRequest
 from src.services.text_translation.service import TextTranslationProviderFactory
 

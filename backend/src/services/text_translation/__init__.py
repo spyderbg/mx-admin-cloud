@@ -6,7 +6,11 @@ import src.services.text_translation.providers  # noqa: F401 — triggers provid
 
 from src.services.acceptance import ServiceAcceptCriteria
 from src.services.models import ServiceProvider
-from src.services.text_translation.models import TextTranslationServiceProvider
+from src.services.text_translation.models import (
+    TextTranslationServiceProvider,
+    TranslateResult,
+    TranslateTextRequest,
+)
 from src.services.text_translation.service import (
     TextTranslationService,
     TextTranslationProviderFactory,
@@ -16,6 +20,8 @@ __all__ = [
     "TextTranslationService",
     "TextTranslationServiceProvider",
     "TextTranslationProviderFactory",
+    "TranslateResult",
+    "TranslateTextRequest",
 ]
 
 

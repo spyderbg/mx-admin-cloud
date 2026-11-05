@@ -1,4 +1,8 @@
-"""Logging subsystem: service class, factory, and provider implementations."""
+"""Logging subsystem: service class, factory, and provider implementations.
+
+Public interface: the service/provider classes plus the **wire contract** (``LogLevel`` and the
+``Log*Request`` bodies) that other services and ``core.log_client`` use to emit records over HTTP.
+"""
 
 from pathlib import Path
 
@@ -6,7 +10,8 @@ import src.services.logging.providers  # noqa: F401 — triggers provider auto-r
 
 from src.services.acceptance import ServiceAcceptCriteria
 from src.services.models import ServiceProvider
-from src.services.logging.models import LoggingServiceProvider
+from src.services.logging.models import LoggingServiceProvider, LogLevel
+from src.services.logging.schemas import LogApiRequest, LogProviderRequest, LogRequest, LogServiceRequest
 from src.services.logging.service import (
     LoggingProviderFactory,
     LoggingService,
@@ -16,6 +21,12 @@ __all__ = [
     "LoggingService",
     "LoggingServiceProvider",
     "LoggingProviderFactory",
+    # Wire contract (see backend/CLAUDE.md "Logging — always out-of-process").
+    "LogLevel",
+    "LogRequest",
+    "LogApiRequest",
+    "LogProviderRequest",
+    "LogServiceRequest",
 ]
 
 
