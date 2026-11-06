@@ -464,3 +464,102 @@ Every pair of blob IDs must match (until step 2 of §12.13, `main` shows `MISSIN
 4. Optionally set the repository variable `WORKER_PLAN_AUTHORS` (default: the repository owner, which is the Worker's `gh` account).
 5. Enable `github.planning` in the Worker's project configuration with the conservative settings of §12.10 (intake must be enabled) and restart the service.
 6. Run one supervised test on a throwaway Issue, with no feature active: `worker:plan` → review → `worker:approve`; check the receipt and its run, `github planning status` and `github intake status`.
+
+## 13. Independent AI review of the Draft PR (W4.6.1, R1)
+
+> Status: **R1 implemented and tested offline only** (mock GitHub, fake reviewers, disposable repositories; no model call). Not activated: `github.review.enabled` defaults **false**. In R1 an **operator** starts every review; the Worker service never does (R2). Code: `feature_coordinator/review.py` (binding, records, comments), `review_context.py` (the reviewer's input), `reviewer.py` (Claude Code without tools), `review_result.py` (validation, outcome, comment), `review_config.py`, `review_commands.py`. Tests: `feature_coordinator/tests/test_fc_review.py`, `test_fc_reviewer.py`. Design: Issue #53.
+
+After publication (§10) has opened the single Draft PR of an approved Issue's feature, an operator can have it reviewed by an AI reviewer that did not write it:
+
+```bash
+python -m feature_coordinator --tracker github --project-config ~/.config/mx-admin-agents/project.yaml \
+  github review run issue-N            # dry run: what would be reviewed (reads GitHub and the checkout only)
+python -m feature_coordinator ... github review run issue-N --apply
+python -m feature_coordinator ... github review status | show issue-N
+python -m feature_coordinator ... github review retry issue-N --reason "…" --apply
+```
+
+The review is **advisory**. It never merges, approves, marks the PR ready, changes a feature or task, or touches publication, completion, the approved Issue or Project #2. The task and integration gates stay authoritative and a person decides whether to merge.
+
+### 13.1 What is reviewed, and the binding
+
+Only the feature's Draft PR as the publisher recorded it: the PR is read fresh and must still pass the publisher's own identity checks (repository, head branch → base branch, the **verified head**, author), be open, and publication must not be stopped. A review is bound to:
+
+| Bound fact | Source |
+| --- | --- |
+| repository, feature, Issue | the configuration and the intake record |
+| PR number and node ID, head branch and **head SHA** | the fresh PR, equal to the verified candidate |
+| base branch and **merge base** | `git merge-base` of the freshly fetched base branch and the head; it must be the feature's base commit |
+| approved spec digest; plan and approval digests (W4.5) or the approval comment (`/worker approve`) | the intake record (a planned record's plan must still match its digest) |
+| reviewer provider kind and model | `github.review` |
+
+`binding_sha256` covers exactly these. The observed base tip and GitHub's `base.sha` are recorded but not bound: the review is of the **PR head's diff** (`subject: pr-head-diff`), not of a future merge result with a newer `dev`, which a later merge step must validate on its own. The input digest (`input_sha256`, the exact prompt) and the diff digest are recorded with each review.
+
+One review per verified head and generation: a second `run` with an unchanged binding changes nothing. A changed binding (a new head, another PR, a different spec, plan, approval or reviewer configuration), a PR that no longer passes the publisher's checks, or an approval that no longer holds **invalidates** the current review (one short notice on the PR if its comment was posted) and the next run starts a new generation. `retry` supersedes the current review on purpose (recorded with who and why).
+
+**Checked again when the reviewer finishes.** A live review can take minutes, and the PR, its head or the approved Issue can change meanwhile. Before a valid answer (PASS, PASS_WITH_NOTES, REQUEST_CHANGES) is recorded, `ReviewRunner.recheck` reads everything again: the feature still in review with the same PR, the PR re-read and still passing the publisher's checks, open, publication not stopped, and the binding re-derived (fresh base fetch, merge base, Issue, plan) equal to the reviewed one.
+
+- **Stale:** the answer is kept as **history only**. In the same write the entry is invalidated with the original reviewed head and the reason. Nothing is posted, it is never evidence, and the run reviews nothing new. The next operator run treats the PR as at the start of any run: an unverified head or a closed PR stops; a withdrawn approval or a moved base is ERROR without a reviewer run.
+- **Re-read failed** (GitHub unavailable, `git fetch` failed, a busy Git lock): the answer is **held**, not recorded, and the run is deferred. The next run checks the binding fresh first. If it still holds, the held answer is recorded without another reviewer run; if not, the held answer stays in the record as history and the usual rules apply.
+
+### 13.2 What the reviewer gets, and what it cannot do
+
+The reviewer is the W4.5 planner's invocation: Claude Code with the operator's **subscription** (the allowlisted environment, `claude auth status` must show the claude.ai login; an API-key login makes the reviewer unavailable), **no tools** (`--tools ""`, `--permission-mode dontAsk`), no MCP server, `--restricted`, an **empty working directory** under the state directory, `--json-schema` for the answer, the existing supervisor's deadline. It receives no GitHub credential; only coordinator code posts comments.
+
+Its prompt holds: the approved Issue title and body (as recorded at approval), the approved plan or task, the tasks' path rules and the protected / approval-required paths, the task and integration gate results, the commit subjects, `CLAUDE.md` / `AGENTS.md` **as of the base commit** (a PR cannot rewrite them for the reviewer), and the diff from the merge base to the head (`git diff --no-ext-diff --no-textconv` through gitsafe). All of it is fenced as untrusted data with a random nonce. Before anything goes into the prompt the coordinator removes control characters, redacts credential-like strings, and withholds the content of files matching `runtime.secret_patterns` or the protected paths; each of these becomes a coordinator note, so such a review is at best PASS_WITH_NOTES. The redaction (`review_context.clean`) runs over **every part of the finished prompt**, one line or fenced block at a time: the Issue, the approved plan (summary, acceptance criteria, task titles, instructions and acceptance criteria, gates) or the single task's title, the path rules, gate results, commit subjects, conventions, the file list and the diff. A section added later cannot bypass it. A diff over `max_diff_characters` is not reviewed (ERROR), never truncated.
+
+After the run the coordinator refuses it (ERROR, no retry) when the stream shows a tool or MCP server offered, any tool use or permission denial, no `init` event, an API key, another model family, or a file written into the empty working directory.
+
+**No-tools mode reduces exposure; it is not OS-level isolation.** The model cannot read, write or run anything and sees only the prompt; the Claude Code program itself still runs unsandboxed as the operator (it reads its own login under HOME and reaches its API). OS confinement is W1's subject (native hardening, bwrap).
+
+### 13.3 Outcomes (deterministic)
+
+The coordinator validates the answer — exactly the expected keys and types, the bound head SHA, every finding on a **changed** file with lines inside that file at the head (null for binary or withheld files), bounded lengths and at most `max_findings` findings — and derives the outcome from the findings; the reviewer's verdict only has to agree.
+
+| Outcome | When |
+| --- | --- |
+| PASS | valid answer, verdict `pass`, no finding, no limitation, no coordinator note |
+| PASS_WITH_NOTES | valid, no `blocker`/`major` finding, verdict `pass` or `pass_with_notes`, at least one note |
+| REQUEST_CHANGES | valid, at least one `blocker` or `major` finding, verdict `request_changes` |
+| ERROR | anything else: invalid or contradictory answers on every attempt, a refused run, a timeout on every attempt, a reviewer unavailable for `unavailable_wait_seconds`, an approval that no longer holds, a base that does not match, `independence: require` unmet, a diff that cannot be reviewed |
+
+A blocking or major finding never yields PASS. An ERROR is never turned into a pass: only a new head or an explicit `retry` starts a new review.
+
+### 13.4 Records, comments, recovery
+
+`state/review/<feature>.json` holds every entry: binding, digests, independence (`provider`, `model` or `none` relative to the implementing agents), attempts with their status, the validated findings, the outcome and the comment. Writes are ahead of the action they protect:
+
+- the entry exists before anything runs; each attempt is counted **before** the reviewer starts, so an attempt a crash interrupted stays counted (with `max_attempts: 1` the review becomes ERROR; `retry` starts again);
+- an unavailable reviewer (CLI missing, not logged in, API-key login) or a cancelled run gives its attempt back and the run is deferred; after `unavailable_wait_seconds` of unavailability the review is ERROR;
+- the comment's operation is recorded before the request and looked for (its marker, by the coordinator's account) before any repost; a crash between posting and recording never duplicates it, and the next run posts a comment that a crash prevented;
+- `github-review.lock` allows one run at a time; a second one is deferred.
+
+**History, outcome, evidence.** These are kept apart:
+
+| | What it is | Where |
+| --- | --- | --- |
+| History | every entry ever made, including invalidated, stale and held answers | `load_review()`, `github review show` |
+| Completed outcome | the current entry's outcome, ERROR included; for people | `review_rows()`, `github review status` |
+| Evidence | the current entry, complete, a real review outcome (PASS, PASS_WITH_NOTES or REQUEST_CHANGES; never ERROR), its stored binding matching its digest, for exactly the asked PR and head, its comment posted | `review_evidence(store, feature, pr, head)` |
+
+Evidence is advisory and **never approval to merge**: REQUEST_CHANGES is evidence too, and nothing acts on evidence in R1. A later step that does (W4.6.3) must itself, at that moment:
+
+- re-derive the binding from fresh reads (`ReviewRunner.recheck(feature, entry)` must return nothing);
+- apply its own rule for which outcomes it accepts;
+- keep the deterministic gates authoritative;
+- treat the local record as forgeable while the limitations below stand.
+
+The PR comment shows the outcome, head, merge base, reviewer, independence and findings; model text is redacted, escaped and has its @-mentions neutralized. It is a plain comment from the coordinator's account, never a GitHub review approval: that account is shared (`spyderbg`) and must never look like an independent authorization.
+
+### 13.5 Configuration (`github.review`)
+
+See [project-config.example.yaml](project-config.example.yaml): `enabled` (false), `provider` (`claude`; R1 accepts only a Claude Code provider), `model` (`opus`), `independence` (`prefer` | `require`), `timeout_seconds` (600), `max_attempts` (1), `unavailable_wait_seconds` (3600), `max_diff_characters` (150000), `max_findings` (30). Unknown keys are refused. Enabling it needs `github.intake.enabled` and `github.publish.enabled`.
+
+### 13.6 Limitations (R1)
+
+- No automatic review: the Worker service does not start reviews (R2). No Codex reviewer, no fallback provider (R4). No CI validation, no automatic merge (W4.6.2, W4.6.3). New features still branch from local `dev` (B1 not implemented).
+- The reviewer sees the diff and the prompt only, not the rest of the repository. Prompt injection through the diff or the Issue can still bias its verdict; the outcome is advisory and the gates stay authoritative.
+- The shared `spyderbg` identity and `runtime.native_hardening` off: an implementing agent with shell access could reach the GitHub login or the state directory and forge a comment or a local record. Nothing acts on a review automatically in R1; this blocks any later use of reviews as merge evidence.
+- The re-check after the reviewer narrows the race to the seconds between it and the comment; nothing pins the PR head on GitHub. Evidence describes the head at that moment, so any later consumer must re-check at its own time (above).
+- The credential patterns are heuristics. They can miss an unusual secret format and can over-redact (for example, a long hyphenated word containing `sk-`). Over-redaction only adds a coordinator note.
+- The post-run checks of the `init` event (`tools: []`, no MCP server) are verified against recorded event shapes only; the first supervised run (R3) must confirm them on the live CLI. A review uses the operator's Claude subscription quota (bounded by attempts and the timeout).
