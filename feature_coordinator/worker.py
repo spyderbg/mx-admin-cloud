@@ -96,17 +96,22 @@ class WorkReport:
 def cli_spawner(repo: Path, state_dir: Path, *, tracker: str = "local", project_config: str | None = None,
                 log_dir: Path | None = None) -> Spawner:
     """Start `python -m feature_coordinator launch TASK --apply` for this checkout and state directory. *env*: extra
-    variables for the launch process (W4: the service's launch tag)."""
-    def spawn(task_id: str, attempt: int, env: dict[str, str] | None = None) -> Handle:
+    variables for the launch process (W4: the service's launch tag). `spawn.start(tail, log_name, env)` starts
+    another internal command the same way with exactly *env* (W4.6.1 R2: the reviewer process)."""
+    def start(tail: Sequence[str], log_name: str, env: Mapping[str, str] | None) -> Handle:
         argv = [*CLI, "--repo", str(repo), "--state-dir", str(state_dir), "--tracker", tracker]
         if project_config:
             argv += ["--project-config", str(project_config)]
-        argv += ["launch", task_id, "--apply"]
         directory = log_dir or (state_dir / "logs")
         directory.mkdir(parents=True, exist_ok=True)
-        with open(directory / f"work-{task_id}.{attempt}.log", "ab") as log:
-            return subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,  # pylint: disable=consider-using-with
-                                    start_new_session=True, env={**os.environ, **env} if env else None, cwd=CODE_ROOT)
+        with open(directory / log_name, "ab") as log:
+            return subprocess.Popen([*argv, *tail], stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,  # pylint: disable=consider-using-with
+                                    start_new_session=True, env=dict(env) if env is not None else None, cwd=CODE_ROOT)
+
+    def spawn(task_id: str, attempt: int, env: dict[str, str] | None = None) -> Handle:
+        return start(["launch", task_id, "--apply"], f"work-{task_id}.{attempt}.log",
+                     {**os.environ, **env} if env else None)
+    spawn.start = start  # type: ignore[attr-defined]
     return spawn
 
 

@@ -2,9 +2,11 @@
 GitHub Issue's Draft PR (review.py).
 
 Kept out of config.py, which loads it into `GitHubConfig.review` and calls `validate_review()`. Off by default.
-R1 is deliberately small: a Claude Code reviewer (no tools, the operator's subscription) started only by an
-operator with `python -m feature_coordinator github review run FEATURE --apply`. The Worker service never
-starts a review, there is no fallback provider and no Codex reviewer yet, and nothing here can merge.
+A Claude Code reviewer (no tools, the operator's subscription): an operator starts one with
+`python -m feature_coordinator github review run FEATURE --apply` (R1, in the foreground), and — R2 — once
+enabled, the Worker service starts one by itself for each verified Draft PR, as a separate process it watches
+at most every `poll_interval_seconds` (review_worker.py). There is no fallback provider and no Codex reviewer
+yet, and nothing here can merge.
 """
 
 from __future__ import annotations
@@ -32,6 +34,8 @@ class GitHubReviewConfig:  # pylint: disable=too-many-instance-attributes
     unavailable_wait_seconds: int = 3600  # a reviewer unavailable for this long makes the review ERROR
     max_diff_characters: int = 150000     # a larger diff is not reviewed (ERROR), never truncated
     max_findings: int = 30                # more findings than this is invalid reviewer output
+    poll_interval_seconds: int = 60       # R2: the Worker service's review step (start, watch, collect) at most
+                                          # this often; it never waits for the model
 
 
 def validate_review(config: Any) -> None:
@@ -54,7 +58,7 @@ def validate_review(config: Any) -> None:
     if review.independence not in INDEPENDENCE_MODES:
         raise ConfigError(f"{where}.independence must be one of {list(INDEPENDENCE_MODES)}")
     bounds = {"timeout_seconds": (60, 1800), "max_attempts": (1, 3), "unavailable_wait_seconds": (60, 86400),
-              "max_diff_characters": (1000, 400000), "max_findings": (1, 100)}
+              "max_diff_characters": (1000, 400000), "max_findings": (1, 100), "poll_interval_seconds": (10, 3600)}
     for key, (low, high) in bounds.items():
         if not low <= getattr(review, key) <= high:
             raise ConfigError(f"{where}.{key} must be {low}..{high}")

@@ -109,7 +109,25 @@ def cmd_worker_status(args: argparse.Namespace, config: ProjectConfig) -> int:
         _print(f"  {task['task']:40s} {task['status']:20s} launches {task.get('launches', '-')} "
                f"attempts {task.get('attempts', {})}" + (f" next {task['next_attempt_at']}" if task.get(
                    "next_attempt_at") else ""))
+    for review in report["reviews"]:
+        _print(f"  {_review_line(review)}")
     return 0
+
+
+def _review_line(review: dict[str, Any]) -> str:
+    """W4.6.1 R2: one AI review as `worker status` shows it (never a prompt, a credential or model text)."""
+    process = review.get("process") or {}
+    text = (f"review {review['feature']}: {review['category']}" + (f" {review['outcome']}" if review.get("outcome")
+                                                                   else "")
+            + (f" — PR #{review['pr']} head {str(review.get('head'))[:12]}, entry {review.get('entry')}, attempts "
+               f"{review.get('attempts')}" if review.get("pr") else ""))
+    if process:
+        text += f"; reviewer process {process.get('pid') or '-'} {process['state']} (deadline {process['deadline']})"
+    if review.get("unavailable_since"):
+        text += f"; reviewer unavailable since {review['unavailable_since']}"
+    if review["category"] in ("error", "invalidated", "unreadable", "request-changes") and review.get("reason"):
+        text += f"; {review['reason']}"
+    return text
 
 
 def cmd_worker_health(args: argparse.Namespace, config: ProjectConfig) -> int:
@@ -133,7 +151,11 @@ def cmd_worker_waiting(args: argparse.Namespace, config: ProjectConfig) -> int:
     for task in report["waiting"]:
         _print(f"{task['task']}: {task['status']} until {task['next_attempt_at']} — "
                f"{(task.get('waiting') or {}).get('reason', '')}; attempts {task['attempts']}")
-    if not report["waiting"]:
+    reviews = [r for r in report.get("reviews", []) if r.get("feature_state") == "review" and r["category"] in (
+        "pending", "running", "held", "reviewer-unavailable", "request-changes")]
+    for review in reviews:
+        _print(_review_line(review))
+    if not report["waiting"] and not reviews:
         _print("nothing is waiting")
     return 0
 
@@ -148,9 +170,15 @@ def cmd_worker_attention(args: argparse.Namespace, config: ProjectConfig) -> int
                f"{attention.get('reason', task.get('reason', 'held for a human'))}")
         default = f"see `python -m feature_coordinator recover {task['task']}`"
         _print(f"  action: {attention.get('action', default)}")
+    reviews = [r for r in report.get("reviews", []) if r.get("feature_state") == "review" and r["category"] in (
+        "error", "unreadable")]
+    for review in reviews:  # W4.6.1 R2: an ERROR review is never retried automatically
+        _print(_review_line(review))
+        _print(f"  action: `python -m feature_coordinator github review show {review['feature']}`, then `github review "
+               f"retry {review['feature']} --reason … --apply`, or review and merge (or close) the PR by hand")
     if report.get("state") == "NEEDS_ATTENTION" and not report["attention"]:
         _print(f"worker: {report.get('reason')}")
-    if not report["attention"] and report.get("state") != "NEEDS_ATTENTION":
+    if not report["attention"] and not reviews and report.get("state") != "NEEDS_ATTENTION":
         _print("nothing needs attention")
         return 0
     return 1

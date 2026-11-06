@@ -1,9 +1,11 @@
-"""W4.6.1 (R1): the independent AI review of an approved GitHub Issue's Draft PR — binding, records, comments.
+"""W4.6.1: the independent AI review of an approved GitHub Issue's Draft PR — binding, records, comments.
 
     python -m feature_coordinator github review run FEATURE [--apply]
     python -m feature_coordinator github review retry FEATURE --reason TEXT [--apply]
 
-R1 runs only when an operator starts it; the Worker service never does. One run, under `github-review.lock`:
+An operator starts a run (R1: the reviewer runs in the foreground); R2: once `github.review.enabled`, the Worker
+service starts runs by itself (review_worker.py), each attempt in a separate reviewer process (review_process.py)
+whose result a later service step collects through the SAME judgement below. One run, under `github-review.lock`:
 
   1. the feature is an approved Issue's feature in `review` whose single Draft PR is recorded (publish.py). The PR
      is read fresh by number and must still be exactly the publisher's verified candidate — the publisher's own
@@ -32,6 +34,11 @@ R1 runs only when an operator starts it; the Worker service never does. One run,
      whose own fresh binding check must pass, records it without another reviewer run;
   7. the outcome is recorded, then ONE comment is posted on the PR: an operation marker, the operation recorded
      before the request and looked for before any repost, so a crash never duplicates it.
+
+R2: while the current entry's attempt runs in a reviewer process the Worker started (found by its process tag),
+a run does nothing else for that feature — no second reviewer, no re-binding, no invalidation; once that process
+is gone, its result is collected FIRST, with the context it was given (5 and 6 apply unchanged; no result: an
+interrupted attempt, which stays counted).
 
 History, outcome and evidence are different things: the record keeps every entry (history); `review_rows` and
 `show` report the latest completed outcome, ERROR included (for people); `review_evidence()` returns only a current,
@@ -70,6 +77,7 @@ from .model import Feature, FeatureState, utc_now
 from .plan_digest import canonical_json, plan_sha256
 from .publish import PullRequestPublisher
 from .review_context import ReviewContext, build_context, independence, merge_base, provider_kind
+from .review_process import attempt_processes, load_context, load_result
 from .review_result import Review, decide, render_comment, render_invalidation, validate_output
 from .reviewer import ReviewRequest, ReviewResult, Reviewer
 
@@ -163,7 +171,7 @@ class ReviewReport:  # pylint: disable=too-many-instance-attributes
 
     applied: bool
     feature: str
-    status: str = ""                 # reviewed | unchanged | error | deferred | stopped | dry-run
+    status: str = ""                 # reviewed | unchanged | error | deferred | stopped | dry-run | running | stale
     entry: str | None = None
     outcome: str | None = None
     reviewer_runs: int = 0
@@ -183,7 +191,9 @@ class ReviewReport:  # pylint: disable=too-many-instance-attributes
 
 
 class ReviewRunner:  # pylint: disable=too-many-instance-attributes,too-few-public-methods
-    """One operator-started review run for one feature (see the module docstring)."""
+    """One review run for one feature (see the module docstring)."""
+
+    background = False  # R2 (review_worker.WorkerReviewRunner): an attempt runs in a separate reviewer process
 
     def __init__(self, coord: Any, *, reviewer: Reviewer | None = None, faults: Iterable[str] = (),
                  clock: Callable[[], float] = time.time) -> None:
@@ -218,13 +228,19 @@ class ReviewRunner:  # pylint: disable=too-many-instance-attributes,too-few-publ
                 report.deferred.append("another review run is in progress")
                 return report
         try:
-            self._run(feature_id, report, apply, retry)
-        except _Stopped:
-            pass
+            self.run_held(feature_id, report, apply=apply, retry=retry)
         finally:
             if lock is not None:
                 lock.release()
         return report
+
+    def run_held(self, feature_id: str, report: ReviewReport, *, apply: bool = True,
+                 retry: Mapping[str, str] | None = None) -> None:
+        """`run` for a caller that already holds `github-review.lock` (R2: the Worker service's review step)."""
+        try:
+            self._run(feature_id, report, apply, retry)
+        except _Stopped:
+            pass
 
     def _stop(self, report: ReviewReport, reason: str, *, status: str = "stopped") -> NoReturn:
         report.status = status
@@ -238,6 +254,8 @@ class ReviewRunner:  # pylint: disable=too-many-instance-attributes,too-few-publ
         if intake is None:
             self._stop(report, "not an approved GitHub Issue's feature: it is never reviewed automatically")
         assert intake is not None
+        if apply and self._worker_attempt(feature_id, report):
+            return
         if apply:
             self._pending_notices(feature_id, report)
         cand = feature.pull_request
@@ -490,10 +508,13 @@ class ReviewRunner:  # pylint: disable=too-many-instance-attributes,too-few-publ
 
     # -- the reviewer --------------------------------------------------------------------------------
 
-    def _attempts(self, feature_id: str, key: str, context: ReviewContext, report: ReviewReport) -> None:  # pylint: disable=too-many-locals
+    def _attempts(self, feature_id: str, key: str, context: ReviewContext, report: ReviewReport) -> None:
         entry = self._now(feature_id, key)
         if entry["running"]:  # a crash interrupted that attempt: it stays counted
             self._update(feature_id, key, self._interrupted, event=("review-attempt", {"status": "interrupted"}))
+        if self.background and self._now(feature_id, key)["attempts"] < self.cfg.max_attempts:
+            self._background(feature_id, key, context, report)  # R2: ONE attempt, collected by a later step
+            return
         reviewer = self.reviewer or self._default_reviewer()
         last = "an interrupted attempt"
         while (entry := self._now(feature_id, key))["attempts"] < self.cfg.max_attempts:
@@ -506,25 +527,76 @@ class ReviewRunner:  # pylint: disable=too-many-instance-attributes,too-few-publ
             result = reviewer.review(ReviewRequest(key=key, prompt=context.prompt, schema=context.schema,
                                                    run_dir=run_dir, timeout_seconds=self.cfg.timeout_seconds))
             report.reviewer_runs += 1
-            log = {"attempt": attempt, "status": result.status, "error": sanitize(result.error, 600),
-                   "details": {k: result.details.get(k) for k in ("auth", "cli_version", "model", "reported_model",
-                                                                  "api_key_source", "exit_code", "duration_seconds")
-                               if k in result.details}, "ended_at": utc_now()}
-            if result.status in ("unavailable", "cancelled"):
-                self._given_back(feature_id, key, result, log, report)
+            last = self._handle(feature_id, key, attempt, result, context, report)
+            if last is None:
                 return
-            if result.status == "refused":
-                self._log(feature_id, key, log)
-                self._complete(feature_id, key, "ERROR", f"the reviewer run was refused: {result.error}", report)
-                return
-            if result.status == "ok":
-                done = self._judge(feature_id, key, result, context, log, report)
-                if done:
-                    return
-            last = log["error"] or result.status
-            self._log(feature_id, key, log)
         self._complete(feature_id, key, "ERROR", f"no valid review in {self.cfg.max_attempts} attempt(s); last: "
                                                  f"{last}", report)
+
+    def _background(self, feature_id: str, key: str, context: ReviewContext, report: ReviewReport) -> None:
+        """R2: start one attempt in a separate reviewer process (review_worker.WorkerReviewRunner)."""
+        raise NotImplementedError
+
+    def _handle(self, feature_id: str, key: str, attempt: int, result: ReviewResult,  # pylint: disable=too-many-arguments
+                context: ReviewContext, report: ReviewReport) -> str | None:
+        """One reviewer result — of a run here or of a Worker reviewer process. None: no further attempt now (given
+        back, refused, a valid answer recorded, held or stale); else the attempt was used without a valid answer
+        (logged) and why is returned."""
+        log = {"attempt": attempt, "status": result.status, "error": sanitize(result.error, 600),
+               "details": {k: result.details.get(k) for k in ("auth", "cli_version", "model", "reported_model",
+                                                              "api_key_source", "exit_code", "duration_seconds")
+                           if k in result.details}, "ended_at": utc_now()}
+        if result.status in ("unavailable", "cancelled"):
+            self._given_back(feature_id, key, result, log, report)
+            return None
+        if result.status == "refused":
+            self._log(feature_id, key, log)
+            self._complete(feature_id, key, "ERROR", f"the reviewer run was refused: {result.error}", report)
+            return None
+        if result.status == "ok" and self._judge(feature_id, key, result, context, log, report):
+            return None
+        self._log(feature_id, key, log)
+        return log["error"] or result.status
+
+    def _worker_attempt(self, feature_id: str, report: ReviewReport) -> bool:
+        """R2: the current entry's attempt runs — or ran — in a reviewer process the Worker service started. While
+        any process carrying its tag lives, nothing else happens for this feature (no second reviewer, no
+        re-binding, no invalidation). Once they are gone its result is collected FIRST, with the context it was
+        given, through the same judgement as a run here. True: this run ends here."""
+        record = load_review(self.store, feature_id)
+        entry = record.entry(record.current) if record else None
+        if entry is None or not (entry.get("running") or {}).get("tag"):
+            return False
+        key = report.entry = entry["key"]
+        state, pids = attempt_processes(entry["running"])
+        if state != "gone":
+            report.status = "running"
+            report.deferred.append(f"{feature_id}: attempt {entry['running']['attempt']} of review {key} runs in a "
+                                   f"reviewer process the Worker service started ({state}, pids {pids}); the "
+                                   "service collects its result")
+            return True
+        last = self._collect(feature_id, key, report)
+        entry = self._now(feature_id, key)
+        if last is not None and entry["status"] == "pending" and entry["attempts"] >= self.cfg.max_attempts:
+            self._complete(feature_id, key, "ERROR", f"no valid review in {self.cfg.max_attempts} attempt(s); "
+                                                     f"last: {last}", report)
+        self._publish(feature_id, key, report)
+        return True
+
+    def _collect(self, feature_id: str, key: str, report: ReviewReport) -> str | None:
+        """Judge the finished Worker attempt (its processes are gone): `_handle`'s answer. No result — or one that
+        is not this attempt's — is an interrupted attempt; past its deadline (the service's watchdog stopped it),
+        anything but a valid answer is a timeout. Both stay counted."""
+        running = self._now(feature_id, key)["running"]
+        context, result = load_context(key, running), load_result(key, running)
+        if context is None or result is None:
+            self._update(feature_id, key, self._interrupted, event=("review-attempt", {"status": "interrupted"}))
+            return "the reviewer process ended without a result (it crashed or was killed)"
+        watchdog = running.get("watchdog") or {}
+        if watchdog.get("kind") == "deadline" and result.status != "ok":
+            result = ReviewResult("timeout", error=f"the reviewer process was stopped at its deadline "
+                                                   f"({watchdog.get('reason')})", details=result.details)
+        return self._handle(feature_id, key, int(running["attempt"]), result, context, report)
 
     @staticmethod
     def _interrupted(entry: dict[str, Any]) -> None:
