@@ -15,12 +15,22 @@ import logging.config
 import logging.handlers
 import urllib.error
 import urllib.request
+import weakref
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from src.services.logging.models import LogMessage, LoggingServiceProvider
 from src.services.logging.service import LoggingProviderFactory
+
+_SEQLOG_HANDLER_CLASS = "seqlog.structured_logging.SeqLogHandler"
+# Imported by dictConfig only, once seqlog is known to be installed (see seq_handler.py).
+_SEQ_HANDLER_CLASS = "src.services.logging.providers.struct_log.seq_handler.SeqHandler"
+
+# Handler -> name (config-file stem) of the provider whose configure() created it. Module-level,
+# because a registry reload replaces the provider objects but keeps their names, and the new
+# instance has to replace its predecessor's handlers.
+_HANDLER_OWNERS: weakref.WeakKeyDictionary[logging.Handler, str] = weakref.WeakKeyDictionary()
 
 
 def _optional_import(module_name: str) -> Any | None:
@@ -93,7 +103,10 @@ class StructLogProvider(LoggingServiceProvider):
     "handlers"
         Handler definitions. A custom "active" flag (default "true")
         controls whether the handler is included; the "$ {output_dir}"
-        placeholder is expanded in "filename" values.
+        placeholder is expanded in "filename" values. A seqlog handler is
+        dropped when Seq does not answer and is otherwise built as
+        "seq_handler.SeqHandler", which survives the other providers'
+        dictConfig and sends each batch within a second.
     "loggers"
         Named stdlib logger definitions (e.g. "requests" with
         "propagate: false").
@@ -385,47 +398,72 @@ class StructLogProvider(LoggingServiceProvider):
     def _apply_logging_config(self, prepared: dict[str, Any]) -> None:
         """Apply a prepared logging config additively.
 
-        Calls "logging.config.dictConfig" but then restores any root-logger
-        handlers that were added by previously configured providers and are not
-        duplicates of the new handlers.  This allows multiple active
-        "StructLogProvider" instances to coexist without clobbering each
-        other's file/stream handlers.
+        Calls "logging.config.dictConfig", which replaces the handlers of the
+        root logger (when *prepared* has a "root" key) and of the named loggers
+        in *prepared*, then puts back the root handlers that belong to anyone
+        else, unless an equivalent handler is already there.  This allows
+        multiple active "StructLogProvider" instances to coexist without
+        clobbering each other's file/stream handlers.
 
-        Handlers whose names appear in this provider's own config (including
-        inactive ones) are never restored — their presence is governed solely
-        by the current prepared config.
+        A handler belongs to the provider that created it ("_HANDLER_OWNERS"),
+        whatever its name, so configs may reuse handler names ("trace.json" and
+        "default.json" both have "console", "file" and "seq"). The handlers this
+        provider created earlier are detached from every logger and stopped:
+        the new config alone decides which handlers it has.
         """
         root = logging.getLogger()
         pre_handlers = list(root.handlers)
-
-        # All handler names declared by this provider (active or inactive).
-        owned_names: set[str] = set((self.config.get("handlers") or {}).keys())
-        # Names of handlers that are active in the new config.
-        active_names: set[str] = set(prepared.get("handlers", {}).keys())
+        previous_owned = self._owned_handlers()
 
         logging.config.dictConfig(prepared)
-
-        # dictConfig only reconfigures the root when a "root" key is present in
-        # prepared. When all root-bound handlers are inactive, the "root" key is
-        # omitted, so dictConfig never touches the root logger and stale handlers
-        # remain. Explicitly remove any owned handler that is no longer active.
-        inactive_owned = owned_names - active_names
-        if inactive_owned:
-            self._evict_handlers(inactive_owned)
+        self._claim_handlers(prepared)
+        self._retire_handlers(previous_owned)
 
         for handler in pre_handlers:
-            if handler.name in owned_names:
+            if handler in previous_owned:
                 continue
             if not self._handler_already_present(handler, root.handlers):
                 root.addHandler(handler)
 
+    def _owned_handlers(self) -> list[logging.Handler]:
+        """Return the live handlers created by this provider, or by an earlier instance of the same name."""
+        return [handler for handler, owner in list(_HANDLER_OWNERS.items()) if owner == self.name]
+
+    def _claim_handlers(self, prepared: dict[str, Any]) -> None:
+        """Record this provider as the owner of the handlers dictConfig just built from *prepared*.
+
+        dictConfig gives the loggers it configures exactly the handlers listed for them, so
+        right after it runs those loggers hold only this config's handlers.
+        """
+        names = set(prepared.get("handlers", {}))
+        loggers = [logging.getLogger(name) for name in prepared.get("loggers", {})]
+        if "root" in prepared:
+            loggers.append(logging.getLogger())
+        for logger in loggers:
+            for handler in logger.handlers:
+                if handler.name in names:
+                    _HANDLER_OWNERS[handler] = self.name
+
     @staticmethod
-    def _evict_handlers(names: set[str]) -> None:
-        """Remove handlers with the given names from root and all named loggers."""
+    def _retire_handlers(handlers: list[logging.Handler]) -> None:
+        """Detach *handlers* from every logger and stop the ones that keep a sender thread.
+
+        dictConfig only replaces the handlers of the loggers in the new config, so a handler
+        bound to a logger the new config no longer uses (or to the root, once every
+        root-bound handler is inactive) would stay attached. "SeqHandler" keeps its sender
+        thread when dictConfig closes it, so it is stopped here.
+        """
+        if not handlers:
+            return
         for logger in StructLogProvider._iter_runtime_loggers():
             for handler in list(logger.handlers):
-                if handler.name in names:
+                if handler in handlers:
                     logger.removeHandler(handler)
+        for handler in handlers:
+            _HANDLER_OWNERS.pop(handler, None)
+            stop_sending = getattr(handler, "stop_sending", None)
+            if callable(stop_sending):
+                stop_sending()
 
     @staticmethod
     def _handler_already_present(
@@ -578,6 +616,14 @@ class StructLogProvider(LoggingServiceProvider):
             for h in handlers.values()
         ):
             self._enable_seq_ignore_submission_errors()
+            self._use_resilient_seq_handlers(handlers)
+
+    @staticmethod
+    def _use_resilient_seq_handlers(handlers: dict[str, Any]) -> None:
+        """Build seqlog's handler as "SeqHandler", which outlives the other providers' dictConfig."""
+        for handler in handlers.values():
+            if isinstance(handler, dict) and handler.get("class") == _SEQLOG_HANDLER_CLASS:
+                handler["class"] = _SEQ_HANDLER_CLASS
 
     @staticmethod
     def _remove_handler_references(
@@ -668,14 +714,21 @@ class StructLogProvider(LoggingServiceProvider):
 
     @staticmethod
     def _seq_server_reachable(server_url: str, timeout: float = 2.0) -> bool:
+        """Return True when a server answers at *server_url*, whatever the HTTP status.
+
+        An error status still means Seq is up: on Seq 2024+ the ingestion port (5341) serves
+        only ingestion, so "GET /api" there answers 404.
+        """
         if not server_url:
             return False
         url = server_url.rstrip("/") + "/api"
         try:
             req = urllib.request.Request(url, method="GET")
-            urllib.request.urlopen(req, timeout=timeout)  # noqa: S310  # pylint: disable=consider-using-with
+            with urllib.request.urlopen(req, timeout=timeout):  # noqa: S310
+                return True
+        except urllib.error.HTTPError:
             return True
-        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ValueError, OSError):
+        except (urllib.error.URLError, TimeoutError, ValueError, OSError):
             return False
 
     @staticmethod

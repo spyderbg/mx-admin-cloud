@@ -429,14 +429,12 @@ src/
 │           └── users.py
 ├── core/                         # No src.services imports (HTTP boundary)
 │   ├── config.py                 # Settings + output path helpers
-│   ├── models.py                 # RunSummary, ProviderRunRecord (service types live in each service's models.py)
 │   ├── languages.py
 │   ├── localization.py           # LocalizedString: multilingual str with property access + Pydantic support
-│   ├── result_writer.py
 │   ├── content_naming.py         # Content folder / image id naming
 │   ├── job_store.py
 │   ├── log_client.py             # Async HTTP client → `/internal/loggers/*` (see services/logging/routes.py)
-│   ├── pipeline.py               # TTS pipeline (internal HTTP)
+│   ├── pipeline.py               # TTS pipeline (internal HTTP), RunSummary/ProviderRunRecord, per-run JSON/CSV reports
 │   ├── tasks.py                  # ping, status, operation, list-files
 │   ├── utils.py                  # boolish, platform / debug helpers
 │   └── (logging/ removed — now in services/logging)

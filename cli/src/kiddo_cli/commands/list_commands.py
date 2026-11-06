@@ -75,7 +75,7 @@ def register(app: typer.Typer) -> None:
         """List registered stdlib loggers. By default, shows only active loggers (those with handlers)."""
 
         def _run(t: str):
-            params = {"all": "true"} if include_all else None
+            params = {"all_loggers": "true"} if include_all else None
             result = internal_get("/loggers", token=t, params=params)
             if not isinstance(result, list):
                 print_json(result)

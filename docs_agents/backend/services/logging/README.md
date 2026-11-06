@@ -18,7 +18,7 @@ Usage from code (see [core](../../core/README.md#core-modules)): `await log_clie
 | [`providers/struct_log/`](../../../../backend/src/services/logging/providers/struct_log/) | `StructLogProvider` |
 | [`routes.py`](../../../../backend/src/services/logging/routes.py), [`schemas.py`](../../../../backend/src/services/logging/schemas.py) | HTTP API and wire contract (`LogRequest`, `LogApiRequest`, `LogServiceRequest`, `LogProviderRequest`, …) |
 
-Depends on: `structlog`, the standard `logging` module, optionally `seqlog` (Seq handlers are disabled when the package or server is unavailable), and `provider_strategy.dispatch_each`. `backend/src/main.py` calls `LoggingService.configure(output_dir, profile)` at start-up. That call is the documented exception to the out-of-process rule.
+Depends on: `structlog`, the standard `logging` module, optionally `seqlog` (Seq handlers are disabled when the package is missing or the server does not answer; any HTTP status, such as the 404 that Seq 2024+ gives on its ingestion port, counts as an answer), and `provider_strategy.dispatch_each`. `backend/src/main.py` calls `LoggingService.configure(output_dir, profile)` at start-up. That call is the documented exception to the out-of-process rule.
 
 ## Service Interface / ServiceProvider Contract
 
@@ -40,23 +40,24 @@ Depends on: `structlog`, the standard `logging` module, optionally `seqlog` (Seq
 
 | Class | Registered name | Path | Capabilities |
 | --- | --- | --- | --- |
-| `StructLogProvider` | `struct_log` | `providers/struct_log/provider.py:86` | Builds stdlib handlers from the config (console, file, rotating file, Seq), structlog rendering, request-log field filtering, reset of file handlers |
+| `StructLogProvider` | `struct_log` | `providers/struct_log/provider.py:86` | Builds stdlib handlers from the config (console, file, rotating file, Seq), structlog rendering, request-log field filtering, reset of file handlers. A config's `seqlog.structured_logging.SeqLogHandler` is built as `providers/struct_log/seq_handler.py` `SeqHandler`: it keeps sending after a later provider's `dictConfig` closes it (seqlog's own handler stops for good) and sends each batch within a second (seqlog waits for 10 records) |
 
 ## Configured Provider Instances
 
 | File | Provider | `provider_category` | Enabled | Priority | Config keys |
 | --- | --- | --- | --- | --- | --- |
-| [`default.json`](../../../../backend/config/logging/default.json) | `struct_log` | — | yes | 20 | `formatters`, `handlers` (`console`, `file`, `seq`), `structlog.renderer` |
+| [`default.json`](../../../../backend/config/logging/default.json) | `struct_log` | — | yes | 20 | `formatters`, `handlers` (`console`, `file`, `seq` active), `structlog.renderer` |
 | [`requests.json`](../../../../backend/config/logging/requests.json) | `struct_log` | `requests` | yes | 1 | `formatters`, `handlers.requests_file`, `request_log.fields` |
+| [`service.json`](../../../../backend/config/logging/service.json) | `struct_log` | `service` | yes | 2 | `formatters`, `handlers` (`service_file` → `results/logs/service.log`, `service_seq`) |
 | [`trace.json`](../../../../backend/config/logging/trace.json) | `struct_log` | — | **no** | 10 | same shape as `default.json` |
 
-All three live in `backend/config/logging/` **[V]**. Named loggers resolve to these file stems. `emit` reaches only `default.json` (and `trace.json` if enabled), because `requests.json` has a category.
+All four live in `backend/config/logging/` **[V]**. Named loggers resolve to these file stems. `emit` reaches only `default.json` (and `trace.json` if enabled), because `requests.json` and `service.json` have a category. Handler names may repeat across these files: a provider only replaces or removes the handlers it created itself.
 
 ## Selection and Lifecycle
 
 - `emit`: active providers without a category, ascending priority, using `ALL_PROVIDERS` (default) or `FIRST_SUCCESS` from `_service_strategies.json`.
 - Named endpoints bypass the strategy and go to one logger: `api-request` and `provider` → `requests`; `service` → `service`; `payment` → `payment`; `{logger_name}` → that name.
-- **The `service` and `payment` configurations do not exist in `backend/config/logging/`, so those two endpoints answer 404 by design** **[S]**. The same applies to `trace` while it is disabled.
+- The `service` endpoint records `LogServiceRequest.service` in the message fields. **The `payment` configuration does not exist in `backend/config/logging/`, so that endpoint answers 404 by design** **[S]**. The same applies to `trace` while it is disabled.
 - Reconfiguration happens at start-up (`configure`). Provider objects are replaced on every registry reload.
 
 ## HTTP API
@@ -69,7 +70,7 @@ Eight internal operations under `/internal/loggers`, all `require_internal` **[V
 | `POST /internal/loggers/emit` | `LoggingService.emit` |
 | `POST /internal/loggers/{logger_name}/log` | Named logger (404 when missing or disabled) |
 | `POST /internal/loggers/logging/log/api-request` · `…/provider` | `requests` logger |
-| `POST /internal/loggers/logging/log/service` · `…/payment` | `service` / `payment` loggers (not configured) |
+| `POST /internal/loggers/logging/log/service` · `…/payment` | `service` logger (`service` lands in the fields) / `payment` logger (not configured) |
 | `POST /internal/loggers/reset` | `LoggingService.reset` |
 
 The CLI `logging` group covers all eight.
@@ -81,7 +82,7 @@ The CLI `logging` group covers all eight.
 - Security:
   - The internal token or admin role is required.
   - Records may contain request metadata, so field filtering for the request log (`request_log.fields`) is configuration-driven.
-  - Seq is a network destination configured in `default.json`.
+  - Seq is a network destination configured in `default.json` and `service.json` (`http://localhost:5341`).
 
 ## Testing
 

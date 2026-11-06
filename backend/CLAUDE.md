@@ -46,12 +46,11 @@ docker compose -f docker/docker-compose.yml up -d --build
   (requires internal service token or admin JWT)
 - **`core/`** — Shared infrastructure with **zero** `src.services` imports (HTTP boundary enforced):
   - `config.py` — Pydantic Settings; all env vars and defaults
-  - `models.py` — TTS pipeline run records (RunSummary, ProviderRunRecord) for `result_writer.py`;
-    service value types live in their service's `models.py` (e.g. GeneratedAudio in `text_to_speech/`)
   - `content_naming.py` — Slugification and output filename helpers
   - `languages.py` — Language code/name lookups and BCP-47 conversion
-  - `result_writer.py` — Write per-run JSON and CSV reports
-  - `pipeline.py` — Async TTS pipeline orchestration (calls internal HTTP endpoints)
+  - `pipeline.py` — Async TTS pipeline orchestration (calls internal HTTP endpoints), its run records
+    (RunSummary, ProviderRunRecord) and `write_run_summary` (per-run JSON and CSV reports);
+    service value types live in their service's `models.py` (e.g. GeneratedAudio in `text_to_speech/`)
   - `job_store.py` — In-memory store for async pipeline jobs
   - `logging_route.py` — `LoggingAPIRoute`, the shared router route class that traces
     requests and reports endpoint failures
