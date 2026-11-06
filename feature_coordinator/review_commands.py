@@ -1,4 +1,4 @@
-"""W4.6.1 (R1) commands: `python -m feature_coordinator github review …` — the advisory AI review of an approved
+"""W4.6.1 commands: `python -m feature_coordinator github review …` — the advisory AI review of an approved
 GitHub Issue's Draft PR (review.py).
 
     github review status [--json]            every review record and its current entry (read-only, local)
@@ -10,14 +10,19 @@ GitHub Issue's Draft PR (review.py).
                                              --apply needs github.review.enabled)
     github review retry FEATURE --reason TEXT [--actor NAME] [--apply] [--json]
                                              supersede the current review and run a new generation for the same head
+    github review exec RUN_DIR               INTERNAL (R2): the reviewer process the Worker service starts for one
+                                             attempt; refused without the attempt's process tag (review_process.py)
 
-R1: an operator starts every review; the Worker service never does. A review is advisory: it never merges,
-approves or marks a pull request ready. See docs_agents/coordination/github-intake.md §13.
+`run` and `retry` review in the foreground (R1). R2: with github.review.enabled the Worker service also starts
+reviews by itself, each attempt in a separate reviewer process (review_worker.py); while one runs, `run` and
+`retry` wait for it. A review is advisory: it never merges, approves or marks a pull request ready. See
+docs_agents/coordination/github-intake.md §13.
 """
 
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 from typing import Any
 
 from .config import ProjectConfig
@@ -63,6 +68,10 @@ def cmd_show(args: argparse.Namespace, config: ProjectConfig) -> int:
         lines += [f"    - {f['severity']}: {f['file']}:{f['line_start'] or ''} {f['title']}" for f in entry["findings"]]
         lines += [f"    attempt {a['attempt']}: {a['status']} {a.get('error') or ''}".rstrip()
                   for a in entry["attempt_log"]]
+        running = entry.get("running") or {}
+        if running.get("tag"):
+            lines.append(f"    running: attempt {running['attempt']} in reviewer process {running.get('pid') or '-'} "
+                         f"(Worker service), since {running['started_at']}, deadline {running.get('deadline')}")
         if entry.get("held") and entry["status"] == "pending":
             lines.append(f"    held: {entry['held']['outcome']} not recorded yet ({entry['held']['error']}); the next "
                          "`run` confirms or discards it")
@@ -98,6 +107,14 @@ def cmd_retry(args: argparse.Namespace, config: ProjectConfig) -> int:
     return _run(args, config, {"by": args.actor, "reason": args.reason})
 
 
+def cmd_exec(args: argparse.Namespace, config: ProjectConfig) -> int:
+    """INTERNAL (R2): run one review attempt as the reviewer process the Worker service started."""
+    from .review_process import run_exec  # pylint: disable=import-outside-toplevel
+    from .supervisor import install_termination_handlers  # pylint: disable=import-outside-toplevel
+    install_termination_handlers()  # SIGTERM/SIGINT: the supervisor cancels the CLI; the attempt says so
+    return run_exec(config, _state(args, config), Path(args.run_dir))
+
+
 def register(gsub: Any) -> None:
     """Add `github review …` to the `github` command group."""
     group = gsub.add_parser("review", help="the advisory AI review of a published Draft PR (W4.6.1)",
@@ -123,3 +140,6 @@ def register(gsub: Any) -> None:
     retry.add_argument("--apply", action="store_true")
     retry.add_argument("--json", action="store_true")
     retry.set_defaults(func=cmd_retry)
+    run_one = rsub.add_parser("exec", help="INTERNAL: the reviewer process the Worker service starts (R2)")
+    run_one.add_argument("run_dir")
+    run_one.set_defaults(func=cmd_exec)

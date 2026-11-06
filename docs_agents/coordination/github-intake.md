@@ -465,11 +465,11 @@ Every pair of blob IDs must match (until step 2 of §12.13, `main` shows `MISSIN
 5. Enable `github.planning` in the Worker's project configuration with the conservative settings of §12.10 (intake must be enabled) and restart the service.
 6. Run one supervised test on a throwaway Issue, with no feature active: `worker:plan` → review → `worker:approve`; check the receipt and its run, `github planning status` and `github intake status`.
 
-## 13. Independent AI review of the Draft PR (W4.6.1, R1)
+## 13. Independent AI review of the Draft PR (W4.6.1, R1 and R2)
 
-> Status: **R1 implemented and tested offline only** (mock GitHub, fake reviewers, disposable repositories; no model call). Not activated: `github.review.enabled` defaults **false**. In R1 an **operator** starts every review; the Worker service never does (R2). Code: `feature_coordinator/review.py` (binding, records, comments), `review_context.py` (the reviewer's input), `reviewer.py` (Claude Code without tools), `review_result.py` (validation, outcome, comment), `review_config.py`, `review_commands.py`. Tests: `feature_coordinator/tests/test_fc_review.py`, `test_fc_reviewer.py`. Design: Issue #53.
+> Status: **R1 (operator-started) merged; R2 (started by the Worker service, §13.7) implemented and tested offline only** (mock GitHub, fake reviewers and fake reviewer processes, disposable repositories; no model call). Not activated: `github.review.enabled` defaults **false**. Code: `feature_coordinator/review.py` (binding, records, comments), `review_context.py` (the reviewer's input), `reviewer.py` (Claude Code without tools), `review_result.py` (validation, outcome, comment), `review_config.py`, `review_commands.py`; R2: `review_worker.py` (the service step, reporting), `review_process.py` (the reviewer process). Tests: `feature_coordinator/tests/test_fc_review.py`, `test_fc_reviewer.py`, `test_fc_review_worker.py`. Design: Issue #53; R2: Issue #55.
 
-After publication (§10) has opened the single Draft PR of an approved Issue's feature, an operator can have it reviewed by an AI reviewer that did not write it:
+After publication (§10) has opened the single Draft PR of an approved Issue's feature, an operator can have it reviewed by an AI reviewer that did not write it (R2: once enabled, the Worker service does this by itself, §13.7):
 
 ```bash
 python -m feature_coordinator --tracker github --project-config ~/.config/mx-admin-agents/project.yaml \
@@ -553,13 +553,56 @@ The PR comment shows the outcome, head, merge base, reviewer, independence and f
 
 ### 13.5 Configuration (`github.review`)
 
-See [project-config.example.yaml](project-config.example.yaml): `enabled` (false), `provider` (`claude`; R1 accepts only a Claude Code provider), `model` (`opus`), `independence` (`prefer` | `require`), `timeout_seconds` (600), `max_attempts` (1), `unavailable_wait_seconds` (3600), `max_diff_characters` (150000), `max_findings` (30). Unknown keys are refused. Enabling it needs `github.intake.enabled` and `github.publish.enabled`.
+See [project-config.example.yaml](project-config.example.yaml): `enabled` (false), `provider` (`claude`; only a Claude Code provider is accepted), `model` (`opus`), `independence` (`prefer` | `require`), `timeout_seconds` (600), `max_attempts` (1), `unavailable_wait_seconds` (3600), `max_diff_characters` (150000), `max_findings` (30), `poll_interval_seconds` (60, R2: how often the Worker service's review step runs, 10..3600). Unknown keys are refused. Enabling it needs `github.intake.enabled` and `github.publish.enabled`; with it enabled, the Worker service reviews every verified Draft PR by itself (§13.7).
 
-### 13.6 Limitations (R1)
+### 13.6 Limitations
 
-- No automatic review: the Worker service does not start reviews (R2). No Codex reviewer, no fallback provider (R4). No CI validation, no automatic merge (W4.6.2, W4.6.3). New features still branch from local `dev` (B1 not implemented).
+- No Codex reviewer, no fallback provider (R4). No CI validation, no automatic merge (W4.6.2, W4.6.3). New features still branch from local `dev` (B1 not implemented).
 - The reviewer sees the diff and the prompt only, not the rest of the repository. Prompt injection through the diff or the Issue can still bias its verdict; the outcome is advisory and the gates stay authoritative.
 - The shared `spyderbg` identity and `runtime.native_hardening` off: an implementing agent with shell access could reach the GitHub login or the state directory and forge a comment or a local record. Nothing acts on a review automatically in R1; this blocks any later use of reviews as merge evidence.
 - The re-check after the reviewer narrows the race to the seconds between it and the comment; nothing pins the PR head on GitHub. Evidence describes the head at that moment, so any later consumer must re-check at its own time (above).
 - The credential patterns are heuristics. They can miss an unusual secret format and can over-redact (for example, a long hyphenated word containing `sk-`). Over-redaction only adds a coordinator note.
 - The post-run checks of the `init` event (`tools: []`, no MCP server) are verified against recorded event shapes only; the first supervised run (R3) must confirm them on the live CLI. A review uses the operator's Claude subscription quota (bounded by attempts and the timeout).
+- R2 (§13.7): under systemd a crash of the service process also ends its reviewer (KillMode=mixed): the attempt is interrupted and stays counted, so with `max_attempts: 1` that review is ERROR until an operator runs `retry`. A graceful stop or restart cancels the reviewer instead (attempt given back, one new model request after the restart). Whether a process is the reviewer is decided by its process tag in `/proc/<pid>/environ` (best effort, as for the agents' run tags); the reviewer process itself is coordinator code running as the operator, not confined beyond the CLI's no-tools mode.
+
+### 13.7 Automatic review by the Worker service (R2)
+
+With `github.review.enabled`, the Worker service runs a **review step** right after its publication step (and before the intake poll), at most every `github.review.poll_interval_seconds`, never while paused. The step holds `github-review.lock` for seconds and **never waits for the model**; the heartbeat, cancellation and the other steps go on while a review runs. `github review run` and `retry` stay as in R1 (the reviewer runs in the foreground).
+
+**Starting.** Only while no reviewer process runs and no agent holds a claim on the checkout, the step takes the first approved Issue's feature in `review` whose recorded PR publication has not stopped (`attention`) and that still needs a review, and does exactly R1's run (§13.1: fresh binding, the publisher's identity checks, preconditions; one review per verified head and generation) — except that the attempt, counted **before** it starts, runs as one separate **reviewer process**: `python -m feature_coordinator github review exec RUN_DIR` (internal). Before counting, the reviewer's availability is checked without a model request (the CLI, its flags, the subscription login); an unavailable reviewer uses no attempt, starts no process, is reported once, and makes the review ERROR after `unavailable_wait_seconds`. A review complete for the publisher's verified head is not looked at again (no GitHub request), ERROR included; nor is one invalidated for that head. A newly verified head or an operator's `retry` starts the next.
+
+**The reviewer process** gets the attempt's request (`request.json` in its own run directory: the prompt, the answer schema, the timeout; mode 0600, never logged) and a random **process tag** (`FC_REVIEW_RUN`). It refuses without that tag or outside `runs/review/`, runs R1's reviewer **unchanged** (Claude Code, subscription, no tools, no MCP, an empty working directory, the existing supervisor and its timeout) with the tag added to the CLI's environment, writes `result.json` once and exits. Its environment is the native allowlist plus the tag: no GitHub token or API key. It never reads GitHub, takes no coordinator lock and writes no record. `worker pause` / `worker stop` cancel it through the control file; SIGTERM cancels it too; a cancelled run is recorded as cancelled.
+
+**Watching and collecting** (every step, local facts and `/proc` only while it runs):
+
+| Situation | What the step does |
+| --- | --- |
+| tagged processes live, within the deadline (timeout + termination grace + 120 s) | nothing: no GitHub request, no second reviewer |
+| past the deadline | records the decision first, then stops it (SIGTERM to the reviewer process, grace, SIGKILL, then any tagged leftover); the attempt is a **timeout** (used, never given back) |
+| the feature left review (merged, closed by publication), another PR, or a head the publisher no longer records as verified | stops it the same way; the entry is **invalidated**, its result discarded, nothing published |
+| the reviewer process ended but processes of its CLI are left (orphaned) | stops those; no result → interrupted |
+| gone | collects `result.json` through R1's judgement with the context it was given (§13.3–13.4): given back, refused, validated, **re-checked against fresh reads** (stale → history only; a failed re-read → held), recorded, ONE comment |
+| no result, or one that is not this attempt's (key, attempt, tag) | **interrupted**: the attempt stays counted; ERROR when none is left |
+
+A process is "ours" only if it carries the attempt's tag; the tag is re-checked before every signal, so a reused PID, a tampered record or any unrelated process is never signalled (a recorded identity that is alive without the tag neither blocks nor is stopped).
+
+**Lifecycle.**
+
+| Event | Result |
+| --- | --- |
+| Worker starts while a review is pending | the first step starts it (or reports the unavailable reviewer) |
+| Worker restarts while a review runs (outside systemd) | the new instance finds it by its tag: waits, collects, or stops it at its deadline |
+| graceful stop (`worker stop`, SIGTERM, `systemctl stop`) | the service asks its reviewer process to stop and waits for it, so it records its cancellation before systemd's final SIGKILL (KillMode=mixed); the attempt is given back (R1) and the next start reviews again |
+| pause | the reviewer cancels itself (control file); nothing is collected or started until resume, which collects (given back) and starts again |
+| reviewer finishes during shutdown | its result is collected by the next start |
+| reviewer crashes / killed | interrupted, counted |
+| reviewer times out | timeout, counted |
+| GitHub unavailable | the start is deferred (nothing counted); a finished answer whose binding cannot be re-read is held |
+| PR head changes, PR closed | publication stops (`attention`); a running review finishes and its answer is stale (history only); nothing new starts |
+| PR merged | the feature is done: a running reviewer is stopped, the review invalidated |
+| approval withdrawn | stale at collection; before a start: ERROR without a model request (R1) |
+| result already published | not looked at again; a comment a crash interrupted is found by its marker, never posted twice |
+| an operator's `run` / `retry` while a reviewer process runs | deferred ("runs in a reviewer process the Worker service started"); once it ended, `run` collects it without a reviewer run |
+
+**Reporting.** `worker status`, `worker health --json` (`reviews`), `worker waiting` and `worker attention` show each review: pending, running (its process, deadline), held, reviewer-unavailable, complete, request-changes, error, invalidated. While no feature is active the service's state combines publication's and the reviews': an **ERROR** review of a feature in review is **NEEDS_ATTENTION** (and `worker health` is not healthy) with the commands to inspect and retry it; a running, pending, held or unavailable review and **REQUEST_CHANGES** are **WAITING**; PASS and PASS_WITH_NOTES add nothing to publication's wait. Log lines and events are written once per transition (a steady wait is not repeated); prompts, credentials and model text are never logged.
+

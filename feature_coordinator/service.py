@@ -2,41 +2,40 @@
 
 `python -m feature_coordinator worker start` (systemd --user runs exactly this). Each cycle:
 
-  1. heartbeat; operator requests (worker-control: pause, stop); a stop signal; W4.3.3: when
-     `github.publish.enabled`, a publication pass (publish.py: an approved Issue's verified feature is
-     integrated, pushed, opened as ONE Draft PR, and completed once a person merged it); W4.3.1: when
-     `github.intake.enabled`, at most every `poll_interval_seconds` a GitHub intake poll (intake.py):
-     an Issue an operator approved with `/worker approve` is planned and, on a free checkout,
-     activated — the approval is the operator's plan and activation (W4.5: also `worker:*` labels);
+  1. heartbeat; operator requests (worker-control: pause, stop); a stop signal; W4.3.3: when `github.publish.enabled`,
+     a publication pass (publish.py: an approved Issue's verified feature is integrated, pushed, opened as ONE Draft
+     PR, and completed once a person merged it); W4.6.1 R2: when `github.review.enabled`, the AI review step
+     (review_worker.py: starts a reviewer process for a verified Draft PR, watches it and collects its result on a
+     later cycle — it never waits for the model); W4.3.1: when `github.intake.enabled`, at most every
+     `poll_interval_seconds` a GitHub intake poll (intake.py): an Issue an operator approved with `/worker approve`
+     is planned and, on a free checkout, activated — the approval is the operator's plan and activation (W4.5: also
+     `worker:*` labels);
   2. the active feature — only one an operator planned AND activated; nothing else is started;
-  3. the checkout: workspace identity/branch/base (W2), the feature's Worker lock (so
-     `python -m feature_coordinator work` cannot drive it at the same time), and claims: a LIVE claim (a manual
-     launch, or a launch of an earlier service instance) means wait — never a second writer;
-     a stale claim is recovered (W3, orphan-aware); an orphaned agent is waited for, and stopped
-     only when its identity is certain and its run deadline has passed;
-  4. eligible tasks (READY, dependencies verified, role enabled, no attention record, next
-     attempt due) → ONE task: pre-launch checks (CLI present, subscription login — never an API
-     key, checkpoint consistency, launch budget; W4.3.1: an approved Issue's task only while the
-     Issue is open and still matches the approved text, re-read now — and re-read while it runs:
-     a withdrawn approval stops the run through the existing cancellation), the launch counted
-     BEFORE it starts
-     (write-ahead), `python -m feature_coordinator launch TASK --apply` as a subprocess (the existing W2/W3 path:
-     claim, agent, acceptance, checkpoints, gates), watched with heartbeats and a watchdog;
+  3. the checkout: workspace identity/branch/base (W2), the feature's Worker lock (so `python -m feature_coordinator
+     work` cannot drive it at the same time), and claims: a LIVE claim (a manual launch, or a launch of an earlier
+     service instance) means wait — never a second writer; a stale claim is recovered (W3, orphan-aware); an
+     orphaned agent is waited for, and stopped only when its identity is certain and its run deadline has passed;
+  4. eligible tasks (READY, dependencies verified, role enabled, no attention record, next attempt due) → ONE task:
+     pre-launch checks (CLI present, subscription login — never an API key, checkpoint consistency, launch budget;
+     W4.3.1: an approved Issue's task only while the Issue is open and still matches the approved text, re-read now
+     — and re-read while it runs: a withdrawn approval stops the run through the existing cancellation), the launch
+     counted BEFORE it starts (write-ahead), `python -m feature_coordinator launch TASK --apply` as a subprocess
+     (the existing W2/W3 path: claim, agent, acceptance, checkpoints, gates), watched with heartbeats and a watchdog;
   5. after the launch: the agent has stopped (no process carries its run tags), its claim is
      released, the branch was not rewritten, no foreign commit or unexplained file change
      appeared, its checkpoints are consistent — else CRITICAL; then the outcome is classified
      and the bounded retry policy applied (autonomy.py); only then is the next task considered;
   6. nothing eligible → WAITING (until the next retry) / NEEDS_ATTENTION / AVAILABLE, idle.
 
-One agent at a time is ENFORCED, not only scheduled: the service holds the `agent-exclusive`
-flag, so any claim — the service's own launch or a manual one — is refused while another claim
-exists on the checkout (claims.py). A second service on the same state directory is refused
-(worker-service.lock, exit 73). Startup failures are counted per cause; the same cause
-`startup_failure_limit` times in a row exits 78, which the systemd unit does not restart.
+One agent at a time is ENFORCED, not only scheduled: the service holds the `agent-exclusive` flag, so any claim — the
+service's own launch or a manual one — is refused while another claim exists on the checkout (claims.py). A second
+service on the same state directory is refused (worker-service.lock, exit 73). Startup failures are counted per
+cause; the same cause `startup_failure_limit` times in a row exits 78, which the systemd unit does not restart.
 
-Stop: SIGTERM / `worker stop` cancels the active agent gracefully (W3: completed checkpoints
-stay; the interrupted step runs again later) and exits. `worker stop --after-current` lets it
-finish first. Pause stops scheduling; an active launch finishes.
+Stop: SIGTERM / `worker stop` cancels the active agent gracefully (W3: completed checkpoints stay; the interrupted
+step runs again later) and exits; W4.6.1 R2: a running reviewer process is asked to stop first and records its
+attempt as cancelled (given back). `worker stop --after-current` lets the agent finish first. Pause stops
+scheduling; an active launch finishes (a running reviewer is cancelled through the control file).
 """
 
 from __future__ import annotations
@@ -141,6 +140,7 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
         self._polled_at: dict[str, float] = {}  # W4.3.1/W4.3.3: the last GitHub polls (service clock)
         self._poll_errors: dict[str, str] = {}
         self._publication: tuple[str, str] | None = None  # W4.3.3: what a published feature waits for
+        self._waits: dict[str, Any] = {}  # W4.6.1 R2: each GitHub step's idle state (combined: _publication)
         self._intake_watch_at = 0.0           # W4.3.1: the last re-read of a running task's approved Issue
 
     # -- the whole lifetime ------------------------------------------------------------------
@@ -262,6 +262,8 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
                 self._log(f"stopped ({self._stop_reason or 'exited'})")
             except CoordinatorError as exc:
                 self._log(f"shutdown bookkeeping failed: {exc}")
+        from .review_worker import stop_reviews  # pylint: disable=import-outside-toplevel
+        stop_reviews(self.coord, self._log)  # W4.6.1 R2: a reviewer process records its cancellation first
         if self._exclusive:
             drop_exclusive(self.store)
             self._exclusive = False
@@ -317,23 +319,19 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
         self._idle(min(self.cfg.idle_poll_seconds, max(wake - now, 0.01)) if wake else self.cfg.idle_poll_seconds)
 
     def _poll_github(self, now: float) -> None:
-        """Each at most every its poll_interval_seconds: W4.3.3 publication (publish.py) — first, so a merge
-        is seen before a closed Issue could look like a withdrawn approval — then the W4.3.1 intake poll
-        (newly approved Issues become tasks; approved texts are checked, intake.py). A failure is recorded
-        once per distinct error; the service goes on (the next poll retries)."""
-        from .intake_poll import IntakePoller, planning_hooks  # pylint: disable=import-outside-toplevel
-        from .publish import PullRequestPublisher  # pylint: disable=import-outside-toplevel
+        """Each step at most every its poll_interval_seconds, in `review_worker.github_steps` order: publication,
+        the AI review, intake (why: see there). A failure is recorded once per distinct error; the service goes on."""
+        from .intake_poll import planning_hooks  # pylint: disable=import-outside-toplevel
+        from .review_worker import github_steps, idle_state  # pylint: disable=import-outside-toplevel
         hooks = planning_hooks(self.store, lambda: self._beat(self.clock()))  # W4.5: while a planner runs
-        for name, cfg, poller in (("publish", self.config.github.publish, PullRequestPublisher),
-                                  ("intake", self.config.github.intake, IntakePoller)):
+        for name, cfg, poller in github_steps(self.config, self.coord, hooks, getattr(self.spawn, "start", None)):
             if not cfg.enabled or now - self._polled_at.get(name, float("-inf")) < cfg.poll_interval_seconds:
                 continue
             self._polled_at[name] = now
             try:
-                report = poller(self.coord, **(hooks if name == "intake" else {})).poll(apply=True)
+                report = poller().poll(apply=True)
                 lines, error = report.lines(), "; ".join(report.deferred)
-                if name == "publish":
-                    self._publication = report.service_state()
+                self._waits[name] = getattr(report, "service_state", lambda: None)()
             except CoordinatorError as exc:
                 error = scrub(f"{type(exc).__name__}: {exc}", 500)
                 lines = [f"deferred: {error}"]
@@ -342,6 +340,7 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
             self._poll_errors[name] = error
             for line in lines:
                 self._log(f"{name}: {line}")
+        self._publication = idle_state(self._waits)
 
     def _intake_changed(self, task: Task) -> bool:
         """W4.3.1: a task from an approved GitHub Issue starts only while that Issue still matches the
