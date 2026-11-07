@@ -232,7 +232,166 @@ def test_stream_problems_of_a_clean_session_are_none(tmp_path: Path) -> None:
     out = tmp_path / "s.jsonl"
     out.write_text(events(INIT, {"type": "assistant", "message": {"content": [{"type": "text", "text": "ok"}]}},
                           result_event()), encoding="utf-8")
-    assert not stream_problems(out)
+    assert not stream_problems(out) and not stream_problems(out, structured=True)
+
+
+# -- Claude Code's internal StructuredOutput delivery (Issue #59) ---------------------------------------------------
+# The shape of the two live sessions Claude Code 2.1.319 recorded with `--tools "" --json-schema` (PR #58 and PR #60,
+# both refused before this fix): init offers exactly ["StructuredOutput"], the model calls it once, Claude Code
+# acknowledges it with a tool result and the result event carries the same object (and its JSON as text).
+
+SO = "StructuredOutput"
+SO_INIT = {**INIT, "tools": [SO], "claude_code_version": "2.1.319", "slash_commands": [], "skills": [],
+           "agents": ["claude", "Explore", "general-purpose", "Plan", "statusline-setup"], "output_style": "default",
+           "plugins": [{"name": "cc-plugin-privacy", "path": "builtin", "source": "cc-plugin-privacy@builtin"}]}
+THINKING = {"type": "assistant", "parent_tool_use_id": None,
+            "message": {"role": "assistant", "model": "claude-opus-5-5", "content": [{"type": "thinking"}]}}
+RATE_LIMIT = {"type": "rate_limit_event", "rate_limit_info": {"status": "allowed", "rateLimitType": "five_hour"}}
+
+
+def so_call(output: Any = None, call_id: str | None = "toolu_01SO", *, name: str = SO, kind: str = "tool_use",
+            parent: str | None = None) -> dict[str, Any]:
+    block = {"type": kind, "id": call_id, "name": name, "input": answer() if output is None else output}
+    return {"type": "assistant", "parent_tool_use_id": parent,
+            "message": {"role": "assistant", "model": "claude-opus-5-5", "content": [block]}}
+
+
+def so_ack(call_id: str = "toolu_01SO", *, error: bool = False) -> dict[str, Any]:
+    block: dict[str, Any] = {"type": "tool_result", "tool_use_id": call_id,
+                             "content": "Structured output provided successfully"}
+    if error:
+        block.update(is_error=True, content="Output does not match the required schema")
+    return {"type": "user", "parent_tool_use_id": None, "message": {"role": "user", "content": [block]},
+            "tool_use_result": block["content"],
+            "tool_result_meta": [{"id": call_id, "permission_decision": {"decision": "accept", "source": "config"}}]}
+
+
+def so_result(output: Any = None, **extra: Any) -> dict[str, Any]:
+    value = answer() if output is None else output
+    return {"type": "result", "subtype": "success", "is_error": False, "num_turns": 2, "stop_reason": "tool_use",
+            "terminal_reason": "completed", "permission_denials": [], "result": json.dumps(value),
+            "structured_output": value, **extra}
+
+
+def delivery(output: Any = None, *, init: dict[str, Any] | None = None, extra: tuple[dict[str, Any], ...] = (),
+             **result: Any) -> str:
+    """The recorded 2.1.319 sequence (init, thinking, the call, its acknowledgement, rate limit, result)."""
+    return events(SO_INIT if init is None else init, THINKING, so_call(output), so_ack(), *extra, RATE_LIMIT,
+                  so_result(output, **result))
+
+
+def test_the_structured_output_delivery_of_claude_code_2_1_319_is_accepted(tmp_path: Path) -> None:
+    seen: dict[str, Any] = {}
+    result = reviewer(delivery(), seen=seen).review(request(tmp_path))
+    assert result.status == "ok" and result.output == answer(), result.error
+    argv = seen["argv"]  # the isolation arguments are all still there
+    assert argv[argv.index("--tools") + 1] == "" and argv[argv.index("--permission-mode") + 1] == "dontAsk"
+    for flag in ("--restricted", "--strict-mcp-config", "--no-session-persistence", "--disable-slash-commands",
+                 "--json-schema"):
+        assert flag in argv
+    out = tmp_path / "s.jsonl"
+    out.write_text(delivery(), encoding="utf-8")
+    assert not stream_problems(out, structured=True)
+    # without --json-schema the delivery is just another tool: refused
+    assert stream_problems(out) == [f"Claude Code offered tools ['{SO}']; the reviewer must have none",
+                                    f"the reviewer tried to use the tool '{SO}'",
+                                    f"Claude Code reported the result of a tool call other than {SO}"]
+
+
+def test_a_delivery_claude_code_rejected_and_then_accepted_counts_once(tmp_path: Path) -> None:
+    wrong = {**answer(), "verdict": "approve"}
+    stream = events(SO_INIT, so_call(wrong, "toolu_01A"), so_ack("toolu_01A", error=True),
+                    so_call(answer(), "toolu_01B"), so_ack("toolu_01B"), so_result())
+    result = reviewer(stream).review(request(tmp_path))
+    assert result.status == "ok" and result.output == answer(), result.error
+
+
+OPERATIONAL = ("Bash", "Read", "Write", "Edit", "Glob", "Grep", "WebFetch", "Agent", "Task",
+               "mcp__github__merge_pull_request")
+
+
+@pytest.mark.parametrize(("stream", "problem"), [
+    # tools offered alongside the delivery
+    *[(delivery(init={**SO_INIT, "tools": [SO, tool]}), "offered tools") for tool in OPERATIONAL],
+    (delivery(init={**SO_INIT, "tools": [SO, SO]}), "offered tools"),
+    (delivery(init={**SO_INIT, "tools": ["Read"]}), "offered tools"),
+    # any operational tool call, before or after the delivery
+    *[(delivery(extra=(so_call({"command": "gh pr merge 60"}, f"toolu_{tool}", name=tool),)), f"tool {tool!r}")
+      for tool in OPERATIONAL],
+    (events(SO_INIT, so_call({"file_path": "/home/op/.claude.json"}, "toolu_R", name="Read"), so_call(), so_ack(),
+            so_result()), "tool 'Read'"),
+    # the delivery's name in another shape: a server or MCP tool, a subagent's call, no call id, not offered
+    (events(SO_INIT, so_call(kind="server_tool_use"), so_ack(), so_result()), f"tool '{SO}'"),
+    (events(SO_INIT, so_call(kind="mcp_tool_use"), so_ack(), so_result()), f"tool '{SO}'"),
+    (events(SO_INIT, so_call(parent="toolu_01PARENT"), so_ack(), so_result()), f"tool '{SO}'"),
+    (events(SO_INIT, so_call(call_id=None), so_ack(), so_result()), f"tool '{SO}'"),
+    (events(INIT, so_call(), so_ack(), so_result()), f"tool '{SO}'"),
+    # a tool result for a call the stream does not show
+    (delivery(extra=(so_ack("toolu_01HIDDEN"),)), f"result of a tool call other than {SO}"),
+    # the other session rules hold with the delivery as without it
+    (delivery(init={**SO_INIT, "mcp_servers": [{"name": "github", "status": "connected"}]}), "MCP servers"),
+    (delivery(permission_denials=[{"tool_name": "Write"}]), "denied 1 permission"),
+    (delivery(permission_denials=[{"tool_name": SO}]), "denied 1 permission"),
+    (delivery(init={**SO_INIT, "apiKeySource": "ANTHROPIC_API_KEY"}), "API key"),
+    (delivery(init={**SO_INIT, "model": "claude-sonnet-5-5"}), "model substitution"),
+    (events(THINKING, so_call(), so_ack(), so_result()), "no init event"),
+])
+def test_a_delivery_session_with_anything_else_is_refused(tmp_path: Path, stream: str, problem: str) -> None:
+    result = reviewer(stream).review(request(tmp_path))
+    assert result.status == "refused" and problem in result.error and result.output is None, result.error
+
+
+def test_a_delivery_that_wrote_into_the_empty_directory_is_refused(tmp_path: Path) -> None:
+    result = reviewer(delivery(), write=True).review(request(tmp_path))
+    assert result.status == "refused" and "changed its empty working directory" in result.error
+
+
+@pytest.mark.parametrize(("stream", "kwargs", "error"), [
+    # missing: the answer only as text, a call without the object, the object without a call, no acknowledgement
+    (events(SO_INIT, {"type": "assistant", "message": {"content": [{"type": "text", "text": json.dumps(answer())}]}},
+            {"type": "result", "subtype": "success", "is_error": False, "result": json.dumps(answer())}), {},
+     "delivered no structured answer"),
+    (events(SO_INIT, so_result()), {}, "delivered no structured answer"),
+    (events(SO_INIT, so_call(), so_ack(), {**so_result(), "structured_output": None}), {},
+     "no structured_output object"),
+    (events(SO_INIT, so_call(), so_ack(), {k: v for k, v in so_result().items() if k != "structured_output"}), {},
+     "no structured_output object"),
+    (events(SO_INIT, so_call(), so_result()), {}, "has no tool result"),
+    # rejected or ambiguous deliveries
+    (events(SO_INIT, so_call(), so_ack(error=True), so_result()), {}, "accepted 0"),
+    (events(SO_INIT, so_call(call_id="toolu_A"), so_ack("toolu_A"), so_call(call_id="toolu_B"), so_ack("toolu_B"),
+            so_result()), {}, "accepted 2"),
+    # malformed: the result's object is not the delivery, not an object at all
+    (events(SO_INIT, so_call(), so_ack(), so_result(answer("request_changes", finding("major")))), {},
+     "is not the accepted"),
+    (events(SO_INIT, so_call(), so_ack(), so_result(), so_result(answer("request_changes", finding("major")))), {},
+     "is not the accepted"),                                                     # the LAST result event counts
+    (events(SO_INIT, so_call("PASS"), so_ack(), so_result("PASS")), {}, "no JSON object"),
+    (events(SO_INIT, so_call(["pass"]), so_ack(), so_result(["pass"])), {}, "no JSON object"),
+    (events(SO_INIT, so_call("PASS"), so_ack(), so_result("PASS", result=json.dumps(answer()))), {},
+     "no structured_output object"),
+    # Claude Code's own failure, a failed exit
+    (events(SO_INIT, so_call(), so_ack(), so_result(is_error=True, subtype="error_max_structured_output_retries")),
+     {}, "reported an error"),
+    (delivery(), {"code": 1}, "exited with 1"),
+])
+def test_a_missing_incomplete_or_malformed_delivery_is_no_answer(tmp_path: Path, stream: str, kwargs: dict,
+                                                                error: str) -> None:
+    result = reviewer(stream, **kwargs).review(request(tmp_path))
+    assert result.status == "failed" and error in result.error and result.output is None, result.error
+
+
+@pytest.mark.parametrize("output", [
+    {**answer(), "approve": True},                         # an unexpected key
+    answer(head="b" * 40),                                 # another head
+    answer("pass_with_notes", finding(path="backend/app.py")),
+    answer("pass", finding("major")),                      # valid shape, contradictory verdict
+])
+def test_an_accepted_delivery_is_still_validated_deterministically(tmp_path: Path, output: dict[str, Any]) -> None:
+    result = reviewer(delivery(output)).review(request(tmp_path))
+    assert result.status == "ok" and result.output == output  # passed on unchanged, never repaired …
+    review, problems = validate_output(result.output, head_sha=HEAD, files=FILES, max_findings=30)
+    assert review is None or decide(review, [])[0] == "ERROR", problems  # … and never a pass
 
 
 # -- validation and outcomes ------------------------------------------------------------------------------------

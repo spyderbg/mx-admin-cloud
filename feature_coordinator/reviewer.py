@@ -14,9 +14,23 @@ decides the outcome, stores it and publishes it).
   * supervision (deadline, process group, cancellation) is the existing supervisor's.
 
 After the run, everything the stream shows is checked, and a violation REFUSES the run (an ERROR review, never
-retried): the `init` event must exist, offer no tool and no MCP server, use no API key (`apiKeySource: none`) and
-the requested model family; no `tool_use` event and no permission denial may appear; the empty working directory
-must still be empty. Only then is the answer parsed.
+retried): the `init` event must exist, offer no OPERATIONAL tool and no MCP server, use no API key (`apiKeySource:
+none`) and the requested model family; no operational tool use and no permission denial may appear; the empty
+working directory must still be empty. Only then is the answer parsed.
+
+Three things are kept apart:
+
+  * OPERATIONAL tools (Bash, Read, Write, Edit, Glob, Grep, MCP tools, anything else): forbidden — offered or used,
+    the run is refused;
+  * Claude Code's internal STRUCTURED-OUTPUT DELIVERY: narrowly permitted. With `--tools ""` and `--json-schema`,
+    Claude Code (2.1.319, seen live) still offers exactly one tool, `StructuredOutput`; the model answers by calling
+    it, Claude Code checks the input against the schema, acknowledges it with a tool result and copies it into the
+    result event's `structured_output`. It reads, writes and runs nothing. It is accepted only when `--json-schema`
+    was requested, when `init` offers it ALONE, as a plain `tool_use` of the main session, and the answer counts
+    only when Claude Code accepted exactly one delivery and `structured_output` is that same JSON object
+    (`structured_delivery`) — never the result text instead. Calling it proves nothing about the answer: review.py
+    still validates it deterministically (review_result.validate_output);
+  * GitHub writes: only the trusted coordinator (review.py), never the reviewer.
 
 What no-tools mode does and does not give: the MODEL cannot read, write or run anything — it only sees the
 prompt the coordinator assembled (review_context.py), so it cannot reach the GitHub login, the state directory
@@ -31,7 +45,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Mapping, Protocol
+from typing import Any, Callable, Iterator, Mapping, Protocol
 
 from .config import ProjectConfig
 from .github_api import sanitize
@@ -76,9 +90,12 @@ class Reviewer(Protocol):  # pylint: disable=too-few-public-methods
         """One bounded review request."""
 
 
-def stream_problems(stdout_path: Path) -> list[str]:
-    """Rule violations visible in Claude Code's stream-json output: a missing init event, offered tools or MCP
-    servers, any tool use, any permission denial (a no-tools session has none of these)."""
+# Claude Code's internal delivery of a `--json-schema` answer (see the module docstring); not an operational tool
+STRUCTURED_OUTPUT = "StructuredOutput"
+_TOOL_USES = ("tool_use", "server_tool_use", "mcp_tool_use")
+
+
+def _events(stdout_path: Path) -> list[dict[str, Any]]:
     raw = stdout_path.read_bytes()[:MAX_RAW].decode("utf-8", errors="replace")
     events = []
     for line in raw.splitlines():
@@ -88,24 +105,95 @@ def stream_problems(stdout_path: Path) -> list[str]:
             continue
         if isinstance(event, dict):
             events.append(event)
-    init = next((e for e in events if e.get("type") == "system" and e.get("subtype") == "init"), None)
+    return events
+
+
+def _init(events: list[dict[str, Any]]) -> dict[str, Any] | None:
+    return next((e for e in events if e.get("type") == "system" and e.get("subtype") == "init"), None)
+
+
+def _blocks(events: list[dict[str, Any]], role: str, kinds: tuple[str, ...]) -> Iterator[tuple[dict, dict]]:
+    """(event, content block) of every *role* message block of one of *kinds*."""
+    for event in events:
+        message = event.get("message") if event.get("type") == role else None
+        content = message.get("content") if isinstance(message, dict) else None
+        for item in content if isinstance(content, list) else ():
+            if isinstance(item, dict) and item.get("type") in kinds:
+                yield event, item
+
+
+def _delivery_call(event: dict[str, Any], item: dict[str, Any]) -> str:
+    """The call id when *item* is a StructuredOutput delivery: a plain `tool_use` of the main session with an id
+    (not a server or MCP tool use, not a subagent's call); else ''."""
+    call = item.get("id")
+    if item.get("type") != "tool_use" or item.get("name") != STRUCTURED_OUTPUT or event.get("parent_tool_use_id"):
+        return ""
+    return call if isinstance(call, str) else ""
+
+
+def stream_problems(stdout_path: Path, *, structured: bool = False) -> list[str]:
+    """Rule violations visible in Claude Code's stream-json output: a missing init event, offered tools or MCP
+    servers, any tool use, any tool result, any permission denial. *structured* (`--json-schema` was requested)
+    permits only Claude Code's internal StructuredOutput delivery: offered alone, called as a plain `tool_use` of
+    the main session, and only those calls may have tool results."""
+    events = _events(stdout_path)
+    init = _init(events)
     if init is None:
         return ["Claude Code reported no init event: the no-tools session cannot be confirmed"]
     problems = []
     tools = init.get("tools")
-    if not isinstance(tools, list) or tools:
-        problems.append(f"Claude Code offered tools {sanitize(tools, 200)}; the reviewer must have none")
+    if not isinstance(tools, list) or tools not in ([], [STRUCTURED_OUTPUT] if structured else []):
+        problems.append(f"Claude Code offered tools {sanitize(tools, 200)}; the reviewer must have none"
+                        + (f" (only the internal {STRUCTURED_OUTPUT} delivery)" if structured else ""))
     if init.get("mcp_servers"):
         problems.append("Claude Code loaded MCP servers; the reviewer must have none")
+    delivery = structured and tools == [STRUCTURED_OUTPUT]
+    calls = set()
+    for event, item in _blocks(events, "assistant", _TOOL_USES):
+        call = _delivery_call(event, item) if delivery else ""
+        if call:
+            calls.add(call)
+            continue
+        problems.append(f"the reviewer tried to use the tool {sanitize(item.get('name'), 80)!r}")
+    for _event, item in _blocks(events, "user", ("tool_result",)):
+        if item.get("tool_use_id") not in calls:
+            problems.append(f"Claude Code reported the result of a tool call other than {STRUCTURED_OUTPUT}")
     for event in events:
-        message = event.get("message") if event.get("type") == "assistant" else None
-        content = message.get("content") if isinstance(message, dict) else None
-        for item in content if isinstance(content, list) else ():
-            if isinstance(item, dict) and item.get("type") in ("tool_use", "server_tool_use", "mcp_tool_use"):
-                problems.append(f"the reviewer tried to use the tool {sanitize(item.get('name'), 80)!r}")
         if event.get("type") == "result" and event.get("permission_denials"):
             problems.append(f"Claude Code denied {len(event['permission_denials'])} permission request(s)")
     return problems
+
+
+def offers_delivery(stdout_path: Path) -> bool:
+    """True when the init event offers the StructuredOutput delivery and nothing else."""
+    init = _init(_events(stdout_path))
+    return init is not None and init.get("tools") == [STRUCTURED_OUTPUT]
+
+
+def structured_delivery(stdout_path: Path) -> tuple[Any, str]:
+    """(answer, '') or (None, why) for a session whose init offered the StructuredOutput delivery (after
+    stream_problems found nothing). The answer counts only when Claude Code acknowledged every call, accepted
+    exactly ONE delivery (a tool result that is not an error; a rejected one is Claude Code's own schema retry)
+    and the last result event's `structured_output` is that same JSON object — never the result text, never a
+    call without that object, never an object without the call. It is not validated here (review.py does)."""
+    events = _events(stdout_path)
+    calls = [(item.get("id"), item.get("input")) for _e, item in _blocks(events, "assistant", ("tool_use",))
+             if item.get("name") == STRUCTURED_OUTPUT]
+    acks = {item.get("tool_use_id"): item for _e, item in _blocks(events, "user", ("tool_result",))}
+    if not calls:
+        return None, f"Claude Code offered {STRUCTURED_OUTPUT} but the reviewer delivered no structured answer"
+    if any(call not in acks for call, _input in calls):
+        return None, f"a {STRUCTURED_OUTPUT} call has no tool result from Claude Code"
+    accepted = [value for call, value in calls if acks[call].get("is_error") is not True]
+    if len(accepted) != 1:
+        return None, f"Claude Code accepted {len(accepted)} {STRUCTURED_OUTPUT} deliveries; exactly one is required"
+    result = next((e for e in reversed(events) if e.get("type") == "result"), {})
+    structured = result.get("structured_output")
+    if not isinstance(structured, dict) or not isinstance(accepted[0], dict):
+        return None, "the result event carries no structured_output object"
+    if structured != accepted[0]:
+        return None, f"the result's structured_output is not the accepted {STRUCTURED_OUTPUT} delivery"
+    return structured, ""
 
 
 class ClaudeCodeReviewer:  # pylint: disable=too-few-public-methods
@@ -164,11 +252,13 @@ class ClaudeCodeReviewer:  # pylint: disable=too-few-public-methods
             return ReviewResult("failed", error="Claude Code produced no output", details=details)
         session, facts = claude_session_problems(stdout, self.model)
         details.update(facts)
-        violations = session + stream_problems(stdout)
+        violations = session + stream_problems(stdout, structured="--json-schema" in argv)
         if violations:
             return ReviewResult("refused", error="; ".join(violations), details=details)
         output, result, error = parse_stream(stdout)
         details.update(result)
+        if not error and offers_delivery(stdout):  # the answer must be the one accepted delivery, not the text
+            output, error = structured_delivery(stdout)
         if error or not sup.ok:
             return ReviewResult("failed", error=error or f"Claude Code exited with {sup.exit_code}", details=details)
         return ReviewResult("ok", output=output, details=details)
