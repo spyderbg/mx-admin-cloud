@@ -31,7 +31,8 @@ from feature_coordinator.issue_sync import SimulatedCrash
 from feature_coordinator.issues import parse_op
 from feature_coordinator.model import FeatureState, TaskState
 from feature_coordinator.review import ReviewRunner, binding_digest, load_review, review_evidence
-from feature_coordinator.reviewer import ReviewRequest, ReviewResult
+from feature_coordinator.reviewer import ClaudeCodeReviewer, ReviewRequest, ReviewResult
+from feature_coordinator.supervisor import Supervision
 
 from test_fc_intake import BODY, outside
 from test_fc_issue_planning import MULTI, FakePlanner
@@ -45,6 +46,7 @@ from test_fc_publish import (  # pylint: disable=unused-import
     remote,
     remote_sha,
 )
+from test_fc_reviewer import PROBE, SO_INIT, SUBSCRIPTION, delivery, events, so_ack, so_call, so_result
 
 CHANGED = "cli/src/commands.py"  # the single task's file (test_fc_intake.EDIT, one line)
 
@@ -237,6 +239,48 @@ def test_a_refused_run_is_error_at_once(repo: Path, state_dir: Path, github_orig
     assert report.outcome == "ERROR" and len(fake.requests) == 1
     assert "refused: the reviewer tried to use the tool 'Bash'" in current(rig, feature_id)["reason"]
     assert "could not be completed" in pr_comments(rig, pr)[0]
+
+
+def claude_reviewer(config, stream_for: Callable[[str], str]) -> ClaudeCodeReviewer:
+    """R1's real ClaudeCodeReviewer; a fake supervisor writes *stream_for(reviewed head)* as Claude Code's output."""
+    def fake_run(_argv, *, stdout_path: Path, stdin_path: Path, **_kwargs: Any) -> Supervision:
+        head = re.search(r"Reviewed head: ([0-9a-f]{40})", stdin_path.read_text(encoding="utf-8"))
+        assert head is not None
+        stdout_path.write_text(stream_for(head.group(1)), encoding="utf-8")
+        return Supervision("exited", 0, 1.0, 4242)
+    return ClaudeCodeReviewer(config, probe=lambda _p: PROBE, auth_check=lambda *_a, **_k: SUBSCRIPTION,
+                              run=fake_run, environ={"PATH": "/usr/bin", "HOME": "/home/op"})
+
+
+def structured_answer(head: str, verdict: str = "pass", **override: Any) -> dict[str, Any]:
+    return {"verdict": verdict, "summary": "The export command is added as specified.", "head_sha": head,
+            "findings": [], "limitations": [], **override}
+
+
+@pytest.mark.parametrize(("stream_for", "outcome", "reason"), [
+    # Issue #59: the live 2.1.319 delivery is a review now …
+    (lambda head: delivery(structured_answer(head)), "PASS", "no finding"),
+    # … but a malformed or missing structured answer never is
+    (lambda head: delivery(structured_answer(head, approve=True)), "ERROR", "exactly the keys"),
+    (lambda head: delivery(structured_answer("f" * 40)), "ERROR", "is not the reviewed head"),
+    (lambda head: delivery(structured_answer(head, "request_changes")), "ERROR", "names no blocking finding"),
+    (lambda head: events(SO_INIT, so_call(structured_answer(head)), so_ack(),
+                         {**so_result(structured_answer(head)), "structured_output": None}), "ERROR",
+     "no structured_output object"),
+    (lambda head: delivery(structured_answer(head), init={**SO_INIT, "tools": ["StructuredOutput", "Bash"]}),
+     "ERROR", "refused: Claude Code offered tools"),
+])
+def test_the_structured_output_delivery_end_to_end(rig: PubRig, stream_for: Callable[[str], str], outcome: str,
+                                                   reason: str) -> None:
+    _number, _task_id, feature_id, pr = published(rig)
+    report = runner(rig, claude_reviewer(rig.coord.config, stream_for)).run(feature_id, apply=True)
+    entry = current(rig, feature_id)
+    assert report.outcome == entry["outcome"] == outcome, entry
+    assert reason in entry["reason"] or reason in json.dumps(entry["attempt_log"]), entry
+    (comment,) = pr_comments(rig, pr)
+    assert f"Independent AI review: {outcome}" in comment
+    evidence = review_evidence(rig.store, feature_id, pr, entry["binding"]["head_sha"])
+    assert (evidence is not None) == (outcome == "PASS")
 
 
 def test_an_unavailable_reviewer_defers_then_errors(rig: PubRig) -> None:

@@ -508,7 +508,24 @@ The reviewer is the W4.5 planner's invocation: Claude Code with the operator's *
 
 Its prompt holds: the approved Issue title and body (as recorded at approval), the approved plan or task, the tasks' path rules and the protected / approval-required paths, the task and integration gate results, the commit subjects, `CLAUDE.md` / `AGENTS.md` **as of the base commit** (a PR cannot rewrite them for the reviewer), and the diff from the merge base to the head (`git diff --no-ext-diff --no-textconv` through gitsafe). All of it is fenced as untrusted data with a random nonce. Before anything goes into the prompt the coordinator removes control characters, redacts credential-like strings, and withholds the content of files matching `runtime.secret_patterns` or the protected paths; each of these becomes a coordinator note, so such a review is at best PASS_WITH_NOTES. The redaction (`review_context.clean`) runs over **every part of the finished prompt**, one line or fenced block at a time: the Issue, the approved plan (summary, acceptance criteria, task titles, instructions and acceptance criteria, gates) or the single task's title, the path rules, gate results, commit subjects, conventions, the file list and the diff. A section added later cannot bypass it. A diff over `max_diff_characters` is not reviewed (ERROR), never truncated.
 
-After the run the coordinator refuses it (ERROR, no retry) when the stream shows a tool or MCP server offered, any tool use or permission denial, no `init` event, an API key, another model family, or a file written into the empty working directory.
+After the run the coordinator refuses it (ERROR, no retry) when the stream shows an operational tool or MCP server offered, any operational tool use, a tool result for any other call, a permission denial, no `init` event, an API key, another model family, or a file written into the empty working directory.
+
+**Structured output is the one permitted tool.** With `--tools ""` and `--json-schema`, Claude Code (2.1.319, observed live on PR #58 and PR #60) still offers exactly one tool, its internal `StructuredOutput`. The protocol runs in four steps:
+
+1. the `init` event lists `tools: ["StructuredOutput"]`;
+2. the model calls it once (`tool_use`, input = the answer);
+3. Claude Code checks the input against the schema and acknowledges it (`tool_result` "Structured output provided successfully");
+4. the `result` event carries the same object as `structured_output` (and its JSON as `result` text).
+
+This tool reads, writes and runs nothing. The coordinator keeps three things apart:
+
+| | Rule |
+| --- | --- |
+| Operational tools (Bash, Read, Write, Edit, Glob, Grep, MCP tools, any other name) | forbidden: offered or used, the run is refused |
+| Internal structured-output delivery | narrowly permitted: only when `--json-schema` was requested, offered **alone**, called as a plain `tool_use` of the main session; the answer counts only if Claude Code acknowledged every call, accepted exactly one, and `structured_output` is that same object (never the result text). Otherwise the attempt has no answer (failed) |
+| GitHub writes | the trusted coordinator only |
+
+Calling `StructuredOutput` proves nothing about the answer: it is validated deterministically like any other (§13.3).
 
 **No-tools mode reduces exposure; it is not OS-level isolation.** The model cannot read, write or run anything and sees only the prompt; the Claude Code program itself still runs unsandboxed as the operator (it reads its own login under HOME and reaches its API). OS confinement is W1's subject (native hardening, bwrap).
 
@@ -562,7 +579,7 @@ See [project-config.example.yaml](project-config.example.yaml): `enabled` (false
 - The shared `spyderbg` identity and `runtime.native_hardening` off: an implementing agent with shell access could reach the GitHub login or the state directory and forge a comment or a local record. Nothing acts on a review automatically in R1; this blocks any later use of reviews as merge evidence.
 - The re-check after the reviewer narrows the race to the seconds between it and the comment; nothing pins the PR head on GitHub. Evidence describes the head at that moment, so any later consumer must re-check at its own time (above).
 - The credential patterns are heuristics. They can miss an unusual secret format and can over-redact (for example, a long hyphenated word containing `sk-`). Over-redaction only adds a coordinator note.
-- The post-run checks of the `init` event (`tools: []`, no MCP server) are verified against recorded event shapes only; the first supervised run (R3) must confirm them on the live CLI. A review uses the operator's Claude subscription quota (bounded by attempts and the timeout).
+- The post-run checks of the `init` event were first written for `tools: []`. The first live runs (Claude Code 2.1.319, PR #58 and PR #60) offered `["StructuredOutput"]` and were refused; since Issue #59 that delivery alone is accepted (§13.2), checked against the recorded shape of those runs. A future CLI that changes the protocol (another tool name, a second tool, the answer elsewhere) is refused or has no answer, never accepted. A review uses the operator's Claude subscription quota (bounded by attempts and the timeout).
 - R2 (§13.7): under systemd a crash of the service process also ends its reviewer (KillMode=mixed): the attempt is interrupted and stays counted, so with `max_attempts: 1` that review is ERROR until an operator runs `retry`. A graceful stop or restart cancels the reviewer instead (attempt given back, one new model request after the restart). Whether a process is the reviewer is decided by its process tag in `/proc/<pid>/environ` (best effort, as for the agents' run tags); the reviewer process itself is coordinator code running as the operator, not confined beyond the CLI's no-tools mode.
 
 ### 13.7 Automatic review by the Worker service (R2)
