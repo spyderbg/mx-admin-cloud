@@ -26,7 +26,7 @@ from src.api.service_resolver import get_typed_service, require_active_providers
 from src.core.log_client import emit_event
 from src.core.logging_route import LoggingAPIRoute
 from src.services import text_to_image
-from src.services.logging.models import LogLevel
+from src.services.logging import LogLevel
 from src.services.provider_strategy import AllProvidersFailedError
 from src.services.service_registry import ServiceRegistry
 from src.services.text_to_image.models import ImageRequest, media_type_for_extension

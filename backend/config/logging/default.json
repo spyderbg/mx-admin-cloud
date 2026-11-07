@@ -26,7 +26,7 @@
           "encoding": "utf-8"
         },
         "seq": {
-          "active": false,
+          "active": true,
           "class": "seqlog.structured_logging.SeqLogHandler",
           "level": "INFO",
           "server_url": "http://localhost:5341",

@@ -12,14 +12,14 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from src.core.input_loader import load_words
-from src.core.models import TranslationSourceWord
+from src.services.text_translation.input_loader import load_words
 from src.services.models import LangCodeText as ServiceLangCodeText
 from src.services.provider_strategy import ProviderSelectionStrategy
 from src.services.text_translation.models import (
     TextTranslationServiceProvider,
     TranslateResult,
     TranslateTextRequest,
+    TranslationSourceWord,
 )
 from src.services.text_translation.schemas import (
     LangCodeText,

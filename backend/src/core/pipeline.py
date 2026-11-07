@@ -1,15 +1,105 @@
-"""Async TTS pipeline orchestration.
+"""Async TTS pipeline orchestration, its run records and its per-run reports.
 
 Accepts a pre-built ServiceRegistry (from lifespan) instead of loading configs
 from disk on every run.  All service interactions go through internal HTTP
 endpoints — ``core/`` never imports ``services/`` directly.
+
+A run is recorded as a ``RunSummary`` of ``ProviderRunRecord`` rows, which
+``write_run_summary`` saves as JSON and CSV reports. Service value types live in
+their service's ``models.py`` (e.g. ``GeneratedAudio`` in ``text_to_speech``).
 """
 
 # pylint: disable=duplicate-code
 
+from __future__ import annotations
+
+import csv
+import json
 import logging
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Any
+
+from src.core.config import settings
 
 logger = logging.getLogger("core.pipeline")
+
+
+@dataclass(slots=True)
+class ProviderRunRecord:  # pylint: disable=too-many-instance-attributes
+    """Flat record combining generation, evaluation, and optimization results."""
+
+    request_id: str  # unique request identifier
+    provider: str  # provider that handled the request
+    source_file: str  # originating input file
+    source_type: str  # input format
+    language_code: str  # ISO language code
+    language_name: str  # human-readable language
+    expected_text: str  # reference text
+    filename_text: str  # text used in filenames
+    output_format: str  # audio format
+    raw_path: str  # path to the raw audio
+    normalized_path: str | None  # path after normalisation
+    generation_latency_seconds: float  # generation wall-clock time
+    evaluation_latency_seconds: float | None  # evaluation wall-clock time
+    evaluation_score: float | None  # pronunciation accuracy score
+    rolling_average_score: float | None  # running average across evaluations
+    transcription: str | None  # transcribed text from audio
+    success: bool  # overall success flag
+    error: str | None  # combined error message (if any)
+    optimized_paths: dict[str, str] = field(default_factory=dict)  # optimizer_name -> path
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return this record as a plain dict, suitable for JSON/CSV serialization."""
+        return asdict(self)
+
+
+@dataclass(slots=True)
+class RunSummary:
+    """Top-level summary for a complete pipeline run."""
+
+    run_id: str  # timestamp-based run identifier
+    input_file: str  # path to the input file
+    output_format: str  # target audio format
+    provider_records: list[ProviderRunRecord]  # per-request results
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return this summary as a plain dict, suitable for JSON/CSV serialization."""
+        return {
+            "run_id": self.run_id,
+            "input_file": self.input_file,
+            "output_format": self.output_format,
+            "provider_records": [record.to_dict() for record in self.provider_records],
+        }
+
+
+def write_run_summary(_base_dir: Path, summary: RunSummary) -> tuple[Path, Path]:
+    """Write the run summary to a JSON and CSV file."""
+    report_dir = settings.reports_output_dir()
+    report_dir.mkdir(parents=True, exist_ok=True)
+
+    json_path = report_dir / f"{summary.run_id}.json"
+    csv_path = report_dir / f"{summary.run_id}.csv"
+
+    json_path.write_text(json.dumps(summary.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8")
+
+    fieldnames = (
+        list(summary.provider_records[0].to_dict().keys())
+        if summary.provider_records
+        else ["run_id"]
+    )
+    with csv_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        if summary.provider_records:
+            for record in summary.provider_records:
+                writer.writerow(record.to_dict())
+        else:
+            writer.writerow({"run_id": summary.run_id})
+
+    return json_path, csv_path
+
+
 #  #
 # async def run_pipeline(
 #     *,
@@ -31,7 +121,7 @@ logger = logging.getLogger("core.pipeline")
 #         ) from exc
 #
 #     # File rows for TTS must be built as list[GenerateRequest] (see api/internal/schemas); load_words is
-#     # translation-only (core.input_loader.load_words).
+#     # translation-only (services.text_translation.input_loader.load_words).
 #     requests: list[Any] = []
 #     ensure_requests_log(output_dir)
 #

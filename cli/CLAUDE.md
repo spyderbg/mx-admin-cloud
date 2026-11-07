@@ -15,6 +15,9 @@ Three components: **FastAPI backend**, **Vue 3 frontend SPA**, **Typer CLI clien
 ./scripts/cli.sh install     # pip install -e cli/
 ./scripts/cli.sh uninstall
 kiddo-cli --help
+
+# Tests (from cli/; pyproject.toml puts src/ on the path, also run by /verify)
+../.venv/bin/python -m pytest
 ```
 
 ---

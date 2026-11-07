@@ -25,8 +25,7 @@ from src.services.configuration.models import (
 from src.services.configuration.providers.file_system import FileSystemConfigurationProvider
 from src.services.configuration import service as configuration_service
 from src.services.configuration.service import LOG_SOURCE, ConfigurationService
-from src.services.logging.models import LogLevel
-from src.services.logging.service import LoggingService
+from src.services.logging import LoggingService, LogLevel
 from src.services.models import ServiceProvider
 from src.services.provider_strategy import ProviderSelectionStrategy
 

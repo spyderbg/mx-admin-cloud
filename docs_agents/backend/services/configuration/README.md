@@ -17,7 +17,7 @@ Typical callers: the frontend Configuration pages, the CLI `config` group, and t
 | [`backend/src/services/configuration/__init__.py`](../../../../backend/src/services/configuration/__init__.py) | `SERVICE_CLASS`, `SERVICE_NAME`, `SERVICE_ACCEPT_CRITERIA` (`config_subdir="configuration"`, `build_runtime_providers`) |
 | [`service.py`](../../../../backend/src/services/configuration/service.py) | `ConfigurationService`, `ConfigurationProviderFactory`, `LOG_SOURCE = "configuration"` |
 | [`models.py`](../../../../backend/src/services/configuration/models.py) | `ConfigurationProvider` contract, result dataclasses, error hierarchy |
-| [`providers/file_system.py`](../../../../backend/src/services/configuration/providers/file_system.py) | `FileSystemConfigurationProvider` |
+| [`providers/file_system/`](../../../../backend/src/services/configuration/providers/file_system/) | `FileSystemConfigurationProvider` |
 | [`merge.py`](../../../../backend/src/services/configuration/merge.py) | `deep_merge` (patch semantics), `prune_payload` (drops empty/default values) |
 | [`routes.py`](../../../../backend/src/services/configuration/routes.py), [`schemas.py`](../../../../backend/src/services/configuration/schemas.py) | HTTP API and Pydantic models |
 
@@ -45,7 +45,7 @@ Result types (`models.py`): `ConfigurationSummary` (`config_name`, `filename`, `
 
 | Class | Registered name | Path | Notes |
 | --- | --- | --- | --- |
-| `FileSystemConfigurationProvider` | `file_system` | `providers/file_system.py:40` | **Runtime-wired**: built by `FileSystemConfigurationProvider.build_runtime(config_root, registry_builder)` through `build_runtime_providers`, because it needs the registry builder, which no config file can supply **[S]** |
+| `FileSystemConfigurationProvider` | `file_system` | `providers/file_system/provider.py:40` | **Runtime-wired**: built by `FileSystemConfigurationProvider.build_runtime(config_root, registry_builder)` through `build_runtime_providers`, because it needs the registry builder, which no config file can supply **[S]** |
 
 Behavior **[S]**:
 

@@ -58,6 +58,25 @@ test('a refused Google login stores no token', async () => {
   assert.equal(stored.has('token'), false)
 })
 
+test('listing files posts the folder depth to /list-files with the stored token', async () => {
+  const listing = { directory: '/content', files: ['drinks/', 'drinks/water/'], depth: 2 }
+  stored.set('token', 'app-token')
+  const requests = []
+  client.defaults.adapter = async (request) => {
+    requests.push(request)
+    return { data: listing, status: 200, statusText: 'OK', headers: {}, config: request }
+  }
+
+  assert.deepEqual(await auth.listFiles(2), listing)
+  await auth.listFiles()
+
+  assert.deepEqual(requests.map((r) => [r.method, r.baseURL + r.url, JSON.parse(r.data)]), [
+    ['post', '/api/v1/list-files', { depth: 2 }],
+    ['post', '/api/v1/list-files', { depth: 1 }],
+  ])
+  assert.equal(requests[0].headers.Authorization, 'Bearer app-token')
+})
+
 const tokenFor = (payload) =>
   ['{"alg":"HS256","typ":"JWT"}', JSON.stringify(payload)].map((part) => Buffer.from(part).toString('base64url')).join('.') + '.signature'
 

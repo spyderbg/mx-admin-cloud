@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 
 from src.core import logging_route
 from src.core.logging_route import LoggingAPIRoute
-from src.services.logging.models import LogLevel
+from src.services.logging import LogLevel
 
 
 @pytest.fixture

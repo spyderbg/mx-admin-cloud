@@ -24,11 +24,12 @@ Editing controls are hidden behind `hasWriteAccess()` (`src/utils/permissions.ts
 | `npm run dev` | Dev server on `:5173`; proxies `/api` and `/internal` to `http://127.0.0.1:8000`; **serves `/content` directly from the local content directory** (dev only) | not run |
 | `npm run type-check` | `vue-tsc --noEmit` | pass **[V]** |
 | `npm run build` | type-check + `vite build` | pass, no warnings **[V]** |
+| `npm test` | `node --experimental-strip-types --test "tests/**/*.test.mjs" "tests/**/*.test.ts"` — every test file; run by `scripts/validate_tests.py` (`/verify`) | 53/53 **[V]** |
 | `npm run test:voices` | `node --experimental-strip-types --test tests/itemVoices.test.ts tests/itemVoicesApi.test.mjs` | 29/29 **[V]** |
 | `npm run test:content` | `node --test tests/contentAvailability.test.mjs` | 5/5 **[V]** |
 | `npm run test:auth` | `node --test tests/auth.test.mjs` | 8/8 **[V]** |
 
-There is no component/DOM test framework and no lint script. Do not invent `npm run` targets; adding one is a Frontend change with its own review. Note that `frontend/CLAUDE.md` says "No test framework is configured", which is stale (discovery F-9).
+There is no component/DOM test framework and no lint script. Do not invent `npm run` targets; adding one is a Frontend change with its own review. New test files named `tests/*.test.mjs` or `tests/*.test.ts` are picked up by `npm test` without editing `package.json`.
 
 Build-time flags read by the source: `VITE_MOCK_DATA` (starts MSW with `src/mocks/*Handlers.ts`), `VITE_ARCHIVE_CONFIRMATION_MODE`, `VITE_DELETE_ITEM_CONFIRMATION_MODE`, `VITE_LOG_REQUESTS`, `VITE_VERBOSE_REQUESTS` **[V]**. `VITE_DEBUG_MODE` is passed by Docker but not read anywhere in `src/` **[V]**.
 
