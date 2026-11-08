@@ -22,13 +22,15 @@ Each service package under `backend/src/services/` may export:
 
 `ServiceRegistry` discovers these packages with `pkgutil`. `ServiceRegistryBuilder` turns each `backend/config/<subdir>/*.json` file into a `ServiceProvider` envelope, which a per-service `ServiceProviderFactory` materializes into a concrete provider class registered at import time. Providers are then sorted by priority and dispatched with `ALL_PROVIDERS` or `FIRST_SUCCESS` according to `backend/config/_service_strategies.json`. Config changes are hot-reloaded. Details: [architecture §4](../architecture/README.md#4-service-and-provider-model-sv).
 
+Each package's `__init__.py` is also its public facade (`__all__`): other services import only from it, and every concrete provider is its own package under `providers/`. The rules and their automated check are in [`backend/CLAUDE.md`](../../backend/CLAUDE.md) ("Service and provider encapsulation").
+
 ## Service catalog
 
 | Service | Registered | Provider contract | Implemented providers | Instances (active/total) | Strategy | Ops | Tests |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | [`configuration`](services/configuration/README.md) | yes | `ConfigurationProvider` | 1 (runtime-wired) | 1/1 | — | 16 | 105 |
 | [`content`](services/content/README.md) | yes | `ContentProvider` | 1 | 1/1 | FIRST_SUCCESS | 37 | 474 |
-| [`evaluation`](services/evaluation/README.md) | **no** | `EvaluationServiceProvider` (unused, not ABC) | 0 | — | — | 2 | **0** |
+| [`evaluation`](services/evaluation/README.md) | **no** | `STTProvider` (STT backends); `EvaluationServiceProvider` unused, not ABC | 3 STT backends | — | — | 2 | 19 |
 | [`logging`](services/logging/README.md) | yes | `LoggingServiceProvider` | 1 | 2/3 | ALL_PROVIDERS | 8 | 14 |
 | [`text_to_image`](services/text_to_image/README.md) | yes | `TextToImageProvider` | 5 | 1/5 | FIRST_SUCCESS | 3 | 121 |
 | [`text_to_speech`](services/text_to_speech/README.md) | yes | `TTSProvider` | 5 | 2/6 | FIRST_SUCCESS | 3 | 48 |
@@ -38,9 +40,9 @@ Each service package under `backend/src/services/` may export:
 Totals **[V]**:
 
 - 8 service packages, 7 registered;
-- 18 provider classes, 26 configured instances;
+- 21 provider classes (18 configured service providers + 3 evaluation STT backends), 26 configured instances;
 - 74 service operations + 17 API-layer operations = 91 runtime operations;
-- 797 service tests (tables above), plus `api` 88, `core` 13 and shared `services/__tests__/test_provider_strategy.py` 21 = 919 tests.
+- 816 service tests (tables above), plus `api` 88, `core` 13 and shared `services/__tests__/test_provider_strategy.py` 21 = 938 tests.
 
 ## API ownership
 

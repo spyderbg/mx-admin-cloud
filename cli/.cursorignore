@@ -35,7 +35,6 @@ backend/
 .claude/
 content/
 docs/
-existing_scripts/
 output/
 workspaces/
 

@@ -1200,7 +1200,8 @@ Mapping this plan onto
 | §8 LM Studio as the local model | OpenAI-compatible localhost:1234 | **Not built** — no local model is used anywhere yet. |
 
 The document's missing piece was the judge it delegates final authority to. That's Workstream 1.
-One gap still to close before any of this runs unattended:
-[validate_tests.py:160](scripts/validate_tests.py#L160) silently skips the frontend test leg,
-which an autonomous loop reads as PASS. It must become a hard failure — a fabricated green is
-the one failure mode this whole design cannot survive.
+~~One gap still to close before any of this runs unattended: `validate_tests.py` silently skips
+the frontend test leg, which an autonomous loop reads as PASS.~~ **Closed 2026-11-07:** the
+frontend has an `npm test` script, `validate_tests.py` also runs the CLI tests, and a suite that
+cannot run, exits non-zero or runs zero tests now fails the script — a fabricated green is the
+one failure mode this whole design cannot survive.

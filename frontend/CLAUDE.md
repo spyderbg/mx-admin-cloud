@@ -16,6 +16,7 @@ npm install
 npm run dev        # Dev server at http://localhost:5173 (proxies /api → :8000)
 npm run build      # Type-check + production build
 npm run type-check # vue-tsc --noEmit only
+npm test           # every tests/*.test.{mjs,ts} with node:test (also run by /verify)
 ```
 
 ### Docker (all services, from project root)
@@ -27,7 +28,8 @@ npm run type-check # vue-tsc --noEmit only
 docker compose -f docker/docker-compose.yml up -d --build
 ```
 
-No test framework is configured.
+Tests use Node's built-in `node:test` runner (no component/DOM framework). Name new test files
+`tests/<name>.test.mjs` or `.test.ts` so `npm test` picks them up.
 
 ## Architecture
 

@@ -51,7 +51,7 @@ Run `kiddo-cli --help`, `kiddo-cli common --help`, `kiddo-cli content --help`, `
 | [`common ping`](cli/src/kiddo_cli/commands/common_commands.py#L14)           | Ping the backend (expected response PONG; no auth). |
 | [`common status`](cli/src/kiddo_cli/commands/common_commands.py#L21)         | Check service status. |
 | [`common operation <name>`](cli/src/kiddo_cli/commands/common_commands.py#L34) | Perform a service operation. |
-| [`common list-files`](cli/src/kiddo_cli/commands/common_commands.py#L48)       | List files in the configured directory (`--depth`, default 1). |
+| [`common list-files`](cli/src/kiddo_cli/commands/common_commands.py#L48)       | List the content directory down to `--depth` folder levels (default 1 = top level; folders end with `/`). |
 
 ### Content (backend routes_content)
 
@@ -107,7 +107,7 @@ Run `kiddo-cli --help`, `kiddo-cli common --help`, `kiddo-cli content --help`, `
 | [`logging emit <event>`](cli/src/kiddo_cli/commands/logging_commands.py#L39) | Emit a structured log message through the default logger. Options: `--level`, `--fields`, `--json`. |
 | [`logging log <logger_name> <event>`](cli/src/kiddo_cli/commands/logging_commands.py#L82) | Emit a structured log message to a specific logger. Options: `--level`, `--fields`, `--json`. |
 | [`logging api-request <event>`](cli/src/kiddo_cli/commands/logging_commands.py#L129) | Emit an API request log message to the `requests` logger. Options: `--level`, `--fields`, `--json`. |
-| [`logging service <event>`](cli/src/kiddo_cli/commands/logging_commands.py#L172) | Emit a service log message to the `service` logger. Options: `--level`, `--fields`, `--json`. |
+| [`logging service <event>`](cli/src/kiddo_cli/commands/logging_commands.py#L172) | Emit a service log message to the `service` logger. Options: `--service` (default `cli`), `--level`, `--fields`, `--json`. |
 | [`logging provider-request`](cli/src/kiddo_cli/commands/logging_commands.py#L215) | Log a provider request payload. Accepts provider fields via options or `--json`. |
 | [`logging payment <event>`](cli/src/kiddo_cli/commands/logging_commands.py#L300) | Emit a payment log message to the `payment` logger. Options: `--level`, `--fields`, `--json`. |
 | [`logging reset`](cli/src/kiddo_cli/commands/logging_commands.py#L343) | Reset active logging providers. |

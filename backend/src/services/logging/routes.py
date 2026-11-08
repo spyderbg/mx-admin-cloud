@@ -162,10 +162,15 @@ async def log_service_request(
         service: LoggingServiceDep,
         _user: dict = Depends(require_internal),
 ) -> StatusResponse:
-    """Emit a service log message through the logging service."""
+    """Emit a service log message, recording the service name in its fields."""
     logger_name = "service"
     validate_logger_exists(service, logger_name)
-    service.log(logger_name, log_message_from_request(body))
+    log_message = LogMessage(
+        event=body.event,
+        level=body.level,
+        fields={**body.fields, "service": body.service},
+    )
+    service.log(logger_name, log_message)
     return StatusResponse(status="ok")
 
 

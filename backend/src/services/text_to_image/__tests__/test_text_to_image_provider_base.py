@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from src.services.logging.schemas import LogProviderRequest
+from src.services.logging import LogProviderRequest
 from src.services.text_to_image import models as image_models
 from src.services.text_to_image.governor import (
     NonRetryableError,

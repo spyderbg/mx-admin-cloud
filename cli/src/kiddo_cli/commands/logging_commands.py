@@ -181,6 +181,11 @@ def register(app: typer.Typer) -> None:
                 "--level",
                 help="Log level: debug, info, warning, error, critical",
             ),
+            service: str = typer.Option(
+                "cli",
+                "--service",
+                help="Service name recorded on the log message",
+            ),
             fields: Optional[str] = typer.Option(
                 None,
                 "--fields",
@@ -205,6 +210,7 @@ def register(app: typer.Typer) -> None:
         """Emit a service log message to the 'service' logger."""
 
         payload = _build_log_payload(event, level, fields, data)
+        payload.setdefault("service", service)
 
         def _run(t: str):
             result = internal_post("/loggers/logging/log/service", token=t, json=payload)

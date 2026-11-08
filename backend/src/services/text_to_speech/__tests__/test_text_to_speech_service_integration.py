@@ -15,10 +15,9 @@ from httpx import ASGITransport, AsyncClient
 
 from src.api.dependencies import get_registry, require_internal
 from src.core.config import settings
-from src.core.models import GeneratedAudio
 from src.services import text_to_speech as text_to_speech_pkg
 from src.services.text_to_speech import routes as tts_routes
-from src.services.text_to_speech.models import TTSProvider, TTSRequest
+from src.services.text_to_speech.models import GeneratedAudio, TTSProvider, TTSRequest
 from src.services.text_to_speech.service import TextToSpeechService
 
 

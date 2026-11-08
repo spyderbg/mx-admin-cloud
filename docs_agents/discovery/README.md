@@ -49,7 +49,7 @@ This document records what was **observed** in the live repository, not what the
 | `docker/` | Compose (backend, frontend, backend-cli on UDS, cli), test compose, Dockerfiles, nginx | |
 | `content/` | Real content tree (categories/items/images/voices + CSV registries), **tracked in git** | Production-like data |
 | `data/`, `backend/data/` | `users.db` (SQLite, **tracked in git**), `users.sql` | Sensitive state — never touched |
-| `existing_scripts/`, `workspaces/`, `output/` | Legacy one-off scripts, editor workspace, run output (gitignored) | Out of scope |
+| `workspaces/`, `output/` | Editor workspace, run output (gitignored) | Out of scope |
 
 ## 3. Instruction files and existing agent tooling
 
