@@ -39,7 +39,7 @@ from .config import ProjectConfig
 from .github_api import sanitize
 from .launchers import FORBIDDEN_ARGS, RunnerProbe, probe_runner
 from .native_backend import SubscriptionCheck, check_subscription, claude_session_problems, native_environment
-from .planning import available_roles
+from .planning import MAX_CRITERION, available_roles
 from .providers import CliRunnerProfile, ProviderKind
 from .supervisor import supervise
 
@@ -136,6 +136,9 @@ def planner_prompt(*, config: ProjectConfig, number: int, title: str, body: str,
         "coordinator.",
         "- Task IDs: lowercase letters, digits and '-', starting with a letter, at most 32 characters.",
         "- `instructions` must be specific and self-contained: what to change and how to verify it.",
+        f"- Keep each feature/task acceptance criterion concise and independently testable, ideally under 300 "
+        f"characters, and never above {MAX_CRITERION} characters. Split unrelated requirements into "
+        "separate criteria, rather than creating a long criterion.",
         "- If the Issue cannot be done within these roles and paths (it needs a disabled role, a protected or "
         "approval-required path, credentials, deployment, or it is unclear), do NOT bend the rules: return "
         "`tasks: []` and explain in `attention` what an operator must decide. Otherwise `attention` is null.",
