@@ -57,17 +57,17 @@ INTAKE ─▶ AWAITING_APPROVAL ─▶ INSPECTING ─▶ CANDIDATE_BUILT ─▶ 
 | `CANDIDATE_BUILT` | Merge of `source_sha` into `base_sha` done in a **separate, disposable worktree**; head SHA and tree SHA recorded | `VALIDATING`, `REFUSED` (conflict), `STALE` |
 | `VALIDATING` | Validation gates per affected role (§6) running | `IN_REVIEW`, `NEEDS_REPAIR`, `FAILED`, `STALE` |
 | `IN_REVIEW` | Independent AI Review (a different runner/session than any author) of the exact diff | `AWAITING_MERGE_APPROVAL`, `NEEDS_REPAIR`, `FAILED`, `STALE` |
-| `AWAITING_MERGE_APPROVAL` | Operator approval of the specific head/tree SHA | `MERGED`, `REJECTED`, `STALE` |
+| `AWAITING_MERGE_APPROVAL` | Operator approval of the specific head/tree SHA; a persisted in-flight merge may need recovery (§5.8) | `MERGED` (including a verified recovered merge), `REJECTED`, `STALE` |
 | `MERGED` | GitHub has merged the PR into `dev` using the one allowed mechanism (§5.9). The resulting dev merge commit is a different object from the local candidate merge commit and is recorded separately as `merge_result` (§8.2) | `COMPLETED`, `FAILED` (a completion check in §5.10 fails; operator attention required) |
 | `COMPLETED` | All completion checks of §5.10 passed: the dev merge commit contains the source head, its tree SHA equals the approved candidate `tree_sha`, the PR shows merged, post-merge checks green | terminal (none) |
 | `NEEDS_REPAIR` | A repair task is open (§6.4) | `INTAKE` (new SHA, a **new job** linked to this one), `ABORTED`, `STALE` |
 | `STALE` | The source, base, candidate or PR head SHA differs from the recorded value | terminal (none) |
 
-**STALE rule.** In every pre-merge and awaiting-approval state (`INTAKE`, `AWAITING_APPROVAL`, `INSPECTING`, `CANDIDATE_BUILT`, `VALIDATING`, `IN_REVIEW`, `AWAITING_MERGE_APPROVAL`, `NEEDS_REPAIR`) a change to the source SHA (`source_ref` no longer at `source_sha`), the base (`dev` no longer at `base_sha`), the candidate (`head_sha` or `tree_sha`) or the PR head SHA moves the job to `STALE`. The check runs on every resume and immediately before every state transition. A `STALE` job is never resumed; recovery is a fresh job with new inputs, a new approval and new evidence (§5.4).
+**STALE rule.** Before a merge takes effect, any change to the source SHA (`source_ref` no longer at `source_sha`), the base (`dev` no longer at `base_sha`), the candidate (`head_sha` or `tree_sha`) or the PR head SHA moves the job to `STALE` from `INTAKE`, `AWAITING_APPROVAL`, `INSPECTING`, `CANDIDATE_BUILT`, `VALIDATING`, `IN_REVIEW`, `AWAITING_MERGE_APPROVAL` or `NEEDS_REPAIR`. Recheck before each state transition and on resume. **Resume exception:** if the persisted state is `AWAITING_MERGE_APPROVAL`, first reconcile a recorded, authorized in-flight merge against GitHub (§5.8); a merge already completed at the pinned head is recovered into `MERGED` and verified, *not* classified as a pre-merge base drift. If no merge took effect, the unconditional `STALE` check applies. A `STALE` job is never resumed; recovery requires a fresh job, new inputs, approval and evidence (§5.4).
 
 **Where `STALE` does not apply:**
 
-- `MERGED`: the merge has already happened and `dev` legitimately moved past `base_sha`, so the pre-merge SHA comparison is meaningless. Problems here are caught by the completion checks (§5.10) and end in `FAILED`.
+- `MERGED` (including a successfully reconciled in-flight merge): the merge has happened and `dev` legitimately moved past `base_sha`; applying a pre-merge base check would be wrong. Problems are caught by the completion checks (§5.10) and end in `FAILED`.
 - `COMPLETED`, `REFUSED`, `REJECTED`, `EXPIRED`, `FAILED`, `ABORTED`, `STALE`: terminal states have no outgoing transitions.
 
 **Terminal states:** `COMPLETED`, `REFUSED`, `REJECTED`, `EXPIRED`, `FAILED`, `ABORTED`, `STALE`. No transition leaves a terminal state, and a terminal job is never reopened. Any non-terminal state before `MERGED` can move to `ABORTED` by operator command.
@@ -76,7 +76,7 @@ INTAKE ─▶ AWAITING_APPROVAL ─▶ INSPECTING ─▶ CANDIDATE_BUILT ─▶ 
 
 - **Lookup.** Before any PR is created or reused, search for PRs in **all** GitHub states (open, closed and merged), keyed by source repo/ref and head SHA (`source_sha`). The search is paginated to completion; an incomplete or failed lookup pauses the job and creates nothing.
 - **Reuse** a PR only when it is **open** and unambiguously matches: its head repo is the allowlisted `source_repo`, its head SHA equals `source_sha`, and its base branch equals `base_ref`. Exactly one such PR may exist. The job records the PR number and does not push to it.
-- If a PR with the same head exists in any state but is not reusable (closed, merged, wrong base, different repo, or more than one candidate so the match is ambiguous): **do not create a new PR**. Stop and require operator attention. Never open a second PR for the same head.
+- If a PR with the same head exists in any state but is not reusable (closed, merged, wrong base, different repo, or more than one candidate so the match is ambiguous): **do not create a new PR**. Keep the job **paused in `INSPECTING`**, record a `non_reusable_pr` attention item with candidate PR IDs/reasons, and require an operator decision; do not auto-retry or label it `REFUSED`/`STALE` merely because of that PR. The operator may explicitly abort; any new approved source SHA requires a new job. Never open a second PR for the same head.
 - A **new PR** may be created only when the all-states lookup finds *no* PR for that head. Creation is idempotent: the job stores the PR number immediately after creation, and on resume it repeats the lookup before it creates.
 - The Worker never closes, retargets or edits someone else's PR except to add its own status/comment.
 
@@ -85,19 +85,24 @@ INTAKE ─▶ AWAITING_APPROVAL ─▶ INSPECTING ─▶ CANDIDATE_BUILT ─▶ 
 1. **No force-push**, anywhere, ever. Any push the job makes (never to `dev`, see rule 9) is fast-forward only; a rejected push fails the job.
 2. **Production Worker checkout is untouched.** All merge work happens in a separate worktree under a job-specific directory; the live checkout's `HEAD`, index and files are never read-write in an integration job.
 3. **No duplicate PRs** (§4.1).
-4. **Stale `dev` rule.** Any movement of `dev` away from the recorded `base_sha`, including movement that would still merge cleanly, makes the current job `STALE`. A `STALE` job cannot be resumed: a fresh job with new inputs, a new approval and new evidence is required. The Worker never re-bases or re-merges inside the existing job.
+4. **Stale `dev` rule (before merge).** Any movement of `dev` away from recorded `base_sha` **before the job's merge takes effect**, including movement that would still merge cleanly, makes the job `STALE`. Recovery then requires a fresh job with new inputs, approval and evidence; no rebase or re-merge inside the existing job. A merge that already took effect but whose `MERGED` state was lost in a crash is **not** a pre-merge movement: reconcile its recorded, authorized merge attempt first (§5.8), then verify the result (§5.10). This exception never permits accepting unrelated changes to `dev` as a successful merge.
 5. **Refuse**: stale refs (`source_ref` no longer at `source_sha`), a moved base (`dev` no longer at `base_sha`, see rule 4), merge conflicts, missing or failed checks, unknown authors, SHAs that do not resolve, and sources outside the allowlist.
 6. **No silent retries that rewrite validated history.** A retry may re-run a gate against the *same* SHAs. Any step that would produce a different head or tree (re-merge, rebase, amend) is a new candidate and a new job; earlier evidence is not carried over.
 7. **Evidence binding.** Every gate result, review verdict and approval stores `head_sha` and `tree_sha` plus a hash of the evidence payload. Evidence is valid only while *both* still match the candidate; a change to either invalidates all evidence and approvals, and the job moves to `STALE`.
-8. **Crash/restart idempotence.** State is persisted (§8.2) with an atomic write before and after each side effect. On resume the Worker (a) reloads the record, (b) re-resolves `source_sha`, `base_sha`, candidate head and tree and PR head, (c) compares with the record, and (d) continues only if everything matches; any mismatch → `STALE`. Each step is written to be repeatable: worktree creation checks for an existing worktree at the recorded SHA, PR creation looks up first, the merge step checks whether `dev` already contains the head.
+8. **Crash/restart idempotence and merge-outcome reconciliation.** Persist state atomically (§8.2) before and after each side effect. **Before calling GitHub's merge API**, persist a `merge_attempt` record containing PR identity, pinned `source_sha`/PR head, approved `base_sha`, candidate `tree_sha`, approval digest and request time. On resume from `AWAITING_MERGE_APPROVAL`, query GitHub's PR state and merge result **before** applying pre-merge `STALE` checks:
+    - If a matching, authorized `merge_attempt` exists and GitHub confirms that **this PR** merged at the pinned source head into the intended target, obtain the resulting merge commit and tree via GitHub. Record `merge_result`, move to `MERGED`, and run §5.10(c, d) (plus PR/status checks), without calling merge again. Validate the merge commit's parents against the approved base/source; unexpected parents or a moved target are a completion failure requiring operator attention, never silently accepted.
+    - If GitHub confirms the PR is **not** merged, perform the normal source/base/candidate/PR SHA checks. Any drift (including an unrelated move of `dev`) is `STALE`; otherwise the guarded merge may proceed under the still-valid approval. Recheck GitHub before retrying an uncertain merge request.
+    - If GitHub cannot establish the result, or reports a merge without a matching recorded authorization/pinned head, **pause for operator attention**. Do not repeat the merge, invent success, or label a potentially completed merge `STALE` solely because `dev` moved.
+    - The check that `dev` contains the source SHA is only an **idempotence signal**, never proof that the recorded PR was merged or that its resulting tree matches the candidate. Other steps likewise look up before writing (e.g. PR creation) and never duplicate a confirmed effect.
 9. **Allowed merge mechanism.** The only allowed mechanism is a GitHub **merge commit** of the PR into `dev`, with the expected PR head SHA pinned (the merge request carries `sha=<source_sha>`, so GitHub rejects it if the head moved). Squash, rebase-merge, fast-forward and direct pushes to `dev` are not allowed.
 10. **Candidate versus dev merge commit; completion checks.** The locally built candidate merge commit (`candidate.head_sha`, `candidate.tree_sha`, built in the disposable worktree) is distinct from the merge commit GitHub writes to `dev` (`merge_result.commit_sha`, `merge_result.tree_sha`). The two commit SHAs normally differ; only the trees are expected to be identical. Checks:
     - (a) **Before merging**: `dev` head equals the approved `base_sha`, evaluated immediately before the merge call.
     - (b) **Before merging**: the reviewed candidate `head_sha`/`tree_sha` evidence is current (matches the approved values and the recorded evidence).
-    - (c) **After merging**: the resulting dev merge commit contains the intended source head (`source_sha` is an ancestor of it).
+    - (c) **After merging or recovering an in-flight merge**: GitHub reports the pinned PR as merged, the resulting commit is reachable from `dev`, its first parent is the approved `base_sha`, its second parent is the pinned `source_sha`, and the intended source head is an ancestor. Do not infer a valid merge solely from ancestry.
     - (d) **After merging**: the tree SHA of the resulting dev merge commit is identical to the approved candidate `tree_sha`, or a formally justified equivalent deterministic check is used (the justification is written down and recorded in the approval record).
     - **Ancestry alone does not prove the trees are equal**: check (c) never substitutes for check (d).
-    - If any check fails, completion is refused and operator attention is required. A failure of (a) or (b) before the merge moves the job to `STALE`; a failure of (c) or (d) after the merge moves it to `FAILED`. The Worker never repairs `dev` itself.
+    - If any check fails, completion is refused and operator attention is required. A failure of (a) or (b) **while no merge has occurred** moves the job to `STALE`; a failure of (c) or (d) **after a confirmed merge**, including one recovered after a crash, moves it to `FAILED`. The Worker never repairs `dev` itself.
+    - **Merge race:** GitHub's merge API pins the PR head SHA but does not atomically pin the target `dev` SHA. If `dev` changes after (a) but before GitHub merges, (c)'s first-parent check and/or (d)'s tree check detects the unexpected result **after the write**; report `FAILED` and require operator intervention. Use branch protection or a merge queue to reduce this window; neither substitutes for post-merge verification.
 
 ## 6. Multiple roles and large diffs
 
@@ -168,7 +173,8 @@ One JSON file per job, written atomically (write-temp + fsync + rename), append-
   "base": {"ref": "dev", "expected_sha": "<40hex>"},
   "candidate": {"worktree": "<job dir>", "head_sha": "<40hex>", "tree_sha": "<40hex>"},
   "pr": {"number": 62, "head_sha": "<40hex>", "reused": true},
-  "merge_result": {"commit_sha": "<40hex, dev merge commit written by GitHub>", "tree_sha": "<40hex>", "method": "github-merge-commit"},
+  "merge_attempt": null,
+  "merge_result": null,
   "provenance": {"authors": ["name <email>"], "origin": "..."},
   "paths": [{"path": "backend/x.py", "role": "backend", "class": "owned"}],
   "evidence": [{"kind": "gate:backend", "head_sha": "...", "tree_sha": "...",
@@ -180,13 +186,17 @@ One JSON file per job, written atomically (write-temp + fsync + rename), append-
 }
 ```
 
+Immediately before the merge API call, `merge_attempt` becomes `{"pr_number": 62, "source_sha": "<40hex>", "expected_base_sha": "<40hex>", "candidate_tree_sha": "<40hex>", "approval_sha256": "<64hex>", "at": "<UTC>"}`. On confirmed success (including reconciliation after a crash), `merge_result` becomes `{"commit_sha": "<GitHub merge commit SHA>", "tree_sha": "<40hex>", "method": "github-merge-commit"}`. These records are retained for the audit trail; `merge_result` is not assumed to exist for a `VALIDATING` job.
+
 ### 8.3 Acceptance tests (for the later engineering Issue)
 
 - Intake refuses: non-allowlisted repo, unresolvable or abbreviated SHA, unknown author, base SHA mismatch.
-- Existing PR with matching head/base is reused; mismatched head, base or repo is refused; no second PR is ever created; resume after a crash between "create PR" and "persist number" finds the PR instead of creating another.
-- Source ref moved after approval → `STALE`; `dev` moved from `base_sha` (even if it would still merge cleanly) → `STALE`, and the job cannot be resumed.
+- An open PR with exactly matching source repo/ref, pinned head and target base is reused; a same-head PR that is closed, merged, wrong-base or ambiguous pauses in `INSPECTING` with `non_reusable_pr` operator attention. No duplicate PR is created; a crash between PR creation and persisting its number is recovered by lookup.
+- Before the merge takes effect: source ref moved after approval → `STALE`; unrelated movement of `dev` from `base_sha` (even if still mergeable) → `STALE`, and a fresh job is required.
 - A same-head PR that is closed, merged, wrong-base or ambiguous stops the job for operator attention; no new PR is created. The lookup covers open, closed and merged PRs.
-- Merge result whose tree differs from the approved candidate `tree_sha` → completion refused, even though the source head is an ancestor.
+- Crash immediately after GitHub merges but before recording `MERGED`: a matching persisted `merge_attempt` is reconciled to `MERGED`, then the source/parent/tree checks run exactly once; no second merge is attempted.
+- A mismatched or missing merge intent, a different PR head, or an indeterminate GitHub response pauses for operator attention without inventing completion or retrying the merge.
+- A merge result with unexpected parents, or a tree different from approved candidate `tree_sha`, refuses completion as `FAILED`, even if the source head is an ancestor. Test a `dev` update racing between the pre-merge check and the API call.
 - Merge conflict → `REFUSED`; the source and the live checkout are unchanged.
 - A protected-path diff is refused; an unowned-path diff is refused without a per-path approval.
 - Evidence with a different head or tree SHA is rejected; approvals expire.
@@ -199,14 +209,15 @@ One JSON file per job, written atomically (write-temp + fsync + rename), append-
 
 | Failure | Response |
 | --- | --- |
-| Stale ref, or `dev` moved from `base_sha` (clean or not) | `STALE`; report both SHAs; fresh job with new inputs, approval and evidence required |
-| Same-head PR exists but is not reusable | No new PR; stop and require operator attention |
+| Stale ref, or unrelated `dev` movement from `base_sha` before merge (clean or not) | `STALE`; report both SHAs; fresh job with new inputs, approval and evidence required |
+| Same-head PR exists but is not reusable | No new PR; pause in `INSPECTING` with `non_reusable_pr` attention; operator decision required |
 | Completion check (§5.10) fails | Completion refused; `STALE` (before merge) or `FAILED` (after); operator attention |
 | Merge conflict | `REFUSED`; no auto-resolution; operator may request a repair task |
 | Missing or failing check/gate | Block at `VALIDATING`/`IN_REVIEW`; `NEEDS_REPAIR` or `FAILED` |
 | Unknown author / non-allowlisted source | `REFUSED` at intake |
 | Protected path touched | `REFUSED`; never overridable |
-| Process crash | Resume with SHA re-verification (§5.8) |
+| Crash while merge call is in flight | Reconcile recorded `merge_attempt` with GitHub PR/commit before testing `STALE`; if merged, verify resulting tree; never merge twice (§5.8) |
+| Process crash during other stages | Resume with SHA re-verification (§5.8) |
 | Push rejected | `FAILED`; no retry that rewrites history |
 | GitHub API unavailable | Pause in current state; retry reads only; no side effect without lookup |
 
