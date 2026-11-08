@@ -381,6 +381,22 @@ def test_invalid_roles_paths_and_permission_expansions_are_refused(change, probl
     assert outcome.plan is None and any(problem in p for p in outcome.problems), outcome.problems
 
 
+@pytest.mark.parametrize("level", ["feature", "task"])
+def test_acceptance_criteria_allow_1000_characters_but_refuse_1001(level: str) -> None:
+    for size in (500, 573, 1000):
+        proposal = copy.deepcopy(SINGLE)
+        target = proposal["feature"] if level == "feature" else proposal["tasks"][0]
+        target["acceptance_criteria"] = ["x" * size]
+        assert _validate(proposal).plan is not None
+
+    proposal = copy.deepcopy(SINGLE)
+    target = proposal["feature"] if level == "feature" else proposal["tasks"][0]
+    target["acceptance_criteria"] = ["x" * 1001]
+    outcome = _validate(proposal)
+    assert outcome.plan is None
+    assert any("has 1001 characters; at most 1000 are allowed" in problem for problem in outcome.problems)
+
+
 def test_required_gates_cannot_be_removed_and_extra_gates_keep_configuration_order() -> None:
     proposal = copy.deepcopy(SINGLE)
     proposal["tasks"][0]["gates"] = ["coordinator-tests", "cli-lint"]
