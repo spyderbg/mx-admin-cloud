@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from feature_coordinator.backlog_priority import ordered_backlog, priority_rank
+from feature_coordinator.backlog_priority import ordered_backlog, priority_rank, ranked_backlog
 from feature_coordinator.errors import ProjectBoardError
 
 
@@ -93,3 +93,11 @@ def test_without_project_or_field_oldest_issue_wins():
     assert ordered_backlog(records, None) == records
     assert ordered_backlog(records, _sync([], enabled=False)) == records
     assert ordered_backlog(records, _sync([], has_field=False)) == records
+
+
+def test_queue_preview_reports_ranks_without_writing():
+    records = [_record(81), _record(82), _record(83)]
+    board = _sync([_item(81, "Normal"), _item(82, "Critical"), _item(83, "Low")])
+    ranked = ranked_backlog(records, board)
+    assert [(rank, rec.issue_number) for rank, rec in ranked] == [(0, 82), (2, 81), (3, 83)]
+    assert ordered_backlog(records, board) == [rec for _rank, rec in ranked]
