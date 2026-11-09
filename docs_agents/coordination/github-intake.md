@@ -248,7 +248,7 @@ A closed approved Issue no longer looks like a withdrawn approval once its featu
 
 Each crash point is tested with a restart on new coordinator objects over the same files, and further passes write nothing (`test_every_interruption_is_recovered_without_duplicates`, `test_repeated_completion_and_restarts_write_nothing`).
 
-**Stops:** doubtful evidence sets `attention` on the PR candidate. The stop is sticky: nothing about this feature runs automatically until an operator resolves the cause and runs `python -m feature_coordinator github publish reset issue-<N> --apply`. Causes: a wrong or rewritten remote; a moved branch; a mismatched or ambiguous PR; a rejected push; a withdrawn approval before publication; merge evidence that does not hold. Transient problems are reported and retried, not sticky: network, GitHub 5xx, a busy lock, an unclean checkout, a PR closed without merge.
+**Stops:** doubtful evidence sets `attention` on the PR candidate. The stop is sticky: nothing about this feature runs automatically until an operator resolves the cause and runs `python -m feature_coordinator github publish reset issue-<N> --apply`. Causes: a wrong or rewritten remote; a moved branch; a mismatched or ambiguous PR; a rejected push; a withdrawn approval before publication; merge evidence that does not hold. Transient problems are reported and retried, not sticky: network, GitHub 5xx, a busy lock, an unclean checkout, a PR closed without merge. A PR whose head **a person moved** (commits pushed to its branch) is not resumed by a reset, which would only stop again: its new head was never validated. Use `github publish revalidate` (§10.12).
 
 ### 10.6 Adopting a PR opened by hand (Issue #25 / PR #27)
 
@@ -278,6 +278,7 @@ Fixed, not configurable: Draft PRs only, the feature's base branch as the target
 | `github publish status [--json]` | Read-only, local: every approved Issue's feature with its candidate head, PR (number, origin, draft), push, merge evidence and stop |
 | `github publish poll [FEATURE…] [--apply] [--json]` | One pass. Without `--apply` it reads GitHub (and nothing else) and lists what it would do. `--apply` needs `github.publish.enabled`. Exit 1 when something was deferred or needs an operator |
 | `github publish reset FEATURE [--apply]` | Clears a stop after the operator resolved it; the next pass checks everything again |
+| `github publish revalidate FEATURE [--head SHA --apply] [--actor NAME] [--json]` | A person pushed to the feature's Draft PR: validates the new head of the same PR and only then moves the recorded candidate to it, invalidating the AI review of the old head (§10.12). Without `--apply` it reads GitHub, `origin` and the checkout only. `--apply` needs `--head` (the head the dry run showed) and `github.publish.enabled`. Exit 1 when it was refused, failed, stale or deferred |
 
 ### 10.9 Limitations
 
@@ -305,6 +306,46 @@ Fixed, not configurable: Draft PRs only, the feature's base branch as the target
 The operator re-ran **4/4** selected Git/GitHub transient-error tests and **11/11** selected publisher-interruption tests on the W4.4 baseline. Verified cases include an unreachable Git remote, HTTP 503 on PR create, an uncertain PR-create response recovered by adoption, transient GitHub waits, an uncertain push, a crash after PR creation, **eight** crash points before/after push, create, completion, comment and Issue closure, and idempotent re-polling/restarts. The tests use **disposable local Git and mock GitHub**, checking exactly one PR and completion comment where applicable; **they do not reproduce a failure against the real GitHub service**.
 
 W4.4's separate four-session real Claude/Codex smoke used a **no-remote** disposable repository and a GitHub shim that was never called. Its 69/69 success is evidence of agent and checkpoint recovery, **not** live GitHub outage handling. See [W4.4 acceptance](w44-reliability-acceptance.md). No new real GitHub Issue, PR or Project #2 item was created for W4.4 testing.
+
+### 10.12 Revalidating a PR whose head a person changed
+
+Publication verifies one head: the one integrated, pushed and opened as the Draft PR. If a person pushes commits to the PR's branch afterwards (for example to address a REQUEST_CHANGES review, §13), the PR no longer matches the candidate and publication stops (§10.5). `github publish revalidate` validates the new head of the **same** PR and only then moves the recorded candidate to it. Code: `feature_coordinator/revalidate.py`; tests: `feature_coordinator/tests/test_fc_revalidate.py`.
+
+```bash
+python -m feature_coordinator --tracker github --project-config ~/.config/mx-admin-agents/project.yaml \
+  github publish revalidate issue-N                          # dry run: what it would do, the head to pass
+python -m feature_coordinator ... github publish revalidate issue-N --head <PR head SHA> --apply
+```
+
+| Step | What is checked or done | Otherwise |
+| --- | --- | --- |
+| 1. Read (dry run too) | The feature is an approved Issue's feature in `review` with its PR recorded, every task verified, nothing merged. The checkout is the feature's repository (the publisher's origin checks). The PR, read by number, is still the recorded PR: the publisher's identity checks (head branch and repository, base branch and repository, author) with only the head commit allowed to differ, plus the same URL and, if an earlier review bound it, the same node ID. It is open, and `origin`'s branch is at the PR's head. The approval still holds (the Issue re-read). No claim, no launch in flight, no reviewer process running | refused, deferred or `stale`; nothing is written |
+| 2. The new head belongs to the feature | It contains the validated head (a fast-forward: history was not rewritten), adds no merge commit, and every path it adds, changes or removes is writable by one of the feature's tasks (protected paths never) | refused |
+| 3. Validate (`--apply`) | Holds `github-publish.lock` and `github-review.lock`: no publication pass and no review run meanwhile. Records the attempt first. Fetches the branch and **fast-forwards** the shared checkout under project.lock EXCLUSIVE + git.lock (clean checkout, on the branch; never a reset, never forced, nothing pushed). Runs, at the new head, the original candidate's integration gates, the approved plan's (or the default) integration gates and every task's required gates, still under project.lock (no writer can start) | failed gates: `failed`, the candidate and the stop stay as they were |
+| 4. Check again | The PR is re-read (identity, open, head) and `origin`'s branch is read | `stale`: nothing recorded; run it again |
+| 5. Record (one transaction) | Re-reads the local facts first: the candidate still at the old head, the same PR, the branch at the new head, no claim. Then the candidate's head, draft flag and integration evidence move to the new head and its stop is cleared. The previous candidate (head, integration evidence, push, stop) is kept in the attempt record. The current AI review, bound to the old head, is **invalidated** (kept as history) | `stale` |
+| 6. Notice | The review's invalidation notice is posted on the PR, once (§13.4) | deferred; the next run posts it |
+
+**After it:**
+
+- The publisher follows the same PR at the new head (it waits for a person, then verifies the merge against the new head).
+- A **new independent AI review** is required. The Worker's review step starts it when `github.review.enabled` is on and the Worker runs: an invalidated review of an older head never settles a newer one. An operator can also run `github review run issue-N --apply`.
+- An earlier PASS, PASS_WITH_NOTES or REQUEST_CHANGES is never evidence for the new head. `review_evidence` is bound to one head and to the current entry only.
+- The review policy is unchanged. A blocking or major finding in the new review is REQUEST_CHANGES again.
+
+**What it never does:** create, edit or merge a PR; push or force anything; reset or rewrite a branch; change the feature's or a task's state; activate another feature; touch the Worker service or its configuration. Records: `state/revalidation/<feature>.json` keeps every attempt (`validated`, `failed`, `stale`, `refused`, `deferred`, `interrupted`) and is never rewritten. The events are `publish-revalidation-started`, `publish-revalidated` and `publish-revalidation-ended`.
+
+**Recovery and idempotency:** every step reads what is true first.
+
+| Interrupted | On the next run |
+| --- | --- |
+| before the transaction | the candidate is still at the old head. The earlier attempt is marked `interrupted`. If the branch was already fast-forwarded, the run continues from anywhere on the way from the old to the new head |
+| after the transaction, before the notice | the PR is at the candidate (`unchanged`); only the notice is posted |
+| a repeat after success | `unchanged`; nothing is written |
+
+Failed gates leave everything as it was: push a fix, then revalidate again.
+
+**Limitations:** the person's commits are validated by the deterministic gates and the path rules, and reviewed by the new AI review. They are not attributed: with the shared `spyderbg` identity (§9) the coordinator cannot tell who pushed them. Only a fast-forward of plain commits is accepted. A merge of `dev` into the branch or a rewritten branch is refused, and a person resolves it (for example with a new Issue).
 
 ## 12. Label-driven planning and approval (W4.5)
 
@@ -615,7 +656,7 @@ A process is "ours" only if it carries the attempt's tag; the tag is re-checked 
 | reviewer crashes / killed | interrupted, counted |
 | reviewer times out | timeout, counted |
 | GitHub unavailable | the start is deferred (nothing counted); a finished answer whose binding cannot be re-read is held |
-| PR head changes, PR closed | publication stops (`attention`); a running review finishes and its answer is stale (history only); nothing new starts |
+| PR head changes, PR closed | publication stops (`attention`); a running review finishes and its answer is stale (history only); nothing new starts. After `github publish revalidate` (§10.12) moved the candidate to a person's new head, the review of the old head is invalidated and the next step reviews the new head |
 | PR merged | the feature is done: a running reviewer is stopped, the review invalidated |
 | approval withdrawn | stale at collection; before a start: ERROR without a model request (R1) |
 | result already published | not looked at again; a comment a crash interrupted is found by its marker, never posted twice |
