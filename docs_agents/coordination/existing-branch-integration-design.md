@@ -92,7 +92,7 @@ INTAKE → AWAITING_APPROVAL → INSPECTING → AWAITING_SCOPE_APPROVAL
 - **Lookup:** fully paginate `GET /repos/{owner}/{repo}/pulls?state=all&per_page=100&page=N`; match by immutable `head.repo.id` and `head.sha`, record head/base repo IDs/refs, PR number/node ID, state and draft flag. A filtered `head=owner:ref` lookup is not a substitute for all-states same-head discovery. A PR for the same branch at another SHA does not block.
 - **Reuse:** one open matching PR for pinned source repo/ref/SHA and target repo/`dev`; otherwise hold with `non_reusable_pr` and never create a same-head duplicate. A previously merged PR is not proof the current job completed.
 - **Create:** only in `PR_PREPARING` after verified **scope/publish** receipt and gates, persisted `pr_create_attempt` and a complete all-states lookup. Re-query after a crash/timeout; GitHub 422 "already exists" triggers lookup, not blind retry. Sources must be in the target repository or an eligible fork; no source branch is pushed by the integration job.
-- **Recheck:** before review/merge, fetch expected PR number/node ID, source/target repo IDs/ref and SHA, target exactly `dev`, **open and non-Draft**. Moved head/base → `STALE` before merge; closed/Draft PR → operator hold or authenticated rejection. Do not edit another author's source PR.
+- **Recheck:** before **review**, require the expected PR number/node ID, source/target repo IDs/refs/SHA and **open** state; a **Draft** PR is valid for advisory independent review. Immediately before **merge**, repeat all identity checks and additionally require **non-Draft** state and target exactly `dev`. Moved head/base → `STALE` before merge; closed PR or still-Draft PR at merge time → operator hold or authenticated rejection. Do not edit another author's source PR.
 
 ## 5. Git safeguards
 
@@ -121,7 +121,7 @@ In normal features an agent writes edits, and role write scopes ([agent-ownershi
 
 ### 6.2 Full history/path classification and a separate scope approval
 
-`INSPECTING` produces a canonical, protected report of **every introduced source commit** and changed blob/path against every parent (including intermediate secrets/protected paths), plus the actual landing-tree diff between approved `base_sha` and candidate tree. Include all renames, deletes, file modes, symlinks and targets, submodules/`.gitmodules`, `.gitattributes`, dependency/CI changes and authorized role ownership. Protected content/paths touched **in any intermediate commit** are refused, even if later removed.
+`INSPECTING` produces a canonical, protected report of **every introduced source commit** and changed blob/path against every parent (including intermediate secrets/protected paths). In its independent clone it computes a **provisional merge tree** with a read-only-from-source-refs merge-tree operation (for example `git merge-tree --write-tree`) and classifies the prospective landing-tree diff from approved `base_sha` to that provisional tree; no candidate **commit** or production ref is created at inspection time. Include renames, deletions, modes, symlinks and targets, submodules/`.gitmodules`, `.gitattributes`, dependencies/CI changes and authorized role ownership. The provisional tree SHA and complete path digest are pinned in the scope report; the subsequent candidate commit in `BUILDING_CANDIDATE` must use that exact tree or the scope authorization is invalid. Protected content/paths touched **in any intermediate commit** are refused, even if later removed.
 
 Classify each path using `PathPolicy` as protected (never approvable), owned, approval-required or unowned, and persist the report with canonical `path_report_sha256`. The candidate build must reconcile the final tree and this report, or the old scope approval is invalid and a **new job** is required. At `AWAITING_SCOPE_APPROVAL` the operator sees the complete path/report digest and authenticates a **per-path decision** for every exceptional path, plus permission to create one PR. Even an empty exception list is explicit. Before this gate **no source-code execution, PR creation or review** is permitted.
 
@@ -134,7 +134,7 @@ Each affected role gets its configured backend/CLI/frontend/docs checks plus who
 If inspection, a gate or the review finds a defect, the integration job does **not** patch the source. It moves to `NEEDS_REPAIR` and opens a repair task:
 
 1. The affected paths determine the authorized role(s); a path with no role goes to the operator (§7).
-2. The repair runs as a normal feature task on its **own branch** (`feature/issue-<N>-repair-<k>`), with normal role/path enforcement and commit gate, based on the candidate or source.
+2. The repair uses a separate restricted task/branch **based on `source_sha` only**, never the unreviewed local candidate merge commit, with normal role/path enforcement. It must **not** auto-publish a normal feature PR to `dev` or bypass integration approval; the existing source PR is unchanged until a new source SHA is explicitly selected by an operator.
 3. On approval of a new source commit SHA, create a **separate** integration job at `INTAKE`, linked to the old job. Move the old job `NEEDS_REPAIR → SUPERSEDED` and retain its history. No SHA-bound gate/review/approval evidence transfers; neither job is silently reused.
 
 ## 7. Implementation prerequisite (operator decision)
