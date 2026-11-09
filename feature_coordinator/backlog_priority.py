@@ -41,20 +41,20 @@ def priority_rank(value: str) -> int:
     return _PRIORITY[key]
 
 
-def ordered_backlog(records: Sequence[T], project_sync: Any) -> list[T]:
-    """Sort *eligible, approved, planned* intake records by Priority, then Issue number.
+def ranked_backlog(records: Sequence[T], project_sync: Any) -> list[tuple[int, T]]:
+    """Rank *eligible, approved, planned* intake records by Priority, then Issue number.
 
     The caller has already filtered out changed approvals and checked that no Feature
     is active. This function never writes to GitHub or the local state. Only the
     configured Project and the exact approved Issue identities count.
     """
     if not records or project_sync is None or not project_sync.cfg.enabled:
-        return list(records)
+        return [(_DEFAULT_RANK, record) for record in records]
 
     project = project_sync.resolve()  # verifies configured project owner, number and node ID
     priority = project.field("Priority")
     if priority is None:
-        return list(records)           # backward-compatible board with no Priority field
+        return [(_DEFAULT_RANK, record) for record in records]  # backward-compatible board
     if priority.data_type != "SINGLE_SELECT":
         raise ProjectBoardError("GitHub Project Priority must be a SINGLE_SELECT field")
 
@@ -75,4 +75,10 @@ def ordered_backlog(records: Sequence[T], project_sync: Any) -> list[T]:
             raise ProjectBoardError(f"unrecognized Priority option {value!r} on Issue #{record.issue_number}")
         choices[record.issue_number] = priority_rank(value)
 
-    return sorted(records, key=lambda rec: (choices.get(rec.issue_number, _DEFAULT_RANK), rec.issue_number))
+    return sorted(((choices.get(rec.issue_number, _DEFAULT_RANK), rec) for rec in records),
+                  key=lambda entry: (entry[0], entry[1].issue_number))
+
+
+def ordered_backlog(records: Sequence[T], project_sync: Any) -> list[T]:
+    """Return the priority order without exposing rank metadata to the scheduler."""
+    return [record for _rank, record in ranked_backlog(records, project_sync)]
