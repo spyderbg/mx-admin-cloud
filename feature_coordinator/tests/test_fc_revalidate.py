@@ -183,7 +183,7 @@ def test_a_new_head_needs_its_own_review_whatever_the_old_outcome(rig: PubRig) -
     feature_id, pr, old, new = moved(rig, ok("pass"))
     assert review_evidence(rig.store, feature_id, pr, old)["outcome"] == "PASS"  # type: ignore[index]
     assert review_evidence(rig.store, feature_id, pr, new) is None  # a PASS is evidence for its own head only
-    assert revalidate(rig, feature_id, new[:12]).status == "revalidated"  # a 12-character head is enough
+    assert revalidate(rig, feature_id, new).status == "revalidated"
     assert review_evidence(rig.store, feature_id, pr, old) is None and review_evidence(rig.store, feature_id, pr,
                                                                                          new) is None
     rows = review_rows(rig.store)
@@ -431,7 +431,7 @@ def test_a_head_that_is_not_the_branch_continuation_is_refused(rig: PubRig, how:
 
 def test_the_expected_head_and_origin_must_agree(rig: PubRig) -> None:
     feature_id, pr, old, new = moved(rig)
-    wrong = revalidate(rig, feature_id, "0" * 12)
+    wrong = revalidate(rig, feature_id, "0" * 40)
     assert wrong.status == "stale" and "not the expected" in wrong.attention[0]
     rig.tracker.update_pull_request(pr, head_sha="1" * 40)  # GitHub reports a head origin does not have
     lagging = revalidate(rig, feature_id, "1" * 40)
@@ -440,7 +440,7 @@ def test_the_expected_head_and_origin_must_agree(rig: PubRig) -> None:
     rig.tracker.update_pull_request(pr, head_sha=new)
     with pytest.raises(CoordinatorError, match="needs --head"):
         revalidate(rig, feature_id)
-    with pytest.raises(CoordinatorError, match="12 to 40"):
+    with pytest.raises(CoordinatorError, match="full 40-character SHA"):
         revalidate(rig, feature_id, "abc")
     github = rig.config.github  # the review needs publication: both off
     off = dataclasses.replace(rig.config, github=dataclasses.replace(
@@ -449,6 +449,43 @@ def test_the_expected_head_and_origin_must_agree(rig: PubRig) -> None:
     with pytest.raises(CoordinatorError, match="publish.enabled is false"):
         revalidate(rig, feature_id, new, coord=rig.make(config=off))
     assert revalidate(rig, feature_id, coord=rig.make(config=off), apply=False).status == "dry-run"  # reads only
+
+
+@pytest.mark.parametrize("malformed", [
+    pytest.param(lambda sha: sha[:12], id="abbreviated-12"),
+    pytest.param(lambda sha: sha[:39], id="abbreviated-39"),
+    pytest.param(lambda sha: sha + "0", id="41-characters"),
+    pytest.param(lambda sha: sha.upper(), id="uppercase"),
+    pytest.param(lambda sha: "g" + sha[1:], id="not-hex"),
+    pytest.param(lambda sha: f" {sha}", id="padded"),
+    pytest.param(lambda sha: "", id="empty"),
+])
+def test_the_head_must_be_the_full_40_character_sha(rig: PubRig, malformed: Any) -> None:
+    feature_id, pr, old, new = moved(rig)
+    key, writes, calls = current(rig, feature_id)["key"], rig.tracker.writes, list(rig.gates.calls)
+    for apply in (False, True):  # refused before anything is read, locked, fetched, run or written
+        with pytest.raises(CoordinatorError, match="full 40-character SHA"):
+            revalidate(rig, feature_id, malformed(new), apply=apply)
+    unchanged_since(rig, feature_id, old, key)
+    assert rig.tracker.writes == writes and rig.gates.calls == calls and local_head(rig, feature_id) == old
+    assert load_revalidation(rig.store, feature_id) is None and not notices(rig, pr)
+    done = revalidate(rig, feature_id, new)  # the exact full SHA is accepted
+    assert done.ok and done.status == "revalidated" and rig.candidate(feature_id).head_sha == new
+
+
+def test_apply_never_proceeds_at_a_head_other_than_the_one_given(rig: PubRig) -> None:
+    feature_id, pr, old, new = moved(rig)
+    key, writes, calls = current(rig, feature_id)["key"], rig.tracker.writes, list(rig.gates.calls)
+    other = new[:39] + ("1" if new[39] == "0" else "0")  # well formed, only its last character differs
+    for head in (other, old, "f" * 40):  # valid SHAs, none of them the PR's head
+        for apply in (False, True):
+            report = revalidate(rig, feature_id, head, apply=apply)
+            assert not report.ok and report.status == "stale" and f"not the expected {head}" in report.attention[0]
+    unchanged_since(rig, feature_id, old, key)
+    assert rig.tracker.writes == writes and rig.gates.calls == calls and local_head(rig, feature_id) == old
+    assert load_revalidation(rig.store, feature_id) is None and not notices(rig, pr)
+    done = revalidate(rig, feature_id, new)  # the matching SHA permits the revalidation
+    assert done.ok and done.status == "revalidated" and rig.candidate(feature_id).head_sha == new
 
 
 # -- recovery -------------------------------------------------------------------------------------------------------
@@ -487,12 +524,14 @@ def test_an_interrupted_revalidation_is_completed_once(rig: PubRig, fault: str) 
 def test_a_split_review_invalidation_is_completed_by_the_next_run(rig: PubRig) -> None:
     """A candidate already at the new head while its current review is still bound to the old one (e.g. restored
     from a backup taken in between): the next run invalidates it — never evidence for another head."""
-    feature_id, pr, _old, new = moved(rig)
+    feature_id, pr, old, new = moved(rig)
     with rig.store.transaction():
         fresh = rig.feature(feature_id)
         fresh.pull_request.head_sha, fresh.pull_request.attention = new, None  # type: ignore[union-attr]
         rig.store.save_feature(fresh)
     git(rig.repo, "merge", "--ff-only", "-q", rig.coord.git.fetch_branch(f"feature/{feature_id}"))
+    wrong = revalidate(rig, feature_id, old)  # --apply completes nothing for a head other than the PR's
+    assert wrong.status == "stale" and current(rig, feature_id)["status"] == "complete" and not notices(rig, pr)
     report = revalidate(rig, feature_id, new)
     assert report.ok and report.status == "unchanged" and report.review["invalidated"]  # type: ignore[index]
     assert current(rig, feature_id)["status"] == "invalidated" and len(notices(rig, pr)) == 1
@@ -557,4 +596,10 @@ def test_the_revalidate_command(rig: PubRig, tmp_path: Path, capsys: pytest.Capt
     assert cli_main([*base, "--project-config", str(enabled), "github", "publish", "revalidate", feature_id,
                      "--apply"]) == 1
     assert "needs --head" in capsys.readouterr().err
+    assert cli_main([*base, "--project-config", str(enabled), "github", "publish", "revalidate", feature_id,
+                     "--head", new[:12], "--apply"]) == 1
+    assert "full 40-character SHA" in capsys.readouterr().err
     assert rig.candidate(feature_id).head_sha == old and load_revalidation(rig.store, feature_id) is None
+    with pytest.raises(SystemExit):
+        cli_main(["github", "publish", "revalidate", "--help"])
+    assert "full 40-character" in " ".join(capsys.readouterr().out.split())

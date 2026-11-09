@@ -14,7 +14,8 @@ an approved GitHub Issue.
                                              (identity, fast-forward, task scopes, the gates at the new head), then
                                              move the recorded candidate to it and require a new AI review — the
                                              same PR, nothing pushed or created (dry run: reads GitHub, origin and
-                                             the checkout only; --apply needs --head and github.publish.enabled)
+                                             the checkout only; --apply needs --head with the PR head's full
+                                             40-character SHA, never abbreviated, and github.publish.enabled)
 
 The Worker service runs the pass by itself when `github.publish.enabled` is true. Nothing ever merges a
 pull request. See docs_agents/coordination/github-intake.md §10.
@@ -139,8 +140,8 @@ def cmd_revalidate(args: argparse.Namespace, config: ProjectConfig) -> int:
     lines.append(f"GitHub requests: {requests - before[0]}, of them writes: {client.writes - before[1]}"
                  if requests is not None else f"tracker writes: {client.writes - before[1]}")
     if not args.apply:
-        lines.append("dry run — nothing was fetched, run or written (pass --head SHA --apply; github.publish.enabled "
-                     "must be true)")
+        lines.append("dry run — nothing was fetched, run or written (pass --head with the full 40-character SHA and "
+                     "--apply; github.publish.enabled must be true)")
     _emit(args, report.to_dict(), lines)
     return 0 if report.ok else 1
 
@@ -168,7 +169,9 @@ def register(gsub: Any) -> None:
     reval = psub.add_parser("revalidate", help="validate the changed head of a feature's existing Draft PR and record "
                                                 "it (dry run unless --apply)")
     reval.add_argument("feature")
-    reval.add_argument("--head", default=None, help="the PR head commit the dry run showed (required with --apply)")
+    reval.add_argument("--head", default=None, metavar="SHA",
+                       help="the PR head commit the dry run showed, as its full 40-character lowercase SHA (required "
+                            "with --apply; an abbreviated SHA is refused, and a PR at any other head changes nothing)")
     reval.add_argument("--actor", default="operator")
     reval.add_argument("--apply", action="store_true")
     reval.add_argument("--json", action="store_true")

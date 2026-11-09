@@ -20,7 +20,8 @@ barrier's cleanliness check and gate evidence, and the review's invalidation; it
   2. the new head belongs to the feature: it contains the validated head (a fast-forward: history was not
      rewritten), adds no merge commit, and every path it adds, changes or removes is writable by one of the
      feature's tasks (their role scopes and grants; protected paths never);
-  3. --apply (needs github.publish.enabled and `--head`, the head the dry run showed), under github-publish.lock and
+  3. --apply (needs github.publish.enabled and `--head`: the PR head the dry run showed, as the full 40-character
+     SHA, never abbreviated; a PR at any other head is `stale` and nothing is done), under github-publish.lock and
      github-review.lock (no publication pass and no review run meanwhile): a write-ahead attempt record; the feature
      branch fetched (2 is checked on that commit) and FAST-FORWARDED in the shared checkout, under project.lock
      EXCLUSIVE + git.lock (clean, on the branch; never reset, never forced, nothing pushed); the original
@@ -69,8 +70,7 @@ from .workflow import DEFAULT_INTEGRATION_GATES
 REVALIDATION_SCHEMA = 1
 ATTEMPT_STATUSES = ("running", "validated", "failed", "stale", "refused", "deferred", "interrupted")
 _RECORD_FIELDS = frozenset({"schema_version", "id", "entries", "updated_at", "revision"})
-_SHA_RE = re.compile(r"[0-9a-f]{40}")
-_HEAD_ARG_RE = re.compile(r"[0-9a-f]{12,40}")
+_SHA_RE = re.compile(r"[0-9a-f]{40}")  # a full commit SHA; `--head` must be exactly this (never abbreviated)
 
 
 @dataclass
@@ -172,17 +172,19 @@ class PullRequestRevalidator:  # pylint: disable=too-few-public-methods
     def run(self, feature_id: str, *, apply: bool, expected_head: str | None = None,
             actor: str = "operator") -> RevalidationReport:
         """Revalidate the feature's Draft PR at its current head (dry run: reads GitHub, origin and the checkout,
-        fetches, runs and writes nothing). *expected_head* (required with *apply*): the head the operator checked."""
+        fetches, runs and writes nothing). *expected_head* (required with *apply*): the head the operator checked,
+        as the exact full 40-character lowercase SHA; the PR's head must be equal to it."""
         report = RevalidationReport(apply, feature_id)
-        expected = (expected_head or "").strip().lower()
-        if expected and not _HEAD_ARG_RE.fullmatch(expected):
-            raise CoordinatorError("--head must be the PR head commit: 12 to 40 lowercase hex characters")
+        expected = expected_head or ""
+        if expected_head is not None and not _SHA_RE.fullmatch(expected_head):
+            raise CoordinatorError("--head must be the PR head commit's full 40-character SHA (lowercase hex, as the "
+                                   "dry run shows it); an abbreviated or malformed SHA is refused")
         if apply and not self.config.github.publish.enabled:
             raise CoordinatorError("github.publish.enabled is false: a PR head is revalidated only while publication "
                                    "is enabled in the project configuration")
-        if apply and not expected:
-            raise CoordinatorError("--apply needs --head SHA: the PR head commit the dry run showed (a head that "
-                                   "changed since is never revalidated by surprise)")
+        if apply and expected_head is None:
+            raise CoordinatorError("--apply needs --head SHA: the full 40-character PR head commit the dry run showed "
+                                   "(a head that changed since is never revalidated by surprise)")
         held = []
         try:
             for lock in ((self.store.locks.publish(), self.store.locks.review()) if apply else ()):
@@ -240,12 +242,12 @@ class PullRequestRevalidator:  # pylint: disable=too-few-public-methods
         pr = self._pull(feature, cand, report)
         report.to_head = pr.head_sha
         report.review = self._review_facts(feature_id)
+        if expected and pr.head_sha != expected:  # exact: --apply never acts on a head the operator did not confirm
+            self._stop(report, f"PR #{pr.number} is at {pr.head_sha}, not the expected {expected}: the head changed "
+                               "since it was checked; run the dry run again", status="stale")
         if pr.head_sha == cand.head_sha:
             self._unchanged(feature, cand, report, apply)
             return
-        if expected and not pr.head_sha.startswith(expected):
-            self._stop(report, f"PR #{pr.number} is at {pr.head_sha[:12]}, not the expected {expected[:12]}: the head "
-                               "changed since it was checked; run the dry run again", status="stale")
         remote = self.git.remote_head(feature.branch, timeout=self.timeout)
         if remote != pr.head_sha:
             self._stop(report, f"origin has {feature.branch} at {(remote or 'nothing')[:12]}, but PR #{pr.number} "

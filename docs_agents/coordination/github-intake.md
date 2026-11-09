@@ -278,7 +278,7 @@ Fixed, not configurable: Draft PRs only, the feature's base branch as the target
 | `github publish status [--json]` | Read-only, local: every approved Issue's feature with its candidate head, PR (number, origin, draft), push, merge evidence and stop |
 | `github publish poll [FEATURE…] [--apply] [--json]` | One pass. Without `--apply` it reads GitHub (and nothing else) and lists what it would do. `--apply` needs `github.publish.enabled`. Exit 1 when something was deferred or needs an operator |
 | `github publish reset FEATURE [--apply]` | Clears a stop after the operator resolved it; the next pass checks everything again |
-| `github publish revalidate FEATURE [--head SHA --apply] [--actor NAME] [--json]` | A person pushed to the feature's Draft PR: validates the new head of the same PR and only then moves the recorded candidate to it, invalidating the AI review of the old head (§10.12). Without `--apply` it reads GitHub, `origin` and the checkout only. `--apply` needs `--head` (the head the dry run showed) and `github.publish.enabled`. Exit 1 when it was refused, failed, stale or deferred |
+| `github publish revalidate FEATURE [--head SHA --apply] [--actor NAME] [--json]` | A person pushed to the feature's Draft PR: validates the new head of the same PR and only then moves the recorded candidate to it, invalidating the AI review of the old head (§10.12). Without `--apply` it reads GitHub, `origin` and the checkout only. `--apply` needs `--head` with the full 40-character SHA of the head the dry run showed (an abbreviated SHA is refused; a PR at any other head is `stale`) and `github.publish.enabled`. Exit 1 when it was refused, failed, stale or deferred |
 
 ### 10.9 Limitations
 
@@ -314,8 +314,10 @@ Publication verifies one head: the one integrated, pushed and opened as the Draf
 ```bash
 python -m feature_coordinator --tracker github --project-config ~/.config/mx-admin-agents/project.yaml \
   github publish revalidate issue-N                          # dry run: what it would do, the head to pass
-python -m feature_coordinator ... github publish revalidate issue-N --head <PR head SHA> --apply
+python -m feature_coordinator ... github publish revalidate issue-N --head <full 40-character PR head SHA> --apply
 ```
+
+`--head` must be the exact, full 40-character lowercase SHA that the dry run prints. An abbreviated, uppercase or malformed value is refused before anything is read. A PR whose head is not exactly that commit is `stale`: nothing is fetched, run or written, and the dry run has to be repeated. The dry run itself needs no `--head`.
 
 | Step | What is checked or done | Otherwise |
 | --- | --- | --- |
