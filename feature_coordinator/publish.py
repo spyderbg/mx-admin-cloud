@@ -42,7 +42,9 @@ idempotent). Per feature, by its EXISTING state (no new state machine):
 Doubtful evidence sets `attention` on the candidate (sticky until
 `python -m feature_coordinator github publish reset FEATURE --apply`): the branch moved, a PR that does not
 match, several PRs, a rejected (non-fast-forward) push, a
-wrong or rewritten remote, a withdrawn approval before publication, merge evidence that does not hold.
+wrong or rewritten remote, a withdrawn approval before publication, merge evidence that does not hold. A PR
+whose head a person moved is NOT resumed by a reset: `github publish revalidate FEATURE` (revalidate.py)
+validates the new head of the same PR and only then moves the candidate to it.
 Transient failures (network, GitHub 5xx, a busy lock) are retried by the next pass.
 
 Locks: one pass at a time (github-publish.lock, taken first). GitHub is never called under a coordinator,
@@ -298,7 +300,8 @@ class PullRequestPublisher:  # pylint: disable=too-few-public-methods
         if cand.attention:
             self._stop(feature, report, f"{cand.attention.get('reason')} (since {cand.attention.get('since')}; after "
                                         "resolving it: `python -m feature_coordinator github publish reset "
-                                        f"{feature.id} --apply`)",
+                                        f"{feature.id} --apply`; a PR head a person changed is validated with "
+                                        f"`python -m feature_coordinator github publish revalidate {feature.id}`)",
                        sticky=False)
         problem = self._repository_problem(feature) or self._head_problem(feature, cand)
         if problem:

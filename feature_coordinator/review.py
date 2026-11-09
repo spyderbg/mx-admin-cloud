@@ -152,6 +152,30 @@ def review_evidence(store: Any, feature_id: str, pr: int, head_sha: str) -> dict
     return entry if (entry.get("comment") or {}).get("status") == "posted" else None
 
 
+def invalidate_superseded(store: Any, feature_id: str, head_sha: str, reason: str) -> str | None:
+    """(Inside the caller's transaction) Invalidate the CURRENT review when it is bound to another head than
+    *head_sha* — the head a revalidation (revalidate.py) has just made the verified candidate. The entry stays in the
+    history with its outcome, findings and attempts (an attempt a crash left running is logged as interrupted); its
+    PR notice is posted by `ReviewRunner.post_notices` or the next run. A new head always needs a new review: no
+    outcome of another head is ever carried over. Returns the invalidated entry's key (None: nothing current,
+    already invalidated, or bound to *head_sha*)."""
+    record = load_review(store, feature_id)
+    entry = record.entry(record.current) if record else None
+    if record is None or entry is None or entry["status"] == "invalidated" or entry["binding"]["head_sha"] == head_sha:
+        return None
+    if entry.get("running"):
+        entry["attempt_log"].append({**entry["running"], "status": "interrupted", "ended_at": utc_now()})
+    _invalidated(entry, reason)
+    record.updated_at = utc_now()
+    store.save_record("review", record)
+    store.append_event("review-invalidated", feature=feature_id, review=entry["key"], reason=sanitize(reason, 300))
+    return entry["key"]
+
+
+def _invalidated(entry: dict[str, Any], reason: str) -> None:
+    entry.update(status="invalidated", running=None, invalidated={"reason": sanitize(reason, 600), "at": utc_now()})
+
+
 def binding_digest(binding: Mapping[str, Any]) -> str:
     """SHA-256 of the canonical JSON of the bound identity fields."""
     return hashlib.sha256(canonical_json({k: binding.get(k) for k in BINDING_KEYS})).hexdigest()
@@ -686,11 +710,17 @@ class ReviewRunner:  # pylint: disable=too-many-instance-attributes,too-few-publ
         if not apply:
             report.writes.append(f"invalidate review {entry['key']}: {sanitize(reason, 300)}")
             return
-        self._update(feature_id, entry["key"], lambda e: e.update(
-            status="invalidated", running=None, invalidated={"reason": sanitize(reason, 600), "at": utc_now()}),
+        self._update(feature_id, entry["key"], lambda e: _invalidated(e, reason),
                      event=("review-invalidated", {"reason": sanitize(reason, 300)}))
         report.lines.append(f"{feature_id}: review {entry['key']} invalidated: {sanitize(reason, 300)}")
         self._notice(feature_id, entry["key"], report)
+
+    def post_notices(self, feature_id: str) -> ReviewReport:
+        """Post the invalidation notices that are due (e.g. after `invalidate_superseded`); idempotent. The caller
+        holds `github-review.lock` (revalidate.py does)."""
+        report = ReviewReport(True, feature_id)
+        self._pending_notices(feature_id, report)
+        return report
 
     def _pending_notices(self, feature_id: str, report: ReviewReport) -> None:
         """After a crash: finish the invalidation notices that were due."""

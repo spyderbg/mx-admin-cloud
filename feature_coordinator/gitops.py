@@ -42,6 +42,11 @@ publishes to EVERY push URL (all `pushurl` values, else all `url` values, after 
 rewriting). It reads the remote branch first and after, so a repeated or interrupted push is safe.
 `fetch_branch` fetches one branch (merge verification) into FETCH_HEAD; no local branch or working-tree
 file changes.
+
+Revalidation of a changed PR head (revalidate.py): `fast_forward_branch` moves the checked-out feature branch
+FORWARD to a fetched commit that contains it (`git merge --ff-only`, hooks off, the repository's own execution
+config refused) — never a reset, never a non-fast-forward — under project.lock EXCLUSIVE (held by the caller,
+which runs the gates under it) + git.lock. Nothing is pushed.
 """
 
 from __future__ import annotations
@@ -69,7 +74,7 @@ from .errors import (
     WritersActiveError,
 )
 from .gitsafe import SAFE_CONFIG_ARGS, assert_no_execution_config, extend_scrub, scrub_prefixes
-from .locks import LockSet
+from .locks import FileLock, LockSet
 from .paths import PathPolicy
 from .workspace import git_operation_in_progress
 
@@ -237,6 +242,19 @@ class GitCoordinator:  # pylint: disable=too-many-public-methods
     def commits_between(self, base: str, head: str) -> list[str]:
         """Commits reachable from *head* but not *base*, oldest first (read-only)."""
         return self._git("rev-list", "--reverse", f"{base}..{head}").split()
+
+    def merge_commits(self, base: str, head: str) -> list[str]:
+        """The merge commits among `commits_between(base, head)` (read-only)."""
+        return self._git("rev-list", "--merges", f"{base}..{head}").split()
+
+    def touched_paths(self, base: str, head: str) -> list[str]:
+        """Every path added, changed or removed between two commits — both sides of a rename (read-only)."""
+        out = self._git("diff", "--no-renames", "--name-only", "-z", f"{base}..{head}")
+        return [p for p in out.split("\0") if p]
+
+    def has_commit(self, sha: str) -> bool:
+        """True when the commit object *sha* is in the local repository (read-only)."""
+        return self._has_commit(sha)
 
     def is_ancestor(self, ancestor: str, descendant: str) -> bool:
         """True when *ancestor* is an ancestor of (or equal to) *descendant* (read-only)."""
@@ -527,6 +545,34 @@ class GitCoordinator:  # pylint: disable=too-many-public-methods
     def _has_commit(self, sha: str) -> bool:
         return subprocess.run([*self._gitc(), "cat-file", "-e", f"{sha}^{{commit}}"], capture_output=True,
                               env=self._env(), check=False).returncode == 0
+
+    def fast_forward_branch(self, branch: str, *, since: str, to: str, project: FileLock) -> bool:
+        """Fast-forward the checked-out feature *branch* to commit *to* (fetched already) — never a reset, never a
+        non-fast-forward. The branch must be at *since* or on the way from it to *to* (a re-run after an
+        interruption), the checkout on it, with no tracked change and no unfinished Git operation; untracked files
+        a commit would overwrite make Git refuse. The caller holds *project* (project.lock EXCLUSIVE: no writer can
+        start while the working tree changes); git.lock is taken here. False: the branch is already at *to*."""
+        if not _FEATURE_REF_RE.fullmatch(branch) or not _SHA_RE.fullmatch(since) or not _SHA_RE.fullmatch(to):
+            raise ScopeViolationError(f"only a feature branch is fast-forwarded, to a full commit SHA, not {branch!r}")
+        if not project.held or project.shared:
+            raise WritersActiveError("fast-forwarding the shared checkout needs project.lock EXCLUSIVE")
+        with self.locks.git().acquire(timeout=self.lock_timeout):
+            assert_no_execution_config(self.root, where="the feature checkout")
+            if self.current_branch() != branch:
+                raise HeadMismatchError(f"the checkout is on {self.current_branch()!r}, not {branch!r}")
+            local = self.rev_parse(f"refs/heads/{branch}")
+            if local == to:
+                return False
+            if not (self.is_ancestor(since, local) and self.is_ancestor(local, to)):
+                raise HeadMismatchError(f"{branch} is at {local[:12]}, not on the way from {since[:12]} to {to[:12]}: "
+                                        "it is never moved there (no reset, no non-fast-forward)")
+            unclean = self.tracked_changes() + git_operation_in_progress(self.root)
+            if unclean:
+                raise GitOperationError(f"the checkout is not clean ({unclean[:10]}); nothing is fast-forwarded")
+            self._git("merge", "--ff-only", "--no-stat", "--quiet", to)
+            if self.rev_parse(f"refs/heads/{branch}") != to or self.rev_parse("HEAD") != to:
+                raise GitOperationError(f"after the fast-forward {branch} is not at {to[:12]}")
+            return True
 
     # -- dry-run plans -------------------------------------------------------
 

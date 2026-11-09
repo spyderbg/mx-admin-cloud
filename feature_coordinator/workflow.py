@@ -835,15 +835,9 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
         if feature.state is not FeatureState.ACTIVE or pending:
             raise PullRequestPolicyError(f"integration needs an active feature with every task verified; "
                                          f"not verified: {pending}")
-        dirty = self.git.tracked_changes()
-        # Inert, read-only agent-config anchors the hardened CLIs leave in the shared checkout
-        # (.claude, .mcp.json, …) are trusted launcher placeholders, not uncommitted work: they are
-        # never committed and must not block integration (same provenance rule as the per-run judge).
-        hardened = self.config.runtime.native_hardening.enabled
-        untracked = [u for u in self.git.untracked_files()
-                     if not (hardened and inert_launcher_anchor(self.root, u))]
-        if dirty or untracked:
-            raise PullRequestPolicyError(f"the shared checkout has uncommitted or foreign changes: {dirty + untracked}")
+        dirty = self.foreign_changes()
+        if dirty:
+            raise PullRequestPolicyError(f"the shared checkout has uncommitted or foreign changes: {dirty}")
         evidence = self.gate_evidence(feature, gates)
         with self.store.transaction():
             feature = self.store.load_feature(feature_id)
@@ -859,6 +853,16 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
             self.store.save_feature(feature)
             self.store.append_event("feature-integrated", feature=feature_id, head=evidence.head_sha)
         return feature
+
+    def foreign_changes(self) -> list[str]:
+        """Uncommitted or foreign changes in the shared checkout (tracked changes, then untracked files). Inert,
+        read-only agent-config anchors the hardened CLIs leave in the shared checkout (.claude, .mcp.json, …) are
+        trusted launcher placeholders, not uncommitted work: they are never committed and must not block
+        integration or revalidation (same provenance rule as the per-run judge)."""
+        hardened = self.config.runtime.native_hardening.enabled
+        untracked = [u for u in self.git.untracked_files()
+                     if not (hardened and inert_launcher_anchor(self.root, u))]
+        return self.git.tracked_changes() + untracked
 
     def _render_pr(self, feature: Feature, tasks: Mapping[str, Task], evidence: Evidence) -> PullRequestCandidate:
         changed = self.git.changed_paths(feature.base_sha, evidence.head_sha)
