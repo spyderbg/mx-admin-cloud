@@ -27,68 +27,72 @@ This document designs a first-class **integration job**: a Worker job type, sepa
 - No change to the production Worker's checkout, to PR #62, or to `dev` history.
 - No force-push, rebase of the source, or history rewriting of any validated ref.
 
-## 3. Inputs
+## 3. Inputs and authenticated operator decisions
 
-An integration job is created from a validated intake record. Immutable SHAs are authoritative; an unresolvable or malformed value fails intake. **Only `dev` is an allowed target** in this design; other base refs are refused. The target repository is fixed to the coordinator's configured repository, and the source repository must be allowlisted.
+The only allowed target is the coordinator's configured repository and branch \`dev\`. A source must be the same repository or an allowlisted eligible fork, with an immutable, fully qualified commit SHA. Bind repository identities to **GitHub numeric repository IDs**, not names alone; unknown sources, invalid SHAs and any alternative target are refused.
 
 | Input | Meaning |
 | --- | --- |
-| `source_repo` | Allowlisted repository containing the source ref; a changed or unknown source is refused |
-| `source_ref` + `source_sha` | Branch name and complete 40-hex commit SHA. Re-resolve the ref; it must still point to the pinned SHA |
-| `base_ref` + `base_sha` | **Exactly** `dev` in the configured target repository; SHA of its approved tip |
-| `pr_number` (optional) | Existing PR identifier, checked against source repo/ref/SHA, target repo/ref and state; never trusted on its own |
-| `provenance` | Commit authors/committers and source origin; all authors must be known |
-| `issue` | Approved GitHub Issue and plan that authorize the inspection scope |
-| `intake_request` | Requester identity, time and scope of the request; **not** a merge approval |
+| \`source_repo\`, \`source_ref\`, \`source_sha\` | Allowlisted repository ID, source branch and full pinned 40-hex SHA; re-resolve the ref |
+| \`base_ref\`, \`base_sha\` | Exactly \`dev\` in the configured target repository ID, at the recorded SHA |
+| \`pr_number\` (optional) | Existing PR, independently checked by numeric number/node ID, head/base repo/ref and SHA |
+| \`provenance\` | Author/committer strings and source origin; these strings do **not** authenticate a pusher |
+| \`issue\` | Approved Issue and immutable plan/scope digest |
+| \`intake_request\` | Requester identity, time, scope; **not** permission to create a PR or merge |
 
-The `AWAITING_APPROVAL` state obtains a separately recorded **inspection authorization**, and `AWAITING_MERGE_APPROVAL` obtains an independent **merge authorization**. Neither is required to exist before intake. Both have an operator identity, timestamp, expiry, revocation status and SHA-bound scope. Merge approval additionally binds the exact PR number, source/target repositories and refs, `source_sha`, `base_sha`, candidate head/tree SHAs and `github-merge-commit` method (§5.9). An absent, expired or revoked approval never authorizes a new GitHub write.
+### 3.1 Authenticated approvals and trust boundary
+
+Only **authenticated GitHub operator actions** count. Extend the existing W4.5 event/receipt pattern ([github-intake.md](github-intake.md) §12.5–12.6) with explicitly versioned approval types for \`inspect\`, \`scope\` and \`merge\`. This extension is a **prerequisite to implement**, not a capability that W4.5 currently provides. A trusted coordinator verifies the GitHub event's actor and current repository permission, unique event and receipt IDs, the matching GitHub Actions run, receipt author and edit history, Issue/plan digest, expiry, revocation and **single-use nonce**. Reused/forged/modified receipts and wrong or unverifiable identities fail closed.
+
+The authenticated approval binds \`job_id\`, stage, Issue and plan, immutable source and target repo IDs/refs/SHAs, scope/action, existing candidate/evidence digests, approving user, creation/expiry, revocation and nonce. A **merge** approval additionally binds PR number/node ID, candidate head/tree SHA, gate/review evidence hashes, exact \`dev\` target, merge method, required post-merge checks and single-use operation ID. The merge approver must be distinct from the requesting/authoring identity; the reviewer cannot approve. A **scope/publish** approval binds the full classified-path report digest, individual exceptional-path decisions and permission to create **one** PR. Inspection approval precedes the candidate and therefore binds **only known** source/base/Issue facts.
+
+A local file, \`operator\` JSON field or an unkeyed SHA-256 digest **never authenticates** the operator. The \`approve --receipt REF\` command can only verify a real GitHub event/receipt; no self-attesting file fallback. The authoritative approval ledger, GitHub merge credential and privileged merge executor stay outside every agent/reviewer/repair process write/read scope. Merge permission is not shared with untrusted validation tools and cannot bypass branch protection. If isolation is not **actually verified** on the host (see [worker-security.md](worker-security.md) §0), integration execution/merge stays disabled.
+
+### 3.2 Three approval gates
+
+1. **Before inspection**, \`AWAITING_APPROVAL\` requires an authenticated \`inspect\` event.
+2. **After complete history/path classification** (§6.2), \`AWAITING_SCOPE_APPROVAL\` requires an authenticated \`scope\` event for **each** approval-required or unowned path and the canonical full path report hash, plus permission to create one PR. An empty list of exceptions is explicitly approved; protected paths are never approvable.
+3. **After gates, PR preparation and independent review**, \`AWAITING_MERGE_APPROVAL\` requires a separate authenticated \`merge\` event tied to exact verified PR, source/base, candidate tree, method and checks. Inspect/scope approval never substitutes for merge approval.
+
+Revalidate the relevant event, expiry and revocation immediately before each permitted side effect. Approval validation must be implemented **before** PR creation, not deferred to the merge milestone.
 
 ## 4. Lifecycle state machine
 
-```text
-INTAKE → AWAITING_APPROVAL → INSPECTING → CANDIDATE_BUILT → VALIDATING
-                                            ↓
-                         AWAITING_MERGE_APPROVAL ← IN_REVIEW ← PR_PREPARING
-                                  ↓
-                               MERGING → MERGED → COMPLETED
-```
-
-This is the successful path; `STALE`, `REFUSED`, `REJECTED`, `EXPIRED`, `FAILED`, `ABORTED`, `SUPERSEDED` and `NEEDS_REPAIR` are detailed below.
+\`\`\`text
+INTAKE → AWAITING_APPROVAL → INSPECTING → AWAITING_SCOPE_APPROVAL
+       → BUILDING_CANDIDATE → CANDIDATE_BUILT → VALIDATING
+       → PR_PREPARING → IN_REVIEW → AWAITING_MERGE_APPROVAL
+       → MERGING → MERGED → COMPLETED
+\`\`\`
 
 | State | Entered when | Allowed next states |
 | --- | --- | --- |
-| `INTAKE` | Input and source/target constraints validated | `AWAITING_APPROVAL`, `REFUSED`, `STALE` |
-| `AWAITING_APPROVAL` | Inspection approval awaited | `INSPECTING`, `REJECTED`, `EXPIRED`, `STALE` |
-| `INSPECTING` | **Read-only** analysis: provenance, ancestry, paths, roles, secret scan, PR lookup (§4.1) | `CANDIDATE_BUILT`, `REFUSED` (including conflict), `NEEDS_REPAIR`, `STALE` |
-| `CANDIDATE_BUILT` | Candidate merge commit and immutable tree recorded in an isolated clone | `VALIDATING`, `STALE`, `FAILED` |
-| `VALIDATING` | Role-specific gates run on the pinned candidate tree (§5.2, §6) | `PR_PREPARING`, `NEEDS_REPAIR`, `FAILED`, `STALE` |
-| `PR_PREPARING` | Recheck all-state PR lookup; reuse or create one PR through a persisted intent | `IN_REVIEW`, `REFUSED`, `STALE`, `FAILED` |
-| `IN_REVIEW` | Independent AI Review of the exact candidate / source diff | `AWAITING_MERGE_APPROVAL`, `NEEDS_REPAIR`, `FAILED`, `STALE` |
-| `AWAITING_MERGE_APPROVAL` | Operator merge approval bound to SHA/tree, PR identity, target and method | `MERGING`, `REJECTED`, `EXPIRED`, `STALE` |
-| `MERGING` | Authorized merge intent persisted; GitHub merge may or may not have taken effect | `MERGED` (including recovered result), `STALE` (confirmed not merged and inputs drifted), `FAILED` |
-| `MERGED` | GitHub confirmed the pinned PR merged; `merge_result` persisted (§5.8) | `COMPLETED`, `FAILED` |
-| `COMPLETED` | All post-merge identity, parent, tree and required-check verifications passed (§5.10) | terminal |
-| `NEEDS_REPAIR` | An independently approved repair is required (§6.4) | `SUPERSEDED` (a new job is created), `ABORTED`, `STALE` |
-| `STALE` | A *pre-merge* pinned input/evidence changed and no merge is in flight | terminal |
-| `SUPERSEDED` | A fresh linked repair/integration job replaces this job; evidence does not transfer | terminal |
-| `REFUSED`, `REJECTED`, `EXPIRED`, `FAILED`, `ABORTED` | The named refusal, rejection, expiry, failure or abort was recorded | terminal |
+| \`INTAKE\` | Input validation is in progress | \`AWAITING_APPROVAL\`, \`REFUSED\` |
+| \`AWAITING_APPROVAL\` | Authenticated inspect authorization awaited | \`INSPECTING\`, \`REJECTED\`, \`EXPIRED\`, \`STALE\`, \`ABORTED\` |
+| \`INSPECTING\` | Read-only history/path/security/PR discovery | \`AWAITING_SCOPE_APPROVAL\`, \`REFUSED\`, \`NEEDS_REPAIR\`, \`STALE\`, \`ABORTED\` |
+| \`AWAITING_SCOPE_APPROVAL\` | Per-path and one-PR publish permission awaited | \`BUILDING_CANDIDATE\`, \`REJECTED\`, \`EXPIRED\`, \`STALE\`, \`ABORTED\` |
+| \`BUILDING_CANDIDATE\` | Isolated deterministic merge commit under construction | \`CANDIDATE_BUILT\`, \`REFUSED\` (conflict), \`FAILED\`, \`STALE\`, \`ABORTED\` |
+| \`CANDIDATE_BUILT\` | Candidate head/tree/parents pinned | \`VALIDATING\`, \`FAILED\`, \`STALE\`, \`ABORTED\` |
+| \`VALIDATING\` | Sandboxed role/security gates | \`PR_PREPARING\`, \`REFUSED\`, \`NEEDS_REPAIR\`, \`FAILED\`, \`STALE\`, \`ABORTED\` |
+| \`PR_PREPARING\` | Scope approval verified; reuse/create one PR | \`IN_REVIEW\`, \`REFUSED\`, \`REJECTED\`, \`EXPIRED\`, \`FAILED\`, \`STALE\`, \`ABORTED\` |
+| \`IN_REVIEW\` | Independent structured review of landing delta | \`AWAITING_MERGE_APPROVAL\`, \`REFUSED\` (oversize), \`NEEDS_REPAIR\`, \`FAILED\`, \`STALE\`, \`ABORTED\` |
+| \`AWAITING_MERGE_APPROVAL\` | Independent authenticated merge approval awaited | \`MERGING\`, \`EXPIRED\`, \`REJECTED\`, \`STALE\`, \`ABORTED\` |
+| \`MERGING\` | Merge intent persisted, outcome may be unknown | \`MERGED\`, \`STALE\` (confirmed no merge), \`REJECTED\`/\`EXPIRED\` (confirmed no merge), \`FAILED\` |
+| \`MERGED\` | GitHub confirmed merge, actual result recorded | \`COMPLETED\`, \`FAILED\` **only** |
+| \`COMPLETED\` | Actual PR/parents/tree/status checks verified | terminal |
+| \`NEEDS_REPAIR\` | Separate repair is required | \`SUPERSEDED\`, \`ABORTED\`, \`STALE\` |
+| \`STALE\`, \`SUPERSEDED\`, \`REFUSED\`, \`REJECTED\`, \`EXPIRED\`, \`FAILED\`, \`ABORTED\` | Named terminal outcome | terminal |
 
-**STALE and recovery ordering.** Apply `STALE` only to pinned fields **already recorded** for pre-merge states. Check the source ref/SHA, the approved `dev` base SHA, any recorded candidate head/tree, and any recorded PR head/base identity before forward progress. *Any* unrelated move of `dev` before this job's merge, even one that would still merge cleanly, is `STALE`: a fresh job with new approval and evidence is required. A job in `MERGING` **first resolves the persisted `merge_attempt` against GitHub**, before performing any pre-merge drift test. If that authorized merge already happened, it transitions to `MERGED` and must undergo the same post-merge verification as the normal success path (§5.8/§5.10). A successful normal merge also transitions directly `MERGING → MERGED` without incorrectly applying the pre-merge base comparison at the transition.
+**Precedence.** After intake, any movement of \`dev\` from approved \`base_sha\` **before** the merge, even if the change would still merge cleanly, makes the job \`STALE\`. First reconcile any recorded PR-creation or GitHub merge attempt, then check recorded source/base/candidate/PR SHAs, then approval. A **normal or recovered completed merge** transitions \`MERGING → MERGED\` without a pre-merge STALE test; \`MERGED\` must perform post-merge verification and can **never** become \`ABORTED\`. Authenticated rejection/cancellation before a merge is in flight takes precedence over forward-progress STALE checks.
 
-**Where `STALE` does not apply:** `MERGED` has already written to `dev`; post-merge failures result in `FAILED`. In `MERGING`, a confirmed non-merge permits `STALE`; an uncertain outcome **pauses** instead of guessing. Terminal states never change. Expiry of an approval in `AWAITING_APPROVAL` or `AWAITING_MERGE_APPROVAL` results in `EXPIRED` **only when no side effect is in flight**; revocation/rejection results in `REJECTED` under the same condition.
-
-**Operator attention is a durable hold, not a new lifecycle state.** The job records `attention: {code, reason, at, context}`, remains in its current non-terminal state, and cannot move forward until an operator resolves the specific issue. Examples are a non-reusable PR in `INSPECTING`/`PR_PREPARING`, an unknown merge outcome in `MERGING`, or a temporarily unavailable GitHub API. Only non-merging states can be aborted. A job in `MERGING` cannot be aborted until GitHub has *positively confirmed* that no merge took effect.
-
-**Terminal states:** `COMPLETED`, `REFUSED`, `REJECTED`, `EXPIRED`, `FAILED`, `ABORTED`, `STALE`, `SUPERSEDED`. No transition leaves one. An operator may move any non-terminal state **except an unresolved `MERGING`** to `ABORTED`; operator cancellation/rejection takes precedence over any new forward-progress `STALE` checks, but must not conceal a merge already in flight.
+**Attention holds** are durable: \`attention: {code, reason, since, evidence_refs, last_retry, owner}\` keeps the current non-terminal state, forbids side effects and requires trusted \`resolve-attention --job --evidence\` to clear. GitHub read failures are retried with bounded read-only backoff, then escalated to the operator. If \`MERGING\` has an **unknown external result**, it cannot be aborted, force-completed, or have its PR reservation released; only verified GitHub evidence resolves it. Once definitively not merged, cancellation/rejection/expiry is permitted; after merge, \`COMPLETED\` or \`FAILED\` is mandatory. Other pre-merge states may abort after pending PR-create effects are reconciled. Terminal states never reopen.
 
 ### 4.1 PR reuse versus creation
 
-- **Lookup:** At `INSPECTING` and again at `PR_PREPARING`, list PRs in the target repo using GitHub's `GET /repos/{owner}/{repo}/pulls?state=all&per_page=100&page=N`, paginate to completion, and inspect each item's `head.repo.full_name`, `head.ref`, `head.sha`, `base.repo.full_name`, `base.ref`, `state` and `merged_at`. An optional `head=<owner>:<ref>` filter can narrow discovery but **must not replace** a complete check for the same source repo and pinned SHA across refs. A failed or incomplete lookup holds the job; never assume zero matches.
-- **Match key:** source repository **and `source_sha`**. Record its branch/ref as an additional identity check. A PR for the same source branch at a **different** head SHA does not block a new job for this `source_sha`. The endpoint for PRs associated with a commit is not an all-states replacement.
-- **Reuse:** exactly one existing **open** PR whose head repo/ref/SHA and target repo/`dev` all match. Store its number; do not modify that PR's branch.
-- **Non-reusable match:** if an exact source repo/SHA is found in any state but is closed/merged, targets another branch, has a different head ref, or is ambiguous, **never create a duplicate**. Hold the job in `INSPECTING` or `PR_PREPARING` with `attention.code=non_reusable_pr` and the matching PR IDs. A confirmed already-merged source is not a new integration success; the operator decides whether to abort or create a newly approved job.
-- **Create:** only if the completed all-states lookup found no PR for the pinned repo/SHA. PR creation happens **only in `PR_PREPARING`**, after validation, through a persisted `pr_create_attempt` containing source repo/ref/SHA, target repo/`dev` and an operation ID. Re-query *before* writing and after an ambiguous timeout or crash. If an existing matching PR appeared, adopt it when safe; never knowingly create another. After creation, verify its identity and record the PR number. A concurrent actor may create an external PR between lookup and creation; detect duplicates on the next read and hold for operator attention rather than claiming global atomicity.
-- **Before merging:** re-read the PR and require it to be **open, non-Draft**, with the expected PR number, source repo/ref/SHA, target repo and exact target branch `dev`. A retargeted/head-moved PR is `STALE` before merge; a closed or Draft PR holds for operator attention (unless the operator rejects it). The job never closes, retargets or edits another author's PR.
+- **Lookup:** fully paginate \`GET /repos/{owner}/{repo}/pulls?state=all&per_page=100&page=N\`; match by immutable \`head.repo.id\` and \`head.sha\`, record head/base repo IDs/refs, PR number/node ID, state and draft flag. A filtered \`head=owner:ref\` lookup is not a substitute for all-states same-head discovery. A PR for the same branch at another SHA does not block.
+- **Reuse:** one open matching PR for pinned source repo/ref/SHA and target repo/\`dev\`; otherwise hold with \`non_reusable_pr\` and never create a same-head duplicate. A previously merged PR is not proof the current job completed.
+- **Create:** only in \`PR_PREPARING\` after verified **scope/publish** receipt and gates, persisted \`pr_create_attempt\` and a complete all-states lookup. Re-query after a crash/timeout; GitHub 422 "already exists" triggers lookup, not blind retry. Sources must be in the target repository or an eligible fork; no source branch is pushed by the integration job.
+- **Recheck:** before review/merge, fetch expected PR number/node ID, source/target repo IDs/ref and SHA, target exactly \`dev\`, **open and non-Draft**. Moved head/base → \`STALE\` before merge; closed/Draft PR → operator hold or authenticated rejection. Do not edit another author's source PR.
 
 ## 5. Git safeguards
 
