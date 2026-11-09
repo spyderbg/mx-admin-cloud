@@ -152,133 +152,130 @@ This design does not choose. Until the decision is recorded, the follow-up engin
 
 ### 8.1 CLI/API commands
 
-Proposed under `python -m feature_coordinator integrate …` with equivalent API calls. Every mutating command takes `--job`, obtains its concurrency guard and verifies the persisted `state_revision`; none takes a "force" option.
+Proposed under `python -m feature_coordinator integrate …`. Mutating commands acquire scope/target locks and check `state_revision`; none takes a force flag. Approval commands **verify authenticated GitHub event/receipt evidence**, never create authorization from an arbitrary local file.
 
 | Command | Effect |
 | --- | --- |
-| `intake --repo --ref --sha --base dev --base-sha [--pr N] --issue N` | Validate immutable inputs and create the job record (`INTAKE → AWAITING_APPROVAL`) |
-| `approve --job J --stage {inspect,merge} --record FILE` | Record operator approval (inspection or SHA/PR/method-bound merge), including expiry/revocation |
-| `inspect --job J` | Read-only classification and all-state PR lookup (`INSPECTING`) |
-| `validate --job J` | Build/pin an isolated candidate and run fresh-checkout gates; then `PR_PREPARING` |
-| `prepare-pr --job J` | Recheck all-state PR matches, reuse a safe PR or create one with persisted intent |
-| `review --job J` | Independently review the pinned candidate/PR diff |
-| `merge --job J` | Require exact approval and checks (§5.9/§5.10), persist `MERGING` intent, call GitHub, reconcile result and verify tree/status before `COMPLETED` |
-| `status --job J [--json]` | Show state, immutable refs, revision, evidence, pending actions and operator holds |
-| `abort --job J --reason` | Terminate only when no merge outcome is unresolved; preserve audit evidence |
+| `intake --repo --ref --sha --base dev --base-sha [--pr N] --issue N` | Validate and reserve immutable source and target |
+| `approve --job J --stage {inspect,scope,merge} --receipt REF` | Verify GitHub event, actor/permission, unique receipt/run, nonce, expiry and SHA-bound scope |
+| `inspect --job J` | Read-only full commit-history/path/PR inspection; compute `path_report_sha256` |
+| `build --job J` | After scope approval, build/pin candidate; refuse conflicts |
+| `validate --job J` | Run verified sandboxed gates on pinned candidate |
+| `prepare-pr --job J` | Recheck scope/publish approval and idempotently reuse/create one PR |
+| `review --job J` | Independently review complete actual landing-tree delta |
+| `merge --job J` | Trusted executor only: new authenticated merge receipt, global `dev` lock, GitHub test-merge preflight, write-ahead intent and actual-result verification |
+| `resolve-attention --job J --evidence REF` | Authenticated operator evidence, no fabricated GitHub result |
+| `reject --job J --receipt REF` | Authenticated rejection before merge effect |
+| `abort --job J --reason` | Forbidden in `MERGED` and unresolved `MERGING`; reconcile any PR-create intent first |
+| `status --job J [--json]` | Read-only SHA/receipt/revision, holds, locks and incidents |
 
-### 8.2 State record schema
+### 8.2 State record schema and durable evidence
 
-One append-audited JSON record per job, updated atomically (write-temp + fsync + rename), with locked, revision-checked writes. Sensitive values are never placed in logs. The following illustrates a job at `VALIDATING`; optional effects have not started.
+The trusted coordinator owns a protected schema-versioned JSON job record, immutable evidence payloads and an append-audited log on a **local filesystem**, using per-job lock and `state_revision` CAS. Every side-effect intent and state transition needs temp-file fsync, atomic rename **and parent-directory fsync**. Agents/reviewers/repair tasks cannot write the store. Multi-host merging requires a fenced shared lock (§5.11).
 
 ```json
 {
+  "schema_version": 1,
   "job_id": "int-20261108-0001",
   "issue": 64,
   "state": "VALIDATING",
   "state_revision": 8,
   "attention": null,
-  "source": {"repo": "owner/source", "ref": "integration/x", "sha": "<40hex>"},
-  "base": {"repo": "owner/target", "ref": "dev", "expected_sha": "<40hex>"},
+  "source": {"repo_id": 123, "repo": "owner/source", "ref": "integration/x", "sha": "<40hex>"},
+  "base": {"repo_id": 456, "repo": "owner/target", "ref": "dev", "expected_sha": "<40hex>"},
   "candidate": {"clone": "<isolated job clone>", "ref": "refs/integration/<job>/candidate",
-                "head_sha": "<40hex>", "tree_sha": "<40hex>",
-                "parents": ["<base_sha>", "<source_sha>"]},
+                "head_sha": "<40hex>", "tree_sha": "<40hex>", "parents": ["<base_sha>", "<source_sha>"]},
   "pr": null,
   "pr_create_attempt": null,
   "merge_attempt": null,
   "merge_result": null,
-  "provenance": {"authors": ["name <email>"], "origin": "..."},
-  "paths": [{"path": "backend/x.py", "role": "backend", "class": "owned"}],
+  "path_report": {"sha256": "<64hex>", "evidence_ref": "<protected path>"},
+  "approval_receipts": [
+    {"stage": "inspect", "event_id": 1001, "run_id": 3001, "receipt_id": 4001,
+     "nonce": "<unique>", "approval_sha256": "<64hex>", "expires": "<UTC>", "revoked": false},
+    {"stage": "scope", "event_id": 1002, "run_id": 3002, "receipt_id": 4002,
+     "nonce": "<unique>", "approval_sha256": "<64hex>", "expires": "<UTC>", "revoked": false}
+  ],
   "evidence": [{"kind": "gate:backend", "head_sha": "<40hex>", "tree_sha": "<40hex>",
-                "result": "pass", "sha256": "<64hex>", "at": "<UTC>"}],
-  "approvals": [{"stage": "inspect", "operator": "...", "source_sha": "<40hex>",
-                 "base_sha": "<40hex>", "at": "<UTC>", "expires": "<UTC>", "revoked": false}],
-  "required_post_merge_checks": ["<named-check>"],
-  "history": [{"from": "INSPECTING", "to": "CANDIDATE_BUILT", "at": "<UTC>", "revision": 7}],
+                "result": "pass", "sha256": "<64hex>", "payload_ref": "<protected path>"}],
+  "required_post_merge_checks": null,
+  "reservations": {"source": "<repo-id>:<sha>", "pr": null, "target": null},
+  "supersedes": null,
+  "superseded_by": null,
+  "history_ref": "<protected append-only journal>",
   "created_at": "<UTC>",
   "updated_at": "<UTC>"
 }
 ```
 
-Before a PR creation, `pr_create_attempt` records `operation_id`, source repository/ref/SHA, target repository/`dev` and timestamp; it is reconciled by an all-states lookup on resume. Once the PR is known, `pr` records its number, repo/ref/head SHA, base repository/`dev`, reused/created status and observed GitHub identity. A merge approval binds this PR number, both repositories/refs, `source_sha`, `base_sha`, candidate head/tree, `github-merge-commit`, check policy, expiry and revocation; the SHA-256 digest of this complete authorization is persisted.
+The example shows `VALIDATING`, before PR/merge effects. **Inspect** approval cannot bind a candidate that does not exist yet; **scope** binds the classified report hash, per-path decisions and permission to create one PR. Only later, a separate authenticated **merge** receipt binds exact PR number/node ID, repo IDs/refs, source/base/candidate head/tree, gate/review evidence payload hashes, method, check policy, expiry, revocation and one-use operation ID. `required_post_merge_checks` is a verified read-only **copy** of that receipt, not a second authority.
 
-Immediately before a merge API call, **in one durable transition** to `MERGING`, `merge_attempt` records `operation_id`, `pr_number`, source/target repo/ref, pinned `source_sha`, `expected_base_sha`, candidate head/tree, `method=github-merge-commit`, `approval_sha256` and timestamp. After a confirmed GitHub merge (including recovery from an uncertain response), `merge_result` records `commit_sha`, `tree_sha`, actual parents, PR number and merge method; it is persisted before `MERGED` verification. Do not treat `merge_attempt` alone as evidence that GitHub merged. These records remain in the audit trail even when the isolated clone is removed.
+Save `pr_create_attempt` before PR creation, reconcile GitHub all-state lookup after uncertain results. Save state `MERGING` **together with** `merge_attempt` (PR/source/base/candidate, preview parent/tree evidence, authenticated receipt and operation ID) before GitHub merge. On confirmed remote merge, save `merge_result` containing actual commit SHA/tree/parents/PR and observed actor, **then re-fetch GitHub and verify independently** before `COMPLETED`. A temporary test-merge SHA never substitutes for an actual result. Hold indeterminate outcomes and preserve candidate/evidence objects for unresolved `merged_unverified` incidents.
 
 ### 8.3 Acceptance tests (for the later engineering Issue)
 
-- Intake rejects non-allowlisted sources, unknown authors, invalid SHAs, and a target repository/ref other than the configured `dev`; an intake base mismatch is `REFUSED`, later drift is `STALE`.
-- A PR lookup paginates **all** states; the same branch at a different SHA does not block. A same-repository/head-SHA PR that is closed, merged, wrong-ref/base or ambiguous holds with `non_reusable_pr`. No new PR is created in that case.
-- PR creation happens only in `PR_PREPARING`, with a durable `pr_create_attempt`. Crash/timeout after creation but before PR number persistence reuses the discovered PR and does not open another.
-- Source/base/candidate/PR identity changes before merge → `STALE`. A cleanly mergeable change to `dev` is **not** an exception.
-- Expired/revoked/unbound merge authorization, PR retargeting to `main`, changed source SHA, wrong repo, closed PR and a still-Draft PR are all refused or held **before** calling GitHub's merge API. The PR must be open and non-Draft; the target is exactly `dev`.
-- Normal merge: `AWAITING_MERGE_APPROVAL → MERGING → MERGED → COMPLETED`. Confirm a persisted merge intent, correct GitHub PR/commit, parents `[base_sha, source_sha]`, identical tree SHA and all configured post-merge checks. The pre-merge `STALE` test never vetoes a completed merge during the transition to `MERGED`.
-- Inject crashes **before and after every external side effect** (PR creation and GitHub merge), after GitHub merges but before `MERGED` is saved, and on an ambiguous timeout. Resume reconciles GitHub first, never blindly retries or invents completion.
-- A merge that completes after `dev` moves between the last precheck and GitHub's write, a wrong-parent result, a mismatched tree, or missing/failing/timed-out post-merge checks → `FAILED` with `merged_unverified` operator alert; no automatic repair of `dev`.
-- Create/abort/restart races: per-job lock plus revision CAS prevents lost transitions; competing jobs for a PR or source SHA fail closed. Abort in `MERGING` is rejected until the external outcome is known.
-- Removing a candidate worktree does not change `candidate.head_sha`/`tree_sha` or gate evidence; a lost pinned Git object fails closed rather than silently rebuilding. A modifying gate fails cleanliness and cannot certify the old tree.
-- `NEEDS_REPAIR → SUPERSEDED` preserves the old record, while a new linked job begins at `INTAKE` with entirely fresh approvals and evidence.
-- Merge conflicts and protected/unowned-path violations are refused with no source changes; all terminal states release temporary clones but retain audit records.
-- Independent reviewer runs in a separate session (subscription only, no API-key billing), sees the complete relevant diff and cannot authorize merge.
-- No operator merge authorization → `merge` refuses. No integration-job push, force-push, source rewrite, or direct push to `dev` exists.
+- Forge/edit/replay a GitHub approval receipt, use wrong actor/permissions, expired/revoked token, duplicate run/nonce, agent approval or JSON `operator` field: **none** may authorize PR creation or merging; merge credential invisible to agent/reviewer.
+- Order: authenticated inspect → **full introduced-commit history/path classification** → scope/per-path and single-PR approval → candidate/gates → PR creation → independent review → separate authenticated merge approval. Missing or expired scope prevents PR write.
+- An intermediate source commit adds then removes a protected file or secret; reject despite clean net diff. Scan each introduced commit and parents, symlink targets, submodules, attributes, modes and exact candidate landing paths; changed path digest invalidates approval.
+- PR lookup covers all states and source repo ID/head SHA; another SHA on same branch does not block. Closed/merged/wrong-base same-head PR holds. GitHub 422, ambiguous timeout and crash do not create duplicate PRs.
+- Preflight GitHub's **fresh test merge commit**, requiring exact parents `[base_sha,source_sha]`, tree identical to candidate, PR open/non-Draft, expected repo IDs/refs, `dev` tip, valid gate/review and independent merge receipt. Failure means **no merge call**.
+- Normal merge and crash recovery: `AWAITING_MERGE_APPROVAL → MERGING → MERGED → COMPLETED`; reconcile GitHub first after timeout/crash. Never mark an already completed merge `STALE`, never accept ancestry alone.
+- Two different approved jobs with the same `dev` base cannot concurrently merge: **global target lock** serializes, second rechecks changed base → `STALE`. Multi-host merging without fenced lock refused.
+- An external change of `dev` or PR retarget after preflight can still cause a bad write; verify actual PR/parents/tree, mark `FAILED` + `merged_unverified`, stop integration merges and alert operator. **No unattended auto-merge** by this API.
+- `MERGED → ABORTED` forbidden. Unknown `MERGING` result cannot be aborted or force-accepted; a definitively unmerged result may expire/reject/stale. Operator resolution requires verified evidence.
+- Build conflict in `BUILDING_CANDIDATE`, prohibited history content in `INSPECTING`/`VALIDATING`, and oversized review in `IN_REVIEW` all map to `REFUSED`. Missing gates map to repair/failure, not success.
+- Crash around event log fsync/rename, PR creation, GitHub merge, lock lease expiry and operator intervention without lost approvals/duplicate side effects; preserve incident evidence.
+- A repair starts a new source-based job and closes the old as `SUPERSEDED`, without inheriting approvals. Historical merged-PR dry run is read-only and never creates PRs.
 
 ### 8.4 Failure modes and responses
 
 | Failure | Response |
 | --- | --- |
-| Invalid input or `dev` mismatch during intake | `REFUSED`; no candidate created |
-| Source/base/candidate/PR drift before merge, including cleanly mergeable `dev` movement | `STALE`; record both SHAs; fresh job and approval required |
-| Non-reusable same-head PR | Hold in `INSPECTING` or `PR_PREPARING` with `non_reusable_pr`; no duplicate |
-| Closed or Draft PR before merge, failed/incomplete GitHub lookup | Hold for operator attention; do not merge or create another PR |
-| Merge approval expired or revoked before a merge attempt | `EXPIRED` or `REJECTED`; no merge call |
-| GitHub merge result unknown after timeout/crash | Hold in `MERGING`; read remote PR/commit before any next action |
-| Confirmed merge result violates PR/parent/tree checks | `FAILED` + `merged_unverified` alert; human assesses `dev` |
-| Post-merge required check fails/is missing/times out | `FAILED` + `merged_unverified`; never claim `COMPLETED` |
-| Merge conflict, invalid author, or protected-path diff | `REFUSED` before merge; no automated conflict resolution |
-| Missing/failing validation gate or reviewer | `NEEDS_REPAIR` or `FAILED`; source remains untouched |
-| Candidate object missing/different or changed gate checkout | Fail closed; previous gate/review evidence cannot transfer |
-| Competing source/PR job, lock failure or revision CAS conflict | Hold for attention; do not start concurrent side effects |
-| Process crash in other stages | Resume with immutable SHA verification and side-effect reconciliation (§5.8) |
-| Operator abort with merge outcome unresolved | Refuse abort until GitHub confirms whether merge happened |
-| GitHub API temporarily unavailable | Hold state; read-only retry/reconciliation before writes |
+| Invalid intake source/target/sha | `REFUSED` |
+| Source/base/candidate/PR drift after intake (even cleanly mergeable) | `STALE`, new job/evidence |
+| Unauthenticated, forged, expired or revoked approval | `REJECTED`/`EXPIRED`, no GitHub write |
+| Unapproved exceptional path or missing scope approval | Hold in `AWAITING_SCOPE_APPROVAL` |
+| Secret/protected path in source history | `REFUSED` even if deleted before final tree |
+| Merge conflict at candidate build | `REFUSED` from `BUILDING_CANDIDATE` |
+| Failed/incomplete PR lookup, closed/Draft or non-reusable PR | Hold, do not duplicate or merge |
+| Missing/unmergeable/wrong-parent/tree temporary test merge | No merge call; hold or `REFUSED` |
+| Confirmed no merge, but approval expired/revoked | `EXPIRED`/`REJECTED`, no retry |
+| Uncertain GitHub merge timeout/crash | Hold in `MERGING`, remote reconciliation first |
+| Confirmed result violates parents/tree/PR/required status | `FAILED` + `merged_unverified`, halt further integration merges |
+| Lock/CAS conflict, API outage | Hold and retry reads only, then authenticated operator resolution |
+| Abort in `MERGED` or unresolved `MERGING` | Refuse; preserve external result |
 
 ### 8.5 Milestones
 
-1. **M1** State record and state machine, `intake`/`status`/`abort`, no Git writes.
-2. **M2** Read-only `inspect`: path/role classification, PR match.
-3. **M3** Isolated candidate worktree and per-role gates.
-4. **M4** Independent review with SHA-bound evidence.
-5. **M5** Operator approvals and `merge` with re-verification.
-6. **M6** Crash-recovery hardening and failure-injection tests.
+1. **M1:** Protected journal and evidence, authenticated GitHub inspect/scope approval receipt verifier, per-job/global locks and `intake`/`status`/`abort`, no PR writes.
+2. **M2:** Full source history and landing-tree path classification, per-path approvals, all-states PR lookup.
+3. **M3:** Isolated candidate, verified offline gates and approved/idempotent PR preparation.
+4. **M4:** Independent structured review with SHA/tree binding.
+5. **M5:** Separate authenticated merge receipt, restricted executor, global `dev` lock, GitHub preview merge and actual-result verification.
+6. **M6:** Crash/race/forged-approval/security tests and operator incident handling.
 
 ### 8.6 Migration from today's publisher/reviewer
 
-The feature publisher and reviewer stay unchanged. Integration reuses their components (PathPolicy, commit gate, reviewer runner, PR client) behind a new job type; shared code is refactored only behind tests. Integration is opt-in per job, disabled by default, and first used on dry-run (inspect-only) jobs against known merged branches (such as #62's `integration/improvements`) before any real merge. **Subscription-only execution is preserved** (no API-key billing path) and **review stays independent**: the reviewer never shares a session with the author or repair task.
+The feature publisher and reviewer stay unchanged. Integration reuses their components (PathPolicy, commit gate, reviewer runner, PR client) behind a new job type; shared code is refactored only behind tests. Integration is disabled by default. The first pilot is **inspect-only**: historical, already-merged PR #62 may be inspected for audit evidence but records `already_integrated`, never creates a new PR, and never merges. **Subscription-only execution is preserved** (no API-key billing path) and **review stays independent**: the reviewer never shares a session with the author or repair task.
 
 ## 9. Operator decision: automatic merge
 
-**Default: no automatic merge into `dev`.** Merge needs an explicit, checkable operator decision record (§8.2 `approvals`, stage `merge`) bound to the PR, source/target identities, head/tree SHAs, merge method, required checks and expiry; without it the `merge` command refuses. Merging uses only §5.9 and completes only after §5.10. Even with this approval, GitHub's merge API does not atomically pin the target base (§5.10); a strict no-wrong-target policy requires a separately approved guarded merge mechanism.
+**Decision: no unattended automatic merge into `dev`.** GitHub's merge API pins the PR head but **cannot atomically pin the target branch/ref and SHA**. A global coordinator lock controls our jobs, not external GitHub actors; even verified preflight cannot prevent a target change between check and write. This design authorizes only **supervised operator-triggered merging**, with independent authenticated one-use GitHub approval (§3.1), exact PR/SHA/tree binding, global `dev` lock and mandatory result verification. Crash recovery of an already approved in-flight merge is not new merge authorization.
 
-A *future* auto-merge policy would require, at a minimum, a separate operator decision record that is itself versioned and checkable, and:
-
-- an allowlisted source repository and known authors only;
-- no protected, approval-required or unowned paths in the diff;
-- all gates green and independent AI Review passing, bound to the exact head and tree SHAs;
-- `dev` still at `base_sha` before the write (any earlier movement makes the job `STALE`), correct PR target and required pre-/post-merge status checks green;
-- a diff-size and affected-role ceiling;
-- an audit log entry, a kill switch, and an operator-revocable policy with an expiry;
-- a successful history of supervised (manual-approval) integrations first.
+Future unattended auto-merge needs a separate operator decision, proven guarded target-atomic merge mechanism or equivalent target/retarget isolation, least privilege, fenced locks, passing security gates and independent review, kill switch and documented recovery of external incidents.
 
 ## 10. Phase-by-phase implementation plan (later engineering Issue)
 
 | Phase | Work | Depends on |
 | --- | --- | --- |
-| P0 | Operator decision on §7 (role change vs trusted workflow) and approval of this design | none; **blocks all** |
-| P1 | Revision-checked state record, side-effect intents, durable locks, terminal states, `intake`/`status`/`abort` | P0 |
-| P2 | Read-only inspection, role/path classification, paginated all-states PR lookup and identity rules | P1 |
-| P3 | Durable isolated candidate clone/ref, deterministic build, clean-checkout gates and PR_PREPARING | P2 |
-| P4 | Independent review with SHA/tree-bound evidence | P3 |
-| P5 | PR/target-bound operator approvals, guarded MERGING reconciliation, merge API call, tree and post-merge status verification | P4 |
-| P6 | Crash/timeout/race injection, optimistic-lock tests, candidate durability and SUPERSEDED repair routing (§6.4) | P3–P5 |
-| P7 | Dry-run pilot on historical branches, docs and operations updates | P5, P6 |
-| P8 | (Optional, separate decision) auto-merge policy per §9 | P7 and a recorded operator decision |
+| P0 | Operator chooses implementation owner (§7), GitHub approval authority, safe credential/isolation and global lock deployment; accepts residual external GitHub race only for supervised merges | none; **blocks all** |
+| P1 | Protected state/evidence store, authenticated inspect/scope verifier, locks, safe `intake`/`status` | P0 |
+| P2 | Full introduced-commit history/path scan, per-path scope gate and all-state PR matching | P1 |
+| P3 | Isolated candidate, verified sandboxed gates and scope-approved PR creation | P2 |
+| P4 | Independent structured review bound to immutable head/tree | P3 |
+| P5 | Authenticated merge receipt, trusted executor, global target lock, test-merge preflight and strict post-write verification | P4 |
+| P6 | Fault/race/forgery/security regressions, operator attention and incident workflows | P3–P5 |
+| P7 | Historical **inspect-only** audit pilot, then supervised live pilot and operations docs | P5, P6 |
+| P8 | **Not approved here:** future unattended auto-merge needs a separate guarded-mechanism design and operator decision | P7 plus new authorization |
 
-Non-goals for every phase: force-push, touching the production checkout, bypassing path policy, and automatic merge before P8's separate decision.
+Non-goals: force-push, production checkout writes, missing authorization, path-policy bypass and unattended merge under the current GitHub API.
