@@ -9,6 +9,8 @@
                                          needs github.intake.enabled)
     github intake status [--json]        the local intake records with their feature and task states
                                          (read-only; no GitHub request)
+    github intake queue [--json]         show next approved Features by Project Priority
+                                         (read-only; never starts or changes anything)
 
 The Worker service polls by itself when `github.intake.enabled` is true. Nothing is written to an
 Issue before it is approved. See docs_agents/coordination/github-intake.md.
@@ -20,10 +22,14 @@ import argparse
 from pathlib import Path
 from typing import Any
 
+from .backlog_priority import ranked_backlog
 from .config import ProjectConfig
+from .errors import CoordinatorError
 from .github_api import sanitize
 from .github_commands import _emit, _state, _tracker, tracker_kind  # pylint: disable=protected-access
 from .intake_poll import IntakePoller, intake_status
+from .model import FeatureState
+from .workflow import ACTIVE_FEATURE_STATES
 from .store import StateStore
 
 
@@ -88,6 +94,40 @@ def cmd_status(args: argparse.Namespace, config: ProjectConfig) -> int:
     return 0
 
 
+
+def cmd_queue(args: argparse.Namespace, config: ProjectConfig) -> int:
+    """Preview the next eligible approved Features; this command never activates any."""
+    coord = _coordinator(args, config)
+    planned = []
+    for record in IntakePoller(coord).records():
+        if record.status != "planned" or record.spec_changed:
+            continue
+        try:
+            feature = coord.store.load_feature(record.id)
+        except KeyError:
+            continue
+        if feature.state is FeatureState.PLANNED:
+            planned.append(record)
+    try:
+        ranked = ranked_backlog(planned, coord.board)
+    except CoordinatorError as exc:
+        _emit(args, {"error": sanitize(str(exc), 300)}, [f"Backlog Priority unavailable: {sanitize(str(exc), 300)}"])
+        return 1
+    active = [f.id for f in coord.store.list_features() if f.state in ACTIVE_FEATURE_STATES]
+    labels = ("Critical", "High", "Normal", "Low")
+    rows = [{"position": index, "issue": record.issue_number, "feature": record.id,
+             "priority": f"P{rank} {labels[rank]}", "state": "planned"}
+            for index, (rank, record) in enumerate(ranked, 1)]
+    data = {"active": active, "next": None if active or not rows else rows[0]["feature"], "backlog": rows}
+    lines = [f"active: {', '.join(active) if active else 'none'}",
+             f"next: {data['next'] or ('waiting for active Feature' if active else 'none')}"]
+    lines += [f"  {row['position']}. #{row['issue']}  {row['priority']:12s} {row['feature']}"
+              for row in rows]
+    lines += ["read-only: Priority orders only approved waiting Features; nothing was activated"]
+    _emit(args, data, lines)
+    return 0
+
+
 def register(gsub: Any) -> None:
     """Add `github intake …` to the `github` command group."""
     group = gsub.add_parser("intake", help="approved GitHub Issues become Worker tasks (W4.3.1)",
@@ -105,3 +145,6 @@ def register(gsub: Any) -> None:
     status = isub.add_parser("status", help="the local intake records (read-only)")
     status.add_argument("--json", action="store_true")
     status.set_defaults(func=cmd_status)
+    queue = isub.add_parser("queue", help="preview approved waiting Features by Project Priority (read-only)")
+    queue.add_argument("--json", action="store_true")
+    queue.set_defaults(func=cmd_queue)

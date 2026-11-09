@@ -3,7 +3,7 @@
 `IntakePoller.poll()` is one bounded poll: discover `/worker approve` comments on eligible Issues
 whose `updated_at` changed (at most `max_issues_per_poll`), record each valid approval (write-ahead),
 plan its feature (workflow.plan: the existing records, state machine, Issue and board sync), post
-one acknowledgement, activate the oldest planned intake feature on a free checkout, and compare every
+one acknowledgement, activate the highest-priority approved planned feature on a free checkout, and compare every
 approved, unfinished Issue with its approved text (a difference holds the task: fail closed).
 `verify_task()` is the Worker service's re-check right before an agent may start and while it
 runs: a withdrawn approval holds the task, or stops its run through the existing cancellation.
@@ -15,12 +15,14 @@ import time
 from dataclasses import asdict, dataclass, field
 from typing import Any, Iterable
 
+from .backlog_priority import ordered_backlog
 from .errors import (
     ClaimError,
     CoordinatorError,
     GitHubError,
     IllegalTransitionError,
     LockBusyError,
+    ProjectBoardError,
 )
 from .escalation import HOLDABLE
 from .github_api import sanitize
@@ -378,7 +380,7 @@ class IntakePoller:
                 f"{board}; moving the card there changes nothing.")
 
     def _activate_next(self, report: IntakeReport, apply: bool) -> None:
-        """Activate the oldest planned intake feature when the checkout has no active feature."""
+        """Activate the highest-priority approved planned feature on a free checkout."""
         planned = []
         for record in self.records():
             try:
@@ -398,6 +400,11 @@ class IntakePoller:
         if active:
             report.waiting += [f"{r.id} stays in Backlog: feature {active[0]} is active (one feature per checkout)"
                                for r in planned]
+            return
+        try:
+            planned = ordered_backlog(planned, self.coord.board)
+        except (GitHubError, ProjectBoardError) as exc:
+            report.deferred.append(f"Backlog Priority read failed; no feature activated: {sanitize(str(exc), 300)}")
             return
         record = planned[0]
         if not apply:

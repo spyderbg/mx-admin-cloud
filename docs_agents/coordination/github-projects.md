@@ -121,9 +121,37 @@ Records: `<state>/project/<record-id>.json` (`ProjectLink`): authorization (feat
 - **Which items.** Only the item recorded for (or found on) the owned Issue. A recorded item that now shows another Issue is refused. Items a person added, drafts and other Issues' items are reported by `reconcile` as foreign, or as orphans (an owned Issue without a local record), and never modified. Test: `test_items_that_are_not_provably_ours_are_never_modified` **[V]**.
 - **Write scope.** The Phase 4 `github.write_scope` applies: against the real board, only `test: true` features are written (`test_write_scope_limits_live_boards_to_test_features` **[V]**).
 
-### 5.2 Nothing on the board is input
+### 5.2 Only Priority is a scheduling input
 
-The coordinator reads the board only to compare it with what it last wrote. A moved card, an edited field, a removed item or an archived item never changes a task state, never creates a claim or starts a worker, and never verifies, releases or approves anything. Claims check the local state (`ClaimManager.claim`), and the scheduler and `launch` read only the local state.
+The GitHub Project #2 `Priority` single-select field is the **one explicit read-only
+exception** to the board-as-projection rule. It affects **only the selection of the
+next already-approved, `planned` intake Feature when no Feature is active**.
+It never grants approval, changes task state, updates a claim, interrupts a run,
+alters dependencies, or changes the active Feature's behavior. The scheduler reads
+the configured Project's verified identity and the exact GitHub Issue item
+identity, ignoring foreign and archived items. It makes no Project writes.
+
+The supported order is `P0 / Critical / Urgent`, `P1 / High`,
+`P2 / Normal / Medium`, `P3 / Low`. An unset value is treated as **Normal
+for scheduling only**; GitHub's field value stays untouched. At equal priority,
+the earlier Issue number wins, preserving the former oldest-Issue ordering.
+Unknown configured values, duplicate or mismatched items, and Project read
+failures block **new activation only**. If Priority has not been created, the
+oldest-Issue rule remains for backward compatibility.
+
+**Default on newly added items:** In Project #2 → Settings → Priority, select
+`Normal` as the single-select field's GitHub **Default value**. GitHub then
+populates future Project items automatically; older items are not backfilled.
+The Coordinator never overwrites manually set Priority values. Preview the effective order at any time with `python -m feature_coordinator github intake queue` (or `queue --json`); this is read-only even while a Feature/PR is active. Only Issues with
+an authenticated intake approval enter the Worker queue; just adding an Issue
+to Project #2 does not authorize it. Pending approved Features may accumulate,
+and changing their board Priority does not change their approved task text.
+Changing an approved Issue's title/body still withdraws its approval under the
+existing intake safety rule and requires an operator decision.
+
+### 5.3 Board state remains a projection
+
+The coordinator reads the board only to compare it with what it last wrote. A moved card, a Status/Agent/Feature ID/Blocked Reason edit, a removed item or an archived item never changes a task state, creates a claim or starts a worker, and never verifies, releases or approves anything. **Priority is the sole limited exception**, as described in §5.2: it only orders waiting, already-approved Features. Claims check the local state (`ClaimManager.claim`), and the scheduler and `launch` read only the local state.
 
 Tests: `test_a_card_moved_on_the_board_never_releases_claims_or_completes` **[V]**. Live B6 and B7 **[V]**: a card moved to In Progress or Done started and completed nothing, and a held task moved to Ready could not be claimed. In each case the next sync reported the drift and restored the derived value. Because coordinator and operator share one account (D-26), field edits on the board are not an authorization channel either. Sensitive approvals stay with `python -m feature_coordinator` run by the operator.
 
