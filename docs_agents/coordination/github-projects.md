@@ -142,7 +142,7 @@ oldest-Issue rule remains for backward compatibility.
 **Default on newly added items:** In Project #2 → Settings → Priority, select
 `Normal` as the single-select field's GitHub **Default value**. GitHub then
 populates future Project items automatically; older items are not backfilled.
-The Coordinator never overwrites manually set Priority values. Only Issues with
+The Coordinator never overwrites manually set Priority values. Preview the effective order at any time with `python -m feature_coordinator github intake queue` (or `queue --json`); this is read-only even while a Feature/PR is active. Only Issues with
 an authenticated intake approval enter the Worker queue; just adding an Issue
 to Project #2 does not authorize it. Pending approved Features may accumulate,
 and changing their board Priority does not change their approved task text.
