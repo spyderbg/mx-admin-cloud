@@ -75,10 +75,15 @@ INTAKE ─▶ AWAITING_APPROVAL ─▶ INSPECTING ─▶ CANDIDATE_BUILT ─▶ 
 
 ### 4.1 PR reuse versus creation
 
-- **Lookup.** Before it reuses or creates a PR, the job searches for PRs in **all** GitHub states (open, closed and merged) by head repo, head branch (`source_ref`) and head SHA (`source_sha`). The lookup must be complete. If it cannot complete, the job pauses and creates nothing (§8.4).
-- **Reuse** an existing PR only when the lookup finds exactly one PR for the head, and that PR is open, its head repo is the allowlisted `source_repo`, its head branch is `source_ref`, its head SHA equals `source_sha`, and its base branch equals `base_ref`. The job records the PR number and does not push to it.
-- If the lookup finds any other result for the same head, the job is **refused** (`REFUSED`). This covers a PR that is closed, merged, targets another base or comes from another repo, and it covers more than one PR for the head. If the recorded PR's head has moved away from `source_sha`, the job becomes `STALE`. In every one of these cases the Worker does not create a new PR, and it never opens a second PR for the same head.
-- A **new PR** may be created only when the complete lookup finds *no* PR for that head in any state (open, closed or merged). Creation is idempotent: the job stores the PR number immediately after creation, and on resume it repeats the lookup before it creates.
+- **Lookup.** Before it reuses or creates a PR, the job searches for PRs in **all** GitHub states (open, closed and merged). The lookup must be complete. If it cannot complete, the job pauses and creates nothing (§8.4).
+- **Matching rule.** A PR is a *candidate for the head* if it matches **either** of these, evaluated independently and combined as a union (de-duplicated by PR number):
+  1. **By branch:** its head repo is `source_repo` and its head branch is `source_ref`, whatever its current head SHA is.
+  2. **By SHA:** its head SHA equals `source_sha`, whatever its head repo or head branch is.
+
+  A moved head must not hide a PR: a PR that matches by branch but whose head SHA differs from `source_sha` is still a candidate (and is handled as moved, below). The lookup never requires repo, branch and SHA to all match in order to find a PR; those conditions apply only to reuse.
+- **Reuse** an existing PR only when the lookup finds exactly one candidate PR (by the matching rule above), and that PR is open, its head repo is the allowlisted `source_repo`, its head branch is `source_ref`, its head SHA equals `source_sha`, and its base branch equals `base_ref`. The job records the PR number and does not push to it.
+- If the lookup finds any other result, the job is **refused** (`REFUSED`). This covers a candidate PR that is closed, merged, targets another base, comes from another repo, or matches by branch with a different head SHA, and it covers more than one candidate PR. If the recorded PR's head has moved away from `source_sha`, the job becomes `STALE`. In every one of these cases the Worker does not create a new PR, and it never opens a second PR for the same head.
+- A **new PR** may be created only when the complete lookup finds *no* candidate PR (neither by branch nor by SHA) in any state (open, closed or merged). Creation is idempotent: the job stores the PR number immediately after creation, and on resume it repeats the lookup before it creates.
 - The Worker never closes, retargets or edits someone else's PR except to add its own status/comment.
 
 ## 5. Git safeguards
