@@ -26,17 +26,15 @@ W4.3.1 adds `github.intake` (intake.py): an Issue a command author approves with
 <spec-sha256>` becomes one feature with one task of that role, verified by its `role_gates`. Off by default.
 W4.5 adds `github.planning` (planning_config.py): label-approved, multi-task execution plans (intake_plan.py).
 W4.6.1 adds `github.review` (review_config.py): the advisory, independent AI review of a published Draft PR.
-
 W4.3.3 adds `github.publish` (publish.py): such a feature is integrated, its own branch pushed, ONE
 Draft PR opened to its base branch, and — after a person merged it — completed, its Issue closed and its
 Project #2 card moved to Done. Off by default; the Worker never merges.
 
-W2 (functional Worker): a role names its agent (`provider`), may override its model (`model`,
-validated per agent kind; "default" = the CLI's own default) and can be disabled (`enabled: false`).
-`runtime.execution_backend`: `native-cli` (the installed CLIs with their subscription logins, no OS
-sandbox; opt-in `runtime.native_hardening` confines their agent tools, native_hardening.py) or `bwrap`
-(Phase 3 containment; W1 `broker`, broker_config.py). Role commands use `{python}` (python_env.py).
-Legacy `agent_network`/`credential_files`: no effect.
+W2 (functional Worker): a role names its agent (`provider`), may override its model (`model`, validated per agent
+kind; "default" = the CLI's own default) and can be disabled (`enabled: false`). `runtime.execution_backend`:
+`native-cli` (the installed CLIs with their subscription logins, no OS sandbox; opt-in `runtime.native_hardening`
+confines their agent tools, native_hardening.py) or `bwrap` (Phase 3 containment; W1 `broker`, broker_config.py).
+Role commands use `{python}` (python_env.py). Legacy `agent_network`/`credential_files`: no effect.
 """
 
 from __future__ import annotations
@@ -49,6 +47,7 @@ from typing import Any, Iterable, Mapping
 
 from .broker_config import BrokerConfig, broker_from_mapping, validate_broker
 from .errors import ConfigError, ProviderError
+from .integration_config import GitHubIntegrationConfig, integration_from_mapping
 from .native_hardening import NativeHardening, hardening_from_mapping, validate_hardening
 from .planning_config import GitHubPlanningConfig, planning_from_mapping, validate_planning
 from .review_config import GitHubReviewConfig, review_from_mapping, validate_review
@@ -296,6 +295,7 @@ class GitHubConfig:  # pylint: disable=too-many-instance-attributes
     publish: GitHubPublishConfig = field(default_factory=GitHubPublishConfig)
     planning: GitHubPlanningConfig = field(default_factory=GitHubPlanningConfig)
     review: GitHubReviewConfig = field(default_factory=GitHubReviewConfig)
+    integration: GitHubIntegrationConfig = field(default_factory=GitHubIntegrationConfig)  # W4.7, integration_config.py
 
     @property
     def owner(self) -> str:
@@ -914,7 +914,7 @@ def _github_from_mapping(data: Mapping[str, Any]) -> GitHubConfig:
         raise ConfigError(f"unknown github keys: {sorted(unknown)} (tokens and endpoints never belong here)")
     values: dict[str, Any] = {}
     nested = {"project": _project_from_mapping, "intake": _intake_from_mapping, "publish": _publish_from_mapping,
-              "planning": planning_from_mapping, "review": review_from_mapping}
+              "planning": planning_from_mapping, "review": review_from_mapping, "integration": integration_from_mapping}
     for key in known & set(data):
         default, raw = getattr(defaults, key), data[key]
         if key in nested:
