@@ -100,6 +100,8 @@ INTAKE ─▶ AWAITING_APPROVAL ─▶ INSPECTING ─▶ CANDIDATE_BUILT ─▶ 
 
     Commit ancestry alone does not prove tree equality: `source_sha` being reachable from `dev` never replaces check (c). If any check fails, completion is refused, the job moves to `FAILED`, and operator attention is required.
 
+    Recovery from a failed post-merge verification is **manual operator remediation only**. The merge is already on `dev`, and the coordinator never reverts it, never resets or rewrites `dev`, and never force-pushes, automatically or on its own initiative. The operator decides and performs any remedy (for example a reviewed follow-up fix or a reviewed revert PR) outside the failed job, through the normal approval flow, and a new job is needed for any further integration.
+
 ## 6. Multiple roles and large diffs
 
 ### 6.1 Importing is not authoring
@@ -203,7 +205,7 @@ One JSON file per job, written atomically (write-temp + fsync + rename), append-
 | --- | --- |
 | Stale source ref, or `dev` moved from `base_sha` before the merge (even if still cleanly mergeable) | `STALE`; report both SHAs; new job with fresh inputs, approval and evidence required |
 | Same-head PR exists but cannot be reused (§4.1) | `REFUSED`, or `STALE` if the recorded PR's head moved; no new PR |
-| Post-merge verification fails (§5.10) | `FAILED`; completion refused; operator attention required |
+| Post-merge verification fails (§5.10) | `FAILED`; completion refused; manual operator remediation required, no automatic revert or force-push |
 | Merge conflict | `REFUSED`; no auto-resolution; operator may request a repair task |
 | Missing or failing check/gate | Block at `VALIDATING`/`IN_REVIEW`; `NEEDS_REPAIR` or `FAILED` |
 | Unknown author / non-allowlisted source | `REFUSED` at intake |
