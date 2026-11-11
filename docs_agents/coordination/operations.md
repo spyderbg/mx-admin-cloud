@@ -25,6 +25,8 @@ python -m feature_coordinator status                            # tasks, claims 
 python -m feature_coordinator integrate <feature> --apply       # quiescent barrier → single PR candidate (not opened)
 ```
 
+**Integration jobs of existing branches (W4.7, M1).** The `integration intake | status | abort` commands are a separate job type and are unrelated to `integrate <feature>`. M1 records and checks jobs only: no Git write, no PR, never a merge. See [integration-jobs.md](integration-jobs.md).
+
 **Execution backend (W2).** `runtime.execution_backend` is `native-cli` by default: the installed `claude` and `codex` run directly in the checkout with the operator's **subscription logins**. That is **not a security sandbox**: write scopes are verified after each run, and changes outside the role are rejected and left in place. `bwrap` selects the Phase 3 containment. There is never a fallback between the two. Design: [worker-functional.md](worker-functional.md).
 
 **The Worker (W2).** `python -m feature_coordinator work <feature>` (dry run) lists the tasks in dependency order with their agent, model and state, and checks the workspace. With `--apply` it launches READY tasks as separate `launch` processes:

@@ -42,6 +42,10 @@ W3 checkpoints (multi-step tasks; see `checkpoints --help`):
     integrate FEATURE [--apply]           the quiescent integration barrier → PR candidate
     hold TASK --reason R [--apply] / release TASK [--apply]
                             human escalation (needs-human); only a release resumes the task
+W4.7 integration jobs of EXISTING branches/PRs (M1; see `integration --help`):
+    integration intake --source-repo R --source-ref B --source-sha SHA --base dev --base-sha SHA --issue N
+                [--pr N] [--apply] [--json]   read-only checks; --apply records the job (no Git write)
+    integration status [--job J] [--json] | abort --job J --reason TEXT [--apply] [--json]
 GitHub Issues (Phase 4; see `python -m feature_coordinator github --help`):
     github status | labels | sync | reconcile | inspect | owned | deps | test-lifecycle | cleanup-test
     github intake show N | poll [--apply] | status
@@ -274,6 +278,8 @@ def build_parser() -> argparse.ArgumentParser:
     register_checkpoints(sub)
     from .service_commands import register as register_service  # pylint: disable=import-outside-toplevel
     register_service(sub)
+    from .integration_commands import register as register_integration  # pylint: disable=import-outside-toplevel
+    register_integration(sub)
     from .github_commands import register as register_github  # pylint: disable=import-outside-toplevel
     from .project_commands import register as register_project  # pylint: disable=import-outside-toplevel
     from .intake_commands import register as register_intake  # pylint: disable=import-outside-toplevel
