@@ -40,24 +40,20 @@ records it); repeating that command returns the same new job. There is no force 
 
 from __future__ import annotations
 
+import collections
+import contextlib
 import functools
-import hashlib
 import heapq
 import os
 import re
-import signal
 import subprocess
-import tempfile
-import threading
-import unicodedata
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import IO, Any, Callable, Iterable, NoReturn
+from typing import Any, Callable, Iterable, Iterator
 
 from .config import ProjectConfig
-from .errors import CoordinatorError, GitHubError, GitHubNotFoundError, GitOperationError
-from .gitops import GitCoordinator
-from .gitsafe import assert_no_execution_config, git_argv, hardened_env, run_git
+from .errors import CoordinatorError, GitHubError, GitHubNotFoundError, GitOperationError, RemoteUnavailableError
+from .gitsafe import git_argv, hardened_env
 from .integration import (
     IntakeRequest,
     IntegrationError,
@@ -68,15 +64,33 @@ from .integration import (
     clean_text,
     job_summary,
 )
+from .integration_isolation import IsolatedRepository, assert_no_execution_config_strict, isolated_remote_head
+from .integration_objects import (  # re-exported: M1's names stay available here
+    MAX_COMMIT_OBJECT,
+    CommitObject,
+    HistoryRefused,
+    HistoryUnverifiable,
+    Identity,
+    ObjectMissing,
+    _CommitReader,
+    commit_object_sha,
+    object_sha,
+    parse_commit,
+)
 from .issue_sync import SimulatedCrash
 from .locks import LockSet
 from .model import utc_now
-from .paths import PathPolicy
 from .publish import github_repository_of
+
+__all__ = [  # the public names, including those re-exported from integration_objects (M1 imports them from here)
+    "CheckResult", "CommitObject", "HistoryRefused", "HistoryUnverifiable", "Identity", "IntakeReport",
+    "IntegrationIntake", "LOCAL_GIT_ARGS", "LOCAL_GIT_ENV", "MAX_BASE_WALK", "MAX_COMMIT_OBJECT", "MAX_INTAKE_COMMITS",
+    "MAX_LISTED", "NO_GRAFT_FILE", "ObjectMissing", "READ_ONLY_SUBCOMMANDS", "ReadOnlyGit", "VerifiedRange",
+    "check_actor", "commit_object_sha", "lazy_fetch_switch_supported", "object_sha", "parse_commit",
+]
 
 MAX_INTAKE_COMMITS = 2000      # a larger range is refused (split the source), never truncated (design §6.3)
 MAX_BASE_WALK = 100_000        # base commits read to prove the range's boundary parents are in base_sha
-MAX_COMMIT_OBJECT = 16 << 20   # a larger commit object is refused (range) or not verifiable (base)
 MAX_LISTED = 20                # identities and reasons shown per list in a record
 # The only Git subcommands ReadOnlyGit runs on the checkout. `ls-remote` (origin's refs) goes through
 # GitCoordinator.remote_head, which bounds it and kills its process group on timeout.
@@ -112,136 +126,6 @@ LOCAL_GIT_ENV: dict[str, str] = {"GIT_NO_LAZY_FETCH": "1", "GIT_NO_REPLACE_OBJEC
 _UNSET_ENV = frozenset({"GIT_SHALLOW_FILE", "GIT_REPLACE_REF_BASE", "GIT_QUARANTINE_PATH"})
 
 
-class HistoryUnverifiable(GitOperationError):
-    """The checkout's view of the source history is incomplete or does not match the commit objects (a missing
-    object, a shallow or grafted history, a corrupt object, unexpected Git output). The intake DEFERS — the job
-    stays in INTAKE — and never accepts."""
-
-
-class HistoryRefused(GitOperationError):
-    """A property of the (hash-verified) source history fails the rules — a malformed commit object, a range or
-    fork point beyond the limits. The intake REFUSES."""
-
-
-@dataclass(frozen=True)
-class Identity:
-    """An author or committer of a commit object, as recorded (no mailmap)."""
-
-    name: str
-    email: str
-    time: int
-
-    @property
-    def key(self) -> str:
-        """The e-mail compared with github.integration.known_authors: ASCII letters lowercased, nothing else
-        (no Unicode case folding: `K` KELVIN SIGN must not become `k`)."""
-        return self.email.encode("utf-8").lower().decode("utf-8")
-
-    def shown(self) -> str:
-        """`Name <email>` for a record (one printable line)."""
-        return clean_text(f"{self.name} <{self.email}>", 200)
-
-
-@dataclass(frozen=True)
-class CommitObject:
-    """A hash-verified commit object: its SHA, tree, parents (in order), author and committer."""
-
-    sha: str
-    tree: str
-    parents: tuple[str, ...]
-    author: Identity
-    committer: Identity
-
-
-_HEX40 = rb"[0-9a-f]{40}"
-_IDENT_RE = re.compile(rb"(?P<name>[^<>\n\x00]*) <(?P<email>[^<>\n\x00]*)> (?P<time>[0-9]{1,20}) (?P<tz>[+-][0-9]{4})")
-_EXTRA_HEADER_RE = re.compile(rb"[a-z][a-z0-9-]{0,63} .*", re.DOTALL)
-_CORE_HEADERS = (b"tree ", b"parent ", b"author ", b"committer ")
-
-
-def parse_commit(sha: str, body: bytes, *, strict: bool = True) -> CommitObject:
-    """The commit object *body* of *sha* (already hash-verified), parsed by its exact standard form:
-
-        tree <sha>\n (parent <sha>\n)* author <ident>\n committer <ident>\n (<key> <value>\n ( <continuation>\n)*)*
-        \n <message>
-
-    with <ident> = `<name> <<email>> <unix time> <+-hhmm>`. Anything else — a missing or repeated core header,
-    headers out of order, a NUL byte, a control character in a name, an e-mail that is empty, not UTF-8 or contains
-    whitespace or control characters — is malformed: HistoryRefused when *strict* (a commit to integrate),
-    HistoryUnverifiable otherwise (a base commit read only for its parents; identities are not checked there)."""
-    def bad(reason: str) -> NoReturn:
-        error = HistoryRefused if strict else HistoryUnverifiable
-        raise error(f"commit {sha[:12]} is malformed: {reason}")
-
-    header, separator, _message = body.partition(b"\n\n")
-    if not separator:
-        bad("no blank line ends its header")
-    if b"\x00" in header:
-        bad("its header contains a NUL byte")
-    lines = header.split(b"\n")
-    tree = re.fullmatch(b"tree (" + _HEX40 + b")", lines[0])
-    if tree is None:
-        bad("its first header line is not `tree <sha>`")
-    index, parents = 1, []
-    while index < len(lines) and lines[index].startswith(b"parent "):
-        parent = re.fullmatch(b"parent (" + _HEX40 + b")", lines[index])
-        if parent is None:
-            bad(f"invalid parent line {_shown_bytes(lines[index])}")
-        parents.append(parent.group(1).decode("ascii"))
-        index += 1
-    if strict and len(set(parents)) != len(parents):
-        bad("it names a parent twice")
-    identities = []
-    for role in (b"author", b"committer"):
-        if index >= len(lines) or not lines[index].startswith(role + b" "):
-            bad(f"no {role.decode()} line where Git writes it")
-        identities.append(_identity(lines[index][len(role) + 1:], role.decode(), strict, bad))
-        index += 1
-    extra = False
-    for line in lines[index:]:
-        if line.startswith(b" ") and extra:
-            continue  # continuation of a multi-line extra header (gpgsig, mergetag)
-        if line.startswith(_CORE_HEADERS) or not _EXTRA_HEADER_RE.fullmatch(line):
-            bad(f"unexpected header line {_shown_bytes(line)}")
-        extra = True
-    return CommitObject(sha=sha, tree=tree.group(1).decode("ascii"), parents=tuple(parents),
-                        author=identities[0], committer=identities[1])
-
-
-# Bidirectional-text controls: a name containing one could display as another (Trojan Source).
-_BIDI_CONTROLS = frozenset("\u061c\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069")
-
-
-def _identity(raw: bytes, role: str, strict: bool, bad: Callable[[str], NoReturn]) -> Identity:
-    match = _IDENT_RE.fullmatch(raw)
-    if match is None:
-        if strict:
-            bad(f"its {role} is not `Name <email> time zone`: {_shown_bytes(raw)}")
-        return Identity(name="", email="", time=0)
-    name = match.group("name").decode("utf-8", "replace")
-    try:
-        email = match.group("email").decode("utf-8")
-    except UnicodeDecodeError:
-        email = ""
-        if strict:
-            bad(f"its {role} e-mail is not UTF-8")
-    if strict:
-        if not email or any(ch.isspace() or unicodedata.category(ch).startswith("C") for ch in email):
-            bad(f"its {role} e-mail {email!r} is empty or contains whitespace or control characters")
-        if any(unicodedata.category(ch) == "Cc" or ch in _BIDI_CONTROLS for ch in name):
-            bad(f"its {role} name {name!r} contains control or bidirectional-text characters")
-    return Identity(name=name, email=email, time=int(match.group("time")))
-
-
-def _shown_bytes(raw: bytes) -> str:
-    return clean_text(repr(raw[:120]), 160)
-
-
-def commit_object_sha(body: bytes) -> str:
-    """The SHA-1 object ID Git gives a commit object with this content."""
-    return hashlib.sha1(b"commit %d\x00" % len(body) + body).hexdigest()
-
-
 @functools.lru_cache(maxsize=1)
 def lazy_fetch_switch_supported() -> bool:
     """True when this Git has `--no-lazy-fetch` (Git ≥ 2.44): then GIT_NO_LAZY_FETCH=1 is known to be honoured by
@@ -264,118 +148,90 @@ class VerifiedRange:
     base_commits_read: int
 
 
-class _CommitReader:
-    """One `git cat-file --batch` process: one object per request, length-delimited output, every commit object's
-    SHA-1 recomputed. A missing object, another object type, a corrupt object or unexpected output raises
-    HistoryUnverifiable; the whole read is bounded by *timeout* (the process group is killed)."""
+class _IsolatedRemote:  # pylint: disable=too-few-public-methods
+    """ReadOnlyGit's remote reader: `ls-remote` of the URL validated at preflight, run in the private repository
+    (integration_isolation.py), never with the checkout as the repository."""
 
-    def __init__(self, argv: list[str], env: dict[str, str], timeout: float) -> None:
-        self._stderr: IO[bytes] = tempfile.TemporaryFile()  # pylint: disable=consider-using-with
-        self._proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,  # pylint: disable=consider-using-with
-                                      stderr=self._stderr, env=env, start_new_session=True)
-        self.timed_out = False
-        self._timer = threading.Timer(timeout, self._kill)
-        self._timer.daemon = True
-        self._timer.start()
-        self.count = 0
+    def __init__(self, git: "ReadOnlyGit") -> None:
+        self._owner = git
 
-    def _kill(self) -> None:
-        self.timed_out = True
-        try:
-            os.killpg(self._proc.pid, signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            self._proc.kill()
-
-    def read(self, sha: str, *, strict: bool) -> CommitObject:
-        """The verified, parsed commit *sha*."""
-        stdin, stdout = self._proc.stdin, self._proc.stdout
-        assert stdin is not None and stdout is not None
-        try:
-            stdin.write(sha.encode("ascii") + b"\n")
-            stdin.flush()
-            header = stdout.readline(200)
-        except OSError as exc:
-            raise self._failed(f"reading {sha[:12]}: {exc}") from exc
-        if header == f"{sha} missing\n".encode("ascii"):
-            raise HistoryUnverifiable(f"commit {sha[:12]} is not present in this checkout: the history is "
-                                      "incomplete (shallow, partial or damaged clone); fetch the full history")
-        match = re.fullmatch(b"(" + _HEX40 + b") ([a-z]{1,10}) ([0-9]{1,12})\n", header)
-        if match is None or match.group(1).decode("ascii") != sha:
-            raise self._failed(f"unexpected output for {sha[:12]}: {_shown_bytes(header)}")
-        size = int(match.group(3))
-        if size > MAX_COMMIT_OBJECT:
-            self.close()
-            error = HistoryRefused if strict else HistoryUnverifiable
-            raise error(f"commit {sha[:12]} is larger than {MAX_COMMIT_OBJECT} bytes")
-        body = stdout.read(size)
-        if len(body) != size or stdout.read(1) != b"\n":
-            raise self._failed(f"truncated output for {sha[:12]}")
-        if match.group(2) != b"commit":
-            raise HistoryUnverifiable(f"object {sha[:12]} is a {match.group(2).decode('ascii')}, not a commit")
-        if commit_object_sha(body) != sha:
-            raise HistoryUnverifiable(f"the object stored as {sha[:12]} does not hash to that SHA: the checkout's "
-                                      "object store is corrupt or was tampered with (`git fsck`)")
-        self.count += 1
-        return parse_commit(sha, body, strict=strict)
-
-    def _failed(self, detail: str) -> HistoryUnverifiable:
-        self._stop()
-        if self.timed_out:
-            error = HistoryUnverifiable(f"reading the commit objects did not finish in time ({detail})")
-        else:
-            self._stderr.seek(0)
-            stderr = clean_text(self._stderr.read(400).decode("utf-8", "replace"), 200)
-            error = HistoryUnverifiable(f"git cat-file failed: {detail}{f' ({stderr})' if stderr else ''}")
-        self.close()
-        return error
-
-    def _stop(self) -> None:
-        """End the process and close its pipes (idempotent)."""
-        self._timer.cancel()
-        if self._proc.poll() is None:
-            try:
-                if self._proc.stdin and not self._proc.stdin.closed:
-                    self._proc.stdin.close()
-                self._proc.wait(timeout=5)
-            except (OSError, subprocess.TimeoutExpired):
-                self._kill()
-                self._proc.wait()
-        for stream in (self._proc.stdout, self._proc.stdin):
-            if stream is not None and not stream.closed:
-                stream.close()
-
-    def close(self) -> None:
-        """Stop the process and release everything (idempotent)."""
-        self._stop()
-        if not self._stderr.closed:
-            self._stderr.close()
-
-    def __enter__(self) -> "_CommitReader":
-        return self
-
-    def __exit__(self, *_exc: Any) -> None:
-        self.close()
+    def remote_head(self, branch: str, *, timeout: float) -> str | None:
+        """origin's commit for refs/heads/<branch> (None: no such branch); RemoteUnavailableError on failure."""
+        url = self._owner.origin_url()
+        return isolated_remote_head(self._owner.isolated(), url, branch, timeout=timeout)
 
 
 class ReadOnlyGit:
-    """The only Git access of the M1 intake: read-only queries on one checkout, every local one under
-    LOCAL_GIT_ARGS / LOCAL_GIT_ENV (no replace refs, grafts, commit-graph, lazy fetch or maintenance) on top of the
-    gitsafe hardening. Exposes no mutation."""
+    """The only Git access of the intake and the inspection: read-only queries, every one under LOCAL_GIT_ARGS /
+    LOCAL_GIT_ENV (no replace refs, grafts, commit-graph, lazy fetch or maintenance) on top of the gitsafe hardening.
+    Exposes no mutation.
+
+    M2 (integration_isolation.py): every query that reads objects (`rev-list`, `cat-file`, `merge-base`) or a remote
+    (`ls-remote`) runs in a private repository whose only link to the checkout is `objects/info/alternates`; only the
+    preflight queries that inspect the checkout itself (`config`, `remote get-url`, `rev-parse`) run on it. Use
+    `with git.session():` around one run so the private repository is removed afterwards."""
 
     def __init__(self, repo: Path, config: ProjectConfig, locks: LockSet, *, timeout: float) -> None:
         self.root = Path(repo)
         self.config = config
         self.timeout = timeout
-        # Only its bounded `ls-remote` (remote_head) is used.
-        self._git = GitCoordinator(self.root, locks, PathPolicy(self.root, config), tmp_dir=locks.dir.parent / "tmp")
+        self.scratch = locks.dir.parent / "tmp"
+        self._git = _IsolatedRemote(self)   # its remote_head is the only remote access (tests replace it)
         self._checked = False
+        self._origin_url: str | None = None
+        self._isolated: IsolatedRepository | None = None
+        self._sessions = 0
 
     def _guard(self) -> None:
-        """Refuse a checkout whose own Git configuration would run a program (ls-remote may start a credential
-        helper or ssh): fail closed before the first command (gitsafe layer 2)."""
+        """Refuse a checkout whose own Git configuration names a program: fail closed before the first command
+        (strict superset of gitsafe layer 2). Since M2 no object or remote query reads that configuration (the
+        private repository), so this is a policy check, repeated before any decision is recorded (recheck)."""
         if not self._checked:
-            assert_no_execution_config(self.root, where="the checkout (integration intake)")
+            assert_no_execution_config_strict(self.root, where="the checkout (integration job)", timeout=self.timeout)
             self._checked = True
+
+    def recheck(self) -> None:
+        """The strict configuration scan AGAIN (right before a decision is recorded): a checkout changed during the
+        run to name a program is refused as tampered (GitConfigExecutionError), even though no program could run."""
+        assert_no_execution_config_strict(self.root, where="the checkout (integration job, changed during the run)",
+                                          timeout=self.timeout)
+
+    # -- the private repository (M2) ---------------------------------------------------------------
+
+    @contextlib.contextmanager
+    def session(self) -> Iterator["ReadOnlyGit"]:
+        """One run: the private repository lives until the outermost session ends, then it is removed."""
+        self._sessions += 1
+        try:
+            yield self
+        finally:
+            self._sessions -= 1
+            if not self._sessions:
+                self.close()
+
+    def close(self) -> None:
+        """Remove the private repository (idempotent; a later query creates a new one)."""
+        if self._isolated is not None:
+            self._isolated.close()
+            self._isolated = None
+
+    def isolated(self) -> IsolatedRepository:
+        """The private repository of this run (created on first use, linked to the checkout's object directory)."""
+        if self._isolated is None:
+            self._guard()
+            common = Path(os.path.join(self.root, self._run_checkout("rev-parse", "--git-common-dir").strip()))
+            objects = Path(os.path.realpath(common / "objects"))
+            self._isolated = IsolatedRepository(objects, scratch=self.scratch)
+            self._isolated.open()
+        return self._isolated
+
+    def origin_url(self) -> str:
+        """origin's URL as validated by origin_problem (read once; never re-read from the checkout)."""
+        if self._origin_url is None:
+            problem = self.origin_problem()
+            if problem or self._origin_url is None:
+                raise RemoteUnavailableError(f"origin cannot be used: {problem or 'not validated'}")
+        return self._origin_url
 
     @staticmethod
     def _env() -> dict[str, str]:
@@ -390,11 +246,20 @@ class ReadOnlyGit:
             raise GitOperationError(f"integration intake: git {args[0] if args else ''} is not a read-only query")
         return (*LOCAL_GIT_ARGS, *args)
 
-    def _query(self, *args: str, stdin: str | None = None) -> subprocess.CompletedProcess:
+    def _query(self, *args: str, stdin: str | None = None, checkout: bool = False) -> subprocess.CompletedProcess:
+        """A read-only query: in the private repository (default) or, for *checkout* preflight queries
+        (config/remote/rev-parse — no object access), on the checkout itself."""
         local = self._local(*args)
         self._guard()
+        if checkout:
+            if args[0] not in ("config", "remote", "rev-parse"):
+                raise GitOperationError(f"integration: git {args[0]} never runs on the checkout itself")
+            argv = git_argv(self.root, *local)
+        else:
+            argv = self.isolated().argv(*local)
         try:
-            return run_git(self.root, *local, env=self._env(), input=stdin, timeout=self.timeout)
+            return subprocess.run(argv, capture_output=True, text=True, input=stdin, timeout=self.timeout,
+                                  env=self._env(), check=False)
         except subprocess.TimeoutExpired as exc:
             raise GitOperationError(f"git {args[0]} did not finish within {self.timeout:.0f}s") from exc
 
@@ -404,16 +269,22 @@ class ReadOnlyGit:
             raise GitOperationError(f"git {' '.join(args[:2])} failed: {clean_text(result.stderr, 200)}")
         return result.stdout
 
+    def _run_checkout(self, *args: str) -> str:
+        result = self._query(*args, checkout=True)
+        if result.returncode != 0:
+            raise GitOperationError(f"git {' '.join(args[:2])} failed: {clean_text(result.stderr, 200)}")
+        return result.stdout
+
     def _lines(self, *args: str) -> tuple[str, ...]:
-        """Non-empty output lines; a failing query (e.g. an unset key) is empty."""
-        result = self._query(*args)
+        """Non-empty output lines of a checkout query; a failing query (e.g. an unset key) is empty."""
+        result = self._query(*args, checkout=True)
         return tuple(line.strip() for line in result.stdout.splitlines() if line.strip()) \
             if result.returncode == 0 else ()
 
     # -- the checkout ------------------------------------------------------------------------------
 
     def origin_problem(self) -> str | None:
-        """Why `origin` is not exactly `github.repository` (None: it is). Refs are resolved through it."""
+        """Why `origin` is not exactly `github.repository` (None: it is; its URL is then kept for remote reads)."""
         configured = self._lines("config", "--get-all", "remote.origin.url")
         fetch = self._lines("remote", "get-url", "--all", "origin") if configured else ()
         push = self._lines("remote", "get-url", "--push", "--all", "origin") if configured else ()
@@ -425,21 +296,22 @@ class ReadOnlyGit:
         repository = github_repository_of(configured[0], self.config.github.hostname)
         if repository is None or repository.lower() != self.config.github.repository.lower():
             return f"origin ({clean_text(configured[0], 120)!r}) is not {wanted}"
+        self._origin_url = configured[0]
         return None
 
     def repository_problem(self) -> str | None:
         """Why this checkout's local history cannot prove provenance, or why a read could fetch implicitly (None:
         neither). Refused: a shallow clone, a graft file, an object format other than SHA-1, and a partial clone
         (promisor remote) when Git cannot be told never to fetch (no `--no-lazy-fetch`)."""
-        if self._run("rev-parse", "--is-shallow-repository").strip() != "false":
+        if self._run_checkout("rev-parse", "--is-shallow-repository").strip() != "false":
             return ("the checkout is a shallow clone: commits beyond its boundary cannot be checked; fetch the full "
                     "history (`git fetch --unshallow origin`)")
-        common = self.root / self._run("rev-parse", "--git-common-dir").strip()
+        common = self.root / self._run_checkout("rev-parse", "--git-common-dir").strip()
         for name, why in (("shallow", "a shallow boundary file"), ("info/grafts", "a graft file")):
             if os.path.lexists(common / name):
                 return (f"the checkout has {why} ({name}), which rewrites the history locally: not supported "
                         "for provenance; remove it")
-        object_format = self._run("rev-parse", "--show-object-format").strip()
+        object_format = self._run_checkout("rev-parse", "--show-object-format").strip()
         if object_format != "sha1":
             return f"the checkout uses the {clean_text(object_format, 20)!r} object format; M1 supports SHA-1 only"
         promisors = self.promisor_remotes()
@@ -453,7 +325,7 @@ class ReadOnlyGit:
         """Remotes Git may lazily fetch missing objects from: `extensions.partialClone` and every
         `remote.<name>.promisor` that is not explicitly false (effective configuration, includes resolved)."""
         names = set()
-        for entry in self._run("config", "--list", "-z").split("\0"):
+        for entry in self._run_checkout("config", "--list", "-z").split("\0"):
             key, _sep, value = entry.partition("\n")
             key = key.strip()
             if key.lower() == "extensions.partialclone":
@@ -493,14 +365,35 @@ class ReadOnlyGit:
         result = self._query("merge-base", "--is-ancestor", ancestor, descendant)
         if result.returncode in (0, 1):
             return result.returncode == 0
+        self._raise_if_incomplete(descendant)
         raise GitOperationError(f"git merge-base --is-ancestor failed: {clean_text(result.stderr, 200)}")
+
+    def merge_bases(self, base: str, head: str) -> list[str]:
+        """Git's merge bases of *base* and *head* (`merge-base --all`; empty: no common history). The caller must
+        prove each one against hash-verified data (M2: they must be boundary parents of the verified range)."""
+        _require_sha(base)
+        _require_sha(head)
+        result = self._query("merge-base", "--all", base, head)
+        if result.returncode == 1 and not result.stdout.strip():
+            return []
+        if result.returncode != 0:
+            self._raise_if_incomplete(head)
+            raise GitOperationError(f"git merge-base --all failed: {clean_text(result.stderr, 200)}")
+        shas = result.stdout.split()
+        if not shas or not all(SHA_RE.fullmatch(sha) for sha in shas) or len(set(shas)) != len(shas):
+            raise HistoryUnverifiable(f"unexpected `git merge-base --all` output {clean_text(result.stdout, 120)!r}")
+        return shas
 
     def range_commits(self, base: str, head: str, *, limit: int) -> list[tuple[str, tuple[str, ...]]]:
         """Git's view of base..head: (commit, parents) per line of `rev-list --parents`, at most *limit*. Strictly
         parsed (40-hex tokens only, no duplicate commit); anything else is HistoryUnverifiable."""
         _require_sha(base)
         _require_sha(head)
-        out = self._run("rev-list", "--parents", f"--max-count={limit}", head, f"^{base}", "--")
+        try:
+            out = self._run("rev-list", "--parents", f"--max-count={limit}", head, f"^{base}", "--")
+        except GitOperationError:
+            self._raise_if_incomplete(head)
+            raise
         if out and not out.endswith("\n"):
             raise HistoryUnverifiable("`git rev-list` output does not end with a newline (truncated?)")
         rows: list[tuple[str, tuple[str, ...]]] = []
@@ -513,10 +406,46 @@ class ReadOnlyGit:
             raise HistoryUnverifiable("`git rev-list` listed a commit twice")
         return rows
 
+    def missing_parent(self, start: str, *, limit: int = 5000) -> tuple[str, str] | None:
+        """(child, parent) for the first commit reachable from *start* whose parent object is not in the checkout,
+        walking hash-verified commit objects (at most *limit*); None when none is found (or the walk cannot go on)."""
+        child_of: dict[str, str | None] = {start: None}
+        queue = collections.deque([start])
+        with self.reader() as reader:
+            while queue and reader.count < limit:
+                sha = queue.popleft()
+                try:
+                    commit = reader.read(sha, strict=False)
+                except ObjectMissing:
+                    child = child_of[sha]
+                    return (child, sha) if child is not None else None
+                except HistoryUnverifiable:
+                    return None
+                for parent in commit.parents:
+                    if parent not in child_of:
+                        child_of[parent] = sha
+                        queue.append(parent)
+        return None
+
+    def _raise_if_incomplete(self, start: str) -> None:
+        """After Git failed to walk from *start*: HistoryUnverifiable naming the commit whose parent is missing,
+        when that is the cause (in the private repository a checkout's shallow boundary is such a missing parent)."""
+        try:
+            found = self.missing_parent(start)
+        except (CoordinatorError, OSError):
+            return
+        if found is not None:
+            child, parent = found
+            raise HistoryUnverifiable(f"commit {child[:12]} names parent {parent[:12]}, which is not present in this "
+                                      "checkout: the local history is incomplete or was rewritten (shallow boundary, "
+                                      "graft, partial or damaged clone) and cannot be used for provenance; fetch the "
+                                      "full history")
+
     def reader(self) -> _CommitReader:
-        """A hash-verifying commit reader on this checkout (use as a context manager)."""
+        """A hash-verifying object reader over the checkout's objects, run in the private repository (use as a
+        context manager)."""
         self._guard()
-        return _CommitReader(git_argv(self.root, *self._local("cat-file", "--batch")), self._env(), self.timeout)
+        return _CommitReader(self.isolated().argv(*self._local("cat-file", "--batch")), self._env(), self.timeout)
 
     def verified_range(self, base: str, head: str, *, limit: int = MAX_INTAKE_COMMITS,
                        base_limit: int = MAX_BASE_WALK) -> VerifiedRange:
@@ -672,6 +601,10 @@ class IntegrationIntake:
             supersede: str | None = None) -> IntakeReport:
         """Check *request*; with *apply*, record (or resume) its job and move it out of INTAKE when the checks
         decide. Raises IntegrationError (nothing recorded) for a precondition that is not the request's fault."""
+        with self.git.session():  # M2: the private repository of this run is removed when it ends
+            return self._run(request, apply=apply, actor=actor, supersede=supersede)
+
+    def _run(self, request: IntakeRequest, *, apply: bool, actor: str, supersede: str | None) -> IntakeReport:
         report = IntakeReport(applied=apply)
         if apply and not self.config.github.integration.enabled:
             raise IntegrationError("github.integration.enabled is false: integration jobs are recorded only once an "
@@ -692,6 +625,7 @@ class IntegrationIntake:
         self._fault("after-create")
         result = self.check(request)
         self._fault("after-checks")
+        self.git.recheck()  # M2: a checkout changed during the run to name a program is refused; nothing recorded
         return self._decide(job.job_id, result, actor, report)
 
     def _dry_run(self, request: IntakeRequest, supersede: str | None, report: IntakeReport) -> IntakeReport:
