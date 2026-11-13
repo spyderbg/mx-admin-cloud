@@ -8,7 +8,7 @@
  * at the time this suite was written — not guessed from behaviour.
  */
 
-import type { Locator, Page } from '@playwright/test'
+import { expect, type Locator, type Page } from '@playwright/test'
 
 // ---------------------------------------------------------------------------
 // Login (views/LoginView.vue, components/LoginForm.vue)
@@ -51,9 +51,12 @@ export const sidebar = {
 
 export const dashboard = {
   addCategoryButton: (page: Page): Locator => page.locator('.page-header button.btn-primary'),
-  cards: (page: Page): Locator => page.locator('.cd-card'),
-  cardByName: (page: Page, name: string): Locator => page.locator('.cd-card', { has: page.locator('h5', { hasText: name }) }),
-  cardItemCount: (card: Locator): Locator => card.locator('p.text-muted'),
+  // components/CollectionCard.vue — the card's description line is the "N items" count.
+  cards: (page: Page): Locator => page.locator('.collection-card'),
+  cardByName: (page: Page, name: string): Locator =>
+    page.locator('.collection-card', { has: page.locator('h5', { hasText: name }) }),
+  cardIcons: (page: Page): Locator => page.locator('.collection-card img.collection-card-image'),
+  cardItemCount: (card: Locator): Locator => card.locator('.collection-card-copy p'),
   archivedSection: (page: Page): Locator => page.locator('.archived-section'),
   archivedToggle: (page: Page): Locator => page.locator('.archived-toggle'),
   archivedRows: (page: Page): Locator => page.locator('.archived-row'),
@@ -86,6 +89,9 @@ export const modal = {
 
 export const addItem = {
   openButton: (page: Page): Locator => page.locator('.category-items-panel button.btn-primary'),
+  // Opt-in since 84bc38e: create_item generates no voices unless this is checked.
+  generateVoicesCheckbox: (page: Page): Locator =>
+    page.locator('.cd-modal-body .form-check-label', { hasText: 'Generate the voices' }).locator('input[type="checkbox"]'),
 }
 
 // ---------------------------------------------------------------------------
@@ -142,26 +148,58 @@ export const itemDetail = {
   addImageTile: (page: Page): Locator => page.locator('.id-add-image-card'),
   emptyImagesState: (page: Page): Locator => page.locator('.file-empty'),
   /**
-   * Three hidden `<input type=file>` elements share no distinguishing attribute
-   * (add image / replace image / add-or-replace voice) — ordinal position in the DOM
-   * is the only handle. Fragile by nature; if a future edit reorders these three
-   * `<input>` tags in ItemDetailsView.vue, update the indices here, not each spec.
+   * The two hidden `<input type=file>` elements in ItemDetailsView.vue (add image /
+   * replace image) share no distinguishing attribute — ordinal position in the DOM is
+   * the only handle. Fragile by nature; if a future edit reorders them, update the
+   * indices here, not each spec.
    */
   hiddenFileInputs: (page: Page): Locator => page.locator('input[type="file"].d-none'),
   addImageInput: (page: Page): Locator => itemDetail.hiddenFileInputs(page).nth(0),
   replaceImageInput: (page: Page): Locator => itemDetail.hiddenFileInputs(page).nth(1),
-  voiceFileInput: (page: Page): Locator => itemDetail.hiddenFileInputs(page).nth(2),
 
-  // Fixture items never have more than one voice per language, so every language
-  // group has exactly one (always-visible) row — no expand/collapse to deal with.
-  voiceRows: (page: Page): Locator => page.locator('.id-voices-table tbody tr'),
-  voicePlayButtons: (page: Page): Locator => page.locator('.id-audio-play'),
-  voiceDeleteButton: (row: Locator): Locator => row.locator('.id-action-delete'),
+  // The item's voices render as a VoiceCardsGrid in the summary panel: one card (and one
+  // play button) per SUPPORTED_LANGUAGES entry.
+  voiceCards: (page: Page): Locator => page.locator('.id-summary-voices-panel .voice-card'),
+  voicePlayButtons: (page: Page): Locator => page.locator('.id-summary-voices-panel .voice-card .btn-play'),
 
-  releaseButton: (page: Page): Locator => page.locator('.id-release-item-btn'),
-  deleteItemButton: (page: Page): Locator => page.locator('.id-delete-item-btn'),
+  // The item actions (`itemActions`) render twice: inline buttons, shown only when the
+  // item-details container is >= 64rem wide, and a MobileActionsMenu ("⋯") otherwise —
+  // which is what Desktop Chrome's 1280px viewport gets once the sidebar is subtracted.
+  // Neither carries a per-action class: release is the "success" tone, delete the only
+  // danger action. Use clickItemAction() rather than these locators directly.
+  releaseButton: (page: Page): Locator =>
+    page.locator('.id-summary-panel .id-summary-buttons .id-summary-action-success'),
+  deleteItemButton: (page: Page): Locator =>
+    page.locator('.id-summary-panel .id-summary-buttons .btn-outline-danger'),
+  itemActionsMenuTrigger: (page: Page): Locator =>
+    page.locator('.id-summary-panel .id-summary-menu .mobile-actions-trigger'),
+  itemActionsMenuItem: (page: Page, action: 'release' | 'delete'): Locator =>
+    page.locator(`.id-summary-panel .id-summary-menu .mobile-actions-item-${action === 'delete' ? 'danger' : 'success'}`),
+  /** Clicks an item action through whichever of the two renderings is visible. */
+  clickItemAction: async (page: Page, action: 'release' | 'delete'): Promise<void> => {
+    const trigger = itemDetail.itemActionsMenuTrigger(page)
+    const inline = action === 'delete' ? itemDetail.deleteItemButton(page) : itemDetail.releaseButton(page)
+    await expect(inline.or(trigger).filter({ visible: true })).toHaveCount(1)
+    if (await inline.isVisible()) {
+      await inline.click()
+      return
+    }
+    await trigger.click()
+    await itemDetail.itemActionsMenuItem(page, action).click()
+  },
 
   imagePreviewOverlay: (page: Page): Locator => page.locator('.image-preview-overlay'),
+}
+
+// ---------------------------------------------------------------------------
+// Native <dialog> confirmation (components/DeleteFileDialog.vue on VoiceDialog.vue) —
+// used for image/voice file deletion, distinct from the cd-modal pattern above.
+// ---------------------------------------------------------------------------
+
+export const fileDialog = {
+  box: (page: Page): Locator => page.locator('dialog.voice-dialog[open]'),
+  title: (page: Page): Locator => page.locator('dialog.voice-dialog[open] .voice-dialog-header h2'),
+  confirmButton: (page: Page): Locator => page.locator('dialog.voice-dialog[open] .delete-file-confirm'),
 }
 
 // ---------------------------------------------------------------------------

@@ -20,6 +20,8 @@ test('creating "cherry" in C_Fruits translates and generates voices via the stub
 
   await modal.nameInput(page).fill('cherry')
   await expect(modal.previewIdCode(page)).toHaveText('I_Cherry')
+  // Voice generation is opt-in (off by default since 84bc38e); image stays off.
+  await addItem.generateVoicesCheckbox(page).check()
 
   // create_item's translate+TTS calls happen server-side before the response returns —
   // this can take a few seconds even against the local stub.

@@ -78,7 +78,7 @@ invoke Docker, uvicorn, or Playwright directly.
 ```bash
 ./test_environment/testenv.sh doctor   # mode, ports, secret scan — run this first, always
 ./test_environment/testenv.sh up       # seeds .testenv/ if absent, starts the stack, waits for it
-./test_environment/testenv.sh e2e      # installs Playwright, runs the 22-test suite (see "Known gaps (sandbox)")
+./test_environment/testenv.sh e2e      # installs Playwright, runs the 23-test suite
 ./test_environment/testenv.sh down     # stop
 ```
 
@@ -106,10 +106,8 @@ quirk in Python's argparse makes the reverse silently discard the flag if it wer
 allowed at all, so it isn't; you'll get a clean argument-parsing error instead of a
 surprise. Omitted, it autodetects: Docker if the daemon answers, native otherwise.
 
-Both modes were validated end to end against this repo's real backend and frontend when
-the suite was written (all 22 specs green in each). **That is no longer true:** the
-frontend has changed since, and 11 of the 23 tests now fail. See
-[Known gaps (sandbox)](#known-gaps-sandbox).
+Both modes are validated end to end against this repo's real backend and frontend: all
+23 tests green in each, last measured 2026-11-13 after a fresh `reset`.
 
 ## Configuration
 
@@ -956,20 +954,15 @@ Nothing in this repository has run step 4 yet.
 
 ## Known gaps (sandbox)
 
-- **The specs have drifted from the frontend: 11 of 23 tests fail.** Measured 2026-10-30
-  in native mode after a fresh `reset`: 12 passed, 11 failed. The failing tests are all
-  four in `03-dashboard`, one each in `05-content-quirks`, `06-item-create`,
-  `07-item-images`, `09-category-archive-restore` and `10-category-create`, and both in
-  `08-item-delete`. Two causes have been confirmed:
-  - Selectors in `e2e/fixtures/selectors.ts` that no longer exist anywhere in
-    `frontend/src`, for example `.cd-card` (dashboard cards) and `.id-delete-item-btn`
-    (delete-item button).
-  - `06`/`10` expect stub TTS calls and get 0. Commit `84bc38e` made item voice and
-    image generation opt-in.
-
-  These are app/spec drift, not sandbox faults: the stack comes up and `02-login`,
-  `04-category-detail` and most of `05` still pass. Until the specs are refreshed, an
-  e2e failure is not evidence of a regression, and `run`'s e2e findings are noise.
+- **The specs ride on CSS classes, so a frontend refactor breaks them.** The frontend
+  has almost no `data-testid`s; every selector lives in `e2e/fixtures/selectors.ts`, so a
+  renamed class is a one-file fix there. Viewport matters too: the item page's action
+  buttons only render inline when its container is at least 64rem wide, and at Desktop Chrome's
+  1280px they sit in the "⋯" menu instead. Use `itemDetail.clickItemAction()`, which handles both.
+- **Only `speaktor` TTS is stub-covered**, so `seed` enables it and disables every
+  other `text_to_speech/*.json`, whatever the real `backend/config` enables
+  (`testenv_config.py`'s `isolate_tts_to_speaktor`). Voice generation on item create is
+  opt-in (`84bc38e`), so `06-item-create` ticks "Generate the voices".
 - **Four providers can't be redirected without a source change**: `elevenlabs_tts`,
   `static_tts`, `openai_tts` (hardcoded `API_BASE`/`ENDPOINT` module constants), and the
   `genai` SDK provider (`genai.Client(http_options=...)` never takes a base URL). Each is

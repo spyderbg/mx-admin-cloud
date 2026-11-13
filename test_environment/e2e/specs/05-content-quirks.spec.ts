@@ -20,10 +20,11 @@ test('fruits/apricot (no on-disk directory) opens without error and shows fully 
   // "No image available" placeholder, not a broken <img> pointing at a missing file.
   await expect(itemDetail.currentImage(page)).toHaveAttribute('alt', 'No image available')
 
-  // item_voices() always returns one row per SUPPORTED_LANGUAGES regardless of file
-  // existence — "empty" here means no *playable* audio, not zero rows.
+  // item_voices() always returns one entry per SUPPORTED_LANGUAGES regardless of file
+  // existence — "empty" here means no *playable* audio, not zero voice cards.
+  await expect(itemDetail.voiceCards(page)).toHaveCount(4)
   const playButtons = itemDetail.voicePlayButtons(page)
-  await expect(playButtons).toHaveCount(8) // 4 languages x 2 columns (normal + optimized)
+  await expect(playButtons).toHaveCount(4) // one per language
   for (const button of await playButtons.all()) {
     await expect(button).toBeDisabled()
   }

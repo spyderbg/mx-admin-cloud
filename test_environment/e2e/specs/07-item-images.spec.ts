@@ -8,7 +8,7 @@
 
 import { fileURLToPath } from 'node:url'
 import { test, expect } from '@playwright/test'
-import { itemDetail } from '../fixtures/selectors'
+import { fileDialog, itemDetail } from '../fixtures/selectors'
 import { FIXTURE } from '../fixtures/seed'
 
 const UPLOAD_PNG = fileURLToPath(new URL('../fixtures/upload.png', import.meta.url))
@@ -42,8 +42,9 @@ test('adding then deleting a variant returns the item to its original count', as
   // typed-id confirmations for archive/delete-item.
   const cards = itemDetail.imageCards(page)
   await itemDetail.deleteImageButton(cards.nth(2)).click()
-  await expect(page.locator('.cd-modal-title', { hasText: 'Delete File' })).toBeVisible()
-  await page.locator('.cd-modal-footer .btn-danger').click()
+  await expect(fileDialog.title(page)).toHaveText('Delete image')
+  await fileDialog.confirmButton(page).click()
+  await expect(fileDialog.box(page)).toHaveCount(0)
 
   await expect(itemDetail.imageCards(page)).toHaveCount(2)
 })

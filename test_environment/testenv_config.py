@@ -108,8 +108,25 @@ class Rewriter:
             data["service_provider"]["config"]["generate"]["base_url"] = self.stub
         self._edit("text_to_image/comfyui.json", mutate)
 
+    def isolate_tts_to_speaktor(self) -> None:
+        """Disable every text_to_speech config except speaktor.json.
+
+        speaktor is the only TTS provider the stub covers. The real backend/config decides
+        which providers are enabled, and that changes over time (elevenlabs and pyttsx3 are
+        on there, speaktor is off). Leaving any other one enabled would send sandbox TTS to
+        a real API (elevenlabs/openai hardcode their endpoints) or to a local engine,
+        bypassing the stub. Matched by file, not provider type: elevenlabs_slow.json is a
+        second elevenlabs config.
+        """
+        def mutate(data: dict) -> None:
+            data["service_provider"]["enabled"] = False
+        for path in sorted((self.config_dir / "text_to_speech").glob("*.json")):
+            if path.name != "speaktor.json":
+                self._edit(f"text_to_speech/{path.name}", mutate)
+
     def redirect_speaktor_tts(self) -> None:
         def mutate(data: dict) -> None:
+            data["service_provider"]["enabled"] = True
             generate = data["service_provider"]["config"]["generate"]
             generate["endpoint"] = f"{self.stub}/tts"
             generate["response_mode"] = "raw"
@@ -191,6 +208,7 @@ def build(*, stub_base_url: str, force: bool) -> int:
     rewriter.enable_openai_http_image()
     rewriter.enable_genai_http_image()
     rewriter.enable_comfyui_image()
+    rewriter.isolate_tts_to_speaktor()
     rewriter.redirect_speaktor_tts()
     rewriter.fallback_static_translate()
     rewriter.redirect_qwen_translate()

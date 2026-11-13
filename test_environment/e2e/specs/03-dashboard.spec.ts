@@ -18,7 +18,7 @@ test('shows exactly 4 cards, sorted alphabetically by folder name', async ({ pag
 })
 
 test('category icons render as real images through the content proxy', async ({ page }) => {
-  const images = dashboard.cards(page).locator('img.cd-card-icon')
+  const images = dashboard.cardIcons(page)
   await expect(images).toHaveCount(4)
   for (const image of await images.all()) {
     // naturalWidth > 0 proves the browser actually decoded bytes from the proxy — a

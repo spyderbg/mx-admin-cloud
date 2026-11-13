@@ -11,7 +11,7 @@ import { FIXTURE } from '../fixtures/seed'
 
 test('cancelling the delete-item confirmation leaves the item intact', async ({ page }) => {
   await page.goto(`/categories/${FIXTURE.categories.atSchool.id}/items/${FIXTURE.items.pencil.id}`)
-  await itemDetail.deleteItemButton(page).click()
+  await itemDetail.clickItemAction(page, 'delete')
   await expect(modal.box(page)).toBeVisible()
 
   await modal.cancelButton(page).click()
@@ -21,7 +21,7 @@ test('cancelling the delete-item confirmation leaves the item intact', async ({ 
 
 test('confirming with the exact typed id deletes the item and preserves its sibling', async ({ page }) => {
   await page.goto(`/categories/${FIXTURE.categories.atSchool.id}/items/${FIXTURE.items.pencil.id}`)
-  await itemDetail.deleteItemButton(page).click()
+  await itemDetail.clickItemAction(page, 'delete')
 
   // Wrong text keeps the danger button disabled — complex confirmation mode requires
   // the exact item id, matching the archive-category dialog's pattern.
