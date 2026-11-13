@@ -977,8 +977,10 @@ def test_a_graft_that_git_honoured_would_be_caught_by_the_parent_check(rig: Rig,
     _first, second, tip = stranger_in_the_middle(repo)
     (repo / ".git" / "info").mkdir(exist_ok=True)
     (repo / ".git" / "info" / "grafts").write_text(f"{second} {head(repo)}\n", encoding="utf-8")
-    env = {k: v for k, v in integration_intake.LOCAL_GIT_ENV.items() if k != "GIT_GRAFT_FILE"}
-    monkeypatch.setattr(integration_intake, "LOCAL_GIT_ENV", env)  # suppose the graft were honoured
+    # Suppose the graft were honoured. (M2: Git no longer reads the checkout's own info/grafts at all — every object
+    # query runs in a private repository — so the graft is forced on through GIT_GRAFT_FILE instead.)
+    env = {**integration_intake.LOCAL_GIT_ENV, "GIT_GRAFT_FILE": str(repo / ".git" / "info" / "grafts")}
+    monkeypatch.setattr(integration_intake, "LOCAL_GIT_ENV", env)
     with pytest.raises(integration_intake.HistoryUnverifiable, match="Git lists the parents"):
         rig.git.verified_range(head(repo), tip)
 
