@@ -30,7 +30,7 @@ from __future__ import annotations
 import secrets
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable
 
 from .errors import (CheckoutBusyError, ClaimError, FullProjectActiveError, LockBusyError, RoleBusyError,
                      WritersActiveError)
@@ -166,10 +166,15 @@ class ClaimManager:
 
     # -- scoped claims -------------------------------------------------------
 
-    def claim(self, task_id: str, *, role: str, branch: str, head_sha: str) -> Claim:
-        """Atomically claim *task_id* and the role slot. See the module docstring."""
+    def claim(self, task_id: str, *, role: str, branch: str, head_sha: str,
+              admission: Callable[[], None] | None = None) -> Claim:
+        """Atomically claim *task_id* and the role slot. See the module docstring. *admission* runs first, inside
+        the same critical section, and refuses the claim by raising (Security S1: a held checkout — the task then
+        never leaves `ready`; the authoritative decision is still the launch gate, workspace_hold.launch_gate)."""
         locks = self.store.locks
         with self.store.transaction():
+            if admission is not None:
+                admission()
             if self.store.get_flag(FULL_PROJECT_FLAG):
                 raise FullProjectActiveError("a full-project session is requested; no new scoped claims")
             task = self.store.load_task(task_id)

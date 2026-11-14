@@ -9,6 +9,13 @@ an approved GitHub Issue.
                                              Issue, Project #2 Done (dry run: reads GitHub and the remote only;
                                              --apply needs github.publish.enabled)
     github publish reset FEATURE [--apply]   after an operator resolved a stop: let publication continue
+    github publish revalidate FEATURE [--head SHA --apply] [--actor NAME] [--json]
+                                             a person pushed to the feature's Draft PR: validate its new head
+                                             (identity, fast-forward, task scopes, the gates at the new head), then
+                                             move the recorded candidate to it and require a new AI review — the
+                                             same PR, nothing pushed or created (dry run: reads GitHub, origin and
+                                             the checkout only; --apply needs --head with the PR head's full
+                                             40-character SHA, never abbreviated, and github.publish.enabled)
 
 The Worker service runs the pass by itself when `github.publish.enabled` is true. Nothing ever merges a
 pull request. See docs_agents/coordination/github-intake.md §10.
@@ -26,6 +33,7 @@ from .github_commands import _emit, _state, _tracker, tracker_kind  # pylint: di
 from .intake import load_intake
 from .model import utc_now
 from .publish import PullRequestPublisher
+from .revalidate import PullRequestRevalidator
 from .store import StateStore
 
 
@@ -69,7 +77,8 @@ def cmd_status(args: argparse.Namespace, config: ProjectConfig) -> int:
                          f"{merge.get('merged_at')}; Issue closed: {closed}")
         if r["attention"]:
             lines.append(f"       STOPPED: {sanitize(r['attention'].get('reason', ''), 300)} — after resolving it: "
-                         f"`python -m feature_coordinator github publish reset {r['feature']} --apply`")
+                         f"`python -m feature_coordinator github publish reset {r['feature']} --apply`; a PR head "
+                         f"a person changed: `python -m feature_coordinator github publish revalidate {r['feature']}`")
     lines = lines or ["no approved GitHub Issue features"]
     if not config.github.publish.enabled:
         lines.append("note: github.publish.enabled is false — nothing is published until an operator enables it")
@@ -118,6 +127,25 @@ def cmd_reset(args: argparse.Namespace, config: ProjectConfig) -> int:
     return 0
 
 
+def cmd_revalidate(args: argparse.Namespace, config: ProjectConfig) -> int:
+    """Validate the changed head of a feature's existing Draft PR, then record it (dry run unless --apply)."""
+    coord = _coordinator(args, config)
+    client = coord.sync.client
+    before = (getattr(client, "requests", 0), client.writes)
+    report = PullRequestRevalidator(coord).run(args.feature, apply=args.apply, expected_head=args.head,
+                                               actor=args.actor)
+    lines = [*report.lines, *(f"would {w}" for w in report.writes), *(f"deferred: {d}" for d in report.deferred),
+             *(f"NEEDS ATTENTION: {a}" for a in report.attention)] or [f"{args.feature}: nothing to do"]
+    requests = getattr(client, "requests", None)
+    lines.append(f"GitHub requests: {requests - before[0]}, of them writes: {client.writes - before[1]}"
+                 if requests is not None else f"tracker writes: {client.writes - before[1]}")
+    if not args.apply:
+        lines.append("dry run — nothing was fetched, run or written (pass --head with the full 40-character SHA and "
+                     "--apply; github.publish.enabled must be true)")
+    _emit(args, report.to_dict(), lines)
+    return 0 if report.ok else 1
+
+
 def register(gsub: Any) -> None:
     """Add `github publish …` to the `github` command group."""
     group = gsub.add_parser("publish", help="the Draft PR and completion of an approved GitHub Issue (W4.3.3)",
@@ -138,3 +166,13 @@ def register(gsub: Any) -> None:
     reset.add_argument("--apply", action="store_true")
     reset.add_argument("--json", action="store_true")
     reset.set_defaults(func=cmd_reset)
+    reval = psub.add_parser("revalidate", help="validate the changed head of a feature's existing Draft PR and record "
+                                                "it (dry run unless --apply)")
+    reval.add_argument("feature")
+    reval.add_argument("--head", default=None, metavar="SHA",
+                       help="the PR head commit the dry run showed, as its full 40-character lowercase SHA (required "
+                            "with --apply; an abbreviated SHA is refused, and a PR at any other head changes nothing)")
+    reval.add_argument("--actor", default="operator")
+    reval.add_argument("--apply", action="store_true")
+    reval.add_argument("--json", action="store_true")
+    reval.set_defaults(func=cmd_revalidate)

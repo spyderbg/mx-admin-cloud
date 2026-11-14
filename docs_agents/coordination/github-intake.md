@@ -5,6 +5,8 @@
 
 A task can start as a GitHub Issue. Nobody writes a YAML file: an operator approves the Issue with a comment, and the approved text becomes one task for the existing coordinator and Worker. Before approval nothing happens. After approval the text is fixed.
 
+W4.5 (§12, offline-tested, off by default) adds a label-driven path: `worker:plan` asks the Desktop Worker for a validated multi-task execution plan, published on the Issue, and `worker:approve` approves that exact Issue text and plan version without copying a digest.
+
 ## 1. Create the Issue
 
 Open an Issue by hand or with any tool. The **title** names the task. The **body** is the complete task specification: it is given to the agent as written. Before approval:
@@ -139,7 +141,7 @@ All of them are `python -m feature_coordinator github intake …`; `--tracker lo
 ## 9. Limitations
 
 - **Real approvals tested, bounded:** the original W4.3.1 tests used mock Issues, but real approvals for Issues #25 and #29 were later accepted by intake and executed. This is supervised happy-path evidence, not evidence that shared credentials prevent approval impersonation or that live failures recover safely.
-- **One task per Issue.** Multi-step and multi-role work still needs a planned feature (`python -m feature_coordinator plan`).
+- **One task per `/worker approve`.** Multi-role work from one Issue needs a label-approved execution plan (W4.5, §12) or a planned feature (`python -m feature_coordinator plan`).
 - **No `/feature hold|release` on approved Issues:** use the local commands. The coordinator closes the Issue only through W4.3.3 publication (§10), after the verified merge of its PR; with publication off, a person closes it.
 - **Detection delay while an agent runs:** the service re-reads the Issue every `poll_interval_seconds`, and a run without the service (`python -m feature_coordinator launch`) is not re-read until it ends. An edit in that window can therefore be verified and then immediately withdrawn by the read after the claim is released. The verification never reaches the board or integration, but it does appear in the task's history (`verified → ready → needs-human`).
 - **The approved body is prompt text.** The role's path policy and the post-run checks still bound what an agent may change, but `native-cli` is not a filesystem sandbox ([worker-functional.md](worker-functional.md)).
@@ -246,7 +248,7 @@ A closed approved Issue no longer looks like a withdrawn approval once its featu
 
 Each crash point is tested with a restart on new coordinator objects over the same files, and further passes write nothing (`test_every_interruption_is_recovered_without_duplicates`, `test_repeated_completion_and_restarts_write_nothing`).
 
-**Stops:** doubtful evidence sets `attention` on the PR candidate. The stop is sticky: nothing about this feature runs automatically until an operator resolves the cause and runs `python -m feature_coordinator github publish reset issue-<N> --apply`. Causes: a wrong or rewritten remote; a moved branch; a mismatched or ambiguous PR; a rejected push; a withdrawn approval before publication; merge evidence that does not hold. Transient problems are reported and retried, not sticky: network, GitHub 5xx, a busy lock, an unclean checkout, a PR closed without merge.
+**Stops:** doubtful evidence sets `attention` on the PR candidate. The stop is sticky: nothing about this feature runs automatically until an operator resolves the cause and runs `python -m feature_coordinator github publish reset issue-<N> --apply`. Causes: a wrong or rewritten remote; a moved branch; a mismatched or ambiguous PR; a rejected push; a withdrawn approval before publication; merge evidence that does not hold. Transient problems are reported and retried, not sticky: network, GitHub 5xx, a busy lock, an unclean checkout, a PR closed without merge. A PR whose head **a person moved** (commits pushed to its branch) is not resumed by a reset, which would only stop again: its new head was never validated. Use `github publish revalidate` (§10.12).
 
 ### 10.6 Adopting a PR opened by hand (Issue #25 / PR #27)
 
@@ -276,6 +278,7 @@ Fixed, not configurable: Draft PRs only, the feature's base branch as the target
 | `github publish status [--json]` | Read-only, local: every approved Issue's feature with its candidate head, PR (number, origin, draft), push, merge evidence and stop |
 | `github publish poll [FEATURE…] [--apply] [--json]` | One pass. Without `--apply` it reads GitHub (and nothing else) and lists what it would do. `--apply` needs `github.publish.enabled`. Exit 1 when something was deferred or needs an operator |
 | `github publish reset FEATURE [--apply]` | Clears a stop after the operator resolved it; the next pass checks everything again |
+| `github publish revalidate FEATURE [--head SHA --apply] [--actor NAME] [--json]` | A person pushed to the feature's Draft PR: validates the new head of the same PR and only then moves the recorded candidate to it, invalidating the AI review of the old head (§10.12). Without `--apply` it reads GitHub, `origin` and the checkout only. `--apply` needs `--head` with the full 40-character SHA of the head the dry run showed (an abbreviated SHA is refused; a PR at any other head is `stale`) and `github.publish.enabled`. Exit 1 when it was refused, failed, stale or deferred |
 
 ### 10.9 Limitations
 
@@ -303,3 +306,363 @@ Fixed, not configurable: Draft PRs only, the feature's base branch as the target
 The operator re-ran **4/4** selected Git/GitHub transient-error tests and **11/11** selected publisher-interruption tests on the W4.4 baseline. Verified cases include an unreachable Git remote, HTTP 503 on PR create, an uncertain PR-create response recovered by adoption, transient GitHub waits, an uncertain push, a crash after PR creation, **eight** crash points before/after push, create, completion, comment and Issue closure, and idempotent re-polling/restarts. The tests use **disposable local Git and mock GitHub**, checking exactly one PR and completion comment where applicable; **they do not reproduce a failure against the real GitHub service**.
 
 W4.4's separate four-session real Claude/Codex smoke used a **no-remote** disposable repository and a GitHub shim that was never called. Its 69/69 success is evidence of agent and checkpoint recovery, **not** live GitHub outage handling. See [W4.4 acceptance](w44-reliability-acceptance.md). No new real GitHub Issue, PR or Project #2 item was created for W4.4 testing.
+
+### 10.12 Revalidating a PR whose head a person changed
+
+Publication verifies one head: the one integrated, pushed and opened as the Draft PR. If a person pushes commits to the PR's branch afterwards (for example to address a REQUEST_CHANGES review, §13), the PR no longer matches the candidate and publication stops (§10.5). `github publish revalidate` validates the new head of the **same** PR and only then moves the recorded candidate to it. Code: `feature_coordinator/revalidate.py`; tests: `feature_coordinator/tests/test_fc_revalidate.py`.
+
+```bash
+python -m feature_coordinator --tracker github --project-config ~/.config/mx-admin-agents/project.yaml \
+  github publish revalidate issue-N                          # dry run: what it would do, the head to pass
+python -m feature_coordinator ... github publish revalidate issue-N --head <full 40-character PR head SHA> --apply
+```
+
+`--head` must be the exact, full 40-character lowercase SHA that the dry run prints. An abbreviated, uppercase or malformed value is refused before anything is read. A PR whose head is not exactly that commit is `stale`: nothing is fetched, run or written, and the dry run has to be repeated. The dry run itself needs no `--head`.
+
+| Step | What is checked or done | Otherwise |
+| --- | --- | --- |
+| 1. Read (dry run too) | The feature is an approved Issue's feature in `review` with its PR recorded, every task verified, nothing merged. The checkout is the feature's repository (the publisher's origin checks). The PR, read by number, is still the recorded PR: the publisher's identity checks (head branch and repository, base branch and repository, author) with only the head commit allowed to differ, plus the same URL and, if an earlier review bound it, the same node ID. It is open, and `origin`'s branch is at the PR's head. The approval still holds (the Issue re-read). No claim, no launch in flight, no reviewer process running | refused, deferred or `stale`; nothing is written |
+| 2. The new head belongs to the feature | It contains the validated head (a fast-forward: history was not rewritten), adds no merge commit, and every path it adds, changes or removes is writable by one of the feature's tasks (protected paths never) | refused |
+| 3. Validate (`--apply`) | Holds `github-publish.lock` and `github-review.lock`: no publication pass and no review run meanwhile. Records the attempt first. Fetches the branch and **fast-forwards** the shared checkout under project.lock EXCLUSIVE + git.lock (clean checkout, on the branch; never a reset, never forced, nothing pushed). Runs, at the new head, the original candidate's integration gates, the approved plan's (or the default) integration gates and every task's required gates, still under project.lock (no writer can start) | failed gates: `failed`, the candidate and the stop stay as they were |
+| 4. Check again | The PR is re-read (identity, open, head) and `origin`'s branch is read | `stale`: nothing recorded; run it again |
+| 5. Record (one transaction) | Re-reads the local facts first: the candidate still at the old head, the same PR, the branch at the new head, no claim. Then the candidate's head, draft flag and integration evidence move to the new head and its stop is cleared. The previous candidate (head, integration evidence, push, stop) is kept in the attempt record. The current AI review, bound to the old head, is **invalidated** (kept as history) | `stale` |
+| 6. Notice | The review's invalidation notice is posted on the PR, once (§13.4) | deferred; the next run posts it |
+
+**After it:**
+
+- The publisher follows the same PR at the new head (it waits for a person, then verifies the merge against the new head).
+- A **new independent AI review** is required. The Worker's review step starts it when `github.review.enabled` is on and the Worker runs: an invalidated review of an older head never settles a newer one. An operator can also run `github review run issue-N --apply`.
+- An earlier PASS, PASS_WITH_NOTES or REQUEST_CHANGES is never evidence for the new head. `review_evidence` is bound to one head and to the current entry only.
+- The review policy is unchanged. A blocking or major finding in the new review is REQUEST_CHANGES again.
+
+**What it never does:** create, edit or merge a PR; push or force anything; reset or rewrite a branch; change the feature's or a task's state; activate another feature; touch the Worker service or its configuration. Records: `state/revalidation/<feature>.json` keeps every attempt (`validated`, `failed`, `stale`, `refused`, `deferred`, `interrupted`) and is never rewritten. The events are `publish-revalidation-started`, `publish-revalidated` and `publish-revalidation-ended`.
+
+**Recovery and idempotency:** every step reads what is true first.
+
+| Interrupted | On the next run |
+| --- | --- |
+| before the transaction | the candidate is still at the old head. The earlier attempt is marked `interrupted`. If the branch was already fast-forwarded, the run continues from anywhere on the way from the old to the new head |
+| after the transaction, before the notice | the PR is at the candidate (`unchanged`); only the notice is posted |
+| a repeat after success | `unchanged`; nothing is written |
+
+Failed gates leave everything as it was: push a fix, then revalidate again.
+
+**Limitations:** the person's commits are validated by the deterministic gates and the path rules, and reviewed by the new AI review. They are not attributed: with the shared `spyderbg` identity (§9) the coordinator cannot tell who pushed them. Only a fast-forward of plain commits is accepted. A merge of `dev` into the branch or a rewritten branch is refused, and a person resolves it (for example with a new Issue).
+
+## 12. Label-driven planning and approval (W4.5)
+
+> Status: **implemented and tested offline only** (mock GitHub, fake planner, the Action's real receipt code against the mock). Not activated: `github.planning.enabled` defaults **false**, and the workflow runs only once it is on the default branch (`main`). Code: `feature_coordinator/plan_digest.py` (canonical JSON, digests, markers; standard library only), `planning.py` (plan schema, deterministic validation, plan record, rendering), `planner.py` (the AI Feature Planner), `intake_plan.py` (the labels), `planning_commands.py`; `.github/workflows/worker-issue-labels.yml` and `.github/scripts/worker_issue_labels.py`. Tests: `feature_coordinator/tests/test_fc_issue_planning.py`.
+
+A second way to approve an Issue, next to `/worker approve` (§2), which stays unchanged. The person never chooses a role or copies a digest: the Desktop Worker proposes an execution plan, the person reviews it on the Issue and approves it with a label.
+
+### 12.1 The labels
+
+| Label | Set by | Meaning |
+| --- | --- | --- |
+| `worker:plan` | a person | Plan this Issue (again). Each new label event is one request. |
+| `worker:ready-for-review` | the coordinator | Plan version N is published on the Issue and waits for review. |
+| `worker:approve` | a person | Approve exactly the current Issue text and the newest published plan version. |
+| `worker:approved` | the coordinator | The approval was validated; the feature is planned (and activated when the checkout is free). |
+
+`python -m feature_coordinator github planning labels --apply` creates the four labels once (existing labels are never edited).
+
+### 12.2 What a person sees
+
+1. Open and discuss the Issue as usual. Nothing happens.
+2. Add **`worker:plan`**. Within a poll interval the Worker posts **one** comment, "Execution plan vN": the feature title and acceptance criteria, a table of tasks (ID, title, role, dependencies, gates), each task's instructions and intended paths, the integration gates, the plan digest, and how to approve or revise. `worker:plan` is replaced by `worker:ready-for-review`.
+3. Review it. To change it, edit the Issue if needed, then remove and re-add `worker:plan`: a new version is published; any earlier approval no longer applies. Editing the Issue's title or body makes the published plan **stale** (one notice; `worker:ready-for-review` removed).
+4. Add **`worker:approve`**. The workflow posts an *Approval receipt* (as `github-actions[bot]`); the Worker validates it, records the approval, replaces the labels with `worker:approved`, posts one acknowledgement and plans the feature with the plan's tasks. From here on it is the ordinary intake lifecycle (§3–§6, §10): recorded text, fail closed on any change, one feature per checkout, Draft PR, human merge.
+
+A refused request or approval gets **one** notice saying why, and its label is removed. If the planner cannot assign the work within the role policies (a disabled role, a protected or approval-required path, unclear scope), it is **not** forced: the Issue gets a "Plan needs an operator" notice and nothing is published.
+
+Example single-task plan (Issue "Export category items as CSV"):
+
+| Task | Role | Depends on | Gates |
+|---|---|---|---|
+| `cli-export` — Add `content export-items` | cli | — | `cli-lint`, `docs-check` |
+
+Example multi-role plan (Issue "Category export across the stack"):
+
+| Task | Role | Depends on | Gates |
+|---|---|---|---|
+| `api` — CSV export endpoint | backend | — | `backend-tests`, `backend-lint`, `docs-check` |
+| `ui` — Export button | frontend | `api` | `frontend-type-check`, `frontend-build`, `docs-check` |
+| `cli` — `content export-items` | cli | `api` | `cli-lint`, `docs-check` |
+| `docs` — Coordination notes | coordination | `api`, `cli`, `ui` | `docs-check` |
+
+### 12.3 Planning (Desktop Worker only)
+
+The intake poll (Worker service, or `github intake poll --apply`) runs at most **one** planner invocation per poll, after approvals are processed. The planner is the installed **Claude Code with the operator's subscription login**, under the native backend's rules: allowlisted environment (no API key, token or base URL is passed), `claude auth status` must report the claude.ai subscription before the request, and the session's `init` event must show `apiKeySource: none` afterwards. It gets **no tools** (`--tools ""`, `--permission-mode dontAsk`, `--restricted`, `--strict-mcp-config`, no session persistence) and runs in an empty directory under the state directory, so planning cannot read or change the checkout; the coordinator puts the Issue text, the available roles with their owned/excluded paths and required gates, the protected and approval-required paths, the gate list and an excerpt of `AGENTS.md`/`CLAUDE.md` into the prompt. The Issue text is marked as data. While it runs, the service record keeps heartbeating, and a stop signal, `worker stop` or `worker pause` ends the run (the request is retried later). No GitHub-hosted runner ever runs a model.
+
+Every proposal is validated deterministically (`planning.canonical_plan`); nothing the model says is trusted:
+
+- exactly the documented keys — `grants`, `steps`, `provides_contract` or any other key is refused (a plan cannot widen a permission);
+- 1..`max_tasks` tasks, unique IDs, **at most one task per role** (no splitting for its own sake);
+- every role enabled and with intake gates (the hand-approvable roles; `automation` is disabled);
+- every intended path an exact path or `<dir>/**` inside the role's owned paths, outside its exclusions, never protected or approval-required;
+- dependencies on known tasks, no self-dependency, no cycle;
+- the role's intake gates always present (first, in configured order); a plan may only **add** configured gates. Integration gates are the coordinator's (`contract-check`, `docs-check`).
+
+A refused proposal is fed back to the planner once (`max_attempts: 2`), then the request needs an operator. Attempts are counted **before** each run, so a crash loop cannot exceed the budget; an unavailable planner (not logged in, API-key login) defers without using an attempt.
+
+### 12.4 The approval digest
+
+`plan_digest.py` serializes canonically (UTF-8 JSON, sorted keys, no whitespace, no floats). The **plan digest** is the SHA-256 of the canonical plan, which carries its schema (`mx-feature-plan/v1`), **version**, repository, Issue identity (number, database ID, node ID), the Issue's spec digest at planning time, the feature and the tasks. The **approval digest** is the SHA-256 of the approval statement (`mx-worker-approval/v1`): repository name and ID, Issue identity, the exact normalized title and body with the legacy spec digest, the plan's schema, version and digest, every task's role, dependencies and gates, and the integration gates. Nobody types it; it is shown as `mx-worker-approval/v1:sha256:<hex>`.
+
+### 12.5 What the coordinator validates before anything is planned
+
+The receipt is **evidence only**. `github-actions[bot]` is **not** added to `command_authors`; only a well-formed receipt from `receipt_author` is read, and the approval is accepted only if all of these hold, re-read at validation time:
+
+- exactly one receipt for the newest `worker:approve` label event; repository (name, ID) and Issue (number, database ID, node ID) match;
+- GitHub's own Issue events show that label event (ID, actor, time), the label is still present, and no newer `worker:plan` request exists;
+- the actor is a command author with at least `command_min_permission` **now**;
+- the receipt names the latest version, its digest and its published comment; that comment still carries exactly the recorded plan; the plan was published before the label was added, is still `published`, and is still valid under the current configuration;
+- the Issue's title and body are unchanged since planning; the locally recomputed approval digest equals the receipt's;
+- the receipt comment was never edited (its `updated_at` equals its `created_at`: anyone with write access can edit a bot's comment, and GitHub keeps the bot as author);
+- the Actions run named by the receipt exists, ran `.github/workflows/worker-issue-labels.yml` for an `issues` event on the default branch, triggered by the same actor, and was **created between the label event and the receipt** (5 s tolerance for GitHub's whole-second timestamps), so an older run of the workflow cannot be reused;
+- **one run, one receipt:** no other receipt on the Issue names the same run, and no approval accepted before (any Issue, local intake records) was backed by it.
+
+Anything else — forged, stale, malformed, mismatched, edited, a receipt from a person, two receipts, a reused or out-of-window run, no receipt after `receipt_wait_seconds` — refuses the approval with one notice; nothing is recorded or started. A valid approval becomes `intake/issue-<N>.json` with **schema 2** (`plan`, `task_ids`, `anchor`, `integration_gates`), written before anything else.
+
+### 12.6 The GitHub Action
+
+`.github/workflows/worker-issue-labels.yml` runs on `issues: labeled`, only for `worker:plan` and `worker:approve`, with `permissions: {}` at the top and `contents: read`, `issues: write` for its one job, a sparse, credential-less checkout pinned by commit SHA, and one step: `python3 -I .github/scripts/worker_issue_labels.py` (standard library plus `plan_digest.py`). Nothing from the event is placed on a command line. For `worker:plan` it only refuses (and removes) a request from an account below `write`. For `worker:approve` it checks the newest plan comment (by `WORKER_PLAN_AUTHORS`, default the repository owner — the Worker's `gh` account) against the Issue **as it was when the label was added** (the event payload) and posts one receipt, or one refusal and removes the label. Comments and labels written with the job token trigger no further workflow runs.
+
+**Which label event.** The event payload carries no event ID, so the step answers the newest `labeled` event of its label. GitHub's events API can lag the webhook, so the newest *visible* event may be an earlier one that was already answered. An answered event (or a newer one by someone else) therefore never ends the wait: the step looks again after 5, 10, 15, 20 and 30 s for an **unanswered** event by the label's sender. If none appears it posts nothing and the job **fails** with the reason (re-run it once the event is visible; the coordinator refuses a label without a receipt after `receipt_wait_seconds`). Every receipt and refusal names its label event and its workflow run, so a re-run of the run that answered (same run ID, any attempt) recognizes its own answer and succeeds without posting; a second, different run for an already-answered event (a duplicate delivery) fails explicitly and posts nothing. No receipt or refusal is ever posted twice.
+
+**Concurrency.** The `concurrency` group is set on the **job**, so only events that pass the job's condition (`worker:plan` or `worker:approve` on an Issue) join it; other labels, including the two the coordinator sets, never queue and cannot cancel approval work. The group is per Issue **and** label: runs that could answer the same event are serialized, a plan request never replaces a pending approval, and a pending approval run can only be replaced by a newer approval run on the same Issue, which answers the newest approval event — the only one the coordinator considers.
+
+### 12.7 Compatibility, recovery, idempotency
+
+- `/worker approve <role> <spec-sha256>` works exactly as before and keeps writing **schema 1** records with exactly the schema-1 fields, so the current Worker (or a rollback) reads them; schema-1 records written earlier load unchanged. Schema-2 records (label approvals) and `plan/` records are **not** readable by pre-W4.5 code: see §12.11 before any rollback. With `github.planning.enabled: false` (the default) the labels are ignored and nothing here runs.
+- A planned feature uses the established lifecycle: `workflow.plan` (DAG validated), activation, claims, checkpoints, Git ownership checks, retries, the fail-closed Issue checks for **every** task, automatic Draft PR (integrated with the approved integration gates), Project #2. The approved Issue belongs to the **feature**: its tasks get no Issues of their own, the queued comments of the feature and all tasks go to the approved Issue, and its Project #2 card shows the feature's status (Blocked while a task needs a person).
+- Write-ahead everywhere: the request and each planner attempt are recorded before the run; a plan version before its comment; the comment carries an operation marker and is found again after a crash; the approval record before the labels. Repeated polls, duplicate label events, repeated approvals and restarts create no second plan, comment, receipt, record or feature.
+
+### 12.8 Configuration (`github.planning`)
+
+`enabled` (false; needs `github.intake.enabled`), `provider` (`claude`, must be Claude Code), `model` (`opus`), `timeout_seconds` (900), `max_attempts` (2), `max_tasks` (4), `max_instructions_characters` (6000), `receipt_author` (`github-actions[bot]`, must be a bot login), `receipt_workflow`, `receipt_wait_seconds` (900), `conventions_files` (`AGENTS.md`, `CLAUDE.md`), `max_conventions_characters` (6000). See [project-config.example.yaml](project-config.example.yaml).
+
+Commands: `github planning status`, `github planning show N` (read-only, local), `github planning labels [--apply]`; `github intake show N` also shows the plan state.
+
+### 12.9 Limitations and actual guarantees
+
+- **Shared identity (accepted risk, unchanged, §9).** The Worker and the operator share the `spyderbg` login. A `worker:approve` label added with that token is indistinguishable from the operator's, so the actor and permission checks do **not** prevent approval impersonation; nothing in W4.5 changes that, and no check below claims to. The coordinator itself never adds `worker:approve`. Agent sessions do not get the login while `runtime.native_hardening` is on (it hides `.config/gh`); with it **off — the production setting today** — an agent with shell access under the operator's HOME may reach the `gh` login and could add the label, exactly as it could post `/worker approve` (§9). Closing this needs a separate Worker identity; credentials, accounts and hardening are deliberately left as they are.
+- **What the receipt checks guarantee.** `github-actions[bot]` is shared by every workflow of the repository, on any branch: any workflow with `issues: write` can post as that bot, and anyone with write access can edit a bot comment. The receipt is therefore never the authority. What the coordinator verifies itself (§12.5) — GitHub's own label event, the actor's command-author status and permission now, the recorded and published plan, the current Issue text, the recomputed approval digest — decides. The run checks add that an accepted receipt names a run of this workflow on the default branch, by the approver, **created for this approval** (between label and receipt), **unedited**, and backing **no other receipt or approval**. They cannot prove that this run posted the comment: a receipt forged by another workflow could still name the genuine run of the same approval while it has not posted yet. Forging needs write access (to push a workflow), which today only the shared identity has, and a forged receipt can at most corroborate facts the coordinator checks anyway; the one Action check it could skip is "the Issue text at the moment of labeling" (the coordinator checks the current text).
+- **An edited receipt is refused** even when the edit changes nothing visible (GitHub reports a new `updated_at`). Re-add `worker:approve` to get a fresh receipt.
+- **GitHub is trusted for facts** (label events, permissions, run metadata and timestamps); a compromised GitHub account defeats every check here.
+- **The plan is model output.** Validation bounds roles, paths and gates, and a person approves it, but the instructions themselves are only as good as the review. Intended `paths` are guidance: a `<dir>/**` subtree may contain protected paths, which the role policy still refuses at run time.
+- **Offline only.** No real Claude Code planning run and no real Actions run were made for W4.5.
+
+### 12.10 Operational impact: the planner runs inside the Worker's loop
+
+A planner invocation runs synchronously inside the Worker service's GitHub poll (`_poll_github`, before the active feature's step). While it runs, the service keeps heartbeating and honours stop, `worker stop` and `worker pause` (a paused service does not poll at all), but **the active feature does not advance**: no task is launched, settled or retried. One poll can take up to `max_attempts × timeout_seconds` — 2 × 900 s = **30 minutes** with the defaults — and at most one plan request is planned per poll. Agent runs are not affected mid-run (they are not polled concurrently).
+
+Conservative settings for the first supervised trial:
+
+```yaml
+github:
+  planning:
+    enabled: true
+    max_attempts: 1          # one subscription request per plan request; a refused plan goes to an operator
+    timeout_seconds: 300     # a no-tools planning answer normally takes well under a minute
+    max_tasks: 2             # start with single- and two-role plans
+```
+
+Trial with no feature active, so a long planner run delays nothing. Raise the values only after observing real planning times.
+
+### 12.11 Rollback to pre-W4.5 code
+
+`/worker approve` records (schema 1) stay readable by older code. Records written by label approvals are not: pre-W4.5 code refuses `intake/issue-<N>.json` with **schema 2** (strict loader) and does not know `plan/issue-<N>.json`. Before reverting the code:
+
+1. Set `github.planning.enabled: false` and restart (labels are ignored from then on; this alone needs no code rollback).
+2. Let every planned feature finish (Draft PR merged, Issue closed) or stop it (`python -m feature_coordinator stop <task>` for running tasks, then hold them).
+3. With the service stopped, move every intake record with `"schema_version": 2` and the whole `plan/` directory out of the state directory (keep them as evidence; do not edit them), together with the local features they created if those must not be resumed by the old code.
+4. Revert the code, start the service and check `github intake status`.
+
+Re-applying W4.5 later reads the archived records again if they are moved back.
+
+### 12.12 Before activation: compare the shared approval code on `main` and `dev` (read-only)
+
+The Action runs `main`'s copy of `plan_digest.py`; the Worker runs its own checkout's (`dev`). The two must be byte-identical, or every approval is refused with a digest mismatch (fail closed, but confusing). Check, without changing anything:
+
+```sh
+git fetch origin
+for f in feature_coordinator/plan_digest.py .github/scripts/worker_issue_labels.py \
+         .github/workflows/worker-issue-labels.yml feature_coordinator/__init__.py; do
+  printf '%-48s main=%s dev=%s\n' "$f" "$(git rev-parse --short origin/main:"$f" 2>/dev/null || echo MISSING)" \
+         "$(git rev-parse --short origin/dev:"$f" 2>/dev/null || echo MISSING)"
+done
+git diff --stat origin/main origin/dev -- feature_coordinator/plan_digest.py .github/scripts/worker_issue_labels.py \
+         .github/workflows/worker-issue-labels.yml      # must print nothing
+git -C <worker checkout> rev-parse HEAD:feature_coordinator/plan_digest.py   # the Worker's copy: same blob
+```
+
+Every pair of blob IDs must match (until step 2 of §12.13, `main` shows `MISSING` for the three W4.5 files). Repeat after every release that touches `plan_digest.py` or the Action, and after every dev → main merge.
+
+### 12.13 Production activation (operator steps; not done by W4.5)
+
+1. Review and merge the W4.5 PR into `dev`; update the Worker's checkout as usual (pause → stop → fast-forward → start → resume). Planning stays disabled.
+2. Bring `.github/workflows/worker-issue-labels.yml`, `.github/scripts/worker_issue_labels.py` and `feature_coordinator/plan_digest.py` to `main` **without deploying**: a commit reaching GitLab `main` deploys production, so use a dedicated `[skip ci]` commit that copies exactly those three files from `dev` (never fast-forward `main` to `dev` for this). Then run the read-only comparison of §12.12.
+3. Create the labels: `python -m feature_coordinator github planning labels --apply`.
+4. Optionally set the repository variable `WORKER_PLAN_AUTHORS` (default: the repository owner, which is the Worker's `gh` account).
+5. Enable `github.planning` in the Worker's project configuration with the conservative settings of §12.10 (intake must be enabled) and restart the service.
+6. Run one supervised test on a throwaway Issue, with no feature active: `worker:plan` → review → `worker:approve`; check the receipt and its run, `github planning status` and `github intake status`.
+
+## 13. Independent AI review of the Draft PR (W4.6.1, R1 and R2)
+
+> Status: **R1 (operator-started) merged; R2 (started by the Worker service, §13.7) implemented and tested offline only** (mock GitHub, fake reviewers and fake reviewer processes, disposable repositories; no model call). Not activated: `github.review.enabled` defaults **false**. Code: `feature_coordinator/review.py` (binding, records, comments), `review_context.py` (the reviewer's input), `reviewer.py` (Claude Code without tools), `review_result.py` (validation, outcome, comment), `review_config.py`, `review_commands.py`; R2: `review_worker.py` (the service step, reporting), `review_process.py` (the reviewer process). Tests: `feature_coordinator/tests/test_fc_review.py`, `test_fc_reviewer.py`, `test_fc_review_worker.py`. Design: Issue #53; R2: Issue #55.
+
+After publication (§10) has opened the single Draft PR of an approved Issue's feature, an operator can have it reviewed by an AI reviewer that did not write it (R2: once enabled, the Worker service does this by itself, §13.7):
+
+```bash
+python -m feature_coordinator --tracker github --project-config ~/.config/mx-admin-agents/project.yaml \
+  github review run issue-N            # dry run: what would be reviewed (reads GitHub and the checkout only)
+python -m feature_coordinator ... github review run issue-N --apply
+python -m feature_coordinator ... github review status | show issue-N
+python -m feature_coordinator ... github review retry issue-N --reason "…" --apply
+```
+
+The review is **advisory**. It never merges, approves, marks the PR ready, changes a feature or task, or touches publication, completion, the approved Issue or Project #2. The task and integration gates stay authoritative and a person decides whether to merge.
+
+### 13.1 What is reviewed, and the binding
+
+Only the feature's Draft PR as the publisher recorded it: the PR is read fresh and must still pass the publisher's own identity checks (repository, head branch → base branch, the **verified head**, author), be open, and publication must not be stopped. A review is bound to:
+
+| Bound fact | Source |
+| --- | --- |
+| repository, feature, Issue | the configuration and the intake record |
+| PR number and node ID, head branch and **head SHA** | the fresh PR, equal to the verified candidate |
+| base branch and **merge base** | `git merge-base` of the freshly fetched base branch and the head; it must be the feature's base commit |
+| approved spec digest; plan and approval digests (W4.5) or the approval comment (`/worker approve`) | the intake record (a planned record's plan must still match its digest) |
+| reviewer provider kind and model | `github.review` |
+
+`binding_sha256` covers exactly these. The observed base tip and GitHub's `base.sha` are recorded but not bound: the review is of the **PR head's diff** (`subject: pr-head-diff`), not of a future merge result with a newer `dev`, which a later merge step must validate on its own. The input digest (`input_sha256`, the exact prompt) and the diff digest are recorded with each review.
+
+One review per verified head and generation: a second `run` with an unchanged binding changes nothing. A changed binding (a new head, another PR, a different spec, plan, approval or reviewer configuration), a PR that no longer passes the publisher's checks, or an approval that no longer holds **invalidates** the current review (one short notice on the PR if its comment was posted) and the next run starts a new generation. `retry` supersedes the current review on purpose (recorded with who and why).
+
+**Checked again when the reviewer finishes.** A live review can take minutes, and the PR, its head or the approved Issue can change meanwhile. Before a valid answer (PASS, PASS_WITH_NOTES, REQUEST_CHANGES) is recorded, `ReviewRunner.recheck` reads everything again: the feature still in review with the same PR, the PR re-read and still passing the publisher's checks, open, publication not stopped, and the binding re-derived (fresh base fetch, merge base, Issue, plan) equal to the reviewed one.
+
+- **Stale:** the answer is kept as **history only**. In the same write the entry is invalidated with the original reviewed head and the reason. Nothing is posted, it is never evidence, and the run reviews nothing new. The next operator run treats the PR as at the start of any run: an unverified head or a closed PR stops; a withdrawn approval or a moved base is ERROR without a reviewer run.
+- **Re-read failed** (GitHub unavailable, `git fetch` failed, a busy Git lock): the answer is **held**, not recorded, and the run is deferred. The next run checks the binding fresh first. If it still holds, the held answer is recorded without another reviewer run; if not, the held answer stays in the record as history and the usual rules apply.
+
+### 13.2 What the reviewer gets, and what it cannot do
+
+The reviewer is the W4.5 planner's invocation: Claude Code with the operator's **subscription** (the allowlisted environment, `claude auth status` must show the claude.ai login; an API-key login makes the reviewer unavailable), **no tools** (`--tools ""`, `--permission-mode dontAsk`), no MCP server, `--restricted`, an **empty working directory** under the state directory, `--json-schema` for the answer, the existing supervisor's deadline. It receives no GitHub credential; only coordinator code posts comments.
+
+Its prompt holds: the approved Issue title and body (as recorded at approval), the approved plan or task, the tasks' path rules and the protected / approval-required paths, the task and integration gate results, the commit subjects, `CLAUDE.md` / `AGENTS.md` **as of the base commit** (a PR cannot rewrite them for the reviewer), and the diff from the merge base to the head (`git diff --no-ext-diff --no-textconv` through gitsafe). All of it is fenced as untrusted data with a random nonce. Before anything goes into the prompt the coordinator removes control characters, redacts credential-like strings, and withholds the content of files matching `runtime.secret_patterns` or the protected paths; each of these becomes a coordinator note, so such a review is at best PASS_WITH_NOTES. The redaction (`review_context.clean`) runs over **every part of the finished prompt**, one line or fenced block at a time: the Issue, the approved plan (summary, acceptance criteria, task titles, instructions and acceptance criteria, gates) or the single task's title, the path rules, gate results, commit subjects, conventions, the file list and the diff. A section added later cannot bypass it. A diff over `max_diff_characters` is not reviewed (ERROR), never truncated.
+
+After the run the coordinator refuses it (ERROR, no retry) when the stream shows an operational tool or MCP server offered, any operational tool use, a tool result for any other call, a permission denial, no `init` event, an API key, another model family, or a file written into the empty working directory.
+
+**Structured output is the one permitted tool.** With `--tools ""` and `--json-schema`, Claude Code (2.1.319, observed live on PR #58 and PR #60) still offers exactly one tool, its internal `StructuredOutput`. The protocol runs in four steps:
+
+1. the `init` event lists `tools: ["StructuredOutput"]`;
+2. the model calls it once (`tool_use`, input = the answer);
+3. Claude Code checks the input against the schema and acknowledges it (`tool_result` "Structured output provided successfully");
+4. the `result` event carries the same object as `structured_output` (and its JSON as `result` text).
+
+This tool reads, writes and runs nothing. The coordinator keeps three things apart:
+
+| | Rule |
+| --- | --- |
+| Operational tools (Bash, Read, Write, Edit, Glob, Grep, MCP tools, any other name) | forbidden: offered or used, the run is refused |
+| Internal structured-output delivery | narrowly permitted: only when `--json-schema` was requested, offered **alone**, called as a plain `tool_use` of the main session; the answer counts only if Claude Code acknowledged every call, accepted exactly one, and `structured_output` is that same object (never the result text). Otherwise the attempt has no answer (failed) |
+| GitHub writes | the trusted coordinator only |
+
+Calling `StructuredOutput` proves nothing about the answer: it is validated deterministically like any other (§13.3).
+
+**No-tools mode reduces exposure; it is not OS-level isolation.** The model cannot read, write or run anything and sees only the prompt; the Claude Code program itself still runs unsandboxed as the operator (it reads its own login under HOME and reaches its API). OS confinement is W1's subject (native hardening, bwrap).
+
+### 13.3 Outcomes (deterministic)
+
+The coordinator validates the answer — exactly the expected keys and types, the bound head SHA, every finding on a **changed** file with lines inside that file at the head (null for binary or withheld files), bounded lengths and at most `max_findings` findings — and derives the outcome from the findings; the reviewer's verdict only has to agree.
+
+| Outcome | When |
+| --- | --- |
+| PASS | valid answer, verdict `pass`, no finding, no limitation, no coordinator note |
+| PASS_WITH_NOTES | valid, no `blocker`/`major` finding, verdict `pass` or `pass_with_notes`, at least one note |
+| REQUEST_CHANGES | valid, at least one `blocker` or `major` finding, verdict `request_changes` |
+| ERROR | anything else: invalid or contradictory answers on every attempt, a refused run, a timeout on every attempt, a reviewer unavailable for `unavailable_wait_seconds`, an approval that no longer holds, a base that does not match, `independence: require` unmet, a diff that cannot be reviewed |
+
+A blocking or major finding never yields PASS. An ERROR is never turned into a pass: only a new head or an explicit `retry` starts a new review.
+
+### 13.4 Records, comments, recovery
+
+`state/review/<feature>.json` holds every entry: binding, digests, independence (`provider`, `model` or `none` relative to the implementing agents), attempts with their status, the validated findings, the outcome and the comment. Writes are ahead of the action they protect:
+
+- the entry exists before anything runs; each attempt is counted **before** the reviewer starts, so an attempt a crash interrupted stays counted (with `max_attempts: 1` the review becomes ERROR; `retry` starts again);
+- an unavailable reviewer (CLI missing, not logged in, API-key login) or a cancelled run gives its attempt back and the run is deferred; after `unavailable_wait_seconds` of unavailability the review is ERROR;
+- the comment's operation is recorded before the request and looked for (its marker, by the coordinator's account) before any repost; a crash between posting and recording never duplicates it, and the next run posts a comment that a crash prevented;
+- `github-review.lock` allows one run at a time; a second one is deferred.
+
+**History, outcome, evidence.** These are kept apart:
+
+| | What it is | Where |
+| --- | --- | --- |
+| History | every entry ever made, including invalidated, stale and held answers | `load_review()`, `github review show` |
+| Completed outcome | the current entry's outcome, ERROR included; for people | `review_rows()`, `github review status` |
+| Evidence | the current entry, complete, a real review outcome (PASS, PASS_WITH_NOTES or REQUEST_CHANGES; never ERROR), its stored binding matching its digest, for exactly the asked PR and head, its comment posted | `review_evidence(store, feature, pr, head)` |
+
+Evidence is advisory and **never approval to merge**: REQUEST_CHANGES is evidence too, and nothing acts on evidence in R1. A later step that does (W4.6.3) must itself, at that moment:
+
+- re-derive the binding from fresh reads (`ReviewRunner.recheck(feature, entry)` must return nothing);
+- apply its own rule for which outcomes it accepts;
+- keep the deterministic gates authoritative;
+- treat the local record as forgeable while the limitations below stand.
+
+The PR comment shows the outcome, head, merge base, reviewer, independence and findings; model text is redacted, escaped and has its @-mentions neutralized. It is a plain comment from the coordinator's account, never a GitHub review approval: that account is shared (`spyderbg`) and must never look like an independent authorization.
+
+### 13.5 Configuration (`github.review`)
+
+See [project-config.example.yaml](project-config.example.yaml): `enabled` (false), `provider` (`claude`; only a Claude Code provider is accepted), `model` (`opus`), `independence` (`prefer` | `require`), `timeout_seconds` (600), `max_attempts` (1), `unavailable_wait_seconds` (3600), `max_diff_characters` (150000), `max_findings` (30), `poll_interval_seconds` (60, R2: how often the Worker service's review step runs, 10..3600). Unknown keys are refused. Enabling it needs `github.intake.enabled` and `github.publish.enabled`; with it enabled, the Worker service reviews every verified Draft PR by itself (§13.7).
+
+### 13.6 Limitations
+
+- No Codex reviewer, no fallback provider (R4). No CI validation, no automatic merge (W4.6.2, W4.6.3). New features still branch from local `dev` (B1 not implemented).
+- The reviewer sees the diff and the prompt only, not the rest of the repository. Prompt injection through the diff or the Issue can still bias its verdict; the outcome is advisory and the gates stay authoritative.
+- The shared `spyderbg` identity and `runtime.native_hardening` off: an implementing agent with shell access could reach the GitHub login or the state directory and forge a comment or a local record. Nothing acts on a review automatically in R1; this blocks any later use of reviews as merge evidence.
+- The re-check after the reviewer narrows the race to the seconds between it and the comment; nothing pins the PR head on GitHub. Evidence describes the head at that moment, so any later consumer must re-check at its own time (above).
+- The credential patterns are heuristics. They can miss an unusual secret format and can over-redact (for example, a long hyphenated word containing `sk-`). Over-redaction only adds a coordinator note.
+- The post-run checks of the `init` event were first written for `tools: []`. The first live runs (Claude Code 2.1.319, PR #58 and PR #60) offered `["StructuredOutput"]` and were refused; since Issue #59 that delivery alone is accepted (§13.2), checked against the recorded shape of those runs. A future CLI that changes the protocol (another tool name, a second tool, the answer elsewhere) is refused or has no answer, never accepted. A review uses the operator's Claude subscription quota (bounded by attempts and the timeout).
+- R2 (§13.7): under systemd a crash of the service process also ends its reviewer (KillMode=mixed): the attempt is interrupted and stays counted, so with `max_attempts: 1` that review is ERROR until an operator runs `retry`. A graceful stop or restart cancels the reviewer instead (attempt given back, one new model request after the restart). Whether a process is the reviewer is decided by its process tag in `/proc/<pid>/environ` (best effort, as for the agents' run tags); the reviewer process itself is coordinator code running as the operator, not confined beyond the CLI's no-tools mode.
+
+### 13.7 Automatic review by the Worker service (R2)
+
+With `github.review.enabled`, the Worker service runs a **review step** right after its publication step (and before the intake poll), at most every `github.review.poll_interval_seconds`, never while paused. The step holds `github-review.lock` for seconds and **never waits for the model**; the heartbeat, cancellation and the other steps go on while a review runs. `github review run` and `retry` stay as in R1 (the reviewer runs in the foreground).
+
+**Starting.** Only while no reviewer process runs and no agent holds a claim on the checkout, the step takes the first approved Issue's feature in `review` whose recorded PR publication has not stopped (`attention`) and that still needs a review, and does exactly R1's run (§13.1: fresh binding, the publisher's identity checks, preconditions; one review per verified head and generation) — except that the attempt, counted **before** it starts, runs as one separate **reviewer process**: `python -m feature_coordinator github review exec RUN_DIR` (internal). Before counting, the reviewer's availability is checked without a model request (the CLI, its flags, the subscription login); an unavailable reviewer uses no attempt, starts no process, is reported once, and makes the review ERROR after `unavailable_wait_seconds`. A review complete for the publisher's verified head is not looked at again (no GitHub request), ERROR included; nor is one invalidated for that head. A newly verified head or an operator's `retry` starts the next.
+
+**The reviewer process** gets the attempt's request (`request.json` in its own run directory: the prompt, the answer schema, the timeout; mode 0600, never logged) and a random **process tag** (`FC_REVIEW_RUN`). It refuses without that tag or outside `runs/review/`, runs R1's reviewer **unchanged** (Claude Code, subscription, no tools, no MCP, an empty working directory, the existing supervisor and its timeout) with the tag added to the CLI's environment, writes `result.json` once and exits. Its environment is the native allowlist plus the tag: no GitHub token or API key. It never reads GitHub, takes no coordinator lock and writes no record. `worker pause` / `worker stop` cancel it through the control file; SIGTERM cancels it too; a cancelled run is recorded as cancelled.
+
+**Watching and collecting** (every step, local facts and `/proc` only while it runs):
+
+| Situation | What the step does |
+| --- | --- |
+| tagged processes live, within the deadline (timeout + termination grace + 120 s) | nothing: no GitHub request, no second reviewer |
+| past the deadline | records the decision first, then stops it (SIGTERM to the reviewer process, grace, SIGKILL, then any tagged leftover); the attempt is a **timeout** (used, never given back) |
+| the feature left review (merged, closed by publication), another PR, or a head the publisher no longer records as verified | stops it the same way; the entry is **invalidated**, its result discarded, nothing published |
+| the reviewer process ended but processes of its CLI are left (orphaned) | stops those; no result → interrupted |
+| gone | collects `result.json` through R1's judgement with the context it was given (§13.3–13.4): given back, refused, validated, **re-checked against fresh reads** (stale → history only; a failed re-read → held), recorded, ONE comment |
+| no result, or one that is not this attempt's (key, attempt, tag) | **interrupted**: the attempt stays counted; ERROR when none is left |
+
+A process is "ours" only if it carries the attempt's tag; the tag is re-checked before every signal, so a reused PID, a tampered record or any unrelated process is never signalled (a recorded identity that is alive without the tag neither blocks nor is stopped).
+
+**Lifecycle.**
+
+| Event | Result |
+| --- | --- |
+| Worker starts while a review is pending | the first step starts it (or reports the unavailable reviewer) |
+| Worker restarts while a review runs (outside systemd) | the new instance finds it by its tag: waits, collects, or stops it at its deadline |
+| graceful stop (`worker stop`, SIGTERM, `systemctl stop`) | the service asks its reviewer process to stop and waits for it, so it records its cancellation before systemd's final SIGKILL (KillMode=mixed); the attempt is given back (R1) and the next start reviews again |
+| pause | the reviewer cancels itself (control file); nothing is collected or started until resume, which collects (given back) and starts again |
+| reviewer finishes during shutdown | its result is collected by the next start |
+| reviewer crashes / killed | interrupted, counted |
+| reviewer times out | timeout, counted |
+| GitHub unavailable | the start is deferred (nothing counted); a finished answer whose binding cannot be re-read is held |
+| PR head changes, PR closed | publication stops (`attention`); a running review finishes and its answer is stale (history only); nothing new starts. After `github publish revalidate` (§10.12) moved the candidate to a person's new head, the review of the old head is invalidated and the next step reviews the new head |
+| PR merged | the feature is done: a running reviewer is stopped, the review invalidated |
+| approval withdrawn | stale at collection; before a start: ERROR without a model request (R1) |
+| result already published | not looked at again; a comment a crash interrupted is found by its marker, never posted twice |
+| an operator's `run` / `retry` while a reviewer process runs | deferred ("runs in a reviewer process the Worker service started"); once it ended, `run` collects it without a reviewer run |
+
+**Reporting.** `worker status`, `worker health --json` (`reviews`), `worker waiting` and `worker attention` show each review: pending, running (its process, deadline), held, reviewer-unavailable, complete, request-changes, error, invalidated. While no feature is active the service's state combines publication's and the reviews': an **ERROR** review of a feature in review is **NEEDS_ATTENTION** (and `worker health` is not healthy) with the commands to inspect and retry it; a running, pending, held or unavailable review and **REQUEST_CHANGES** are **WAITING**; PASS and PASS_WITH_NOTES add nothing to publication's wait. Log lines and events are written once per transition (a steady wait is not repeated); prompts, credentials and model text are never logged.
+

@@ -36,13 +36,34 @@ def operation(operation_name: str) -> dict[str, str]:
     """Return a placeholder operation result."""
     return {"operation": operation_name, "result": "success"}
 
+def _collect_tree(directory: str, prefix: str, levels: int, out: list[str]) -> None:
+    """Append *directory*'s entries to *out*, descending into sub-folders while *levels* > 1."""
+    with os.scandir(directory) as entries:
+        ordered = sorted(entries, key=lambda entry: entry.name)
+    for entry in ordered:
+        path = prefix + entry.name
+        # Symlinks are never followed, so the walk cannot leave the content tree or loop.
+        if entry.is_dir(follow_symlinks=False):
+            out.append(path + "/")
+            if levels > 1:
+                _collect_tree(entry.path, path + "/", levels - 1, out)
+        else:
+            out.append(path)
+
+
 def list_files(depth: int = 1) -> dict[str, Any]:
-    """List files in the configured content directory."""
+    """List the configured content directory down to *depth* folder levels.
+
+    ``depth=1`` lists the top level only, ``depth=2`` adds each top-level folder's contents, and so on.
+    ``files`` holds paths relative to the content directory in tree order (every folder is followed by
+    its contents, names sorted), and folders end with ``/`` so they can be told apart from files.
+    """
     directory = settings.content_path
     if not os.path.exists(directory):
         return {"error": f"Directory '{directory}' does not exist"}
     try:
-        files = os.listdir(directory)
+        files: list[str] = []
+        _collect_tree(str(directory), "", max(1, depth), files)
         return {"directory": directory, "files": files, "depth": depth}
     except OSError as err:
         return {"error": str(err)}

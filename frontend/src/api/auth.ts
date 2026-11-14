@@ -52,10 +52,12 @@ interface FilesResponse {
   [key: string]: unknown
 }
 
-export const listFiles = async (): Promise<FilesResponse> => {
-  const token = localStorage.getItem('token')
-  const response = await client.get<FilesResponse>('/list', {
-    headers: { Authorization: `Bearer ${token}` }
-  })
+/**
+ * List the content directory down to `depth` folder levels (1 = top level only).
+ * `files` holds paths relative to the content directory; folders end with `/`.
+ * The client's interceptor adds the Bearer token.
+ */
+export const listFiles = async (depth = 1): Promise<FilesResponse> => {
+  const response = await client.post<FilesResponse>('/list-files', { depth })
   return response.data
 }

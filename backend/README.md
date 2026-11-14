@@ -199,7 +199,7 @@ Base URL for all routes below: `/api/v1`. Protected routes require `Authorizatio
 | `GET`  | [/ping](src/api/v1/routes_common.py#L11)       | No   | Health check; returns PONG with backend platform info.                                   |
 | `GET`  | [/status](src/api/v1/routes_common.py#L16)     | Yes  | Service status.                                                                          |
 | `POST` | [/operation](src/api/v1/routes_common.py#L21)  | Yes (not viewers) | Perform a service operation. Query param: `name`.                           |
-| `POST` | [/list-files](src/api/v1/routes_common.py#L30) | Yes  | List files in the configured directory. Body: `{"depth": int}` (depth < 1 treated as 1). |
+| `POST` | [/list-files](src/api/v1/routes_common.py#L30) | Yes  | List the content directory down to `depth` folder levels (1 = top level). Body: `{"depth": int}` (depth < 1 treated as 1). `files` holds paths relative to the content directory in tree order; folders end with `/`, symlinks are not followed. |
 
 ### Content
 
@@ -394,6 +394,10 @@ importing service implementations directly. The content service lives in `servic
 also communicates with TTS and translation via internal HTTP calls. This keeps the core
 infrastructure layer decoupled from provider-specific code.
 
+Services that do import each other go through the other service's package facade, and every concrete
+provider is its own package — see "Service and provider encapsulation" in `CLAUDE.md`, enforced by
+`src/__tests__/test_architecture.py`.
+
 ### Output path helpers
 
 Output naming/path helpers now live on `Settings` in `src/core/config.py` (not a separate `output_paths.py` module).
@@ -409,6 +413,7 @@ Paths are relative to `backend/` (set `PYTHONPATH` to `src` when running uvicorn
 ```text
 src/
 ├── main.py                       # FastAPI app factory, lifespan, router registration
+├── __tests__/test_architecture.py  # Service/provider encapsulation rules (AST checks, see CLAUDE.md)
 ├── api/
 │   ├── dependencies.py           # get_registry, builder/service deps, get_job_store, auth deps
 │   ├── internal/                 # Internal routes (internal JWT or admin)
@@ -424,15 +429,12 @@ src/
 │           └── users.py
 ├── core/                         # No src.services imports (HTTP boundary)
 │   ├── config.py                 # Settings + output path helpers
-│   ├── models.py                 # e.g. TranslationSourceWord, GeneratedAudio, RunSummary
 │   ├── languages.py
 │   ├── localization.py           # LocalizedString: multilingual str with property access + Pydantic support
-│   ├── input_loader.py           # load_words() for translate-file (TXT/CSV/XLSX)
-│   ├── result_writer.py
 │   ├── content_naming.py         # Content folder / image id naming
 │   ├── job_store.py
 │   ├── log_client.py             # Async HTTP client → `/internal/loggers/*` (see services/logging/routes.py)
-│   ├── pipeline.py               # TTS pipeline (internal HTTP)
+│   ├── pipeline.py               # TTS pipeline (internal HTTP), RunSummary/ProviderRunRecord, per-run JSON/CSV reports
 │   ├── tasks.py                  # ping, status, operation, list-files
 │   ├── utils.py                  # boolish, platform / debug helpers
 │   └── (logging/ removed — now in services/logging)
@@ -452,7 +454,7 @@ src/
     │   ├── schemas.py            # Pydantic bodies for /api/v1/content/* (id, LocalizedString name, thumbnail_uri)
     │   ├── routes.py             # /api/v1/content/* (categories, voices, images, files)
     │   ├── service.py            # ContentService + ContentProviderFactory
-    │   └── providers/            # file_system provider
+    │   └── providers/            # file_system/ package (reference provider layout)
     ├── configuration/            # Co-located service (routes + schemas live next to service.py)
     │   ├── __init__.py           # SERVICE_CLASS, SERVICE_NAME, SERVICE_ACCEPT_CRITERIA
     │   ├── models.py             # ConfigurationProvider base + error/result dataclasses
@@ -464,10 +466,10 @@ src/
     │   │   ├── __init__.py
     │   │   ├── test_configuration_service.py
     │   │   └── test_configuration_service_integration.py
-    │   └── providers/            # file_system provider
+    │   └── providers/            # file_system/ package
     ├── text_to_speech/           # Co-located service (routes + schemas live next to service.py)
     │   ├── __init__.py           # SERVICE_CLASS, SERVICE_NAME, SERVICE_ACCEPT_CRITERIA
-    │   ├── models.py
+    │   ├── models.py             # TTSRequest, GeneratedAudio, TTSProvider base
     │   ├── schemas.py            # Pydantic bodies for /internal/generators/*
     │   ├── routes.py             # /internal/generators/, /{provider}/generate, /generate-word
     │   ├── service.py
@@ -475,10 +477,11 @@ src/
     │   │   ├── __init__.py
     │   │   ├── test_text_to_speech_service.py
     │   │   └── test_text_to_speech_service_integration.py
-    │   └── providers/            # openai_tts, elevenlabs_tts, speaktor_tts, pyttsx3_tts
+    │   └── providers/            # one package each: openai_tts/, elevenlabs_tts/, speaktor_tts/, pyttsx3_tts/, static_tts/
     ├── text_translation/         # Co-located service (routes + schemas live next to service.py)
     │   ├── __init__.py            # SERVICE_CLASS, SERVICE_NAME, SERVICE_ACCEPT_CRITERIA
-    │   ├── models.py
+    │   ├── input_loader.py        # load_words() for translate-file (TXT/CSV/XLSX)
+    │   ├── models.py              # TranslationSourceWord, TranslateResult, provider base
     │   ├── schemas.py             # Pydantic bodies for /internal/translators/* routes
     │   ├── routes.py              # /internal/translators/, /translate, /translate-file (under that prefix)
     │   ├── service.py
@@ -486,7 +489,7 @@ src/
     │   │   ├── __init__.py
     │   │   ├── test_text_translation_service.py
     │   │   └── test_text_translation_service_integration.py
-    │   └── providers/            # openai_translate, static_translate
+    │   └── providers/            # one package each: openai_translate/, qwen_translate/, static_translate/
     ├── voice_optimization/       # Co-located service (routes + schemas live next to service.py)
     │   ├── __init__.py            # SERVICE_CLASS, SERVICE_NAME, SERVICE_ACCEPT_CRITERIA
     │   ├── models.py              # AudioOptimizerBase
@@ -496,19 +499,21 @@ src/
     │   ├── normalizer.py
     │   ├── __tests__/             # Pytest tree (co-located with service)
     │   │   └── __init__.py
-    │   └── providers/             # ffmpeg_optimizer, pydub_optimizer
+    │   └── providers/             # one package each: ffmpeg_optimizer/, pydub_optimizer/
     ├── evaluation/               # Co-located service (routes + schemas live next to service.py)
-    │   ├── __init__.py            # Re-exports engine + score stores
-    │   ├── models.py              # EvaluationServiceProvider base
+    │   ├── __init__.py            # Re-exports engine + score stores; imports the STT providers
+    │   ├── models.py              # EvaluationResult, ProviderAggregate, ScoreRecord, STTProvider, EvaluationServiceProvider base
     │   ├── schemas.py             # Pydantic bodies for /internal/evaluators/*
     │   ├── routes.py              # /internal/evaluators, /evaluators/evaluate
-    │   ├── service.py             # EvaluationService + EvaluationProviderFactory
-    │   ├── engine.py
+    │   ├── service.py             # SpeechToTextProviderFactory, EvaluationService + EvaluationProviderFactory
+    │   ├── engine.py              # EvaluationEngine: picks the STT backend by evaluate.stt_provider, scores
     │   ├── score_store.py
     │   ├── score_store_json.py
     │   ├── score_store_sqlite.py
-    │   └── __tests__/             # Pytest tree (co-located with service)
-    │       └── __init__.py
+    │   ├── __tests__/             # Pytest tree (co-located with service)
+    │   │   ├── test_evaluation_engine.py
+    │   │   └── test_stt_providers.py
+    │   └── providers/             # STT backends, one package each: openai_stt/, elevenlabs_stt/, speaktor_stt/
     └── logging/                  # Logging service (structlog + stdlib + request logger)
         ├── __init__.py           # SERVICE_CLASS, SERVICE_NAME, SERVICE_ACCEPT_CRITERIA
         ├── models.py             # LoggingServiceProvider base class
@@ -702,7 +707,7 @@ requires the `pydub` Python package (included in `requirements.txt`).
 Logging is a registered service (`SERVICE_NAME = "logging"`) configured via JSON files in
 `config/logging/`. Each file uses the standard `service_provider` envelope and creates an
 independent provider instance. The only implementation is `struct_log`
-(`src/services/logging/providers/struct_log.py`). Internal HTTP handlers and request/response models live in
+(`src/services/logging/providers/struct_log/provider.py`). Internal HTTP handlers and request/response models live in
 `src/services/logging/routes.py` and `src/services/logging/schemas.py` (mounted at `/internal/loggers/*`).
 
 **Priority-ordered emit.** `LoggingService.emit(msg)` filters active providers to those with

@@ -377,6 +377,8 @@ def classify(before: Task, after: Task, events: Sequence[Mapping[str, Any]], *, 
         return Outcome(EXTERNAL, "another agent owns the checkout")
     if "stale claim" in log_text:
         return Outcome(INTERRUPTED, "a stale claim must be recovered first")
+    if "the checkout is on hold" in log_text or "no agent is started (temporarily unavailable" in log_text:
+        return Outcome(EXTERNAL, "the checkout is on hold or was changing: no agent was started (Security S1)")
     if "workspace check failed" in log_text or "identity mismatch" in log_text:
         return Outcome(CRITICAL, "the workspace is not the feature's checkout")
     return Outcome(UNKNOWN, f"launch exit {exit_code} without a recognized outcome")
@@ -489,7 +491,8 @@ def task_status(task: Task, rec: Scheduling | None, claim: Mapping[str, Any] | N
 
 def health_report(store: StateStore, config: ProjectConfig, now: float) -> dict[str, Any]:  # pylint: disable=too-many-locals
     """Read-only, structured health: the service (alive? responsive? state), the current agent,
-    every task's scheduling status, what waits and what needs an operator."""
+    every task's scheduling status, what waits and what needs an operator; W4.6.1 R2: the AI reviews (an ERROR
+    review of a feature in review needs an operator)."""
     record = load_service(store)
     claims = store.list_claims()
     identity = safe_identity(record.identity) if record and record.identity else None
@@ -530,7 +533,10 @@ def health_report(store: StateStore, config: ProjectConfig, now: float) -> dict[
             tasks.append(entry)
     attention = [t for t in tasks if t["status"] == "needs-attention"]
     waiting = [t for t in tasks if t["status"] in ("waiting-retry", "waiting-subscription")]
-    healthy = alive and state not in (UNRESPONSIVE, NEEDS_ATTENTION) and not attention
+    from .review_worker import review_view  # pylint: disable=import-outside-toplevel
+    reviews = review_view(store)
+    healthy = alive and state not in (UNRESPONSIVE, NEEDS_ATTENTION) and not attention and not any(
+        r.get("feature_state") == "review" and r["category"] in ("error", "unreadable") for r in reviews)
     return {"worker_id": record.worker_id if record else None, "state": state,
             "diagnosis": diagnose(state, record if alive else None, tasks, waiting),
             "recorded_state": record.state if record else None, "reason": record.reason if record else "",
@@ -544,7 +550,7 @@ def health_report(store: StateStore, config: ProjectConfig, now: float) -> dict[
             "attention": attention, "pending": sum(t["status"] in ("ready", "waiting-retry", "waiting-subscription",
                                                                     "interrupted", "orphaned", "running")
                                                    for t in tasks),
-            "control": read_control(store), "healthy": healthy}
+            "control": read_control(store), "reviews": reviews, "healthy": healthy}
 
 
 def blocking_survivors(rec: Scheduling | None) -> list[int]:

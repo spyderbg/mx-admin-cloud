@@ -16,7 +16,7 @@ from src.services.configuration.models import (
     ConfigurationSummary,
     ProviderStrategyInfo,
 )
-from src.services.logging.models import LogLevel
+from src.services.logging import LogLevel
 from src.services.models import Service, ServiceProvider
 from src.services.provider_factory import ServiceProviderFactory
 

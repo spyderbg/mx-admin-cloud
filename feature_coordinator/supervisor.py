@@ -22,6 +22,7 @@ import signal
 import subprocess
 import threading
 import time
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
@@ -161,15 +162,29 @@ def supervise(argv: Sequence[str], *, cwd: Path, env: Mapping[str, str] | None, 
               heartbeat: Callable[[], None] | None = None, heartbeat_interval: float = 10.0,
               cancelled: Callable[[], bool] | None = None, grace_seconds: float = 10.0,
               poll_interval: float = 0.1, on_start: Callable[[int], None] | None = None,
-              pass_fds: Sequence[int] = ()) -> Supervision:
+              pass_fds: Sequence[int] = (),
+              launch_gate: Callable[[], AbstractContextManager[Callable[[int], None] | None]] | None = None,
+              ) -> Supervision:
     """Run *argv* under supervision. See the module docstring. Only *pass_fds* (the broker
-    channel, W1) are inherited besides stdin/stdout/stderr; every other descriptor is closed."""
+    channel, W1) are inherited besides stdin/stdout/stderr; every other descriptor is closed.
+
+    *launch_gate* (Security S1): the admission decision for this launch. The process is started INSIDE the context
+    it returns — which may refuse by raising; then nothing is started — and the function it yields is called with
+    the new process ID before the context is left (workspace_hold.launch_gate)."""
     stdout_path.parent.mkdir(parents=True, exist_ok=True)
     with open(stdout_path, "wb") as out, open(stderr_path, "wb") as err, \
             (open(stdin_path, "rb") if stdin_path else open(os.devnull, "rb")) as stdin:
         start = time.monotonic()
-        proc = subprocess.Popen(list(argv), cwd=cwd, env=dict(env) if env is not None else None,  # pylint: disable=consider-using-with
-                                stdin=stdin, stdout=out, stderr=err, start_new_session=True, pass_fds=tuple(pass_fds))
+        with (launch_gate() if launch_gate else nullcontext()) as admitted:
+            proc = subprocess.Popen(list(argv), cwd=cwd, env=dict(env) if env is not None else None,  # pylint: disable=consider-using-with
+                                    stdin=stdin, stdout=out, stderr=err, start_new_session=True,
+                                    pass_fds=tuple(pass_fds))
+            if admitted is not None:
+                try:
+                    admitted(proc.pid)
+                except BaseException:
+                    terminate_group(proc, 0)  # never leave an agent running that could not be registered
+                    raise
         if on_start:
             try:
                 on_start(proc.pid)

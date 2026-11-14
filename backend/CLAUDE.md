@@ -46,12 +46,11 @@ docker compose -f docker/docker-compose.yml up -d --build
   (requires internal service token or admin JWT)
 - **`core/`** — Shared infrastructure with **zero** `src.services` imports (HTTP boundary enforced):
   - `config.py` — Pydantic Settings; all env vars and defaults
-  - `models.py` — Core dataclasses (TTSRequest, GeneratedAudio, EvaluationResult, etc.)
   - `content_naming.py` — Slugification and output filename helpers
   - `languages.py` — Language code/name lookups and BCP-47 conversion
-  - `input_loader.py` — `load_words()` parses CSV/XLSX/TXT for translation
-  - `result_writer.py` — Write per-run JSON and CSV reports
-  - `pipeline.py` — Async TTS pipeline orchestration (calls internal HTTP endpoints)
+  - `pipeline.py` — Async TTS pipeline orchestration (calls internal HTTP endpoints), its run records
+    (RunSummary, ProviderRunRecord) and `write_run_summary` (per-run JSON and CSV reports);
+    service value types live in their service's `models.py` (e.g. GeneratedAudio in `text_to_speech/`)
   - `job_store.py` — In-memory store for async pipeline jobs
   - `logging_route.py` — `LoggingAPIRoute`, the shared router route class that traces
     requests and reports endpoint failures
@@ -62,12 +61,70 @@ docker compose -f docker/docker-compose.yml up -d --build
   - `text_to_speech/` — TTS provider implementations (OpenAI, ElevenLabs, Speaktor, Static)
   - `text_to_image/` — Image provider implementations (OpenAI SDK/HTTP, Google GenAI SDK/HTTP,
     ComfyUI) with a shared traffic governor (concurrency, spacing, retries) and cost estimates
-  - `text_translation/` — Translator implementations (OpenAI, Static CSV)
+  - `text_translation/` — Translator implementations (OpenAI, Static CSV); `input_loader.py` —
+    `load_words()` parses CSV/XLSX/TXT for `translate-file`
   - `voice_optimization/` — Audio post-processing (FFmpeg, Pydub, Normalizer)
   - `evaluation/` — STT transcription and Levenshtein-based scoring
   - `logging/` — Logging service (structlog provider, HTTP emit client, request logger)
 - **`db/`** — SQLite user store; passwords use SHA256 prehash + bcrypt
 - **`security/`** — JWT auth and token generation
+
+### Service and provider encapsulation
+
+Two levels, enforced by `src/__tests__/test_architecture.py` (AST-based; runs with the normal test suite and
+`/verify`). The `content` service is the reference.
+
+**Services.** `src/services/<name>/__init__.py` is the service's public interface: it lists in `__all__` the
+service class, the provider base/factory and the request/result models callers need. Code outside the service
+(other services, `core/`, `api/`, `main.py`, shared tests) imports only from that facade:
+
+```python
+from src.services.text_to_speech import GeneratedAudio, TextToSpeechService  # yes
+from src.services.text_to_speech.service import TextToSpeechService          # no, outside text_to_speech
+```
+
+- Inside a service, modules import each other directly (`from src.services.evaluation.models import …`).
+- Services call each other directly — there is no orchestrator. The import-time graph between services stays
+  acyclic (`content` → `text_to_image`/`text_to_speech`/`voice_optimization`; `evaluation`,
+  `voice_optimization` → `text_to_speech`; most services → `logging`). An import that would close a cycle stays
+  inside the function that needs it (`static_tts` → `content`).
+- A type one service owns lives in that service even when others use it (`GeneratedAudio` in
+  `text_to_speech`); `core/` keeps only genuinely application-wide code.
+
+**Providers.** Every concrete provider is its own package, laid out like `content/providers/file_system/`:
+
+```
+text_to_speech/providers/
+├── __init__.py          # imports every provider package (pkgutil), so each registers itself
+├── openai_tts/
+│   ├── __init__.py      # re-exports OpenAITTSProvider (for the service's own code and tests)
+│   └── provider.py      # the implementation; calls TextToSpeechProviderFactory.register("openai", cls)
+└── …
+```
+
+- A provider implements the service's existing contract (`TTSProvider`, `TextToImageProvider`,
+  `AudioOptimizerBase`, …) and may import its own service's models, factory and helpers — never a sibling
+  provider. Provider-specific helpers live in the provider's package (`comfyui_image/templating.py`); add modules
+  only when they help, a simple provider is just `__init__.py` + `provider.py`.
+- Code several providers share lives in a `_`-prefixed module of `providers/`
+  (`text_to_image/providers/_genai_common.py`, `_openai_payload.py`): it registers nothing and imports no
+  concrete provider.
+- Registration stays with the owning service: `<Factory>.register("<id>", cls)` runs only inside the provider's
+  package, and adding a provider needs no other edit. A facade never exports a provider class.
+- The service's own code selects providers through its factory (`<Factory>.create(...)`), never by importing a
+  concrete provider package. Outside `providers/` it imports at most the loader `src.services.<name>.providers`,
+  which the facade imports so that every provider registers itself.
+- `evaluation`'s speech-to-text backends follow the same layout without being configured providers:
+  `evaluation/providers/{openai,elevenlabs,speaktor}_stt/` implement `STTProvider` and register with
+  `SpeechToTextProviderFactory` under the id that a TTS configuration names in `evaluate.stt_provider`;
+  `EvaluationEngine` looks that id up. Details and how to add one:
+  `docs_agents/backend/services/evaluation/README.md`.
+
+**Exceptions** (`ALLOWED_DEEP_IMPORTS` in the test — keep it short): `main.py` imports each
+`src.services.<name>.routes` to mount its router; `core/log_client.py` imports the route paths from
+`src.services.logging.routes` (re-exporting them from the facade would load the router on every logging import);
+`services/configuration/__init__.py` imports `providers.file_system` because that provider is built at runtime
+from the registry builder, which no configuration file can supply.
 
 ### TTS Pipeline
 
@@ -129,8 +186,8 @@ so a record stays attributable once it reaches a collector that runs none of the
 - A named logger resolves to a config-file stem (`config/logging/<name>.json`) and 404s when that
   config is missing or disabled, dropping the record by design — `trace` ships disabled, so trace
   records go nowhere until you enable it. `emit_event` cannot 404; prefer it when a record must land.
-- Importing `src.services.logging.schemas` / `.models` (`LogRequest`, `LogLevel`) is fine — those are
-  the wire contract, not the implementation.
+- The wire contract (`LogLevel`, `LogRequest`, `LogProviderRequest`, `LogApiRequest`, `LogServiceRequest`) is
+  part of the logging facade: `from src.services.logging import LogLevel, LogProviderRequest`.
 - Plain `logging.getLogger(__name__)` stays fine for local diagnostics, but those lines stay on the
   local host and are never collected centrally.
 - Only exceptions: `src/services/logging/` itself, and `src/main.py`, which calls

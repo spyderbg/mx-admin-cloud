@@ -18,6 +18,11 @@ kiddo-cli = "kiddo_cli.main:app"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.pytest.ini_options]
+# Lets `pytest` run from cli/ without installing the package or setting PYTHONPATH.
+pythonpath = ["src"]
+testpaths = ["tests"]
+
 [tool.pylint.format]
 max-line-length = 120
 

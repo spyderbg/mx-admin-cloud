@@ -46,14 +46,15 @@ def register(app: typer.Typer) -> None:
 
     @app.command(name="list-files")
     def list_files(
-            depth: int = typer.Option(1, "--depth", help="Directory depth to list"),
+            depth: int = typer.Option(1, "--depth", help="How many folder levels to list (1 = top level only)"),
             url: str = typer.Option(None, "--url", help="Backend base URL"),
             token: str | None = typer.Option(None, "--token", help="Bearer token (else auth via CLI socket)"),
     ):
-        """Run a report task (calls backend API)."""
+        """List the content directory down to --depth folder levels (calls backend API)."""
 
         def run(t: str):
-            result = post("/list-files", params={"depth": depth}, token=t)
+            # The backend reads depth from the JSON body (ListFilesRequest), not the query string.
+            result = post("/list-files", json={"depth": depth}, token=t)
             print_json(result)
 
         run_with_auth(url, token, run)

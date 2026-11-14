@@ -6,7 +6,7 @@ from pathlib import Path
 
 from src.services.acceptance import ServiceAcceptCriteria
 from src.services.models import ServiceProvider
-from src.services.text_to_speech.models import TTSProvider
+from src.services.text_to_speech.models import GeneratedAudio, TTSProvider, TTSRequest
 from src.services.text_to_speech.service import (
     TextToSpeechProviderFactory,
     TextToSpeechService
@@ -17,7 +17,9 @@ from src.services.text_to_speech.service import (
 import src.services.text_to_speech.providers  # noqa: F401, E402 # pylint: disable=wrong-import-position
 
 __all__ = [
+    "GeneratedAudio",
     "TTSProvider",
+    "TTSRequest",
     "TextToSpeechProviderFactory",
     "TextToSpeechService",
 ]

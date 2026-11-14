@@ -6,7 +6,6 @@ from typing import ClassVar, List, Pattern, Protocol
 
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from src.core.models import GeneratedAudio
 
 # Load .env into os.environ so.env values override Settings defaults
 load_dotenv()
@@ -166,20 +165,6 @@ class Settings(BaseSettings):
         base = request.filename_text if request.language_code != "en" and request.filename_text else request.text
         safe_text = self.slugify_filename(base, fallback=request.request_id)
         return f"{safe_text}_{request.language_code}"
-
-    def build_output_stem_from_result(self, generated_audio: GeneratedAudio) -> str:
-        """Build the output stem from a generated audio result."""
-        request_stub = type(
-            "RequestStub",
-            (),
-            {
-                "filename_text": generated_audio.filename_text,
-                "language_code": generated_audio.language_code,
-                "text": generated_audio.expected_text,
-                "request_id": generated_audio.request_id,
-            },
-        )()
-        return self.build_output_stem(request_stub)
 
 
 settings = Settings()

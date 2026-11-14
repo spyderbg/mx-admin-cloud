@@ -158,7 +158,7 @@ async def translate_file(
         registry: ServiceRegistry = Depends(get_registry),
 ) -> TranslateFileResponse:
     """Translate words in an uploaded file via the registry's active translators."""
-    from src.core.input_loader import load_words  # pylint: disable=import-outside-toplevel
+    from src.services.text_translation.input_loader import load_words  # pylint: disable=import-outside-toplevel
 
     service = get_typed_service(
         registry=registry,

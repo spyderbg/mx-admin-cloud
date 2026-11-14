@@ -43,6 +43,7 @@ from .errors import CoordinatorError, LockBusyError
 from .model import FeatureState, Task, TaskState
 from .supervisor import stop_requested
 from .workspace import require_workspace
+from .workspace_hold import describe, hold_of
 
 
 
@@ -86,6 +87,7 @@ class WorkReport:
     stopped: bool = False
     recovered: list[str] = field(default_factory=list)          # W3: stale claims reclaimed at start
     orphaned: dict[str, list[int]] = field(default_factory=dict)  # W3: dead worker, agent still alive
+    held: str = ""  # Security S1: why the checkout went on hold (no task was started after that)
 
     @property
     def all_verified(self) -> bool:
@@ -96,17 +98,22 @@ class WorkReport:
 def cli_spawner(repo: Path, state_dir: Path, *, tracker: str = "local", project_config: str | None = None,
                 log_dir: Path | None = None) -> Spawner:
     """Start `python -m feature_coordinator launch TASK --apply` for this checkout and state directory. *env*: extra
-    variables for the launch process (W4: the service's launch tag)."""
-    def spawn(task_id: str, attempt: int, env: dict[str, str] | None = None) -> Handle:
+    variables for the launch process (W4: the service's launch tag). `spawn.start(tail, log_name, env)` starts
+    another internal command the same way with exactly *env* (W4.6.1 R2: the reviewer process)."""
+    def start(tail: Sequence[str], log_name: str, env: Mapping[str, str] | None) -> Handle:
         argv = [*CLI, "--repo", str(repo), "--state-dir", str(state_dir), "--tracker", tracker]
         if project_config:
             argv += ["--project-config", str(project_config)]
-        argv += ["launch", task_id, "--apply"]
         directory = log_dir or (state_dir / "logs")
         directory.mkdir(parents=True, exist_ok=True)
-        with open(directory / f"work-{task_id}.{attempt}.log", "ab") as log:
-            return subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,  # pylint: disable=consider-using-with
-                                    start_new_session=True, env={**os.environ, **env} if env else None, cwd=CODE_ROOT)
+        with open(directory / log_name, "ab") as log:
+            return subprocess.Popen([*argv, *tail], stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,  # pylint: disable=consider-using-with
+                                    start_new_session=True, env=dict(env) if env is not None else None, cwd=CODE_ROOT)
+
+    def spawn(task_id: str, attempt: int, env: dict[str, str] | None = None) -> Handle:
+        return start(["launch", task_id, "--apply"], f"work-{task_id}.{attempt}.log",
+                     {**os.environ, **env} if env else None)
+    spawn.start = start  # type: ignore[attr-defined]
     return spawn
 
 
@@ -191,7 +198,11 @@ class FeatureWorker:  # pylint: disable=too-many-instance-attributes,too-few-pub
                                                    round(time.monotonic() - began, 1)))
                 self.echo(f"done  {task_id}: {task.state.value} (exit {code})")
             tasks = self.coord.store.load_tasks(self.coord.store.load_feature(feature_id))
-            started = [] if report.stopped else self._eligible(tasks, running, attempts, report)
+            hold = hold_of(self.coord.store, self.coord.root)  # Security S1: residue blocks every new start
+            if hold is not None and not report.held:
+                report.held = describe(hold)
+                self.echo(f"workspace on hold: {report.held}")
+            started = [] if report.stopped or hold is not None else self._eligible(tasks, running, attempts, report)
             for task in started:
                 attempts[task.id] = attempts.get(task.id, 0) + 1
                 steps = progress_line(self.coord.store, task)

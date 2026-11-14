@@ -46,6 +46,14 @@ Issue and board synchronizers use; the poll itself is intake_poll.py.
 
 Not eligible (never read for commands, never written): pull requests, Issues of the bug workflow
 (`mx-auto`, `source::*`, `severity::*`), Issues that carry a coordinator marker, closed Issues.
+
+W4.5 (intake_plan.py): a second way to approve. A `worker:plan` label asks the Desktop Worker for a
+validated, versioned execution plan (one or more tasks across roles), published on the Issue; a
+`worker:approve` label approves exactly that Issue text and plan version (no digest to copy). The
+validated approval becomes an intake record of schema 2 (`plan` set): the feature gets the plan's
+tasks, the approved Issue belongs to the FEATURE (`anchor`), and every rule above — recorded text,
+fail closed on change, one acknowledgement, activation, Draft PR — applies to all of its tasks.
+Records of `/worker approve` keep schema 1, byte for byte.
 """
 
 from __future__ import annotations
@@ -61,6 +69,7 @@ from .issues import RemoteIssue, is_foreign, normalize_body
 from .model import utc_now
 
 INTAKE_SCHEMA = 1
+PLANNED_INTAKE_SCHEMA = 2  # W4.5: a record approved through a published plan (`plan` set)
 COMMAND_PREFIX = "/worker"
 MAX_COMMAND_COMMENT = 2000
 _APPROVE_RE = re.compile(r"/worker[ \t]+approve[ \t]+([a-z][a-z-]{0,39})[ \t]+([0-9a-f]{64})")
@@ -136,6 +145,7 @@ _FIELDS = frozenset({"schema_version", "id", "issue_number", "issue_id", "node_i
                      "body", "digest", "role", "gates", "task_id", "approved_by", "approval_comment_id",
                      "approval_comment_url", "approved_at", "recorded_at", "status", "spec_changed",
                      "activation_error", "completed", "revision"})
+_PLANNED_FIELDS = frozenset({"task_ids", "anchor", "plan", "integration_gates"})  # schema 2 only
 STATUSES = ("approved", "planned", "active", "done")
 
 
@@ -167,22 +177,50 @@ class IntakeRecord:  # pylint: disable=too-many-instance-attributes
     activation_error: str = ""
     completed: dict[str, Any] | None = None     # W4.3.3: {pr, merge_commit_sha, issue, closed_by, at}
     revision: int = 0
+    # W4.5 (schema 2): approved through a published execution plan (intake_plan.py)
+    task_ids: list[str] = field(default_factory=list)          # every task of the plan, in plan order
+    anchor: str = ""                                           # the record the Issue belongs to: the feature
+    plan: dict[str, Any] | None = None                         # {version, sha256, approval_sha256, canonical, evidence}
+    integration_gates: list[str] = field(default_factory=list)  # the plan's (approved) integration gates
+
+    @property
+    def planned(self) -> bool:
+        """True for a record approved through a published plan (schema 2)."""
+        return self.plan is not None
+
+    @property
+    def anchor_id(self) -> str:
+        """The local record whose Issue is the approved Issue: the task (legacy) or the feature (planned)."""
+        return self.anchor or self.task_id
+
+    @property
+    def all_task_ids(self) -> list[str]:
+        """Every task this approval covers."""
+        return list(self.task_ids) or [self.task_id]
 
     def to_dict(self) -> dict[str, Any]:
-        """JSON form."""
-        return {**asdict(self), "schema_version": INTAKE_SCHEMA}
+        """JSON form. A legacy record stays schema 1 with exactly the schema-1 fields (a rollback reads it)."""
+        data = asdict(self)
+        if not self.planned:
+            return {**{k: v for k, v in data.items() if k not in _PLANNED_FIELDS}, "schema_version": INTAKE_SCHEMA}
+        return {**data, "schema_version": PLANNED_INTAKE_SCHEMA}
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "IntakeRecord":
         """Strict: another schema or unknown fields are refused (never dropped)."""
-        if data.get("schema_version") != INTAKE_SCHEMA:
-            raise StateDirError(f"intake record {data.get('id')!r}: unsupported schema {data.get('schema_version')!r}")
-        unknown = sorted(set(data) - _FIELDS)
+        schema = data.get("schema_version")
+        if schema not in (INTAKE_SCHEMA, PLANNED_INTAKE_SCHEMA):
+            raise StateDirError(f"intake record {data.get('id')!r}: unsupported schema {schema!r}")
+        allowed = _FIELDS | (_PLANNED_FIELDS if schema == PLANNED_INTAKE_SCHEMA else frozenset())
+        unknown = sorted(set(data) - allowed)
         if unknown:
             raise StateDirError(f"intake record {data.get('id')!r} has unknown fields {unknown}")
         record = cls(**{k: v for k, v in data.items() if k != "schema_version"})
         if record.status not in STATUSES:
             raise StateDirError(f"intake record {record.id!r}: unknown status {record.status!r}")
+        if (schema == PLANNED_INTAKE_SCHEMA) != record.planned:
+            raise StateDirError(f"intake record {record.id!r}: unsupported schema {schema} for a record "
+                                f"{'with' if record.planned else 'without'} a plan")
         return record
 
 
@@ -199,9 +237,10 @@ def verify_intake_issue(issue: RemoteIssue, record: IntakeRecord, *, record_id: 
     asking): only the intake task has this Issue — the feature has none. *known_id*: the database ID
     recorded when the task was mapped."""
     where = f"#{issue.number}"
-    if record_id is not None and record_id != record.task_id:
+    if record_id is not None and record_id != record.anchor_id:
+        owner = f"its feature {record.id!r}" if record.planned else f"its task {record.task_id!r}"
         raise OwnershipError(f"{where}: `{record_id}` has no Issue; feature {record.id!r} came from an approved "
-                             f"Issue, which belongs to its task {record.task_id!r} only")
+                             f"Issue, which belongs to {owner} only")
     if known_id is not None and issue.id != known_id:
         raise OwnershipError(f"{where}: database ID {issue.id} differs from the recorded {known_id}")
     if issue.is_pull_request:
@@ -241,6 +280,6 @@ def known_problem(store: Any, task: Any) -> str | None:
     """Why an intake task's approval is known to be withdrawn (the intake record, no request), or
     None — also for every task that did not come from the intake."""
     record = load_intake(store, task.feature_id)
-    if record is None or record.task_id != task.id or not record.spec_changed:
+    if record is None or task.id not in record.all_task_ids or not record.spec_changed:
         return None
     return f"approved Issue #{record.issue_number}: {record.spec_changed.get('reason', 'changed after approval')}"

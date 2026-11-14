@@ -73,6 +73,10 @@ class RunContext:
     # and the Git coordinator's lock, so workspace snapshots never see a commit half-way.
     concurrent_roles: Callable[[], set[str]] | None = None
     git_quiet: Callable[[], Any] | None = None
+    # Security S1: the launch admission (workspace_hold.launch_gate), called with the runner's FRESH inventory. A
+    # runner that sets `launch_gated = True` starts its agent process inside the context this returns (it may
+    # raise: then nothing is started); the coordinator admits every other runner itself, just before run().
+    launch_gate: Callable[[Any], Any] | None = None
 
 
 @dataclass

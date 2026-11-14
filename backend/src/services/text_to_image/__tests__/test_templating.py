@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from src.services.text_to_image.templating import render_template
+from src.services.text_to_image.providers.comfyui_image.templating import render_template
 
 _CONTEXT = {
     "prompt": "a friendly cat",

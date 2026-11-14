@@ -14,7 +14,7 @@ import pytest
 
 from src.services.models import ServiceProvider
 from src.services.text_translation.models import TranslateTextRequest
-from src.services.text_translation.providers import qwen_translate
+from src.services.text_translation.providers.qwen_translate import provider as qwen_translate
 from src.services.text_translation.providers.qwen_translate import QwenTextTranslate
 from src.services.text_translation.service import TextTranslationProviderFactory
 
@@ -135,7 +135,7 @@ def test_qwen_works_with_openai_provider_file_removed(tmp_path):
     source_dir = _CONFIG_DIR.parent.parent / "src"
     isolated_src = tmp_path / "src"
     shutil.copytree(source_dir, isolated_src, ignore=shutil.ignore_patterns("__pycache__", "__tests__"))
-    (isolated_src / "services/text_translation/providers/openai_translate.py").unlink()
+    shutil.rmtree(isolated_src / "services/text_translation/providers/openai_translate")
     script = """
 import asyncio
 import sys
@@ -145,7 +145,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from src.services.models import ServiceProvider
 from src.services.text_translation.models import TranslateTextRequest
-from src.services.text_translation.providers import qwen_translate
+from src.services.text_translation.providers.qwen_translate import provider as qwen_translate
 from src.services.text_translation.service import TextTranslationProviderFactory
 
 assert Path(qwen_translate.__file__).resolve().is_relative_to(Path.cwd())

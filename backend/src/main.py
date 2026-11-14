@@ -24,7 +24,7 @@ from src.services.configuration import routes as configuration_routes
 from src.services.content import routes as content_routes
 from src.services.evaluation import routes as evaluators_routes
 from src.services.logging import routes as logging_routes
-from src.services.logging.service import LoggingService
+from src.services.logging import LoggingService
 from src.services.service_registry import ServiceRegistry, ServiceRegistryBuilder
 from src.services.text_to_image import routes as text_to_image_routes
 from src.services.text_to_speech import routes as text_to_speech_routes

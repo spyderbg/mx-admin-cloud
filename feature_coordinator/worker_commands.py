@@ -76,6 +76,8 @@ def cmd_work(args: argparse.Namespace, config: ProjectConfig) -> int:  # pylint:
            f"{'; STOPPED by request' if report.stopped else ''}")
     for task_id, why in report.skipped.items():
         _print(f"  not run: {task_id}: {why}")
+    if report.held:
+        _print(f"  workspace on hold: {report.held}")
     if report.recovered:
         _print(f"  recovered at start (stale claims): {report.recovered}")
     if report.all_verified and args.integrate:

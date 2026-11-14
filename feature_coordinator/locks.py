@@ -194,3 +194,8 @@ class LockSet:
         """W4.3.3: one publication pass at a time (publish.py: push, PR, completion). Like intake(), NOT part
         of the lock order above: it is taken first, then the pass uses the ordinary locks."""
         return FileLock(self.dir / "github-publish.lock")
+
+    def review(self) -> FileLock:
+        """W4.6.1: one AI review run at a time (review.py). Like publish(), NOT part of the lock order above: it
+        is taken first and held while the reviewer runs; no coordinator, project, role or Git lock is held then."""
+        return FileLock(self.dir / "github-review.lock")

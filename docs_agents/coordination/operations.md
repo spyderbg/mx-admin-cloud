@@ -25,6 +25,8 @@ python -m feature_coordinator status                            # tasks, claims 
 python -m feature_coordinator integrate <feature> --apply       # quiescent barrier → single PR candidate (not opened)
 ```
 
+**Integration jobs of existing branches (W4.7, M1/M2).** The `integration intake | status | abort | approve | inspect` commands are a separate job type and are unrelated to `integrate <feature>`. M1 records and checks jobs; M2 adds the operator's SSH-signed authorization (`approve`) and the read-only inspection (`inspect`: pinned SHAs, provenance, the complete PR lookup, the changed paths classified through PathPolicy). No Git write, no PR, never a merge. See [integration-jobs.md](integration-jobs.md).
+
 **Execution backend (W2).** `runtime.execution_backend` is `native-cli` by default: the installed `claude` and `codex` run directly in the checkout with the operator's **subscription logins**. That is **not a security sandbox**: write scopes are verified after each run, and changes outside the role are rejected and left in place. `bwrap` selects the Phase 3 containment. There is never a fallback between the two. Design: [worker-functional.md](worker-functional.md).
 
 **The Worker (W2).** `python -m feature_coordinator work <feature>` (dry run) lists the tasks in dependency order with their agent, model and state, and checks the workspace. With `--apply` it launches READY tasks as separate `launch` processes:
@@ -173,7 +175,7 @@ Operating rules:
 | `duplicates` in a report | Two owned Issues carry one key; the oldest is used. Close the other one by hand after checking it |
 | `drift` in a report | A human changed labels, the managed block or the open/closed state; the local state was re-applied. Use `/feature hold`/`release` or `python -m feature_coordinator` commands to change task state |
 | Rate limited | The sync waits up to `max_rate_limit_wait_seconds`, otherwise it is deferred; run it again later |
-| `github publish poll` reports a stop (NEEDS ATTENTION) | Read the reason (`github publish status`). Resolve it: restore the remote or the branch; close a stray PR; inspect the merge. Then run `github publish reset FEATURE --apply`. A PR closed without merge is not a stop: reopen and merge it, and the next pass continues |
+| `github publish poll` reports a stop (NEEDS ATTENTION) | Read the reason (`github publish status`). Resolve it: restore the remote or the branch; close a stray PR; inspect the merge. Then run `github publish reset FEATURE --apply`. A PR closed without merge is not a stop: reopen and merge it, and the next pass continues. A PR whose head a person moved: `github publish revalidate FEATURE`, then with `--head <full 40-character SHA> --apply` ([github-intake.md §10.12](github-intake.md#1012-revalidating-a-pr-whose-head-a-person-changed)) |
 | Publication was interrupted (crash, network, lost GitHub response) | Run `github publish poll --apply` again (or let the service do it). The remote branch and the PRs are read before anything is pushed or created, so nothing is duplicated ([github-intake §10.5](github-intake.md#105-recovery-after-interruptions)) |
 
 ## 8. GitHub Projects board (Phase 4 extension)

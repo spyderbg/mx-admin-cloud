@@ -42,7 +42,9 @@ idempotent). Per feature, by its EXISTING state (no new state machine):
 Doubtful evidence sets `attention` on the candidate (sticky until
 `python -m feature_coordinator github publish reset FEATURE --apply`): the branch moved, a PR that does not
 match, several PRs, a rejected (non-fast-forward) push, a
-wrong or rewritten remote, a withdrawn approval before publication, merge evidence that does not hold.
+wrong or rewritten remote, a withdrawn approval before publication, merge evidence that does not hold. A PR
+whose head a person moved is NOT resumed by a reset: `github publish revalidate FEATURE` (revalidate.py)
+validates the new head of the same PR and only then moves the candidate to it.
 Transient failures (network, GitHub 5xx, a busy lock) are retried by the next pass.
 
 Locks: one pass at a time (github-publish.lock, taken first). GitHub is never called under a coordinator,
@@ -201,7 +203,7 @@ class PullRequestPublisher:  # pylint: disable=too-few-public-methods
             if wanted and feature.id not in wanted:
                 continue
             record = load_intake(self.store, feature.id)
-            if record is None or record.task_id not in feature.task_ids:
+            if record is None or not set(record.all_task_ids) <= set(feature.task_ids):
                 if wanted:
                     report.attention.append(f"{feature.id} is not an approved GitHub Issue's feature: it is never "
                                             "published automatically (integrate it and open its PR by hand)")
@@ -271,7 +273,9 @@ class PullRequestPublisher:  # pylint: disable=too-few-public-methods
             self._status(report, feature, "verified", "ready for the integration barrier")
             return
         try:
-            feature = self.coord.integrate(feature.id)
+            # W4.5: a planned feature is integrated with the approved plan's gates; a legacy one exactly as before
+            planned = {"gates": tuple(record.integration_gates)} if record.planned and record.integration_gates else {}
+            feature = self.coord.integrate(feature.id, **planned)
         except (EvidenceError, PullRequestPolicyError) as exc:  # gates failed, approval withdrawn, unclean checkout
             self._stop(feature, report, f"integration refused: {exc}", sticky=False)
         report.integrated.append(feature.id)
@@ -296,7 +300,8 @@ class PullRequestPublisher:  # pylint: disable=too-few-public-methods
         if cand.attention:
             self._stop(feature, report, f"{cand.attention.get('reason')} (since {cand.attention.get('since')}; after "
                                         "resolving it: `python -m feature_coordinator github publish reset "
-                                        f"{feature.id} --apply`)",
+                                        f"{feature.id} --apply`; a PR head a person changed is validated with "
+                                        f"`python -m feature_coordinator github publish revalidate {feature.id}`)",
                        sticky=False)
         problem = self._repository_problem(feature) or self._head_problem(feature, cand)
         if problem:
@@ -425,10 +430,10 @@ class PullRequestPublisher:  # pylint: disable=too-few-public-methods
                                     state=pr.state, merged=pr.merged, draft=pr.draft)
             if pr.state == "open":
                 kind = "Draft pull request opened" if origin == "created" else "Pull request found and recorded"
-                self._queue(record.task_id, f"pr-{feature.id}", (
+                self._queue(record.anchor_id, f"pr-{feature.id}", (
                     f"**{kind}**: #{pr.number} ({pr.url}) — `{feature.branch}` → `{feature.base_branch}` at the "
                     f"verified `{pr.head_sha[:12]}`. The Worker never merges: a person reviews it, marks it ready and "
-                    f"merges it. Merging completes task `{record.task_id}`; the coordinator then closes this Issue and "
+                    f"merges it. Merging completes {_work(record)}; the coordinator then closes this Issue and "
                     "moves its Project card to Done. Closing the pull request without merging completes nothing."))
         self.coord.sync_issues(feature.id)  # posts the PR link (outside every lock)
 
@@ -445,8 +450,8 @@ class PullRequestPublisher:  # pylint: disable=too-few-public-methods
                               f"open ONE Draft PR {feature.branch} → {feature.base_branch}"]
             self._status(report, feature, "integrated", "the Draft PR is opened next")
             return
-        task = self.store.load_task(record.task_id)
-        withdrawn = known_problem(self.store, task) or issue_problem(self.client, record)[1]
+        withdrawn = next((p for p in (known_problem(self.store, self.store.load_task(t)) for t in record.all_task_ids)
+                          if p), None) or issue_problem(self.client, record)[1]
         if withdrawn:
             self._stop(feature, report, f"the approval no longer holds; nothing is published: {withdrawn}")
         self._push(feature, cand, report)
@@ -539,7 +544,7 @@ class PullRequestPublisher:  # pylint: disable=too-few-public-methods
             self._status(report, feature, "draft" if pr.draft else "open", f"{what} #{pr.number}")
             return
         if not pr.merged:
-            self._stop(feature, report, f"PR #{pr.number} was closed without merge: task {record.task_id} is NOT "
+            self._stop(feature, report, f"PR #{pr.number} was closed without merge: {_work(record)} is NOT "
                                         f"complete and Issue #{record.issue_number} stays open; reopen and merge the "
                                         "PR (nothing is created again)", sticky=False)
         self._complete(feature, record, cand, pr, report, apply)
@@ -583,7 +588,7 @@ class PullRequestPublisher:  # pylint: disable=too-few-public-methods
             return
         op = f"done-{feature.id}"
         with self.store.transaction():
-            self._queue(record.task_id, op, self._completion_text(feature, record, merge))
+            self._queue(record.anchor_id, op, self._completion_text(feature, record, merge))
         self.coord.sync_issues(feature.id)  # posts it before the Issue is closed
         if (self.store.load_record("outbox", op) or {}).get("status") != "done":
             detail = "the completion comment is not posted yet; the Issue is closed after it"
@@ -610,7 +615,7 @@ class PullRequestPublisher:  # pylint: disable=too-few-public-methods
 
     def _close_issue(self, feature: Feature, record: IntakeRecord, report: PublishReport) -> str:
         """Close exactly the approved Issue (number, database and node ID), once. Returns who closed it."""
-        link = self.coord.sync.load_link(record.task_id)
+        link = self.coord.sync.load_link(record.anchor_id)
         try:
             issue = self.client.get_issue(record.issue_number)
         except GitHubNotFoundError:
@@ -632,7 +637,7 @@ class PullRequestPublisher:  # pylint: disable=too-few-public-methods
             return True
         result = board.sync(feature.id, apply=True)
         cfg = self.config.github.project
-        if result.ok and (result.items.get(record.task_id) or {}).get(cfg.status_field) == cfg.status("done"):
+        if result.ok and (result.items.get(record.anchor_id) or {}).get(cfg.status_field) == cfg.status("done"):
             return True
         why = "; ".join([*result.deferred, *result.protected.values()]) or "the card is not Done yet"
         detail = f"Project #{cfg.number} does not show Done yet ({sanitize(why, 200)}); the next pass retries"
@@ -649,12 +654,35 @@ class PullRequestPublisher:  # pylint: disable=too-few-public-methods
         return (f"**Completed.** Pull request #{merge.get('number')} ({merge.get('url')}) was merged into "
                 f"`{merge.get('base')}`{by} at {merge.get('merged_at')}; its merge commit "
                 f"`{str(merge.get('merge_commit_sha'))[:12]}` contains the verified head "
-                f"`{str(merge.get('head_sha'))[:12]}` of task `{record.task_id}`. {done}")
+                f"`{str(merge.get('head_sha'))[:12]}` of {_work(record)}. {done}")
 
 
 # ---------------------------------------------------------------------------
 # The Draft PR's body (rendered at integration: workflow._render_pr)
 # ---------------------------------------------------------------------------
+
+def _work(record: IntakeRecord) -> str:
+    """The approved work in prose: the task (legacy) or, W4.5, every task of the approved plan."""
+    if not record.planned:
+        return f"task `{record.task_id}`"
+    return "tasks " + ", ".join(f"`{t}`" for t in record.all_task_ids)
+
+
+def _task_rows(record: IntakeRecord, tasks: Mapping[str, Task]) -> list[str]:
+    if not record.planned:
+        gates = ", ".join(f"`{g}`" for g in record.gates)
+        return [f"| Task | `{record.task_id}` (role `{record.role}`, gates {gates}) |"]
+    assert record.plan is not None
+    rows = [f"| Plan | v{record.plan['version']}, approval sha256 `{record.plan['approval_sha256']}` "
+            f"(label `worker:approve`, receipt {record.approval_comment_url}) |"]
+    for task_id in record.all_task_ids:
+        task = tasks.get(task_id)
+        if task is not None:
+            deps = ", ".join(f"`{d}`" for d in task.depends_on) or "none"
+            rows.append(f"| Task | `{task.id}` (role `{task.role}`, depends on {deps}, gates "
+                        f"{', '.join(f'`{g}`' for g in task.required_gates)}) |")
+    return rows
+
 
 def _cell(text: str, limit: int = 200) -> str:
     return escape_markdown_comment(sanitize(text, limit)).replace("|", "\\|")
@@ -672,7 +700,7 @@ def intake_pr_body(feature: Feature, tasks: Mapping[str, Task], evidence: Eviden
              f"| Issue | #{record.issue_number} — {_cell(record.title)} |",
              f"| Feature | `{feature.id}`: branch `{feature.branch}` from `{feature.base_branch}` at "
              f"`{feature.base_sha[:12]}` |",
-             f"| Task | `{record.task_id}` (role `{record.role}`, gates {', '.join(f'`{g}`' for g in record.gates)}) |",
+             *_task_rows(record, tasks),
              f"| Approved | by `{record.approved_by}` at {record.approved_at} ({record.approval_comment_url}) |",
              f"| Specification | the Issue's title and body at approval, sha256 `{record.digest}` |",
              "", "## Changed files", *[f"- `{_cell(p, 300)}`" for p in changed[:200]],

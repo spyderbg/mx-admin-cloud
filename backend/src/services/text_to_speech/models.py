@@ -1,4 +1,4 @@
-"""Base TTS provider abstraction."""
+"""Base TTS provider abstraction and the TTS request/result value types."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from abc import abstractmethod, ABC
 from pathlib import Path
 from typing import Any
 
-from src.core.models import GeneratedAudio
 from src.services.models import ServiceProvider
 
 logger = logging.getLogger(__name__)
@@ -34,6 +33,29 @@ class TTSRequest:
     # Per-request voice settings ("speed", "stability", "similarity") layered over the
     # configuration's own; see TTSProvider.apply_generate_overrides.
     overrides: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class GeneratedAudio:  # pylint: disable=too-many-instance-attributes
+    """Result of a single TTS generation attempt by one provider.
+
+    Also consumed by the evaluation (scoring, score stores) and voice_optimization (normalizer) services.
+    """
+
+    provider: str  # provider produced this audio
+    request_id: str  # matching TTSRequest.request_id
+    language_code: str  # ISO language code
+    language_name: str  # human-readable language name
+    expected_text: str  # reference text for evaluation
+    filename_text: str  # sanitized text for the output filename
+    output_format: str  # audio format, e.g. "mp3"
+    raw_path: Path  # path to the raw generated audio file
+    raw_extension: str  # file extension of the raw audio
+    latency_seconds: float  # wall-clock generation time
+    success: bool  # whether generation succeeded
+    error: str | None = None  # error message on failure
+    normalized_path: Path | None = None  # path after normalization (if any)
+    normalization_error: str | None = None  # normalization error (if any)
 
 
 class TTSProvider(ServiceProvider, ABC):

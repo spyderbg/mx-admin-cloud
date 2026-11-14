@@ -6,7 +6,7 @@ from pathlib import Path
 
 from src.services.acceptance import ServiceAcceptCriteria
 from src.services.models import ServiceProvider
-from src.services.text_to_image.models import TextToImageProvider
+from src.services.text_to_image.models import GeneratedImage, ImageRequest, TextToImageProvider
 from src.services.text_to_image.service import (
     TextToImageProviderFactory,
     TextToImageService
@@ -17,6 +17,8 @@ from src.services.text_to_image.service import (
 import src.services.text_to_image.providers  # noqa: F401, E402 # pylint: disable=wrong-import-position
 
 __all__ = [
+    "GeneratedImage",
+    "ImageRequest",
     "TextToImageProvider",
     "TextToImageProviderFactory",
     "TextToImageService",

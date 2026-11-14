@@ -6,11 +6,10 @@ from pathlib import Path
 from typing import Any
 from typing_extensions import override
 
-from src.core.models import GeneratedImage
 from src.services.models import Service, ServiceProvider
 from src.services.provider_strategy import ProviderSelectionStrategy, first_success
 from src.services.provider_factory import ServiceProviderFactory
-from src.services.text_to_image.models import ImageRequest, TextToImageProvider
+from src.services.text_to_image.models import GeneratedImage, ImageRequest, TextToImageProvider
 
 
 class NoActiveImageProvidersError(Exception):

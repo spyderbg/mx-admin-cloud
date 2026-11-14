@@ -1,0 +1,32 @@
+{
+  "service_provider": {
+    "service": "logging",
+    "provider": "struct_log",
+    "provider_category": "service",
+    "enabled": true,
+    "priority": 2,
+    "version": "1.0",
+    "config": {
+      "formatters": {
+        "plain": {
+          "format": "%(message)s"
+        }
+      },
+      "handlers": {
+        "service_file": {
+          "class": "logging.FileHandler",
+          "level": "INFO",
+          "formatter": "plain",
+          "filename": "${output_dir}/results/logs/service.log",
+          "encoding": "utf-8"
+        },
+        "service_seq": {
+          "class": "seqlog.structured_logging.SeqLogHandler",
+          "level": "INFO",
+          "server_url": "http://localhost:5341",
+          "api_key": ""
+        }
+      }
+    }
+  }
+}
