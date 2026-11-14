@@ -1,4 +1,4 @@
-"""Shared rig for the W4.7 M2 tests (approve, inspect, GitHub discovery, Git isolation).
+"""Shared rig for the W4.7 M2/M3 tests (approve, inspect, validate, GitHub discovery, Git isolation).
 
 Everything is disposable: a temporary checkout with a bare `origin` (the conftest `repo` fixture plus `origin` here),
 a temporary state directory, a throw-away operator SSH key generated per test, signed authorization records, the
@@ -30,6 +30,7 @@ from feature_coordinator.integration_approval import SshSignatureVerifier, appro
 from feature_coordinator.integration_config import GitHubIntegrationConfig
 from feature_coordinator.integration_inspect import IntegrationInspector
 from feature_coordinator.integration_intake import IntegrationIntake, ReadOnlyGit
+from feature_coordinator.integration_validate import IntegrationValidator
 from feature_coordinator.paths import PathPolicy
 from feature_coordinator.store import StateStore
 
@@ -249,6 +250,17 @@ class Rig:
     def state_of(self, job_id: str) -> JobState:
         return self.jobs.load(job_id).state
 
+    def validator(self, *, gates: Any = None, faults: tuple[str, ...] = (), clock: Any = None) -> IntegrationValidator:
+        """M3: the validator over this rig (*gates*: a gate runner factory; default the real sandboxed runner)."""
+        kwargs = {"clock": clock} if clock is not None else {}
+        tracker = (lambda: self.client) if self.client is not None else None
+        return IntegrationValidator(self.store, self.config, self.git, verifier=self.verifier, tracker=tracker,
+                                    gate_runner=gates, faults=faults, **kwargs)
+
+    def validate(self, job_id: str, *, apply: bool = True, gates: Any = None, faults: tuple[str, ...] = (),
+                 actor: str = "operator", clock: Any = None) -> Any:
+        return self.validator(gates=gates, faults=faults, clock=clock).run(job_id, apply=apply, actor=actor)
+
 
 # -- a scripted GitHub behind the real client -------------------------------------------------------------------
 
@@ -261,6 +273,25 @@ def pr_json(number: int, *, head_ref: str = BRANCH, head_sha: str, base: str = "
             "html_url": f"https://github.com/{REPOSITORY}/pull/{number}", "user": {"login": "spyderbg"},
             "head": {"ref": head_ref, "sha": head_sha, "repo": {"full_name": head_repo} if head_repo else None},
             "base": {"ref": base, "sha": "b" * 40, "repo": {"full_name": base_repo}}}
+
+
+def issue_json(number: int, *, state: str = "open", pull_request: bool = False) -> dict[str, Any]:
+    """M3: an Issue as GitHub's REST API returns it (`pull_request` set: the number is a PR)."""
+    data = {"number": number, "id": 800000 + number, "node_id": f"I_kw{number}", "title": f"Issue {number}",
+            "body": "", "state": state, "state_reason": "completed" if state == "closed" else None, "labels": [],
+            "user": {"login": OPERATOR}, "html_url": f"https://github.com/{REPOSITORY}/issues/{number}",
+            "updated_at": "2026-11-01T00:00:00Z", "comments": 0}
+    if pull_request:
+        data["pull_request"] = {"url": f"https://api.github.com/repos/{REPOSITORY}/pulls/{number}"}
+    return data
+
+
+def open_issue(tracker: Any, number: int = 63, *, state: str = "open", pull_request: bool = False) -> None:
+    """M3: Issue #*number* in the in-memory mock tracker (the job's Issue must exist and be open)."""
+    tracker.issues[number] = {"number": number, "id": 900000 + number, "title": f"Issue {number}", "body": "",
+                              "state": state, "state_reason": "completed" if state == "closed" else None,
+                              "labels": [], "author": OPERATOR, "comments": [], "updated_at": "2026-11-01T00:00:00Z",
+                              "is_pull_request": pull_request}
 
 
 def commit_node(sha: str, *, author: str | None = OPERATOR, signature: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -282,8 +313,9 @@ class FakeGitHub:  # pylint: disable=too-many-instance-attributes
         self.fail: list[tuple[str, Any]] = []     # (substring of "METHOD path", ApiResponse | Exception)
         self.pages: dict[int, tuple[list[dict[str, Any]], str]] = {}
         self.extra_by_commit: list[dict[str, Any]] = []
+        self.issues: dict[int, dict[str, Any]] = {63: issue_json(63)}   # M3: the job's Issue (open)
 
-    def request(self, method: str, path: str, body: Any = None) -> ApiResponse:  # pylint: disable=too-many-return-statements
+    def request(self, method: str, path: str, body: Any = None) -> ApiResponse:  # pylint: disable=too-many-return-statements,too-many-branches
         self.calls.append((method, path))
         for index, (needle, outcome) in enumerate(self.fail):
             if needle in f"{method} {path}":
@@ -320,6 +352,11 @@ class FakeGitHub:  # pylint: disable=too-many-instance-attributes
             if not found:
                 return ApiResponse(404, {}, {"message": "Not Found"})
             return ApiResponse(200, {}, found[0])
+        if route.startswith(f"{base}/issues/"):
+            number = int(route.rsplit("/", 1)[1])
+            if number not in self.issues:
+                return ApiResponse(404, {}, {"message": "Not Found"})
+            return ApiResponse(200, {}, self.issues[number])
         raise AssertionError(f"unexpected request {method} {path}")
 
     def _page(self, items: list[dict[str, Any]], query: dict[str, str], route: str) -> ApiResponse:
