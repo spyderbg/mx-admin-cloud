@@ -1,4 +1,4 @@
-"""W4.7 (M1, M2) commands: `python -m feature_coordinator integration …` — integration jobs of existing branches/PRs.
+"""W4.7 (M1-M3) commands: `python -m feature_coordinator integration …` — integration jobs of existing branches/PRs.
 
     integration intake --source-repo OWNER/NAME --source-ref BRANCH --source-sha SHA --base BRANCH --base-sha SHA
                        --issue N [--pr N] [--supersede JOB] [--actor NAME] [--apply] [--json]
@@ -18,14 +18,21 @@
                             (M2) read-only inspection under a valid inspect approval: pinned SHAs re-verified (STALE),
                             provenance with GitHub attribution, the complete PR lookup and reuse rules, the changed
                             paths classified through PathPolicy; --apply records the decision
+    integration validate --job JOB [--actor NAME] [--apply] [--json]
+                            (M3) under a current passed inspection and a valid approval: verify the Issue and the
+                            pinned SHAs, build the candidate (merge of source_sha into base_sha in a coordinator-owned
+                            repository), classify its exact changes, run the gates of the affected roles in the gate
+                            sandbox against it; --apply records (INSPECTING → CANDIDATE_BUILT → VALIDATING); repeat to
+                            resume (passed gates are reused). Dry run: read-only, no gate runs
 
-M1/M2 only: no candidate is built, no gate runs, nothing is reviewed, no PR is created and nothing is merged; no Git
-ref, index or working-tree file is written. The `integrate FEATURE` command (the feature integration barrier) is
-unrelated and unchanged. See docs_agents/coordination/integration-jobs.md.
+No PR is created, nothing is reviewed and nothing is merged; the checkout's refs, index and working tree are never
+written (M3 writes only the coordinator state directory). The `integrate FEATURE` command (the feature integration
+barrier) is unrelated and unchanged. See docs_agents/coordination/integration-jobs.md.
 
 Exit codes: 0 OK (intake: the job is active past INTAKE, or would be; approve: recorded, existing or would record;
-inspect: passed or would pass); 1 refused, deferred, stale, needs authorization, terminal or failed (with --json the
-error is also printed as {"ok": false, "error": …}); 2 invalid arguments.
+inspect: passed or would pass; validate: validated, or the dry run found nothing in the way); 1 refused, deferred,
+stale, needs authorization, blocked, terminal or failed (with --json the error is also printed as
+{"ok": false, "error": …}); 2 invalid arguments.
 """
 
 from __future__ import annotations
@@ -40,8 +47,10 @@ from .config import ProjectConfig
 from .errors import CoordinatorError
 from .integration import IntakeRequest, IntegrationJobs, abort_job, job_summary
 from .integration_approval import SshSignatureVerifier, approve, check_stage
+from .integration_candidate import CandidateArea
 from .integration_inspect import IntegrationInspector
 from .integration_intake import IntegrationIntake, ReadOnlyGit, check_actor
+from .integration_validate import IntegrationValidator
 from .locks import LockSet
 from .paths import PathPolicy
 from .statedir import ensure_state_dir, resolve_state_dir
@@ -113,7 +122,38 @@ def _job_lines(job: dict[str, Any]) -> list[str]:
         lines.append(f"  inspection {ins['id']}: {ins['result']} under {ins['approval']} — {ins['paths']['count']} "
                      f"path(s), PR {ins['pr_match']['result']}"
                      + (f" #{ins['pr_match']['number']}" if ins["pr_match"]["number"] else ""))
+    lines += _candidate_lines(job)
     lines.append(f"  next: {', '.join(job['allowed_next']) or 'none (terminal)'}")
+    return lines
+
+
+def _candidate_lines(job: dict[str, Any]) -> list[str]:
+    """M3: the candidate, the newest gate evidence per gate and the validation summary."""
+    lines = []
+    candidate = job.get("candidate")
+    if candidate:
+        roles = sorted({p["role"] for p in candidate["paths"] if p["role"]})
+        lines.append(f"  candidate {candidate['evidence']}: {candidate['head_sha']} (tree {candidate['tree_sha']}), "
+                     f"{len(candidate['paths'])} changed path(s), roles {', '.join(roles) or 'none'}")
+        lines.append(f"    built {candidate['built_at']} with {candidate['git']}; worktree {candidate['worktree']}")
+    for gate in job.get("gates") or []:
+        lines.append(f"    gate {gate['gate']:22s} {gate['result']:8s} ({gate['status']}, {gate['id']}, "
+                     f"{gate['duration_seconds']:.1f}s)" + (f" — {gate['summary'][:120]}" if gate["result"] != "PASS"
+                                                             and gate["summary"] else ""))
+    attempt = job.get("attempt")
+    if attempt:
+        lines.append(f"  attempt {attempt['id']}: started {attempt['at']}, {len(attempt['run'])} gate(s) to run — "
+                     + ("OPEN: no decision names it (running, or interrupted: run validate again)"
+                        if job.get("attempt_open") else "decided"))
+    validation = job.get("validation")
+    if validation:
+        counts = {}
+        for item in validation["gates"]:
+            counts[item["result"]] = counts.get(item["result"], 0) + 1
+        shown = ", ".join(f"{n} {r}" for r, n in sorted(counts.items()))
+        lines.append(f"  validation {validation['id']}: {validation['result']} — {len(validation['gates'])} gate(s)"
+                     + (f": {shown}" if shown else "") + (" (VALIDATED: ready for M4 review)" if job.get("validated")
+                                                          else ""))
     return lines
 
 
@@ -200,6 +240,43 @@ def cmd_inspect(args: argparse.Namespace, config: ProjectConfig) -> int:
 
 
 @_json_errors
+def cmd_validate(args: argparse.Namespace, config: ProjectConfig) -> int:
+    """(M3) Build the candidate and run its gates under a current passed inspection; --apply records."""
+    actor = check_actor(args.actor)
+    state_dir = _writable_state(args, config) if args.apply else _state_path(args, config)
+    store = StateStore(state_dir)
+    git = ReadOnlyGit(Path(args.repo), config, LockSet(state_dir / "locks"),
+                      timeout=config.github.publish.git_timeout_seconds)
+
+    def tracker() -> Any:
+        from .github_commands import _tracker  # pylint: disable=import-outside-toplevel,protected-access
+        return _tracker(args, config, state_dir)
+
+    report = IntegrationValidator(store, config, git, verifier=_verifier(args, config, state_dir),
+                                  tracker=tracker).run(args.job, apply=args.apply, actor=actor)
+    lines = [f"validate: {report.outcome}" + ("" if report.changed or not report.applied else " (unchanged)")]
+    lines += [f"  [{c['status']:9s}] {c['check']}: {c['detail']}" for c in report.checks]
+    lines += [f"  - {reason}" for reason in report.reasons]
+    if report.candidate:
+        cand = report.candidate
+        lines.append(f"  candidate: {cand['head_sha'] or 'CONFLICT'} (tree {cand['tree_sha']}), "
+                     f"{cand['paths']['count']} changed path(s), roles {', '.join(cand['roles']) or 'none'}"
+                     + (f"; conflicts: {', '.join(cand['conflicts'])}" if cand["conflicts"] else ""))
+    for gate in report.gates:
+        if "action" in gate:
+            lines.append(f"  gate {gate['gate']:22s} would {gate['action']}"
+                         + (f" ({gate['detail']})" if gate.get("detail") else ""))
+        else:
+            lines.append(f"  gate {gate['gate']:22s} {gate['result']:8s} ({gate['status']}"
+                         + (", reused" if gate["reused"] else f", {gate['duration_seconds']:.1f}s") + ")"
+                         + (f" — {gate['summary'][:160]}" if gate["result"] != "PASS" and gate["summary"] else ""))
+    lines += _job_lines(report.job) if report.job else []
+    lines += report.messages
+    _emit(args, report.to_dict(), lines)
+    return 0 if report.ok else 1
+
+
+@_json_errors
 def cmd_status(args: argparse.Namespace, config: ProjectConfig) -> int:
     """Every integration job, or one job's full record (read-only)."""
     jobs = IntegrationJobs(StateStore(_state_path(args, config)))
@@ -223,6 +300,8 @@ def cmd_abort(args: argparse.Namespace, config: ProjectConfig) -> int:
     actor = check_actor(args.actor)
     state_dir = _writable_state(args, config) if args.apply else _state_path(args, config)
     result = abort_job(IntegrationJobs(StateStore(state_dir)), args.job, args.reason, actor=actor, apply=args.apply)
+    if args.apply and result["job"]["state"] == "ABORTED":
+        CandidateArea(state_dir, args.job).discard()   # M3: the disposable candidate (gate logs are kept)
     lines = [f"abort: {result['outcome']}"] + _job_lines(result["job"])
     if result["outcome"] == "would-abort":
         lines.append("dry run — nothing was changed (pass --apply to abort)")
@@ -231,9 +310,9 @@ def cmd_abort(args: argparse.Namespace, config: ProjectConfig) -> int:
 
 
 def register(sub: Any) -> None:
-    """Add `integration intake|status|abort|approve|inspect` to the CLI's subparsers."""
+    """Add `integration intake|status|abort|approve|inspect|validate` to the CLI's subparsers."""
     group = sub.add_parser("integration", help="W4.7: integration jobs of existing branches/PRs (M1: intake, "
-                                               "status, abort; M2: approve, inspect)",
+                                               "status, abort; M2: approve, inspect; M3: validate)",
                            description=__doc__.split("\n\n", 1)[0],
                            epilog=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     isub = group.add_subparsers(dest="integration_command", required=True)
@@ -277,3 +356,9 @@ def register(sub: Any) -> None:
     inspect.add_argument("--apply", action="store_true", help="record the decision (default: dry run)")
     inspect.add_argument("--json", action="store_true")
     inspect.set_defaults(func=cmd_inspect)
+    validate = isub.add_parser("validate", help="(M3) build the integration candidate and run its validation gates")
+    validate.add_argument("--job", required=True)
+    validate.add_argument("--actor", default="operator", help="who validates (recorded in the history)")
+    validate.add_argument("--apply", action="store_true", help="build, run the gates and record (default: dry run)")
+    validate.add_argument("--json", action="store_true")
+    validate.set_defaults(func=cmd_validate)

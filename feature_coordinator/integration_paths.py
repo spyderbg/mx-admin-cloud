@@ -302,6 +302,26 @@ def changed_paths(reader: _CommitReader, commits: Iterable[CommitObject], *, sou
     for merge_base_tree in merge_base_trees:
         _aggregate(union, trees.diff(merge_base_tree, source_tree, limit=MAX_CHANGED_PATHS))
         _check_count(union)
+    return _finish(trees, union, tip_tree=source_tree, base_tree=base_tree)
+
+
+def candidate_changes(reader: _CommitReader, *, base_tree: str, candidate_tree: str) -> dict[str, PathChange]:
+    """M3: the EXACT change an integration candidate makes to the base — every path that differs between the base
+    tree and the candidate (merge) tree, from hash-verified trees, with the same kinds of change and flags as
+    changed_paths (renames, symlinks and their targets, gitlinks, empty trees, git-control files). The merge can place
+    content where the source's own commits never did (rename detection, directory renames), so the candidate is
+    classified on its own, never only through the source history (M2 stays authoritative for that history)."""
+    trees = TreeReader(reader)
+    union: dict[bytes, PathChange] = {}
+    _aggregate(union, trees.diff(base_tree, candidate_tree, limit=MAX_CHANGED_PATHS))
+    _check_count(union)
+    return _finish(trees, union, tip_tree=candidate_tree, base_tree=base_tree)
+
+
+def _finish(trees: TreeReader, union: dict[bytes, PathChange], *, tip_tree: str, base_tree: str
+            ) -> dict[str, PathChange]:
+    """Name checks, git-control and history-only flags and symlink targets for every aggregated path (*tip_tree*: the
+    tree that lands — the source tip in M2, the candidate in M3)."""
     result: dict[str, PathChange] = {}
     for raw_path, item in union.items():
         problems = [problem for component in raw_path.split(b"/") if (problem := name_problem(component))]
@@ -313,11 +333,11 @@ def changed_paths(reader: _CommitReader, commits: Iterable[CommitObject], *, sou
             raise HistoryRefused(f"the source changes a path longer than {MAX_PATH_TEXT} characters ({path[:80]}...)")
         if posixpath.basename(path) in GIT_CONTROL_NAMES:
             item.flags.add("git-control")
-        if trees.lookup(source_tree, raw_path) == trees.lookup(base_tree, raw_path):
+        if trees.lookup(tip_tree, raw_path) == trees.lookup(base_tree, raw_path):
             item.flags.add("history-only")
-        tip = trees.lookup(source_tree, raw_path)
+        tip = trees.lookup(tip_tree, raw_path)
         if tip is not None and tip.mode == LINK:
-            item.tip_target = _tip_target_kind(trees, source_tree, path, _link_text(trees, tip.sha))
+            item.tip_target = _tip_target_kind(trees, tip_tree, path, _link_text(trees, tip.sha))
         item.link_targets = {_link_text(trees, sha) for sha in sorted(item.link_targets)}
         result[path] = item
     return dict(sorted(result.items()))

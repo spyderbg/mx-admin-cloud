@@ -64,7 +64,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Mapping
 
 from .config import ProjectConfig
 from .errors import CoordinatorError, GitHubError, GitHubNotFoundError, LockBusyError
@@ -323,7 +323,19 @@ class IntegrationInspector:  # pylint: disable=too-many-instance-attributes
             self._paths(job, approval, history, result)
         return result
 
-    def _pinned(self, job: IntegrationJob, result: InspectionResult) -> None:
+    def check_pinned(self, job: IntegrationJob, recorded: Mapping[str, Any] | None = None) -> InspectionResult:
+        """M3: only the pinned-value checks of step 2a — origin's source and base branches still at the pinned SHAs,
+        and the pinned PR (*recorded*: {number, head_repo, head_ref, head_sha, base_repo, base_ref}; default: the PR
+        verified at intake) unchanged, where a change reported by its single read counts only once the complete PR
+        lookup agrees (Codex review F2). Reads only; `stale` / `deferred` of the result decide."""
+        result = InspectionResult(observed={"source_sha": job.source["sha"], "base_sha": job.base["expected_sha"]})
+        self._pinned(job, result, recorded)
+        if result.pr_changes and not result.deferred:
+            self._confirm_pr_changes(job, result)
+        return result
+
+    def _pinned(self, job: IntegrationJob, result: InspectionResult,
+                recorded: Mapping[str, Any] | None = None) -> None:
         source, base = job.source, job.base
         try:
             now = {"source_ref_sha": self.git.remote_head(source["ref"]),
@@ -342,7 +354,8 @@ class IntegrationInspector:  # pylint: disable=too-many-instance-attributes
                                                   f"{now[key]}")
             else:
                 result.note(f"{label}-ref", "pass", f"origin {ref} is still at {pinned[:12]}")
-        recorded = job.pr if job.pr and len(job.pr) > 1 else None
+        if recorded is None:
+            recorded = job.pr if job.pr and len(job.pr) > 1 else None
         if recorded is None:
             return
         tracker = self.tracker()
@@ -373,7 +386,7 @@ class IntegrationInspector:  # pylint: disable=too-many-instance-attributes
         """The read of the intake PR reports that a pinned value changed. It makes the job STALE only when the complete
         PR lookup (listing, head query, commit query) agrees with that read — discover_pull_requests cross-checks every
         answer about the PR; a disagreement, an incomplete listing or a failed lookup defers and decides nothing."""
-        number = job.pr["number"]
+        number = result.recorded_pr.number if result.recorded_pr is not None else job.pr["number"]
         discovery = self._discover(job, result, "recorded-pr",
                                    f"the change that the read of PR #{number} reports cannot be confirmed")
         if discovery is None:

@@ -1,13 +1,21 @@
-"""W4.7 (M1, M2): integration jobs — the record, the lifecycle state machine and their persistence.
+"""W4.7 (M1, M2, M3): integration jobs — the record, the lifecycle state machine and their persistence.
 
 Design: docs_agents/coordination/existing-branch-integration-design.md (§4 lifecycle, §8.2 record). Operator
-notes, M1/M2 decisions and open questions: docs_agents/coordination/integration-jobs.md.
+notes, M1/M2/M3 decisions and open questions: docs_agents/coordination/integration-jobs.md.
 
 An integration job brings an EXISTING branch (or PR head) into the base branch by immutable SHA. M1 implements
 the record, the state machine and `intake` / `status` / `abort` (integration_intake.py, integration_commands.py).
 M2 adds the operator authorization (`approvals`, integration_approval.py) and the read-only inspection (`paths`,
-`evidence` of kind `inspection`, integration_inspect.py). Nothing here builds a candidate, runs a gate, reviews,
-creates a PR, writes Git or merges.
+`evidence` of kind `inspection`, integration_inspect.py). M3 adds the integration candidate and the validation gates
+(integration_validate.py): `candidate` and evidence of kinds `candidate`, `gate` and `validation`. Nothing here
+reviews, creates a PR or merges.
+
+M3 record rules (validate_job):
+  * `candidate` is set exactly when the job reached CANDIDATE_BUILT, names the single `built` candidate evidence
+    entry and carries its head and tree SHAs, the pinned base/source SHAs and its classified paths (bound by digest).
+    Once recorded it never changes (IntegrationJobs.save): a different candidate is a new job (design §5.5).
+  * Every evidence entry refers only to earlier entries. Gate and validation entries name the built candidate and
+    carry its head and tree SHAs; a validation result must follow from its gate results.
 
 M2 record rules (validate_job, on every load and save):
   * `approvals` entries carry the exact signed authorization record text; its SHA-256, its parsed fields and the
@@ -52,17 +60,45 @@ from enum import Enum
 from typing import Any, Iterable, Mapping
 
 from .errors import CoordinatorError, IllegalTransitionError, StateConflictError, StateDirError
+from .integration_schema import (  # re-exported: the record schema lives in integration_schema.py since M3
+    GATE_STATUS_RESULT,
+    MAX_PATH_TEXT,
+    MAX_REASON,
+    SHA_RE,
+    IntegrationError,
+    _check_candidate,
+    _check_evidence,
+    _check_paths,
+    _copy,
+    _expect,
+    _is_int,
+    _is_text,
+    _is_text_list,
+    _is_time,
+    _shown,
+    check_path_text,
+    clean_text,
+    evidence_digest,
+    inspection_digest,
+    paths_digest,
+)
 from .model import check_id, utc_now
 
 JOB_SCHEMA = 1
 RECORD_KIND = "integration"
-SHA_RE = re.compile(r"[0-9a-f]{40}")
 _JOB_ID_RE = re.compile(r"int-(\d{8})-(\d{4,6})")
-MAX_REASON = 500
-
-
-class IntegrationError(CoordinatorError):
-    """A deliberate refusal of an integration-job operation (malformed input, unknown job, conflict)."""
+__all__ = [  # this module's public names and the schema names it re-exports (integration_schema.py)
+    "abort_job", "ABORTABLE_STATES", "allowed_next", "approval_binding_problems", "APPROVAL_KIND",
+    "APPROVAL_NAMESPACE", "APPROVAL_STAGES", "APPROVAL_VERSION", "check_job_id", "check_number", "check_path_text",
+    "check_reason", "check_ref", "check_repo", "check_sha", "check_transition", "clean_text", "current_gate_evidence",
+    "open_attempt", "recorded_failures",
+    "current_inspection_passed", "DEFERRABLE_STATES", "effective_approval", "evidence_digest", "GATE_STATUS_RESULT",
+    "inspection_digest", "IntakeRequest", "IntegrationError", "IntegrationJob", "IntegrationJobs", "JOB_SCHEMA",
+    "job_summary", "JOB_TRANSITIONS", "JobState", "latest_evidence", "latest_inspection", "MAX_ACTOR",
+    "MAX_APPROVALS", "MAX_APPROVED_PATHS", "MAX_PATH_TEXT", "MAX_REASON", "MAX_RECORD_BYTES", "MAX_SIGNATURE_BYTES",
+    "parse_approval_record", "parse_record_time", "paths_digest", "RECORD_KIND", "SHA_RE", "SIGNATURE_HEADER",
+    "TERMINAL_STATES", "transition_job", "validate_job", "validated",
+]
 
 
 class JobState(str, Enum):
@@ -179,17 +215,6 @@ def check_reason(value: Any, label: str = "--reason") -> str:
     return text
 
 
-def clean_text(value: Any, limit: int = MAX_REASON) -> str:
-    """*value* as one printable line of at most *limit* characters (internal reasons; never raises)."""
-    text = " ".join(re.sub(r"[\x00-\x1f\x7f]", " ", str(value)).split())
-    return text if len(text) <= limit else text[:limit - 3] + "..."
-
-
-def _shown(value: Any) -> str:
-    text = repr(value)
-    return text if len(text) <= 60 else text[:57] + "..."
-
-
 @dataclass(frozen=True)
 class IntakeRequest:  # pylint: disable=too-many-instance-attributes
     """The operator's exact inputs (design §3). Every field is validated on construction."""
@@ -251,9 +276,7 @@ _FIELDS = frozenset({"schema_version", "job_id", "state", "issue", "source", "ba
                      "attention", "deferred", "history", "created_at", "updated_at", "revision"})
 _HISTORY_FIELDS = frozenset({"from", "to", "at", "reason", "actor"})
 _IMMUTABLE = ("job_id", "issue", "source", "base", "request_key", "supersedes", "created_at")
-_TIMESTAMP_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z")   # model.utc_now()
 MAX_ACTOR = 80
-MAX_TEXT = 1000
 # The PR as requested ({number}) or as verified at intake (every key). Types per key.
 _PR_VERIFIED: Mapping[str, type] = {"number": int, "head_repo": str, "head_ref": str, "head_sha": str,
                                     "base_repo": str, "base_ref": str, "draft": bool, "url": str, "node_id": str,
@@ -274,7 +297,6 @@ APPROVAL_NAMESPACE = "mx-admin-cloud-integration-approval@feature-coordinator"  
 MAX_RECORD_BYTES = 64 * 1024
 MAX_SIGNATURE_BYTES = 16 * 1024
 MAX_APPROVED_PATHS = 2000
-MAX_PATH_TEXT = 1000
 _RECORD_REQUIRED = ("kind", "version", "job", "stage", "operator", "issued_at", "expires_at", "source", "base", "issue",
                     "pr", "paths", "accept_unverified_provenance")
 _RECORD_KEYS = frozenset({*_RECORD_REQUIRED, "note"})
@@ -287,24 +309,6 @@ _LOGIN_RE = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})")
 _KEY_FINGERPRINT_RE = re.compile(r"SHA256:[A-Za-z0-9+/]{43}")
 _RECORD_TIME_RE = re.compile(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,6}))?Z")
 SIGNATURE_HEADER = "-----BEGIN SSH SIGNATURE-----"
-
-# -- M2: the classified changed paths and the inspection evidence ---------------------------------------------------
-PATH_CLASSES = ("owned", "approval-required", "unowned", "protected")
-PATH_CHANGES = ("added", "deleted", "modified", "mode", "type")
-PATH_FLAGS = ("symlink", "gitlink", "executable", "git-control", "renamed", "history-only", "empty-tree")
-PATH_AUTHORIZATION = ("not-needed", "authorized", "required", "refused")
-_PATH_KEYS = frozenset({"path", "class", "role", "changes", "flags", "authorization"})
-INSPECTION_RESULTS = ("passed", "needs-authorization", "refused", "stale")
-_INSPECTION_KEYS = frozenset({"kind", "id", "at", "approval", "source_sha", "base_sha", "result", "pr_match",
-                              "provenance", "paths", "reasons", "sha256"})
-_PR_MATCH_KEYS = frozenset({"result", "number", "candidates"})
-PR_MATCH_RESULTS = ("none", "reuse", "refused", "stale", "unknown")
-_INSPECTION_PROVENANCE_KEYS = frozenset({"source", "verified", "unverified", "unverifiable", "accepted"})
-PROVENANCE_SOURCES = ("github", "unavailable", "unknown")
-_INSPECTION_PATHS_KEYS = frozenset({"count", "sha256", "required", "authorized", "refused"})
-_EVIDENCE_ID_RE = re.compile(r"ins-(\d{4})")
-_HEX64_RE = re.compile(r"[0-9a-f]{64}")
-MAX_EVIDENCE = 500
 MAX_APPROVALS = 200
 
 
@@ -321,7 +325,7 @@ class IntegrationJob:  # pylint: disable=too-many-instance-attributes
     pr: dict[str, Any] | None = None       # {number} (immutable) + what intake observed: head/base, url, ids
     supersedes: str | None = None          # the terminal job with the same request this one replaces — immutable
     provenance: dict[str, Any] | None = None   # {authors, committers, commits, origin} — recorded at intake
-    candidate: dict[str, Any] | None = None    # M3: {worktree, head_sha, tree_sha}
+    candidate: dict[str, Any] | None = None    # M3: {evidence, head_sha, tree_sha, worktree, …} — set once, immutable
     merge_result: dict[str, Any] | None = None  # M5: {commit_sha, parents, tree_sha, verified}
     paths: list[dict[str, Any]] = field(default_factory=list)      # M2
     evidence: list[dict[str, Any]] = field(default_factory=list)   # M3/M4
@@ -427,6 +431,7 @@ def validate_job(job: IntegrationJob, *, persisted: bool) -> None:
     _check_approvals(job)
     _check_paths(job.paths)
     _check_evidence(job)
+    _check_candidate(job)
     if job.attention is not None:
         att = job.attention
         _expect(isinstance(att, dict) and set(att) == _ATTENTION_KEYS and _is_text(att["reason"])
@@ -443,6 +448,11 @@ def validate_job(job: IntegrationJob, *, persisted: bool) -> None:
     reached = {entry["to"] for entry in job.history}
     _expect(JobState.AWAITING_APPROVAL.value not in reached or job.provenance is not None,
             "a job that reached AWAITING_APPROVAL must carry its provenance")
+    # The only code path that enters CANDIDATE_BUILT records the candidate with it (integration_validate.py); a job
+    # in CANDIDATE_BUILT or later without one is refused there as conflicting state (as M2 does for INSPECTING
+    # without an approval), so the state machine and every M1/M2 record stay valid.
+    _expect(job.candidate is None or JobState.CANDIDATE_BUILT.value in reached,
+            "a job carries a candidate only once it reached CANDIDATE_BUILT (M3)")
     _expect(JobState.MERGED.value not in reached
             or SHA_RE.fullmatch(str((job.merge_result or {}).get("commit_sha", ""))) is not None,
             "a job that reached MERGED must carry the merge commit (merge_result)")
@@ -512,15 +522,6 @@ def parse_record_time(value: Any, label: str) -> datetime:
     except ValueError as exc:
         raise IntegrationError(f"{label} is not a valid date and time: {_shown(value)}") from exc
     return seconds.replace(microsecond=int((match.group(2) or "").ljust(6, "0")), tzinfo=timezone.utc)
-
-
-def check_path_text(value: Any, label: str = "path") -> str:
-    """A repository-relative POSIX path as an operator names it in an authorization record (no glob, no `..`)."""
-    valid = isinstance(value, str) and 0 < len(value) <= MAX_PATH_TEXT and not value.startswith("/")
-    if not valid or re.search(r"[\x00-\x1f\x7f\\]", value) or any(p in ("", ".", "..") for p in value.split("/")):
-        raise IntegrationError(f"{label} must be a repository-relative path (no '..', no leading '/', no control "
-                               f"characters), got {_shown(value)}")
-    return value
 
 
 def parse_approval_record(text: Any) -> dict[str, Any]:
@@ -637,91 +638,6 @@ def _check_approvals(job: "IntegrationJob") -> None:
         latest[record["stage"]] = issued
 
 
-def _check_paths(paths: list[dict[str, Any]]) -> None:
-    seen: set[str] = set()
-    for index, entry in enumerate(paths):
-        where = f"paths[{index}]"
-        _expect(set(entry) == _PATH_KEYS, f"{where} must have exactly {sorted(_PATH_KEYS)}")
-        check_path_text(entry["path"], f"{where}: path")
-        _expect(entry["path"] not in seen, f"{where}: path must be a unique repository path")
-        seen.add(entry["path"])
-        _expect(entry["class"] in PATH_CLASSES, f"{where}: class must be one of {list(PATH_CLASSES)}")
-        _expect(entry["role"] is None or _is_text(entry["role"], 40), f"{where}: role must be null or a role name")
-        _expect((entry["role"] is not None) == (entry["class"] == "owned") or entry["class"] == "approval-required",
-                f"{where}: an owned path names its role, a protected or unowned path none")
-        for key, allowed in (("changes", PATH_CHANGES), ("flags", PATH_FLAGS)):
-            value = entry[key]
-            _expect(isinstance(value, list) and all(item in allowed for item in value)
-                    and value == sorted(set(value)), f"{where}: {key} must be a sorted subset of {list(allowed)}")
-        _expect(bool(entry["changes"]), f"{where}: changes must not be empty")
-        _expect(entry["authorization"] in PATH_AUTHORIZATION,
-                f"{where}: authorization must be one of {list(PATH_AUTHORIZATION)}")
-        needs = entry["class"] in ("approval-required", "unowned") or bool({"symlink", "git-control"}
-                                                                              & set(entry["flags"]))
-        must_refuse = entry["class"] == "protected" or bool({"gitlink", "empty-tree"} & set(entry["flags"]))
-        status = entry["authorization"]
-        _expect(status == "refused" if must_refuse else (status != "not-needed" or not needs),
-                f"{where}: authorization {status!r} contradicts class {entry['class']!r} and flags {entry['flags']}")
-        _expect(status not in ("authorized", "required") or needs,
-                f"{where}: authorization {status!r} for a path that needs none")
-
-
-def inspection_digest(entry: Mapping[str, Any]) -> str:
-    """SHA-256 of an inspection evidence payload (everything but its id, time and digest): two inspections with the
-    same digest found exactly the same thing under the same approval for the same pinned SHAs."""
-    payload = {k: v for k, v in entry.items() if k not in ("id", "at", "sha256")}
-    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
-
-
-def _check_evidence(job: "IntegrationJob") -> None:
-    _expect(len(job.evidence) <= MAX_EVIDENCE, f"at most {MAX_EVIDENCE} evidence entries")
-    approval_ids = {entry["id"] for entry in job.approvals}
-    for index, entry in enumerate(job.evidence):
-        where = f"evidence {index + 1}"
-        _expect(entry.get("kind") == "inspection", f"{where}: kind must be 'inspection' (gates and reviews are M3/M4)")
-        _expect(set(entry) == _INSPECTION_KEYS, f"{where} must have exactly {sorted(_INSPECTION_KEYS)}")
-        match = _EVIDENCE_ID_RE.fullmatch(str(entry["id"]))
-        _expect(match is not None and int(match.group(1)) == index + 1, f"{where} must have the id ins-{index + 1:04d}")
-        _expect(_is_time(entry["at"]), f"{where}: at must be a timestamp")
-        _expect(entry["approval"] in approval_ids, f"{where} names approval {_shown(entry['approval'])}, which this "
-                                                   "job does not carry")
-        _expect(entry["source_sha"] == job.source["sha"] and entry["base_sha"] == job.base["expected_sha"],
-                f"{where} is bound to other SHAs than the job's pinned source and base")
-        _expect(entry["result"] in INSPECTION_RESULTS, f"{where}: result must be one of {list(INSPECTION_RESULTS)}")
-        pr_match = entry["pr_match"]
-        _expect(isinstance(pr_match, dict) and set(pr_match) == _PR_MATCH_KEYS
-                and pr_match["result"] in PR_MATCH_RESULTS
-                and (pr_match["number"] is None or _is_int(pr_match["number"], 1))
-                and isinstance(pr_match["candidates"], list) and all(_is_int(n, 1) for n in pr_match["candidates"]),
-                f"{where}: pr_match must have exactly {sorted(_PR_MATCH_KEYS)}")
-        prov = entry["provenance"]
-        _expect(isinstance(prov, dict) and set(prov) == _INSPECTION_PROVENANCE_KEYS
-                and prov["source"] in PROVENANCE_SOURCES and isinstance(prov["accepted"], bool)
-                and all(_is_int(prov[k], 0) for k in ("verified", "unverified", "unverifiable")),
-                f"{where}: provenance must have exactly {sorted(_INSPECTION_PROVENANCE_KEYS)}")
-        summary = entry["paths"]
-        _expect(isinstance(summary, dict) and set(summary) == _INSPECTION_PATHS_KEYS
-                and all(_is_int(summary[k], 0) for k in ("count", "required", "authorized", "refused"))
-                and isinstance(summary["sha256"], str)
-                and (summary["sha256"] == "" or _HEX64_RE.fullmatch(summary["sha256"]) is not None),
-                f"{where}: paths must have exactly {sorted(_INSPECTION_PATHS_KEYS)}")
-        _expect(_is_text_list(entry["reasons"]) and len(entry["reasons"]) <= 20, f"{where}: reasons must be texts")
-        _expect(entry["sha256"] == inspection_digest(entry), f"{where}: its SHA-256 does not match its payload")
-        if entry["result"] == "passed":
-            _expect(summary["required"] == 0 and summary["refused"] == 0 and pr_match["result"] in ("none", "reuse"),
-                    f"{where}: a passed inspection cannot leave a path unauthorized or refused or a PR unresolved")
-    if job.paths:
-        with_paths = [entry for entry in job.evidence if entry["paths"]["count"]]
-        _expect(bool(with_paths) and with_paths[-1]["paths"]["sha256"] == paths_digest(job.paths)
-                and with_paths[-1]["paths"]["count"] == len(job.paths),
-                "paths are not the classified paths bound into the newest inspection evidence")
-
-
-def paths_digest(paths: list[dict[str, Any]]) -> str:
-    """SHA-256 of a classified path list (bound into the inspection evidence)."""
-    return hashlib.sha256(json.dumps(paths, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
-
-
 def latest_inspection(job: "IntegrationJob") -> dict[str, Any] | None:
     """The newest inspection evidence entry, or None."""
     entries = [entry for entry in job.evidence if entry.get("kind") == "inspection"]
@@ -744,31 +660,6 @@ def effective_approval(job: "IntegrationJob", stage: str = "inspect") -> dict[st
     the approvals of a stage in strictly increasing `issued_at` order (full precision), on every load and save."""
     entries = [entry for entry in job.approvals if entry["stage"] == stage]
     return entries[-1] if entries else None
-
-
-def _expect(condition: bool, message: str) -> None:
-    if not condition:
-        raise IntegrationError(message)
-
-
-def _is_int(value: Any, minimum: int) -> bool:
-    return type(value) is int and value >= minimum  # pylint: disable=unidiomatic-typecheck  # bool is not a count
-
-
-def _is_text(value: Any, limit: int = MAX_TEXT) -> bool:
-    return isinstance(value, str) and len(value) <= limit
-
-
-def _is_text_list(value: Any) -> bool:
-    return isinstance(value, list) and all(_is_text(item) for item in value)
-
-
-def _is_time(value: Any) -> bool:
-    return isinstance(value, str) and _TIMESTAMP_RE.fullmatch(value) is not None
-
-
-def _copy(value: Any) -> Any:
-    return json.loads(json.dumps(value)) if value is not None else None
 
 
 def check_job_id(value: Any) -> str:
@@ -890,6 +781,9 @@ class IntegrationJobs:
                 if getattr(job, name)[:len(getattr(before, name))] != getattr(before, name):
                     raise IntegrationError(f"{job.job_id}: {name} is append-only (an earlier entry changed or was "
                                            "removed)")
+            if before.candidate is not None and job.candidate != before.candidate:  # M3: the candidate's identity
+                raise IntegrationError(f"{job.job_id}: the recorded candidate is immutable (a different candidate is "
+                                       "a new job, design §5.5)")
             volatile = ("revision", "updated_at")
             if before.terminal and ({k: v for k, v in job.to_dict().items() if k not in volatile}
                                     != {k: v for k, v in before.to_dict().items() if k not in volatile}):
@@ -916,7 +810,7 @@ class IntegrationJobs:
         """Load, transition and save one job in one transaction. *expect*: the states the caller's decision was
         based on — anything else (e.g. aborted meanwhile) changes nothing and returns (job, False). *updates*:
         fields set together with the transition (provenance, pr, attention, deferred; M2: paths, and evidence entries
-        to APPEND). Returns (job, changed)."""
+        to APPEND; M3: candidate). Returns (job, changed)."""
         with self.store.transaction():
             job = self.load(job_id)
             if expect is not None and job.state not in set(expect) and job.state is not target:
@@ -927,8 +821,11 @@ class IntegrationJobs:
                 if name == "evidence":
                     job.evidence.extend(_copy(value))
                     continue
-                if name not in ("provenance", "pr", "attention", "deferred", "paths"):
-                    raise IntegrationError(f"field {name!r} cannot be set with a transition (M1/M2)")
+                if name == "candidate" and target is not JobState.CANDIDATE_BUILT:
+                    raise IntegrationError(f"field 'candidate' cannot be set with a transition to {target.value} "
+                                           "(only with the transition to CANDIDATE_BUILT, M3)")
+                if name not in ("provenance", "pr", "attention", "deferred", "paths", "candidate"):
+                    raise IntegrationError(f"field {name!r} cannot be set with a transition (M1-M3)")
                 setattr(job, name, _copy(value))
             before = job.state
             transition_job(job, target, reason, actor=actor)
@@ -939,19 +836,88 @@ class IntegrationJobs:
             return job, True
 
 
+def latest_evidence(job: IntegrationJob, kind: str) -> dict[str, Any] | None:
+    """The newest evidence entry of *kind*, or None."""
+    entries = [entry for entry in job.evidence if entry.get("kind") == kind]
+    return entries[-1] if entries else None
+
+
+def current_gate_evidence(job: IntegrationJob) -> dict[str, dict[str, Any]]:
+    """gate name → its newest gate evidence entry for the job's candidate (empty without a candidate). Gate evidence is
+    bound to the candidate's immutable head and tree SHAs (validate_job), so every entry here is about exactly the
+    content of that candidate."""
+    return _candidate_gates(job)
+
+
+def recorded_failures(job: IntegrationJob) -> dict[str, dict[str, Any]]:
+    """gate name → the newest FAIL recorded for the job's candidate under ANY gate definition (Codex review of M3, F1).
+    The candidate's content is immutable, so a recorded failure is a fact about it: it is never re-run (not after a
+    changed timeout or command either), never dropped when the gate leaves the plan, and every later validation
+    decision is `failed` (integration_schema). The resolution is explicit: NEEDS_REPAIR, or abort and a new job."""
+    return _candidate_gates(job, "FAIL")
+
+
+def _candidate_gates(job: IntegrationJob, result: str | None = None) -> dict[str, dict[str, Any]]:
+    if job.candidate is None:
+        return {}
+    newest: dict[str, dict[str, Any]] = {}
+    identity = (job.candidate["head_sha"], job.candidate["tree_sha"])
+    for entry in job.evidence:
+        if entry.get("kind") == "gate" and (entry["head_sha"], entry["tree_sha"]) == identity \
+                and (result is None or entry["result"] == result):
+            newest[entry["gate"]] = entry
+    return newest
+
+
+def open_attempt(job: IntegrationJob) -> dict[str, Any] | None:
+    """The newest validation attempt of the job's candidate when no validation decision names it — an attempt that is
+    running or was interrupted before its decision (Codex review of M3, F2) — else None (completed, or none yet)."""
+    attempt = latest_evidence(job, "attempt")
+    if attempt is None or job.candidate is None or attempt["candidate"] != job.candidate["evidence"]:
+        return None
+    decided = any(entry.get("kind") == "validation" and entry["attempt"] == attempt["id"] for entry in job.evidence)
+    return None if decided else attempt
+
+
+def validated(job: IntegrationJob, plan_sha256: str | None = None) -> bool:
+    """M3's success: the job is VALIDATING, its newest validation decision passed for its candidate and decides the
+    NEWEST validation attempt, no gate ran after it, and no FAIL was ever recorded for the candidate. An attempt is
+    recorded before any gate of a new run starts (write-ahead), so a re-validation that is interrupted — even while
+    its first gate runs, before any result — revokes the earlier success until a new decision is recorded (Codex
+    review of M3, F2; independent review, finding 2). *plan_sha256*: also require that decision to cover exactly this
+    gate plan (integration_validate.validated_for derives it from the current configuration: a changed plan is not
+    validated). M4 starts from there and must re-verify the pinned SHAs and the candidate itself."""
+    if job.state is not JobState.VALIDATING or job.candidate is None:
+        return False
+    last = max((i for i, entry in enumerate(job.evidence) if entry.get("kind") == "validation"), default=-1)
+    if last < 0:
+        return False
+    latest = job.evidence[last]
+    return (latest["result"] == "passed" and latest["candidate"] == job.candidate["evidence"]
+            and not any(entry.get("kind") in ("gate", "attempt") for entry in job.evidence[last + 1:])
+            and not recorded_failures(job)
+            and (plan_sha256 is None or latest["plan"]["sha256"] == plan_sha256))
+
+
 def job_summary(job: IntegrationJob) -> dict[str, Any]:
     """The status of one job: its record plus derived facts (JSON-serializable). M2: `inspection` is the newest
     inspection evidence, `effective_approval` the id of the newest inspect-stage approval (its validity is checked
-    when it is used, not here)."""
+    when it is used, not here). M3: `validation` is the newest validation summary, `gates` the newest gate evidence
+    per gate for the job's candidate, `validated` whether M3 succeeded (for the plan its decision recorded), `attempt`
+    the newest validation attempt and `attempt_open` whether no decision names it (running or interrupted)."""
     approval = effective_approval(job)
     return {**job.to_dict(), "terminal": job.terminal, "allowed_next": allowed_next(job.state),
-            "inspection": _copy(latest_inspection(job)), "effective_approval": approval["id"] if approval else None}
+            "inspection": _copy(latest_inspection(job)), "effective_approval": approval["id"] if approval else None,
+            "validation": _copy(latest_evidence(job, "validation")),
+            "gates": _copy(list(current_gate_evidence(job).values())), "validated": validated(job),
+            "attempt": _copy(latest_evidence(job, "attempt")), "attempt_open": open_attempt(job) is not None}
 
 
 def abort_job(jobs: IntegrationJobs, job_id: str, reason: str, *, actor: str, apply: bool) -> dict[str, Any]:
     """Operator abort (design §8.1 `abort`): any non-terminal state before MERGED → ABORTED. Idempotent: an
     already ABORTED job is reported unchanged. Another terminal state, MERGED or COMPLETED is refused
-    (IllegalTransitionError). M1 has no candidate worktree to remove (M3 adds that cleanup). Dry run unless *apply*.
+    (IllegalTransitionError). The disposable candidate worktree (M3) is removed by the caller after an applied abort
+    (integration_candidate.CandidateArea.discard). Dry run unless *apply*.
     Returns {outcome, changed, job} with outcome would-abort | aborted | already-aborted."""
     reason = check_reason(reason)
     job = jobs.load(job_id)

@@ -1,4 +1,4 @@
-"""W4.7 (M1, M2): the `github.integration` configuration section — integration jobs for an EXISTING branch or PR
+"""W4.7 (M1, M2, M3): the `github.integration` configuration section — integration jobs for an EXISTING branch or PR
 (integration.py, integration_intake.py, integration_inspect.py; design:
 docs_agents/coordination/existing-branch-integration-design.md).
 
@@ -21,6 +21,17 @@ merge.
     trusted_logins   (M2) GitHub logins whose GitHub attribution and GitHub-verified commit signatures are trusted for
                      provenance at inspection. A commit that GitHub attributes to, or that is signed by, any OTHER login
                      is REFUSED. Empty: `integration inspect` refuses to run.
+    unowned_gates    (M3) the gates `integration validate` requires when the candidate changes a path that NO role owns
+                     (e.g. feature_coordinator/**, root files). Gate NAMES of the existing registry (`gates`,
+                     `lint_gates`), not a second registry: owned paths take their role's `github.intake.role_gates`, and
+                     every candidate takes the feature integration gates (workflow.DEFAULT_INTEGRATION_GATES). A name
+                     that is not configured is a missing gate: validation is BLOCKED, never passed. Default:
+                     coordinator-tests.
+    gate_timeouts    (M3) per-gate timeouts in seconds for `integration validate`, {gate name: seconds}; a gate not
+                     listed uses `runtime.gate_timeout_seconds` (900 by default). The effective timeout is part of the
+                     gate's fingerprint (a changed timeout re-runs a PASS, never a recorded FAIL). A timeout is BLOCKED,
+                     never FAIL or PASS. Default: {coordinator-tests: 1800} (the Coordinator suite runs longer than
+                     900 s); giving the key replaces the default mapping.
 
 The permitted source repository is `github.repository` itself (the M1 allowlist; refs are resolved through the
 checkout's `origin`, which must be exactly that repository). Remote reads use `github.publish.git_timeout_seconds`.
@@ -29,7 +40,7 @@ checkout's `origin`, which must be exactly that repository). Remote reads use `g
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 from .errors import ConfigError
@@ -39,6 +50,11 @@ _LOGIN_RE = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})")
 MAX_KNOWN_AUTHORS = 100
 MAX_LOGINS = 100
 MAX_PATH = 4096
+_GATE_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+DEFAULT_UNOWNED_GATES = ("coordinator-tests",)
+DEFAULT_GATE_TIMEOUTS: Mapping[str, int] = {"coordinator-tests": 1800}
+MAX_GATE_TIMEOUT = 86400
+MAX_GATE_TIMEOUTS = 100
 
 
 @dataclass(frozen=True)
@@ -50,6 +66,8 @@ class GitHubIntegrationConfig:
     operators: tuple[str, ...] = ()       # M2: logins that may sign authorization records
     allowed_signers: str = ""             # M2: absolute path of the OpenSSH allowed-signers file
     trusted_logins: tuple[str, ...] = ()  # M2: logins trusted for GitHub attribution and verified signatures
+    unowned_gates: tuple[str, ...] = DEFAULT_UNOWNED_GATES  # M3: gate names required for paths no role owns
+    gate_timeouts: Mapping[str, int] = field(default_factory=lambda: dict(DEFAULT_GATE_TIMEOUTS))  # M3: seconds
 
     def __post_init__(self) -> None:
         validate_integration(self)
@@ -87,13 +105,25 @@ def validate_integration(integration: GitHubIntegrationConfig) -> None:
                           "known author would refuse every job)")
     _check_logins(integration.operators, f"{where}.operators")
     _check_logins(integration.trusted_logins, f"{where}.trusted_logins")
+    gates = integration.unowned_gates
+    if not isinstance(gates, tuple) or not all(isinstance(g, str) and _GATE_NAME_RE.fullmatch(g) for g in gates) \
+            or len(set(gates)) != len(gates) or not 1 <= len(gates) <= 20:
+        raise ConfigError(f"{where}.unowned_gates must be a list of 1 to 20 distinct gate names (a change no role owns "
+                          "is never validated without a gate; omit the key for the default coordinator-tests)")
+    timeouts = integration.gate_timeouts
+    if not isinstance(timeouts, Mapping) or len(timeouts) > MAX_GATE_TIMEOUTS \
+            or not all(isinstance(g, str) and _GATE_NAME_RE.fullmatch(g) for g in timeouts) \
+            or not all(isinstance(v, int) and not isinstance(v, bool) and 1 <= v <= MAX_GATE_TIMEOUT
+                       for v in timeouts.values()):
+        raise ConfigError(f"{where}.gate_timeouts must map at most {MAX_GATE_TIMEOUTS} gate names to whole seconds "
+                          f"(1 to {MAX_GATE_TIMEOUT})")
     signers = integration.allowed_signers
     if not isinstance(signers, str) or len(signers) > MAX_PATH or re.search(r"[\x00-\x1f\x7f]", signers) \
             or (signers and not signers.startswith("/")):
         raise ConfigError(f"{where}.allowed_signers must be an absolute file path (or empty)")
 
 
-def integration_from_mapping(data: Mapping[str, Any]) -> GitHubIntegrationConfig:
+def integration_from_mapping(data: Mapping[str, Any]) -> GitHubIntegrationConfig:  # pylint: disable=too-many-branches
     """`github.integration` from YAML: strict, like `github.review`; absent → off."""
     known = set(GitHubIntegrationConfig.__dataclass_fields__)  # pylint: disable=no-member
     unknown = set(data) - known
@@ -111,6 +141,19 @@ def integration_from_mapping(data: Mapping[str, Any]) -> GitHubIntegrationConfig
         if not all(isinstance(item, str) for item in raw):
             raise ConfigError("github.integration.known_authors must be a list of e-mail addresses")
         values["known_authors"] = tuple(item.strip().lower() for item in raw)
+    if "unowned_gates" in data:
+        raw = data["unowned_gates"] or ()
+        if isinstance(raw, (str, bytes)) or not isinstance(raw, (list, tuple)) \
+                or not all(isinstance(item, str) for item in raw):
+            raise ConfigError("github.integration.unowned_gates must be a list of gate names")
+        values["unowned_gates"] = tuple(item.strip() for item in raw)
+    if "gate_timeouts" in data:
+        raw = data["gate_timeouts"]
+        if raw is None:
+            raw = {}
+        if not isinstance(raw, Mapping):
+            raise ConfigError("github.integration.gate_timeouts must map gate names to seconds")
+        values["gate_timeouts"] = {str(name).strip(): seconds for name, seconds in raw.items()}
     for name in ("operators", "trusted_logins"):
         if name in data:
             raw = data[name] or ()
