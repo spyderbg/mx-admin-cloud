@@ -21,6 +21,20 @@ titles, instructions and acceptance criteria, the gates, the commits, the conven
 so no section, including one added later, can bypass it. Every such measure becomes a coordinator note on the
 review, so a review with withheld content is never a plain PASS. A diff larger than `max_diff_characters` is not
 reviewed at all (never truncated).
+
+Security S1 — moving or copying protected content is never declassification. A rename or copy keeps BOTH paths, and
+the content is withheld when either is protected or secret (`backend/src/.env/key.py` → `backend/src/public.py`); a
+file whose content is byte-identical to a protected or secret file at the base or the head is withheld too.
+
+ONE confidentiality guard (review_guard.py) then covers EVERY field, not only diffs: the lines and assignment
+values of every tracked secret file in the reviewed range are known, and text that repeats one — normalised, as a
+substring — never leaves: a changed file whose diff or path repeats it is withheld; a commit subject, the Issue
+title or body, the plan or a conventions excerpt that repeats it is replaced as a whole by a marker; and the
+COMPLETE prompt is checked once more after every other sanitiser — if a known secret is still in it, there is no
+prompt (an ERROR review, no model call). Findings name the secret's path, never its content. Not recognized: content
+never tracked in the range, lines and values shorter than the guard's minimum, and transformed content (documented
+limits; the credential redaction above is the remaining layer). A change list Git reports in an unexpected shape is
+not reviewed.
 """
 
 from __future__ import annotations
@@ -34,19 +48,22 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from .config import ProjectConfig, matches
+from .config import ProjectConfig
 from .errors import GitOperationError
 from .gitsafe import assert_no_execution_config, git_argv, hardened_env
 from .github_api import sanitize
 from .intake import IntakeRecord
 from .model import Feature, Task
+from .paths import matching_prefix, protected_prefix, secret_prefix
 from .providers import ProviderKind
+from .review_guard import WITHHELD, SecretGuard
 from .review_result import FileFacts, review_schema
 
 CONVENTIONS_FILES = ("CLAUDE.md", "AGENTS.md")
 MAX_CONVENTIONS = 8000      # characters of conventions in one prompt
 MAX_FILES = 300             # changed files in one reviewable diff
 MAX_COMMITS = 60
+_STATUS = re.compile(r"[ADMTUXB]|[RC]\d{1,3}")   # the complete grammar of a --name-status entry
 _CREDENTIALS = re.compile(
     r"gh[pousr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{16,}|sk-ant-[A-Za-z0-9_-]{16,}|sk-[A-Za-z0-9_-]{20,}"
     r"|AKIA[0-9A-Z]{16}|xox[abposr]-[A-Za-z0-9-]{10,}|(?i:bearer)\s+[A-Za-z0-9_.\-]{20,}"
@@ -84,20 +101,56 @@ def merge_base(root: Path, first: str, second: str) -> str:
     return _git(root, "merge-base", first, second).decode().strip()
 
 
-def changed_files(root: Path, base: str, head: str) -> list[tuple[str, str]]:
-    """(status letter, path) of every file changed from *base* to *head*; a rename is reported at its new path."""
-    raw = _git(root, "diff", "--no-ext-diff", "--no-textconv", "--name-status", "-z", "-M", base, head).decode(
-        "utf-8", errors="replace").split("\0")
+@dataclass(frozen=True)
+class ChangedFile:
+    """One changed file: its status letter, path (the new path of a rename or copy) and, for R/C, the source."""
+
+    status: str
+    path: str
+    source: str = ""
+
+
+class ChangeListError(GitOperationError):
+    """Git's change list is not in the expected shape (never reviewed)."""
+
+
+def _path_problem(path: str) -> str:
+    if not path:
+        return "an empty path"
+    parts = path.split("/")
+    if path.startswith("/") or any(part in ("", ".", "..") for part in parts):
+        return "a path that is absolute or not normalized"
+    return ""
+
+
+def changed_entries(root: Path, base: str, head: str) -> list[ChangedFile]:
+    """Every file changed from *base* to *head*, renames and copies with BOTH paths. ChangeListError: an entry does
+    not follow Git's grammar (the complete status token, the number of paths, repository-relative normalized
+    paths) — the message gives its position, never its content."""
+    raw = _git(root, "diff", "--no-ext-diff", "--no-textconv", "--name-status", "-z", "-M", "-C", base, head).decode(
+        "utf-8", errors="replace")
+    tokens = raw.split("\0")
+    if tokens and tokens[-1] == "":
+        tokens.pop()
     out, i = [], 0
-    while i < len(raw) and raw[i]:
-        status = raw[i][:1]
-        if status in "RC":
-            out.append((status, raw[i + 2]))
-            i += 3
-        else:
-            out.append((status, raw[i + 1]))
-            i += 2
+    while i < len(tokens):
+        status = tokens[i]
+        width = 3 if status[:1] in ("R", "C") else 2
+        if not _STATUS.fullmatch(status) or i + width > len(tokens):
+            raise ChangeListError(f"entry {len(out) + 1} of the change list has an unexpected status or is truncated")
+        paths = tokens[i + 1:i + width]
+        problem = next((p for p in map(_path_problem, paths) if p), "")
+        if problem:
+            raise ChangeListError(f"entry {len(out) + 1} of the change list ({status[:1]}) has {problem}")
+        out.append(ChangedFile(status[:1], paths[-1], paths[0] if width == 3 else ""))
+        i += width
     return out
+
+
+def changed_files(root: Path, base: str, head: str) -> list[tuple[str, str]]:
+    """(status letter, path) of every file changed from *base* to *head*; a rename is reported at its new path
+    (changed_entries() keeps its source too)."""
+    return [(entry.status, entry.path) for entry in changed_entries(root, base, head)]
 
 
 def _blob(root: Path, sha: str, path: str) -> bytes | None:
@@ -127,8 +180,71 @@ def clean(text: str) -> tuple[str, int]:
 
 
 def withheld(config: ProjectConfig, path: str) -> bool:
-    """True when a file's content never goes into a prompt (secret patterns, protected paths)."""
-    return any(matches(p, path) for p in (*config.runtime.secret_patterns, *config.protected))
+    """True when a file's content never goes into a prompt (secret patterns, protected paths) — the file itself or
+    a directory containing it (`backend/.env/key`)."""
+    return (protected_prefix(config.protected, path) is not None
+            or matching_prefix(config.runtime.secret_patterns, path) is not None)
+
+
+def entry_withheld(config: ProjectConfig, entry: ChangedFile) -> bool:
+    """True when the content of a changed file is withheld: its path OR, for a rename or copy, its source is
+    protected or secret — moving or copying protected content never declassifies it."""
+    return withheld(config, entry.path) or bool(entry.source) and withheld(config, entry.source)
+
+
+def _tree_blobs(root: Path, sha: str) -> dict[str, str]:
+    """path → blob ID of every regular file at *sha*."""
+    listing = _git(root, "ls-tree", "-r", "-z", "--full-tree", sha).decode("utf-8", errors="replace").split("\0")
+    out = {}
+    for line in listing:
+        meta, _tab, path = line.partition("\t")
+        fields = meta.split()
+        if len(fields) == 3 and fields[1] == "blob" and fields[0] in ("100644", "100755"):
+            out[path] = fields[2]
+    return out
+
+
+ContentGuard = SecretGuard   # the name this module used before the guard covered every field
+
+
+def _range_blobs(root: Path, base: str, head: str) -> list[tuple[str, str]]:
+    """(blob ID, path) for every file version a commit in base..head touches (both sides of each change), so a
+    secret added and removed again inside the range is known as well. EVERY path of a blob is kept: the same
+    content at an ordinary path must not hide that it is also at a secret one."""
+    raw = _git(root, "log", "--raw", "-z", "--no-abbrev", "--no-renames", "-m", "--format=", f"{base}..{head}").decode(
+        "utf-8", errors="replace").split("\0")
+    out: set[tuple[str, str]] = set()
+    for index, token in enumerate(raw[:-1]):
+        fields = token.lstrip("\n").split()
+        if len(fields) >= 5 and fields[0].startswith(":"):
+            for mode, blob in ((fields[0].lstrip(":"), fields[2]), (fields[1], fields[3])):
+                if mode in ("100644", "100755") and set(blob) != {"0"}:
+                    out.add((blob, raw[index + 1]))
+    return sorted(out)
+
+
+def content_guard(config: ProjectConfig, root: Path, base: str, head: str) -> SecretGuard:
+    """The known protected content of the reviewed range (review_guard.SecretGuard): blob IDs of protected and
+    secret files at *base* and *head*, and the tokens of every tracked secret file at base, at head and in the
+    commits between them. Bounded: `problem` is set when it cannot be built — nothing is then reviewed."""
+    guard = SecretGuard()
+    runtime = config.runtime
+    secret_blobs: dict[str, str] = {}
+    for sha in dict.fromkeys((base, head)):
+        guard.trees[sha] = _tree_blobs(root, sha)
+        for path, blob in guard.trees[sha].items():
+            if withheld(config, path):
+                guard.blobs.setdefault(blob, path)
+            if secret_prefix(runtime.secret_patterns, runtime.secret_exempt_suffixes, path) is not None:
+                secret_blobs.setdefault(blob, path)
+    for blob, path in _range_blobs(root, base, head):
+        if secret_prefix(runtime.secret_patterns, runtime.secret_exempt_suffixes, path) is not None:
+            secret_blobs.setdefault(blob, path)
+    for blob, path in secret_blobs.items():
+        guard.add(path, _git(root, "cat-file", "blob", blob))
+        if guard.problem:
+            break
+    return guard
 
 
 def conventions_at(root: Path, base: str, names: Sequence[str] = CONVENTIONS_FILES,
@@ -201,18 +317,10 @@ def build_context(config: ProjectConfig, root: Path, *, feature: Feature, record
     cfg, ctx = config.github.review, ReviewContext()
     base, head = binding["merge_base"], binding["head_sha"]
     assert_no_execution_config(root, where="the checkout (review)")
-    changed = changed_files(root, base, head)
-    if not changed:
-        ctx.problem = "the pull request changes no file"
+    entries, guard = _reviewable(config, root, base, head, ctx)
+    if ctx.problem:
         return ctx
-    if len(changed) > MAX_FILES:
-        ctx.problem = f"the pull request changes {len(changed)} files; at most {MAX_FILES} are reviewed"
-        return ctx
-    secret = [p for _s, p in changed if withheld(config, p)]
-    ctx.files = {p: (FileFacts(s, None) if p in secret else file_facts(root, base, head, s, p)) for s, p in changed}
-    shown = [p for _s, p in changed if p not in secret]
-    raw = _git(root, "diff", "--no-ext-diff", "--no-textconv", "--no-color", "-M", "--unified=3", base, head, "--",
-               *(f":(literal){p}" for p in shown)).decode("utf-8", errors="replace") if shown else ""
+    secret, copies, raw = _shown_diff(config, root, base, head, entries, guard, ctx)
     diff, count = clean(raw)  # first: the length of the diff the reviewer would see decides whether it is reviewed
     ctx.diff_sha256 = hashlib.sha256(raw.encode("utf-8")).hexdigest()
     if len(diff) > cfg.max_diff_characters:
@@ -222,6 +330,12 @@ def build_context(config: ProjectConfig, root: Path, *, feature: Feature, record
     binary = sorted(p for p, f in ctx.files.items() if f.lines is None and p not in secret and f.status != "D")
     commits = _git(root, "log", "--no-color", f"--max-count={MAX_COMMITS}", "--format=%h %s",
                    f"{base}..{head}").decode("utf-8", errors="replace")
+    # Every other untrusted field: a text that repeats known protected content is withheld AS A WHOLE.
+    fields = _guarded_fields(guard, {
+        "commit subject": commits.strip().splitlines(), "Issue title": [record.title], "Issue body": [record.body],
+        "plan": [_plan_text(record, tasks)]})
+    conventions = conventions_at(root, base)
+    fields.update(_guarded_fields(guard, {f"conventions ({name})": [text] for name, text in conventions}))
     nonce = secrets.token_hex(6)
     roles = sorted({t.role for t in tasks})
     rules = [f"- role `{r}`: owns {', '.join(config.roles[r].owned)}"
@@ -253,8 +367,9 @@ def build_context(config: ProjectConfig, root: Path, *, feature: Feature, record
         f"`{binding['base_branch']}`. Reviewed head: {head}. Diff base (merge base): {base}.",
         "",
         f"Approved specification (GitHub Issue #{record.issue_number}, spec sha256 {record.digest}):",
-        *_block("ISSUE_TITLE", nonce, record.title), *_block("ISSUE_BODY", nonce, record.body), "",
-        *_block("PLAN", nonce, _plan_text(record, tasks)), "",
+        *_block("ISSUE_TITLE", nonce, fields["Issue title"].texts[0]),
+        *_block("ISSUE_BODY", nonce, fields["Issue body"].texts[0]), "",
+        *_block("PLAN", nonce, fields["plan"].texts[0]), "",
         "Path rules (the coordinator enforces them; report a change that contradicts them):", *rules,
         f"- protected (never changed): {', '.join(config.protected)}",
         f"- approval-required (never changed by an agent): {', '.join(config.approval_required)}",
@@ -263,11 +378,11 @@ def build_context(config: ProjectConfig, root: Path, *, feature: Feature, record
         *(f"- task `{t.id}` ({t.role}): {_gates(t.evidence)}" for t in tasks),
         f"- integration gates at {head[:12]}: {_gates(feature.integration_evidence)}",
         "",
-        "Commits (subjects):", *_block("COMMITS", nonce, commits.strip()), "",
+        "Commits (subjects):", *_block("COMMITS", nonce, "\n".join(fields["commit subject"].texts)), "",
     ]
-    for name, text in conventions_at(root, base):
+    for name, _text in conventions:
         parts += [f"Project conventions from `{name}` at the base commit (excerpt):",
-                  *_block("CONVENTIONS", nonce, text), ""]
+                  *_block("CONVENTIONS", nonce, fields[f"conventions ({name})"].texts[0]), ""]
     parts.append("Changed files:")
     for path, facts in ctx.files.items():
         kind = ("content withheld" if path in secret else "binary or non-text" if facts.lines is None
@@ -279,17 +394,143 @@ def build_context(config: ProjectConfig, root: Path, *, feature: Feature, record
     cleaned = [clean(part) for part in parts]
     ctx.prompt = "\n".join(text for text, _n in cleaned)
     ctx.redactions = count + sum(n for _text, n in cleaned)
+    # THE confidentiality boundary: the complete outbound prompt, after every other sanitiser. Known protected
+    # content that is still in it — through any field, present or future — means there is no prompt at all.
+    leaked = guard.find(ctx.prompt)
+    if leaked:
+        ctx.prompt = ""
+        ctx.problem = (f"the reviewer context still repeated the content of the protected file "
+                       f"{sanitize(leaked, 120)} in a field the coordinator could not isolate: nothing was sent")
+        return ctx
+    _notes(ctx, fields, secret, copies, binary)
+    ctx.schema = review_schema(cfg.max_findings)
+    ctx.input_sha256 = hashlib.sha256(ctx.prompt.encode("utf-8")).hexdigest()
+    return ctx
+
+
+def _reviewable(config: ProjectConfig, root: Path, base: str, head: str,
+                ctx: ReviewContext) -> tuple[list[ChangedFile], SecretGuard]:
+    """(the change list, the confidentiality guard) — or ctx.problem set: nothing is reviewed."""
+    guard = SecretGuard()
+    try:
+        entries = changed_entries(root, base, head)
+    except ChangeListError as exc:
+        ctx.problem = f"the change list could not be read safely: {exc}"
+        return [], guard
+    if not entries:
+        ctx.problem = "the pull request changes no file"
+    elif len(entries) > MAX_FILES:
+        ctx.problem = f"the pull request changes {len(entries)} files; at most {MAX_FILES} are reviewed"
+    else:
+        guard = content_guard(config, root, base, head)
+        named = next((guard.find(p) for e in entries for p in (e.path, e.source) if p and guard.find(p)), None)
+        if guard.problem or named:
+            ctx.problem = guard.problem or (f"a changed path repeats the content of the protected file "
+                                            f"{sanitize(named or '', 120)}: the change list cannot be shown")
+    return entries, guard
+
+
+def _notes(ctx: ReviewContext, fields: Mapping[str, "_Guarded"], secret: Sequence[str], copies: Mapping[str, str],
+           binary: Sequence[str]) -> None:
+    """The coordinator's notes on everything it withheld (they rule out a plain PASS)."""
+    for name, guarded in fields.items():
+        if guarded.sources:
+            ctx.notes.append(f"{guarded.withheld} {name} text(s) were withheld because they repeat the content of "
+                             "protected file(s): " + ", ".join(sanitize(p, 80) for p in guarded.sources[:10]))
     if ctx.redactions:
         ctx.notes.append(f"{ctx.redactions} credential-like string(s) were withheld from the reviewer")
     if secret:
         ctx.notes.append(f"the content of {len(secret)} secret or protected file(s) was withheld: "
                          + ", ".join(sanitize(p, 80) for p in secret[:10]))
+    if copies:
+        ctx.notes.append(f"{len(copies)} file(s) were withheld because they carry protected or secret content "
+                         "(moved, copied or repeated): " + ", ".join(f"{sanitize(p, 80)} ← {sanitize(src, 80)}"
+                                                                     for p, src in list(copies.items())[:10]))
     if binary:
         ctx.notes.append(f"{len(binary)} binary or non-text file(s) were listed by name only: "
                          + ", ".join(sanitize(p, 80) for p in binary[:10]))
-    ctx.schema = review_schema(cfg.max_findings)
-    ctx.input_sha256 = hashlib.sha256(ctx.prompt.encode("utf-8")).hexdigest()
-    return ctx
+
+
+@dataclass
+class _Guarded:
+    """One untrusted field after the guard: its texts (a withheld one is the marker) and what was withheld."""
+
+    texts: list[str]
+    withheld: int = 0
+    sources: list[str] = field(default_factory=list)
+
+
+def _guarded_fields(guard: SecretGuard, fields: Mapping[str, Sequence[str]]) -> dict[str, _Guarded]:
+    """Each field's texts, with every text that repeats known protected content replaced AS A WHOLE by the
+    marker (a commit subject keeps its abbreviated hash)."""
+    out = {}
+    for name, texts in fields.items():
+        guarded = _Guarded([])
+        for text in texts:
+            source = guard.find(text)
+            if source is None:
+                guarded.texts.append(text)
+                continue
+            guarded.withheld += 1
+            if source not in guarded.sources:
+                guarded.sources.append(source)
+            guarded.texts.append(f"{text.split(' ', 1)[0]} {WITHHELD}" if name == "commit subject" else WITHHELD)
+        out[name] = guarded if guarded.texts else _Guarded([""])
+    return out
+
+
+def _diff(root: Path, base: str, head: str, paths: Sequence[str]) -> str:
+    if not paths:
+        return ""
+    return _git(root, "diff", "--no-ext-diff", "--no-textconv", "--no-color", "-M", "--unified=3", base, head, "--",
+                *(f":(literal){p}" for p in paths)).decode("utf-8", errors="replace")
+
+
+def _shown_diff(config: ProjectConfig, root: Path, base: str, head: str,  # pylint: disable=too-many-arguments
+                entries: Sequence[ChangedFile], guard: ContentGuard,
+                ctx: ReviewContext) -> tuple[list[str], dict[str, str], str]:
+    """(withheld paths, path → the protected source it carries, the raw diff of the rest); fills ctx.files."""
+    secret, copies = _withheld_entries(config, root, base, head, entries, guard)
+    ctx.files = {e.path: (FileFacts(e.status, None) if e.path in secret else
+                          file_facts(root, base, head, e.status, e.path)) for e in entries}
+    # an ordinary rename is diffed with its source, so it shows as a rename (a withheld one never is)
+    sources = {e.path: e.source for e in entries if e.status == "R" and e.source}
+
+    def specs(paths: Sequence[str]) -> list[str]:
+        """The pathspecs that diff *paths* (with the sources of ordinary renames)."""
+        return [q for p in paths for q in (p, sources.get(p)) if q]
+    shown = [e.path for e in entries if e.path not in secret]
+    raw = _diff(root, base, head, specs(shown))
+    if shown and guard.find(raw):  # known secret content: find the file(s), withhold them, diff again
+        for path in shown:
+            found = guard.find(_diff(root, base, head, specs([path])))
+            if found:
+                secret.append(path)
+                copies[path] = found
+                ctx.files[path] = FileFacts(ctx.files[path].status, None)
+        raw = _diff(root, base, head, specs([p for p in shown if p not in secret]))
+    return secret, copies, raw
+
+
+def _withheld_entries(config: ProjectConfig, root: Path, base: str, head: str,  # pylint: disable=too-many-arguments
+                      entries: Sequence[ChangedFile], guard: ContentGuard) -> tuple[list[str], dict[str, str]]:
+    """(paths whose content is withheld, path → the protected source it carries) for the change list: by path (either
+    side of a rename or copy) and by content (byte-identical to a protected or secret file)."""
+    secret, copies = [], {}
+    head_blobs = guard.trees.get(head) or _tree_blobs(root, head)
+    base_blobs = guard.trees.get(base) or _tree_blobs(root, base)
+    for entry in entries:
+        if entry_withheld(config, entry):
+            secret.append(entry.path)
+            if not withheld(config, entry.path):
+                copies[entry.path] = entry.source  # moved or copied out of a protected or secret path
+            continue
+        blob = (base_blobs if entry.status == "D" else head_blobs).get(entry.path)
+        source = guard.copied_from(blob)
+        if source:
+            secret.append(entry.path)
+            copies[entry.path] = source
+    return secret, copies
 
 
 def provider_kind(config: ProjectConfig) -> str:

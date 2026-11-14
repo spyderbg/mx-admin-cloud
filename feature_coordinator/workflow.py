@@ -26,6 +26,12 @@
 
 Only one feature may be active per checkout; others wait in `planned`.
 
+Security S1 (workspace_hold.py): an agent starts only through the launch gate — under the Coordinator lock the
+checkout must not be on hold and its fresh inventory of sensitive entries (fsguard.py) must match the workspace
+baseline; a hold published by any process is ordered against every launch by that lock. The same checks run
+earlier (before the claim, and inside the claim) only to fail fast. A run that leaves unauthorized changes (its
+`residue`) puts the checkout on hold; only an operator lifts it (`workspace resolve`, bound to the hold's generation).
+
 Issue tracking (Phase 4). The coordinator never calls the tracker inside a state
 transaction. Each operation changes the local state first (authoritative), then — outside
 every coordinator lock — asks the IssueSync to converge the Issues (issue_sync.py). A tracker
@@ -117,6 +123,7 @@ from .store import StateStore
 from .supervisor import stop_requested
 from .workspace import identity as workspace_identity
 from .workspace import require_workspace
+from .workspace_hold import abandon_execution, finish_execution, guard_before_run, launch_gate, require_no_hold
 
 # A gate runner gets the gate name and a GateContext and returns a GateResult (or an exit code).
 GateRunner = Callable[[str, GateContext], "GateResult | int"]
@@ -367,10 +374,13 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
         if self.git.current_branch() != feature.branch:
             raise GitOperationError(f"the shared checkout is not on {feature.branch!r}")
         require_workspace(self.root, feature)  # W2: identity, base revision, no unfinished Git operation
+        # Security S1: no hold, and nothing untrusted in the checkout's sensitive entries (workspace_hold.py)
+        guard_before_run(self.store, self.root, self.config)
         self._require_approval(task)  # W4.3.1: before the claim, so no lock is held during the request
         head = self._head(feature)
         mark = len(self.store.events())
-        claim = self.claims.claim(task_id, role=task.role, branch=feature.branch, head_sha=head)
+        claim = self.claims.claim(task_id, role=task.role, branch=feature.branch, head_sha=head,
+                                  admission=lambda: require_no_hold(self.store, self.root))  # S1: never while held
         # Roles already holding a claim as we start: they overlap this run even if they finish before
         # it is judged, so their owned paths must stay attributed to them, never to this agent.
         coincident = {c.get("role") for c in self.store.list_claims().values()} - {task.role}
@@ -391,7 +401,7 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
                     concurrent_roles=lambda: self._concurrent_roles(mark, task.role, coincident),
                     git_quiet=lambda: self.store.locks.git().acquire(timeout=self.git.lock_timeout))
                 request = RunRequest(task_id, task.role, prompt or self._task_prompt(task), workspace, context=context)
-                run = TaskRun(task_id, TaskState.IN_PROGRESS, self.runners[task.role].run(request))
+                run = TaskRun(task_id, TaskState.IN_PROGRESS, self._run_agent(task, request))
                 result = self._after_run(feature, task, head, run, verifying)
         finally:
             # Only a task still in-progress is affected: it goes back to ready for a later claim.
@@ -526,7 +536,7 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
         request = RunRequest(task.id, task.role, step_prompt(feature, task, record, step, uncommitted=leftovers),
                              ScopedWorkspace(self.policy, task.role, grants=task.grants), context=context,
                              step=step.key)
-        result = self.runners[task.role].run(request)
+        result = self._run_agent(task, request)
         run = TaskRun(task.id, TaskState.IN_PROGRESS, result)
         where = f"step {step.key!r}"
         if result.status == "unavailable":
@@ -577,6 +587,37 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
         settle(self.store, task.id, checkpoint.id, status="committed", commit=commit.sha)
         run.commit = commit.sha
         return run
+
+    def _run_agent(self, task: Task, request: RunRequest) -> RunResult:
+        """One agent invocation, admitted through the launch gate (Security S1, workspace_hold.py): under the
+        Coordinator lock the checkout must not be held and its fresh inventory must match the baseline, and the
+        execution is registered — a runner with `launch_gated` starts its agent process inside that gate, every
+        other runner is admitted here, immediately before run(). A refusal raises (the task goes back to ready;
+        nothing was started). Unauthorized changes the run left put the checkout on hold in the same write that
+        ends the execution."""
+        runner = self.runners[task.role]
+        context = request.context
+        execution = {"id": secrets.token_hex(8), "task": request.script_key, "role": task.role,
+                     "runner": runner.name, "run_dir": str(context.run_dir) if context is not None else ""}
+
+        def gate(inventory: Any = None) -> Any:
+            return launch_gate(self.store, self.root, self.config, execution=execution, inventory=inventory)
+        try:
+            if context is not None and getattr(runner, "launch_gated", False):
+                context.launch_gate = gate
+            else:
+                with gate():
+                    pass
+            result = runner.run(request)
+        except BaseException:
+            abandon_execution(self.store, self.root, execution["id"])
+            raise
+        hold = finish_execution(self.store, self.root, self.config, execution_id=execution["id"], role=task.role,
+                                grants=task.grants, result=result, task_id=request.script_key)
+        if hold is not None:
+            self._event("workspace-held", task=task.id, role=task.role, runner=result.runner, status=result.status,
+                        residue=list(result.details.get("residue") or [])[:50])
+        return result
 
     @staticmethod
     def _task_prompt(task: Task) -> str:

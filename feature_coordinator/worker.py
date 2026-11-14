@@ -43,6 +43,7 @@ from .errors import CoordinatorError, LockBusyError
 from .model import FeatureState, Task, TaskState
 from .supervisor import stop_requested
 from .workspace import require_workspace
+from .workspace_hold import describe, hold_of
 
 
 
@@ -86,6 +87,7 @@ class WorkReport:
     stopped: bool = False
     recovered: list[str] = field(default_factory=list)          # W3: stale claims reclaimed at start
     orphaned: dict[str, list[int]] = field(default_factory=dict)  # W3: dead worker, agent still alive
+    held: str = ""  # Security S1: why the checkout went on hold (no task was started after that)
 
     @property
     def all_verified(self) -> bool:
@@ -196,7 +198,11 @@ class FeatureWorker:  # pylint: disable=too-many-instance-attributes,too-few-pub
                                                    round(time.monotonic() - began, 1)))
                 self.echo(f"done  {task_id}: {task.state.value} (exit {code})")
             tasks = self.coord.store.load_tasks(self.coord.store.load_feature(feature_id))
-            started = [] if report.stopped else self._eligible(tasks, running, attempts, report)
+            hold = hold_of(self.coord.store, self.coord.root)  # Security S1: residue blocks every new start
+            if hold is not None and not report.held:
+                report.held = describe(hold)
+                self.echo(f"workspace on hold: {report.held}")
+            started = [] if report.stopped or hold is not None else self._eligible(tasks, running, attempts, report)
             for task in started:
                 attempts[task.id] = attempts.get(task.id, 0) + 1
                 steps = progress_line(self.coord.store, task)

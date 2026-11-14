@@ -377,6 +377,8 @@ def classify(before: Task, after: Task, events: Sequence[Mapping[str, Any]], *, 
         return Outcome(EXTERNAL, "another agent owns the checkout")
     if "stale claim" in log_text:
         return Outcome(INTERRUPTED, "a stale claim must be recovered first")
+    if "the checkout is on hold" in log_text or "no agent is started (temporarily unavailable" in log_text:
+        return Outcome(EXTERNAL, "the checkout is on hold or was changing: no agent was started (Security S1)")
     if "workspace check failed" in log_text or "identity mismatch" in log_text:
         return Outcome(CRITICAL, "the workspace is not the feature's checkout")
     return Outcome(UNKNOWN, f"launch exit {exit_code} without a recognized outcome")

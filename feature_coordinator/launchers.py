@@ -79,6 +79,8 @@ from .broker import ROUTES, AuthBroker, configured_credential
 from .gitsafe import SAFE_CONFIG_ARGS, hardened_env
 from .config import ProjectConfig
 from .errors import BrokerError
+from .fsguard import Change, InventoryError, InventoryUnstableError, compare, scan, violations
+from .fsguard import summary as sensitive_summary
 from .native_hardening import (
     claude_shell_enabled,
     codex_exec_args,
@@ -91,7 +93,7 @@ from .paths import PathPolicy
 from .providers import CliRunnerProfile, ProviderKind
 from .python_env import PLACEHOLDER, PythonInterpreter, discover_python, expand_commands
 from .runners import RunContext, RunRequest, RunResult
-from .sandbox import Bind, SandboxBuilder, SandboxUnavailableError, check_bwrap, install_prefix
+from .sandbox import Bind, SandboxBuilder, SandboxPlan, SandboxUnavailableError, check_bwrap, install_prefix
 from .supervisor import supervise
 
 FORBIDDEN_ARGS = frozenset({
@@ -279,6 +281,7 @@ class _Launcher:  # pylint: disable=too-few-public-methods
         self.config = config
         self.executable = executable
         self.native = native
+        self.denied: set[str] = set()   # hardened native: every secret path this launcher's rules deny
 
     @property
     def hardened(self) -> bool:
@@ -286,8 +289,12 @@ class _Launcher:  # pylint: disable=too-few-public-methods
         return self.native and self.config.runtime.native_hardening.enabled
 
     def secrets(self, workspace: Path) -> list[str]:
-        """The workspace's untracked secret files (relative paths), denied to hardened agents."""
-        return SandboxBuilder(workspace, self.config).secret_files() if self.hardened else []
+        """The workspace's secret files (relative paths), denied to hardened agents: the security policy's list
+        from a FRESH scan (tracked, staged or baseline-accepted files included). Every path handed out is kept in
+        `denied`, so the runner can prove before the launch that no secret appeared afterwards."""
+        found = SandboxBuilder(workspace, self.config).secret_files() if self.hardened else []
+        self.denied.update(found)
+        return found
 
     def model(self, role: str) -> str:
         """The role's model ('' = the CLI's own default)."""
@@ -514,6 +521,21 @@ def snapshot(repo_root: Path, paths: Sequence[str]) -> dict[str, str | None]:
     return {p: _fingerprint(repo_root / p) for p in paths}
 
 
+def write_violations(run_dir: Path, request: RunRequest, backend: str, breaches: Sequence[Change],  # pylint: disable=too-many-arguments
+                     denied: Sequence[str], git_issues: Sequence[str] = (),
+                     tracked: Mapping[str, tuple[str | None, str | None]] | None = None) -> Path:
+    """The run's violation evidence (`violations.json` in the run directory): what was left in the checkout,
+    with stamps and reasons — never file content. Both backends write it; the workspace hold points to it."""
+    path = run_dir / "violations.json"
+    path.write_text(json.dumps({
+        "task": request.task_id, "step": request.step, "role": request.role, "backend": backend,
+        "grants": list(request.workspace.grants), "denied": list(denied), "git": list(git_issues),
+        "sensitive": [c.to_dict() for c in breaches],
+        "git_status": {p: {"before": b, "after": a} for p, (b, a) in sorted((tracked or {}).items())}},
+        indent=2, sort_keys=True), encoding="utf-8")
+    return path
+
+
 def role_dirty_paths(repo_root: Path, roots: Sequence[str]) -> list[str]:
     """Modified, deleted or untracked (not ignored) paths under *roots* — read-only query."""
     if not roots:
@@ -570,9 +592,15 @@ class _Handshake:  # pylint: disable=too-few-public-methods
                 pass
 
 
+PLAN_ATTEMPTS = 3        # sandbox plans built for one launch before a changing checkout refuses the run
+VERIFY_ATTEMPTS = 8      # walks of the post-run inventory before the run counts as unverifiable
+
+
 class RealCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-public-methods
     """Runs a real Claude Code or Codex process for one task: contained, network-isolated,
     brokered and supervised."""
+
+    launch_gated = True   # the sandbox is started inside the coordinator's launch gate (RunContext.launch_gate)
 
     def __init__(self, profile: CliRunnerProfile, config: ProjectConfig, *, bwrap: str | None = None,  # pylint: disable=too-many-arguments
                  probe: RunnerProbe | None = None, broker_factory: BrokerFactory | None = None,
@@ -625,7 +653,7 @@ class RealCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-pub
         finally:
             broker.stop()
 
-    def _run(self, request: RunRequest, ctx: RunContext, bwrap: str,  # pylint: disable=too-many-locals
+    def _run(self, request: RunRequest, ctx: RunContext, bwrap: str,  # pylint: disable=too-many-locals,too-many-statements
              broker: AuthBroker) -> RunResult:
         policy: PathPolicy = request.workspace.policy
         builder = SandboxBuilder(policy.root, self.config, policy, bwrap=bwrap)
@@ -635,10 +663,16 @@ class RealCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-pub
         channel = BrokerChannel()
         handshake = _Handshake(channel, broker, launcher.broker_environment(broker.session.token),
                                self.config.broker.handshake_timeout_seconds)
+        plan: SandboxPlan | None = None
         try:
-            plan = builder.plan(run_dir=ctx.run_dir, role=request.role, grants=request.workspace.grants,
-                                shadow_writable=spec.shadow_writable, env=spec.env, extra=[*spec.binds, channel.bind()],
-                                hide=[ctx.run_dir.parent.parent])
+            try:  # masks and overlays from ONE fresh verified scan, proven still current right before the launch
+                plan = self._current_plan(builder, request, ctx, spec, channel)
+            except InventoryError as exc:  # fail closed: never start an agent behind a plan that may be stale
+                status = "unavailable" if isinstance(exc, InventoryUnstableError) else "failed"
+                return RunResult(self.name, status, error=f"the workspace inventory before the run failed: {exc}; "
+                                                          "the agent was not started")
+            inventory = plan.inventory
+            assert inventory is not None
             argv = plan.argv(channel.command(spec.argv))
             (ctx.run_dir / "sandbox.json").write_text(json.dumps({
                 "argv": argv, "writable": plan.writable, "readonly_overlays": plan.readonly_overlays,
@@ -652,35 +686,81 @@ class RealCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-pub
                 stdin_path=spec.stdin_path, timeout_seconds=ctx.timeout_seconds or runtime.task_timeout_seconds,
                 heartbeat=(lambda: ctx.heartbeat({"run_dir": str(ctx.run_dir)})) if ctx.heartbeat else None,
                 heartbeat_interval=runtime.heartbeat_interval_seconds, cancelled=ctx.cancelled,
-                grace_seconds=runtime.terminate_grace_seconds, pass_fds=(channel.child_fd,), on_start=handshake)
+                grace_seconds=runtime.terminate_grace_seconds, pass_fds=(channel.child_fd,), on_start=handshake,
+                launch_gate=(lambda: ctx.launch_gate(inventory)) if ctx.launch_gate else None)
+        except BaseException:   # e.g. the launch gate refused (held checkout): nothing ran, drop the scratch shadow
+            if plan is not None:
+                plan.discard_shadow()
+            raise
         finally:
             channel.close()
         broker.stop()
-        strays, residue = plan.stray_writes()
+        strays, residue_entries = plan.stray_writes()
         plan.discard_shadow()
         after = role_dirty_paths(policy.root, writable)
         allowed = [p for p in after if policy.check(request.role, p, grants=request.workspace.grants).allowed]
         now = snapshot(policy.root, sorted(set(after) | set(before)))
         touched = sorted(p for p in now if now[p] != before.get(p, "<absent>") or p not in before)
         denied = sorted(p for p in touched if p not in allowed and now[p] is not None)
+        # Independently of Git (ignored, untracked or never reported, like a nested .git/): every sensitive entry
+        # that changed inside the role's writable roots — the only places the sandbox lets it write.
+        try:
+            sensitive = compare(inventory, scan(policy.root, self.config, attempts=VERIFY_ATTEMPTS),
+                                within=writable)
+            unverified = ""
+        except InventoryError as exc:  # fail closed: what the agent left cannot be judged
+            sensitive, unverified = [], f"unverified workspace: {exc}"
+        breaches = violations(sensitive, policy, request.role, request.workspace.grants)
+        denied = sorted(set(denied) | {c.path for c in breaches})
+        allowed = [p for p in allowed if p not in denied]
+        residue = [*denied, *([unverified] if unverified else [])]
+        if residue:
+            write_violations(ctx.run_dir, request, "bwrap", breaches, denied,
+                             tracked={p: (before.get(p), now.get(p)) for p in touched if p in denied})
         ok, summary, details = launcher.parse(ctx.run_dir / "stdout.jsonl")
         details.update(exit_code=sup.exit_code, duration_seconds=round(sup.duration_seconds, 1),
                        escalated_to_kill=sup.escalated_to_kill, run_dir=str(ctx.run_dir),
                        changed_during_run=touched, preexisting=sorted(before),
-                       shadow_residue=residue, broker=broker.describe())
+                       shadow_residue=residue_entries, broker=broker.describe(),
+                       sensitive_changes=[c.to_dict() for c in sensitive], residue=residue)
         result = RunResult(self.name, "completed", allowed, transcript=[summary] if summary else [],
                            stray_writes=strays, details=details)
-        if sup.status in ("timeout", "cancelled"):
+        # Unauthorized changes left in the checkout decide first (before a timeout or cancellation): the run is
+        # rejected and its residue puts the checkout on hold (workflow → workspace_hold).
+        if unverified:
+            result.status, result.error = "rejected", (f"the workspace could not be verified after the run "
+                                                       f"({unverified}); everything is left in place for the operator")
+        elif denied:
+            sensitive_note = f"; sensitive: {sensitive_summary(breaches)}" if breaches else ""
+            result.status, result.error = "rejected", (f"changed paths the role may not commit (left in place, not "
+                                                       f"committed): {denied}{sensitive_note}")
+        elif sup.status in ("timeout", "cancelled"):
             result.status, result.error = sup.status, f"runner {sup.status} after {sup.duration_seconds:.0f}s"
         elif handshake.error:
             result.status, result.error = "failed", f"sandbox start-up failed: {handshake.error}"
         elif strays:
             result.status, result.error = "rejected", f"wrote outside its roots (discarded): {strays}"
-        elif denied:
-            result.status, result.error = "rejected", f"changed paths the role may not commit: {denied}"
         elif not sup.ok or not ok:
             result.status, result.error = "failed", f"runner exit {sup.exit_code}: {summary[:500]}"
         return result
+
+
+    def _current_plan(self, builder: SandboxBuilder, request: RunRequest, ctx: RunContext, spec: LaunchSpec,  # pylint: disable=too-many-arguments
+                      channel: BrokerChannel) -> SandboxPlan:
+        """A sandbox plan whose inventory still equals the checkout when it is checked again, right before the
+        launch: a sensitive entry that appeared while the plan was built would be bound without its mask or
+        read-only overlay. A stale plan is discarded and rebuilt; a checkout that keeps changing refuses the run."""
+        changed: list[str] = []
+        for _attempt in range(PLAN_ATTEMPTS):
+            plan = builder.plan(run_dir=ctx.run_dir, role=request.role, grants=request.workspace.grants,
+                                shadow_writable=spec.shadow_writable, env=spec.env,
+                                extra=[*spec.binds, channel.bind()], hide=[ctx.run_dir.parent.parent])
+            changed = builder.stale(plan)
+            if not changed:
+                return plan
+            plan.discard_shadow()
+        raise InventoryUnstableError(f"sensitive entries kept changing while the sandbox was prepared "
+                                     f"({', '.join(changed[:5])}): no current protection plan exists")
 
 
 def run_context(run_root: Path, task_id: str, **kwargs: Any) -> RunContext:

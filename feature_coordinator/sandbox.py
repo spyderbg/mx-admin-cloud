@@ -19,8 +19,12 @@ Every real runner and every gate runs inside `bwrap`:
     bind-mounted read-write on top; then everything inside those roots that the role must
     not write (exclusions, protected and approval-required paths, nested `.git`) is
     re-mounted read-only. `.git` is always read-only: only the Git coordinator mutates it;
-  * untracked or ignored secret files (e.g. `.env`) are not mounted at all (top level) or
-    are masked with /dev/null (nested). Tracked files are already in the repository history.
+  * secret files (e.g. `.env`) are not mounted at all (top level) or are masked with /dev/null
+    (nested). Which files are secret is decided by the SECURITY POLICY alone (`runtime.secret_patterns`,
+    fsguard) — never by whether Git tracks or stages the file, and never by the workspace baseline
+    (workspace_hold.py): a staged, tracked or operator-accepted secret is masked like any other.
+    (What a mask cannot hide: content that is in Git's object store — committed history, or a blob
+    written by `git add` — stays readable through the read-only `.git`; see worker docs §25.)
 
 The mount points are pre-created in the shadow on the host, so the shadow itself is mounted
 read-only for Claude Code and for gates: any write outside the writable roots fails with
@@ -28,8 +32,27 @@ EROFS. Codex's own sandbox (itself bubblewrap) must create guard mount points in
 root, so for Codex the shadow is writable; anything written there never reaches the checkout
 and is reported as a stray write (the run is then rejected).
 
-The OS layer cannot stop a role from *creating* a new file with a protected name inside its
-own root (there is nothing to mount over yet); the commit gate (PathPolicy) refuses it.
+A protected path is protected with everything below it (PathPolicy judges every ancestor): an
+EXISTING protected directory inside a writable root (`backend/src/.env/`, a nested `.git/`) — or a
+directory at an excluded exact path (`scripts/deploy.sh/`) — is re-mounted read-only as a whole, so
+its files can neither be changed nor joined by new ones. Which entries exist comes from the bounded
+file-system inventory (fsguard.py), which also reads the dependency and build trees the role-specific
+walk below skips for speed (PRUNE_DIRS): a protected directory or secret file below `node_modules/`,
+`.venv/` or `dist/` is covered as well. Secret files are judged component by component: a file inside
+an exempt directory (`backend/.env.example/.env`) is still masked.
+
+FRESHNESS (Security S1 round 3). An inventory is a fact about one moment, so the builder keeps none:
+every plan() takes its own verified scan and records it in the plan (`plan.inventory`), and that one
+inventory decides the plan's overlays AND masks. Before the sandbox starts, the runner compares the
+plan's inventory with another fresh scan (`stale()`); if a sensitive entry appeared or changed in
+between, the plan is discarded and rebuilt, and after a few attempts the run is refused (fail closed).
+
+The OS layer cannot stop a role from *creating* a NEW file or directory with a protected name
+inside its own root (there is nothing to mount over yet). That is DETECTED only after the run, by
+comparing the inventory before and after it (Git-ignored entries included; the run is rejected and
+the checkout put on hold, see workspace_hold.py), and the commit gate (PathPolicy) refuses it.
+Post-run detection does not prevent the agent from creating, reading or changing such a new path
+while it runs.
 """
 
 from __future__ import annotations
@@ -41,9 +64,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 
-from .gitsafe import SAFE_CONFIG_ARGS, hardened_env
 from .config import ProjectConfig
 from .errors import CoordinatorError
+from .fsguard import Inventory, compare, scan
 from .paths import PathPolicy, matches
 
 PRUNE_DIRS = frozenset({"node_modules", ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache", "dist"})
@@ -82,6 +105,7 @@ class SandboxPlan:  # pylint: disable=too-many-instance-attributes
     hidden: tuple[str, ...]
     extra: list[Bind] = field(default_factory=list)
     hidden_dirs: tuple[str, ...] = ()
+    inventory: Inventory | None = None   # the verified scan this plan's overlays and masks were built from
 
     def argv(self, command: Sequence[str]) -> list[str]:
         """The complete bwrap command line running *command*."""
@@ -184,6 +208,18 @@ class SandboxBuilder:
         self.policy = policy or PathPolicy(self.root, config)
         self.bwrap = bwrap or find_bwrap() or "bwrap"
 
+    def inventory(self) -> Inventory:
+        """A FRESH verified scan of the checkout's sensitive entries (fsguard). Never cached: an inventory is a
+        fact about one moment (InventoryError: no complete scan — callers fail closed)."""
+        return scan(self.root, self.config)
+
+    def stale(self, plan: SandboxPlan) -> list[str]:
+        """The sensitive entries that differ between *plan*'s inventory and the checkout NOW (a fresh scan): not
+        empty means the plan's masks and overlays may no longer cover the checkout — rebuild it, never launch it."""
+        if plan.inventory is None:
+            return ["<the plan carries no inventory>"]
+        return [change.path for change in compare(plan.inventory, self.inventory())]
+
     # -- what is writable -------------------------------------------------------
 
     def writable_roots(self, role: str, grants: Sequence[str] = ()) -> list[str]:
@@ -206,12 +242,20 @@ class SandboxBuilder:
     def _denied_subtree(self, role: str, rel_dir: str, grants: Sequence[str]) -> bool:
         role_cfg = self.config.role(role)
         granted = [g for g in grants if matches(g, rel_dir) or matches(g, f"{rel_dir}/.probe")]
-        patterns = [*role_cfg.excluded, *self.config.protected,
-                    *(p for p in self.config.approval_required if not granted)]
-        return any(p.endswith("/**") and matches(p, rel_dir) for p in patterns) or os.path.basename(rel_dir) == ".git"
+        patterns = [*role_cfg.excluded, *(p for p in self.config.approval_required if not granted)]
+        # A protected directory is read-only AS A WHOLE, whichever protected pattern names it (`**/.env` and
+        # `**/.env.*` name directories too) and Git's own directory at any depth: everything below it is
+        # protected (PathPolicy), so the role may neither change its files nor create new ones in it. Likewise a
+        # directory an excluded or approval-required pattern names — `<dir>/**`, or an exact path used as a
+        # directory (`scripts/deploy.sh/`): PathPolicy refuses everything inside it.
+        return self.policy.protected_by(rel_dir) is not None or any(matches(p, rel_dir) for p in patterns)
 
-    def readonly_overlays(self, role: str, roots: Iterable[str], grants: Sequence[str] = ()) -> list[str]:
-        """Paths inside *roots* that must be re-mounted read-only for *role*."""
+    def readonly_overlays(self, role: str, roots: Iterable[str], grants: Sequence[str] = (),
+                          inventory: Inventory | None = None) -> list[str]:
+        """Paths inside *roots* that must be re-mounted read-only for *role* (*inventory*: the scan to use — the
+        plan's own; none: a fresh one)."""
+        roots = list(roots)
+        inventory = inventory or self.inventory()
         overlays: list[str] = []
         for rel_root in roots:
             top = self.root / rel_root
@@ -235,28 +279,41 @@ class SandboxBuilder:
                         continue
                     if not self.policy.check(role, rel, grants=grants).allowed:
                         overlays.append(rel)
-        return overlays
+        return self._inventory_overlays(role, roots, grants, overlays, inventory)
+
+    def _inventory_overlays(self, role: str, roots: Iterable[str], grants: Sequence[str],  # pylint: disable=too-many-arguments
+                            overlays: list[str], inventory: Inventory) -> list[str]:
+        """*overlays* plus every sensitive entry of the inventory inside *roots* the role may not write and no
+        overlay covers yet — the walk above skips the PRUNE_DIRS trees (`backend/node_modules/x/.git/`,
+        `backend/.venv/.env/`); the inventory does not. Parents sort before their children."""
+        roots = tuple(r for r in roots if (self.root / r).is_dir())
+        covered = set(overlays)
+        for rel, entry in sorted(inventory.entries.items()):
+            if entry.kind in ("symlink", "vanished") or not any(rel.startswith(f"{r}/") for r in roots):
+                continue
+            parts = rel.split("/")
+            if any("/".join(parts[:i]) in covered for i in range(1, len(parts) + 1)):
+                continue
+            denied = (self._denied_subtree(role, rel, grants) if entry.kind == "dir"
+                      else not self.policy.check(role, rel, grants=grants).allowed)
+            if denied:
+                covered.add(rel)
+        return sorted(covered)
 
     # -- what is hidden ------------------------------------------------------------
 
-    def secret_files(self) -> list[str]:
-        """Untracked or ignored files matching the secret patterns (never shown to agents)."""
-        runtime = self.config.runtime
-        found: list[str] = []
-        for dirpath, dirnames, filenames in os.walk(self.root):
-            dirnames[:] = [d for d in dirnames if d not in PRUNE_DIRS and d != ".git"
-                           and not os.path.islink(os.path.join(dirpath, d))]
-            for name in filenames:
-                rel = os.path.relpath(os.path.join(dirpath, name), self.root)
-                if any(matches(p, rel) for p in runtime.secret_patterns) and \
-                        not name.endswith(tuple(runtime.secret_exempt_suffixes)):
-                    found.append(rel)
-        if not found:
-            return []
-        tracked = set(subprocess.run(["git", "-C", str(self.root), *SAFE_CONFIG_ARGS, "ls-files", "-z", "--",
-                                      *found], capture_output=True, text=True, env=hardened_env(),
-                                     check=False).stdout.split("\0"))
-        return sorted(rel for rel in found if rel not in tracked)
+    def secret_files(self, inventory: Inventory | None = None) -> list[str]:
+        """Every secret file of the checkout — the file itself or a file inside a secret directory
+        (`backend/.env/key`), anywhere, including the PRUNE_DIRS trees — never shown to agents (masked or hidden
+        here; denied to hardened native agents). Each path component is judged on its own: an exempt suffix
+        applies only to the name it matches, so `backend/.env.example` is readable but `backend/.env.example/.env`
+        is masked (fsguard / paths.secret_prefix).
+
+        SECURITY POLICY ONLY: the list depends on the secret patterns and on what exists in the file system —
+        not on Git (a tracked or merely staged secret is listed like an untracked one; index membership is not
+        history) and not on the workspace baseline (an operator-accepted entry stays listed). *inventory*: the
+        scan to use (the plan's own); none: a fresh one — never a cached one."""
+        return (inventory or self.inventory()).secret_files()
 
     # -- the plan ------------------------------------------------------------------
 
@@ -268,9 +325,10 @@ class SandboxBuilder:
         home, shadow = run_dir / "home", run_dir / "shadow"
         home.mkdir(exist_ok=True)
         shadow.mkdir(exist_ok=False)
+        inventory = self.inventory()   # fresh and verified: THIS plan's facts (overlays, masks, later baseline)
         roots = self.writable_roots(role, grants) if role else []
-        overlays = self.readonly_overlays(role, roots, grants) if role else []
-        secrets = self.secret_files()
+        overlays = self.readonly_overlays(role, roots, grants, inventory) if role else []
+        secrets = self.secret_files(inventory)
         hidden = sorted(s for s in secrets if "/" not in s)
         masked = sorted(s for s in secrets if "/" in s)
         binds: list[Bind] = []
@@ -301,7 +359,7 @@ class SandboxBuilder:
                            home=home, binds=binds, env=base_env, cwd=cwd or self.root,
                            top_level=frozenset(top_level), writable=tuple(roots), readonly_overlays=tuple(overlays),
                            masked=tuple(masked), hidden=tuple(hidden), extra=list(extra),
-                           hidden_dirs=tuple(hidden_dirs))
+                           hidden_dirs=tuple(hidden_dirs), inventory=inventory)
 
 
 def _inside(path: Path, root: Path) -> bool:

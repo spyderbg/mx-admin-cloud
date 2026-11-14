@@ -62,10 +62,14 @@ def test_writable_roots_and_read_only_islands(repo3: Path, config: ProjectConfig
     assert "test_environment/testenv.toml" not in overlays and "test_environment/testenv.local.toml" in overlays
 
 
-def test_untracked_secrets_are_hidden_tracked_files_are_not(repo3: Path, config: ProjectConfig) -> None:
-    assert SandboxBuilder(repo3, config).secret_files() == [".env", "backend/.env.local"]
+def test_secrets_are_hidden_whether_git_tracks_them_or_not(repo3: Path, config: ProjectConfig) -> None:
+    """Security S1 (round 3, F8): which files are masked is the security policy's decision alone
+    (`runtime.secret_patterns`) — a tracked file matching them (frontend/.env.development.local) is masked like an
+    untracked one. Git's index is not history, and no baseline acceptance changes this either."""
+    assert SandboxBuilder(repo3, config).secret_files() == [".env", "backend/.env.local",
+                                                            "frontend/.env.development.local"]
     plan = SandboxBuilder(repo3, config).plan(run_dir=repo3.parent / "run", role="backend")
-    assert plan.hidden == (".env",) and plan.masked == ("backend/.env.local",)
+    assert plan.hidden == (".env",) and plan.masked == ("backend/.env.local", "frontend/.env.development.local")
     assert ".env" not in plan.top_level and ".env.example" in plan.top_level
 
 
