@@ -48,6 +48,9 @@ Phase 2 delivered the design and a skeleton with mock runners, a mock issue trac
 | `http_transport.py`³, `capabilities.py`³ | Loopback-only Chat Completions transport (streaming, partial tool calls, cancellation); capability validation |
 | `operations.py`³ | Containment self-test, real runner wiring per execution backend (W2), tracker selection (`make_tracker`)⁴ |
 | `native_backend.py`ᵂ² | The `native-cli` execution backend: subscription-only environment and status checks, supervision with run-tag cleanup, workspace-wide acceptance (NOT a sandbox) |
+| `fsguard.py`ˢ¹ | The bounded, deterministic, VERIFIED file-system inventory of sensitive entries (protected, secret, excluded, symlinks into them), independent of Git; shared by the sandbox plan and both backends' post-run judgement (§25) |
+| `workspace_hold.py`ˢ¹, `workspace_commands.py`ˢ¹ | Workspace baseline, workspace hold and the launch admission gate (one atomically written record per checkout under `coordinator.lock`); `python -m feature_coordinator workspace status` / `resolve --hold REF` (§25) |
+| `review_guard.py`ˢ¹ | The reviewer's confidentiality guard: known tracked secret content never reaches the prompt through any field (§25) |
 | `worker.py`ᵂ², `worker_commands.py`ᵂ² | The Worker loop (`python -m feature_coordinator work`): dependencies, one writer per role, bounded launches; the `subscription-smoke` command |
 | `workspace.py`ᵂ², `python_env.py`ᵂ², `native_smoke.py`ᵂ² | Workspace verification (identity, branch, base, no unfinished Git operation); Python interpreter discovery for `{python}` role commands; the bounded real-subscription smoke test |
 | `checkpoints.py`ᵂ³, `checkpoint_commands.py`ᵂ³ | Multi-step tasks: checkpoint records, the intent → commit → complete protocol, reconciliation and recovery, context reconstruction; `python -m feature_coordinator checkpoints` / `recover TASK` |
@@ -73,7 +76,7 @@ The documented example is [`project-config.example.yaml`](project-config.example
 | automation | `remote_qwen` (OpenAI-compatible) | `scripts/**`, `test_environment/**`, `docs_agents/automation/**` | `test_environment/mxfix/**`, `test_environment/mxissues/**`, `test_environment/testenv.toml`, `test_environment/testenv.local.toml`, `scripts/deploy.sh` |
 | coordination | `claude` (configurable) | `docs_agents/coordination/**` | — |
 
-- **Protected** (no role, no grant): `.git/**`, `.env`, `.env.*`, `**/.env`, `**/.env.*` (any depth, Phase 3), `content/**`, `data/**`, `backend/data/**`, `test_environment/mxfix/**`, `test_environment/mxissues/**`, `test_environment/testenv.local.toml` (Git-ignored per-developer test-environment overrides; a run that creates or changes it is rejected).
+- **Protected** (no role, no grant): `.git/**`, `.env`, `.env.*`, `**/.env`, `**/.env.*` (any depth, Phase 3), `content/**`, `data/**`, `backend/data/**`, `test_environment/mxfix/**`, `test_environment/mxissues/**`, `test_environment/testenv.local.toml` (Git-ignored per-developer test-environment overrides; a run that creates or changes it is rejected). A path is protected when it OR ANY OF ITS ANCESTOR DIRECTORIES matches (lexical and resolved): `backend/src/.env/secret.py` is protected through `backend/src/.env` (`**/.env`), and Git's own directory `.git` is protected at any depth and in every alias Git refuses (any case, trailing dots or spaces, HFS+-ignorable code points, the NTFS short name `git~N`; one rule, `paths.is_git_dir_name`, shared with the W4.7 integration inspection) (Security S1, `test_fc_protected_descendants.py`, `test_fc_s1_review_findings.py`; §25).
 - Phase 3 configuration sections: `runtime` (containment fixed to `bwrap`, timeouts, heartbeat, Claude budget, secret patterns, per-role command allowlists; gates are always offline), `lint_gates` (policy fixed to `block-new`) and `unsafe_gates` (§11).
 - **Approval-required** (only with a task grant): root instruction files (`CLAUDE.md`, `AGENTS.md`, `README.md`), `.gitignore`, `.gitlab-ci.yml`, `test_environment/testenv.toml` (also excluded from the automation role, which owns `test_environment/**`), `scripts/deploy.sh`, agent-tool configuration (`.claude/**`, `.cursor/**`, `.opencode/**`, `.aiassistant/**`, `.agents/**`), `.github/**`, `docker/**`, `docs_agents/architecture/**`, `docs_agents/README.md`.
 - Anything else, for example `package.json` at the root, is **unowned and denied**. That includes the coordinator itself: `feature_coordinator/**` (its code, tests and systemd unit template) belongs to no role and is not approval-required, so no task grant can open it either (`test_the_coordinator_itself_is_writable_by_no_role`).
@@ -189,7 +192,7 @@ Tests: `test_blocked_consumer_does_not_freeze_unrelated_work`, `test_contract_re
 
 Generated outputs follow **destination ownership**. For example, `frontend/src/types/*Schemas.ts` (from `generate_ts_schemas.py`) and `frontend/src/api/*Client.ts` belong to Frontend, and Backend-owned OpenAPI files belong to Backend; a denial names the generator.
 
-Mock runners and the Qwen tool loop write only through `ScopedWorkspace`, which enforces the policy **at write time** and refuses to read `.env*`. Real Claude Code and Codex runs are contained by bubblewrap mounts derived from the same policy (§17.1, [agent-ownership.md](agent-ownership.md)).
+Mock runners and the Qwen tool loop write only through `ScopedWorkspace`, which enforces the policy **at write time** and refuses to read `.env*`. Real Claude Code and Codex runs are contained by bubblewrap mounts derived from the same policy (§17.1, [agent-ownership.md](agent-ownership.md)). What each layer prevents, detects or only refuses to commit is summarized in §25.
 
 Tests: 34 in `test_fc_paths.py` **[V]**.
 
@@ -470,8 +473,8 @@ Each real runner and each gate runs as `bwrap … <command>` with:
 | Process | `--die-with-parent --new-session --unshare-all` (mount, PID, IPC, UTS, cgroup, user and **network** namespaces). Since W1 no sandbox shares the host network: a runner reaches its model only through the broker endpoint inside its own namespace (§21); gates have none |
 | System | `/usr` and `/etc` read-only; `/proc`, `/dev`, private `/tmp` and `/var/tmp`; `--remount-ro /`, so nothing outside the explicit binds is writable |
 | Home and environment | A private HOME (`<state>/runs/<id>/home`); since W1 no credential file is bound and no API key is forwarded; `--clearenv` plus an allowlisted environment (no `XDG_STATE_HOME`, no `AGENT_QWEN_*`). The broker URL and per-run token reach the CLI through the channel only |
-| Repository | A **shadow root**: every top-level entry of the checkout is bound read-only into a private directory mounted at the repository path. The role's writable roots are then bound read-write, and paths the role must not write inside them are re-bound read-only: exclusions, protected and approval-required paths, nested `.git` |
-| Secrets | Untracked or ignored files matching `runtime.secret_patterns` (`.env`, `.env.*`, any depth; `*.example` exempt) are hidden at top level or masked with `/dev/null` |
+| Repository | A **shadow root**: every top-level entry of the checkout is bound read-only into a private directory mounted at the repository path. The role's writable roots are then bound read-write, and paths the role must not write inside them are re-bound read-only: exclusions, protected and approval-required paths, nested `.git`. An existing protected directory — or a directory at an excluded exact path (`scripts/deploy.sh/`) — is read-only as a whole, wherever it is, also below `node_modules/`, `.venv/` or `dist/` (from the inventory, §25) |
+| Secrets | Files matching `runtime.secret_patterns` (`.env`, `.env.*`, any depth, also below dependency and build trees) are hidden at top level or masked with `/dev/null` — decided by the security policy alone: a tracked, staged or baseline-accepted file is masked like an untracked one (S1 round 3; `secret_exempt_suffixes` is the only way to make one readable). Each path component is judged on its own: `*.example`/`.sample`/`.template` exempt only the name they end, so `backend/.env.example` stays readable while `backend/.env.example/.env` is masked. Hardened native agents are denied the same list. Every plan takes its own fresh, verified inventory and is checked against another one right before the sandbox starts |
 | State | The coordinator state directory is never visible: it lives under the real HOME, and a tmpfs covers it if a bound toolchain prefix would expose it |
 | Shadow writability | Read-only for Claude Code and gates (`EROFS` everywhere else). Writable only for Codex, whose own nested bubblewrap sandbox must create guard mount points in its working root. Anything written there is discarded and rejects the run as a **stray write** |
 
@@ -651,3 +654,93 @@ Design, trust boundaries, tests, limitations and troubleshooting: [worker-securi
 | Network | Every runner sandbox has its own network namespace; the bootstrap hands the worker a listener inside it, verified to be in a different namespace (`SO_NETNS_COOKIE`). There is no `--share-net` path | `netns_channel.py`, `sandbox_bootstrap.py`, `sandbox.py` |
 | Nested commands | Claude Code's strict Bash sandbox; Codex's workspace-write sandbox without network; neither sees the broker or the token | `launchers.CLAUDE_SANDBOX`, `CodexLauncher.prepare` |
 | Eligibility | `python -m feature_coordinator worker-check --apply`: CLI versions and flags, dependencies, broker credential, containment and isolation self-tests | `commands.cmd_worker_check`, `isolation_check.py` |
+
+## 25. Security S1 — security policy, workspace baseline, workspace hold and the security boundaries
+
+Branch `security/worker-path-policy`. Tests: `test_fc_protected_descendants.py` (the ancestor rule), `test_fc_s1_review_findings.py` (first independent review, F1–F7) and `test_fc_s1_round3.py` (second independent review, F8–F12; real Worker processes).
+
+### 25.1 Three separate concepts
+
+| Concept | What it is | What it never does |
+| --- | --- | --- |
+| **Security policy** (`paths.py`, `fsguard.Classifier`, `sandbox.py`) | Which paths are protected or secret, hence read-only, masked or denied. Fixed by the configuration | It never depends on Git's index, on the workspace baseline or on an operator's acceptance |
+| **Workspace baseline** (`workspace_hold.py`) | A record of file-system state used only to DETECT CHANGE: the sensitive entries Git does not explain, as an operator or an accepted run last left them | It never grants read or write access and never removes a mask or deny rule |
+| **Workspace hold** (`workspace_hold.py`) | A persistent block on NEW agent executions in one checkout until an operator resolves it | It never deletes, resets, cleans or stashes a file |
+
+**Sensitive entries** (`fsguard.py`). An entry is sensitive when it or an ancestor directory is protected (`paths.protected_prefix`, `.git` at any depth and in any alias, NTFS stream spellings included), secret (`runtime.secret_patterns`, each component judged on its own, `paths.secret_prefix`) or excluded for a role, or when it is a symlink whose target resolves to a protected or secret path.
+
+### 25.2 The inventory is verified, never cached
+
+The walk covers the whole checkout except Git's own top-level `.git/`, dependency and build trees included, name by name. It never follows a symlink (`O_NOFOLLOW`, directory-relative), is deterministic, and is bounded: `MAX_ENTRIES` 1 000 000 (counted while a directory is listed), `MAX_DEPTH` 256, `MAX_SECONDS` 300 (checked for every entry and before the result is returned).
+
+A directory walk is not an atomic snapshot. A walk therefore counts only when it is **verified**: each directory's identity and change stamps (inode, device, mode, mtime, ctime) are taken before it is listed and compared again after the whole walk, and an entry that vanishes or changes type while it is read marks the walk. An unverified walk is repeated (4 attempts with a growing pause; 8 for a post-run verification). If the checkout keeps changing, the scan raises `InventoryUnstableError`; it never returns a result whose completeness was not established. Callers fail closed: no agent starts (the task is tried again), and a finished run that cannot be verified is rejected and held.
+
+Nothing security-relevant is cached. Every sandbox plan takes its own inventory, which decides its overlays and masks and becomes the run's baseline snapshot. Right before the launch the runner compares it with another fresh scan; a stale plan is discarded and rebuilt, and after 3 attempts the run is refused. A hardened native run is refused when a secret exists that its deny rules do not name.
+
+What verification cannot prove: anything about changes made after the verification pass. See the quiescence boundary below.
+
+### 25.3 Admission: the launch gate
+
+All coordination state of a checkout is one record (`flags/workspace-guard.json`: `generation`, `launches`, `hold`, `baseline`, `executions`), always written atomically as a whole under the Coordinator's existing process-shared lock (`coordinator.lock`, a flock the kernel releases when its holder dies).
+
+An agent process starts only inside `workspace_hold.launch_gate`. Under that lock the record is reloaded; a hold refuses; the runner's fresh inventory is compared with the baseline (an unexplained new or changed sensitive entry puts the checkout on hold and refuses); the execution is registered; the agent process is started; its process identity is recorded; then the lock is released. Publishing a hold takes the same lock. Every hold is therefore totally ordered against every launch: an agent either started before the hold existed (it is then a registered execution, and the hold entry lists it as `in_flight`) or it does not start. The earlier checks (before the claim, and inside the claim's critical section) only fail fast; a decision made before a hold existed is never reused. Multi-step tasks pass the gate once per agent invocation. Real runners (`native-cli`, `bwrap`) start their process inside the gate; in-process runners (mock, remote) are admitted by the same gate immediately before they run.
+
+An execution ends in `finish_execution`: it leaves the registry, and its residue becomes a hold entry in the same write. If its Worker dies, the record survives: the execution counts as in flight while its Worker or agent process is alive and is dropped (an event) once both are gone. Whatever it left is found by the next admission's inventory check.
+
+**Quiescence boundary.** Worker-controlled writers are the registered executions (the Git coordinator never writes sensitive working-tree paths). While a hold exists none can start; resolution requires that none is in flight. With one agent at a time (`worker.max_parallel: 1`, the service default) admission, inventory, launch and final verification of a run see no other Worker-controlled writer. With parallel roles another role's agent may write while a run is admitted; what it leaves is judged by its own final verification. A host process that ignores the Coordinator's locks (an editor, a script, an operator's shell) can change the checkout after any scan. That cannot be prevented from the Coordinator; it is detected afterwards (against the baseline at the next admission, and by each run's before/after inventories) and never trusted silently. Detection does not undo a read that already happened.
+
+### 25.4 Hold, baseline and resolution
+
+A run that leaves unauthorized changes — its `residue`: paths the role may not write, changed sensitive entries, a changed Git state, an unverifiable workspace — is rejected with `violations.json` in its run directory, and the checkout goes on hold. While held, `run` refuses, `work` starts nothing new, and the Worker service shows NEEDS_ATTENTION without counting a launch.
+
+**First inventory.** A checkout whose first inventory finds unexplained sensitive entries is put on hold: an operator reviews them (`workspace status`, text or `--json`, lists every path) and records them with `workspace resolve --accept --reason TEXT`. Nothing is trusted on first use.
+
+**Resolution is bound to a generation.** `workspace resolve` is a dry run that prints the hold's reference (`<id>.<generation>`). `--apply` must name it with `--hold REF`. The command inspects the checkout without the lock; under the lock it applies only if the hold's id and generation, the launch counter and the baseline revision are unchanged and no execution is in flight. Otherwise it changes nothing and reports STALE: a hold that another process added or replaced meanwhile survives.
+
+**Acceptance** (`--accept --reason TEXT`) updates the baseline only. An accepted path stays exactly as protected, read-only, masked and denied as the policy makes it. Two things are never acceptable: a sensitive entry that a run created (the operator removes it) and a sensitive path staged in Git's index (the operator unstages it; `git add` copies the content into the object store, where no working-tree mask hides it).
+
+### 25.5 Reviewer confidentiality
+
+`review_guard.py` knows the lines and `KEY=VALUE` values (12 or more characters after normalisation) of every tracked secret file at the diff base, at the reviewed head and in every commit between them, and the blob IDs of protected and secret files. Text is compared normalised (NFKC; whitespace, control and format characters removed) and as a substring. A changed file whose diff or path repeats known content is withheld. A commit subject, the Issue title or body, the plan or a conventions excerpt that repeats it is replaced as a whole by a marker. The complete prompt is checked once more after every other sanitiser; if known content is still in it, there is no prompt (an ERROR review, no model call). Messages name the secret's path, never its content.
+
+### 25.6 Boundaries
+
+| Boundary | What it does | Backends | Prevents or detects? |
+| --- | --- | --- | --- |
+| **OS-enforced filesystem restrictions** | bwrap mounts: writable roots only; existing protected directories, excluded and approval-required paths read-only as a whole (also below pruned trees); secret files hidden or masked, whatever Git or the baseline says | `bwrap` only | **Prevents** writes to, and reads of, EXISTING protected or secret entries while the agent runs. It cannot stop the agent from creating a NEW protected name inside its own writable root. `native-cli` has no OS enforcement: hardened native runs confine the agent's tools, not the CLI process |
+| **Admission** | The launch gate: no agent starts while a hold exists or the fresh inventory differs from the baseline | both, and in-process runners | **Prevents** a new execution; it does not stop one that was already admitted |
+| **Post-run detection** | The verified inventory before and after the run (bwrap: inside the role's writable roots; native: the whole checkout), plus `git status`; residue rejects the run and holds the checkout | both | **Detects after the fact.** It does not prevent the agent from reading or changing anything while it runs |
+| **Commit-gate enforcement** | `GitCoordinator.commit` re-checks every manifest path (deletions included) with PathPolicy under the Git lock | both | **Refuses** to commit a protected or unowned path, whatever the runner reported |
+| **Secret disclosure prevention** | Masking/hiding (bwrap); deny lists for hardened native agents; the reviewer guard (§25.5) | as stated | **Reduces** disclosure, within the limits below |
+
+### 25.7 Status, known security limitations and deployment restrictions
+
+**Status.** Security S1 is a functional hardening with documented limits. It is NOT a complete security certification: the last independent review was inconclusive on Git-history confidentiality, and S1 does not claim to provide it. No further Git-history isolation is part of S1.
+
+**Git history and the object store are not confidential (not addressed by S1).**
+
+- A mask hides the working-tree file only. Everything in Git's object store stays readable through the read-only `.git` that every sandbox mounts and every native agent can read: committed content (`git show HEAD:path`), loose and packed objects, and blobs written by `git add`.
+- Unstaging does not remove a staged blob: it stays in the object store as an unreachable object until Git prunes it. Treat a secret that was ever staged or committed as disclosed to agents and rotate it.
+- A tracked secret file that equals `HEAD` is explained by Git: it is masked in the working tree, but it never causes a hold, and its content is in history.
+- A path that is staged in the index while its working-tree file is absent is not seen by the inventory, so admission does not refuse on it. `workspace resolve` reports staged sensitive paths; admission does not.
+- The reviewer guard knows tracked secret content in the reviewed range only (base, head and the commits between them), not older history.
+
+**Other known limitations.**
+
+- `native-cli` agents are unconfined while they run: they can read every file the operator can, protected and secret ones included. Acceptance does not change that; the hold does, by not starting them.
+- bwrap cannot prevent the creation of a new protected name inside the role's own writable root; it is detected after the run.
+- A scan is not an atomic snapshot. A name inserted into a directory after that directory was verified, or after the scan ended, is not in the result. It is found by a later scan (the run's own before/after inventories, the next admission), not by this one.
+- If a Worker dies between starting the agent process and recording its process identity (a window of milliseconds), the execution is registered without an agent identity. Once the Worker is gone it no longer counts as in flight although the agent may still run; a resolution can then be applied. The existing orphan handling (run tags, `recover`) is the remaining safeguard.
+- A sensitive entry that a run created stops being "never acceptable" once Git explains it (it was committed and is clean): the resolution then sees nothing left to remediate.
+- A new Git-ignored entry that is not sensitive is not judged (for example an ignored build file in another role's tree on native-cli). Approval-required paths are not in the inventory.
+- Reviewer guard: it does not know content that was never tracked in the reviewed range, lines and values shorter than 12 characters, or transformed content. Messages name the secret file's path; a path that itself contains secret text therefore appears in the coordinator's message.
+- The hold and the baseline live in the state directory and are keyed by the checkout's path. A different or empty state directory, or a moved checkout, starts with a first inventory (which holds when it finds unexplained sensitive entries). Protect one authoritative state directory.
+- OS enforcement was verified with non-nested bwrap only; nested bwrap (the CLIs' own sandboxes inside ours) is blocked on Ubuntu by AppArmor (blocker B1). No reboot or power-loss durability test was performed.
+
+**Deployment restrictions.**
+
+- Do not rely on S1 to keep secrets that are, or ever were, in the repository's Git history or index away from agents or from the reviewer. Keep real secrets out of the Worker checkout where possible; rotate any that were committed or staged.
+- Before enabling autonomous work on an existing checkout: stop the Worker, run `workspace status`, review every unexplained sensitive entry, remove what should not be there, unstage any staged sensitive path, then `workspace resolve --apply --hold REF --accept --reason …`. The first run holds until this is done.
+- Keep `worker.max_parallel: 1` unless parallel roles are needed; the quiescence boundary (§25.3) is strongest with one agent at a time.
+- Verify bwrap on the deployment host (`sandbox-check --apply`) before using the `bwrap` backend; on `native-cli`, treat every agent as having the operator's file access.
+- Behaviour change: a tracked file matching the secret patterns (in this repository `frontend/.env.development.local`) is now masked in sandboxes and denied to hardened native agents. Add its suffix to `runtime.secret_exempt_suffixes` if agents must read it.

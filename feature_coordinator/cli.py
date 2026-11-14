@@ -42,6 +42,12 @@ W3 checkpoints (multi-step tasks; see `checkpoints --help`):
     integrate FEATURE [--apply]           the quiescent integration barrier → PR candidate
     hold TASK --reason R [--apply] / release TASK [--apply]
                             human escalation (needs-human); only a release resumes the task
+Security S1 workspace hold (see `workspace --help`; workspace_hold.py):
+    workspace status [--json]             the hold and its reference, executions in flight, untrusted
+                                          sensitive entries with their paths (read-only)
+    workspace resolve [--apply --hold REF] [--accept --reason TEXT]
+                            lift exactly the hold REF once the residue is remediated (or record the
+                            state as the baseline; never the security policy); never changes a file
 W4.7 integration jobs of EXISTING branches/PRs (M1; see `integration --help`):
     integration intake --source-repo R --source-ref B --source-sha SHA --base dev --base-sha SHA --issue N
                 [--pr N] [--apply] [--json]   read-only checks; --apply records the job (no Git write)
@@ -232,6 +238,10 @@ def cmd_status(args: argparse.Namespace, config: ProjectConfig) -> int:
                f"heartbeat {age:.0f}s ago" if age is not None else f"claim {task_id}: {state}")
         if store.get_flag(f"cancel-{task_id}"):
             _print(f"  stop requested for {task_id}")
+    from .workspace_hold import describe, hold_of  # pylint: disable=import-outside-toplevel
+    hold = hold_of(store, Path(args.repo))
+    if hold is not None:
+        _print(f"WORKSPACE HOLD: {describe(hold)}")
     return 0
 
 
@@ -280,6 +290,8 @@ def build_parser() -> argparse.ArgumentParser:
     register_service(sub)
     from .integration_commands import register as register_integration  # pylint: disable=import-outside-toplevel
     register_integration(sub)
+    from .workspace_commands import register as register_workspace  # pylint: disable=import-outside-toplevel
+    register_workspace(sub)
     from .github_commands import register as register_github  # pylint: disable=import-outside-toplevel
     from .project_commands import register as register_project  # pylint: disable=import-outside-toplevel
     from .intake_commands import register as register_intake  # pylint: disable=import-outside-toplevel

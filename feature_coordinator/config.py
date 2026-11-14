@@ -384,19 +384,19 @@ def _check_pattern(pattern: str, *, allow_glob: bool) -> None:
 
 
 @lru_cache(maxsize=None)
-def _regex(pattern: str) -> re.Pattern[str]:
+def pattern_regex(pattern: str) -> re.Pattern[str]:
+    """The compiled form of a path pattern: THE definition of matches() (fsguard builds its unions from it)."""
     any_depth = pattern.startswith("**/")
     body = pattern[3:] if any_depth else pattern
     subtree = body.endswith("/**")
     body = body[:-3] if subtree else body
     parts = [re.escape(seg).replace(r"\*", "[^/]*") for seg in body.split("/")]
-    prefix = "(?:.*/)?" if any_depth else ""
-    return re.compile(prefix + "/".join(parts) + ("(/.*)?" if subtree else "") + r"\Z")
+    return re.compile(("(?:.*/)?" if any_depth else "") + "/".join(parts) + ("(/.*)?" if subtree else "") + r"\Z")
 
 
 def matches(pattern: str, rel: str) -> bool:
     """True if the repository-relative POSIX path *rel* matches *pattern*."""
-    return bool(_regex(pattern).match(rel))
+    return bool(pattern_regex(pattern).match(rel))
 
 
 def _prefix(pattern: str) -> tuple[str, bool]:

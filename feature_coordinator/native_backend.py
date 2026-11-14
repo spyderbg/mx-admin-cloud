@@ -35,11 +35,18 @@ identity (pid + start time + boot id) right after, so recovery can tell whether 
 interrupted run still lives (claims.recover() then refuses to reclaim the task).
 
 Acceptance (unchanged rules, workspace-wide here): every path the run changed anywhere in the
-checkout — tracked, untracked, and protected ignored files such as `.env` — must be writable by
-the role, and the Git state must be untouched: same branch, no ref or stash change, nothing
-staged, and new commits on the branch only from the Git coordinator (its `Feature-Task:`
-trailer). Otherwise the run is REJECTED and the changes are LEFT IN PLACE for the operator
-(never silently discarded). Only the Git coordinator commits, from the role's own paths.
+checkout must be writable by the role, and the Git state must be untouched: same branch, no ref
+or stash change, nothing staged, and new commits on the branch only from the Git coordinator (its
+`Feature-Task:` trailer). Changed paths come from two independent sources: `git status` (tracked
+and untracked changes) and the bounded file-system inventory (fsguard.py) of every SENSITIVE entry
+— protected, secret or excluded paths and symlinks into them, Git-ignored or not, including a
+nested `.git/` that `git status` never reports and anything below dependency or build trees.
+Otherwise the run is REJECTED, the changes are LEFT IN PLACE for the operator (never silently
+discarded, deleted or reset), the evidence is written to the run directory (`violations.json`)
+and the run reports them as `residue`: the workflow then puts the checkout on hold, so no further
+agent task starts until an operator resolves it (workspace_hold.py). This is detection AFTER the
+run: without an OS sandbox nothing stops the agent from reading or changing such paths while it
+runs. Only the Git coordinator commits, from the role's own paths.
 
 Concurrent tasks share the checkout. A change inside the roots of ANOTHER role that held a claim
 during this run (RunContext.concurrent_roles) is that role's to judge and commit, so it is not
@@ -62,8 +69,10 @@ from typing import Any, Callable, Mapping
 
 from .config import ProjectConfig
 from .errors import CoordinatorError, GitConfigExecutionError
+from .fsguard import Change, Inventory, InventoryError, InventoryUnstableError, compare, scan, violations
+from .fsguard import summary as sensitive_summary
 from .gitsafe import assert_no_execution_config, git_argv, hardened_env
-from .launchers import LAUNCHERS, RunnerProbe, probe_runner, snapshot
+from .launchers import LAUNCHERS, VERIFY_ATTEMPTS, RunnerProbe, probe_runner, snapshot, write_violations
 from .locks import ProcessIdentity
 from .native_hardening import (
     claude_init_problems,
@@ -73,7 +82,7 @@ from .native_hardening import (
     preflight,
 )
 from .native_hardening import summary as hardening_summary
-from .paths import PathPolicy, matches
+from .paths import PathPolicy
 from .providers import CliRunnerProfile, ProviderKind, model_family
 from .python_env import PythonInterpreter
 from .runners import RunContext, RunRequest, RunResult
@@ -201,7 +210,7 @@ class WorkspaceState:
     """Fingerprints of everything a run could change, taken before and after it."""
 
     dirty: dict[str, str | None]        # tracked and untracked (not ignored) changes
-    protected_ignored: dict[str, str | None]  # ignored files the policy protects (e.g. .env)
+    inventory: Inventory                # every sensitive entry, from the file system (fsguard), ignored or not
     ignored: frozenset[str]             # every ignored entry (informational)
     git: GitState
 
@@ -251,23 +260,23 @@ def git_problems(root: Path, before: GitState, after: GitState) -> list[str]:
     return problems
 
 
-def workspace_state(root: Path, config: ProjectConfig) -> WorkspaceState:
-    """The current state of *root* (read-only Git queries; optional locks off)."""
+def workspace_state(root: Path, config: ProjectConfig, *, attempts: int | None = None) -> WorkspaceState:
+    """The current state of *root* (read-only Git queries; optional locks off) and its sensitive entries, from a
+    fresh verified scan (InventoryError: no complete inventory — callers fail closed). *attempts*: how many walks
+    the scan may take when the checkout keeps changing (default: fsguard's)."""
     dirty, ignored = _status(root)
-    protected = [p for p in ignored if not p.endswith("/") and
-                 any(matches(pattern, p) for pattern in (*config.protected, *config.runtime.secret_patterns))]
-    return WorkspaceState(snapshot(root, dirty), snapshot(root, protected), frozenset(ignored), git_state(root))
+    inventory = scan(root, config) if attempts is None else scan(root, config, attempts=attempts)
+    return WorkspaceState(snapshot(root, dirty), inventory, frozenset(ignored), git_state(root))
 
 
-def changed_paths(before: WorkspaceState, after: WorkspaceState) -> tuple[list[str], list[str], list[str]]:
-    """(changed paths, changed protected ignored files, new ignored entries) between two states.
+def changed_paths(before: WorkspaceState, after: WorkspaceState) -> tuple[list[str], list[Change], list[str]]:
+    """(changed paths, changed sensitive entries, new ignored entries) between two states.
     A path that is clean (equal to HEAD) on one side counts as `<clean>` there, so a path that
-    became dirty, changed again, or was restored to HEAD during the run is reported."""
+    became dirty, changed again, or was restored to HEAD during the run is reported. Sensitive
+    entries come from the file system, whatever Git tracks or ignores (a nested `.git/` included)."""
     changed = sorted(p for p in set(before.dirty) | set(after.dirty)
                      if before.dirty.get(p, "<clean>") != after.dirty.get(p, "<clean>"))
-    protected = sorted(p for p in set(before.protected_ignored) | set(after.protected_ignored)
-                       if before.protected_ignored.get(p, "<absent>") != after.protected_ignored.get(p, "<absent>"))
-    return changed, protected, sorted(after.ignored - before.ignored)
+    return changed, compare(before.inventory, after.inventory), sorted(after.ignored - before.ignored)
 
 
 # ---------------------------------------------------------------------------
@@ -307,6 +316,7 @@ class NativeCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-p
     """Runs a real Claude Code or Codex process for one task, natively, with the subscription login."""
 
     backend = BACKEND
+    launch_gated = True   # the CLI is started inside the coordinator's launch gate (RunContext.launch_gate)
 
     def __init__(self, profile: CliRunnerProfile, config: ProjectConfig, *, probe: RunnerProbe | None = None,  # pylint: disable=too-many-arguments
                  auth_check: Callable[..., SubscriptionCheck] = check_subscription,
@@ -397,9 +407,21 @@ class NativeCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-p
             "argv": spec.argv, "cwd": str(root), "run_tag": tag,
             "environment_names": sorted(env), "model": model or "CLI default", "writable": writable,
             "authentication": self.subscription().method}, indent=2), encoding="utf-8")
-        before = self._state(root, ctx)
+        try:
+            before = self._state(root, ctx)
+        except InventoryError as exc:  # fail closed: never start an agent whose changes could not be judged
+            status = "unavailable" if isinstance(exc, InventoryUnstableError) else "failed"
+            return RunResult(self.name, status, error=f"the workspace inventory before the run failed: {exc}; "
+                                                      "the agent was not started")
+        # Hardened: the deny rules were generated from an earlier scan. A secret that appeared since then is in the
+        # baseline snapshot above but in no rule — never launch with a stale deny list (fail closed, tried again).
+        undenied = sorted(set(before.inventory.secret_files()) - launcher.denied) if self.hardened else []
+        if undenied:
+            return RunResult(self.name, "unavailable", error=(
+                f"secret files appeared while the run was prepared ({', '.join(undenied[:5])}): the hardened deny "
+                "rules would not cover them (temporarily unavailable); the agent was not started"))
         control = git_control_digest(root) if self.hardened else ""
-        sup = self._supervise(spec.argv, root, env, spec.stdin_path, ctx, tag)
+        sup = self._supervise(spec.argv, root, env, spec.stdin_path, ctx, tag, before.inventory)
         leftovers = kill_tagged(RUN_TAG, tag)
         result = self._judge(request, ctx, launcher, model, before, sup, leftovers, writable)
         return self._judge_hardened(result, root, control, launcher, request.role) if self.hardened else result
@@ -418,18 +440,19 @@ class NativeCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-p
             result.status, result.error = "rejected", ("the run changed Git control files (.git/config, hooks or "
                                                        "info); left as is for the operator — review before any Git "
                                                        "command runs in this checkout")
+            result.details.setdefault("residue", []).append("Git control files (.git/config, hooks or info) changed")
         elif problems and result.status not in ("timeout", "cancelled", "rejected"):
             result.status, result.error = "failed", "native hardening: " + "; ".join(problems)
         return result
 
-    def _state(self, root: Path, ctx: RunContext) -> WorkspaceState:
+    def _state(self, root: Path, ctx: RunContext, attempts: int | None = None) -> WorkspaceState:
         """A workspace snapshot taken while no Git coordinator commit is in flight (a commit
         moves the branch first and refreshes the shared index after)."""
         with ctx.git_quiet() if ctx.git_quiet else nullcontext():
-            return workspace_state(root, self.config)
+            return workspace_state(root, self.config, attempts=attempts)
 
     def _supervise(self, argv: list[str], root: Path, env: dict[str, str], stdin_path: Path, ctx: RunContext,  # pylint: disable=too-many-arguments
-                   tag: str) -> Any:
+                   tag: str, inventory: Inventory) -> Any:
         runtime = self.config.runtime
         beat: dict[str, Any] = {"run_dir": str(ctx.run_dir), "run_tag": tag}
 
@@ -446,27 +469,43 @@ class NativeCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-p
             stdin_path=stdin_path, timeout_seconds=ctx.timeout_seconds or runtime.task_timeout_seconds,
             heartbeat=(lambda: ctx.heartbeat(dict(beat))) if ctx.heartbeat else None,
             heartbeat_interval=runtime.heartbeat_interval_seconds, cancelled=ctx.cancelled,
-            grace_seconds=runtime.terminate_grace_seconds, on_start=on_start)
+            grace_seconds=runtime.terminate_grace_seconds, on_start=on_start,
+            launch_gate=(lambda: ctx.launch_gate(inventory)) if ctx.launch_gate else None)
 
     def _judge(self, request: RunRequest, ctx: RunContext, launcher: Any, model: str,  # pylint: disable=too-many-arguments,too-many-locals
                before: WorkspaceState, sup: Any, leftovers: list[int], writable: list[str]) -> RunResult:
         policy: PathPolicy = request.workspace.policy
         root, grants = policy.root, request.workspace.grants
-        after = self._state(root, ctx)
-        touched, protected_touched, new_ignored = changed_paths(before, after)
+        try:
+            after = self._state(root, ctx, VERIFY_ATTEMPTS)
+        except InventoryError as exc:  # fail closed: what the agent left cannot be judged
+            return RunResult(self.name, "rejected", error=(
+                f"the workspace could not be verified after the run ({exc}); everything is left in place for the "
+                "operator"), details={"run_dir": str(ctx.run_dir), "backend": BACKEND,
+                                      "residue": [f"unverified workspace: {exc}"]})
+        touched, sensitive, new_ignored = changed_paths(before, after)
         concurrent = ctx.concurrent_roles() if ctx.concurrent_roles else set()
         not_ours = {p for p in touched if not policy.check(request.role, p, grants=grants).allowed}
         theirs = sorted(p for p in not_ours if policy.owner_of(p) in concurrent)  # protected paths have no owner
-        denied = sorted((not_ours - set(theirs)) | set(protected_touched))
         # Hardened runs: the trusted CLI materialises inert, read-only agent-config anchors
         # (.claude, .mcp.json, .codex, .agents) in the shared checkout to carry its own permission
         # rules; concurrent roles see each other's. The agent is denied writing these, so an inert
         # instance is never an agent change — exclude it (a non-inert one, i.e. real content, stays
         # denied). This neither ignores the paths globally nor commits them (they are not writable).
-        anchors = sorted(p for p in denied if self.hardened and inert_launcher_anchor(root, p))
+        def inert(path: str) -> bool:
+            return self.hardened and inert_launcher_anchor(root, path)
+        # Sensitive entries changed anywhere — Git-ignored, untracked or invisible to Git (a nested .git/) —
+        # are judged whoever's roots they are in: a protected path has no owner, so no concurrent role explains it.
+        breaches = violations(sensitive, policy, request.role, grants, tolerated=inert)
+        denied = sorted((not_ours - set(theirs)) | {c.path for c in breaches})
+        anchors = sorted(p for p in denied if inert(p))
         if anchors:
             denied = [p for p in denied if p not in set(anchors)]
         git_issues = git_problems(root, before.git, after.git)
+        residue = [*denied, *(f"Git state: {issue}" for issue in git_issues)]
+        if residue:
+            write_violations(ctx.run_dir, request, BACKEND, breaches, denied, git_issues,
+                             {p: (before.dirty.get(p, "<clean>"), after.dirty.get(p, "<clean>")) for p in not_ours})
         from .launchers import role_dirty_paths  # pylint: disable=import-outside-toplevel
         allowed = [p for p in role_dirty_paths(root, writable)
                    if policy.check(request.role, p, grants=grants).allowed]
@@ -478,16 +517,21 @@ class NativeCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-p
                        duration_seconds=round(sup.duration_seconds, 1), escalated_to_kill=sup.escalated_to_kill,
                        run_dir=str(ctx.run_dir), changed_during_run=touched, ignored_entries_created=new_ignored,
                        left_to_concurrent_roles=theirs, concurrent_roles=sorted(concurrent),
-                       launcher_anchors_ignored=anchors, leftover_processes_killed=len(leftovers))
+                       launcher_anchors_ignored=anchors, leftover_processes_killed=len(leftovers),
+                       sensitive_changes=[c.to_dict() for c in sensitive], inventory_entries=after.inventory.scanned,
+                       residue=residue)
         result = RunResult(self.name, "completed", allowed, transcript=[summary] if summary else [], details=details)
-        if sup.status in ("timeout", "cancelled"):
-            result.status, result.error = sup.status, f"runner {sup.status} after {sup.duration_seconds:.0f}s"
-        elif git_issues:
+        # Unauthorized changes left in the checkout decide first (before a timeout or cancellation): the run is
+        # rejected and its residue puts the checkout on hold (workflow → workspace_hold).
+        if git_issues:
             result.status, result.error = "rejected", (f"the agent changed the Git state ({'; '.join(git_issues)}); "
                                                        "left as is for the operator — only the coordinator mutates Git")
         elif denied:
+            sensitive_note = f"; sensitive: {sensitive_summary(breaches)}" if breaches else ""
             result.status, result.error = "rejected", (f"changed paths the role may not write (left in place for "
-                                                       f"review, not committed): {denied}")
+                                                       f"review, not committed): {denied}{sensitive_note}")
+        elif sup.status in ("timeout", "cancelled"):
+            result.status, result.error = sup.status, f"runner {sup.status} after {sup.duration_seconds:.0f}s"
         elif problems:
             result.status, result.error = "failed", "; ".join(problems)
         elif not sup.ok or not ok:

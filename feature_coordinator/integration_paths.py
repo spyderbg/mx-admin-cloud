@@ -60,10 +60,10 @@ import unicodedata
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
-from .config import ProjectConfig, matches
+from .config import ProjectConfig
 from .integration import MAX_PATH_TEXT, IntegrationError
 from .integration_objects import CommitObject, HistoryRefused, HistoryUnverifiable, _CommitReader
-from .paths import PathPolicy
+from .paths import HFS_IGNORABLE, PathPolicy, is_git_dir_name, matching_prefix, protected_prefix
 
 MAX_TREE_OBJECT = 16 << 20       # a larger tree is refused (source side) or unverifiable (base side)
 MAX_SYMLINK_TARGET = 4096        # a larger symlink blob is refused
@@ -73,10 +73,7 @@ MAX_TREES_READ = 200_000         # tree objects read for one inspection
 TREE, FILE, EXEC, LINK, GITLINK = "40000", "100644", "100755", "120000", "160000"
 GIT_CONTROL_NAMES = frozenset({".gitattributes", ".gitmodules"})
 INVALID_TARGET = chr(0xFFFD)     # stands for a symlink target that is not UTF-8 (always refused)
-# HFS+ ignores these code points in names (zero-width and bidirectional controls): a name containing one can
-# alias `.git` or display as another name. Written as code points so this source contains no invisible text.
-_HFS_IGNORABLE = frozenset(chr(c) for c in (0x200C, 0x200D, 0x200E, 0x200F, 0x202A, 0x202B, 0x202C, 0x202D,
-                                            0x202E, 0x206A, 0x206B, 0x206C, 0x206D, 0x206E, 0x206F, 0xFEFF))
+_HFS_IGNORABLE = HFS_IGNORABLE   # shared with the Worker's PathPolicy (paths.py)
 
 
 @dataclass(frozen=True)
@@ -142,8 +139,7 @@ def name_problem(component: bytes) -> str | None:
         return "it is not UTF-8"
     if text in (".", ".."):
         return f"it is {text!r}"
-    stripped = text.rstrip(". ").lower()
-    if stripped == ".git" or re.fullmatch(r"git~\d+", stripped):
+    if is_git_dir_name(text):  # the Worker's PathPolicy uses the same rule (paths.is_git_dir_name)
         return "it names Git's own directory (.git, in some spelling)"
     if "\\" in text:
         return "it contains a backslash"
@@ -357,23 +353,11 @@ def _link_text(trees: TreeReader, sha: str) -> str:
 # Classification
 # ---------------------------------------------------------------------------
 
-def path_and_ancestors(path: str) -> list[str]:
-    """`a/b/c` → [`a`, `a/b`, `a/b/c`]: the path and every directory that contains it."""
-    parts = path.split("/")
-    return ["/".join(parts[:index]) for index in range(1, len(parts) + 1)]
-
-
-def matching_prefix(patterns: Iterable[str], path: str) -> str | None:
-    """The shortest of *path* and its ancestor directories that matches one of *patterns* (None: none does)."""
-    patterns = tuple(patterns)
-    return next((prefix for prefix in path_and_ancestors(path)
-                 if any(matches(pattern, prefix) for pattern in patterns)), None)
-
-
 def path_class(policy: PathPolicy, config: ProjectConfig, path: str) -> tuple[str, str | None]:
     """(class, owning role) of a repository path — lexical: protected > approval-required > owned > unowned; the path
-    or any of its ancestor directories matching a pattern puts it in that class (see the module docstring)."""
-    if matching_prefix(config.protected, path) is not None:
+    or any of its ancestor directories matching a pattern puts it in that class (see the module docstring). Protected
+    is exactly the Worker's rule (paths.protected_prefix): Git's own directory at any depth and in any alias too."""
+    if protected_prefix(config.protected, path) is not None:
         return "protected", None
     role = policy.owner_of(path)
     if matching_prefix(config.approval_required, path) is not None:
@@ -401,9 +385,9 @@ def symlink_problem(config: ProjectConfig, path: str, target: str) -> str | None
         problem = f"points to the absolute path {shown}"
     elif resolved in (".", "..") or resolved.startswith("../"):
         problem = f"points outside the repository ({shown})"
-    elif any(part.rstrip(". ").lower() == ".git" for part in resolved.split("/")):
+    elif any(is_git_dir_name(part) for part in resolved.split("/")):
         problem = f"points into Git's own directory ({shown})"
-    elif any(matching_prefix(config.protected, candidate) is not None for candidate in (resolved, f"{resolved}/x")):
+    elif any(protected_prefix(config.protected, candidate) is not None for candidate in (resolved, f"{resolved}/x")):
         problem = f"points to the protected path {resolved!r}"
     elif inside:
         problem = f"points to {resolved!r}, which contains the protected path(s) {inside[:3]}"
@@ -439,7 +423,7 @@ def classify_paths(changes: dict[str, PathChange], policy: PathPolicy, config: P
         cls, role = path_class(policy, config, path)
         reasons = []
         if cls == "protected":
-            through = matching_prefix(config.protected, path)
+            through = protected_prefix(config.protected, path)
             reasons.append(f"{path} is protected (never writable, never authorizable)"
                            + (f": it lies inside the protected directory {through}" if through != path else ""))
         if "empty-tree" in item.flags:

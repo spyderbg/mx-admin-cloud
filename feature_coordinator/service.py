@@ -97,6 +97,7 @@ from .model import Feature, FeatureState, Task, TaskState, transition_task, utc_
 from .store import atomic_write_json
 from .supervisor import RUN_TAG_ENV, stop_requested, tagged_processes, terminate_pids, wait_for_wake
 from .workspace import workspace_problems
+from .workspace_hold import hold_problems
 
 LAUNCH_TAG_ENV = "FC_WORKER_LAUNCH"  # set on each launch process: found again after a service crash
 _OUTCOME_EVENTS = {SUCCESS: "worker-task-verified", TRANSIENT: "worker-retry-scheduled",
@@ -286,7 +287,7 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
             self._set_state(WAITING, f"another Worker (`python -m feature_coordinator work`) drives {feature.id}")
             self._idle(self.cfg.idle_poll_seconds)
             return
-        problems = workspace_problems(self.coord.root, feature)
+        problems = workspace_problems(self.coord.root, feature) + hold_problems(self.store, self.coord.root)  # S1
         if problems:
             self._set_state(NEEDS_ATTENTION, "workspace: " + "; ".join(problems))
             self._idle(self.cfg.idle_poll_seconds)
@@ -311,7 +312,7 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
             self._idle(self.cfg.idle_poll_seconds)
             return
         candidates = eligible_tasks(self.config, tasks, schedules, now)
-        if candidates:
+        if candidates and not hold_problems(self.store, self.coord.root, self.config):  # S1: inventory, then launch
             self._run_task(feature, candidates[0])
             return
         state, reason, wake = self._waiting_state(feature, tasks, schedules, now)

@@ -42,6 +42,7 @@ from .config import ProjectConfig, matches
 from .errors import StateDirError
 from .issues import escape_markdown_comment
 from .model import utc_now
+from .paths import matching_prefix, protected_prefix
 from .plan_digest import (
     APPROVAL_FORMAT,
     LABEL_APPROVE,
@@ -157,16 +158,20 @@ def path_problem(config: ProjectConfig, role: str, path: str) -> str | None:  # 
     if any(seg in ("", ".", "..") or not _PATH_SEGMENT_RE.fullmatch(seg) for seg in segments):
         return "must be an exact path or `<dir>/**` (no `..`, no wildcards)"
     probe = f"{body}/__any__" if subtree else body
-    for pattern in config.protected:
-        if matches(pattern, probe) or matches(pattern, body):
-            return f"is protected ({pattern}); no task may change it"
-    for pattern in config.approval_required:
-        if matches(pattern, probe) or matches(pattern, body):
-            return f"is approval-required ({pattern}); a plan cannot grant it"
+    # The path, its subtree AND every ancestor directory are judged, as PathPolicy does: a protected
+    # (approval-required, excluded) name used as a directory covers everything below it.
+    through = protected_prefix(config.protected, probe)
+    if through is not None:
+        pattern = next((p for p in config.protected if matches(p, through)), "Git's own directory")
+        return f"is protected ({pattern}); no task may change it"
+    through = matching_prefix(config.approval_required, probe)
+    if through is not None:
+        pattern = next(p for p in config.approval_required if matches(p, through))
+        return f"is approval-required ({pattern}); a plan cannot grant it"
     spec = config.role(role)
     if not any(matches(pattern, probe) for pattern in spec.owned):
         return f"is outside the {role} role's owned paths {list(spec.owned)}"
-    if any(matches(pattern, probe) or matches(pattern, body) for pattern in spec.excluded):
+    if matching_prefix(spec.excluded, probe) is not None:
         return f"is excluded from the {role} role"
     return None
 
