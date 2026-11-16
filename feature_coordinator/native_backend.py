@@ -303,13 +303,21 @@ def claude_session_problems(stdout_path: Path, requested_model: str) -> tuple[li
     problems = []
     if init.get("apiKeySource") not in (None, "none"):
         problems.append(f"Claude Code used an API key ({init.get('apiKeySource')}), not the subscription")
-    family = model_family(requested_model) if requested_model else ()
-    reported = str(init.get("model") or "")
-    if family and not any(f in reported for f in family):
-        problems.append(f"model substitution: requested {requested_model!r}, Claude Code reported {reported!r}")
-    elif requested_model and not family and reported and reported != requested_model:
-        problems.append(f"model substitution: requested {requested_model!r}, Claude Code reported {reported!r}")
+    substitution = model_substitution(requested_model, str(init.get("model") or ""))
+    if substitution:
+        problems.append(substitution)
     return problems, facts
+
+
+def model_substitution(requested_model: str, reported: str) -> str:
+    """Why the model Claude Code *reported* is not the *requested* one ('' : it is, or nothing was requested — the
+    CLI's default): the requested model's family, or exactly the requested model when it has no known family."""
+    family = model_family(requested_model) if requested_model else ()
+    if family and not any(f in reported for f in family):
+        return f"model substitution: requested {requested_model!r}, Claude Code reported {reported!r}"
+    if requested_model and not family and reported and reported != requested_model:
+        return f"model substitution: requested {requested_model!r}, Claude Code reported {reported!r}"
+    return ""
 
 
 class NativeCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-public-methods

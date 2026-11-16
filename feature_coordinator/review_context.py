@@ -46,7 +46,7 @@ import secrets
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence, Union
 
 from .config import ProjectConfig
 from .errors import GitOperationError
@@ -89,14 +89,22 @@ class ReviewContext:  # pylint: disable=too-many-instance-attributes
 # Git, read-only and gitsafe
 # ---------------------------------------------------------------------------
 
-def _git(root: Path, *args: str) -> bytes:
+# Where the reviewed objects are read: the checkout (through gitsafe, below) or — W4.7 M4 — a callable that runs one
+# read-only Git command in another repository and returns its stdout (integration_review_context reads the
+# coordinator-owned candidate repository with the M3 isolation). Every reader below accepts either.
+Root = Union[Path, Callable[..., bytes]]
+
+
+def _git(root: Root, *args: str) -> bytes:
+    if callable(root):
+        return root(*args)
     proc = subprocess.run(git_argv(root, *args), capture_output=True, env=hardened_env(), check=False)
     if proc.returncode != 0:
         raise GitOperationError(f"git {' '.join(args[:2])} failed: {proc.stderr.decode(errors='replace').strip()}")
     return proc.stdout
 
 
-def merge_base(root: Path, first: str, second: str) -> str:
+def merge_base(root: Root, first: str, second: str) -> str:
     """The merge base of two commits (read-only)."""
     return _git(root, "merge-base", first, second).decode().strip()
 
@@ -123,7 +131,7 @@ def _path_problem(path: str) -> str:
     return ""
 
 
-def changed_entries(root: Path, base: str, head: str) -> list[ChangedFile]:
+def changed_entries(root: Root, base: str, head: str) -> list[ChangedFile]:
     """Every file changed from *base* to *head*, renames and copies with BOTH paths. ChangeListError: an entry does
     not follow Git's grammar (the complete status token, the number of paths, repository-relative normalized
     paths) — the message gives its position, never its content."""
@@ -147,13 +155,13 @@ def changed_entries(root: Path, base: str, head: str) -> list[ChangedFile]:
     return out
 
 
-def changed_files(root: Path, base: str, head: str) -> list[tuple[str, str]]:
+def changed_files(root: Root, base: str, head: str) -> list[tuple[str, str]]:
     """(status letter, path) of every file changed from *base* to *head*; a rename is reported at its new path
     (changed_entries() keeps its source too)."""
     return [(entry.status, entry.path) for entry in changed_entries(root, base, head)]
 
 
-def _blob(root: Path, sha: str, path: str) -> bytes | None:
+def _blob(root: Root, sha: str, path: str) -> bytes | None:
     """The file's content at *sha* when it is a regular file there (None: absent, a symlink or a submodule)."""
     listing = _git(root, "ls-tree", "-z", sha, "--", path).decode(errors="replace")
     if not listing.startswith(("100644 blob ", "100755 blob ")):
@@ -161,7 +169,7 @@ def _blob(root: Path, sha: str, path: str) -> bytes | None:
     return _git(root, "cat-file", "blob", listing.split()[2].split("\t")[0])
 
 
-def file_facts(root: Path, base: str, head: str, status: str, path: str) -> FileFacts:
+def file_facts(root: Root, base: str, head: str, status: str, path: str) -> FileFacts:
     """Line count of the version a finding refers to (the head's; the base's for a deletion); None for binary."""
     data = _blob(root, base if status == "D" else head, path)
     if data is None or b"\0" in data[:8000]:
@@ -192,7 +200,7 @@ def entry_withheld(config: ProjectConfig, entry: ChangedFile) -> bool:
     return withheld(config, entry.path) or bool(entry.source) and withheld(config, entry.source)
 
 
-def _tree_blobs(root: Path, sha: str) -> dict[str, str]:
+def _tree_blobs(root: Root, sha: str) -> dict[str, str]:
     """path → blob ID of every regular file at *sha*."""
     listing = _git(root, "ls-tree", "-r", "-z", "--full-tree", sha).decode("utf-8", errors="replace").split("\0")
     out = {}
@@ -207,7 +215,7 @@ def _tree_blobs(root: Path, sha: str) -> dict[str, str]:
 ContentGuard = SecretGuard   # the name this module used before the guard covered every field
 
 
-def _range_blobs(root: Path, base: str, head: str) -> list[tuple[str, str]]:
+def _range_blobs(root: Root, base: str, head: str) -> list[tuple[str, str]]:
     """(blob ID, path) for every file version a commit in base..head touches (both sides of each change), so a
     secret added and removed again inside the range is known as well. EVERY path of a blob is kept: the same
     content at an ordinary path must not hide that it is also at a secret one."""
@@ -223,7 +231,7 @@ def _range_blobs(root: Path, base: str, head: str) -> list[tuple[str, str]]:
     return sorted(out)
 
 
-def content_guard(config: ProjectConfig, root: Path, base: str, head: str) -> SecretGuard:
+def content_guard(config: ProjectConfig, root: Root, base: str, head: str) -> SecretGuard:
     """The known protected content of the reviewed range (review_guard.SecretGuard): blob IDs of protected and
     secret files at *base* and *head*, and the tokens of every tracked secret file at base, at head and in the
     commits between them. Bounded: `problem` is set when it cannot be built — nothing is then reviewed."""
@@ -247,7 +255,7 @@ def content_guard(config: ProjectConfig, root: Path, base: str, head: str) -> Se
     return guard
 
 
-def conventions_at(root: Path, base: str, names: Sequence[str] = CONVENTIONS_FILES,
+def conventions_at(root: Root, base: str, names: Sequence[str] = CONVENTIONS_FILES,
                    budget: int = MAX_CONVENTIONS) -> list[tuple[str, str]]:
     """(name, bounded text) of the convention files as they are in the BASE commit."""
     out = []
@@ -408,7 +416,7 @@ def build_context(config: ProjectConfig, root: Path, *, feature: Feature, record
     return ctx
 
 
-def _reviewable(config: ProjectConfig, root: Path, base: str, head: str,
+def _reviewable(config: ProjectConfig, root: Root, base: str, head: str,
                 ctx: ReviewContext) -> tuple[list[ChangedFile], SecretGuard]:
     """(the change list, the confidentiality guard) — or ctx.problem set: nothing is reviewed."""
     guard = SecretGuard()
@@ -479,14 +487,14 @@ def _guarded_fields(guard: SecretGuard, fields: Mapping[str, Sequence[str]]) -> 
     return out
 
 
-def _diff(root: Path, base: str, head: str, paths: Sequence[str]) -> str:
+def _diff(root: Root, base: str, head: str, paths: Sequence[str]) -> str:
     if not paths:
         return ""
     return _git(root, "diff", "--no-ext-diff", "--no-textconv", "--no-color", "-M", "--unified=3", base, head, "--",
                 *(f":(literal){p}" for p in paths)).decode("utf-8", errors="replace")
 
 
-def _shown_diff(config: ProjectConfig, root: Path, base: str, head: str,  # pylint: disable=too-many-arguments
+def _shown_diff(config: ProjectConfig, root: Root, base: str, head: str,  # pylint: disable=too-many-arguments
                 entries: Sequence[ChangedFile], guard: ContentGuard,
                 ctx: ReviewContext) -> tuple[list[str], dict[str, str], str]:
     """(withheld paths, path → the protected source it carries, the raw diff of the rest); fills ctx.files."""
@@ -512,7 +520,7 @@ def _shown_diff(config: ProjectConfig, root: Path, base: str, head: str,  # pyli
     return secret, copies, raw
 
 
-def _withheld_entries(config: ProjectConfig, root: Path, base: str, head: str,  # pylint: disable=too-many-arguments
+def _withheld_entries(config: ProjectConfig, root: Root, base: str, head: str,  # pylint: disable=too-many-arguments
                       entries: Sequence[ChangedFile], guard: ContentGuard) -> tuple[list[str], dict[str, str]]:
     """(paths whose content is withheld, path → the protected source it carries) for the change list: by path (either
     side of a rename or copy) and by content (byte-identical to a protected or secret file)."""

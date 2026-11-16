@@ -38,6 +38,25 @@ class GitHubReviewConfig:  # pylint: disable=too-many-instance-attributes
                                           # this often; it never waits for the model
 
 
+def reviewer_problem(config: Any) -> str:
+    """Why `github.review`'s provider and model cannot be the reviewer ('' : they can): an unknown provider, one that
+    is not Claude Code (no other reviewer is implemented), or a model the provider does not accept. Checked at load
+    time when the Draft PR review is enabled (validate_review), and at use time by the W4.7 M4 integration review,
+    which uses the same reviewer without requiring `github.review.enabled`. Never a fallback to another provider."""
+    review, where = config.github.review, "github.review"
+    profile = config.providers.get(review.provider)
+    if profile is None:
+        return f"{where}.provider: unknown provider {review.provider!r}"
+    if getattr(profile, "kind", None) is not ProviderKind.CLAUDE_CODE:
+        return (f"{where}.provider must be a Claude Code provider (R1: the subscription-authenticated Claude Code "
+                "CLI without tools; a Codex reviewer is not implemented)")
+    try:
+        check_model(profile.kind, review.model, where=where)
+    except ProviderError as exc:
+        return str(exc)
+    return ""
+
+
 def validate_review(config: Any) -> None:
     """ConfigError unless `config.github.review` is valid for this ProjectConfig."""
     review, where = config.github.review, "github.review"
@@ -45,16 +64,9 @@ def validate_review(config: Any) -> None:
         raise ConfigError(f"{where}.enabled needs github.intake.enabled and github.publish.enabled (only the "
                           "published Draft PR of an approved GitHub Issue is reviewed)")
     if review.enabled:  # an existing configuration without this section keeps loading whatever it names
-        profile = config.providers.get(review.provider)
-        if profile is None:
-            raise ConfigError(f"{where}.provider: unknown provider {review.provider!r}")
-        if getattr(profile, "kind", None) is not ProviderKind.CLAUDE_CODE:
-            raise ConfigError(f"{where}.provider must be a Claude Code provider (R1: the subscription-authenticated "
-                              "Claude Code CLI without tools; a Codex reviewer is not implemented)")
-        try:
-            check_model(profile.kind, review.model, where=where)
-        except ProviderError as exc:
-            raise ConfigError(str(exc)) from exc
+        problem = reviewer_problem(config)
+        if problem:
+            raise ConfigError(problem)
     if review.independence not in INDEPENDENCE_MODES:
         raise ConfigError(f"{where}.independence must be one of {list(INDEPENDENCE_MODES)}")
     bounds = {"timeout_seconds": (60, 1800), "max_attempts": (1, 3), "unavailable_wait_seconds": (60, 86400),

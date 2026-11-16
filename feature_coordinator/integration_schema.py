@@ -18,6 +18,21 @@ Evidence (append-only; every entry refers only to EARLIER entries, ids are `<pre
                       gate results (any FAIL → failed, else any BLOCKED → blocked, else passed) AND from every FAIL
                       recorded for the candidate before it: a recorded failure is never dropped (Codex review of M3,
                       F1), so no passed or blocked validation follows a FAIL of the same candidate.
+  * review-attempt (M4) — one invocation of the independent AI reviewer, recorded BEFORE its process starts
+                      (write-ahead): the candidate's head/tree SHAs, the pinned SHAs, the approval, the PASSED
+                      validation decision it relies on (and that decision's plan), the review round, the effective
+                      reviewer, its independence, the digests of the exact reviewer input and the process tag, run
+                      directory and deadline. A new attempt follows only an attempt that ended (a run names it);
+                      a new ROUND only an ERROR decision, with the operator's retry; no attempt follows a PASS /
+                      PASS_WITH_NOTES / REQUEST_CHANGES decision;
+  * review-run (M4)  — how one attempt ended: the reviewer's status, whether it counts against the round's budget
+                      (`unavailable`, `cancelled` and `not-started` are given back), the validated answer and its
+                      outcome (only for `ok`; the outcome must be review_result.decide()'s for that answer and the
+                      attempt's coordinator notes), the digests of the raw answer and of the result file;
+  * review (M4)      — the review DECISION for the candidate: PASS / PASS_WITH_NOTES / REQUEST_CHANGES carry exactly the
+                      answer of an `ok` run of the decided attempt; ERROR follows a run without a valid answer. It
+                      repeats the attempt's bindings (candidate, SHAs, approval, validation, plan, round, reviewer,
+                      independence, input digests), so one entry tells whether it applies to the current candidate.
 Every entry's `sha256` covers its payload (everything but id, time and digest); what a result claims is checked after
 the digest, as M2 does.
 """
@@ -30,6 +45,7 @@ import re
 from typing import Any, Mapping
 
 from .errors import CoordinatorError
+from .review_result import BLOCKING, SEVERITIES, VERDICTS, Review, decide
 
 SHA_RE = re.compile(r"[0-9a-f]{40}")
 
@@ -108,7 +124,8 @@ MAX_EVIDENCE = 500
 # -- M3: the integration candidate, its gate evidence and the validation summary (integration_validate.py) ---------
 # Evidence ids are `<prefix>-<position in the evidence list>` for every kind (M2's `ins-NNNN` rule, unchanged).
 EVIDENCE_PREFIXES: Mapping[str, str] = {"inspection": "ins", "candidate": "can", "attempt": "att", "gate": "gat",
-                                         "validation": "val"}
+                                         "validation": "val", "review-attempt": "rva", "review-run": "rvr",
+                                         "review": "rev"}
 
 
 _EVIDENCE_KINDS = {prefix: kind for kind, prefix in EVIDENCE_PREFIXES.items()}
@@ -163,6 +180,37 @@ MAX_CONFLICTS_LISTED = 200
 
 
 MAX_GATES = 100
+
+
+# -- M4: the independent AI review of the candidate (integration_review.py) ------------------------------------------
+REVIEW_OUTCOMES = ("PASS", "PASS_WITH_NOTES", "REQUEST_CHANGES", "ERROR")   # review_result.OUTCOMES
+POSITIVE_OUTCOMES = ("PASS", "PASS_WITH_NOTES")                              # → AWAITING_MERGE_APPROVAL
+# How one reviewer invocation ended: the reviewer's own statuses (reviewer.RESULT_STATUSES) plus `invalid` (an answer
+# that is not a valid review), `interrupted` (it started — its output file exists — and ended without a result) and
+# `not-started` (no model request was made: the process never launched the CLI).
+REVIEW_RUN_STATUSES = ("ok", "invalid", "failed", "timeout", "refused", "cancelled", "unavailable", "interrupted",
+                       "not-started")
+UNCOUNTED_RUN_STATUSES = ("cancelled", "unavailable", "not-started")   # given back: they do not use the round's budget
+INDEPENDENCE_LEVELS = ("provider", "model", "none", "unknown")          # review_context.independence + `unknown`
+_REVIEW_ATTEMPT_KEYS = frozenset({"kind", "id", "at", "candidate", "head_sha", "tree_sha", "source_sha", "base_sha",
+                                  "approval", "validation", "plan_sha256", "round", "reviewer", "independence",
+                                  "context", "timeout_seconds", "run_dir", "tag", "deadline", "retry", "sha256"})
+_REVIEW_RUN_KEYS = frozenset({"kind", "id", "at", "attempt", "candidate", "head_sha", "tree_sha", "status", "counted",
+                              "outcome", "verdict", "summary", "findings", "limitations", "output_sha256",
+                              "result_sha256", "error", "details", "started_at", "ended_at", "duration_seconds",
+                              "reasons", "sha256"})
+_REVIEW_KEYS = frozenset({"kind", "id", "at", "candidate", "head_sha", "tree_sha", "source_sha", "base_sha", "approval",
+                          "validation", "plan_sha256", "round", "attempt", "run", "outcome", "verdict", "summary",
+                          "findings", "limitations", "coordinator_notes", "blocking", "reviewer", "independence",
+                          "input_sha256", "diff_sha256", "spec_sha256", "output_sha256", "result_sha256", "reasons",
+                          "sha256"})
+_REVIEWER_KEYS = frozenset({"provider", "kind", "model", "config_sha256"})
+_INDEPENDENCE_KEYS = frozenset({"mode", "level", "author", "session", "limitation"})
+_REVIEW_CONTEXT_KEYS = frozenset({"input_sha256", "diff_sha256", "spec_sha256", "files", "redactions", "notes"})
+_FINDING_KEYS = frozenset({"severity", "file", "line_start", "line_end", "title", "explanation", "recommendation"})
+_TAG_RE = re.compile(r"review-[0-9a-f]{16}")
+MAX_REVIEW_FINDINGS = 100        # github.review.max_findings is at most 100
+MAX_REVIEW_NOTES = 20
 
 
 def check_path_text(value: Any, label: str = "path") -> str:
@@ -243,13 +291,21 @@ def _check_evidence(job: "IntegrationJob") -> None:
             _check_attempt_entry(entry, where, approval_ids, earlier)
         elif kind == "gate":
             _check_gate_entry(entry, where, earlier)
-        else:
+        elif kind == "validation":
             _check_validation_entry(entry, where, earlier)
+        elif kind == "review-attempt":
+            _check_review_attempt_entry(job, entry, where, approval_ids, earlier)
+        elif kind == "review-run":
+            _check_review_run_entry(entry, where, earlier)
+        else:
+            _check_review_entry(job, entry, where, approval_ids, earlier)
         _expect(_is_time(entry["at"]), f"{where}: at must be a timestamp")
         _expect(_is_text_list(entry.get("reasons", [])) and len(entry.get("reasons", [])) <= 20,
                 f"{where}: reasons must be at most 20 texts")
         _expect(entry["sha256"] == evidence_digest(entry), f"{where}: its SHA-256 does not match its payload")
         _check_entry_meaning(entry, where, earlier)   # after the digest: a consistent payload must also be coherent
+        if kind in ("review-attempt", "review-run", "review"):
+            _check_review_meaning(entry, where, earlier)
         earlier[entry["id"]] = entry
     if job.paths:
         with_paths = [entry for entry in job.evidence if entry["kind"] == "inspection" and entry["paths"]["count"]]
@@ -442,8 +498,8 @@ def _check_candidate(job: "IntegrationJob") -> None:
     candidate = job.candidate
     if candidate is None:
         _expect(not built, "a built candidate evidence entry needs the job's candidate")
-        _expect(not any(entry["kind"] in ("attempt", "gate", "validation") for entry in job.evidence),
-                "attempt, gate and validation evidence need a built candidate")
+        _expect(not any(entry["kind"] in _CANDIDATE_BOUND for entry in job.evidence),
+                "attempt, gate, validation and review evidence need a built candidate")
         return
     _expect(set(candidate) == _CANDIDATE_FIELD_KEYS, f"candidate must have exactly {sorted(_CANDIDATE_FIELD_KEYS)}")
     _expect(len(built) == 1 and candidate["evidence"] == built[0]["id"]
@@ -460,9 +516,248 @@ def _check_candidate(job: "IntegrationJob") -> None:
     summary = built[0]["paths"]
     _expect(summary["count"] == len(paths) and summary["sha256"] == (paths_digest(paths) if paths else ""),
             "candidate.paths are not the classified paths bound into its candidate evidence")
-    _expect(all(entry["candidate"] == built[0]["id"] for entry in job.evidence
-                if entry["kind"] in ("attempt", "gate", "validation")),
-            "attempt, gate and validation evidence must name the job's built candidate")
+    _expect(all(entry["candidate"] == built[0]["id"] for entry in job.evidence if entry["kind"] in _CANDIDATE_BOUND),
+            "attempt, gate, validation and review evidence must name the job's built candidate")
+
+
+_CANDIDATE_BOUND = ("attempt", "gate", "validation", "review-attempt", "review-run", "review")
+
+
+# -- M4: review evidence ------------------------------------------------------------------------------------------
+
+def _review_attempts(earlier: Mapping[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    return [e for e in earlier.values() if e["kind"] == "review-attempt"]
+
+
+def _check_reviewer(value: Any, where: str) -> None:
+    _expect(isinstance(value, dict) and set(value) == _REVIEWER_KEYS
+            and all(_is_text(value[k], 100) and value[k] for k in ("provider", "kind", "model"))
+            and _is_digest(value["config_sha256"]),
+            f"{where}: reviewer must be {{provider, kind, model, config_sha256}} (texts and the configuration digest)")
+
+
+def _validation_current_at(validation_id: Any, earlier: Mapping[str, dict[str, Any]]) -> bool:
+    """True when *validation_id* names the NEWEST validation decision at this position of the evidence and no
+    validation attempt or gate followed it — integration.validated() evaluated on the evidence before this entry
+    (Codex review of M4, F4): a newer M3 attempt, open or decided, or a later gate revokes it."""
+    entries = list(earlier.values())
+    position = next((i for i, e in enumerate(entries) if e["id"] == validation_id), -1)
+    return position >= 0 and entries[position]["kind"] == "validation" \
+        and not any(e["kind"] in ("validation", "attempt", "gate") for e in entries[position + 1:])
+
+
+def _check_independence(value: Any, where: str) -> None:
+    _expect(isinstance(value, dict) and set(value) == _INDEPENDENCE_KEYS and value["mode"] in ("prefer", "require")
+            and value["level"] in INDEPENDENCE_LEVELS and all(_is_text(value[k]) for k in ("author", "session",
+                                                                                          "limitation")),
+            f"{where}: independence must be {sorted(_INDEPENDENCE_KEYS)} (mode prefer|require, level one of "
+            f"{list(INDEPENDENCE_LEVELS)})")
+    _expect(value["mode"] != "require" or value["level"] in ("provider", "model"),
+            f"{where}: independence `require` was not met (level {value['level']}): no reviewer may run")
+    _expect(value["level"] in ("provider", "model") or bool(value["limitation"]),
+            f"{where}: an incomplete independence ({value['level']}) must state its limitation")
+
+
+def _is_digest(value: Any, *, empty: bool = False) -> bool:
+    return isinstance(value, str) and ((empty and value == "") or _HEX64_RE.fullmatch(value) is not None)
+
+
+def _check_findings(findings: Any, limitations: Any, where: str) -> None:
+    _expect(isinstance(findings, list) and len(findings) <= MAX_REVIEW_FINDINGS, f"{where}: findings must be a list")
+    for finding in findings:
+        _expect(isinstance(finding, dict) and set(finding) == _FINDING_KEYS and finding["severity"] in SEVERITIES
+                and _is_text(finding["file"], MAX_PATH_TEXT) and all(_is_text(finding[k], 2000) for k in
+                                                                      ("title", "explanation", "recommendation"))
+                and all(finding[k] is None or _is_int(finding[k], 1) for k in ("line_start", "line_end")),
+                f"{where}: each finding must be {sorted(_FINDING_KEYS)} with a severity of {list(SEVERITIES)}")
+    _expect(isinstance(limitations, list) and len(limitations) <= MAX_REVIEW_NOTES
+            and all(_is_text(item) for item in limitations), f"{where}: limitations must be a list of texts")
+
+
+def _check_review_attempt_entry(job: "IntegrationJob", entry: dict[str, Any], where: str, approval_ids: set[str],
+                                earlier: Mapping[str, dict[str, Any]]) -> None:
+    """M4: one reviewer invocation of the built candidate, recorded before the reviewer process starts."""
+    _expect(set(entry) == _REVIEW_ATTEMPT_KEYS, f"{where} must have exactly {sorted(_REVIEW_ATTEMPT_KEYS)}")
+    _check_built_reference(entry, where, earlier)
+    _expect(entry["approval"] in approval_ids, f"{where} names approval {_shown(entry['approval'])}, which this "
+                                               "job does not carry")
+    _expect(entry["source_sha"] == job.source["sha"] and entry["base_sha"] == job.base["expected_sha"],
+            f"{where} is bound to other SHAs than the job's pinned source and base")
+    validation = earlier.get(str(entry["validation"]))
+    _expect(validation is not None and validation["kind"] == "validation" and validation["result"] == "passed"
+            and validation["candidate"] == entry["candidate"] and validation["head_sha"] == entry["head_sha"]
+            and validation["tree_sha"] == entry["tree_sha"] and validation["plan"]["sha256"] == entry["plan_sha256"],
+            f"{where} must name an earlier PASSED validation of its candidate and carry that decision's plan digest")
+    _expect(_validation_current_at(entry["validation"], earlier),
+            f"{where}: validation {_shown(entry['validation'])} is not current here (a newer validation attempt, gate "
+            "or validation decision follows it): no review starts from a revoked validation")
+    _expect(_is_int(entry["round"], 1), f"{where}: round must be a positive integer")
+    _check_reviewer(entry["reviewer"], where)
+    _check_independence(entry["independence"], where)
+    context = entry["context"]
+    _expect(isinstance(context, dict) and set(context) == _REVIEW_CONTEXT_KEYS
+            and all(_is_digest(context[k]) for k in ("input_sha256", "diff_sha256", "spec_sha256"))
+            and _is_int(context["files"], 1) and _is_int(context["redactions"], 0)
+            and isinstance(context["notes"], list) and len(context["notes"]) <= MAX_REVIEW_NOTES
+            and all(_is_text(note) for note in context["notes"]),
+            f"{where}: context must be {sorted(_REVIEW_CONTEXT_KEYS)} (digests of the exact reviewer input)")
+    _expect(_is_int(entry["timeout_seconds"], 1) and _is_text(entry["run_dir"]) and bool(entry["run_dir"])
+            and isinstance(entry["tag"], str) and _TAG_RE.fullmatch(entry["tag"]) is not None
+            and _is_time(entry["deadline"]), f"{where}: timeout_seconds, run_dir, tag and deadline are required")
+    retry = entry["retry"]
+    _expect(retry is None or (isinstance(retry, dict) and set(retry) == {"by", "reason"}
+                              and all(_is_text(retry[k], MAX_REASON) and retry[k] for k in ("by", "reason"))),
+            f"{where}: retry must be null or {{by, reason}}")
+
+
+def _check_review_run_entry(entry: dict[str, Any], where: str, earlier: Mapping[str, dict[str, Any]]) -> None:
+    """M4: how one reviewer invocation ended."""
+    _expect(set(entry) == _REVIEW_RUN_KEYS, f"{where} must have exactly {sorted(_REVIEW_RUN_KEYS)}")
+    _check_built_reference(entry, where, earlier)
+    _expect(entry["status"] in REVIEW_RUN_STATUSES, f"{where}: status must be one of {list(REVIEW_RUN_STATUSES)}")
+    _expect(entry["counted"] is (entry["status"] not in UNCOUNTED_RUN_STATUSES),
+            f"{where}: counted must be false exactly for {list(UNCOUNTED_RUN_STATUSES)}")
+    ok = entry["status"] == "ok"
+    _expect(entry["outcome"] in (POSITIVE_OUTCOMES + ("REQUEST_CHANGES",) if ok else (None,)),
+            f"{where}: an `ok` run carries its outcome (PASS, PASS_WITH_NOTES, REQUEST_CHANGES), any other none")
+    _expect(entry["verdict"] in (VERDICTS if ok else (None,)) and _is_text(entry["summary"], 2000)
+            and (ok or (entry["summary"] == "" and entry["findings"] == [] and entry["limitations"] == [])),
+            f"{where}: only an `ok` run carries a verdict, a summary, findings and limitations")
+    _check_findings(entry["findings"], entry["limitations"], where)
+    _expect(_is_digest(entry["output_sha256"], empty=not ok) and _is_digest(entry["result_sha256"], empty=True),
+            f"{where}: output_sha256 and result_sha256 must be SHA-256 digests (an `ok` run's answer is digested)")
+    details = entry["details"]
+    _expect(_is_text(entry["error"]) and isinstance(details, dict) and len(details) <= 20
+            and all(_is_text(k, 100) and (v is None or isinstance(v, (str, int, float, bool))) for k, v in
+                    details.items()), f"{where}: error must be a text, details a flat object")
+    duration = entry["duration_seconds"]
+    _expect(_is_time(entry["started_at"]) and _is_time(entry["ended_at"]) and isinstance(duration, (int, float))
+            and not isinstance(duration, bool) and duration >= 0,
+            f"{where}: started_at and ended_at must be timestamps, duration_seconds non-negative")
+
+
+def _check_review_entry(job: "IntegrationJob", entry: dict[str, Any], where: str, approval_ids: set[str],
+                        earlier: Mapping[str, dict[str, Any]]) -> None:
+    """M4: the review decision for the candidate."""
+    _expect(set(entry) == _REVIEW_KEYS, f"{where} must have exactly {sorted(_REVIEW_KEYS)}")
+    _check_built_reference(entry, where, earlier)
+    _expect(entry["approval"] in approval_ids and entry["source_sha"] == job.source["sha"]
+            and entry["base_sha"] == job.base["expected_sha"],
+            f"{where} must name an approval of this job and the job's pinned source and base SHAs")
+    _expect(entry["outcome"] in REVIEW_OUTCOMES, f"{where}: outcome must be one of {list(REVIEW_OUTCOMES)}")
+    _check_findings(entry["findings"], entry["limitations"], where)
+    _check_reviewer(entry["reviewer"], where)
+    _check_independence(entry["independence"], where)
+    _expect(isinstance(entry["coordinator_notes"], list) and all(_is_text(n) for n in entry["coordinator_notes"])
+            and _is_int(entry["blocking"], 0) and _is_text(entry["summary"], 2000),
+            f"{where}: coordinator_notes must be texts, blocking a count, summary a text")
+    _expect(all(_is_digest(entry[k]) for k in ("input_sha256", "diff_sha256", "spec_sha256"))
+            and _is_digest(entry["output_sha256"], empty=True) and _is_digest(entry["result_sha256"], empty=True),
+            f"{where}: the input, output and result digests must be SHA-256 digests")
+
+
+def _check_review_meaning(entry: dict[str, Any], where: str, earlier: Mapping[str, dict[str, Any]]) -> None:
+    """M4 (after the digest): the order of attempts, runs and decisions, and what a run or a decision claims."""
+    attempts = _review_attempts(earlier)
+    decisions = [e for e in earlier.values() if e["kind"] == "review"]
+    if entry["kind"] == "review-attempt":
+        previous = attempts[-1] if attempts else None
+        _expect(previous is None or _run_of(previous, earlier) is not None,
+                f"{where}: a review attempt starts only after the previous one ended ({previous and previous['id']} "
+                "has no run)")
+        last = decisions[-1] if decisions else None
+        _expect(last is None or last["outcome"] == "ERROR",
+                f"{where}: no review attempt follows the {last and last['outcome']} decision {last and last['id']}")
+        new_round = previous is None or entry["round"] != previous["round"]
+        expected = 1 if previous is None else previous["round"] + (1 if new_round else 0)
+        ended = last is not None and last["round"] == (previous or {}).get("round")
+        _expect(entry["round"] == expected and (entry["retry"] is not None) == (previous is not None and new_round)
+                and (not new_round or previous is None or ended),
+                f"{where}: round {entry['round']} must continue the round of the previous attempt, or follow its ERROR "
+                "decision as the next round with the operator's retry (the first round has none)")
+        _expect(last is None or last["round"] != entry["round"],
+                f"{where}: round {entry['round']} already ended with the ERROR decision {last and last['id']}")
+        return
+    attempt = earlier.get(str(entry["attempt"]))
+    _expect(attempt is not None and attempt["kind"] == "review-attempt" and attempt["candidate"] == entry["candidate"]
+            and attempt is (attempts[-1] if attempts else None),
+            f"{where} must name the newest review attempt of its candidate")
+    assert attempt is not None
+    run = _run_of(attempt, earlier)
+    if entry["kind"] == "review-run":
+        _expect(run is None, f"{where}: attempt {attempt['id']} already ended ({run and run['id']})")
+        if entry["status"] == "ok":
+            outcome = decide(Review(entry["verdict"], entry["summary"], entry["findings"], entry["limitations"]),
+                             list(attempt["context"]["notes"]))[0]
+            _expect(outcome == entry["outcome"], f"{where}: outcome {entry['outcome']!r} is not what its answer and "
+                                                 f"the attempt's notes decide ({outcome!r})")
+        return
+    _expect(run is not None and entry["run"] == run["id"], f"{where} must name the run of attempt {attempt['id']}")
+    assert run is not None
+    _expect(not any(d["attempt"] == attempt["id"] for d in decisions), f"{where}: attempt {attempt['id']} was decided")
+    bound = {"validation": attempt["validation"], "plan_sha256": attempt["plan_sha256"], "round": attempt["round"],
+             "approval": attempt["approval"], "reviewer": attempt["reviewer"],
+             "independence": attempt["independence"], "input_sha256": attempt["context"]["input_sha256"],
+             "diff_sha256": attempt["context"]["diff_sha256"], "spec_sha256": attempt["context"]["spec_sha256"],
+             "coordinator_notes": attempt["context"]["notes"], "result_sha256": run["result_sha256"]}
+    differing = sorted(k for k, v in bound.items() if entry[k] != v)
+    _expect(not differing, f"{where}: {differing} differ from its attempt and run")
+    _expect(entry["outcome"] == "ERROR" or _validation_current_at(entry["validation"], earlier),
+            f"{where}: a {entry['outcome']} decision needs its validation {_shown(entry['validation'])} still current "
+            "(no validation attempt, gate or decision after it)")
+    answer = {k: run[k] for k in ("verdict", "summary", "findings", "limitations", "output_sha256")}
+    if entry["outcome"] == "ERROR":
+        _expect(run["status"] != "ok" and all(entry[k] == answer[k] for k in answer),
+                f"{where}: an ERROR decision follows a run without a valid answer and carries none")
+    else:
+        _expect(run["status"] == "ok" and run["outcome"] == entry["outcome"] and all(entry[k] == answer[k]
+                                                                                      for k in answer),
+                f"{where}: a {entry['outcome']} decision carries exactly the answer of its `ok` run")
+    blocking = sum(1 for f in entry["findings"] if f["severity"] in BLOCKING)
+    _expect(entry["blocking"] == blocking and (entry["outcome"] == "REQUEST_CHANGES") == (blocking > 0),
+            f"{where}: blocking must count the blocker/major findings, and only REQUEST_CHANGES has any")
+
+
+def _run_of(attempt: Mapping[str, Any], earlier: Mapping[str, dict[str, Any]]) -> dict[str, Any] | None:
+    return next((e for e in earlier.values() if e["kind"] == "review-run" and e["attempt"] == attempt["id"]), None)
+
+
+def review_attempts(job: "IntegrationJob") -> list[dict[str, Any]]:
+    """Every review attempt of the job's candidate, oldest first (empty without a candidate)."""
+    if job.candidate is None:
+        return []
+    return [e for e in job.evidence if e["kind"] == "review-attempt" and e["candidate"] == job.candidate["evidence"]]
+
+
+def review_run(job: "IntegrationJob", attempt: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """The run that ended *attempt* (None: none — the attempt is open: running, or interrupted)."""
+    if attempt is None:
+        return None
+    return next((e for e in job.evidence if e["kind"] == "review-run" and e["attempt"] == attempt["id"]), None)
+
+
+def review_decision(job: "IntegrationJob", attempt: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """The review decision of *attempt* (None: undecided)."""
+    if attempt is None:
+        return None
+    return next((e for e in job.evidence if e["kind"] == "review" and e["attempt"] == attempt["id"]), None)
+
+
+def open_review_attempt(job: "IntegrationJob") -> dict[str, Any] | None:
+    """The newest review attempt when no run names it — its reviewer process runs, or the attempt was interrupted
+    (crash) — else None."""
+    attempts = review_attempts(job)
+    return attempts[-1] if attempts and review_run(job, attempts[-1]) is None else None
+
+
+def pending_answer(job: "IntegrationJob") -> dict[str, Any] | None:
+    """The newest attempt's `ok` run when no decision names it yet: a valid answer whose freshness checks have not
+    passed (they could not complete, or a crash came first) — it is decided without another reviewer run."""
+    attempts = review_attempts(job)
+    run = review_run(job, attempts[-1]) if attempts else None
+    if run is None or run["status"] != "ok" or review_decision(job, attempts[-1]) is not None:
+        return None
+    return run
 
 
 def _is_sha(value: Any) -> bool:

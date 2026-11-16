@@ -163,8 +163,11 @@ def process_environment(tag: str, source: Mapping[str, str] | None = None) -> di
 
 def run_exec(config: Any, state_dir: Path, run_dir: Path, *, reviewer: Reviewer | None = None,  # pylint: disable=too-many-arguments
              environ: Mapping[str, str] | None = None, cancelled: Callable[[], bool] | None = None,
-             echo: Callable[[str], None] = print) -> int:
-    """The reviewer process (see the module docstring). Refusals raise CoordinatorError and write nothing."""
+             echo: Callable[[str], None] = print, refusal: str | None = None) -> int:
+    """The reviewer process (see the module docstring). Refusals raise CoordinatorError and write nothing.
+    *refusal*: why the reviewer must not run ('' : it may), decided by the caller; None (the Worker's Draft PR
+    review) means `github.review.enabled` decides. W4.7 M4 (integration_review.integration_exec) passes its own rule
+    and its own *cancelled* (the integration job left IN_REVIEW), never the Worker's pause."""
     environ = os.environ if environ is None else environ
     run_dir = Path(run_dir).resolve()
     root = (Path(state_dir) / "runs" / "review").resolve()
@@ -186,8 +189,10 @@ def run_exec(config: Any, state_dir: Path, run_dir: Path, *, reviewer: Reviewer 
         from .intake_poll import planning_hooks  # pylint: disable=import-outside-toplevel
         from .store import StateStore  # pylint: disable=import-outside-toplevel
         cancelled = planning_hooks(StateStore(Path(state_dir)), lambda: None)["cancelled"]
-    if not config.github.review.enabled:
-        result = ReviewResult("cancelled", error="github.review.enabled is false: the reviewer did not run")
+    if refusal is None:
+        refusal = "" if config.github.review.enabled else "github.review.enabled is false: the reviewer did not run"
+    if refusal:
+        result = ReviewResult("cancelled", error=refusal)
     else:
         if reviewer is None:
             from .reviewer import ClaudeCodeReviewer  # pylint: disable=import-outside-toplevel

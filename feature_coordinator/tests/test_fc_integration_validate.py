@@ -1249,10 +1249,10 @@ def test_codex_f2_status_distinguishes_an_open_attempt_from_a_decided_one(rig: R
     job = inspected(rig, {"backend/src/x.py": X_PY})
     with pytest.raises(SimulatedCrash):
         rig.validate(job.job_id, gates=FakeGates({"contract-check": Crash()}))
-    lines = integration_commands._job_lines(job_summary(rig.jobs.load(job.job_id)))
+    lines = integration_commands._job_lines(job_summary(rig.jobs.load(job.job_id)), rig.config)
     assert any("attempt att-0003" in line and "OPEN" in line for line in lines)
     assert rig.validate(job.job_id, gates=FakeGates()).outcome == "validated"
-    lines = integration_commands._job_lines(job_summary(rig.jobs.load(job.job_id)))
+    lines = integration_commands._job_lines(job_summary(rig.jobs.load(job.job_id)), rig.config)
     assert any("attempt att-0003" in line and line.endswith("decided") for line in lines)
 
 
@@ -1420,7 +1420,7 @@ def test_codex_f5_cli_text_after_an_approval_expiry_shows_the_persisted_job(rig:
     out = capsys.readouterr().out
     persisted = json.loads(json.dumps(job_summary(rig.jobs.load(job_id))))
     assert "validate: no-approval" in out and persisted["state"] == "VALIDATING"
-    assert "\n".join(integration_commands._job_lines(persisted)) in out          # exactly the persisted job
+    assert "\n".join(integration_commands._job_lines(persisted, rig.config)) in out   # exactly the persisted job
     assert f"{job_id}: VALIDATING" in out and "CANDIDATE_BUILT —" not in out
 
 

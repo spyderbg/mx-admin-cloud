@@ -1,14 +1,16 @@
-"""W4.7 (M1, M2, M3): integration jobs — the record, the lifecycle state machine and their persistence.
+"""W4.7 (M1-M4): integration jobs — the record, the lifecycle state machine and their persistence.
 
 Design: docs_agents/coordination/existing-branch-integration-design.md (§4 lifecycle, §8.2 record). Operator
-notes, M1/M2/M3 decisions and open questions: docs_agents/coordination/integration-jobs.md.
+notes, M1-M4 decisions and open questions: docs_agents/coordination/integration-jobs.md.
 
 An integration job brings an EXISTING branch (or PR head) into the base branch by immutable SHA. M1 implements
 the record, the state machine and `intake` / `status` / `abort` (integration_intake.py, integration_commands.py).
 M2 adds the operator authorization (`approvals`, integration_approval.py) and the read-only inspection (`paths`,
 `evidence` of kind `inspection`, integration_inspect.py). M3 adds the integration candidate and the validation gates
-(integration_validate.py): `candidate` and evidence of kinds `candidate`, `gate` and `validation`. Nothing here
-reviews, creates a PR or merges.
+(integration_validate.py): `candidate` and evidence of kinds `candidate`, `gate` and `validation`. M4 adds the
+independent AI review of that exact candidate (integration_review.py): evidence of kinds `review-attempt`,
+`review-run` and `review` (integration_schema.py), VALIDATING → IN_REVIEW → AWAITING_MERGE_APPROVAL / NEEDS_REPAIR.
+Nothing here creates a PR or merges.
 
 M3 record rules (validate_job):
   * `candidate` is set exactly when the job reached CANDIDATE_BUILT, names the single `built` candidate evidence
@@ -64,6 +66,7 @@ from .integration_schema import (  # re-exported: the record schema lives in int
     GATE_STATUS_RESULT,
     MAX_PATH_TEXT,
     MAX_REASON,
+    POSITIVE_OUTCOMES,
     SHA_RE,
     IntegrationError,
     _check_candidate,
@@ -80,7 +83,12 @@ from .integration_schema import (  # re-exported: the record schema lives in int
     clean_text,
     evidence_digest,
     inspection_digest,
+    open_review_attempt,
     paths_digest,
+    pending_answer,
+    review_attempts,
+    review_decision,
+    review_run,
 )
 from .model import check_id, utc_now
 
@@ -97,7 +105,8 @@ __all__ = [  # this module's public names and the schema names it re-exports (in
     "job_summary", "JOB_TRANSITIONS", "JobState", "latest_evidence", "latest_inspection", "MAX_ACTOR",
     "MAX_APPROVALS", "MAX_APPROVED_PATHS", "MAX_PATH_TEXT", "MAX_REASON", "MAX_RECORD_BYTES", "MAX_SIGNATURE_BYTES",
     "parse_approval_record", "parse_record_time", "paths_digest", "RECORD_KIND", "SHA_RE", "SIGNATURE_HEADER",
-    "TERMINAL_STATES", "transition_job", "validate_job", "validated",
+    "TERMINAL_STATES", "transition_job", "validate_job", "validated", "VALIDATED_STATES", "current_review",
+    "open_review_attempt", "pending_answer", "review_attempts", "review_decision", "review_run", "POSITIVE_OUTCOMES",
 ]
 
 
@@ -879,15 +888,19 @@ def open_attempt(job: IntegrationJob) -> dict[str, Any] | None:
     return None if decided else attempt
 
 
+VALIDATED_STATES = frozenset({JobState.VALIDATING, JobState.IN_REVIEW, JobState.AWAITING_MERGE_APPROVAL})
+
+
 def validated(job: IntegrationJob, plan_sha256: str | None = None) -> bool:
-    """M3's success: the job is VALIDATING, its newest validation decision passed for its candidate and decides the
-    NEWEST validation attempt, no gate ran after it, and no FAIL was ever recorded for the candidate. An attempt is
-    recorded before any gate of a new run starts (write-ahead), so a re-validation that is interrupted — even while
-    its first gate runs, before any result — revokes the earlier success until a new decision is recorded (Codex
-    review of M3, F2; independent review, finding 2). *plan_sha256*: also require that decision to cover exactly this
-    gate plan (integration_validate.validated_for derives it from the current configuration: a changed plan is not
-    validated). M4 starts from there and must re-verify the pinned SHAs and the candidate itself."""
-    if job.state is not JobState.VALIDATING or job.candidate is None:
+    """M3's success: the job is VALIDATING — or, M4, IN_REVIEW / AWAITING_MERGE_APPROVAL, where no gate can run — its
+    newest validation decision passed for its candidate and decides the NEWEST validation attempt, no gate ran after
+    it, and no FAIL was ever recorded for the candidate. An attempt is recorded before any gate of a new run starts
+    (write-ahead), so a re-validation that is interrupted — even while its first gate runs, before any result — revokes
+    the earlier success until a new decision is recorded (Codex review of M3, F2; independent review, finding 2).
+    *plan_sha256*: also require that decision to cover exactly this gate plan (integration_validate.validated_for
+    derives it from the current configuration: a changed plan is not validated). M4 starts from there and re-verifies
+    the pinned SHAs and the candidate itself."""
+    if job.state not in VALIDATED_STATES or job.candidate is None:
         return False
     last = max((i for i, entry in enumerate(job.evidence) if entry.get("kind") == "validation"), default=-1)
     if last < 0:
@@ -899,18 +912,49 @@ def validated(job: IntegrationJob, plan_sha256: str | None = None) -> bool:
             and (plan_sha256 is None or latest["plan"]["sha256"] == plan_sha256))
 
 
+def current_review(job: IntegrationJob) -> dict[str, Any] | None:
+    """M4's success, for M5: the newest review decision when it is a real, positive review (PASS / PASS_WITH_NOTES) of
+    the job's candidate that still applies — the job is AWAITING_MERGE_APPROVAL, no review attempt followed it, it
+    relies on the NEWEST validation decision and that validation is still `validated` (no gate or attempt after it,
+    no FAIL). The entry repeats its candidate's head and tree SHAs (bound by the schema). M5 must also re-verify the
+    pinned SHAs, the candidate and the current gate plan (integration_review.reviewed_for) before relying on it."""
+    attempts = review_attempts(job)
+    decision = review_decision(job, attempts[-1]) if attempts else None
+    newest_validation = latest_evidence(job, "validation")
+    if job.state is not JobState.AWAITING_MERGE_APPROVAL or decision is None or job.candidate is None \
+            or decision["outcome"] not in POSITIVE_OUTCOMES or newest_validation is None:
+        return None
+    current = (decision["head_sha"], decision["tree_sha"]) == (job.candidate["head_sha"], job.candidate["tree_sha"])
+    return decision if current and decision["validation"] == newest_validation["id"] and validated(job) else None
+
+
 def job_summary(job: IntegrationJob) -> dict[str, Any]:
     """The status of one job: its record plus derived facts (JSON-serializable). M2: `inspection` is the newest
     inspection evidence, `effective_approval` the id of the newest inspect-stage approval (its validity is checked
     when it is used, not here). M3: `validation` is the newest validation summary, `gates` the newest gate evidence
     per gate for the job's candidate, `validated` whether M3 succeeded (for the plan its decision recorded), `attempt`
-    the newest validation attempt and `attempt_open` whether no decision names it (running or interrupted)."""
+    the newest validation attempt and `attempt_open` whether no decision names it (running or interrupted). M4:
+    `review_attempt` / `review_run` / `review` the newest review attempt, its run and its decision, `review_open`
+    (no run names it), `review_pending` (a valid answer awaits its decision), `review_bound` and `reviewed`
+    (current_review: from the record alone — the CLI makes `reviewed` the eligibility under the current configuration,
+    integration_review.review_eligibility)."""
     approval = effective_approval(job)
+    attempts = review_attempts(job)
+    newest = attempts[-1] if attempts else None
     return {**job.to_dict(), "terminal": job.terminal, "allowed_next": allowed_next(job.state),
             "inspection": _copy(latest_inspection(job)), "effective_approval": approval["id"] if approval else None,
             "validation": _copy(latest_evidence(job, "validation")),
             "gates": _copy(list(current_gate_evidence(job).values())), "validated": validated(job),
-            "attempt": _copy(latest_evidence(job, "attempt")), "attempt_open": open_attempt(job) is not None}
+            "attempt": _copy(latest_evidence(job, "attempt")), "attempt_open": open_attempt(job) is not None,
+            "review_attempt": _copy(newest), "review_run": _copy(review_run(job, newest)),
+            "review": _copy(latest_evidence(job, "review")), "review_open": open_review_attempt(job) is not None,
+            "review_pending": pending_answer(job) is not None, "review_bound": current_review(job) is not None,
+            "reviewed": current_review(job) is not None}
+
+
+def job_from_summary(summary: Mapping[str, Any]) -> IntegrationJob:
+    """The job a job_summary describes: its record fields, loaded as strictly as from disk (from_dict)."""
+    return IntegrationJob.from_dict({key: summary[key] for key in _FIELDS})
 
 
 def abort_job(jobs: IntegrationJobs, job_id: str, reason: str, *, actor: str, apply: bool) -> dict[str, Any]:
