@@ -103,6 +103,11 @@ export const categoryDetail = {
   icon: (page: Page): Locator => page.locator('.id-summary-image-preview .id-summary-image'),
   archiveButton: (page: Page): Locator => page.locator('.category-archive-btn'),
   description: (page: Page): Locator => page.locator('.id-description'),
+  // Pencil next to the id: opens the "change category id" dialog (a cd-modal).
+  renameIdButton: (page: Page): Locator => page.locator('.category-detail-panel .id-value-row .id-edit-btn'),
+  // Hover actions over the icon. "Regenerate" only shows a "backend task pending" toast.
+  iconUploadButton: (page: Page): Locator => page.locator('.category-icon-actions .btn-icon-edit'),
+  iconDeleteButton: (page: Page): Locator => page.locator('.category-icon-actions .btn-icon-delete'),
 }
 
 // ---------------------------------------------------------------------------
@@ -117,6 +122,13 @@ export const voiceCards = {
   playButton: (card: Locator): Locator => card.locator('.btn-play'),
   deleteButton: (card: Locator): Locator => card.locator('.btn-icon-delete'),
   name: (card: Locator): Locator => card.locator('.voice-card-name'),
+  // Top actions: the extra "regenerate" action, the pencil (upload / replace the file),
+  // and delete. The pencil beside the name (ServerWord) edits that language's name.
+  regenerateButton: (card: Locator): Locator => card.locator('.voice-card-top-actions .btn-icon-regenerate'),
+  uploadButton: (card: Locator): Locator => card.locator('.voice-card-top-actions .btn-icon-edit'),
+  renameButton: (card: Locator): Locator => card.locator('.server-word-edit'),
+  // The upload dialog's file input is visually hidden behind a "Choose file" button.
+  uploadInput: (page: Page): Locator => page.locator('.cd-modal-body input.localized-file-input'),
 }
 
 // ---------------------------------------------------------------------------

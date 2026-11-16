@@ -55,8 +55,8 @@ test_environment/
     playwright.config.ts
     global-setup.ts        readiness probe, runs once before the suite
     auth.setup.ts          real UI login, saves storageState for every other spec
-    fixtures/              selectors.ts, seed.ts, stub.ts, testEnv.ts, upload.png
-    specs/                 02-login.spec.ts … 10-category-create.spec.ts (numbered — see below)
+    fixtures/              selectors.ts, seed.ts, stub.ts, testEnv.ts, contentApi.ts, upload.png
+    specs/                 02-login.spec.ts … 12-category-operations-api.spec.ts (numbered — see below)
   stub-provider/
     stub_server.py         stdlib-only HTTP stub for every redirected provider
 ```
@@ -78,7 +78,7 @@ invoke Docker, uvicorn, or Playwright directly.
 ```bash
 ./test_environment/testenv.sh doctor   # mode, ports, secret scan — run this first, always
 ./test_environment/testenv.sh up       # seeds .testenv/ if absent, starts the stack, waits for it
-./test_environment/testenv.sh e2e      # installs Playwright, runs the 23-test suite
+./test_environment/testenv.sh e2e      # installs Playwright, runs the 43-test suite
 ./test_environment/testenv.sh down     # stop
 ```
 
@@ -107,7 +107,8 @@ allowed at all, so it isn't; you'll get a clean argument-parsing error instead o
 surprise. Omitted, it autodetects: Docker if the daemon answers, native otherwise.
 
 Both modes are validated end to end against this repo's real backend and frontend: all
-23 tests green in each, last measured 2026-11-13 after a fresh `reset`.
+43 tests green in each (one is an expected failure documenting a known bug, see
+[Test scenarios](#test-scenarios)), last measured 2026-11-16 after a fresh `reset`.
 
 ## Configuration
 
@@ -246,7 +247,7 @@ These have their own configuration — `test_environment/testenv.toml`'s `[issue
 ./test_environment/testenv.sh e2e -- --debug                                 # Playwright inspector
 ```
 
-Spec files are numbered (`02-login.spec.ts` … `10-category-create.spec.ts`; `01` is
+Spec files are numbered (`02-login.spec.ts` … `12-category-operations-api.spec.ts`; `01` is
 `auth.setup.ts`, a separate Playwright *project* that always runs first) because
 **Playwright's default file order is alphabetical**, which stops matching the intended
 run order the moment a spec mutates state — e.g. `10-category-create.spec.ts` adding a
@@ -262,6 +263,34 @@ admin password from `.testenv/test.env` at run time rather than hardcoding it a 
 time. `fixtures/stub.ts` talks directly to the stub's `/__calls`/`/__reset` — it isn't
 behind the frontend's `/api`/`/internal`/`/content` proxy, so it needs `E2E_STUB_URL`
 (set by `testenv.py e2e` alongside `E2E_BASE_URL`) rather than a relative path.
+
+### Test scenarios
+
+Specs `02`–`10` cover the seeded fixture. From `11` on, each scenario covers a feature
+area deterministically:
+
+| Scenario | Specs | Covers |
+|---|---|---|
+| 1. Category operations | `11-category-operations-ui.spec.ts`, `12-category-operations-api.spec.ts` | Every category operation: create, list, details, update names/descriptions, change the id, icon upload/replace/delete, extra images add/replace/delete, voice delete/upload/replace/regenerate, archive, the archive list filters, restore, and permanent delete. Includes the error responses (404/409/400). `11` drives what the UI offers; `12` covers the full API, including what only the API exposes. |
+
+How a scenario spec stays deterministic, so it passes on any run order and repeat:
+
+- Each test creates its own scratch category through the API (`fixtures/contentApi.ts`),
+  named with the spec's prefix (`ops ui …`, `ops api …`). Nothing is asserted about the
+  shared fixture categories except that they're untouched.
+- The stub's call log is reset before each test, so call counts and spoken text are exact.
+- Nothing time-dependent is asserted. Archive folders are `<folder>_<unix seconds>`, so
+  tests read them from responses.
+- Every scratch category, live or archived, is purged after each test and before the
+  file starts (in case an earlier run was aborted). The last test of each file checks
+  nothing was left behind, so specs `02`–`10`'s assumptions (4 categories, empty
+  archive) still hold. Verified with `--repeat-each 3` on one stack.
+
+Known bug pinned by the scenario: after deleting a category icon, the page keeps showing
+the deleted file until a reload. `CategoryDetail.vue`'s `refreshCategory()` doesn't
+re-fetch the category list that `thumbnail_uri` comes from. The test asserting the correct
+behaviour is marked `test.fail()`. Once the bug is fixed, Playwright reports it as an
+unexpected pass, so drop the marker then.
 
 ## Issue tracking
 
