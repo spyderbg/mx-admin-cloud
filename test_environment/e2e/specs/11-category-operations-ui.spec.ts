@@ -6,8 +6,7 @@
  *
  *   change the category id ......... id pencil -> "Rename category" dialog
  *   rename one language's name ..... pencil beside a voice card's name
- *   upload / delete the icon ....... icon actions (regenerate is a placeholder toast, not tested;
- *                                    the page not refreshing after a delete is a known bug, test.fail)
+ *   upload / delete the icon ....... icon actions (regenerate is a placeholder toast, not tested)
  *   delete / upload / replace voice  voice card actions
  *   regenerate a voice ............. voice card action
  *   archive ........................ category page
@@ -133,28 +132,8 @@ test('uploading a new icon, then deleting it', async ({ page }) => {
   expect(await api.contentFile(iconUri)).toBeNull()
   expect((await api.list()).find((c) => c.id === id)!.thumbnail_uri).toBeNull()
 
-  // Checked after a reload: without one the page keeps the stale icon (see the next test).
-  await page.reload()
-  await expect(categoryDetail.idHeading(page)).toHaveText(id)
+  // The page updates in place: no icon, and nothing left to delete.
   await expect(icon).not.toHaveAttribute('src', /\/content\//)
-  await expect(categoryDetail.iconDeleteButton(page)).toBeDisabled()
-})
-
-test('deleting the icon updates the page without a reload', async ({ page }) => {
-  // KNOWN BUG: after the delete, CategoryDetail.vue's refreshCategory() only invalidates
-  // the category-detail cache, while thumbnail_uri comes from the shared category list,
-  // which is never re-fetched — so the page keeps pointing at the deleted file (a broken
-  // image) and the delete button stays enabled until a reload. Remove test.fail() once
-  // that's fixed; Playwright reports this test as an unexpected pass when it is.
-  test.fail(true, 'stale icon after delete: category list cache not invalidated (CategoryDetail.vue)')
-
-  const id = await api.create('ops ui icon')
-  await openCategory(page, id)
-  await categoryDetail.iconDeleteButton(page).click()
-  await modal.dangerButton(page).click()
-  await expect(toast.success(page)).toHaveText('Category icon deleted.')
-
-  await expect(categoryDetail.icon(page)).not.toHaveAttribute('src', /\/content\//)
   await expect(categoryDetail.iconDeleteButton(page)).toBeDisabled()
 })
 

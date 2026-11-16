@@ -78,7 +78,7 @@ invoke Docker, uvicorn, or Playwright directly.
 ```bash
 ./test_environment/testenv.sh doctor   # mode, ports, secret scan — run this first, always
 ./test_environment/testenv.sh up       # seeds .testenv/ if absent, starts the stack, waits for it
-./test_environment/testenv.sh e2e      # installs Playwright, runs the 43-test suite
+./test_environment/testenv.sh e2e      # installs Playwright, runs the 42-test suite
 ./test_environment/testenv.sh down     # stop
 ```
 
@@ -107,8 +107,7 @@ allowed at all, so it isn't; you'll get a clean argument-parsing error instead o
 surprise. Omitted, it autodetects: Docker if the daemon answers, native otherwise.
 
 Both modes are validated end to end against this repo's real backend and frontend: all
-43 tests green in each (one is an expected failure documenting a known bug, see
-[Test scenarios](#test-scenarios)), last measured 2026-11-16 after a fresh `reset`.
+42 tests green in each, last measured 2026-11-16 after a fresh `reset`.
 
 ## Configuration
 
@@ -285,12 +284,6 @@ How a scenario spec stays deterministic, so it passes on any run order and repea
   file starts (in case an earlier run was aborted). The last test of each file checks
   nothing was left behind, so specs `02`–`10`'s assumptions (4 categories, empty
   archive) still hold. Verified with `--repeat-each 3` on one stack.
-
-Known bug pinned by the scenario: after deleting a category icon, the page keeps showing
-the deleted file until a reload. `CategoryDetail.vue`'s `refreshCategory()` doesn't
-re-fetch the category list that `thumbnail_uri` comes from. The test asserting the correct
-behaviour is marked `test.fail()`. Once the bug is fixed, Playwright reports it as an
-unexpected pass, so drop the marker then.
 
 ## Issue tracking
 

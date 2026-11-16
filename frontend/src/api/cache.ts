@@ -11,6 +11,7 @@ import {
   itemsVoicesList,
 } from './contentClient'
 import type { ImageResponse, ItemImagesResponse, ItemSummary } from '../types/contentSchemas'
+import { categoryIconUri } from '../utils/categoryIds'
 
 // ---------------------------------------------------------------------------
 // In-flight promise deduplication
@@ -390,8 +391,9 @@ export const ensureCategoryDetail = async (
       voicesResponse.voices,
       (voicesResponse.name as unknown as Record<string, string>) ?? {},
     )
-    const thumbnail_uri = imagesResponse.images?.[0]?.file_uri
-      ?? sharedCategories.value.find((c) => c.name.en === categoryName)?.thumbnail_uri
+    // The images response is authoritative: after an icon delete it has no icon, and
+    // falling back to the cached thumbnail_uri would keep showing the deleted file.
+    const thumbnail_uri = categoryIconUri(categoryId, imagesResponse.images)
 
     const catIdx = sharedCategories.value.findIndex((c) => c.name.en === categoryName)
     if (catIdx !== -1) {
