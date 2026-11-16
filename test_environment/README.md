@@ -90,10 +90,10 @@ picking a Python interpreter and a stable `./test_environment/testenv.sh` entry 
 | Command | What it does |
 |---|---|
 | `doctor` | Reports the resolved mode, Docker Compose version (if applicable), whether the stack's ports are free, and scans the environment that would be handed to child processes for anything that looks like a real credential. Safe to run any time; changes nothing. |
-| `seed [--force] [--check-ts]` | (Re)builds `.testenv/{content,config,archive}` and `.testenv/test.env` from the real `content/` and `backend/config/`. `--force` wipes an existing `.testenv/content` first; without it, `seed` refuses if content is already there. `--check-ts` compares the real `content/` against the last seed's manifest and reports drift **without** reseeding — useful if a test failure might be a stale fixture rather than an app bug. |
-| `up [--build] [--simple-confirm] [--backend-port N] [--frontend-port N] [--stub-port N]` | Seeds if `.testenv/content` is empty, starts stub → backend → frontend (or the three containers, in Docker mode), waits for each to answer, prints the URLs. `--build` forces a Docker image rebuild (native mode always rebuilds the frontend bundle; there's no image to skip). |
+| `seed [--force] [--check-ts] [--content-dir DIR] [--config-dir DIR]` | (Re)builds `.testenv/{content,config,archive}` and `.testenv/test.env` from the real `content/` and `backend/config/`. `--force` wipes an existing `.testenv/content` first; without it, `seed` refuses if content is already there. `--check-ts` compares the real `content/` against the last seed's manifest and reports drift **without** reseeding — useful if a test failure might be a stale fixture rather than an app bug. |
+| `up [--build] [--simple-confirm] [--backend-port N] [--frontend-port N] [--stub-port N] [--content-dir DIR] [--config-dir DIR]` | Seeds if `.testenv/content` is empty, starts stub → backend → frontend (or the three containers, in Docker mode), waits for each to answer, prints the URLs. `--build` forces a Docker image rebuild (native mode always rebuilds the frontend bundle; there's no image to skip). |
 | `down [--purge]` | Stops everything. `--purge` also deletes `.testenv/` entirely (content, config, archive, the SQLite user DB, logs, Playwright artifacts) — the next `up`/`seed` starts from nothing. |
-| `reset [--simple-confirm] [--backend-port N] [--frontend-port N] [--stub-port N]` | `down` + wipe `.testenv/` + `seed` + `up`, in one call. The workhorse — run this between full E2E runs so every spec starts from the identical, byte-for-byte fixture. |
+| `reset [--simple-confirm] [--backend-port N] [--frontend-port N] [--stub-port N] [--content-dir DIR] [--config-dir DIR]` | `down` + wipe `.testenv/` + `seed` + `up`, in one call. The workhorse — run this between full E2E runs so every spec starts from the identical, byte-for-byte fixture. |
 | `e2e [--base-url URL] [--stub-url URL] [-- <playwright args>]` | Ensures the stack is up (starts it if not), installs `test_environment/e2e`'s npm deps on first use, runs `npx playwright install chromium --with-deps` on **every** invocation, then runs the suite. On Linux, `--with-deps` installs OS packages through `sudo apt-get`, so it can stop at a sudo password prompt; to skip it, run `npx playwright test` from `test_environment/e2e` with `E2E_BASE_URL`/`E2E_STUB_URL` set yourself. Anything after `--` is passed straight to `playwright test` — see [Running specs](#running-specs) below. |
 | `logs [backend\|frontend\|stub] [--follow]` | Prints (or tails) that service's log. No argument prints all three. |
 | `status` | Shows what's currently running (pid + port in native mode, `docker compose ps` in Docker mode). |
@@ -110,6 +110,38 @@ Both modes are validated end to end against this repo's real backend and fronten
 23 tests green in each, last measured 2026-11-13 after a fresh `reset`.
 
 ## Configuration
+
+### Content and config sources
+
+By default `.testenv/` is built from the repo's `content/` (the curated subset, see
+[The seeded fixture](#the-seeded-fixture)) and `backend/config/`. To use other
+directories:
+
+```bash
+./test_environment/testenv.sh reset --content-dir /path/to/content --config-dir /path/to/config
+```
+
+- **Content** from any directory other than the repo's `content/` is copied **whole**
+  (minus `.git/`; a symlink is copied as the file it points at, a dangling one is
+  skipped). The subset picks categories by CSV row index, which only means something for
+  the repo's own content. The e2e specs assert the curated fixture, so expect them to fail
+  against other content; `e2e` warns when that's the case.
+- **Config** from any directory gets the same neutralisation as `backend/config/`:
+  rewrites match on provider **type**, not file name. Every enabled provider of a type the
+  stub can't imitate (image: anything but `openai_http`/`genai_http`/`comfyui`; TTS:
+  anything but `speaktor`; translation: anything but `openai_translate`/`qwen_translate`/
+  `static_translate`) is disabled, and every logging handler with a `server_url` is pointed
+  at the stub. A service directory the tool has no rules for is copied as-is with a
+  warning.
+- **Resolution order**, per directory: the flag, then `$TESTENV_CONTENT_SOURCE` /
+  `$TESTENV_CONFIG_SOURCE`, then the choice recorded in `.testenv/sources.json` by the
+  last seed, then the repo defaults. The record means a plain `up`, `reset` or `seed`
+  keeps using your directories. `down --purge` forgets it.
+- `up --config-dir` switches config on the next start (config is rebuilt on every `up`).
+  `up --content-dir` refuses if `.testenv/content` came from somewhere else: content is
+  only copied by a seed, so use `reset --content-dir`.
+- `doctor` prints which directories are in effect. `seed --check-ts` checks a whole-copy
+  seed by size and mtime rather than a hash, so it stays cheap on a large tree.
 
 ### Ports
 
@@ -996,6 +1028,11 @@ above — the credential helper lives right next to the `docker` binary itself, 
 `docker` found only via the fallback needs its directory added to the *child process's*
 `PATH` too, not just resolved for the parent call. `testenv.py` does this for you; if
 you're running `docker compose` by hand, add `~/.docker/bin` to your own `PATH`.
+
+**`reset`/`down --purge` and root-owned files.** The Docker backend container runs as
+root and writes into `.testenv/` (new categories, voices, uploads). When deleting
+`.testenv/` hits a permission error, `testenv.py` removes it from a throwaway
+`python:3.11-slim` container instead. Without Docker available, remove it with `sudo`.
 
 **Port already in use.** `doctor`/`up` check before doing anything, and `up` refuses
 cleanly rather than stealing the port — but if something else on your machine happens to

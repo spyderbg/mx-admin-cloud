@@ -1,20 +1,24 @@
 #!/usr/bin/env python3
-"""Build the throwaway `.testenv/` content fixture from the real `content/` directory.
+"""Build the throwaway `.testenv/` content fixture from a content directory.
 
-Copies a curated 4-category subset (at_school, drinks, at_home, fruits) out of the
-real content/ tree, slicing only the row-aligned index CSVs; every other file —
-images, MP3s, voice sidecars, stray legacy files — is copied byte-for-byte. Nothing
-under .testenv/ is ever a symlink into content/ or backend/config/: the suite includes
-destructive specs (archive, delete item, delete image) that would follow a symlink
-straight into tracked, real content.
+From the repo's own content/ (the default), copies a curated 4-category subset
+(at_school, drinks, at_home, fruits), slicing only the row-aligned index CSVs; every
+other file — images, MP3s, voice sidecars, stray legacy files — is copied
+byte-for-byte. From any other content directory (--content-dir, see
+testenvlib/sources.py) the whole tree is copied instead: the subset picks categories by
+CSV row index, which only means something for the repo's own content/. Nothing under
+.testenv/ is ever a symlink into a source directory: the suite includes destructive
+specs (archive, delete item, delete image) that would follow a symlink straight into
+real content.
 
 See docs/test_environment/implementation_plan.md §3 for the fixture design rationale.
 
 Usage:
     python test_environment/testenv_seed.py              # build (or rebuild empty) .testenv/
     python test_environment/testenv_seed.py --force       # wipe an existing .testenv/content and rebuild
-    python test_environment/testenv_seed.py --check-ts    # compare real content/ against the stored
+    python test_environment/testenv_seed.py --check-ts    # compare the source content against the stored
                                                   # manifest without reseeding; nonzero on drift
+    python test_environment/testenv_seed.py --content-dir /path/to/content   # seed from another directory
 """
 
 from __future__ import annotations
@@ -23,6 +27,7 @@ import argparse
 import csv
 import hashlib
 import json
+import os
 import re
 import shutil
 import sys
@@ -32,7 +37,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.stdout.reconfigure(line_buffering=True)  # see testenv.py for why
 
-from testenvlib import paths  # noqa: E402
+from testenvlib import paths, sources  # noqa: E402
 from testenvlib.envfile import write_env_file  # noqa: E402
 
 RED = "\033[91m"
@@ -91,17 +96,32 @@ def _sha256_file(path: Path) -> str:
 # Manifest — drift detection against the real content/ this fixture was cut from
 # ---------------------------------------------------------------------------
 
-def _collect_source_files() -> dict[str, dict[str, object]]:
+def _collect_full_source_files(source_dir: Path) -> dict[str, dict[str, object]]:
+    """Return {relpath: {size, mtime_ns}} for every file under a wholly-copied source.
+
+    Size + mtime rather than a hash: a full content tree can be gigabytes of images and
+    MP3s, and hashing it all would double the cost of every seed just for --check-ts.
+    """
+    files: dict[str, dict[str, object]] = {}
+    for entry in sorted(source_dir.rglob("*")):
+        if not entry.is_file() or _ignored_in_full_copy(entry.relative_to(source_dir)):
+            continue
+        stat = entry.stat()
+        files[entry.relative_to(source_dir).as_posix()] = {"size": stat.st_size, "mtime_ns": stat.st_mtime_ns}
+    return files
+
+
+def _collect_source_files(source_dir: Path) -> dict[str, dict[str, object]]:
     """Return {relpath-from-content/: {size, sha256}} for every file this seed reads."""
     files: dict[str, dict[str, object]] = {}
 
     for filename in paths.ROOT_SLICED_CSV_FILES:
-        src = paths.REAL_CONTENT_DIR / filename
+        src = source_dir / filename
         if src.is_file():
             files[filename] = {"size": src.stat().st_size, "sha256": _sha256_file(src)}
 
     for _, folder in paths.KEPT_CATEGORY_ROWS:
-        category_src = paths.REAL_CONTENT_DIR / folder
+        category_src = source_dir / folder
         if not category_src.is_dir():
             raise FileNotFoundError(f"Expected source category directory missing: {category_src}")
 
@@ -137,25 +157,34 @@ def _kept_item_folder_names(category_src: Path, folder: str) -> set[str]:
     return names
 
 
-def build_manifest(kept_files: dict[str, dict[str, object]]) -> dict[str, object]:
+def build_manifest(
+        kept_files: dict[str, dict[str, object]], *, source_dir: Path, full: bool,
+) -> dict[str, object]:
     aggregate = hashlib.sha256()
     for rel in sorted(kept_files):
+        if full:
+            continue
         if Path(rel).name in paths.ROOT_SLICED_CSV_FILES or Path(rel).name in paths.ITEM_SLICED_CSV_FILES:
             aggregate.update(rel.encode("utf-8"))
             aggregate.update(str(kept_files[rel]["sha256"]).encode("utf-8"))
-    return {
+    manifest: dict[str, object] = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "source_content_dir": str(paths.REAL_CONTENT_DIR),
-        "categories": [folder for _, folder in paths.KEPT_CATEGORY_ROWS],
-        "kept_category_rows": [[i, folder] for i, folder in paths.KEPT_CATEGORY_ROWS],
-        "kept_item_rows": {k: list(v) for k, v in paths.KEPT_ITEM_ROWS.items()},
-        "sliced_csv_digest": aggregate.hexdigest(),
+        "source_content_dir": str(source_dir),
+        "content_mode": "full" if full else "subset",
         "files": kept_files,
     }
+    if not full:
+        manifest.update({
+            "categories": [folder for _, folder in paths.KEPT_CATEGORY_ROWS],
+            "kept_category_rows": [[i, folder] for i, folder in paths.KEPT_CATEGORY_ROWS],
+            "kept_item_rows": {k: list(v) for k, v in paths.KEPT_ITEM_ROWS.items()},
+            "sliced_csv_digest": aggregate.hexdigest(),
+        })
+    return manifest
 
 
 def check_timestamps() -> int:
-    """`--check-ts`: report drift between real content/ and the last-recorded manifest."""
+    """`--check-ts`: report drift between the seed's source content and its manifest."""
     if not paths.SEED_MANIFEST_PATH.is_file():
         print(
             f"{YELLOW}No manifest at {paths.testenv_relative(paths.SEED_MANIFEST_PATH)} — "
@@ -169,18 +198,24 @@ def check_timestamps() -> int:
         print(f"{RED}Could not read existing manifest: {exc}{RESET}", file=sys.stderr)
         return 1
 
-    current_files = _collect_source_files()
+    source_dir = Path(stored.get("source_content_dir") or paths.REAL_CONTENT_DIR)
+    if not source_dir.is_dir():
+        print(f"{RED}Seed source directory no longer exists: {source_dir}{RESET}", file=sys.stderr)
+        return 1
+    full = stored.get("content_mode") == "full"
+    current_files = _collect_full_source_files(source_dir) if full else _collect_source_files(source_dir)
     stored_files: dict[str, dict[str, object]] = stored.get("files", {})
+    fingerprint_keys = ("size", "mtime_ns") if full else ("sha256",)
 
     added = sorted(set(current_files) - set(stored_files))
     removed = sorted(set(stored_files) - set(current_files))
     changed = sorted(
         rel for rel in (set(current_files) & set(stored_files))
-        if current_files[rel]["sha256"] != stored_files[rel]["sha256"]
+        if any(current_files[rel].get(k) != stored_files[rel].get(k) for k in fingerprint_keys)
     )
 
     if not added and not removed and not changed:
-        print(f"{GREEN}Fixture source unchanged — content/ still matches the seeded manifest.{RESET}")
+        print(f"{GREEN}Fixture source unchanged — {source_dir} still matches the seeded manifest.{RESET}")
         return 0
 
     print(f"{RED}{BOLD}Fixture source changed since the last seed:{RESET}")
@@ -201,8 +236,31 @@ def check_timestamps() -> int:
 # Seed
 # ---------------------------------------------------------------------------
 
-def _copy_category(folder: str) -> None:
-    src_dir = paths.REAL_CONTENT_DIR / folder
+def _ignored_in_full_copy(rel: Path) -> bool:
+    """VCS metadata and a previous seed's manifest are never part of a full copy."""
+    return bool(rel.parts) and (rel.parts[0] == ".git" or rel.as_posix() == paths.SEED_MANIFEST_PATH.name)
+
+
+def _copy_full(source_dir: Path) -> None:
+    def ignore(directory: str, names: list[str]) -> set[str]:
+        rel_dir = Path(directory).relative_to(source_dir)
+        return {
+            name for name in names
+            if _ignored_in_full_copy(rel_dir / name)
+            # A dangling symlink has nothing to copy. Checked here rather than with
+            # copytree's ignore_dangling_symlinks, which tests a relative link target
+            # against the current directory instead of the link's own, and so skips
+            # every valid relative link (e.g. fruits/x.png -> ../drinks/drinks.png).
+            or (os.path.islink(os.path.join(directory, name)) and not os.path.exists(os.path.join(directory, name)))
+        }
+
+    # symlinks=False copies what a symlink points at, never the link itself (see
+    # _assert_no_symlinks).
+    shutil.copytree(source_dir, paths.TEST_CONTENT_DIR, symlinks=False, ignore=ignore, dirs_exist_ok=True)
+
+
+def _copy_category(source_dir: Path, folder: str) -> None:
+    src_dir = source_dir / folder
     dst_dir = paths.TEST_CONTENT_DIR / folder
     dst_dir.mkdir(parents=True, exist_ok=True)
 
@@ -227,10 +285,10 @@ def _copy_category(folder: str) -> None:
             _write_csv_rows(dst_dir / filename, _slice_rows(rows, item_indices))
 
 
-def _slice_root_csvs() -> None:
+def _slice_root_csvs(source_dir: Path) -> None:
     indices = tuple(i for i, _ in paths.KEPT_CATEGORY_ROWS)
     for filename in paths.ROOT_SLICED_CSV_FILES:
-        src = paths.REAL_CONTENT_DIR / filename
+        src = source_dir / filename
         if not src.is_file():
             print(f"{YELLOW}  ! root file missing, skipping: {filename}{RESET}")
             continue
@@ -286,7 +344,20 @@ def _write_test_env() -> None:
     )
 
 
-def seed(*, force: bool) -> int:
+def seed(*, force: bool, source: sources.Sources | None = None) -> int:
+    """Build .testenv/content (+ test.env) and record *source* in .testenv/sources.json.
+
+    *source* defaults to sources.resolve() — env vars, then the recorded choice, then
+    the repo defaults.
+    """
+    if source is None:
+        try:
+            source = sources.resolve()
+        except sources.SourceError as exc:
+            print(f"{RED}{exc}{RESET}", file=sys.stderr)
+            return 1
+    source_dir = source.content_dir
+
     if paths.TEST_CONTENT_DIR.exists() and any(paths.TEST_CONTENT_DIR.iterdir()):
         if not force:
             print(
@@ -296,23 +367,28 @@ def seed(*, force: bool) -> int:
             return 1
         shutil.rmtree(paths.TEST_CONTENT_DIR)
 
-    print(f"{BOLD}Seeding .testenv/ from {paths.testenv_relative(paths.REAL_CONTENT_DIR)}...{RESET}")
+    how = "whole directory" if source.full_content else "curated subset"
+    print(f"{BOLD}Seeding .testenv/ from {paths.testenv_relative(source_dir)} ({how})...{RESET}")
 
     for directory in paths.TESTENV_SUBDIRS:
         directory.mkdir(parents=True, exist_ok=True)
 
-    _slice_root_csvs()
-    for _, folder in paths.KEPT_CATEGORY_ROWS:
-        _copy_category(folder)
-        print(f"  copied {folder}")
+    if source.full_content:
+        _copy_full(source_dir)
+    else:
+        _slice_root_csvs(source_dir)
+        for _, folder in paths.KEPT_CATEGORY_ROWS:
+            _copy_category(source_dir, folder)
+            print(f"  copied {folder}")
 
     _assert_no_symlinks()
 
-    kept_files = _collect_source_files()
-    manifest = build_manifest(kept_files)
+    kept_files = _collect_full_source_files(source_dir) if source.full_content else _collect_source_files(source_dir)
+    manifest = build_manifest(kept_files, source_dir=source_dir, full=source.full_content)
     paths.SEED_MANIFEST_PATH.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
 
     _write_test_env()
+    sources.record(source)
 
     total_size = sum(int(f["size"]) for f in kept_files.values())
     print(
@@ -328,17 +404,23 @@ def main() -> int:
     parser.add_argument("--force", action="store_true", help="wipe an existing .testenv/content and rebuild")
     parser.add_argument(
         "--check-ts", action="store_true",
-        help="compare content/ against the stored manifest without reseeding; exit 1 on drift",
+        help="compare the seed's source content against the stored manifest without reseeding; exit 1 on drift",
+    )
+    parser.add_argument(
+        "--content-dir", default=None,
+        help=f"seed from this content directory, copied whole (default: ${sources.CONTENT_ENV_VAR}, "
+             "then the last seed's choice, then the repo's content/ subset)",
     )
     args = parser.parse_args()
 
-    if not paths.REAL_CONTENT_DIR.is_dir():
-        print(f"{RED}Real content directory not found: {paths.REAL_CONTENT_DIR}{RESET}", file=sys.stderr)
-        return 1
-
     if args.check_ts:
         return check_timestamps()
-    return seed(force=args.force)
+    try:
+        source = sources.resolve(content_dir=args.content_dir)
+    except sources.SourceError as exc:
+        print(f"{RED}{exc}{RESET}", file=sys.stderr)
+        return 1
+    return seed(force=args.force, source=source)
 
 
 if __name__ == "__main__":

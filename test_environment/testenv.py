@@ -9,6 +9,8 @@ docs/test_environment/implementation_plan.md §1 for the full mode comparison.
     testenv.py doctor    mode? compose >= 2.24? ports free? dev stack up? real keys?
     testenv.py seed      (re)build .testenv/{content,config,archive} + test.env
     testenv.py up        [--build] [--simple-confirm]   seed if absent, start, wait
+                    seed/up/reset take --content-dir DIR / --config-dir DIR to build the
+                    sandbox from other directories (see testenvlib/sources.py)
     testenv.py down      [--purge]                       tear down (docker: -v --remove-orphans)
     testenv.py reset     down + rm -rf .testenv + seed + up   (the workhorse)
     testenv.py logs | status | shell <service>
@@ -41,7 +43,9 @@ sys.stdout.reconfigure(line_buffering=True)
 
 import testenv_config  # noqa: E402
 import testenv_seed  # noqa: E402
-from testenvlib import paths, pyenv  # noqa: E402
+import os  # noqa: E402
+
+from testenvlib import paths, pyenv, sources  # noqa: E402
 from testenvlib.dockerutil import find_docker  # noqa: E402
 from testenvlib.envfile import child_env, find_leaked_secrets, load_env_file  # noqa: E402
 from testenvlib.proc import port_is_free, wait_for_http  # noqa: E402
@@ -163,6 +167,14 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         if not free:
             ok = False
 
+    try:
+        resolved = sources.resolve()
+        for line in resolved.describe():
+            print(f"{DIM}sources:{RESET} {line}")
+    except sources.SourceError as exc:
+        ok = False
+        print(f"{RED}[FAIL] sources: {exc}{RESET}")
+
     # -- secret scan: build the exact child env `up` would use, and check it ------
     test_env = load_env_file(paths.TEST_ENV_FILE)
     env = child_env(test_env)
@@ -193,17 +205,36 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 # seed
 # ---------------------------------------------------------------------------
 
+def _resolve_sources(args: argparse.Namespace) -> sources.Sources | None:
+    """--content-dir/--config-dir > env > recorded > repo default; None (printed) if invalid."""
+    try:
+        return sources.resolve(
+            content_dir=getattr(args, "content_dir", None), config_dir=getattr(args, "config_dir", None),
+        )
+    except sources.SourceError as exc:
+        print(f"{RED}{exc}{RESET}", file=sys.stderr)
+        return None
+
+
+def _print_sources(source: sources.Sources) -> None:
+    for line in source.describe():
+        print(f"{DIM}  {line}{RESET}")
+
+
 def cmd_seed(args: argparse.Namespace) -> int:
     if args.check_ts:
         return testenv_seed.check_timestamps()
-    rc = testenv_seed.seed(force=args.force)
+    source = _resolve_sources(args)
+    if source is None:
+        return 1
+    rc = testenv_seed.seed(force=args.force, source=source)
     if rc != 0:
         return rc
     stub_base = (
         f"http://stub:{paths.DOCKER_STUB_CONTAINER_PORT}" if resolve_mode(args.mode) == "docker"
         else f"http://127.0.0.1:{paths.NATIVE_DEFAULT_STUB_PORT}"
     )
-    return testenv_config.build(stub_base_url=stub_base, force=True)
+    return testenv_config.build(stub_base_url=stub_base, force=True, config_dir=source.config_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -255,11 +286,27 @@ def cmd_up(args: argparse.Namespace) -> int:
     frontend_port = getattr(args, "frontend_port", None)
     stub_port = getattr(args, "stub_port", None)
 
+    source = _resolve_sources(args)
+    if source is None:
+        return 1
+
     if not (paths.TEST_CONTENT_DIR.exists() and any(paths.TEST_CONTENT_DIR.iterdir())):
         print(f"{DIM}Seeding .testenv/ ...{RESET}")
-        rc = testenv_seed.seed(force=False)
+        rc = testenv_seed.seed(force=False, source=source)
         if rc != 0:
             return rc
+    else:
+        # Content is only (re)copied by a seed; `up` never replaces what's already there.
+        seeded_from = Path(sources.load_recorded().get("content_dir") or paths.REAL_CONTENT_DIR).resolve()
+        if seeded_from != source.content_dir:
+            print(
+                f"{RED}.testenv/content was seeded from {seeded_from}, not {source.content_dir}. "
+                f"`up` doesn't replace content — run `reset --content-dir {source.content_dir}` instead.{RESET}",
+                file=sys.stderr,
+            )
+            return 1
+        sources.record(source)  # config is rebuilt on every `up`, so a new --config-dir sticks
+    _print_sources(source)
 
     if mode == "native":
         cmd = [sys.executable, str(APP_PY), "start"]
@@ -271,11 +318,22 @@ def cmd_up(args: argparse.Namespace) -> int:
             cmd += ["--frontend-port", str(frontend_port)]
         if stub_port:
             cmd += ["--stub-port", str(stub_port)]
-        result = subprocess.run(cmd, check=False)
+        # app.py rebuilds the config itself; pin the resolved directories so an exported
+        # TESTENV_*_SOURCE can't override a --content-dir/--config-dir passed here.
+        app_env = {
+            **os.environ,
+            sources.CONTENT_ENV_VAR: str(source.content_dir),
+            sources.CONFIG_ENV_VAR: str(source.config_dir),
+        }
+        result = subprocess.run(cmd, env=app_env, check=False)
         return result.returncode
 
     confirm_mode = "simple" if args.simple_confirm else "complex"
-    testenv_config.build(stub_base_url=f"http://stub:{paths.DOCKER_STUB_CONTAINER_PORT}", force=True)
+    rc = testenv_config.build(
+        stub_base_url=f"http://stub:{paths.DOCKER_STUB_CONTAINER_PORT}", force=True, config_dir=source.config_dir,
+    )
+    if rc != 0:
+        return rc
 
     env = _docker_child_env(
         confirm_mode=confirm_mode, backend_port=backend_port, frontend_port=frontend_port, stub_port=stub_port,
@@ -315,6 +373,36 @@ def cmd_up(args: argparse.Namespace) -> int:
     return 0
 
 
+def _remove_testenv_dir() -> None:
+    """rm -rf .testenv/, also when Docker mode left root-owned files in it.
+
+    The Docker backend container runs as root and writes into the bind-mounted
+    .testenv/ (new categories, generated voices, uploads), so a later `reset` or
+    `down --purge` can't delete those files as the invoking user. On PermissionError,
+    delete the contents from a throwaway container instead, using the stub's image
+    (python:3.11-slim), which a Docker-mode run has already pulled.
+    """
+    try:
+        shutil.rmtree(paths.TESTENV_DIR)
+        return
+    except PermissionError as exc:
+        docker_bin, _ = find_docker()
+        if not docker_bin:
+            raise SystemExit(
+                f"{RED}Can't delete {paths.TESTENV_DIR}: {exc}. Files there are probably root-owned "
+                f"(left by Docker mode) — remove it with sudo.{RESET}",
+            ) from exc
+    print(f"{DIM}  root-owned files left by Docker mode — removing them via a container ...{RESET}")
+    result = subprocess.run(
+        [docker_bin, "run", "--rm", "-v", f"{paths.TESTENV_DIR.resolve()}:/t", "python:3.11-slim",
+         "sh", "-c", "rm -rf /t/* /t/.[!.]* /t/..?*"],
+        check=False,
+    )
+    if result.returncode != 0:
+        raise SystemExit(f"{RED}Couldn't delete {paths.TESTENV_DIR} via docker; remove it with sudo.{RESET}")
+    shutil.rmtree(paths.TESTENV_DIR)
+
+
 def cmd_down(args: argparse.Namespace) -> int:
     mode = resolve_mode(args.mode)
     if mode == "native":
@@ -328,24 +416,30 @@ def cmd_down(args: argparse.Namespace) -> int:
 
     if args.purge and paths.TESTENV_DIR.exists():
         print(f"{DIM}Purging {paths.testenv_relative(paths.TESTENV_DIR)} ...{RESET}")
-        shutil.rmtree(paths.TESTENV_DIR)
+        _remove_testenv_dir()
     return rc
 
 
 def cmd_reset(args: argparse.Namespace) -> int:
+    # Resolved before .testenv/ is wiped, so a plain `reset` keeps the recorded sources.
+    source = _resolve_sources(args)
+    if source is None:
+        return 1
+
     down_args = argparse.Namespace(mode=args.mode, purge=False)
     cmd_down(down_args)
 
     if paths.TESTENV_DIR.exists():
         print(f"{DIM}Removing {paths.testenv_relative(paths.TESTENV_DIR)} ...{RESET}")
-        shutil.rmtree(paths.TESTENV_DIR)
+        _remove_testenv_dir()
 
-    rc = testenv_seed.seed(force=False)
+    rc = testenv_seed.seed(force=False, source=source)
     if rc != 0:
         return rc
 
     up_args = argparse.Namespace(
         mode=args.mode, build=True, simple_confirm=args.simple_confirm,
+        content_dir=str(source.content_dir), config_dir=str(source.config_dir),
         backend_port=getattr(args, "backend_port", None),
         frontend_port=getattr(args, "frontend_port", None),
         stub_port=getattr(args, "stub_port", None),
@@ -435,6 +529,13 @@ def cmd_e2e(args: argparse.Namespace) -> int:
         rc = cmd_up(up_args)
         if rc != 0:
             return rc
+
+    recorded = sources.load_recorded().get("content_dir")
+    if recorded and Path(recorded).resolve() != paths.REAL_CONTENT_DIR.resolve():
+        print(
+            f"{YELLOW}! .testenv/content is a full copy of {recorded}, not the curated fixture the specs "
+            f"assert against (fixtures/seed.ts) — expect fixture-count failures.{RESET}",
+        )
 
     base_url = args.base_url
     if not base_url:
@@ -624,6 +725,19 @@ def cmd_run(args: argparse.Namespace) -> int:
 # argparse wiring
 # ---------------------------------------------------------------------------
 
+def _add_source_args(subparser: argparse.ArgumentParser) -> None:
+    subparser.add_argument(
+        "--content-dir", default=None, metavar="DIR",
+        help=f"build .testenv/content from DIR, copied whole (default: ${sources.CONTENT_ENV_VAR}, then the "
+             "last seed's choice, then the repo's content/ curated subset)",
+    )
+    subparser.add_argument(
+        "--config-dir", default=None, metavar="DIR",
+        help=f"build .testenv/config from DIR, redirected to the stub (default: ${sources.CONFIG_ENV_VAR}, then "
+             "the last seed's choice, then backend/config/)",
+    )
+
+
 def main() -> int:
     # --mode must come BEFORE the subcommand (`testenv.py --mode docker up`, not
     # `testenv.py up --mode docker`) — it is defined ONLY on the top-level parser.
@@ -641,6 +755,7 @@ def main() -> int:
     p_seed = sub.add_parser("seed", help="(re)build .testenv/{content,config,archive} + test.env")
     p_seed.add_argument("--force", action="store_true")
     p_seed.add_argument("--check-ts", action="store_true", help="report drift vs. the last seed's manifest; do not reseed")
+    _add_source_args(p_seed)
     p_seed.set_defaults(func=cmd_seed)
 
     p_up = sub.add_parser("up", help="seed if absent, start the stack, wait for readiness")
@@ -649,6 +764,7 @@ def main() -> int:
     p_up.add_argument("--backend-port", type=int, default=None, help="default: mode's standard port (48000 native / 48100 docker)")
     p_up.add_argument("--frontend-port", type=int, default=None, help="default: mode's standard port (48001 native / 48101 docker)")
     p_up.add_argument("--stub-port", type=int, default=None, help="default: mode's standard port (48002 native / 48102 docker)")
+    _add_source_args(p_up)
     p_up.set_defaults(func=cmd_up)
 
     p_down = sub.add_parser("down", help="tear down the stack")
@@ -660,6 +776,7 @@ def main() -> int:
     p_reset.add_argument("--backend-port", type=int, default=None)
     p_reset.add_argument("--frontend-port", type=int, default=None)
     p_reset.add_argument("--stub-port", type=int, default=None)
+    _add_source_args(p_reset)
     p_reset.set_defaults(func=cmd_reset)
 
     p_logs = sub.add_parser("logs", help="stream logs")
