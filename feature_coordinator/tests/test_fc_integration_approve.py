@@ -138,9 +138,9 @@ def test_a_clock_skew_of_a_few_minutes_is_tolerated(rig: Rig, job: IntegrationJo
     (lambda r: r.update(issue=99), "Issue #99"),
     (lambda r: r.update(pr=5), "PR 5"),
     (lambda r: r.update(job="int-20990101-0001"), "authorizes job int-20990101-0001"),
-    (lambda r: r.update(stage="merge"), "merge stage is M5"),
+    (lambda r: r.update(stage="merge"), "version 1 record authorizes the inspect stage only"),
     (lambda r: r.update(operator="mallory"), "not in github.integration.operators"),
-], ids=["source-sha", "base-sha", "base-ref", "source-repo", "source-ref", "issue", "pr", "other-job", "merge-stage",
+], ids=["source-sha", "base-sha", "base-ref", "source-repo", "source-ref", "issue", "pr", "other-job", "v1-merge-stage",
         "unknown-operator"])
 def test_a_record_that_does_not_bind_exactly_this_job_is_refused(rig: Rig, job: IntegrationJob, change: Any,
                                                                  match: str):
@@ -319,8 +319,8 @@ def test_cli_approve_dry_run_apply_and_refusal(rig: Rig, job: IntegrationJob, ke
     data = json.loads(capsys.readouterr().out)
     assert code == 1 and not data["ok"] and data["outcome"] == "refused" and "expired" in data["reasons"][0]
     with pytest.raises(SystemExit) as exc:
-        cli_main([*base, "approve", "--job", job.job_id, "--stage", "merge", "--record", str(path)])
-    assert exc.value.code == 2  # only the inspect stage exists in M2
+        cli_main([*base, "approve", "--job", job.job_id, "--stage", "bogus", "--record", str(path)])
+    assert exc.value.code == 2  # the stages are inspect (M2) and merge (M5)
 
 
 def test_cli_approve_with_a_separate_signature_file(rig: Rig, job: IntegrationJob, key: OperatorKey, tmp_path: Path,

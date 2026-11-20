@@ -93,8 +93,8 @@ from .integration_github import (
     fetch_pull,
     recorded_pr_changes,
 )
-from .integration_intake import MAX_LISTED, HistoryRefused, ReadOnlyGit, VerifiedRange
-from .integration_paths import ClassifiedPaths, changed_paths, classify_paths
+from .integration_intake import MAX_LISTED, HistoryRefused, HistoryUnverifiable, ReadOnlyGit, VerifiedRange
+from .integration_paths import ClassifiedPaths, PathChange, changed_paths, classify_paths
 from .issue_sync import SimulatedCrash
 from .issues import PullRequest
 from .locks import FileLock
@@ -189,6 +189,34 @@ class InspectReport:  # pylint: disable=too-many-instance-attributes
     def to_dict(self) -> dict[str, Any]:
         """JSON form."""
         return {**asdict(self), "ok": self.ok}
+
+
+class UnprovenMergeBases(HistoryUnverifiable):
+    """Git's merge bases are not proven boundary parents of the verified range (the object store is inconsistent)."""
+
+
+def history_changes(git: ReadOnlyGit, history: VerifiedRange, base_sha: str, source_sha: str) -> dict[str, PathChange]:
+    """M2's history-wide change set of base..source (integration_paths: every commit of the hash-verified *history*,
+    plus the net diff from each merge base to the source tip), read from hash-verified objects — symlink targets
+    included. The merge bases come from Git and are accepted only as boundary parents of the verified range (every true
+    merge base is one). Shared by M2's inspection and M5's write boundary (Codex F7a), so both judge the same change.
+    HistoryRefused: unrelated histories, a crafted tree or name, too many paths; UnprovenMergeBases; other
+    CoordinatorError / OSError: the objects cannot be read or verified."""
+    listed = {c.sha for c in history.commits}
+    boundary = {p for c in history.commits for p in c.parents if p not in listed}
+    merge_bases = git.merge_bases(base_sha, source_sha)
+    if not merge_bases:
+        raise HistoryRefused("the source shares no history with the base (unrelated histories)")
+    unproven = [sha[:12] for sha in merge_bases if sha not in boundary]
+    if unproven:   # every true merge base is a boundary parent of the verified range
+        raise UnprovenMergeBases(f"Git's merge base(s) {unproven} are not proven boundary parents of the verified "
+                                 "range: the checkout's object store is inconsistent")
+    with git.reader() as reader:
+        head = next(c for c in history.commits if c.sha == source_sha)
+        base_tree = reader.read(base_sha, strict=False).tree
+        merge_base_trees = [reader.read(sha, strict=False).tree for sha in merge_bases]
+        return changed_paths(reader, history.commits, source_tree=head.tree, base_tree=base_tree,
+                             merge_base_trees=merge_base_trees)
 
 
 class IntegrationInspector:  # pylint: disable=too-many-instance-attributes
@@ -519,24 +547,11 @@ class IntegrationInspector:  # pylint: disable=too-many-instance-attributes
 
     def _paths(self, job: IntegrationJob, approval: dict[str, Any], history: VerifiedRange,
                result: InspectionResult) -> None:
-        listed = {c.sha for c in history.commits}
-        boundary = {p for c in history.commits for p in c.parents if p not in listed}
         try:
-            merge_bases = self.git.merge_bases(job.base["expected_sha"], job.source["sha"])
-            if not merge_bases:
-                result.refuse("paths", "the source shares no history with the base (unrelated histories)")
-                return
-            unproven = [sha[:12] for sha in merge_bases if sha not in boundary]
-            if unproven:   # every true merge base is a boundary parent of the verified range
-                result.defer("paths", f"Git's merge base(s) {unproven} are not proven boundary parents of the "
-                                      "verified range: the checkout's object store is inconsistent")
-                return
-            with self.git.reader() as reader:
-                head = next(c for c in history.commits if c.sha == job.source["sha"])
-                base_tree = reader.read(job.base["expected_sha"], strict=False).tree
-                merge_base_trees = [reader.read(sha, strict=False).tree for sha in merge_bases]
-                changes = changed_paths(reader, history.commits, source_tree=head.tree, base_tree=base_tree,
-                                        merge_base_trees=merge_base_trees)
+            changes = history_changes(self.git, history, job.base["expected_sha"], job.source["sha"])
+        except UnprovenMergeBases as exc:
+            result.defer("paths", str(exc))
+            return
         except HistoryRefused as exc:
             result.refuse("paths", str(exc))
             return

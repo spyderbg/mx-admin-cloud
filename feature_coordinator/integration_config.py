@@ -1,4 +1,4 @@
-"""W4.7 (M1, M2, M3): the `github.integration` configuration section — integration jobs for an EXISTING branch or PR
+"""W4.7 (M1-M5): the `github.integration` configuration section — integration jobs for an EXISTING branch or PR
 (integration.py, integration_intake.py, integration_inspect.py; design:
 docs_agents/coordination/existing-branch-integration-design.md).
 
@@ -33,6 +33,16 @@ merge.
                      never FAIL or PASS. Default: {coordinator-tests: 1800} (the Coordinator suite runs longer than
                      900 s); giving the key replaces the default mapping.
 
+    required_checks  (M5) names of the GitHub check runs / commit-status contexts that must be SUCCESSFUL on the PR head
+                     (the approved source SHA) before `integration merge --apply` merges. Empty (default): none is
+                     required — reported as `not-configured`, never as passed (the project has no branch protection or
+                     CI on its current plan, docs_agents/discovery/README.md SEC-7); GitHub's own `mergeable_state`
+                     is still checked.
+    post_merge_checks (M5) names of the check runs / statuses that must be successful on the actual merge commit before
+                     the job is COMPLETED. Empty: `not-configured` is recorded explicitly and verification rests on
+                     the PR, the commit's parents and its tree; a configured check that is pending, missing or
+                     unavailable keeps the job MERGED (pending verification), a failed one makes it FAILED.
+
 The permitted source repository is `github.repository` itself (the M1 allowlist; refs are resolved through the
 checkout's `origin`, which must be exactly that repository). Remote reads use `github.publish.git_timeout_seconds`.
 """
@@ -55,6 +65,8 @@ DEFAULT_UNOWNED_GATES = ("coordinator-tests",)
 DEFAULT_GATE_TIMEOUTS: Mapping[str, int] = {"coordinator-tests": 1800}
 MAX_GATE_TIMEOUT = 86400
 MAX_GATE_TIMEOUTS = 100
+MAX_CHECKS = 20
+_CHECK_NAME_RE = re.compile(r"[^\x00-\x1f\x7f]{1,100}")
 
 
 @dataclass(frozen=True)
@@ -68,6 +80,8 @@ class GitHubIntegrationConfig:
     trusted_logins: tuple[str, ...] = ()  # M2: logins trusted for GitHub attribution and verified signatures
     unowned_gates: tuple[str, ...] = DEFAULT_UNOWNED_GATES  # M3: gate names required for paths no role owns
     gate_timeouts: Mapping[str, int] = field(default_factory=lambda: dict(DEFAULT_GATE_TIMEOUTS))  # M3: seconds
+    required_checks: tuple[str, ...] = ()      # M5: checks that must pass on the PR head before the merge
+    post_merge_checks: tuple[str, ...] = ()    # M5: checks that must pass on the merge commit before COMPLETED
 
     def __post_init__(self) -> None:
         validate_integration(self)
@@ -117,6 +131,12 @@ def validate_integration(integration: GitHubIntegrationConfig) -> None:
                        for v in timeouts.values()):
         raise ConfigError(f"{where}.gate_timeouts must map at most {MAX_GATE_TIMEOUTS} gate names to whole seconds "
                           f"(1 to {MAX_GATE_TIMEOUT})")
+    for name in ("required_checks", "post_merge_checks"):
+        checks = getattr(integration, name)
+        if not isinstance(checks, tuple) or len(checks) > MAX_CHECKS or len(set(checks)) != len(checks) \
+                or not all(isinstance(c, str) and _CHECK_NAME_RE.fullmatch(c) and c == c.strip() for c in checks):
+            raise ConfigError(f"{where}.{name} must be a list of at most {MAX_CHECKS} distinct check names (one "
+                              "printable line of at most 100 characters each, no surrounding spaces)")
     signers = integration.allowed_signers
     if not isinstance(signers, str) or len(signers) > MAX_PATH or re.search(r"[\x00-\x1f\x7f]", signers) \
             or (signers and not signers.startswith("/")):
@@ -154,6 +174,13 @@ def integration_from_mapping(data: Mapping[str, Any]) -> GitHubIntegrationConfig
         if not isinstance(raw, Mapping):
             raise ConfigError("github.integration.gate_timeouts must map gate names to seconds")
         values["gate_timeouts"] = {str(name).strip(): seconds for name, seconds in raw.items()}
+    for name in ("required_checks", "post_merge_checks"):
+        if name in data:
+            raw = data[name] or ()
+            if isinstance(raw, (str, bytes)) or not isinstance(raw, (list, tuple)) \
+                    or not all(isinstance(item, str) for item in raw):
+                raise ConfigError(f"github.integration.{name} must be a list of check names")
+            values[name] = tuple(item.strip() for item in raw)
     for name in ("operators", "trusted_logins"):
         if name in data:
             raw = data[name] or ()

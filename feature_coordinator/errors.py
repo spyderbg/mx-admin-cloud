@@ -106,6 +106,16 @@ class PullRequestPolicyError(CoordinatorError):
     """The one-feature/one-final-PR policy would be violated."""
 
 
+class IntegrationWriteRefused(PullRequestPolicyError):
+    """W4.7 M5 (Codex F1): the write boundary of an integration job's GitHub write found no current authorization in
+    the persisted job (signed merge approval, recorded intent, candidate, policy). NOTHING reached GitHub: the
+    refusal happens before the request is built, so the caller may treat the operation as definitely not submitted."""
+
+    def __init__(self, reasons: list[str]) -> None:
+        super().__init__("; ".join(reasons) or "the integration write is not authorized")
+        self.reasons = reasons
+
+
 class TrackerError(CoordinatorError):
     """The issue tracker refused an operation (foreign issue, duplicate, unknown issue)."""
 

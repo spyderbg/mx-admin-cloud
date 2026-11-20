@@ -29,6 +29,9 @@ Evidence (append-only; every entry refers only to EARLIER entries, ids are `<pre
                       (`unavailable`, `cancelled` and `not-started` are given back), the validated answer and its
                       outcome (only for `ok`; the outcome must be review_result.decide()'s for that answer and the
                       attempt's coordinator notes), the digests of the raw answer and of the result file;
+  * merge-pr, merge-attempt, merge-outcome (M5, integration_merge_schema.py) — the PR a merge goes through, the
+                      write-ahead INTENT of one GitHub write (PR creation or merge) under the signed merge approval,
+                      and how that write ended;
   * review (M4)      — the review DECISION for the candidate: PASS / PASS_WITH_NOTES / REQUEST_CHANGES carry exactly the
                       answer of an `ok` run of the decided attempt; ERROR follows a run without a valid answer. It
                       repeats the attempt's bindings (candidate, SHAs, approval, validation, plan, round, reviewer,
@@ -42,9 +45,11 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from typing import Any, Mapping
+from datetime import datetime, timezone
+from typing import Any, Callable, Mapping
 
 from .errors import CoordinatorError
+from .model import check_id
 from .review_result import BLOCKING, SEVERITIES, VERDICTS, Review, decide
 
 SHA_RE = re.compile(r"[0-9a-f]{40}")
@@ -125,10 +130,16 @@ MAX_EVIDENCE = 500
 # Evidence ids are `<prefix>-<position in the evidence list>` for every kind (M2's `ins-NNNN` rule, unchanged).
 EVIDENCE_PREFIXES: Mapping[str, str] = {"inspection": "ins", "candidate": "can", "attempt": "att", "gate": "gat",
                                          "validation": "val", "review-attempt": "rva", "review-run": "rvr",
-                                         "review": "rev"}
+                                         "review": "rev", "merge-pr": "mpr", "merge-attempt": "mat",
+                                         "merge-dispatch": "mdi", "merge-outcome": "mou"}
 
 
 _EVIDENCE_KINDS = {prefix: kind for kind, prefix in EVIDENCE_PREFIXES.items()}
+
+
+# Evidence kinds that a later milestone adds register their checker here (kind → checker(job, entry, where, earlier)):
+# integration_merge_schema.py (M5) does, and integration.py imports it, so no record is ever validated without it.
+EVIDENCE_CHECKERS: dict[str, Callable[[Any, dict[str, Any], str, Mapping[str, dict[str, Any]]], None]] = {}
 
 
 _EVIDENCE_ID_RE = re.compile(r"([a-z]{3})-(\d{4})")
@@ -213,6 +224,74 @@ MAX_REVIEW_FINDINGS = 100        # github.review.max_findings is at most 100
 MAX_REVIEW_NOTES = 20
 
 
+# -- the primitive validators of an intake request, a job ID and an authorization record's times (moved here from
+# integration.py, which re-exports them; integration_merge_record.py needs them without importing integration.py) --
+
+APPROVAL_KIND = "w47-integration-approval"
+_JOB_ID_RE = re.compile(r"int-(\d{8})-(\d{4,6})")
+_RECORD_TIME_RE = re.compile(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,6}))?Z")
+
+
+_REPO_RE = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}")
+_REF_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,199}")
+
+
+def check_sha(value: Any, label: str) -> str:
+    """A full 40-character lowercase hexadecimal commit SHA (never abbreviated), else IntegrationError."""
+    if not isinstance(value, str) or not SHA_RE.fullmatch(value):
+        raise IntegrationError(f"{label} must be the full 40-character lowercase hexadecimal commit SHA "
+                               f"(abbreviated, uppercase or symbolic values are refused), got {_shown(value)}")
+    return value
+
+
+def check_ref(value: Any, label: str) -> str:
+    """A plain branch name (no `refs/` prefix, no revision syntax), conservatively validated."""
+    if not isinstance(value, str) or not _REF_RE.fullmatch(value):
+        raise IntegrationError(f"{label} must be a branch name (letters, digits, '.', '_', '-', '/'), got "
+                               f"{_shown(value)}")
+    parts = value.split("/")
+    if (value.startswith("refs/") or any(not p or p.startswith(".") or p.endswith(".lock") for p in parts)
+            or ".." in value or value.endswith((".", "/")) or value == "HEAD"):
+        raise IntegrationError(f"{label} {value!r} is not a valid plain branch name")
+    return value
+
+
+def check_repo(value: Any, label: str) -> str:
+    """owner/name."""
+    if not isinstance(value, str) or not _REPO_RE.fullmatch(value) or value.endswith((".git", ".")):
+        raise IntegrationError(f"{label} must be 'owner/name', got {_shown(value)}")
+    return value
+
+
+def check_number(value: Any, label: str) -> int:
+    """A positive integer (an Issue or PR number)."""
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 10_000_000:
+        raise IntegrationError(f"{label} must be a positive integer, got {_shown(value)}")
+    return value
+
+
+def parse_record_time(value: Any, label: str) -> datetime:
+    """A UTC timestamp `YYYY-MM-DDTHH:MM:SS[.f…]Z` (1 to 6 fractional digits) of an authorization record, as an
+    aware datetime with its FULL precision: `…:00.9Z` is 900 ms after `…:00.1Z` (approvals are ordered by it, so a
+    truncated fraction would make two distinct records look simultaneous). More than 6 digits are refused."""
+    match = _RECORD_TIME_RE.fullmatch(value) if isinstance(value, str) else None
+    if match is None:
+        raise IntegrationError(f"{label} must be a UTC timestamp like 2026-11-12T09:00:00Z or "
+                               f"2026-11-12T09:00:00.250000Z, got {_shown(value)}")
+    try:
+        seconds = datetime.strptime(match.group(1), "%Y-%m-%dT%H:%M:%S")
+    except ValueError as exc:
+        raise IntegrationError(f"{label} is not a valid date and time: {_shown(value)}") from exc
+    return seconds.replace(microsecond=int((match.group(2) or "").ljust(6, "0")), tzinfo=timezone.utc)
+
+
+def check_job_id(value: Any) -> str:
+    """`int-YYYYMMDD-NNNN` (design §8.2), also a valid state-store record ID."""
+    if not isinstance(value, str) or not _JOB_ID_RE.fullmatch(value):
+        raise IntegrationError(f"invalid integration job ID {_shown(value)} (expected int-YYYYMMDD-NNNN)")
+    return check_id(value, "integration job id")
+
+
 def check_path_text(value: Any, label: str = "path") -> str:
     """A repository-relative POSIX path as an operator names it in an authorization record (no glob, no `..`)."""
     valid = isinstance(value, str) and 0 < len(value) <= MAX_PATH_TEXT and not value.startswith("/")
@@ -262,7 +341,7 @@ def inspection_digest(entry: Mapping[str, Any]) -> str:
 evidence_digest = inspection_digest
 
 
-def _check_evidence(job: "IntegrationJob") -> None:
+def _check_evidence(job: "IntegrationJob") -> None:  # pylint: disable=too-many-branches
     """Every evidence entry, by kind. Entries may only refer to EARLIER entries (append-only audit trail)."""
     _expect(len(job.evidence) <= MAX_EVIDENCE, f"at most {MAX_EVIDENCE} evidence entries")
     approval_ids = {entry["id"] for entry in job.approvals}
@@ -297,8 +376,13 @@ def _check_evidence(job: "IntegrationJob") -> None:
             _check_review_attempt_entry(job, entry, where, approval_ids, earlier)
         elif kind == "review-run":
             _check_review_run_entry(entry, where, earlier)
-        else:
+        elif kind == "review":
             _check_review_entry(job, entry, where, approval_ids, earlier)
+        else:   # M5: merge-pr, merge-attempt, merge-dispatch, merge-outcome — integration_merge_schema.py's checker
+            checker = EVIDENCE_CHECKERS.get(kind)
+            _expect(checker is not None, f"{where}: no checker for the evidence kind {kind!r}")
+            assert checker is not None
+            checker(job, entry, where, earlier)
         _expect(_is_time(entry["at"]), f"{where}: at must be a timestamp")
         _expect(_is_text_list(entry.get("reasons", [])) and len(entry.get("reasons", [])) <= 20,
                 f"{where}: reasons must be at most 20 texts")
@@ -520,7 +604,8 @@ def _check_candidate(job: "IntegrationJob") -> None:
             "attempt, gate, validation and review evidence must name the job's built candidate")
 
 
-_CANDIDATE_BOUND = ("attempt", "gate", "validation", "review-attempt", "review-run", "review")
+_CANDIDATE_BOUND = ("attempt", "gate", "validation", "review-attempt", "review-run", "review", "merge-pr",
+                    "merge-attempt", "merge-outcome")
 
 
 # -- M4: review evidence ------------------------------------------------------------------------------------------
@@ -758,6 +843,51 @@ def pending_answer(job: "IntegrationJob") -> dict[str, Any] | None:
     if run is None or run["status"] != "ok" or review_decision(job, attempts[-1]) is not None:
         return None
     return run
+
+
+# -- M3 evidence accessors (moved here from integration.py, which re-exports them) --------------------------------
+
+def latest_evidence(job: "IntegrationJob", kind: str) -> dict[str, Any] | None:
+    """The newest evidence entry of *kind*, or None."""
+    entries = [entry for entry in job.evidence if entry.get("kind") == kind]
+    return entries[-1] if entries else None
+
+
+def current_gate_evidence(job: "IntegrationJob") -> dict[str, dict[str, Any]]:
+    """gate name → its newest gate evidence entry for the job's candidate (empty without a candidate). Gate evidence is
+    bound to the candidate's immutable head and tree SHAs (validate_job), so every entry here is about exactly the
+    content of that candidate."""
+    return _candidate_gates(job)
+
+
+def recorded_failures(job: "IntegrationJob") -> dict[str, dict[str, Any]]:
+    """gate name → the newest FAIL recorded for the job's candidate under ANY gate definition (Codex review of M3, F1).
+    The candidate's content is immutable, so a recorded failure is a fact about it: it is never re-run (not after a
+    changed timeout or command either), never dropped when the gate leaves the plan, and every later validation
+    decision is `failed` (integration_schema). The resolution is explicit: NEEDS_REPAIR, or abort and a new job."""
+    return _candidate_gates(job, "FAIL")
+
+
+def _candidate_gates(job: "IntegrationJob", result: str | None = None) -> dict[str, dict[str, Any]]:
+    if job.candidate is None:
+        return {}
+    newest: dict[str, dict[str, Any]] = {}
+    identity = (job.candidate["head_sha"], job.candidate["tree_sha"])
+    for entry in job.evidence:
+        if entry.get("kind") == "gate" and (entry["head_sha"], entry["tree_sha"]) == identity \
+                and (result is None or entry["result"] == result):
+            newest[entry["gate"]] = entry
+    return newest
+
+
+def open_attempt(job: "IntegrationJob") -> dict[str, Any] | None:
+    """The newest validation attempt of the job's candidate when no validation decision names it — an attempt that is
+    running or was interrupted before its decision (Codex review of M3, F2) — else None (completed, or none yet)."""
+    attempt = latest_evidence(job, "attempt")
+    if attempt is None or job.candidate is None or attempt["candidate"] != job.candidate["evidence"]:
+        return None
+    decided = any(entry.get("kind") == "validation" and entry["attempt"] == attempt["id"] for entry in job.evidence)
+    return None if decided else attempt
 
 
 def _is_sha(value: Any) -> bool:

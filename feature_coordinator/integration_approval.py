@@ -23,10 +23,16 @@ or PR state is ever read as an approval):
     pinned values exactly (an identical request under another job ID needs its own approval).
   * Time: `issued_at` not in the future (5 minutes clock skew), `expires_at` in the future, and at most
     MAX_LIFETIME after `issued_at`.
-  * Scope: `stage` is `inspect` (the merge stage is M5); `paths` are exact repository paths (no globs) authorized one
+  * Scope: `stage` is `inspect` (version 1) or, since M5, `merge` (version 2, integration_merge_record.py: it binds the
+    candidate, the validation and review evidence, the PR identity and the merge operation); `paths` are exact
+    repository paths (no globs) authorized one
     by one for the approval-required / unowned / symlink / git-control rules of the inspection (a protected path can
     never be authorized: the record is refused); `accept_unverified_provenance` is the operator's explicit acceptance
     of commits whose identity GitHub cannot verify (it never turns them into verified provenance).
+
+The merge stage (M5) uses exactly this mechanism — same namespace, allowed-signers file, operators, ordering and
+replacement rules per stage — for a job in AWAITING_MERGE_APPROVAL whose M3 validation and M4 review are current
+(`ready`, supplied by the caller: integration_merge_status.merge_approval_blockers).
 
 Recording (--apply): the exact signed text, its SHA-256, the signature and the verified key fingerprint are appended
 to the job's `approvals` (append-only; ids apr-0001, …) with an `integration-approval` event. A refused attempt is
@@ -78,6 +84,7 @@ from .integration import (
     parse_approval_record,
     parse_record_time,
 )
+from .integration_merge_record import INSPECT_STAGE, MERGE_STAGE, binding_of, merge_binding_problems
 from .integration_paths import check_authorizable
 from .model import utc_now
 from .paths import PathPolicy
@@ -85,7 +92,8 @@ from .paths import PathPolicy
 MAX_LIFETIME = timedelta(days=7)
 CLOCK_SKEW = timedelta(minutes=5)
 MAX_ALLOWED_SIGNERS = 1 << 20
-APPROVABLE_STATES = frozenset({JobState.AWAITING_APPROVAL, JobState.INSPECTING})
+APPROVABLE_STATES = frozenset({JobState.AWAITING_APPROVAL, JobState.INSPECTING})   # the inspect stage
+STAGE_STATES = {INSPECT_STAGE: APPROVABLE_STATES, MERGE_STAGE: frozenset({JobState.AWAITING_MERGE_APPROVAL})}
 _GOOD_RE = re.compile(r'Good "(?P<ns>[^"]+)" signature for (?P<principal>\S+) with \S+ key '
                       r'(?P<key>SHA256:[A-Za-z0-9+/]{43})')
 
@@ -210,7 +218,12 @@ def read_record_files(record_path: Path, signature_path: Path | None) -> tuple[s
 def record_problems(job: IntegrationJob, record: dict[str, Any], *, stage: str, config: ProjectConfig,
                     now: datetime) -> list[str]:
     """Why a parsed record does not authorize *stage* of *job* now (empty: it does, signature aside)."""
-    problems = approval_binding_problems(record, job)
+    if record["stage"] == MERGE_STAGE:
+        problems = merge_binding_problems(record, job)
+        if record["repository"].lower() != config.github.repository.lower():
+            problems.append(f"it names the repository {record['repository']}, not {config.github.repository}")
+    else:
+        problems = approval_binding_problems(record, job)
     if record["stage"] != stage:
         problems.append(f"it authorizes the {record['stage']} stage, not {stage}")
     operators = {login.lower() for login in config.github.integration.operators}
@@ -242,7 +255,8 @@ def verify_record(job: IntegrationJob, text: str, signature: str, *, stage: str,
     """(parsed record, verified key fingerprint) or ApprovalRefused listing every problem."""
     try:
         record = parse_approval_record(text)
-        check_authorizable(policy, config, record["paths"])
+        if record["stage"] == INSPECT_STAGE:
+            check_authorizable(policy, config, record["paths"])
     except ApprovalRefused:
         raise
     except IntegrationError as exc:
@@ -274,20 +288,27 @@ def effective_approval_problems(job: IntegrationJob, *, config: ProjectConfig, v
     return entry, [f"approval {entry['id']}: {problem}" for problem in problems]
 
 
-def approve(jobs: IntegrationJobs, config: ProjectConfig, job_id: str, *, stage: str, record_path: Path,
+def approve(jobs: IntegrationJobs, config: ProjectConfig, job_id: str, *, stage: str, record_path: Path,  # pylint: disable=too-many-locals,too-many-arguments
             signature_path: Path | None, verifier: SshSignatureVerifier, policy: PathPolicy, apply: bool,
-            clock: Callable[[], datetime] = now_utc) -> dict[str, Any]:
+            clock: Callable[[], datetime] = now_utc,
+            ready: Callable[[IntegrationJob], list[str]] | None = None) -> dict[str, Any]:
     """Verify an authorization record for *job_id* and (with *apply*) append it to the job's approvals. Returns
     {outcome, changed, reasons, approval, effective, job} with outcome would-record | recorded | existing | refused;
-    `effective` says whether the (new or replayed) record is, or would be, the job's effective approval."""
+    `effective` says whether the (new or replayed) record is, or would be, the job's effective approval. *ready*
+    (M5, the merge stage): the reasons the job's evidence does not allow this stage's approval now — checked before
+    the signature and again inside the transaction that appends it."""
     job = jobs.load(job_id)
     reasons: list[str] = []
     record_sha = ""
     try:
-        if job.state not in APPROVABLE_STATES:
-            raise ApprovalRefused(f"{job_id} is {job.state.value}: only a job in AWAITING_APPROVAL or INSPECTING takes "
-                                  "an inspect approval" + (" (terminal jobs are never reopened)" if job.terminal
-                                                           else ""))
+        if job.state not in STAGE_STATES[stage]:
+            states = " or ".join(sorted(s.value for s in STAGE_STATES[stage]))
+            article = "an" if stage == "inspect" else "a"
+            raise ApprovalRefused(f"{job_id} is {job.state.value}: only a job in {states} takes {article} {stage} "
+                                  "approval" + (" (terminal jobs are never reopened)" if job.terminal else ""))
+        not_ready = ready(job) if ready is not None else []
+        if not_ready:
+            raise ApprovalRefused("; ".join(not_ready))
         text, signature = read_record_files(record_path, signature_path)
         record_sha = _sha256(text)
         record, fingerprint = verify_record(job, text, signature, stage=stage, config=config, verifier=verifier,
@@ -316,7 +337,8 @@ def approve(jobs: IntegrationJobs, config: ProjectConfig, job_id: str, *, stage:
         # Atomic replacement: the job is re-read under the coordinator lock and the duplicate, ordering and time
         # checks are repeated there, so a concurrent approve (or a slow verification) cannot interleave.
         job = jobs.load(job_id)
-        late = [] if job.state in APPROVABLE_STATES else [f"{job_id} became {job.state.value} meanwhile"]
+        late = [] if job.state in STAGE_STATES[stage] else [f"{job_id} became {job.state.value} meanwhile"]
+        late += (ready(job) if ready is not None and not late else [])
         settled = None if late else _settled(job, record, record_sha)
         if settled is not None and settled["outcome"] == "existing":
             return settled
@@ -382,14 +404,19 @@ def _sha256(text: str) -> str:
 
 
 def _entry(record: dict[str, Any], text: str, signature: str, fingerprint: str, approval_id: str) -> dict[str, Any]:
-    return {"id": approval_id, "stage": record["stage"], "operator": record["operator"],
-            "issued_at": record["issued_at"], "expires_at": record["expires_at"], "source_sha": record["source"]["sha"],
-            "base_sha": record["base"]["sha"], "issue": record["issue"], "pr": record["pr"], "paths": record["paths"],
-            "accept_unverified_provenance": record["accept_unverified_provenance"], "note": record.get("note", ""),
-            "record": text, "record_sha256": _sha256(text), "signature": signature,
-            "signer": {"method": "ssh-sig", "namespace": APPROVAL_NAMESPACE, "principal": record["operator"],
-                       "key": fingerprint},
-            "recorded_at": utc_now(), "actor": record["operator"]}
+    entry = {"id": approval_id, "stage": record["stage"], "operator": record["operator"],
+             "issued_at": record["issued_at"], "expires_at": record["expires_at"],
+             "source_sha": record["source"]["sha"], "base_sha": record["base"]["sha"], "issue": record["issue"],
+             "pr": record["pr"],
+             "paths": record.get("paths", []),
+             "accept_unverified_provenance": record.get("accept_unverified_provenance", False),
+             "note": record.get("note", ""), "record": text, "record_sha256": _sha256(text), "signature": signature,
+             "signer": {"method": "ssh-sig", "namespace": APPROVAL_NAMESPACE, "principal": record["operator"],
+                        "key": fingerprint},
+             "recorded_at": utc_now(), "actor": record["operator"]}
+    if record["stage"] == MERGE_STAGE:
+        entry["merge"] = binding_of(record)   # the signed merge-specific values (candidate, evidence, authorizes)
+    return entry
 
 
 def approval_view(entry: dict[str, Any]) -> dict[str, Any]:
@@ -398,7 +425,7 @@ def approval_view(entry: dict[str, Any]) -> dict[str, Any]:
 
 
 def check_stage(value: str) -> str:
-    """`inspect` (M2); `merge` is M5."""
-    if value != "inspect":
-        raise IntegrationError(f"--stage {value!r}: only the inspect stage exists in M2 (the merge stage is M5)")
+    """`inspect` (M2) or `merge` (M5)."""
+    if value not in STAGE_STATES:
+        raise IntegrationError(f"--stage {value!r}: the stages are {', '.join(STAGE_STATES)}")
     return value

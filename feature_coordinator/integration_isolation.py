@@ -164,6 +164,54 @@ def isolated_remote_head(repo: IsolatedRepository, url: str, branch: str, *, tim
     return None
 
 
+FETCHED_REF = "refs/integration/fetched"
+
+
+def isolated_fetch(repo: IsolatedRepository, url: str, branch: str, *, negotiation_tips: tuple[str, ...],
+                   timeout: float) -> str:
+    """W4.7 M5 (post-merge verification): fetch refs/heads/<branch> of *url* into the PRIVATE repository — objects
+    and one
+    private ref (FETCHED_REF) — and return the fetched tip. The same isolation as `ls-remote`: the checkout is never the
+    repository, the URL is the one validated at preflight (on the command line), only https and ssh (and `file` for the
+    tests' local remotes) are allowed, no hook, tag, submodule or FETCH_HEAD file, no automatic gc. *negotiation_tips*
+    (commits the checkout already has, e.g. the pinned base and source) keep the transfer to the objects the merge
+    added.
+    Nothing here writes the checkout: the objects land in the private object store (the checkout's are read through the
+    alternate); what is fetched is read afterwards ONLY through the hash-verifying reader. RemoteUnavailableError when
+    Git fails or does not finish in time."""
+    if not url or url.startswith("-") or _CONTROL_RE.search(url):
+        raise RemoteUnavailableError(f"refusing to fetch from the remote URL {url[:80]!r}")
+    if not _REF_RE.fullmatch(branch) or not all(_SHA_RE.fullmatch(tip) for tip in negotiation_tips):
+        raise RemoteUnavailableError(f"refusing to fetch {branch[:80]!r} with those negotiation tips")
+    fetch = repo.argv(*NETWORK_ARGS, "fetch", "--quiet", "--no-tags", "--no-write-fetch-head",
+                      "--no-recurse-submodules", "--no-auto-gc",
+                      *(f"--negotiation-tip={tip}" for tip in negotiation_tips), "--", url,
+                      f"+refs/heads/{branch}:{FETCHED_REF}")
+    _run_remote(fetch, timeout, "git fetch")
+    out = _run_remote(repo.argv("rev-parse", "--verify", "--quiet", f"{FETCHED_REF}^{{commit}}"), timeout,
+                      "git rev-parse").strip()
+    if not _SHA_RE.fullmatch(out):
+        raise RemoteUnavailableError(f"git fetch did not produce {FETCHED_REF}")
+    return out
+
+
+def _run_remote(argv: list[str], timeout: float, what: str) -> str:
+    proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,  # pylint: disable=consider-using-with
+                            stdin=subprocess.DEVNULL, text=True, env=hardened_env(), start_new_session=True)
+    try:
+        out, err = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, 9)
+        except (ProcessLookupError, PermissionError):
+            proc.kill()
+        proc.communicate()
+        raise RemoteUnavailableError(f"{what} did not finish within {timeout:.0f}s") from None
+    if proc.returncode != 0:
+        raise RemoteUnavailableError(f"{what} failed: {' '.join((err or out or '').split())[-300:]}")
+    return out
+
+
 # ---------------------------------------------------------------------------
 # The strict configuration scan (a superset of gitsafe.execution_findings)
 # ---------------------------------------------------------------------------

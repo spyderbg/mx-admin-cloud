@@ -105,7 +105,7 @@ from .integration_gates import CandidateGateRunner, PlannedGate, Toolchain, gate
 from .integration_inspect import IntegrationInspector
 from .integration_intake import MAX_LISTED, ReadOnlyGit
 from .integration_objects import HistoryRefused
-from .integration_paths import ClassifiedPaths, classify_paths
+from .integration_paths import ClassifiedPaths, classify_paths, path_class
 from .issue_sync import SimulatedCrash
 from .locks import FileLock
 from .model import GateResult, utc_now
@@ -910,14 +910,33 @@ class IntegrationValidator:  # pylint: disable=too-many-instance-attributes
         return gates, decisive
 
 
-def validated_for(job: IntegrationJob, config: ProjectConfig) -> bool:
-    """integration.validated for the gate plan the CURRENT configuration derives for the job's recorded candidate paths:
-    a decision for another plan (a gate added, removed or redefined — another command, timeout or reason) is not
-    current; `validate --apply` then records a new attempt and decision (Codex review of M3, F1). M4's starting
-    point, together with re-verifying the pinned values and the candidate."""
+def current_paths(job: IntegrationJob, config: ProjectConfig) -> list[dict[str, Any]]:
+    """The candidate's recorded changed paths with the class and owning role *config* gives them NOW
+    (integration_paths.path_class — lexical: patterns only, the root is never consulted), never the role recorded under
+    an older configuration: a path whose owner changed needs the new owner's gates (Codex F7b)."""
+    assert job.candidate is not None
+    policy = PathPolicy(Path("/"), config)
+    return [{**entry, **dict(zip(("class", "role"), path_class(policy, config, entry["path"])))}
+            for entry in job.candidate["paths"]]
+
+
+def current_plan_sha256(job: IntegrationJob, config: ProjectConfig,
+                        paths: Iterable[Mapping[str, Any]] | None = None) -> str:
+    """The digest of the gate plan *config* derives for the candidate's paths as classified NOW (*paths*: a caller's
+    own current classification — M4/M5 pass the rebuilt candidate's, the write boundary its own from verified objects;
+    default current_paths)."""
+    return plan_view(gate_plan(current_paths(job, config) if paths is None else paths, config))["sha256"]
+
+
+def validated_for(job: IntegrationJob, config: ProjectConfig, paths: Iterable[Mapping[str, Any]] | None = None) -> bool:
+    """integration.validated for the gate plan the CURRENT configuration derives for the candidate's paths, classified
+    under it (current_plan_sha256: the owning roles too, Codex F7b): a decision for another plan (a gate added, removed
+    or redefined — another command, timeout or reason —, or a path that changed owner) is not current; `validate
+    --apply` then records a new attempt and decision (Codex review of M3, F1). M4's starting point, together with
+    re-verifying the pinned values and the candidate."""
     if job.candidate is None:
         return False
-    return validated(job, plan_view(gate_plan(job.candidate["paths"], config))["sha256"])
+    return validated(job, current_plan_sha256(job, config, paths))
 
 
 class _Undecided(Exception):

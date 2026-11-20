@@ -48,8 +48,11 @@ classification is LEXICAL (patterns only): the live checkout's files and symlink
 required and unowned paths, added or changed symlinks and git-control files need an explicit per-path authorization
 in the operator's signed record (design §6.2); a gitlink, a symlink whose target is absolute, leaves the repository,
 enters `.git`, is or contains a protected path, a symlink kept in the source tip that does not resolve to a regular file
-of that tree (a directory could expose `**/.env`; a chain, a dangling link or a submodule cannot be judged), a
-malformed name, and more than MAX_CHANGED_PATHS paths refuse the job (split the source; never truncated, §6.3).
+of that tree (a directory could expose `**/.env`; a chain, a dangling link or a submodule cannot be judged) — and,
+the same rule for the source HISTORY (Codex F7a, independent review), a symlink that does not resolve to a regular file
+in the tree of every range commit in which it exists (a history-only symlink to a directory, through a directory
+symlink, along a chain or to nothing would escape the lexical target check) —, a malformed name, and more than
+MAX_CHANGED_PATHS paths refuse the job (split the source; never truncated, §6.3).
 """
 
 from __future__ import annotations
@@ -157,6 +160,8 @@ class PathChange:
     link_targets: set[str] = field(default_factory=set)   # blob IDs (then texts) of the symlink targets it is set to
     commits: int = 0
     tip_target: str | None = None     # a symlink in the source tip: the kind its target resolves to there
+    link_trees: set[tuple[str, str]] = field(default_factory=set)  # (commit tree, symlink blob): every range commit
+    history_kinds: set[str] = field(default_factory=set)   # in which it is a symlink; the kinds it resolves to there
 
 
 class TreeReader:
@@ -302,6 +307,12 @@ def changed_paths(reader: _CommitReader, commits: Iterable[CommitObject], *, sou
     for merge_base_tree in merge_base_trees:
         _aggregate(union, trees.diff(merge_base_tree, source_tree, limit=MAX_CHANGED_PATHS))
         _check_count(union)
+    for raw_path, item in union.items():   # every commit in which a path the range sets to a symlink is one
+        if "symlink" in item.flags:
+            for commit in commits:
+                entry = trees.lookup(commit.tree, raw_path)
+                if entry is not None and entry.mode == LINK:
+                    item.link_trees.add((commit.tree, entry.sha))
     return _finish(trees, union, tip_tree=source_tree, base_tree=base_tree)
 
 
@@ -339,6 +350,8 @@ def _finish(trees: TreeReader, union: dict[bytes, PathChange], *, tip_tree: str,
         if tip is not None and tip.mode == LINK:
             item.tip_target = _tip_target_kind(trees, tip_tree, path, _link_text(trees, tip.sha))
         item.link_targets = {_link_text(trees, sha) for sha in sorted(item.link_targets)}
+        item.history_kinds = {_tip_target_kind(trees, tree, path, _link_text(trees, sha))
+                              for tree, sha in sorted(item.link_trees)}
         result[path] = item
     return dict(sorted(result.items()))
 
@@ -414,13 +427,14 @@ def symlink_problem(config: ProjectConfig, path: str, target: str) -> str | None
     return f"symlink {path} {problem}" if problem else None
 
 
-def tip_target_problem(path: str, kind: str | None) -> str | None:
-    """A symlink that stays in the source tip must resolve to a regular file of that tree: a directory could expose
-    protected files at any depth (`**/.env`), and a missing target, a chain or a submodule cannot be judged."""
+def tip_target_problem(path: str, kind: str | None, where: str = "the source tip") -> str | None:
+    """A symlink that stays in the source tip — or, *where* "a commit of the source history", exists in any commit of
+    the range — must resolve to a regular file of that tree: a directory could expose protected files at any depth
+    (`**/.env`), and a missing target, a chain or a submodule cannot be judged."""
     if kind is None or kind in ("file", "outside"):   # outside: already refused by symlink_problem
         return None
     shown = {"tree": "a directory", "link": "another symlink", "gitlink": "a submodule", "missing": "nothing"}[kind]
-    return f"symlink {path} points to {shown} in the source tip; only a symlink to a regular file can be authorized"
+    return f"symlink {path} points to {shown} in {where}; only a symlink to a regular file can be authorized"
 
 
 @dataclass
@@ -456,6 +470,8 @@ def classify_paths(changes: dict[str, PathChange], policy: PathPolicy, config: P
             if problem:
                 reasons.append(problem)
         problem = tip_target_problem(path, item.tip_target)
+        for kind in sorted(item.history_kinds):
+            problem = problem or tip_target_problem(path, kind, "a commit of the source history")
         if problem and not reasons:
             reasons.append(problem)
         needs = cls in ("approval-required", "unowned") or bool(item.flags & {"symlink", "git-control"})
