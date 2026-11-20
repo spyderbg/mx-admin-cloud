@@ -24,24 +24,48 @@ approved GitHub Issue's feature); only Draft PRs from a `feature/` branch, never
 request exists in this client). Any other caller — including the operator-approved Phase 2
 `open_pull_request` — is refused, as in Phase 4.
 
-GraphQL (Phase 4 extension, GitHub Projects): `GitHubClient.graphql()` sends one query or
-mutation through the same transport and the same retry, pacing and rate-limit rules. A
-GraphQL response is HTTP 200 even when it failed, so its `errors` list is classified like an
-HTTP status (NOT_FOUND, FORBIDDEN, INSUFFICIENT_SCOPES, RATE_LIMITED, …). Queries are never
+W4.7 M5 — the integration job's two GitHub writes, and nothing else (integration-jobs.md §58–§61).
+`create_integration_pull_request` opens ONE non-draft PR from the job's source branch into its base;
+`merge_integration_pull_request` merges ONE PR with `merge_method=merge` pinned to the approved head SHA (no squash, no
+rebase). Neither takes a grant, token, flag or authorization object from its caller: immediately before the request the
+client builds integration_authority.IntegrationWriteAuthority ITSELF from the trust anchors `integration merge` bound to
+it once (state directory, checkout, project configuration file; a private binding), and that authority re-derives the
+authorization from the persisted job under one configuration snapshot and records the one-shot dispatch (its module
+docstring lists the checks). A client without anchors, or any problem, raises IntegrationWriteRefused and NOTHING is
+sent. Each write is ONE transmission (no resend after a rate limit or a transport failure; an ambiguous failure raises
+GitHubUncertainWriteError and the caller reconciles first), its facts are plain `str`/`int` values, and its destination
+is its authorized identity: `integration_route` builds the method and path from the repository and the PR number only
+(never from `repo_path`), the boundary compares it with its own before recording anything, and the request core sends
+exactly that request. Defence in depth: the transport is private; on the normalized route (query, fragment,
+percent-encoding, dot segments, repeated slashes, letter case) a PR merge PUT is refused outside its authorized route, a
+PR creation POST outside an authorized integration creation or the publisher's Draft creation, the branch-merge endpoint
+always; GraphQL mutations are an allowlist (below). The Feature Publisher's rules above are untouched. (Arbitrary code
+running inside the coordinator process can replace this client, the authority or the transport: a different threat
+boundary, not one this module claims to close.)
+
+GraphQL (Phase 4 extension, GitHub Projects): `GitHubClient.graphql()` sends one query or mutation through the same
+transport and the same retry, pacing and rate-limit rules. Mutations are an ALLOWLIST of fixed documents (W4.7 M5): a
+document that contains `mutation` anywhere is sent only when its SHA-256 is in `_ALLOWED_MUTATIONS` — the seven
+github_projects.MUTATIONS documents, character for character (no alias, extra operation, fragment, reformatting or
+operation name passes); read-only documents pass. A GraphQL response is HTTP 200 even when it failed, so its `errors`
+list is classified like an HTTP status (NOT_FOUND, FORBIDDEN, INSUFFICIENT_SCOPES, RATE_LIMITED, …). Queries are never
 paced and never counted as writes.
 """
 
 from __future__ import annotations
 
+import contextlib
+import hashlib
 import json
 import os
+import posixpath
 import re
 import signal
 import subprocess
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, Iterable, Mapping, Protocol
-from urllib.parse import quote, urlencode
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Iterator, Mapping, Protocol
+from urllib.parse import quote, unquote, urlencode, urlparse
 
 from .config import GitHubConfig
 from .errors import (
@@ -55,9 +79,13 @@ from .errors import (
     GitHubUncertainWriteError,
     GitHubUnavailableError,
     GitHubValidationError,
+    IntegrationWriteRefused,
     PullRequestPolicyError,
 )
 from .issues import PullRequest, RemoteComment, RemoteIssue, RemoteIssueEvent, check_feature_labels, check_worker_labels
+
+if TYPE_CHECKING:  # pragma: no cover - typing only (the authority module imports this one's users)
+    from .integration_authority import IntegrationAnchors
 
 API_VERSION = "2022-11-28"
 PER_PAGE = 100
@@ -71,6 +99,18 @@ _NODE_ID_RE = re.compile(r"^[A-Za-z0-9_=-]{2,120}$")
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 _REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$")
 _PR_HEAD_RE = re.compile(r"^feature/[a-z0-9][a-z0-9._-]{0,99}$")
+_PR_MERGE_ROUTE_RE = re.compile(r"repos/[^/]+/[^/]+/pulls/[^/]+/merge", re.IGNORECASE)
+_PR_CREATE_ROUTE_RE = re.compile(r"repos/[^/]+/[^/]+/pulls", re.IGNORECASE)
+_BRANCH_MERGE_ROUTE_RE = re.compile(r"repos/[^/]+/[^/]+/merges", re.IGNORECASE)
+_INTEGRATION_REPOSITORY_RE = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}")
+_ALLOWED_MUTATIONS = frozenset({  # W4.7 M5: SHA-256 of github_projects.MUTATIONS (a test keeps them equal)
+    "78564f07962b778589002517553cb34c83383e2f156d069b92116f94745c572a",   # ADD_ITEM
+    "35faed0fd3df8a4cee4ef6550782322afa36f0142d93122b5a8abbd07be81f3f",   # SET_VALUE
+    "b491b05fe3320c739232df42eac3db227164224ae5d50bc64718fdbe296a4585",   # CLEAR_VALUE
+    "1a1dc2326098ba339203b4a948eb3380dc9be04b0b739a6a81d3cc80b727d9c7",   # CREATE_FIELD
+    "b0f7a32adab7f7fef89e025b2439066cc71ec26429eb1c4cad8f215c687ebb0c",   # UPDATE_FIELD
+    "748654a21b3c07a2f102a1eebb1f70d9ec78aabeb30f7a351e705cd3a708bf73",   # CREATE_VIEW
+    "3413c67a05f01e7595457444a33b0a93d92ddc9b78d0b6ef3a49460289a8d88d"})  # UPDATE_VIEW
 GH_ENV = {"GH_PROMPT_DISABLED": "1", "GH_NO_UPDATE_NOTIFIER": "1", "NO_COLOR": "1", "CLICOLOR": "0",
           "GH_PAGER": "cat", "PAGER": "cat", "GH_SPINNER_DISABLED": "1"}
 
@@ -95,6 +135,45 @@ def sanitize(text: Any, limit: int = 300) -> str:
     value = _CONTROL_RE.sub("", value)
     value = " ".join(value.split())
     return value if len(value) <= limit else value[: limit - 1] + "…"
+
+
+def _plain(kind: type, **values: Any) -> None:
+    """The facts of an integration write are PLAIN values (exactly str / int — no subclass whose comparison or
+    conversion could make the request the boundary authorizes differ from the request that is sent)."""
+    odd = [name for name, value in values.items() if type(value) is not kind]  # pylint: disable=unidiomatic-typecheck
+    if odd:
+        raise IntegrationWriteRefused([f"the integration write needs plain {kind.__name__} values: {odd}"])
+
+
+def _route(path: str) -> str:
+    """The route a request path really names, for the guard: no query or fragment, percent-encoding decoded, dot
+    segments resolved, repeated and outer slashes removed (`repos/o/r/pulls/9/../101/merge/?x` → `repos/o/r/pulls/101/
+    merge`)."""
+    return posixpath.normpath("/" + unquote(urlparse(path).path)).strip("/")
+
+
+def integration_route(operation: str, repository: str, number: int | None = None) -> tuple[str, str]:
+    """The ONE (method, path) of an integration write (Codex F1, routing): built from exact values only — *repository*
+    (`owner/name`) and, for a merge, the PR *number* — never from `repo_path`, a prefix, a suffix or a query. A value
+    that is not exactly that shape is a refusal (nothing is recorded or sent)."""
+    if type(repository) is not str or not _INTEGRATION_REPOSITORY_RE.fullmatch(repository) \
+            or repository.endswith((".git", ".")):  # pylint: disable=unidiomatic-typecheck
+        raise IntegrationWriteRefused([f"an integration write needs the plain owner/name of its repository, not "
+                                       f"{sanitize(repository, 120)!r}"])
+    if operation == "create-pr" and number is None:
+        return "POST", f"repos/{repository}/pulls"
+    if operation == "merge" and type(number) is int and number > 0:  # pylint: disable=unidiomatic-typecheck
+        return "PUT", f"repos/{repository}/pulls/{number}/merge"
+    raise IntegrationWriteRefused([f"no route for the integration write {operation!r} with PR {number!r}"])
+
+
+@dataclass(frozen=True)
+class MergeResponse:
+    """GitHub's answer to a successful `PUT /pulls/{n}/merge`: the merge commit it wrote (validated)."""
+
+    merged: bool
+    sha: str
+    message: str
 
 
 @dataclass(frozen=True)
@@ -386,6 +465,17 @@ def parse_pull(data: Any) -> PullRequest:
                        base_sha=base_sha)
 
 
+def _graphql_allowed(query: Any) -> None:
+    """A document containing `mutation` ANYWHERE (no mutation without that keyword) is sent only when it IS one of
+    the fixed documents (`_ALLOWED_MUTATIONS`); neither the `mutation` flag nor an operation name counts; plain str."""
+    if type(query) is not str:  # pylint: disable=unidiomatic-typecheck  # a subclass could answer `in` / `==` falsely
+        raise IntegrationWriteRefused(["a GraphQL document must be a plain str"])
+    if "mutation" in query.lower() and hashlib.sha256(query.encode("utf-8")).hexdigest() not in _ALLOWED_MUTATIONS:
+        raise IntegrationWriteRefused(["a GraphQL mutation is sent only as one of the GitHub Projects sync's fixed "
+                                       "documents: no GraphQL merge, pull-request, ref, branch or commit mutation and "
+                                       "no unknown one"])
+
+
 def _operation_name(query: str) -> str:
     match = re.match(r"\s*(query|mutation)\s+([A-Za-z_][A-Za-z0-9_]*)", query)
     return match.group(2) if match else "anonymous"
@@ -424,7 +514,7 @@ class GitHubClient:  # pylint: disable=too-many-instance-attributes,too-many-pub
 
     def __init__(self, transport: Transport, settings: GitHubConfig, *, sleep: Callable[[float], None] = time.sleep,
                  clock: Callable[[], float] = time.monotonic, wall: Callable[[], float] = time.time) -> None:
-        self.transport = transport
+        self._transport = transport   # private: the client, not its transport, is the API
         self.settings = settings
         self.repo_path = f"repos/{settings.repository}"
         self.sleep = sleep
@@ -437,6 +527,9 @@ class GitHubClient:  # pylint: disable=too-many-instance-attributes,too-many-pub
         self._last_write = float("-inf")
         self._viewer: str | None = None
         self._authorized: set[tuple[str, str]] = set()  # W4.3.3: (head, base) of the one PR the publisher may open
+        self._integration_anchors: IntegrationAnchors | None = None  # W4.7 M5: bound once, by `integration merge`
+        self._integration_write: tuple[str, str] | None = None  # the ONE authorized (method, path), for one request
+        self._pr_creation = False         # True only inside create_pull_request (the publisher's Draft)
 
     @classmethod
     def from_config(cls, settings: GitHubConfig, **kwargs: Any) -> "GitHubClient":
@@ -474,11 +567,36 @@ class GitHubClient:  # pylint: disable=too-many-instance-attributes,too-many-pub
             return max(int(headers["x-ratelimit-reset"]) - self.wall(), 0) + 1.0
         return 60.0 * (2 ** attempt)  # GitHub: otherwise wait at least one minute, then back off
 
-    def _call(self, method: str, path: str, body: Any = None, *, idempotent: bool,  # pylint: disable=too-many-branches
-              ok: Iterable[int] = (), write: bool | None = None) -> ApiResponse:
+    def _guard(self, method: str, path: str) -> None:
+        """No merge and no PR creation except through the methods made for them (W4.7 M5, defence in depth). While an
+        integration write is authorized, the ONE request it was authorized for — exactly that method and path, once —
+        is the only one allowed. Otherwise a PR merge PUT is refused, a PR creation POST is refused except inside
+        create_pull_request (the publisher's Draft), and GitHub's branch-merge endpoint always. Judged on the
+        normalized route (_route: no query string, fragment, encoding, dot segment or trailing slash slips past)."""
+        granted, self._integration_write = self._integration_write, None   # consumed by the first request
+        if granted is not None:
+            if (method, path) != granted:
+                raise IntegrationWriteRefused([f"the authorized integration write goes to {granted[0]} {granted[1]}; "
+                                               f"nothing else is sent in its place ({method} {sanitize(path, 160)})"])
+            return
+        route = _route(path)
+        if method == "PUT" and _PR_MERGE_ROUTE_RE.fullmatch(route):
+            raise IntegrationWriteRefused(["a pull request is merged only through merge_integration_pull_request, "
+                                           "on the route its write boundary authorized"])
+        if method == "POST" and _BRANCH_MERGE_ROUTE_RE.fullmatch(route):
+            raise IntegrationWriteRefused(["the coordinator never merges branches through GitHub's merge endpoint"])
+        if method == "POST" and _PR_CREATE_ROUTE_RE.fullmatch(route) and not self._pr_creation:
+            raise IntegrationWriteRefused(["a pull request is created only through create_pull_request (the "
+                                           "publisher's Draft) or create_integration_pull_request"])
+
+    def _call(self, method: str, path: str, body: Any = None, *, idempotent: bool,  # pylint: disable=too-many-branches,too-many-arguments
+              ok: Iterable[int] = (), write: bool | None = None, retry: bool = True) -> ApiResponse:
         """Send with bounded retries. *ok* lists extra statuses returned instead of raised.
-        *write* defaults to "not a GET" (a GraphQL query is a POST that writes nothing)."""
+        *write* defaults to "not a GET" (a GraphQL query is a POST that writes nothing). *retry* false: one
+        transmission only (the integration writes: every transmission needs its own authorization at the write
+        boundary, so nothing is resent here after a rate limit or a transport failure)."""
         write = method != "GET" if write is None else write
+        self._guard(method, path)
         ok = set(ok)
         attempt = 0
         while True:
@@ -486,12 +604,12 @@ class GitHubClient:  # pylint: disable=too-many-instance-attributes,too-many-pub
                 self._pace()
             self.requests += 1
             try:
-                resp = self.transport.request(method, path, body)
+                resp = self._transport.request(method, path, body)
             except TransportFailure as exc:
                 self.log.append(f"{method} {path} -> no response")
                 if write and not idempotent and exc.maybe_applied:
                     raise GitHubUncertainWriteError(f"{exc} (the write may have been applied)") from exc
-                if attempt >= self.settings.max_retries:
+                if attempt >= self.settings.max_retries or not retry:
                     raise
                 self.retries += 1
                 self.sleep(self._backoff(attempt))
@@ -505,7 +623,8 @@ class GitHubClient:  # pylint: disable=too-many-instance-attributes,too-many-pub
             wait = self._rate_limit_wait(resp, attempt)
             if wait is not None:
                 # A rate-limited request was rejected, so even a non-idempotent write is safe to resend.
-                if wait > self.settings.max_rate_limit_wait_seconds or attempt >= self.settings.max_retries:
+                if wait > self.settings.max_rate_limit_wait_seconds or attempt >= self.settings.max_retries \
+                        or not retry:
                     raise GitHubRateLimitError(f"{method} {path}: rate limited (retry after {wait:.0f}s): "
                                                f"{resp.message}", status=resp.status)
                 self.retries += 1
@@ -558,6 +677,7 @@ class GitHubClient:  # pylint: disable=too-many-instance-attributes,too-many-pub
         """The `data` of one GraphQL operation. `errors` raise like the matching HTTP status;
         RATE_LIMITED waits (bounded) and retries. A non-idempotent mutation that may have been
         applied raises GitHubUncertainWriteError, exactly like a REST create."""
+        _graphql_allowed(query)
         body = {"query": query, "variables": dict(variables or {})}
         operation = _operation_name(query)
         attempt = 0
@@ -771,7 +891,100 @@ class GitHubClient:  # pylint: disable=too-many-instance-attributes,too-many-pub
         self._authorized.discard((head, base))
         payload = {"title": title[:256], "body": body, "head": head, "base": base, "draft": True,
                    "maintainer_can_modify": False}
-        return parse_pull(self._call("POST", f"{self.repo_path}/pulls", payload, idempotent=False).data)
+        with self._creating():
+            return parse_pull(self._call("POST", f"{self.repo_path}/pulls", payload, idempotent=False).data)
+
+    @contextlib.contextmanager
+    def _creating(self) -> Iterator[None]:
+        self._pr_creation = True
+        try:
+            yield
+        finally:
+            self._pr_creation = False
+
+    # -- W4.7 M5: the integration job's two writes (see the module docstring) -------------------------------------
+
+    def _bind_integration(self, anchors: "IntegrationAnchors") -> None:
+        """Bind the TRUST ANCHORS of this client's integration writes, ONCE (integration_authority.IntegrationAnchors:
+        the state directory, the checkout, the project configuration file). PRIVATE, not part of the client's API: the
+        `integration merge` command binds them while it builds its client, before the workflow gets it; they are never
+        replaced. A caller of the client's public API has no way to bind, replace or supply them."""
+        from .integration_authority import IntegrationAnchors as Anchors  # pylint: disable=import-outside-toplevel
+        if type(anchors) is not Anchors:  # pylint: disable=unidiomatic-typecheck  # data, not a pluggable behaviour
+            raise IntegrationWriteRefused(["the integration anchors must be an IntegrationAnchors"])
+        if self._integration_anchors is not None:
+            raise IntegrationWriteRefused(["the integration anchors of this client are bound once and never replaced"])
+        self._integration_anchors = anchors
+
+    @property
+    def integration_bound(self) -> bool:
+        """True once the trust anchors of the integration writes are bound (read-only)."""
+        return self._integration_anchors is not None
+
+    def _authorize_integration(self, operation: str, job_id: str, attempt: str, request: Mapping[str, Any],  # pylint: disable=too-many-arguments
+                               repository: str, route: tuple[str, str]) -> None:
+        """The write boundary: raises IntegrationWriteRefused (nothing sent) unless the persisted job authorizes exactly
+        this operation, to exactly *route*, now. The caller supplies only WHAT it is about to send and where; whether
+        that is authorized is decided by the concrete authority this client builds from its own anchors
+        (integration_authority.py), never by anything the caller says or supplies."""
+        if not self.settings.integration.enabled:
+            raise IntegrationWriteRefused(["integration GitHub writes are disabled: github.integration.enabled is "
+                                           "false"])
+        anchors = self._integration_anchors
+        if anchors is None:
+            raise IntegrationWriteRefused(["the integration write is not authorized: this GitHub client has no "
+                                           "integration anchors (only `integration merge --project-config FILE` "
+                                           "builds a client that may send an integration write)"])
+        from .integration_authority import IntegrationWriteAuthority  # pylint: disable=import-outside-toplevel
+        IntegrationWriteAuthority(anchors, self).authorize(operation, job_id=job_id, attempt=attempt,
+                                                           repository=repository, request=dict(request), route=route)
+
+    @contextlib.contextmanager
+    def _sending(self, route: tuple[str, str]) -> Iterator[None]:
+        """The request core may send ONE request, to exactly *route* (the authorized one), inside this block."""
+        self._integration_write = route
+        try:
+            yield
+        finally:
+            self._integration_write = None
+
+    def create_integration_pull_request(self, head: str, base: str, title: str, body: str, *, job_id: str,
+                                        attempt: str) -> PullRequest:
+        """`POST /repos/{repo}/pulls`: ONE non-draft PR of an integration job, only when the write boundary finds the
+        persisted `create-pr` *attempt* of *job_id* authorized (not idempotent: the caller looks up first and, after an
+        ambiguous failure, looks up again — never a blind repeat). The route is integration_route's, from the
+        configured repository — `repo_path` plays no part — and is the one the boundary authorized."""
+        _plain(str, head=head, base=base, title=title, body=body, job_id=job_id, attempt=attempt)
+        repository = self.settings.repository
+        route = integration_route("create-pr", repository)
+        self._authorize_integration("create-pr", job_id, attempt, {"head": head, "base": base, "draft": False},
+                                    repository, route)
+        payload = {"title": title[:256], "body": body, "head": head, "base": base, "draft": False,
+                   "maintainer_can_modify": False}
+        with self._sending(route):
+            return parse_pull(self._call(route[0], route[1], payload, idempotent=False, retry=False).data)
+
+    def merge_integration_pull_request(self, number: int, sha: str, *, job_id: str, attempt: str) -> MergeResponse:
+        """`PUT /repos/{repo}/pulls/{number}/merge` with `merge_method=merge` and `sha` = the approved head SHA (GitHub
+        refuses the call, HTTP 409, when the PR head is no longer that SHA), only when the write boundary finds the
+        persisted `merge` *attempt* of *job_id* authorized. Not idempotent: an ambiguous failure raises
+        GitHubUncertainWriteError — the caller reads the PR before anything else. The route is integration_route's,
+        from the configured repository and *number* — `repo_path` plays no part — and is the one the boundary
+        authorized (the recorded intent's PR, bound to the approved head and base)."""
+        _plain(int, number=number)
+        _plain(str, sha=sha, job_id=job_id, attempt=attempt)
+        repository = self.settings.repository
+        route = integration_route("merge", repository, number)
+        self._authorize_integration("merge", job_id, attempt, {"number": number, "merge_method": "merge", "sha": sha},
+                                    repository, route)
+        with self._sending(route):
+            data = self._call(route[0], route[1], {"merge_method": "merge", "sha": sha}, idempotent=False,
+                              retry=False).data
+        if not isinstance(data, dict) or data.get("merged") is not True or not isinstance(data.get("sha"), str) \
+                or not _SHA_RE.fullmatch(data["sha"]):
+            raise GitHubResponseError(f"PUT pulls/{int(number)}/merge: the answer does not confirm a merge commit "
+                                      "(the caller reads the PR to reconcile)")
+        return MergeResponse(merged=True, sha=data["sha"], message=sanitize(data.get("message", ""), 200))
 
     def get_pull_request(self, number: int) -> PullRequest:
         """`GET /repos/{repo}/pulls/{number}` (with `merged` and `merged_by`)."""

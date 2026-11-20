@@ -107,7 +107,6 @@ from .integration import (
 from .integration_approval import SshSignatureVerifier, effective_approval_problems, now_utc, time_problems
 from .integration_candidate import Candidate, CandidateArea, CandidateGit, build_candidate, ensure_repository, \
     identity_problem
-from .integration_gates import gate_plan, plan_view
 from .integration_intake import MAX_LISTED, ReadOnlyGit
 from .integration_objects import HistoryRefused, HistoryUnverifiable
 from .integration_review_context import IssueSpec, ReviewGit, build_candidate_context, independence_problem, \
@@ -115,7 +114,7 @@ from .integration_review_context import IssueSpec, ReviewGit, build_candidate_co
 from .integration_review_process import POLL_SECONDS, REVIEW_SLACK_SECONDS, AttemptProcess, Starter, deadline_text, \
     running_of, run_entry
 from .integration_schema import BLOCKING, UNCOUNTED_RUN_STATUSES
-from .integration_validate import IntegrationValidator, validated_for
+from .integration_validate import IntegrationValidator, current_plan_sha256, validated_for
 from .issue_sync import SimulatedCrash
 from .locks import FileLock
 from .model import utc_now
@@ -404,14 +403,14 @@ class IntegrationReviewer:  # pylint: disable=too-many-instance-attributes,too-m
             reasons = classified.refusals or self.validator._authorization_reasons(classified)  # pylint: disable=protected-access
             self._final(job, JobState.FAILED, [f"the recorded candidate is no longer authorized: {r}" for r in reasons],
                         {}, report, actor, apply)
-        validation, why = self.validation_problem(job)
+        validation, why = self.validation_problem(job, classified.entries)
         if validation is None:
             report.note("validation", "fail", why)
             self._refuse(job, "not-validated", [why], report, apply)
         assert validation is not None
         report.note("validation", "pass", f"validation {validation['id']} passed for candidate "
                                           f"{job.candidate['head_sha'][:12]} under the current gate plan")
-        plan = plan_view(gate_plan(job.candidate["paths"], self.config))["sha256"]
+        plan = current_plan_sha256(job, self.config, classified.entries)
         return _Checked(candidate=candidate, spec=spec, validation=validation, plan_sha256=plan, repo=repo)
 
     def _pinned(self, job: IntegrationJob, report: ReviewJobReport, actor: str, *, apply: bool, when: str) -> None:
@@ -472,11 +471,12 @@ class IntegrationReviewer:  # pylint: disable=too-many-instance-attributes,too-m
                                          "candidate")
         return candidate, repo
 
-    def validation_problem(self, job: IntegrationJob) -> tuple[dict[str, Any] | None, str]:
+    def validation_problem(self, job: IntegrationJob, paths: Any = None) -> tuple[dict[str, Any] | None, str]:
         """(the PASSED validation decision this review relies on, '') when M3's validation is current for the gate
-        plan the current configuration derives (integration_validate.validated_for), else (None, why not)."""
+        plan the current configuration derives for the candidate's paths classified now (*paths*, else current_paths;
+        integration_validate.validated_for), else (None, why not)."""
         assert job.candidate is not None
-        plan = plan_view(gate_plan(job.candidate["paths"], self.config))["sha256"]
+        plan = current_plan_sha256(job, self.config, paths)
         latest = latest_evidence(job, "validation")
         if validated(job, plan) and latest is not None:
             return latest, ""
@@ -981,7 +981,8 @@ def reviewed_for(job: IntegrationJob, config: ProjectConfig) -> dict[str, Any] |
     return review_eligibility(job, config)[0]
 
 
-def review_eligibility(job: IntegrationJob, config: ProjectConfig) -> tuple[dict[str, Any] | None, str]:
+def review_eligibility(job: IntegrationJob, config: ProjectConfig, paths: Any = None,
+                       ) -> tuple[dict[str, Any] | None, str]:
     """(decision, '') for integration.current_review (a PASS / PASS_WITH_NOTES that still applies to the job's
     candidate and its newest, current validation) whose recorded independence the CURRENT policy accepts (F2) and
     whose validation and decision are for the gate plan the CURRENT configuration derives; else (None, why that
@@ -992,7 +993,7 @@ def review_eligibility(job: IntegrationJob, config: ProjectConfig) -> tuple[dict
     refused = independence_problem(config, decision["independence"])
     if refused:
         return None, f"the current reviewer independence requirement is not satisfied: {refused}"
-    plan = plan_view(gate_plan(job.candidate["paths"], config))["sha256"]
-    if not validated_for(job, config) or decision["plan_sha256"] != plan:
+    plan = current_plan_sha256(job, config, paths)   # *paths*: the candidate's paths classified now (Codex F7b)
+    if not validated_for(job, config, paths) or decision["plan_sha256"] != plan:
         return None, "the current configuration derives another gate plan than the review was made for"
     return decision, ""

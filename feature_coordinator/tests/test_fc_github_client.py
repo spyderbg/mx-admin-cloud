@@ -297,4 +297,5 @@ def test_sanitize_redacts_tokens_and_strips_terminal_escapes() -> None:
 def test_gh_is_installed_for_the_live_adapter() -> None:
     if not shutil.which("gh"):
         pytest.skip("gh is not installed on this host")
-    assert GitHubClient.from_config(GitHubConfig()).transport.executable == "gh"  # type: ignore[attr-defined]
+    client = GitHubClient.from_config(GitHubConfig())
+    assert client._transport.executable == "gh"  # type: ignore[attr-defined]  # pylint: disable=protected-access

@@ -91,7 +91,8 @@ FeatureCoordinator (workflow.py) — local state change in StateStore.transactio
           │  resolve + bind the project (identity proof) → layout (fields/options) →
           │  per record: Issue ownership proof → item (recorded | found | added) → values → read-back
           ▼
-       BoardClient: ProjectsClient (GraphQL over the same GitHubClient: retries, pacing, rate limits)
+       BoardClient: ProjectsClient (GraphQL over the same GitHubClient: retries, pacing, rate limits;
+                    the client sends no GraphQL mutation but github_projects.MUTATIONS' seven documents)
                     LocalProjectBoard (tests, rehearsal, --tracker local)
 ```
 

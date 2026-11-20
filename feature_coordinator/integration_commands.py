@@ -1,4 +1,4 @@
-"""W4.7 (M1-M4) commands: `python -m feature_coordinator integration …` — integration jobs of existing branches/PRs.
+"""W4.7 (M1-M5) commands: `python -m feature_coordinator integration …` — integration jobs of existing branches/PRs.
 
     integration intake --source-repo OWNER/NAME --source-ref BRANCH --source-sha SHA --base BRANCH --base-sha SHA
                        --issue N [--pr N] [--supersede JOB] [--actor NAME] [--apply] [--json]
@@ -11,10 +11,12 @@
                             current configuration (reviewed_for); otherwise it is shown as history with the reason
     integration abort --job JOB --reason TEXT [--actor NAME] [--apply] [--json]
                             any state before MERGED → ABORTED (dry run unless --apply; idempotent)
-    integration approve --job JOB --stage inspect --record FILE [--signature FILE] [--apply] [--json]
+    integration approve --job JOB --stage inspect|merge --record FILE [--signature FILE] [--apply] [--json]
                             (M2) verify an operator authorization record signed with `ssh-keygen -Y sign` (default
                             signature: FILE.sig) and bound to the job's pinned SHAs; --apply appends it to the job's
-                            approvals (dry run unless --apply; idempotent)
+                            approvals (dry run unless --apply; idempotent). (M5) --stage merge: the version 2 record
+                            that binds the candidate, the validation and review evidence, the PR identity and the merge
+                            operation — for a job in AWAITING_MERGE_APPROVAL whose evidence is current
     integration inspect --job JOB [--actor NAME] [--apply] [--json]
                             (M2) read-only inspection under a valid inspect approval: pinned SHAs re-verified (STALE),
                             provenance with GitHub attribution, the complete PR lookup and reuse rules, the changed
@@ -35,14 +37,23 @@
     integration review-exec RUN_DIR
                             INTERNAL (M4): the reviewer process `review --apply` starts for one attempt; refused unless
                             it is the job's open review attempt with its process tag
+    integration merge --job JOB [--actor NAME] [--apply] [--json]
+                            (M5) the operator-approved GitHub merge and its verified completion: reconcile a merge that
+                            may have happened FIRST, then — under a valid signed merge approval — the shared review
+                            checks, the PR (reused, or created when the approval authorizes it; a Draft is reported),
+                            GitHub's merge requirements, the write-ahead intent, `PUT /pulls/N/merge` (merge-commit
+                            method pinned to the approved source SHA), and the post-merge verification (parents, tree,
+                            checks) that alone completes the job. Dry run (default): reads only, writes nothing
 
-No PR is created, commented on or merged; nothing is pushed; the checkout's refs, index and working tree are never
-written (M3/M4 write only the coordinator state directory). The `integrate FEATURE` command (the feature integration
+Only `merge --apply` writes to GitHub (the one PR the approval authorizes, and the merge); nothing is pushed and dev is
+never touched directly; the checkout's refs, index and working tree are never written (M3-M5 write only the
+coordinator state directory). The `integrate FEATURE` command (the feature integration
 barrier) is unrelated and unchanged. See docs_agents/coordination/integration-jobs.md.
 
 Exit codes: 0 OK (intake: the job is active past INTAKE, or would be; approve: recorded, existing or would record;
 inspect: passed or would pass; validate: validated, or the dry run found nothing in the way; review: reviewed PASS or
-PASS_WITH_NOTES, or the dry run found nothing in the way); 1 refused, deferred, stale, needs authorization, blocked,
+PASS_WITH_NOTES, or the dry run found nothing in the way; merge: COMPLETED (merged and verified), or the dry run found
+nothing in the way); 1 refused, pending verification, deferred, stale, needs authorization, blocked,
 changes requested, error, terminal or failed (with --json the error is also printed as {"ok": false, "error": …});
 2 invalid arguments.
 """
@@ -60,16 +71,22 @@ from typing import Any, Callable, Iterator
 from .config import ProjectConfig, load_config
 from .errors import CoordinatorError
 from .integration import IntakeRequest, IntegrationJobs, abort_job, job_from_summary, job_summary
-from .integration_approval import SshSignatureVerifier, approve, check_stage
+from .integration_approval import SshSignatureVerifier, approve, check_stage, now_utc
+from .integration_authority import IntegrationAnchors
 from .integration_candidate import CandidateArea
 from .integration_inspect import IntegrationInspector
 from .integration_intake import IntegrationIntake, ReadOnlyGit, check_actor
+from .integration_merge import IntegrationMerger
+from .integration_merge_status import merge_approval_blockers, merge_status
 from .integration_review import IntegrationReviewer, review_eligibility
 from .integration_validate import IntegrationValidator
 from .locks import LockSet
 from .paths import PathPolicy
 from .statedir import ensure_state_dir, resolve_state_dir
 from .store import StateStore
+
+
+MERGE_VIEW_STATES = frozenset({"AWAITING_MERGE_APPROVAL", "MERGED", "COMPLETED", "FAILED"})
 
 
 def _print(text: str = "") -> None:
@@ -150,7 +167,51 @@ def _job_lines(job: dict[str, Any], config: ProjectConfig) -> list[str]:
                      + (f" #{ins['pr_match']['number']}" if ins["pr_match"]["number"] else ""))
     lines += _candidate_lines(job)
     lines += _review_lines(job)
+    lines += _merge_lines(job)
     lines.append(f"  next: {', '.join(job['allowed_next']) or 'none (terminal)'}")
+    return lines
+
+
+def _merge_lines(job: dict[str, Any]) -> list[str]:  # pylint: disable=too-many-branches
+    """M5: the signed merge approval, the PR, the merge result and its verification, what blocks (read-only)."""
+    lines: list[str] = []
+    merge = job.get("merge")
+    if merge:
+        approval = merge["approval"]
+        if approval:
+            lines.append(f"  merge approval {approval['id']} by {approval['operator']} "
+                         f"(key {approval['signer']['key']}): issued {approval['issued_at']}, EXPIRES "
+                         f"{approval['expires_at']} — "
+                         + ("VALID" if approval["valid"] else "NOT VALID: " + "; ".join(approval["problems"])))
+            bound = approval["merge"]
+            lines.append(f"    binds candidate {bound['candidate']['head_sha']} "
+                         f"(tree {bound['candidate']['tree_sha']}), validation "
+                         f"{bound['validation']['evidence']}, review {bound['review']['evidence']} "
+                         f"({bound['review']['outcome']}), PR {approval['pr'] or 'none known'}"
+                         + (", PR creation authorized" if bound["authorizes"]["create_pr"] else ""))
+        else:
+            lines.append("  merge approval: none")
+        lines.append(f"  merge: validation {'eligible' if merge['validation']['eligible'] else 'NOT eligible'}, review "
+                     f"{'eligible' if merge['review']['eligible'] else 'NOT eligible'}; PR "
+                     + (f"#{merge['pr']['bound']} (bound)" if merge["pr"]["bound"] else
+                        f"#{merge['pr']['known']} (known)" if merge["pr"]["known"] else "not known")
+                     + f"; {'MERGE-READY (re-verified at merge time)' if merge['ready'] else 'not merge-ready'}")
+        lines += [f"    blocker: {text}" for text in merge["blockers"]] + [f"    action: {text}" for text in
+                                                                         merge["actions"]]
+        if merge.get("record_template"):
+            lines.append("    merge record to sign (fill operator, issued_at and expires_at, then sign it):")
+            lines += ["      " + row for row in json.dumps(merge["record_template"], indent=2).splitlines()]
+    elif job.get("merge_pr"):
+        lines.append(f"  merge PR #{job['merge_pr']['number']} ({job['merge_pr']['origin']})")
+    result = job.get("merge_result")
+    if result:
+        verification = result.get("verification") or {}
+        lines.append(f"  merge_result: commit {result['commit_sha']}"
+                     + (f" (parents {', '.join(p[:12] for p in result['parents'])}, tree {result['tree_sha']})"
+                        if result.get("parents") else "")
+                     + f", PR #{result.get('pr', '?')}, verification {verification.get('state', 'n/a')}"
+                     + (", VERIFIED" if result.get("verified") else ""))
+        lines += [f"    {c['status']:14s} {c['name']}: {c['detail'][:140]}" for c in verification.get("checks", [])]
     return lines
 
 
@@ -214,12 +275,15 @@ def _blockers(job: dict[str, Any]) -> list[str]:  # pylint: disable=too-many-ret
         return ["the independent review is not decided (integration review --apply)"]
     if state == "AWAITING_MERGE_APPROVAL":
         if job.get("reviewed"):
-            return ["merge approval and merge (M5, not implemented)"]
+            return ["merge approval and merge (M5: `integration approve --stage merge`, then "
+                    "`integration merge --apply`; `status --job` shows the signed approval)"]
         if job.get("review_blocker"):
             return [f"{job['review_blocker']} (the review is kept as history; it is not eligible for M5)"]
         return ["the recorded review no longer applies (integration review)"]
     if state == "NEEDS_REPAIR":
         return ["repair on a new branch and a new job (M6); the source is never patched"]
+    if state == "MERGED":
+        return ["post-merge verification is pending (`integration merge --apply`)"]
     return []
 
 
@@ -279,7 +343,8 @@ def cmd_intake(args: argparse.Namespace, config: ProjectConfig) -> int:
 
 
 def _verifier(args: argparse.Namespace, config: ProjectConfig, state_dir: Path) -> SshSignatureVerifier:
-    return SshSignatureVerifier(config.github.integration.allowed_signers, repo_root=Path(args.repo),
+    repo = getattr(args, "repo", None)   # always set by the CLI; a direct cmd_status(Namespace) call may omit it
+    return SshSignatureVerifier(config.github.integration.allowed_signers, repo_root=Path(repo) if repo else None,
                                 scratch=state_dir / "tmp")
 
 
@@ -291,14 +356,20 @@ def cmd_approve(args: argparse.Namespace, config: ProjectConfig) -> int:
     result = approve(IntegrationJobs(StateStore(state_dir)), config, args.job, stage=stage,
                      record_path=Path(args.record), signature_path=Path(args.signature) if args.signature else None,
                      verifier=_verifier(args, config, state_dir), policy=PathPolicy(Path(args.repo), config),
-                     apply=args.apply)
+                     apply=args.apply,
+                     ready=(lambda job: merge_approval_blockers(job, config)) if stage == "merge" else None)
     label = "refused" if result["outcome"] == "refused" else "note"
     lines = [f"approve: {result['outcome']}"] + [f"  {label}: {reason}" for reason in result["reasons"]]
     if result["approval"]:
         view = result["approval"]
         lines.append(f"  {view['id']}: {view['stage']} by {view['operator']} (key {view['signer']['key']}), "
-                     f"issued {view['issued_at']}, expires {view['expires_at']}, {len(view['paths'])} path(s)"
-                     + (", unverified provenance accepted" if view["accept_unverified_provenance"] else "")
+                     f"issued {view['issued_at']}, expires {view['expires_at']}"
+                     + (f", candidate {view['merge']['candidate']['head_sha']}, validation "
+                        f"{view['merge']['validation']['evidence']}, review {view['merge']['review']['evidence']}, PR "
+                        f"{view['pr'] or 'none known'}" + (", PR creation authorized"
+                                                           if view["merge"]["authorizes"]["create_pr"] else "")
+                        if view["stage"] == "merge" else f", {len(view['paths'])} path(s)"
+                        + (", unverified provenance accepted" if view["accept_unverified_provenance"] else ""))
                      + ("" if result["effective"] else " — superseded, authorizes nothing"))
     lines += _job_lines(result["job"], config)
     if result["outcome"] == "would-record":
@@ -426,6 +497,47 @@ def cmd_review(args: argparse.Namespace, config: ProjectConfig) -> int:
     return 0 if report.ok else 1
 
 
+@_json_errors
+def cmd_merge(args: argparse.Namespace, config: ProjectConfig) -> int:
+    """(M5) The operator-approved GitHub merge and its verified completion; --apply writes (dry run by default)."""
+    actor = check_actor(args.actor)
+    state_dir = _writable_state(args, config) if args.apply else _state_path(args, config)
+    store = StateStore(state_dir)
+    git = ReadOnlyGit(Path(args.repo), config, LockSet(state_dir / "locks"),
+                      timeout=config.github.publish.git_timeout_seconds)
+
+    built: list[Any] = []
+
+    def tracker() -> Any:
+        """The ONE GitHub client of this run, with the TRUST ANCHORS of its integration writes bound before the
+        workflow gets it (Codex F1/F2): this state directory, this checkout and the --project-config FILE, which the
+        client's write boundary reads again at every write. Without --project-config no anchors are bound and every
+        integration write is refused (there is no cached fallback to a permissive policy); a client that already
+        carries anchors is refused (they are never replaced)."""
+        if not built:
+            from .github_commands import _tracker  # pylint: disable=import-outside-toplevel,protected-access
+            client = _tracker(args, config, state_dir)
+            if args.project_config and getattr(client, "live", False):
+                client._bind_integration(  # pylint: disable=protected-access  # the merge command's own client
+                    IntegrationAnchors.from_file(state_dir, Path(args.repo), Path(args.project_config)))
+            built.append(client)
+        return built[0]
+
+    report = IntegrationMerger(store, config, git, verifier=_verifier(args, config, state_dir), tracker=tracker
+                               ).run(args.job, apply=args.apply, actor=actor)
+    lines = [f"merge: {report.outcome}" + ("" if report.changed or not report.applied else " (unchanged)")]
+    lines += [f"  [{c['status']:14s}] {c['check']}: {c['detail']}" for c in report.checks]
+    lines += [f"  - {reason}" for reason in report.reasons]
+    if report.pr:
+        lines.append(f"  PR #{report.pr['number']} ({report.pr['origin']}, {report.pr['state']}"
+                     f"{', DRAFT' if report.pr['draft'] else ''}): {report.pr['url'] or report.pr['head']}")
+    lines += [f"  GitHub write: {write}" for write in report.github_writes]
+    lines += _job_lines(report.job, config) if report.job else []
+    lines += report.messages
+    _emit(args, report.to_dict(), lines)
+    return 0 if report.ok else 1
+
+
 @contextlib.contextmanager
 def _stop_on_signals(active: bool) -> Iterator[None]:
     """While a review runs with --apply: SIGTERM/SIGINT request a graceful stop (the reviewer process is stopped and
@@ -454,9 +566,13 @@ def cmd_review_exec(args: argparse.Namespace, config: ProjectConfig) -> int:
 @_json_errors
 def cmd_status(args: argparse.Namespace, config: ProjectConfig) -> int:
     """Every integration job, or one job's full record (read-only)."""
-    jobs = IntegrationJobs(StateStore(_state_path(args, config)))
+    state_dir = _state_path(args, config)
+    jobs = IntegrationJobs(StateStore(state_dir))
     if args.job:
-        job = job_summary(jobs.load(args.job))
+        loaded = jobs.load(args.job)
+        job = job_summary(loaded)
+        if loaded.candidate is not None and loaded.state.value in MERGE_VIEW_STATES:
+            job["merge"] = merge_status(loaded, config, _verifier(args, config, state_dir), now_utc())
         lines = _job_lines(job, config) + [f"  history: {h['from'] or '-'} → {h['to']} at {h['at']} by {h['actor']}: "
                                    f"{h['reason']}" for h in job["history"]]
         _emit(args, {"ok": True, "job": job}, lines)
@@ -486,10 +602,11 @@ def cmd_abort(args: argparse.Namespace, config: ProjectConfig) -> int:
     return 0
 
 
-def register(sub: Any) -> None:
-    """Add `integration intake|status|abort|approve|inspect|validate|review` to the CLI's subparsers."""
+def register(sub: Any) -> None:  # pylint: disable=too-many-statements
+    """Add `integration intake|status|abort|approve|inspect|validate|review|merge` to the CLI's subparsers."""
     group = sub.add_parser("integration", help="W4.7: integration jobs of existing branches/PRs (M1: intake, "
-                                               "status, abort; M2: approve, inspect; M3: validate; M4: review)",
+                                               "status, abort; M2: approve, inspect; M3: validate; M4: review; M5: "
+                                               "merge)",
                            description=__doc__.split("\n\n", 1)[0],
                            epilog=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     isub = group.add_subparsers(dest="integration_command", required=True)
@@ -521,7 +638,8 @@ def register(sub: Any) -> None:
     approval = isub.add_parser("approve", help="(M2) verify a signed operator authorization record; --apply records "
                                                "it")
     approval.add_argument("--job", required=True)
-    approval.add_argument("--stage", required=True, choices=("inspect",), help="the approved stage (M2: inspect)")
+    approval.add_argument("--stage", required=True, choices=("inspect", "merge"),
+                          help="the approved stage: inspect (M2) or merge (M5: a version 2 record)")
     approval.add_argument("--record", required=True, help="the authorization record (JSON) the operator signed")
     approval.add_argument("--signature", default=None, help="its SSH signature (default: RECORD.sig)")
     approval.add_argument("--apply", action="store_true", help="record the approval (default: dry run)")
@@ -540,6 +658,13 @@ def register(sub: Any) -> None:
     validate.add_argument("--json", action="store_true")
     validate.set_defaults(func=cmd_validate)
     _register_review(isub)
+    merge = isub.add_parser("merge", help="(M5) the operator-approved GitHub merge and its verified completion")
+    merge.add_argument("--job", required=True)
+    merge.add_argument("--actor", default="operator", help="who merges (recorded in the history)")
+    merge.add_argument("--apply", action="store_true",
+                       help="write to GitHub (the authorized PR, the merge) and record (default: dry run, reads only)")
+    merge.add_argument("--json", action="store_true")
+    merge.set_defaults(func=cmd_merge)
 
 
 def _register_review(isub: Any) -> None:

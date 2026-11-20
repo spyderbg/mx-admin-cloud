@@ -63,6 +63,7 @@ from typing import Any, Iterable, Mapping
 
 from .errors import CoordinatorError, IllegalTransitionError, StateConflictError, StateDirError
 from .integration_schema import (  # re-exported: the record schema lives in integration_schema.py since M3
+    APPROVAL_KIND,
     GATE_STATUS_RESULT,
     MAX_PATH_TEXT,
     MAX_REASON,
@@ -73,28 +74,46 @@ from .integration_schema import (  # re-exported: the record schema lives in int
     _check_evidence,
     _check_paths,
     _copy,
+    _JOB_ID_RE,
     _expect,
     _is_int,
     _is_text,
     _is_text_list,
     _is_time,
     _shown,
+    check_job_id,
+    check_number,
     check_path_text,
+    check_ref,
+    check_repo,
+    check_sha,
     clean_text,
+    current_gate_evidence,
     evidence_digest,
     inspection_digest,
+    latest_evidence,
+    open_attempt,
     open_review_attempt,
+    parse_record_time,
     paths_digest,
     pending_answer,
+    recorded_failures,
     review_attempts,
     review_decision,
     review_run,
 )
-from .model import check_id, utc_now
+from .integration_merge_record import binding_of, merge_binding_problems, parse_merge_record
+from .integration_merge_schema import (
+    attempt_dispatch,
+    check_merge_result,
+    merge_in_flight_problem,
+    merge_result_change_problem,
+    open_merge_attempt,
+)
+from .model import utc_now
 
 JOB_SCHEMA = 1
 RECORD_KIND = "integration"
-_JOB_ID_RE = re.compile(r"int-(\d{8})-(\d{4,6})")
 __all__ = [  # this module's public names and the schema names it re-exports (integration_schema.py)
     "abort_job", "ABORTABLE_STATES", "allowed_next", "approval_binding_problems", "APPROVAL_KIND",
     "APPROVAL_NAMESPACE", "APPROVAL_STAGES", "APPROVAL_VERSION", "check_job_id", "check_number", "check_path_text",
@@ -175,44 +194,6 @@ def check_transition(current: JobState, target: JobState) -> None:
 # ---------------------------------------------------------------------------
 # The request (immutable inputs) and its key
 # ---------------------------------------------------------------------------
-
-_REPO_RE = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}")
-_REF_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,199}")
-
-
-def check_sha(value: Any, label: str) -> str:
-    """A full 40-character lowercase hexadecimal commit SHA (never abbreviated), else IntegrationError."""
-    if not isinstance(value, str) or not SHA_RE.fullmatch(value):
-        raise IntegrationError(f"{label} must be the full 40-character lowercase hexadecimal commit SHA "
-                               f"(abbreviated, uppercase or symbolic values are refused), got {_shown(value)}")
-    return value
-
-
-def check_ref(value: Any, label: str) -> str:
-    """A plain branch name (no `refs/` prefix, no revision syntax), conservatively validated."""
-    if not isinstance(value, str) or not _REF_RE.fullmatch(value):
-        raise IntegrationError(f"{label} must be a branch name (letters, digits, '.', '_', '-', '/'), got "
-                               f"{_shown(value)}")
-    parts = value.split("/")
-    if (value.startswith("refs/") or any(not p or p.startswith(".") or p.endswith(".lock") for p in parts)
-            or ".." in value or value.endswith((".", "/")) or value == "HEAD"):
-        raise IntegrationError(f"{label} {value!r} is not a valid plain branch name")
-    return value
-
-
-def check_repo(value: Any, label: str) -> str:
-    """owner/name."""
-    if not isinstance(value, str) or not _REPO_RE.fullmatch(value) or value.endswith((".git", ".")):
-        raise IntegrationError(f"{label} must be 'owner/name', got {_shown(value)}")
-    return value
-
-
-def check_number(value: Any, label: str) -> int:
-    """A positive integer (an Issue or PR number)."""
-    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 10_000_000:
-        raise IntegrationError(f"{label} must be a positive integer, got {_shown(value)}")
-    return value
-
 
 def check_reason(value: Any, label: str = "--reason") -> str:
     """A non-empty single-line reason, bounded."""
@@ -299,9 +280,8 @@ _DEFERRED_KEYS = frozenset({"reason", "at"})
 DEFERRABLE_STATES: frozenset[JobState] = frozenset({JobState.INTAKE, JobState.INSPECTING})
 
 # -- M2: the operator authorization record (integration_approval.py signs/verifies; here: schema and binding) ------
-APPROVAL_KIND = "w47-integration-approval"
 APPROVAL_VERSION = 1
-APPROVAL_STAGES = ("inspect",)                    # `merge` is M5
+APPROVAL_STAGES = ("inspect", "merge")             # M5: `merge` records are version 2 (integration_merge_record.py)
 APPROVAL_NAMESPACE = "mx-admin-cloud-integration-approval@feature-coordinator"  # ssh-keygen -Y sign -n …
 MAX_RECORD_BYTES = 64 * 1024
 MAX_SIGNATURE_BYTES = 16 * 1024
@@ -316,7 +296,6 @@ _SIGNER_KEYS = frozenset({"method", "namespace", "principal", "key"})
 _APPROVAL_ID_RE = re.compile(r"apr-(\d{4})")
 _LOGIN_RE = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})")
 _KEY_FINGERPRINT_RE = re.compile(r"SHA256:[A-Za-z0-9+/]{43}")
-_RECORD_TIME_RE = re.compile(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,6}))?Z")
 SIGNATURE_HEADER = "-----BEGIN SSH SIGNATURE-----"
 MAX_APPROVALS = 200
 
@@ -441,6 +420,7 @@ def validate_job(job: IntegrationJob, *, persisted: bool) -> None:
     _check_paths(job.paths)
     _check_evidence(job)
     _check_candidate(job)
+    check_merge_result(job)
     if job.attention is not None:
         att = job.attention
         _expect(isinstance(att, dict) and set(att) == _ATTENTION_KEYS and _is_text(att["reason"])
@@ -518,21 +498,6 @@ def _no_constants(name: str) -> Any:
     raise IntegrationError(f"the authorization record contains {name}, which is not JSON")
 
 
-def parse_record_time(value: Any, label: str) -> datetime:
-    """A UTC timestamp `YYYY-MM-DDTHH:MM:SS[.f…]Z` (1 to 6 fractional digits) of an authorization record, as an
-    aware datetime with its FULL precision: `…:00.9Z` is 900 ms after `…:00.1Z` (approvals are ordered by it, so a
-    truncated fraction would make two distinct records look simultaneous). More than 6 digits are refused."""
-    match = _RECORD_TIME_RE.fullmatch(value) if isinstance(value, str) else None
-    if match is None:
-        raise IntegrationError(f"{label} must be a UTC timestamp like 2026-11-12T09:00:00Z or "
-                               f"2026-11-12T09:00:00.250000Z, got {_shown(value)}")
-    try:
-        seconds = datetime.strptime(match.group(1), "%Y-%m-%dT%H:%M:%S")
-    except ValueError as exc:
-        raise IntegrationError(f"{label} is not a valid date and time: {_shown(value)}") from exc
-    return seconds.replace(microsecond=int((match.group(2) or "").ljust(6, "0")), tzinfo=timezone.utc)
-
-
 def parse_approval_record(text: Any) -> dict[str, Any]:
     """The operator authorization record (the exact JSON text that was signed), strictly: one JSON object with
     exactly the record keys (`note` optional), no duplicate key, no NaN/Infinity, every field of its type. Binding to
@@ -545,6 +510,8 @@ def parse_approval_record(text: Any) -> dict[str, Any]:
         raise IntegrationError(f"the authorization record is not valid JSON: {clean_text(exc, 200)}") from exc
     if not isinstance(data, dict):
         raise IntegrationError("the authorization record must be a JSON object")
+    if data.get("stage") == "merge" and type(data.get("version")) is int and data["version"] == 2:  # pylint: disable=unidiomatic-typecheck
+        return parse_merge_record(data)   # M5: the merge stage (every other record is parsed as version 1, as before)
     missing = [key for key in _RECORD_REQUIRED if key not in data]
     unknown = sorted(set(data) - _RECORD_KEYS)
     if missing or unknown:
@@ -554,8 +521,8 @@ def parse_approval_record(text: Any) -> dict[str, Any]:
             and data["version"] == APPROVAL_VERSION,
             f"the authorization record must be kind {APPROVAL_KIND!r}, version {APPROVAL_VERSION}")
     check_job_id(data["job"])
-    _expect(data["stage"] in APPROVAL_STAGES, f"stage must be one of {list(APPROVAL_STAGES)} (the merge stage is M5), "
-                                              f"got {_shown(data['stage'])}")
+    _expect(data["stage"] == "inspect", "a version 1 record authorizes the inspect stage only (the merge stage is "
+                                        f"version 2, integration_merge_record.py), got {_shown(data['stage'])}")
     _expect(isinstance(data["operator"], str) and _LOGIN_RE.fullmatch(data["operator"]) is not None,
             f"operator must be a GitHub login, got {_shown(data['operator'])}")
     issued = parse_record_time(data["issued_at"], "issued_at")
@@ -613,7 +580,9 @@ def _check_approvals(job: "IntegrationJob") -> None:
     latest: dict[str, datetime] = {}
     for index, entry in enumerate(job.approvals):
         where = f"approval {index + 1}"
-        _expect(set(entry) == _APPROVAL_KEYS, f"{where} must have exactly {sorted(_APPROVAL_KEYS)}")
+        merge = entry.get("stage") == "merge"   # M5: a merge entry also carries its signed `merge` binding
+        keys = _APPROVAL_KEYS | ({"merge"} if merge else set())
+        _expect(set(entry) == keys, f"{where} must have exactly {sorted(keys)}")
         match = _APPROVAL_ID_RE.fullmatch(str(entry["id"]))
         _expect(match is not None and int(match.group(1)) == index + 1, f"{where} must have the id apr-{index + 1:04d}")
         record_text = entry["record"]
@@ -621,13 +590,15 @@ def _check_approvals(job: "IntegrationJob") -> None:
                 and hashlib.sha256(record_text.encode("utf-8")).hexdigest() == entry["record_sha256"],
                 f"{where}: the stored authorization record does not match its SHA-256")
         record = parse_approval_record(record_text)
-        problems = approval_binding_problems(record, job)
+        _expect((record["stage"] == "merge") == merge, f"{where}: the stage of the entry and of its record differ")
+        problems = merge_binding_problems(record, job) if merge else approval_binding_problems(record, job)
         _expect(not problems, f"{where} does not bind this job: {'; '.join(problems)}")
         derived = {"stage": record["stage"], "operator": record["operator"], "issued_at": record["issued_at"],
                    "expires_at": record["expires_at"], "source_sha": record["source"]["sha"],
                    "base_sha": record["base"]["sha"], "issue": record["issue"], "pr": record["pr"],
-                   "paths": record["paths"], "accept_unverified_provenance": record["accept_unverified_provenance"],
-                   "note": record.get("note", "")}
+                   "paths": record.get("paths", []),
+                   "accept_unverified_provenance": record.get("accept_unverified_provenance", False),
+                   "note": record.get("note", ""), **({"merge": binding_of(record)} if merge else {})}
         differing = sorted(key for key, value in derived.items() if entry[key] != value)
         _expect(not differing, f"{where}: field(s) {differing} differ from the signed authorization record")
         signature, signer = entry["signature"], entry["signer"]
@@ -669,13 +640,6 @@ def effective_approval(job: "IntegrationJob", stage: str = "inspect") -> dict[st
     the approvals of a stage in strictly increasing `issued_at` order (full precision), on every load and save."""
     entries = [entry for entry in job.approvals if entry["stage"] == stage]
     return entries[-1] if entries else None
-
-
-def check_job_id(value: Any) -> str:
-    """`int-YYYYMMDD-NNNN` (design §8.2), also a valid state-store record ID."""
-    if not isinstance(value, str) or not _JOB_ID_RE.fullmatch(value):
-        raise IntegrationError(f"invalid integration job ID {_shown(value)} (expected int-YYYYMMDD-NNNN)")
-    return check_id(value, "integration job id")
 
 
 def _check_history(job: IntegrationJob) -> None:
@@ -790,6 +754,9 @@ class IntegrationJobs:
                 if getattr(job, name)[:len(getattr(before, name))] != getattr(before, name):
                     raise IntegrationError(f"{job.job_id}: {name} is append-only (an earlier entry changed or was "
                                            "removed)")
+            problem = merge_result_change_problem(before.merge_result, job.merge_result)   # M5: the merge's identity
+            if problem:
+                raise IntegrationError(f"{job.job_id}: {problem}")
             if before.candidate is not None and job.candidate != before.candidate:  # M3: the candidate's identity
                 raise IntegrationError(f"{job.job_id}: the recorded candidate is immutable (a different candidate is "
                                        "a new job, design §5.5)")
@@ -833,8 +800,11 @@ class IntegrationJobs:
                 if name == "candidate" and target is not JobState.CANDIDATE_BUILT:
                     raise IntegrationError(f"field 'candidate' cannot be set with a transition to {target.value} "
                                            "(only with the transition to CANDIDATE_BUILT, M3)")
-                if name not in ("provenance", "pr", "attention", "deferred", "paths", "candidate"):
-                    raise IntegrationError(f"field {name!r} cannot be set with a transition (M1-M3)")
+                if name == "merge_result" and target not in (JobState.MERGED, JobState.COMPLETED, JobState.FAILED):
+                    raise IntegrationError(f"field 'merge_result' cannot be set with a transition to {target.value} "
+                                           "(only MERGED, COMPLETED or FAILED, M5)")
+                if name not in ("provenance", "pr", "attention", "deferred", "paths", "candidate", "merge_result"):
+                    raise IntegrationError(f"field {name!r} cannot be set with a transition (M1-M5)")
                 setattr(job, name, _copy(value))
             before = job.state
             transition_job(job, target, reason, actor=actor)
@@ -843,49 +813,6 @@ class IntegrationJobs:
             self.store.append_event("integration-transition", job=job.job_id, actor=entry["actor"],
                                     reason=entry["reason"], to=target.value, **{"from": before.value})
             return job, True
-
-
-def latest_evidence(job: IntegrationJob, kind: str) -> dict[str, Any] | None:
-    """The newest evidence entry of *kind*, or None."""
-    entries = [entry for entry in job.evidence if entry.get("kind") == kind]
-    return entries[-1] if entries else None
-
-
-def current_gate_evidence(job: IntegrationJob) -> dict[str, dict[str, Any]]:
-    """gate name → its newest gate evidence entry for the job's candidate (empty without a candidate). Gate evidence is
-    bound to the candidate's immutable head and tree SHAs (validate_job), so every entry here is about exactly the
-    content of that candidate."""
-    return _candidate_gates(job)
-
-
-def recorded_failures(job: IntegrationJob) -> dict[str, dict[str, Any]]:
-    """gate name → the newest FAIL recorded for the job's candidate under ANY gate definition (Codex review of M3, F1).
-    The candidate's content is immutable, so a recorded failure is a fact about it: it is never re-run (not after a
-    changed timeout or command either), never dropped when the gate leaves the plan, and every later validation
-    decision is `failed` (integration_schema). The resolution is explicit: NEEDS_REPAIR, or abort and a new job."""
-    return _candidate_gates(job, "FAIL")
-
-
-def _candidate_gates(job: IntegrationJob, result: str | None = None) -> dict[str, dict[str, Any]]:
-    if job.candidate is None:
-        return {}
-    newest: dict[str, dict[str, Any]] = {}
-    identity = (job.candidate["head_sha"], job.candidate["tree_sha"])
-    for entry in job.evidence:
-        if entry.get("kind") == "gate" and (entry["head_sha"], entry["tree_sha"]) == identity \
-                and (result is None or entry["result"] == result):
-            newest[entry["gate"]] = entry
-    return newest
-
-
-def open_attempt(job: IntegrationJob) -> dict[str, Any] | None:
-    """The newest validation attempt of the job's candidate when no validation decision names it — an attempt that is
-    running or was interrupted before its decision (Codex review of M3, F2) — else None (completed, or none yet)."""
-    attempt = latest_evidence(job, "attempt")
-    if attempt is None or job.candidate is None or attempt["candidate"] != job.candidate["evidence"]:
-        return None
-    decided = any(entry.get("kind") == "validation" and entry["attempt"] == attempt["id"] for entry in job.evidence)
-    return None if decided else attempt
 
 
 VALIDATED_STATES = frozenset({JobState.VALIDATING, JobState.IN_REVIEW, JobState.AWAITING_MERGE_APPROVAL})
@@ -949,7 +876,9 @@ def job_summary(job: IntegrationJob) -> dict[str, Any]:
             "review_attempt": _copy(newest), "review_run": _copy(review_run(job, newest)),
             "review": _copy(latest_evidence(job, "review")), "review_open": open_review_attempt(job) is not None,
             "review_pending": pending_answer(job) is not None, "review_bound": current_review(job) is not None,
-            "reviewed": current_review(job) is not None}
+            "reviewed": current_review(job) is not None, "merge_pr": _copy(latest_evidence(job, "merge-pr")),
+            "merge_attempt": _copy(latest_evidence(job, "merge-attempt")),
+            "merge_open": open_merge_attempt(job) is not None}
 
 
 def job_from_summary(summary: Mapping[str, Any]) -> IntegrationJob:
@@ -957,7 +886,8 @@ def job_from_summary(summary: Mapping[str, Any]) -> IntegrationJob:
     return IntegrationJob.from_dict({key: summary[key] for key in _FIELDS})
 
 
-def abort_job(jobs: IntegrationJobs, job_id: str, reason: str, *, actor: str, apply: bool) -> dict[str, Any]:
+def abort_job(jobs: IntegrationJobs, job_id: str, reason: str, *, actor: str, apply: bool,
+              now: datetime | None = None) -> dict[str, Any]:
     """Operator abort (design §8.1 `abort`): any non-terminal state before MERGED → ABORTED. Idempotent: an
     already ABORTED job is reported unchanged. Another terminal state, MERGED or COMPLETED is refused
     (IllegalTransitionError). The disposable candidate worktree (M3) is removed by the caller after an applied abort
@@ -968,9 +898,22 @@ def abort_job(jobs: IntegrationJobs, job_id: str, reason: str, *, actor: str, ap
     if job.state is JobState.ABORTED:
         return {"outcome": "already-aborted", "changed": False, "job": job_summary(job)}
     check_transition(job.state, JobState.ABORTED)
+    now = now or datetime.now(timezone.utc)   # (tests move it: a dispatched merge request ages past the settle window)
+    problem = merge_in_flight_problem(job, now)   # M5: a merge request may be in flight: reconcile it first
+    if problem:
+        raise IntegrationError(problem)
     if not apply:
         return {"outcome": "would-abort", "changed": False, "job": job_summary(job)}
-    job, changed = jobs.transition(job_id, JobState.ABORTED, reason, actor=actor, expect=ABORTABLE_STATES)
+    with jobs.store.transaction():   # the in-flight check and the abort are one decision (M5)
+        current = jobs.load(job_id)
+        problem = merge_in_flight_problem(current, now)
+        if problem:
+            raise IntegrationError(problem)
+        unresolved = open_merge_attempt(current)
+        if unresolved is not None and unresolved["action"] == "merge" and attempt_dispatch(current, unresolved):
+            reason = clean_text(f"{reason} [the merge request {unresolved['id']} was dispatched and its outcome was "
+                                "never established: aborted by the operator]")
+        job, changed = jobs.transition(job_id, JobState.ABORTED, reason, actor=actor, expect=ABORTABLE_STATES)
     if not changed and job.state is not JobState.ABORTED:
         check_transition(job.state, JobState.ABORTED)  # it became terminal meanwhile: raises with that state
     return {"outcome": "aborted" if changed else "already-aborted", "changed": changed, "job": job_summary(job)}

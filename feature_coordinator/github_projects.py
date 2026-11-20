@@ -454,6 +454,12 @@ mutation FcUpdateView($input: UpdateProjectV2ViewInput!) {
   updateProjectV2View(input: $input) { projectV2View { ...ViewParts } }
 }""" + _VIEW_PARTS
 
+# The ONLY GraphQL mutation documents the coordinator sends: GitHubClient.graphql() sends a document that contains a
+# mutation only when it is one of these, character for character — pinned there by SHA-256 (github_api.
+# _ALLOWED_MUTATIONS; a test keeps both equal). W4.7 M5: no ref, branch, commit or pull-request mutation — those would
+# bypass the integration write boundary — and no unknown one.
+MUTATIONS = frozenset({ADD_ITEM, SET_VALUE, CLEAR_VALUE, CREATE_FIELD, UPDATE_FIELD, CREATE_VIEW, UPDATE_VIEW})
+
 
 def _payload(data: Mapping[str, Any], *path: str) -> Any:
     value: Any = data
