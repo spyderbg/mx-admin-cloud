@@ -33,6 +33,21 @@ merge.
                      never FAIL or PASS. Default: {coordinator-tests: 1800} (the Coordinator suite runs longer than
                      900 s); giving the key replaces the default mapping.
 
+    worker           (M6) the Worker service's scheduling of integration jobs, a mapping (absent: off):
+                       enabled                false (default) | true — needs `enabled` above. Off: the service never
+                                              looks at integration jobs
+                       stages                 what the Worker may start by itself, of inspect, validate, review,
+                                              recover (default: validate, review). `merge`, `approve`, `intake` and
+                                              `abort` cannot be listed: they are an operator's commands
+                       poll_interval_seconds  how often the service looks at the jobs (default 30)
+                       retry_seconds / max_retry_seconds
+                                              the delay after a stage run that changed nothing, doubled per repeat up
+                                              to the maximum (defaults 300 / 3600)
+                       max_stalls             such runs in a row before the job is held for the operator (default 3)
+                       max_launches           stage runs per job and stage before it is held (default 12)
+                       stage_timeouts         {stage: seconds} after which a stage process is stopped (defaults:
+                                              inspect 900, validate 14400, review 7200, recover 900)
+
     required_checks  (M5) names of the GitHub check runs / commit-status contexts that must be SUCCESSFUL on the PR head
                      (the approved source SHA) before `integration merge --apply` merges. Empty (default): none is
                      required — reported as `not-configured`, never as passed (the project has no branch protection or
@@ -69,8 +84,80 @@ MAX_CHECKS = 20
 _CHECK_NAME_RE = re.compile(r"[^\x00-\x1f\x7f]{1,100}")
 
 
+WORKER_STAGES = ("inspect", "validate", "review", "recover")   # M6: everything the Worker may start; never a merge
+DEFAULT_WORKER_STAGES = ("validate", "review")
+DEFAULT_STAGE_TIMEOUTS: Mapping[str, int] = {"inspect": 900, "validate": 14400, "review": 7200, "recover": 900}
+MAX_STAGE_TIMEOUT = 86400
+
+
 @dataclass(frozen=True)
-class GitHubIntegrationConfig:
+class IntegrationWorkerConfig:  # pylint: disable=too-many-instance-attributes
+    """M6: `github.integration.worker` — the Worker service's scheduling of integration jobs (integration_worker.py).
+    Off until an operator enables it; it can never name the merge."""
+
+    enabled: bool = False
+    stages: tuple[str, ...] = DEFAULT_WORKER_STAGES
+    poll_interval_seconds: int = 30
+    retry_seconds: int = 300
+    max_retry_seconds: int = 3600
+    max_stalls: int = 3
+    max_launches: int = 12
+    stage_timeouts: Mapping[str, int] = field(default_factory=lambda: dict(DEFAULT_STAGE_TIMEOUTS))
+
+    def __post_init__(self) -> None:
+        where = "github.integration.worker"
+        if not isinstance(self.enabled, bool):
+            raise ConfigError(f"{where}.enabled must be true or false")
+        stages = self.stages
+        if not isinstance(stages, tuple) or not stages or len(set(stages)) != len(stages) \
+                or not all(isinstance(s, str) and s in WORKER_STAGES for s in stages):
+            raise ConfigError(f"{where}.stages must be a non-empty list of distinct stages out of "
+                              f"{', '.join(WORKER_STAGES)} (the merge is never scheduled: it is the operator's "
+                              "`integration merge --apply`)")
+        for name, low, high in (("poll_interval_seconds", 1, 3600), ("retry_seconds", 1, 86400),
+                                ("max_retry_seconds", 1, 604800), ("max_stalls", 1, 100), ("max_launches", 1, 1000)):
+            value = getattr(self, name)
+            if not isinstance(value, int) or isinstance(value, bool) or not low <= value <= high:
+                raise ConfigError(f"{where}.{name} must be a whole number from {low} to {high}")
+        if self.max_retry_seconds < self.retry_seconds:
+            raise ConfigError(f"{where}.max_retry_seconds must be at least {where}.retry_seconds")
+        timeouts = self.stage_timeouts
+        if not isinstance(timeouts, Mapping) or not all(isinstance(s, str) and s in WORKER_STAGES for s in timeouts) \
+                or not all(isinstance(v, int) and not isinstance(v, bool) and 1 <= v <= MAX_STAGE_TIMEOUT
+                           for v in timeouts.values()):
+            raise ConfigError(f"{where}.stage_timeouts must map stages ({', '.join(WORKER_STAGES)}) to whole seconds "
+                              f"(1 to {MAX_STAGE_TIMEOUT})")
+
+    def timeout(self, stage: str) -> int:
+        """The seconds after which a *stage* process is stopped."""
+        return int(self.stage_timeouts.get(stage, DEFAULT_STAGE_TIMEOUTS[stage]))
+
+
+def worker_from_mapping(data: Any) -> IntegrationWorkerConfig:
+    """`github.integration.worker` from YAML: strict; absent or null → off."""
+    if data is None:
+        return IntegrationWorkerConfig()
+    if not isinstance(data, Mapping):
+        raise ConfigError("github.integration.worker must be a mapping")
+    unknown = set(data) - set(IntegrationWorkerConfig.__dataclass_fields__)  # pylint: disable=no-member
+    if unknown:
+        raise ConfigError(f"unknown github.integration.worker keys: {sorted(unknown)}")
+    values: dict[str, Any] = dict(data)
+    if "stages" in values:
+        raw = values["stages"]
+        if isinstance(raw, (str, bytes)) or not isinstance(raw, (list, tuple)):
+            raise ConfigError("github.integration.worker.stages must be a list of stage names")
+        values["stages"] = tuple(raw)
+    if "stage_timeouts" in values:
+        raw = values["stage_timeouts"]
+        if not isinstance(raw, Mapping):
+            raise ConfigError("github.integration.worker.stage_timeouts must map stage names to seconds")
+        values["stage_timeouts"] = {**DEFAULT_STAGE_TIMEOUTS, **raw}
+    return IntegrationWorkerConfig(**values)
+
+
+@dataclass(frozen=True)
+class GitHubIntegrationConfig:  # pylint: disable=too-many-instance-attributes
     """W4.7: integration jobs of existing branches/PRs (integration.py). Off until an operator enables it."""
 
     enabled: bool = False
@@ -82,6 +169,7 @@ class GitHubIntegrationConfig:
     gate_timeouts: Mapping[str, int] = field(default_factory=lambda: dict(DEFAULT_GATE_TIMEOUTS))  # M3: seconds
     required_checks: tuple[str, ...] = ()      # M5: checks that must pass on the PR head before the merge
     post_merge_checks: tuple[str, ...] = ()    # M5: checks that must pass on the merge commit before COMPLETED
+    worker: IntegrationWorkerConfig = field(default_factory=IntegrationWorkerConfig)  # M6: Worker scheduling
 
     def __post_init__(self) -> None:
         validate_integration(self)
@@ -99,7 +187,7 @@ def _check_logins(value: Any, where: str) -> None:
         raise ConfigError(f"{where} lists a login more than once (logins are case-insensitive)")
 
 
-def validate_integration(integration: GitHubIntegrationConfig) -> None:
+def validate_integration(integration: GitHubIntegrationConfig) -> None:  # pylint: disable=too-many-branches
     """ConfigError unless the `github.integration` section is valid."""
     where = "github.integration"
     if not isinstance(integration.enabled, bool):
@@ -137,6 +225,11 @@ def validate_integration(integration: GitHubIntegrationConfig) -> None:
                 or not all(isinstance(c, str) and _CHECK_NAME_RE.fullmatch(c) and c == c.strip() for c in checks):
             raise ConfigError(f"{where}.{name} must be a list of at most {MAX_CHECKS} distinct check names (one "
                               "printable line of at most 100 characters each, no surrounding spaces)")
+    if not isinstance(integration.worker, IntegrationWorkerConfig):
+        raise ConfigError(f"{where}.worker must be a mapping")
+    if integration.worker.enabled and not integration.enabled:
+        raise ConfigError(f"{where}.worker.enabled needs {where}.enabled: the Worker schedules integration jobs only "
+                          "once an operator enabled them")
     signers = integration.allowed_signers
     if not isinstance(signers, str) or len(signers) > MAX_PATH or re.search(r"[\x00-\x1f\x7f]", signers) \
             or (signers and not signers.startswith("/")):
@@ -188,6 +281,8 @@ def integration_from_mapping(data: Mapping[str, Any]) -> GitHubIntegrationConfig
                     or not all(isinstance(item, str) for item in raw):
                 raise ConfigError(f"github.integration.{name} must be a list of GitHub logins")
             values[name] = tuple(item.strip() for item in raw)
+    if "worker" in data:
+        values["worker"] = worker_from_mapping(data["worker"])
     if "allowed_signers" in data:
         raw = data["allowed_signers"]
         if raw is not None and not isinstance(raw, str):

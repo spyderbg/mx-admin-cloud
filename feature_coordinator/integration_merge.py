@@ -273,6 +273,84 @@ class IntegrationMerger(MergeRecovery, IntegrationReviewer):  # pylint: disable=
         self._merge_and_record(job.job_id, approval, checked, pr, report, actor, client)
         self._verify_merged(self.jobs.load(job.job_id), report, client, actor, True)
 
+    # -- M6: settle what a merge run left behind — never a write ---------------------------------------------------
+
+    def settle(self, job_id: str, *, apply: bool, actor: str = "operator") -> MergeReport:
+        """`integration recover` (M6): the part of a merge run that only READS GitHub — step 0 (reconcile first) and
+        the post-merge verification — for a job a merge run left unfinished: an intent that was never dispatched is
+        closed, a dispatched merge request is reconciled from GitHub's state (recorded when it is this job's merge,
+        STALE when it is someone else's, left unresolved while GitHub shows nothing), a MERGED job is verified. No
+        approval is asked for, because nothing is authorized here: no PR is created, no merge request is sent and
+        none is repeated — and a client that COULD send one (bound integration anchors) is refused outright."""
+        with self.git.session():
+            report = MergeReport(applied=apply)
+            try:
+                self._settle(job_id, report, apply=apply, actor=actor)
+            except _review._Stop:  # pylint: disable=protected-access
+                pass
+            if apply:
+                report.job = job_summary(self._tidy(job_id))
+            return report
+
+    def _settle(self, job_id: str, report: MergeReport, *, apply: bool, actor: str) -> None:
+        job = self.jobs.load(job_id)
+        report.job = job_summary(job)
+        if job.terminal or job.state not in MERGEABLE_STATES or job.candidate is None \
+                or (job.state is JobState.AWAITING_MERGE_APPROVAL and not merge_attempts(job)):
+            report.outcome = "nothing-to-settle"
+            report.messages.append(f"{job_id} is {job.state.value} and no merge run left anything unfinished")
+            return
+        if apply and not self.config.github.integration.enabled:
+            raise IntegrationError("github.integration.enabled is false: nothing is recorded for integration jobs")
+        client = self.inspector.tracker()
+        if client is None or not getattr(client, "live", False):
+            raise IntegrationError("integration recover needs the live GitHub client to read the PR and the merge "
+                                   "commit (the local tracker cannot); nothing was done")
+        if getattr(client, "integration_bound", False):
+            raise IntegrationError("integration recover never runs with a GitHub client that can send an integration "
+                                   "write (bound anchors); nothing was done")
+        self.validator._preflight()  # pylint: disable=protected-access  # origin and checkout fit, as for the merge
+        lock = FileLock(self.store.locks.dir / f"integration-{job_id}.lock")
+        if apply:
+            try:
+                lock.acquire(timeout=0)
+            except LockBusyError as exc:
+                raise IntegrationError(f"another integration operation on {job_id} is running; nothing was "
+                                       "done") from exc
+        try:
+            current = self.jobs.load(job_id)
+            if current.state is not job.state:
+                self._meanwhile(report, current)
+            self._settle_held(current, report, client, actor, apply)
+        finally:
+            lock.release()
+
+    def _settle_held(self, job: IntegrationJob, report: MergeReport, client: Any, actor: str, apply: bool) -> None:
+        if job.state is JobState.MERGED:
+            self._verify_merged(job, report, client, actor, apply)
+            return
+        opened = open_merge_attempt(job)
+        if opened is not None and opened["action"] == "create-pr":
+            if attempt_dispatch(job, opened) is None:
+                self._close_undispatched(job, opened, report, apply)
+                report.outcome = "settled" if apply else "would-settle"
+                return
+            report.outcome = "pr-uncertain"
+            report.reasons = [f"the PR-creation request {opened['id']} was dispatched and its outcome is not recorded"]
+            report.messages.append(f"`integration merge --job {job.job_id} --apply` looks the PR up in every state and "
+                                   "binds it (it never creates a second one); recover creates and binds no PR")
+            return
+        if not [a for a in merge_attempts(job) if a["action"] == "merge"]:
+            report.outcome = "nothing-to-settle"
+            report.messages.append(f"{job.job_id}: no merge request of this job was ever recorded")
+            return
+        if self._reconcile_first(job, report, client, actor, apply):
+            self._verify_merged(self.jobs.load(job.job_id), report, client, actor, apply)
+            return
+        report.outcome = "settled" if apply else "would-settle"
+        report.messages.append(f"{job.job_id}: GitHub shows the PR not merged and no merge request of this job is "
+                               "unresolved; a merge needs the operator's `integration merge --apply`")
+
     # -- reports (the merge's own event names) ------------------------------------------------------------------
 
     def _refuse(self, job: IntegrationJob, outcome: str, reasons: list[str], report: Any, apply: bool,  # pylint: disable=arguments-renamed

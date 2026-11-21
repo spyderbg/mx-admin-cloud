@@ -111,6 +111,10 @@ def cmd_worker_status(args: argparse.Namespace, config: ProjectConfig) -> int:
                    "next_attempt_at") else ""))
     for review in report["reviews"]:
         _print(f"  {_review_line(review)}")
+    if config.github.integration.worker.enabled:   # W4.7 M6: the open integration jobs as the Worker sees them
+        from .integration_worker import schedule_view, status_line  # pylint: disable=import-outside-toplevel
+        for row in schedule_view(store, config, time.time()):
+            _print(f"  {status_line(row)}")
     return 0
 
 

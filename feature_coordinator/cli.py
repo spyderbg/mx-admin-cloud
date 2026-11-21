@@ -288,7 +288,7 @@ def build_parser() -> argparse.ArgumentParser:
     register_checkpoints(sub)
     from .service_commands import register as register_service  # pylint: disable=import-outside-toplevel
     register_service(sub)
-    from .integration_commands import register as register_integration  # pylint: disable=import-outside-toplevel
+    from .integration_recovery_commands import register as register_integration  # pylint: disable=import-outside-toplevel
     register_integration(sub)
     from .workspace_commands import register as register_workspace  # pylint: disable=import-outside-toplevel
     register_workspace(sub)

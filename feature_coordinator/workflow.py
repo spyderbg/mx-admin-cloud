@@ -92,6 +92,7 @@ from .escalation import release_task as _release_task
 from .github_api import redact_secrets, sanitize
 from .gitops import CommitRequest, GitCoordinator, commit_subject, file_digest
 from .intake import issue_problem, known_problem, load_intake
+from .integration_slot import execution_owner
 from .issue_sync import IssueSync, SyncReport, enqueue_comment
 from .project_sync import BoardReport, ProjectSync
 from .publish import intake_pr_body
@@ -865,6 +866,11 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
                 raise PullRequestPolicyError(f"feature {feature_id!r} is not integrated: {problem}")
         try:
             with self.store.locks.project(shared=False, busy_error=WritersActiveError).acquire():
+                with self.store.transaction():  # W4.7 M6: never beside an integration stage (its gates, ours)
+                    stage = execution_owner(self.store)[1]
+                if stage:
+                    raise WritersActiveError(f"feature {feature_id!r} is not integrated now: the checkout's "
+                                             f"execution slot is taken: {stage}")
                 return self._integrate(feature_id, gates)
         finally:
             self.sync_issues(feature_id)
