@@ -19,6 +19,11 @@ recovered (its agent may still write) — so a manually launched agent can never
 Worker's, and the Worker never starts a second writer while ownership is uncertain. The check
 runs inside the claim's coordinator.lock section, so two claims cannot both pass it.
 
+W4.7 M6: while an integration stage holds the checkout's execution slot — or its ownership cannot be read —
+(integration_slot.execution_owner) every claim is refused in that same critical section, a manual one too; a stage is
+admitted only while no claim exists (integration_worker.py). On a checkout that never scheduled an integration stage
+the check is one `stat`.
+
 W3: a dead holder is not enough. A native agent runs in its own session and can outlive the
 worker that supervised it; the claim records the run's tag and the agent's process identity
 (the claim's progress data), and recover() keeps a claim whose run still has a live process
@@ -34,6 +39,7 @@ from typing import Any, Callable
 
 from .errors import (CheckoutBusyError, ClaimError, FullProjectActiveError, LockBusyError, RoleBusyError,
                      WritersActiveError)
+from .integration_slot import execution_owner
 from .locks import FileLock, ProcessIdentity
 from .model import TaskState, transition_task, utc_now
 from .store import StateStore
@@ -177,6 +183,9 @@ class ClaimManager:
                 admission()
             if self.store.get_flag(FULL_PROJECT_FLAG):
                 raise FullProjectActiveError("a full-project session is requested; no new scoped claims")
+            stage = execution_owner(self.store)[1]  # W4.7 M6: decided in this critical section, as its admission is
+            if stage:
+                raise CheckoutBusyError(f"the checkout's execution slot is taken: {stage}")
             task = self.store.load_task(task_id)
             if task.role != role:
                 raise ClaimError(f"task {task_id!r} belongs to role {task.role!r}, not {role!r}")

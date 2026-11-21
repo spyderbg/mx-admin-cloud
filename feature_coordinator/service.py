@@ -51,41 +51,10 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .autonomy import (
-    AVAILABLE,
-    BUSY,
-    CANCELLED,
-    CRITICAL,
-    EXIT_ALREADY_RUNNING,
-    EXIT_DO_NOT_RESTART,
-    INTERRUPTED,
-    NEEDS_ATTENTION,
-    OFFLINE,
-    PAUSED,
-    RECOVERING,
-    STOPPING,
-    SUBSCRIPTION,
-    SUCCESS,
-    TRANSIENT,
-    UNKNOWN,
-    WAITING,
-    Outcome,
-    Scheduling,
-    ServiceRecord,
-    apply_outcome,
-    blocking_survivors,
-    claim_view,
-    classify,
-    eligible_tasks,
-    epoch,
-    hung_after_seconds,
-    iso,
-    load_scheduling,
-    load_service,
-    new_service_record,
-    process_start_epoch,
-    read_control,
-    safe_identity,
-    scrub,
+    AVAILABLE, BUSY, CANCELLED, CRITICAL, EXIT_ALREADY_RUNNING, EXIT_DO_NOT_RESTART, INTERRUPTED, NEEDS_ATTENTION,
+    OFFLINE, PAUSED, RECOVERING, STOPPING, SUBSCRIPTION, SUCCESS, TRANSIENT, UNKNOWN, WAITING, Outcome, Scheduling,
+    ServiceRecord, apply_outcome, blocking_survivors, claim_view, classify, eligible_tasks, epoch, hung_after_seconds,
+    iso, load_scheduling, load_service, new_service_record, process_start_epoch, read_control, safe_identity, scrub,
     task_status,
 )
 from .checkpoints import classify_uncommitted, inspect, load_record, recover_task
@@ -263,8 +232,10 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
                 self._log(f"stopped ({self._stop_reason or 'exited'})")
             except CoordinatorError as exc:
                 self._log(f"shutdown bookkeeping failed: {exc}")
+        from .integration_worker import stop_stages  # pylint: disable=import-outside-toplevel
         from .review_worker import stop_reviews  # pylint: disable=import-outside-toplevel
         stop_reviews(self.coord, self._log)  # W4.6.1 R2: a reviewer process records its cancellation first
+        stop_stages(self.coord, self._log)   # W4.7 M6: an integration stage process is stopped and its launch closed
         if self._exclusive:
             drop_exclusive(self.store)
             self._exclusive = False
@@ -279,7 +250,8 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
             self._set_state(PAUSED, "paused by the operator: no new work is started")
             self._idle(self.cfg.idle_poll_seconds)
             return
-        self._poll_github(now)
+        if self._poll_github(now):
+            return
         feature = self._active_feature()
         if feature is None:
             return
@@ -319,14 +291,24 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
         self._set_state(state, reason)
         self._idle(min(self.cfg.idle_poll_seconds, max(wake - now, 0.01)) if wake else self.cfg.idle_poll_seconds)
 
-    def _poll_github(self, now: float) -> None:
+    def _poll_github(self, now: float) -> bool:
         """Each step at most every its poll_interval_seconds, in `review_worker.github_steps` order: publication,
-        the AI review, intake (why: see there). A failure is recorded once per distinct error; the service goes on."""
+        the AI review, intake (why: see there), W4.7 M6 integration. A failure is recorded once per distinct error;
+        the service goes on. True while an integration stage holds the checkout's execution slot — or it cannot be
+        known whether one does (integration_slot.execution_owner): this cycle starts no agent, and until the slot
+        is free no other step runs either — no publication pass (its integration gates), no intake (a planner), no
+        reviewer."""
         from .intake_poll import planning_hooks  # pylint: disable=import-outside-toplevel
+        from .integration_slot import execution_owner  # pylint: disable=import-outside-toplevel
+        from .integration_worker import integration_steps  # pylint: disable=import-outside-toplevel
         from .review_worker import github_steps, idle_state  # pylint: disable=import-outside-toplevel
         hooks = planning_hooks(self.store, lambda: self._beat(self.clock()))  # W4.5: while a planner runs
-        for name, cfg, poller in github_steps(self.config, self.coord, hooks, getattr(self.spawn, "start", None)):
-            if not cfg.enabled or now - self._polled_at.get(name, float("-inf")) < cfg.poll_interval_seconds:
+        start = getattr(self.spawn, "start", None)
+        held = bool(execution_owner(self.store)[0])  # M6: read from the records and /proc, so a restart sees it too
+        for name, cfg, poller in [*github_steps(self.config, self.coord, hooks, start),
+                                  *integration_steps(self.coord, start, self.instance, self.clock)]:
+            if not cfg.enabled or (held and name != "integration") \
+                    or now - self._polled_at.get(name, float("-inf")) < cfg.poll_interval_seconds:
                 continue
             self._polled_at[name] = now
             try:
@@ -342,6 +324,11 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
             for line in lines:
                 self._log(f"{name}: {line}")
         self._publication = idle_state(self._waits)
+        kind, why = execution_owner(self.store)  # again: the step above may have started or settled a stage
+        if kind:  # a stage runs (BUSY), or it cannot be known whether one does (NEEDS_ATTENTION): nothing beside it
+            self._set_state(BUSY if kind == "running" else NEEDS_ATTENTION, why)
+            self._idle(min(self.cfg.idle_poll_seconds, self.config.github.integration.worker.poll_interval_seconds))
+        return bool(kind)
 
     def _intake_changed(self, task: Task) -> bool:
         """W4.3.1: a task from an approved GitHub Issue starts only while that Issue still matches the

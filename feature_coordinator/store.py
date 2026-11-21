@@ -148,9 +148,9 @@ class StateStore:
     def save_record(self, kind: str, record: Any) -> None:
         """Persist a revision-checked record of *kind* ('github', 'outbox', 'project', 'checkpoints',
         'scheduling', 'service', 'intake', — W4.5 — 'plan', — W4.6.1 — 'review' or 'revalidation', — W4.7 —
-        'integration'; inside a transaction)."""
+        'integration' or — M6 — 'integration-schedule'; inside a transaction)."""
         if kind not in ("github", "outbox", "project", "checkpoints", "scheduling", "service", "intake", "plan",
-                        "review", "revalidation", "integration"):
+                        "review", "revalidation", "integration", "integration-schedule"):
             raise StateDirError(f"unknown record kind {kind!r}")
         self._write(kind, record)
 

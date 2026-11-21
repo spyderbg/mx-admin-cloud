@@ -461,7 +461,8 @@ def github_steps(config: Any, coord: Any, hooks: Mapping[str, Any],
     """The service's GitHub steps in order: W4.3.3 publication first (a merge is seen before a closed Issue could
     look like a withdrawn approval; a Draft PR opened now is reviewable at once), then W4.6.1 R2 the AI review
     (it only starts, watches and collects reviewer processes), then the W4.3.1 intake poll (W4.5: a planner run
-    inside it keeps the service's heartbeat through *hooks*)."""
+    inside it keeps the service's heartbeat through *hooks*). W4.7 M6: the service appends the integration step
+    (integration_worker.integration_steps) after these, only when `github.integration.worker.enabled`."""
     from .intake_poll import IntakePoller  # pylint: disable=import-outside-toplevel
     from .publish import PullRequestPublisher  # pylint: disable=import-outside-toplevel
     github = config.github

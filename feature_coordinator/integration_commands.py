@@ -1,4 +1,4 @@
-"""W4.7 (M1-M5) commands: `python -m feature_coordinator integration …` — integration jobs of existing branches/PRs.
+"""W4.7 (M1-M6) commands: `python -m feature_coordinator integration …` — integration jobs of existing branches/PRs.
 
     integration intake --source-repo OWNER/NAME --source-ref BRANCH --source-sha SHA --base BRANCH --base-sha SHA
                        --issue N [--pr N] [--supersede JOB] [--actor NAME] [--apply] [--json]
@@ -45,6 +45,17 @@
                             method pinned to the approved source SHA), and the post-merge verification (parents, tree,
                             checks) that alone completes the job. Dry run (default): reads only, writes nothing
 
+    integration recover [--job JOB] [--actor NAME] [--apply] [--json]
+                            (M6) the diagnosis of interrupted jobs (read-only): the operation the record shows as begun
+                            and not finished, the next step and who takes it, the repair routing of NEEDS_REPAIR.
+                            --apply (one job) settles what a merge run left behind by READING GitHub: an undispatched
+                            intent is closed, a dispatched merge request reconciled, a MERGED job verified — it sends
+                            no PR creation and no merge request, and repeats none
+    integration schedule [--job JOB] [--resume --reason TEXT [--actor NAME] --apply] [--json]
+                            (M6) the Worker's view of the open jobs (next step, running stage, delay, hold); --resume
+                            clears a job's hold and counters. The Worker schedules inspect, validate, review and
+                            recover only when github.integration.worker enables them — never the merge
+
 Only `merge --apply` writes to GitHub (the one PR the approval authorizes, and the merge); nothing is pushed and dev is
 never touched directly; the checkout's refs, index and working tree are never written (M3-M5 write only the
 coordinator state directory). The `integrate FEATURE` command (the feature integration
@@ -63,6 +74,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import json
+import os
 import signal
 import sys
 from pathlib import Path
@@ -79,8 +91,9 @@ from .integration_intake import IntegrationIntake, ReadOnlyGit, check_actor
 from .integration_merge import IntegrationMerger
 from .integration_merge_status import merge_approval_blockers, merge_status
 from .integration_review import IntegrationReviewer, review_eligibility
+from .integration_slot import STAGE_TAG_ENV, confirm_launch
 from .integration_validate import IntegrationValidator
-from .locks import LockSet
+from .locks import LockSet, ProcessIdentity
 from .paths import PathPolicy
 from .statedir import ensure_state_dir, resolve_state_dir
 from .store import StateStore
@@ -124,6 +137,19 @@ def _json_errors(func: Callable[[argparse.Namespace, ProjectConfig], int]) -> Ca
             return 1
     wrapper.__doc__ = func.__doc__
     return wrapper
+
+
+def _confirm_scheduled(args: argparse.Namespace, config: ProjectConfig) -> None:
+    """M6: a stage command started BY THE WORKER (it carries a stage tag) confirms its launch before it does anything
+    (integration_slot.confirm_launch): its launch must still be the recorded one, and — if no process is recorded for
+    it yet — the checkout must still be free. Otherwise it does nothing at all. An operator's own command carries no
+    tag and is not affected."""
+    tag = os.environ.get(STAGE_TAG_ENV)
+    if not tag or not getattr(args, "apply", False):
+        return
+    problem = confirm_launch(StateStore(_state_path(args, config)), args.job, tag, ProcessIdentity.current())
+    if problem:
+        raise CoordinatorError(f"this scheduled stage does not run: {problem}; nothing was done")
 
 
 def _eligible(job: dict[str, Any], config: ProjectConfig) -> dict[str, Any]:
@@ -383,6 +409,7 @@ def cmd_approve(args: argparse.Namespace, config: ProjectConfig) -> int:
 def cmd_inspect(args: argparse.Namespace, config: ProjectConfig) -> int:
     """Read-only inspection of a job under a valid inspect approval; --apply records the decision."""
     actor = check_actor(args.actor)
+    _confirm_scheduled(args, config)
     state_dir = _writable_state(args, config) if args.apply else _state_path(args, config)
     store = StateStore(state_dir)
     git = ReadOnlyGit(Path(args.repo), config, LockSet(state_dir / "locks"),
@@ -410,6 +437,7 @@ def cmd_inspect(args: argparse.Namespace, config: ProjectConfig) -> int:
 def cmd_validate(args: argparse.Namespace, config: ProjectConfig) -> int:
     """(M3) Build the candidate and run its gates under a current passed inspection; --apply records."""
     actor = check_actor(args.actor)
+    _confirm_scheduled(args, config)
     state_dir = _writable_state(args, config) if args.apply else _state_path(args, config)
     store = StateStore(state_dir)
     git = ReadOnlyGit(Path(args.repo), config, LockSet(state_dir / "locks"),
@@ -447,6 +475,7 @@ def cmd_validate(args: argparse.Namespace, config: ProjectConfig) -> int:
 def cmd_review(args: argparse.Namespace, config: ProjectConfig) -> int:
     """(M4) The independent AI review of the validated candidate; --apply runs or recovers it and records."""
     actor = check_actor(args.actor)
+    _confirm_scheduled(args, config)
     if args.retry and not args.reason:
         raise CoordinatorError("--retry needs --reason TEXT (recorded with the new review round)")
     if args.reason and not args.retry:
@@ -602,8 +631,9 @@ def cmd_abort(args: argparse.Namespace, config: ProjectConfig) -> int:
     return 0
 
 
-def register(sub: Any) -> None:  # pylint: disable=too-many-statements
-    """Add `integration intake|status|abort|approve|inspect|validate|review|merge` to the CLI's subparsers."""
+def register(sub: Any) -> Any:  # pylint: disable=too-many-statements
+    """Add `integration intake|status|abort|approve|inspect|validate|review|merge|recover|schedule` to the CLI's
+    subparsers."""
     group = sub.add_parser("integration", help="W4.7: integration jobs of existing branches/PRs (M1: intake, "
                                                "status, abort; M2: approve, inspect; M3: validate; M4: review; M5: "
                                                "merge)",
@@ -665,6 +695,7 @@ def register(sub: Any) -> None:  # pylint: disable=too-many-statements
                        help="write to GitHub (the authorized PR, the merge) and record (default: dry run, reads only)")
     merge.add_argument("--json", action="store_true")
     merge.set_defaults(func=cmd_merge)
+    return isub   # M6: integration_recovery_commands.register adds recover and schedule
 
 
 def _register_review(isub: Any) -> None:
