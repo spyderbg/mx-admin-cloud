@@ -65,6 +65,7 @@ from .errors import (
     GitHubError,
     GitHubNotFoundError,
     GitHubUncertainWriteError,
+    GitConfigExecutionError,
     GitOperationError,
     LockBusyError,
     StateDirError,
@@ -385,6 +386,8 @@ class ReviewRunner:  # pylint: disable=too-many-instance-attributes,too-few-publ
                 tip = feature.base_sha
         try:
             base = merge_base(self.coord.root, tip, head)
+        except GitConfigExecutionError:   # refused (S2): the pass is deferred, nothing is recorded about the PR
+            raise
         except GitOperationError as exc:  # unrelated histories, a missing object: never reviewed
             base = ""
             problems.append(f"no merge base of {feature.base_branch} ({tip[:12]}) and the head: {sanitize(exc, 200)}")

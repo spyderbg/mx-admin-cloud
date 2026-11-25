@@ -195,19 +195,23 @@ def supervise(argv: Sequence[str], *, cwd: Path, env: Mapping[str, str] | None, 
         next_beat = start + heartbeat_interval
         beats = 0
         status = "exited"
-        while proc.poll() is None:
-            now = time.monotonic()
-            if heartbeat and now >= next_beat:
-                heartbeat()
-                beats += 1
-                next_beat = now + heartbeat_interval
-            if (cancelled and cancelled()) or stop_requested():
-                status = "cancelled"
-                break
-            if now >= deadline:
-                status = "timeout"
-                break
-            time.sleep(poll_interval)
+        try:
+            while proc.poll() is None:
+                now = time.monotonic()
+                if heartbeat and now >= next_beat:
+                    heartbeat()
+                    beats += 1
+                    next_beat = now + heartbeat_interval
+                if (cancelled and cancelled()) or stop_requested():
+                    status = "cancelled"
+                    break
+                if now >= deadline:
+                    status = "timeout"
+                    break
+                time.sleep(poll_interval)
+        except BaseException:
+            terminate_group(proc, 0)  # e.g. a failing heartbeat: never leave an unsupervised agent running
+            raise
         escalated = False
         if proc.poll() is None:
             escalated = terminate_group(proc, grace_seconds)

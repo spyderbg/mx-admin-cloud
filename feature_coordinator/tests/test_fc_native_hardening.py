@@ -19,6 +19,7 @@ from feature_coordinator import native_hardening as nh
 from feature_coordinator.config import ProjectConfig, config_from_mapping
 from feature_coordinator.demo import init_demo_repo
 from feature_coordinator.errors import ConfigError
+from feature_coordinator.git_control import control_files
 from feature_coordinator.launchers import ClaudeCodeLauncher, CodexLauncher, run_context
 from feature_coordinator.native_backend import NativeCliRunner, SubscriptionCheck
 from feature_coordinator.native_hardening import NativeHardening
@@ -240,17 +241,17 @@ def test_sandboxed_claude_shell_needs_nested_user_namespaces(monkeypatch, fake_h
 # -- post-run checks ------------------------------------------------------------------------------------
 
 def test_git_control_digest_sees_what_could_run_code_later(repo) -> None:
-    base = nh.git_control_digest(repo)
+    base = control_files(repo)
     (repo / ".git/commondir").write_text(".\n", encoding="utf-8")   # Claude Code's own benign guards
     (repo / ".git/config.worktree").write_text("", encoding="utf-8")
-    assert nh.git_control_digest(repo) == base
+    assert control_files(repo) == base
     for change in (lambda: (repo / ".git/config").open("a").write("[core]\n\tfsmonitor = /tmp/x\n"),
                    lambda: (repo / ".git/hooks/post-checkout").write_text("#!/bin/sh\n"),
                    lambda: (repo / ".git/info/attributes").write_text("* filter=x\n"),
                    lambda: (repo / ".git/commondir").write_text("/elsewhere\n")):
-        before = nh.git_control_digest(repo)
+        before = control_files(repo)
         change()
-        assert nh.git_control_digest(repo) != before
+        assert control_files(repo) != before
 
 
 def test_claude_init_problems() -> None:

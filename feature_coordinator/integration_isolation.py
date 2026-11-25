@@ -14,6 +14,7 @@ the single check weaker than it looks (both reproduced on this host, tests in te
   * gitsafe's name-keyed patterns (`^credential(\\.[^.]+)?\\.helper$`, `^filter\\.[^.]+\\.(clean|smudge|process)$`, …)
     do not match a subsection name that contains a dot (`credential.https://host.example.helper`,
     `filter.a.b.smudge`), which Git accepts and uses.
+Security S2 fixed both in gitsafe, whose scan this module uses; the isolation below does not depend on any scan.
 
 The mechanism (closes the race instead of narrowing it). No integration Git process that reads objects or talks to a
 remote ever has the checkout as its repository:
@@ -37,7 +38,7 @@ get-url`, `rev-parse --is-shallow-repository|--git-common-dir|--show-object-form
 run no program whatever the configuration says and never write; the adversarial tests plant every known execution
 key and every hook and assert that nothing runs. Their output is validated input.
 
-strict_execution_findings() is a superset of gitsafe's check (the keys above included). It runs at preflight and again
+strict_execution_findings() is gitsafe's scan (the keys above included). It runs at preflight and again
 right before a decision is recorded: a checkout whose configuration was changed to run programs during a run is
 refused — not because a program could have run (none can), but as evidence of tampering.
 
@@ -58,7 +59,7 @@ from pathlib import Path
 from typing import Any
 
 from .errors import GitConfigExecutionError, RemoteUnavailableError
-from .gitsafe import git_argv, hardened_env
+from .gitsafe import execution_findings, git_argv, hardened_env
 
 # Written by this module into every private repository (no `git init`, no template, no hooks directory).
 PRIVATE_CONFIG = (
@@ -213,77 +214,10 @@ def _run_remote(argv: list[str], timeout: float, what: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# The strict configuration scan (a superset of gitsafe.execution_findings)
+# The configuration scan (gitsafe's: one scanner for the Worker and the integration jobs since Security S2)
 # ---------------------------------------------------------------------------
 
-_UNTRUSTED_SCOPES = frozenset({"local", "worktree"})
-_INERT = frozenset({"", "false", "0", "no", "off"})
-# Exact keys (gitsafe's list): the value names a program.
-_EXACT = frozenset({"core.hookspath", "core.sshcommand", "core.gitproxy", "core.pager", "core.editor", "core.askpass",
-                    "core.alternaterefscommand", "core.fsmonitorhookversion", "sequence.editor", "diff.external",
-                    "gpg.program", "uploadpack.packobjectshook", "pack.packobjectshook"})
-# Name-keyed program settings: section → final key names, for ANY subsection (dots included — gitsafe misses those).
-_BY_SECTION: dict[str, frozenset[str]] = {
-    "filter": frozenset({"clean", "smudge", "process"}),
-    "diff": frozenset({"command", "textconv"}),
-    "difftool": frozenset({"cmd", "path"}),
-    "mergetool": frozenset({"cmd", "path"}),
-    "merge": frozenset({"driver"}),
-    "credential": frozenset({"helper"}),
-    "gpg": frozenset({"program", "defaultkeycommand"}),
-    "trailer": frozenset({"command", "cmd"}),
-    "remote": frozenset({"uploadpack", "receivepack", "vcs"}),  # not in gitsafe: run by ls-remote/fetch/push
-}
-_ANY_SECTION = frozenset({"textconv", "hookspath"})
-
-
-def is_execution_setting(key: str, value: str) -> bool:
-    """True when the configuration entry *key*=*value* names a program Git may run."""
-    key = key.lower()
-    inert = value.strip().lower() in _INERT
-    if key == "core.fsmonitor":
-        return value.strip().lower() not in (_INERT | {"true"})  # `true` is Git's builtin monitor, no program
-    section, _sep, rest = key.partition(".")
-    name = key.rsplit(".", 1)[-1]
-    if section == "submodule" and name == "update":
-        return value.strip().startswith("!")
-    if key in _EXACT:
-        return not inert
-    has_subsection = "." in rest
-    if section == "credential" and name == "helper":
-        return not inert
-    if has_subsection and name in _BY_SECTION.get(section, frozenset()):
-        return not inert
-    return (not inert) and name in _ANY_SECTION and key != name
-
-
-def config_records(root: Path | str, *, timeout: float = 30.0) -> list[tuple[str, str, str]]:
-    """(scope, key, value) of every effective configuration entry of *root* (includes resolved by Git), read by a
-    command that runs no program. Unlike gitsafe's listing it fails CLOSED: a configuration that cannot be listed is
-    a GitConfigExecutionError (an unreadable configuration also breaks every other Git command)."""
-    try:
-        proc = subprocess.run(git_argv(root, "config", "--list", "--show-scope", "-z"), capture_output=True,
-                              text=True, env=hardened_env(), timeout=timeout, check=False)
-    except subprocess.TimeoutExpired as exc:
-        raise GitConfigExecutionError(f"listing the Git configuration of {root} did not finish within "
-                                      f"{timeout:.0f}s") from exc
-    if proc.returncode != 0:
-        raise GitConfigExecutionError(f"the Git configuration of {root} cannot be listed: "
-                                      f"{' '.join(proc.stderr.split())[:200]}")
-    fields = proc.stdout.split("\0")
-    records = []
-    for index in range(0, len(fields) - 1, 2):
-        key, _sep, value = fields[index + 1].partition("\n")
-        records.append((fields[index], key.strip(), value))
-    return records
-
-
-def strict_execution_findings(root: Path | str, *, timeout: float = 30.0) -> list[str]:
-    """Repository-scoped (local/worktree, includes resolved) configuration entries that name a program. Empty when
-    there are none. A superset of gitsafe.execution_findings (see the module docstring)."""
-    findings = {f"{scope} {key.lower()}={value[:80]}" for scope, key, value in config_records(root, timeout=timeout)
-                if scope in _UNTRUSTED_SCOPES and is_execution_setting(key, value)}
-    return sorted(findings)
+strict_execution_findings = execution_findings
 
 
 def assert_no_execution_config_strict(root: Path | str, *, where: str, timeout: float = 30.0) -> None:

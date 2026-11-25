@@ -23,6 +23,7 @@ from . import CLI, CODE_ROOT
 from .config import ProjectConfig
 from .demo import init_demo_repo
 from .gates import SandboxedGateRunner
+from .gitsafe import run_git
 from .http_transport import HttpChatTransport
 from .issue_sync import IssueSync
 from .issues import MockIssueTracker, TrackerClient
@@ -157,8 +158,7 @@ def containment_self_test(config: ProjectConfig, workdir: Path | None = None) ->
         init_demo_repo(repo, SELF_TEST_FILES)
         for rel, text in UNTRACKED_SECRETS.items():
             (repo / rel).write_text(text, encoding="utf-8")
-        before = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True, text=True,
-                                check=True).stdout.strip()
+        before = run_git(repo, "rev-parse", "HEAD", check=True).stdout.strip()
         policy = PathPolicy(repo, config)
         builder = SandboxBuilder(repo, config, policy, bwrap=bwrap)
         report = SelfTestReport()
@@ -188,8 +188,7 @@ def containment_self_test(config: ProjectConfig, workdir: Path | None = None) ->
             report.mismatches += _role_mismatches(policy, role, result, own=own, victim=victim)
             if (repo / "probe-at-root.txt").exists():
                 report.mismatches.append(f"{role}: a root-level write reached the real checkout")
-        after = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True, text=True,
-                               check=True).stdout.strip()
+        after = run_git(repo, "rev-parse", "HEAD", check=True).stdout.strip()
         if (base / "outside.txt").exists() or after != before:
             report.repo_unchanged_outside_roots = False
             report.mismatches.append("a write escaped the sandbox (outside file or a new commit)")

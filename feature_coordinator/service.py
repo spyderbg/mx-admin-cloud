@@ -60,7 +60,7 @@ from .autonomy import (
 from .checkpoints import classify_uncommitted, inspect, load_record, recover_task
 from .claims import drop_exclusive, heartbeat_age, hold_exclusive, orphaned_agents
 from .config import ProjectConfig
-from .errors import ClaimError, CoordinatorError, LockBusyError
+from .errors import ClaimError, CoordinatorError, GitConfigExecutionError, GitOperationError, LockBusyError
 from .locks import FileLock, ProcessIdentity
 from .model import Feature, FeatureState, Task, TaskState, transition_task, utc_now
 from .store import atomic_write_json
@@ -649,6 +649,8 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
         if pre is not None:
             self._apply(task.id, pre, None)
             return
+        head = self.coord.git.rev_parse(f"refs/heads/{feature.branch}")  # before the write-ahead: may be refused (S2)
+        foreign_before = self._foreign_dirty(task)
         with self.store.transaction():  # write-ahead: counted BEFORE the agent can start
             rec = load_scheduling(self.store, task)
             rec.launches += 1
@@ -659,9 +661,6 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
             self.store.save_record("scheduling", rec)
         started = time.time()  # wall time: compared with run directories' modification times
         mark = len(self.store.events())
-        branch = f"refs/heads/{feature.branch}"
-        head = self.coord.git.rev_parse(branch)
-        foreign_before = self._foreign_dirty(task)
         profile = self.config.provider_for(task.role)
         assert self.record is not None
         self.record.current = {"feature": feature.id, "task": task.id, "role": task.role, "agent": profile.name,
@@ -703,6 +702,8 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
         """W3 consistency of a multi-step task's checkpoints (an unreadable record is CRITICAL for this task only)."""
         try:
             conflicts = inspect(self.coord, task.id).conflicts
+        except GitConfigExecutionError:  # the checkout's problem (workspace_problems: NEEDS_ATTENTION), not the task's
+            return None
         except CoordinatorError as exc:
             return Outcome(CRITICAL, f"checkpoint state unreadable: {exc}")
         return Outcome(CRITICAL, "recovery conflict: " + "; ".join(conflicts)) if conflicts else None
@@ -818,16 +819,19 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
         tags = tags | self._run_tags(task.id, started)  # also runs too short to be seen while polling
         survivors = sorted({pid for tag in tags for pid in tagged_processes(RUN_TAG_ENV, tag)})
         git = self.coord.git
-        now_head = git.rev_parse(f"refs/heads/{feature.branch}")
-        if not git.is_ancestor(head, now_head):
-            problems.append(f"the feature branch was rewritten during the launch ({head[:12]} → {now_head[:12]})")
-        else:
-            for sha in git.commits_between(head, now_head):
-                if not git.trailers(sha).get("Feature-Task"):
-                    problems.append(f"commit {sha[:12]} was not made by the Git coordinator")
-        unexplained = sorted(self._foreign_dirty(task) - foreign_before)
-        if unexplained:
-            problems.append(f"unexplained changes outside {task.role}'s paths: {unexplained[:20]}")
+        try:
+            now_head = git.rev_parse(f"refs/heads/{feature.branch}")
+            if not git.is_ancestor(head, now_head):
+                problems.append(f"the feature branch was rewritten during the launch ({head[:12]} → {now_head[:12]})")
+            else:
+                for sha in git.commits_between(head, now_head):
+                    if not git.trailers(sha).get("Feature-Task"):
+                        problems.append(f"commit {sha[:12]} was not made by the Git coordinator")
+            unexplained = sorted(self._foreign_dirty(task) - foreign_before)
+            if unexplained:
+                problems.append(f"unexplained changes outside {task.role}'s paths: {unexplained[:20]}")
+        except (GitOperationError, subprocess.CalledProcessError, OSError) as exc:  # S2: the launch is settled anyway
+            problems.append(f"the checkout could not be inspected after the launch: {scrub(str(exc), 600)}")
         if self.store.load_claim(task.id) is not None:
             if problems:
                 return Outcome(CRITICAL, "; ".join(problems))
@@ -845,7 +849,8 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
                                + (f"{remaining} could not be stopped)" if remaining else "stopped by the service)"))
             blocking = sorted(tags) if remaining else []
         if after.steps:
-            problems += inspect(self.coord, task.id).conflicts
+            conflict = self._checkpoint_problem(task)
+            problems += [conflict.reason] if conflict else []
         if problems:
             return Outcome(CRITICAL, "; ".join(problems), evidence={"blocking_run_tags": blocking} if blocking else {})
         outcome = classify(task, after, events, exit_code=exit_code, log_text=self._launch_log(task.id, launch),

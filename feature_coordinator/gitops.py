@@ -73,7 +73,14 @@ from .errors import (
     UnstableFileError,
     WritersActiveError,
 )
-from .gitsafe import SAFE_CONFIG_ARGS, assert_no_execution_config, extend_scrub, scrub_prefixes
+from .gitsafe import (
+    ALLOWED_PROTOCOLS,
+    assert_no_execution_config,
+    extend_scrub,
+    guarded_argv,
+    guarded_env,
+    scrub_prefixes,
+)
 from .locks import FileLock, LockSet
 from .paths import PathPolicy
 from .workspace import git_operation_in_progress
@@ -153,9 +160,9 @@ def branch_contains(repo: Path, branch: str, sha: str, *, env: Mapping[str, str]
     """True when commit *sha* is an ancestor of (or equal to) refs/heads/<branch> in *repo*."""
     if not re.fullmatch(r"[0-9a-f]{7,40}", sha):
         return False
-    result = subprocess.run(["git", "-C", str(repo), *SAFE_CONFIG_ARGS, "merge-base", "--is-ancestor", sha,
-                             f"refs/heads/{branch}"], capture_output=True, text=True,
-                            env=None if env is None else dict(env), check=False)
+    result = subprocess.run(guarded_argv(repo, "merge-base", "--is-ancestor", sha, f"refs/heads/{branch}"),
+                            capture_output=True, text=True, env=guarded_env() if env is None else dict(env),
+                            check=False)
     return result.returncode == 0
 
 
@@ -175,16 +182,18 @@ class GitCoordinator:  # pylint: disable=too-many-public-methods
     def _env(self, extra: Mapping[str, str] | None = None) -> dict[str, str]:
         env = {k: v for k, v in os.environ.items()
                if k not in _SCRUBBED_ENV and not k.startswith(tuple(scrub_prefixes()))}
-        env.update({"LC_ALL": "C", "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0"})
+        env.update({"LC_ALL": "C", "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0",
+                    "GIT_ALLOW_PROTOCOL": ALLOWED_PROTOCOLS})
         env.update(extra or {})
         return env
 
-    def _gitc(self) -> list[str]:
-        """`git -C <root>` with the gitsafe -c overrides — the prefix of every Coordinator Git call."""
-        return ["git", "-C", str(self.root), *SAFE_CONFIG_ARGS]
+    def _argv(self, *args: str) -> list[str]:
+        """The argv of every Coordinator Git call: the gitsafe scan of the checkout's configuration runs first
+        (GitConfigExecutionError: the command must not run), then `git -C <root>` with the -c overrides."""
+        return guarded_argv(self.root, *args)
 
     def _git(self, *args: str, env: Mapping[str, str] | None = None, check: bool = True) -> str:
-        result = subprocess.run([*self._gitc(), *args], capture_output=True, text=True,
+        result = subprocess.run(self._argv(*args), capture_output=True, text=True, errors="surrogateescape",
                                 env=self._env(env), check=False)
         if check and result.returncode != 0:
             detail = result.stderr.strip() or result.stdout.strip()
@@ -192,7 +201,7 @@ class GitCoordinator:  # pylint: disable=too-many-public-methods
         return result.stdout
 
     def _git_bytes(self, *args: str, env: Mapping[str, str] | None = None) -> bytes:
-        result = subprocess.run([*self._gitc(), *args], capture_output=True, env=self._env(env),
+        result = subprocess.run(self._argv(*args), capture_output=True, env=self._env(env),
                                 check=False)
         if result.returncode != 0:
             raise GitOperationError(f"git {' '.join(args[:2])} failed: {result.stderr.decode(errors='replace')}")
@@ -215,8 +224,8 @@ class GitCoordinator:  # pylint: disable=too-many-public-methods
 
     def branch_exists(self, branch: str) -> bool:
         """True if refs/heads/<branch> exists."""
-        result = subprocess.run([*self._gitc(), "show-ref", "--verify", "--quiet",
-                                 f"refs/heads/{branch}"], env=self._env(), check=False)
+        result = subprocess.run(self._argv("show-ref", "--verify", "--quiet", f"refs/heads/{branch}"),
+                                capture_output=True, env=self._env(), check=False)
         return result.returncode == 0
 
     def staged_paths(self) -> list[str]:
@@ -258,7 +267,7 @@ class GitCoordinator:  # pylint: disable=too-many-public-methods
 
     def is_ancestor(self, ancestor: str, descendant: str) -> bool:
         """True when *ancestor* is an ancestor of (or equal to) *descendant* (read-only)."""
-        result = subprocess.run([*self._gitc(), "merge-base", "--is-ancestor", ancestor, descendant],
+        result = subprocess.run(self._argv("merge-base", "--is-ancestor", ancestor, descendant),
                                 capture_output=True, env=self._env(), check=False)
         return result.returncode == 0
 
@@ -286,7 +295,7 @@ class GitCoordinator:  # pylint: disable=too-many-public-methods
 
     def blob_digest(self, sha: str, path: str) -> str | None:
         """SHA-256 of *path* in commit *sha*, or None when the commit has no such file (read-only)."""
-        result = subprocess.run([*self._gitc(), "cat-file", "blob", f"{sha}:{path}"],
+        result = subprocess.run(self._argv("cat-file", "blob", f"{sha}:{path}"),
                                 capture_output=True, env=self._env(), check=False)
         return hashlib.sha256(result.stdout).hexdigest() if result.returncode == 0 else None
 
@@ -364,8 +373,8 @@ class GitCoordinator:  # pylint: disable=too-many-public-methods
                 message += f"{CHECKPOINT_TRAILER}: {request.checkpoint_id}\n"
             sha = self._commit_tree(tree, head, message, commit_env)
             result = subprocess.run(
-                [*self._gitc(), "update-ref", "-m", f"feature-coordinator: {request.task_id}",
-                 f"refs/heads/{request.branch}", sha, head],
+                self._argv("update-ref", "-m", f"feature-coordinator: {request.task_id}",
+                           f"refs/heads/{request.branch}", sha, head),
                 capture_output=True, text=True, env=self._env(), check=False)
             if result.returncode != 0:
                 raise HeadMismatchError(f"branch moved during the commit (compare-and-swap failed): {result.stderr}")
@@ -386,8 +395,8 @@ class GitCoordinator:  # pylint: disable=too-many-public-methods
     def _check_head(self, expected: str, head: str, paths: Sequence[str]) -> tuple[str, ...]:
         if expected == head:
             return ()
-        ancestor = subprocess.run([*self._gitc(), "merge-base", "--is-ancestor", expected, head],
-                                  env=self._env(), check=False)
+        ancestor = subprocess.run(self._argv("merge-base", "--is-ancestor", expected, head),
+                                  capture_output=True, env=self._env(), check=False)
         if ancestor.returncode != 0:
             raise HeadMismatchError(f"expected HEAD {expected[:12]} is not an ancestor of {head[:12]}")
         touched = [p for p in self._git("diff", "--name-only", "-z", expected, head, "--", *paths).split("\0") if p]
@@ -427,7 +436,7 @@ class GitCoordinator:  # pylint: disable=too-many-public-methods
                 raise UnstableFileError(f"{path!r} changed while it was being staged; resubmit when stable")
 
     def _commit_tree(self, tree: str, parent: str, message: str, env: Mapping[str, str]) -> str:
-        result = subprocess.run([*self._gitc(), "commit-tree", tree, "-p", parent],
+        result = subprocess.run(self._argv("commit-tree", tree, "-p", parent),
                                 input=message, capture_output=True, text=True, env=self._env(env), check=False)
         if result.returncode != 0:
             raise GitOperationError(f"git commit-tree failed: {result.stderr.strip()}")
@@ -435,7 +444,7 @@ class GitCoordinator:  # pylint: disable=too-many-public-methods
 
     def _refresh_index(self, paths: Sequence[str], attempts: int = 5) -> None:
         for attempt in range(attempts):
-            result = subprocess.run([*self._gitc(), "reset", "-q", "HEAD", "--", *paths],
+            result = subprocess.run(self._argv("reset", "-q", "HEAD", "--", *paths),
                                     capture_output=True, text=True, env=self._env(), check=False)
             if result.returncode == 0:
                 return
@@ -464,7 +473,7 @@ class GitCoordinator:  # pylint: disable=too-many-public-methods
     def _network(self, *args: str, timeout: float) -> subprocess.CompletedProcess[str]:
         """A git command that talks to a remote: no hooks, no prompts, bounded. On timeout the whole process
         group is killed (RemoteUnavailableError: the operation may still have reached the remote)."""
-        proc = subprocess.Popen([*self._gitc(), *args],  # pylint: disable=consider-using-with
+        proc = subprocess.Popen(self._argv(*args),  # pylint: disable=consider-using-with
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL, text=True,
                                 env=self._env(), start_new_session=True)
         try:
@@ -543,7 +552,7 @@ class GitCoordinator:  # pylint: disable=too-many-public-methods
             return self.rev_parse("FETCH_HEAD")
 
     def _has_commit(self, sha: str) -> bool:
-        return subprocess.run([*self._gitc(), "cat-file", "-e", f"{sha}^{{commit}}"], capture_output=True,
+        return subprocess.run(self._argv("cat-file", "-e", f"{sha}^{{commit}}"), capture_output=True,
                               env=self._env(), check=False).returncode == 0
 
     def fast_forward_branch(self, branch: str, *, since: str, to: str, project: FileLock) -> bool:
@@ -569,7 +578,7 @@ class GitCoordinator:  # pylint: disable=too-many-public-methods
             unclean = self.tracked_changes() + git_operation_in_progress(self.root)
             if unclean:
                 raise GitOperationError(f"the checkout is not clean ({unclean[:10]}); nothing is fast-forwarded")
-            self._git("merge", "--ff-only", "--no-stat", "--quiet", to)
+            self._git("merge", "--ff-only", "--no-autostash", "--no-stat", "--quiet", to)
             if self.rev_parse(f"refs/heads/{branch}") != to or self.rev_parse("HEAD") != to:
                 raise GitOperationError(f"after the fast-forward {branch} is not at {to[:12]}")
             return True

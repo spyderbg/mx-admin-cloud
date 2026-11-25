@@ -66,15 +66,17 @@ is after the fact: it does not undo a read that already happened.
 from __future__ import annotations
 
 import secrets
-import subprocess
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, Sequence
 
 from .config import ProjectConfig
+from .errors import GitConfigExecutionError
 from .fsguard import Classifier, Inventory, InventoryError, InventoryUnstableError, scan
-from .gitsafe import SAFE_CONFIG_ARGS, hardened_env
+from .git_control import RESIDUE as CONTROL_RESIDUE
+from .git_control import GitControl, capture, verify
+from .gitsafe import displayable, run_git
 from .locks import ProcessIdentity
 from .model import utc_now
 from .paths import PathPolicy
@@ -153,8 +155,7 @@ def hold_ref(hold: Mapping[str, Any] | None, generation: int = 0) -> str:
 # ---------------------------------------------------------------------------
 
 def _git_lines(root: Path, *args: str) -> list[str] | None:
-    proc = subprocess.run(["git", "-C", str(root), *SAFE_CONFIG_ARGS, *args], capture_output=True, text=True,
-                          env=hardened_env(), check=False)
+    proc = run_git(root, *args)
     return [t for t in proc.stdout.split("\0") if t] if proc.returncode == 0 else None
 
 
@@ -210,29 +211,70 @@ def describe(hold: Mapping[str, Any]) -> str:
     first = entries[0] if entries else {}
     where = f" (task {first.get('task')}, run {first.get('run_dir') or '-'})" if first.get("task") else ""
     more = f" (+{len(entries) - 1} more)" if len(entries) > 1 else ""
-    return (f"the checkout is on hold {hold_ref(hold)} since {hold.get('since')}: "
-            f"{first.get('reason', 'unauthorized changes')}{where}{more} — inspect `python -m feature_coordinator "
-            f"workspace status`, remediate, then `python -m feature_coordinator workspace resolve --apply --hold "
-            f"{hold_ref(hold)}` (nothing is removed automatically)")
+    reason = displayable(str(first.get("reason", "unauthorized changes")))
+    return (f"the checkout is on hold {hold_ref(hold)} since {hold.get('since')}: {reason}{where}{more} — "
+            "inspect `python -m feature_coordinator workspace status`, remediate, then `python -m feature_coordinator "
+            f"workspace resolve --apply --hold {hold_ref(hold)}` (nothing is removed automatically)")
 
 
 def _alive(execution: Mapping[str, Any]) -> bool:
+    """Is its Worker or agent process alive? An identity nobody can read counts as alive (nothing is dropped)."""
     for key in ("worker", "agent"):
         identity = execution.get(key)
-        if identity and ProcessIdentity.from_dict(identity).is_alive():
+        try:
+            if identity and ProcessIdentity.from_dict(identity).is_alive():
+                return True
+        except (KeyError, TypeError, ValueError):
             return True
     return False
 
 
-def _reap(store: StateStore, root: Path, record: dict[str, Any]) -> bool:
-    """Drop executions whose Worker AND agent processes are gone (they ended without a final verification: an
-    event; their residue is the next inventory check's to find). True when the record changed."""
-    gone = [key for key, execution in record["executions"].items() if not _alive(execution)]
-    for key in gone:
-        execution = record["executions"].pop(key)
-        store.append_event("workspace-execution-abandoned", checkout=checkout_key(root), execution=key,
-                           task=execution.get("task"), role=execution.get("role"))
-    return bool(gone)
+def _control_problems(root: Path, execution: Mapping[str, Any]) -> list[str]:
+    """Security S2: what an execution that ended without a judged result left of the Git control state recorded at its
+    admission. Lists the configuration (bounded by its timeout): never called under the Coordinator lock."""
+    recorded = execution.get("git_control")
+    if recorded is None:        # admitted before S2
+        return []
+    try:
+        control = GitControl.from_dict(recorded)
+    except (ValueError, AttributeError):
+        return ["Git control state recorded at its start is unreadable"]
+    return verify(root, control).problems
+
+
+def _add_interrupted(store: StateStore, root: Path, record: dict[str, Any], execution: Mapping[str, Any],
+                     problems: Sequence[str]) -> None:
+    if problems:
+        _add_entry(store, root, record, paths=[CONTROL_RESIDUE, *problems], reason=(
+            f"the run of {execution.get('task')} ({execution.get('role')}) was interrupted and not judged, and the Git "
+            f"control files changed since it started: {', '.join(problems[:5])}"),
+            evidence={k: execution.get(k) for k in ("task", "role", "runner", "run_dir")})
+
+
+def reap(store: StateStore, root: Path) -> None:
+    """Drop executions whose Worker AND agent processes are gone: they ended without a final verification (an event).
+    Their sensitive residue is the next inventory check's to find; a changed Git control state holds the checkout.
+    Called before anything else is decided about the checkout (guard_before_run, launch_gate, the service's cycle,
+    resolve); the comparison runs without the lock, the decision is taken again under it."""
+    gone = {key: e for key, e in _load(store, root)["executions"].items() if not _alive(e)}
+    if not gone:
+        return
+    found = {key: _control_problems(root, execution) for key, execution in gone.items()}
+    with store.transaction():
+        record = _load(store, root)
+        dropped = [key for key in found if key in record["executions"] and not _alive(record["executions"][key])]
+        for key in dropped:
+            execution = record["executions"].pop(key)
+            store.append_event("workspace-execution-abandoned", checkout=checkout_key(root), execution=key,
+                               task=execution.get("task"), role=execution.get("role"))
+            _add_interrupted(store, root, record, execution, found[key])
+        if dropped:
+            _save(store, root, record)
+
+
+def _uncompared(record: Mapping[str, Any]) -> list[str]:
+    """Executions that ended since reap() looked: nothing may be decided before they are compared."""
+    return sorted(key for key, execution in record["executions"].items() if not _alive(execution))
 
 
 def executions_of(store: StateStore, root: Path) -> dict[str, dict[str, Any]]:
@@ -266,6 +308,7 @@ def hold_problems(store: StateStore, root: Path, config: ProjectConfig | None = 
     """[why no agent may start now] or [] — with *config*, after the inventory check (guard_before_run, which may
     put the checkout on hold); without, the hold record only (no scan). For the Worker service's cycle."""
     try:
+        reap(store, root)
         if config is None:
             require_no_hold(store, root)
         else:
@@ -281,7 +324,8 @@ def hold_problems(store: StateStore, root: Path, config: ProjectConfig | None = 
 
 def _current(store: StateStore, root: Path, config: ProjectConfig, inventory: Inventory | None) -> dict[str, str]:
     """The checkout's unexplained sensitive entries NOW (*inventory*: the caller's fresh verified scan; none: one is
-    taken). Never returns a result for a scan that could not be completed."""
+    taken). Never returns a result for a scan that could not be completed, nor for a checkout whose own Git
+    configuration would run a program (Security S2: no Git command runs in it; an operator has to look)."""
     try:
         return unexplained(root, inventory if inventory is not None else scan(root, config))
     except InventoryUnstableError as exc:   # transient: nothing decided, nothing recorded
@@ -289,6 +333,18 @@ def _current(store: StateStore, root: Path, config: ProjectConfig, inventory: In
             from exc
     except InventoryError as exc:           # limits, permissions: an operator has to look
         hold = put_on_hold(store, root, reason=f"the workspace inventory could not be completed: {exc}")
+        raise WorkspaceHoldError(describe(hold)) from exc
+    except GitConfigExecutionError as exc:
+        hold = put_on_hold(store, root, reason=str(exc))
+        raise WorkspaceHoldError(describe(hold)) from exc
+
+
+def _control(store: StateStore, root: Path) -> GitControl:
+    """The checkout's Git control state at an admission, recorded with the execution."""
+    try:
+        return capture(root)
+    except GitConfigExecutionError as exc:
+        hold = put_on_hold(store, root, reason=str(exc))
         raise WorkspaceHoldError(describe(hold)) from exc
 
 
@@ -323,6 +379,7 @@ def guard_before_run(store: StateStore, root: Path, config: ProjectConfig,
                      inventory: Inventory | None = None) -> None:
     """The admission checks WITHOUT a launch: no hold, and a fresh inventory that matches the baseline (otherwise
     the checkout is put on hold). Fails fast before a claim; the authoritative decision is launch_gate's."""
+    reap(store, root)
     current = _current(store, root, config, inventory)
     with store.transaction():
         record = _load(store, root)
@@ -343,11 +400,15 @@ def launch_gate(store: StateStore, root: Path, config: ProjectConfig, *, executi
 
     *execution*: {id, task, role, runner, run_dir}. *inventory*: the caller's fresh verified scan — the one its
     sandbox plan or baseline snapshot was built from."""
+    reap(store, root)
     current = _current(store, root, config, inventory)
+    control = _control(store, root)
     key = str(execution["id"])
     with store.transaction():   # coordinator.lock: every hold publication is ordered against this block
         record = _load(store, root)
-        _reap(store, root, record)
+        if _uncompared(record):
+            raise WorkspaceUnstableError("another run just ended without being judged: its Git control state is "
+                                         "compared first (temporarily unavailable — it is tried again)")
         problem = _decide(store, root, record, current)
         if problem:
             _save(store, root, record)
@@ -355,7 +416,8 @@ def launch_gate(store: StateStore, root: Path, config: ProjectConfig, *, executi
         record["launches"] += 1
         record["executions"][key] = {**{k: execution.get(k) for k in ("task", "role", "runner", "run_dir")},
                                      "worker": ProcessIdentity.current().to_dict(), "agent": None,
-                                     "admitted_at": utc_now(), "generation": record["generation"]}
+                                     "admitted_at": utc_now(), "generation": record["generation"],
+                                     "git_control": control.to_dict()}
         _save(store, root, record)
 
         def started(pid: int) -> None:
@@ -371,10 +433,15 @@ def launch_gate(store: StateStore, root: Path, config: ProjectConfig, *, executi
 
 
 def abandon_execution(store: StateStore, root: Path, execution_id: str) -> None:
-    """Remove an execution that ended without a result to judge (its runner raised)."""
+    """Remove an execution that ended without a result to judge (its runner raised). Git control files it changed put
+    the checkout on hold."""
+    execution = _load(store, root)["executions"].get(str(execution_id))
+    problems = _control_problems(root, execution) if execution is not None else []
     with store.transaction():
         record = _load(store, root)
-        if record["executions"].pop(str(execution_id), None) is not None:
+        execution = record["executions"].pop(str(execution_id), None)
+        if execution is not None:
+            _add_interrupted(store, root, record, execution, problems)
             _save(store, root, record)
 
 
@@ -405,6 +472,8 @@ def finish_execution(store: StateStore, root: Path, config: ProjectConfig, *, ex
     except InventoryError as exc:
         return put_on_hold(store, root, evidence=evidence,
                            reason=f"the workspace inventory after the run of {task_id} could not be completed: {exc}")
+    except GitConfigExecutionError as exc:   # S2: planted after the run was judged
+        return put_on_hold(store, root, evidence=evidence, reason=f"while {task_id} was being finished: {exc}")
     policy = PathPolicy(root, config)
     with store.transaction():
         record = _load(store, root)
@@ -485,10 +554,8 @@ def resolve(store: StateStore, root: Path, config: ProjectConfig, *, apply: bool
     generation: *expect* (a `hold_ref`) names the hold the operator means; whatever this call inspected must still
     be the stored state when it writes, else it changes nothing and reports `stale`. Never changes a file, never
     changes the security policy."""
-    with store.transaction():
-        record = _load(store, root)
-        if _reap(store, root, record):
-            _save(store, root, record)
+    reap(store, root)
+    record = _load(store, root)
     seen = _identity(record)
     out = Resolution(held=record["hold"] is not None, ref=hold_ref(_view(record), record["generation"]),
                      in_flight=sorted(k for k, e in record["executions"].items() if _alive(e)))
@@ -523,7 +590,6 @@ def resolve(store: StateStore, root: Path, config: ProjectConfig, *, apply: bool
         raise WorkspaceHoldError("--accept needs --reason: accepting unremediated changes is recorded")
     with store.transaction():
         record = _load(store, root)
-        _reap(store, root, record)
         if _identity(record) != seen or any(_alive(e) for e in record["executions"].values()):
             out.resolved = False
             out.stale = ("the checkout's hold, baseline or executions changed while it was inspected "

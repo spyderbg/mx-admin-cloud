@@ -22,7 +22,9 @@ from pathlib import Path
 from typing import Any
 
 from .config import ProjectConfig
+from .errors import GitConfigExecutionError
 from .fsguard import scan
+from .gitsafe import displayable
 from .statedir import ensure_state_dir, resolve_state_dir
 from .store import StateStore
 from .workspace_hold import (
@@ -41,7 +43,7 @@ MAX_PATHS = 2000   # paths listed by `status --json`
 
 
 def _print(text: str = "") -> None:
-    sys.stdout.write(text + "\n")
+    sys.stdout.write(displayable(text) + "\n")
     sys.stdout.flush()
 
 
@@ -50,18 +52,25 @@ def _store(args: argparse.Namespace, config: ProjectConfig) -> StateStore:
     return StateStore(ensure_state_dir(path, allowed=config.allowed_state_filesystems))
 
 
-def cmd_workspace_status(args: argparse.Namespace, config: ProjectConfig) -> int:  # pylint: disable=too-many-locals
+def cmd_workspace_status(args: argparse.Namespace, config: ProjectConfig) -> int:  # pylint: disable=too-many-locals,too-many-branches
     """The hold, its evidence, the executions in flight and the sensitive entries outside the baseline."""
     store, root = _store(args, config), Path(args.repo).resolve()
     hold = hold_of(store, root)
     inventory = scan(root, config)
-    current = unexplained(root, inventory)
     baseline = trusted_of(store, root)
+    current: dict[str, str] = {}
+    staged: list[str] = []
+    refused = ""
+    try:
+        current = unexplained(root, inventory)
+        staged = staged_sensitive(root, config)
+    except GitConfigExecutionError as exc:   # Security S2: no Git command runs here; the hold is shown all the same
+        refused = str(exc)
     # Before a first baseline exists EVERY unexplained sensitive entry is unreviewed: list them all.
     untrusted = contamination(baseline["entries"] if baseline else {}, current)
-    staged = staged_sensitive(root, config)
-    running = executions_of(store, root)
-    needs_operator = bool(hold or untrusted or staged)
+    running = {key: {k: v for k, v in execution.items() if k != "git_control"}
+               for key, execution in executions_of(store, root).items()}
+    needs_operator = bool(hold or untrusted or staged or refused)
     if args.json:
         _print(json.dumps({
             "checkout": str(root), "hold": hold, "hold_ref": hold_ref(hold) if hold else None,
@@ -70,11 +79,14 @@ def cmd_workspace_status(args: argparse.Namespace, config: ProjectConfig) -> int
             "untrusted": untrusted[:MAX_PATHS], "untrusted_count": len(untrusted),
             "untrusted_reasons": {p: list(inventory.entries[p].reasons) for p in untrusted[:MAX_PATHS]
                                   if p in inventory.entries},
-            "staged_sensitive": staged, "executions": running, "needs_operator": needs_operator},
+            "staged_sensitive": staged, "executions": running, "git_refused": refused,
+            "needs_operator": needs_operator},
             indent=2, sort_keys=True))
         return 1 if needs_operator else 0
     _print(f"checkout {root}: {inventory.scanned} entries read, {len(inventory.entries)} sensitive, "
-           f"{len(current)} not explained by Git")
+           + ("Git was not asked" if refused else f"{len(current)} not explained by Git"))
+    if refused:
+        _print(f"Git was NOT asked (the entries below are incomplete): {refused}")
     if baseline is None:
         _print("no workspace baseline yet: unexplained sensitive entries (below) need an operator's review before "
                "any agent runs — `workspace resolve --accept --reason TEXT` records them after the audit")

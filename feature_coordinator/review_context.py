@@ -43,14 +43,13 @@ import hashlib
 import json
 import re
 import secrets
-import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence, Union
 
 from .config import ProjectConfig
 from .errors import GitOperationError
-from .gitsafe import assert_no_execution_config, git_argv, hardened_env
+from .gitsafe import assert_no_execution_config, run_git
 from .github_api import sanitize
 from .intake import IntakeRecord
 from .model import Feature, Task
@@ -98,7 +97,7 @@ Root = Union[Path, Callable[..., bytes]]
 def _git(root: Root, *args: str) -> bytes:
     if callable(root):
         return root(*args)
-    proc = subprocess.run(git_argv(root, *args), capture_output=True, env=hardened_env(), check=False)
+    proc = run_git(root, *args, text=False)
     if proc.returncode != 0:
         raise GitOperationError(f"git {' '.join(args[:2])} failed: {proc.stderr.decode(errors='replace').strip()}")
     return proc.stdout

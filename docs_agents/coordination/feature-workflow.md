@@ -744,3 +744,64 @@ A run that leaves unauthorized changes — its `residue`: paths the role may not
 - Keep `worker.max_parallel: 1` unless parallel roles are needed; the quiescence boundary (§25.3) is strongest with one agent at a time.
 - Verify bwrap on the deployment host (`sandbox-check --apply`) before using the `bwrap` backend; on `native-cli`, treat every agent as having the operator's file access.
 - Behaviour change: a tracked file matching the secret patterns (in this repository `frontend/.env.development.local`) is now masked in sandboxes and denied to hardened native agents. Add its suffix to `runtime.secret_exempt_suffixes` if agents must read it.
+
+## 26. Security S2 — Git configuration never runs a program through the Coordinator
+
+Branch `security/gitsafe-s2`. Code: `gitsafe.py` (scan, guarded commands), `git_control.py` (control files around a run), the two backends. Tests: `test_fc_gitsafe_s2.py`.
+
+### 26.1 What was wrong
+
+| # | Gap (all reproduced in disposable repositories, Git 2.43) | Cause |
+| --- | --- | --- |
+| 1 | `filter.a.b.clean`, `credential.https://host.helper`, `merge.a.b.driver` … passed the Worker's scan and ran | the patterns did not allow a dot in a subsection name |
+| 2 | `remote.<name>.uploadpack`, `receivepack`, `vcs` passed the scan and ran | keys missing (the integration jobs' stricter scan had them) |
+| 3 | A configuration that could not be listed counted as safe | the listing failed open |
+| 4 | Any planted filter, flagged or not, ran in the `git status` that judged the finished run | the scan ran before the launch and before the commit, not before that status; the control-file comparison existed only with `runtime.native_hardening`, and after the status |
+| 5 | The `bwrap` runner did not scan at all (the commit did) | — |
+| 6 | Found while fixing the above, each executed through a Coordinator command, none known to the stricter scan: `gc.recentObjectsHook` (automatic gc of `merge --ff-only`, also detached, after the command); `lfs.extension.*`, and `lfs.customtransfer.*.args` with `lfs.standalonetransferagent` (run by the operator's global git-lfs filter, the arguments through a shell); values such as `off` (a program called `off`); `foo::` and `foo://` URLs and `insteadOf` (a `git-remote-foo` on `PATH`); `pager.<command>` on an operator's terminal; the configuration of an EMBEDDED repository, entered by `status` (gitlink in the index), by `submodule.recurse` and by `diff.submodule` | — |
+| 7 | A program that reads `git config --list` by line (git-lfs does) sees other settings than Git: a newline in a value, or a `=` in a subsection name, hid `lfs.extension.*` or `core.sshCommand` from the scan. Reproduced | the scan judged Git's own records only |
+| 8 | A run that was interrupted (its runner raised, its Worker died) was never compared at all; a failing heartbeat left the agent running | the state before a run was held in memory only; `supervise` did not stop the agent when it raised |
+
+### 26.2 What holds now
+
+1. **One scan.** `gitsafe.execution_findings` is the only scanner: program-naming keys by section and final key name for any subsection, and every git-lfs setting that names, chooses or parameterises a program; only an empty value is harmless (`core.fsmonitor` is a boolean or a program). An entry is judged as Git reads it and line by line, because a program that reads the listing by line (git-lfs) sees other settings; a control character other than a tab or a line break is refused; a listing that fails, hangs, or answers unexpectedly raises. `integration_isolation.strict_execution_findings` is that function.
+2. **A scan in front of every Worker Git command.** `gitsafe.guarded_argv` / `run_git` build every Git command that runs on the shared checkout, and scan first. A structural test looks for other ways (literal `["git", …]` command lines, imports and attributes of the raw builders) in every module; it cannot see a command assembled at run time.
+3. **Nothing else to select.** Hooks, the filesystem monitor, pagers, automatic gc and maintenance, recursion into embedded repositories and `ext::` are forced off on the command line; `status` never enters an embedded repository; transports are limited to `file`, `https` and `ssh` (`GIT_ALLOW_PROTOCOL`).
+4. **Control files first.** Both backends capture the Git control files (`config`, `config.worktree`, `commondir`, `hooks/`, `info/`, `remotes/`, `branches/`, and that `HEAD`, `objects` and `refs` are there; a linked worktree's common directory too) and the effective repository-scoped settings before the agent starts, whether or not hardening is on. After the run they are verified before any Git command: the files from the file system alone, then the settings (a listing runs no program; it also covers an included file outside `.git`). What cannot be verified is a problem; only a host short of resources (memory, file descriptors) raises, after the listing was retried.
+5. **Interrupted runs too.** The captured state is recorded with the registered execution (§25.3). An execution that ended without a judged result is compared before anything else is decided about the checkout (admission, the service's cycle, `workspace resolve`; never under the Coordinator lock), and a change holds it. An operator's own `recover --apply` does not ask first. A supervision that raises stops the agent.
+
+**When something changed or is unsafe** the result is `rejected` (the task fails), the residue and `violations.json` name the files and settings (names and up to 80 characters of a flagged value, escaped; never file content), and the checkout goes on hold:
+
+| What was found | Does Git judge the rest of the run? |
+| --- | --- |
+| A control file changed, the settings are listable and name no program, it is still the same repository | Yes, as evidence only (other roles' files, foreign commits and branches are in the residue as before S2) |
+| The settings name a program or cannot be listed, `.git`, `commondir`, `HEAD`, `objects` or `refs` changed, or anything cannot be verified | No Git command but the listing. The residue says that other changes were NOT judged, and `violations.json` holds the state before the run (`before`: branch, head, refs, dirty files). Sensitive entries are still compared from the file system (S1) |
+| A command of the judgement is refused (a setting planted since the check), or the judgement fails in a way an agent could cause (a damaged index, a missing branch, its run directory or output removed) | Rejected and held with that reason; what the judgement recorded before stays in `violations-judged.json`. Evidence that cannot be written is noted in the residue and never stops the judgement. Only a busy lock and exhausted host resources (memory, file descriptors) are raised as before S2: the task goes back to `ready` — unless a control change already rejects the run |
+
+Every later Worker Git command is refused while a setting names a program: the service settles the launch, shows NEEDS_ATTENTION and starts nothing; `workspace status` shows the hold and says that Git was not asked; `workspace resolve` refuses. Nothing is repaired, restored or discarded. The operator inspects and removes what was planted, then `workspace resolve --apply --hold REF --accept --reason …`.
+
+### 26.3 Behaviour changes
+
+- A change of a control file during an agent run rejects it, now without hardening too. Not counted: a plain `branch.*.vscode-merge-base` (VS Code writes it after a branch switch), `lfs.repositoryformatversion = 0` (git-lfs writes it), and a change of `config` that leaves every other effective setting and its mode as they were. Counted: `git remote`, `git push -u`, `git config` by an operator while an agent runs.
+- A checkout whose own configuration names a program is refused by every Worker operation, not only at launch and commit. A repository-local `core.editor`, `core.pager`, `credential.helper`, `filter.*` … must move to the operator's global configuration.
+- `http://` and `git://` remotes are refused for Worker operations.
+- The Worker's own Git commands never start an automatic gc; the operator's commands in the checkout still do.
+- A run that cannot be judged because of what it left is rejected and held (before: it went back to `ready`, unjudged).
+- A repository-local setting with a control character is refused; a value of several lines (a branch description, an alias) is not, unless one of its lines reads as a program setting.
+- A file name that is not UTF-8 is never committed: the run is rejected like one that wrote another role's path (before: the command's caller failed and the task went back to `ready`).
+- Every Worker Git command costs one more short Git process (the listing: about 1.4 ms on a local disk).
+
+### 26.4 Known limitations
+
+- **Residual race.** The scan and the command are two processes and Git reads the configuration again in the second one. Whoever rewrites `.git/config` after the scan and before Git has read it is not seen by that scan. An agent's processes are stopped before its run is judged; a process that escaped (no run tag, its own session) or another role's live agent (`worker.max_parallel` > 1) could still win it. Closing it needs the isolated repositories the integration jobs use; that is a redesign, not part of S2.
+- `native-cli` agents stay unconfined while they run (§25.7): S2 stops their configuration from running through the Coordinator afterwards, it does not confine them.
+- The operator's global and system configuration, the Git and git-lfs binaries and everything on the Worker's `PATH` are trusted. Programs the CLIs themselves run (Claude Code, Codex) are the agent's, not the Coordinator's.
+- A control change that is undone before the run ends is not seen (it could only have affected processes of that run and concurrent Coordinator commands, which scan for themselves). An interrupted run is compared for control files and, at the next admission, for sensitive entries; its other changes are judged by the next runs' own checks, as before.
+- `url.*.insteadOf` and `pushInsteadOf` can still redirect a fetch to another repository (no program runs); the push destination is checked ([github-intake.md](github-intake.md) §10). Publication and intake of OTHER features continue while the checkout is held, as before.
+- A configuration planted between a commit's `update-ref` and its index refresh, or between a push and the read after it, reports a commit or push that landed as failed; the next attempt finds it.
+- The Git commands that judge a run have no time limit: a FIFO named by `core.attributesFile`, or a FIFO `.gitattributes` in a role's root, can hang them, the service's own inspection of the checkout included, as before S2.
+- Other programs of the operator's global configuration that read repository configuration in their own way are trusted to read it as Git does; git-lfs is covered by line (above).
+- A registered execution whose recorded process identity cannot be read counts as in flight until its record is repaired by hand.
+- A shortage of host resources while the SERVICE inspects the checkout after a launch is recorded as an inspection failure (operator attention), not retried.
+- Settings that name a program only for commands the Coordinator never runs (`alias.*`, `sendemail.*`, `tar.<format>.command`, `interactive.diffFilter`, …) are not scanned.
+- Keys of Git and git-lfs versions newer than the installed ones (Git 2.43, git-lfs 3.7) are covered only as far as they follow the scanned names. Review the scan when either is upgraded.

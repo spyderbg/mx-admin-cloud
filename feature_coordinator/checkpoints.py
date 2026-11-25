@@ -56,12 +56,11 @@ from __future__ import annotations
 
 import copy
 import secrets
-import subprocess
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
-from .gitsafe import SAFE_CONFIG_ARGS, hardened_env
+from .gitsafe import run_git
 from .errors import (
     CheckpointError,
     CoordinatorError,
@@ -379,10 +378,8 @@ class Inspection:  # pylint: disable=too-many-instance-attributes
 
 
 def _status_paths(root: Path) -> list[str]:
-    out = subprocess.run(["git", "-C", str(root), *SAFE_CONFIG_ARGS, "status", "--porcelain=v1", "-z",
-                          "--untracked-files=all"],
-                         capture_output=True, text=True, check=True,
-                         env=hardened_env({"PATH": "/usr/bin:/bin"})).stdout
+    out = run_git(root, "status", "--porcelain=v1", "-z", "--untracked-files=all", env={"PATH": "/usr/bin:/bin"},
+                  check=True).stdout
     tokens = [t for t in out.split("\0") if t]
     paths, i = [], 0
     while i < len(tokens):
