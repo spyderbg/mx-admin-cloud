@@ -236,7 +236,7 @@ The transition table is unchanged. M2 uses AWAITING_APPROVAL → INSPECTING (onl
 3. **Approval-required, unowned, symlink and git-control paths do not refuse the job.** They leave it in INSPECTING as needs-authorization until a new signed record authorizes them by exact path. The user requirement says "require explicit authorization", not "refuse". Protected paths and gitlinks still REFUSE. The design's §8.3 wording "an unowned-path diff is refused without a per-path approval" is read as "the inspection does not pass".
 4. **Dry runs need the approval too.** The approval authorizes the inspection, not only its recording.
 5. **Unverified provenance needs explicit acceptance.** The current commits are unsigned (GitHub-signed merges aside), so requiring verified signatures would block every job. Instead, any commit that is not verified needs `accept_unverified_provenance` in the signed record. A GitHub account match or a valid signature that points to an untrusted login REFUSES.
-6. **gitsafe is not changed in M2** (no production Worker change). Its gaps are documented, and integration uses the stricter scan and isolation. Fixing gitsafe for the Worker is proposed as a separate, reviewed change and is a blocker for M3 (§14).
+6. **gitsafe is not changed in M2** (no production Worker change). Its gaps are documented, and integration uses the stricter scan and isolation. Fixing gitsafe for the Worker is proposed as a separate, reviewed change and is a blocker for M3 (§14). **Fixed by Security S2** ([feature-workflow.md](feature-workflow.md) §26): the Worker and the integration jobs now use one scan.
 7. **Path list = every commit of the range plus the net diff from each merge base.** The per-commit part catches content that only passes through the history; the net-diff part catches what would land in `dev`'s tree (§17).
 8. **No new top-level record field.** The inspection result is an `evidence` entry of kind `inspection` (schema version unchanged). M3 will add gate and review entries next to it.
 9. **The Issue is still not verified** (open item 10 of §6): what counts as an approved plan is undefined. Proposal: M3 should require the Issue to be open, not in the bug workflow, and carry the planning approval of W4.5.
@@ -252,7 +252,7 @@ M2 does not depend on #67, and #67 does not depend on M2. The overlaps that must
 - **Authorization model.** #67 needs an explicit revision request bound to the PR, the head SHA and the Issue, and it must never trust PR comments. The signed-record mechanism of §11 fits that need. Proposal: share it, with a namespace per purpose.
 - **Repair routing.** The W4.7 design (§6.4, M6) sends a defect to a repair branch and starts a NEW integration job. #67 instead revises the SAME Draft PR. If #67 becomes the review/repair loop for integration jobs, as #67 suggests, §6.4 needs an amendment. Either way, a moved PR head keeps making an integration job STALE: W4.7 never follows a moving head.
 - **Evidence invalidation.** #67's "invalidate prior head's evidence and keep history" matches W4.7's SHA-bound, append-only evidence. A common evidence model is advisable before M4.
-- **gitsafe.** #67 adds pushes to existing branches by the Worker, so the gitsafe gaps of §14 affect it directly.
+- **gitsafe.** #67 adds pushes to existing branches by the Worker, so the gitsafe gaps of §14 affected it directly (fixed by Security S2).
 
 ## 17. Independent review of M2 (before hand-off) and its corrections
 
@@ -344,7 +344,7 @@ Exit code 0 for `validated` (and for a dry run that found nothing in the way: `w
 | 1. coordinator-owned repository, never `worktree add` / `checkout` in the checkout | done (above) |
 | 2. no content-triggered execution | done for candidate construction (above). Gates run candidate code by design, inside the gate sandbox |
 | 3. hooks off, fast-forward push by full SHA to a validated URL | hooks off; M3 never pushes (push is M5) |
-| 4. gitsafe's gaps for the Worker | unchanged: M3 does not use gitsafe's scan for safety and does not modify `gitsafe.py` (the Worker change remains a separate operator decision, §15 item 6) |
+| 4. gitsafe's gaps for the Worker | unchanged in M3, which does not use gitsafe's scan for safety; **fixed by Security S2** ([feature-workflow.md](feature-workflow.md) §26) |
 
 ## 22. Candidate paths, the Issue and the approval
 

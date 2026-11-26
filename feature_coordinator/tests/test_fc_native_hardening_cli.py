@@ -37,6 +37,7 @@ import pytest
 from feature_coordinator import native_hardening as nh
 from feature_coordinator.config import ProjectConfig
 from feature_coordinator.demo import init_demo_repo
+from feature_coordinator.git_control import control_files
 from feature_coordinator.launchers import ClaudeCodeLauncher, CodexLauncher
 from feature_coordinator.native_backend import NativeCliRunner, SubscriptionCheck, native_environment
 from feature_coordinator.native_hardening import NativeHardening
@@ -134,7 +135,7 @@ class Target:  # pylint: disable=too-few-public-methods
         (self.repo / "pre-link").symlink_to(home / ".claude/.credentials.json")
         self.outside.mkdir()
         (self.outside / "secret.txt").write_text(OUTSIDE, encoding="utf-8")
-        self.control = nh.git_control_digest(self.repo)
+        self.control = control_files(self.repo)
         self.listener = socket.socket(socket.AF_UNIX)
         self.listener.bind(str(home / "agent.sock"))  # stands for ssh-agent / D-Bus / keyring sockets
         self.listener.listen()
@@ -166,7 +167,7 @@ class Target:  # pylint: disable=too-few-public-methods
     def host_unchanged(self) -> None:
         assert not (self.outside / "written.txt").exists() and not (self.home / "written.txt").exists()
         assert not list(self.outside.glob("patched*")) and not (self.home / "patched.txt").exists()
-        assert nh.git_control_digest(self.repo) == self.control          # .git/config, hooks, info untouched
+        assert control_files(self.repo) == self.control          # .git/config, hooks, info untouched
         assert (self.home / ".claude/.credentials.json").read_text(encoding="utf-8").count(FAKE_HOST_LOGIN) == 1
 
     def close(self) -> None:

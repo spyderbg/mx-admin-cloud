@@ -26,6 +26,7 @@ from feature_coordinator.gitops import CommitRequest, GitCoordinator, file_diges
 from feature_coordinator.gitsafe import (
     assert_no_execution_config,
     execution_findings,
+    git_argv,
     hardened_env,
     run_git,
 )
@@ -62,6 +63,12 @@ def raw_git(repo: Path, *args: str, env: dict | None = None) -> subprocess.Compl
     """An UNHARDENED git call — the attacker's-eye baseline that proves the attack is real."""
     return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True,
                           env=env, check=False)
+
+
+def layer_1(repo: Path, *args: str, env: dict | None = None) -> subprocess.CompletedProcess:
+    """A git call with gitsafe's FIRST layer only (the -c overrides and the scrubbed environment), so that a test can
+    show what that layer prevents by itself. A Worker command (run_git) is refused before it starts (S2)."""
+    return subprocess.run(git_argv(repo, *args), capture_output=True, text=True, env=hardened_env(env), check=False)
 
 
 def plant_fsmonitor(repo: Path, marker: Path) -> None:
@@ -119,18 +126,21 @@ def test_core_fsmonitor_executes_on_a_raw_status_but_not_a_hardened_one(tmp_path
     raw_git(repo, "status", "--porcelain", env={**hardened_env(), "GIT_OPTIONAL_LOCKS": "0"})  # no -c override
     assert marker.exists(), "attack precondition: a raw status must run the fsmonitor program"
     marker.unlink()
-    assert run_git(repo, "status", "--porcelain").returncode == 0
+    assert layer_1(repo, "status", "--porcelain").returncode == 0
+    with pytest.raises(GitConfigExecutionError, match="core.fsmonitor"):
+        run_git(repo, "status", "--porcelain")
     assert not marker.exists(), "hardened status must not run the planted fsmonitor program"
 
 
-def test_coordinator_status_helpers_do_not_execute_fsmonitor(tmp_path: Path) -> None:
+def test_coordinator_status_helpers_refuse_a_planted_fsmonitor(tmp_path: Path) -> None:
     repo = disposable_repo(tmp_path)
     marker = tmp_path / "FSMON"
     plant_fsmonitor(repo, marker)
     # the native backend's own git helper, the role dirty-path scan and the workspace check
-    nb._git(repo, "status", "--porcelain=v1", "-z", "--untracked-files=all")  # pylint: disable=protected-access
-    role_dirty_paths(repo, ["backend"])
-    workspace_mod.git_operation_in_progress(repo)
+    for helper in (lambda: nb._git(repo, "status", "--porcelain=v1", "-z", "--untracked-files=all"),  # pylint: disable=protected-access
+                   lambda: role_dirty_paths(repo, ["backend"]), lambda: workspace_mod.git_operation_in_progress(repo)):
+        with pytest.raises(GitConfigExecutionError):   # S2: refused before the command, not only defused
+            helper()
     assert not marker.exists()
 
 
@@ -144,7 +154,9 @@ def test_planted_hook_runs_on_a_raw_commit_but_not_a_hardened_one(tmp_path: Path
     raw_git(repo, "commit", "--allow-empty", "-m", "raw", env={**hardened_env(), "GIT_OPTIONAL_LOCKS": "0"})
     assert marker.exists(), "attack precondition: a raw commit must run the planted pre-commit hook"
     marker.unlink()
-    assert run_git(repo, "commit", "--allow-empty", "-m", "hardened").returncode == 0
+    assert layer_1(repo, "commit", "--allow-empty", "-m", "hardened").returncode == 0
+    with pytest.raises(GitConfigExecutionError, match="core.hookspath"):
+        run_git(repo, "commit", "--allow-empty", "-m", "refused")
     assert not marker.exists(), "hardened commit must not run the planted hook"
 
 
@@ -213,7 +225,7 @@ def test_commit_is_refused_when_the_checkout_config_can_execute(gc: GitCoordinat
     plant(gc.root, marker)
     with pytest.raises(GitConfigExecutionError):
         gc.commit(commit_request(gc, "backend", ["backend/src/app.py"]))
-    assert gc.rev_parse(BRANCH) == head, "the branch must not move"
+    assert raw_git(gc.root, "rev-parse", BRANCH).stdout.strip() == head, "the branch must not move"
     assert not marker.exists(), "no program ran while refusing"
 
 

@@ -21,10 +21,10 @@ import pytest
 
 from feature_coordinator import gitsafe, integration_intake
 from feature_coordinator.errors import GitConfigExecutionError, RemoteUnavailableError
+from feature_coordinator.gitsafe import is_execution_setting
 from feature_coordinator.integration import JobState
 from feature_coordinator.integration_isolation import (
     IsolatedRepository,
-    is_execution_setting,
     isolated_remote_head,
     strict_execution_findings,
 )
@@ -152,23 +152,23 @@ def attack_after_preflight(monkeypatch: pytest.MonkeyPatch, repo: Path, markers:
 # -- the attack is real (positive control) and the strict scan sees what gitsafe misses ---------------------------
 
 def test_positive_control_m1_style_invocation_runs_a_planted_uploadpack(repo: Path, origin: Path, markers: Path):
-    """What M1 did after its single preflight check: `git -C <checkout> ls-remote origin`. gitsafe does not flag the
-    setting, and Git runs it."""
+    """What M1 did after its single preflight check: `git -C <checkout> ls-remote origin` with gitsafe's first layer
+    only — Git runs the program. (Since Security S2 gitsafe's scan flags the setting.)"""
     git(repo, "config", "remote.origin.uploadpack", program(markers, "uploadpack", passthrough="git-upload-pack"))
-    assert gitsafe.execution_findings(repo) == []
+    assert gitsafe.execution_findings(repo)
     subprocess.run(gitsafe.git_argv(repo, "ls-remote", "origin", "refs/heads/dev"), capture_output=True,
                    env=gitsafe.hardened_env(), check=True)
     assert ran(markers) == ["uploadpack"]
 
 
-def test_the_strict_scan_flags_what_gitsafe_misses(repo: Path, markers: Path):
+def test_the_scan_flags_what_gitsafe_missed_before_s2(repo: Path, markers: Path):
     missed = {"credential.https://host.example.helper": "x", "filter.a.b.smudge": "x", "merge.a.b.driver": "x",
               "remote.origin.uploadpack": "x", "remote.origin.receivepack": "x", "remote.origin.vcs": "x",
               "difftool.a.b.cmd": "x", "submodule.lib.update": "!sh -c x"}
     for name, value in missed.items():
         git(repo, "config", name, value)
-    assert gitsafe.execution_findings(repo) == []
     found = strict_execution_findings(repo)
+    assert found == gitsafe.execution_findings(repo)
     for name in missed:
         assert any(name.lower() in finding for finding in found), (name, found)
 
@@ -177,11 +177,12 @@ def test_the_strict_scan_flags_what_gitsafe_misses(repo: Path, markers: Path):
     "filter.x.smudge", "filter.x.clean", "filter.x.process", "diff.x.command", "diff.x.textconv", "difftool.x.cmd",
     "mergetool.x.cmd", "merge.x.driver", "credential.helper", "credential.x.helper", "gpg.x.program",
     "trailer.x.command", "x.y.textconv", "x.y.hookspath", "core.fsmonitor"}))
-def test_the_strict_scan_is_a_superset_of_gitsafe(name: str):
-    assert gitsafe._is_execution(name, "/bin/evil")  # pylint: disable=protected-access
+def test_the_worker_and_the_integration_jobs_use_one_scan(name: str):
+    assert is_execution_setting is gitsafe.is_execution_setting
     assert is_execution_setting(name, "/bin/evil")
-    for inert in ("", "false", "off"):
-        assert is_execution_setting(name, inert) == gitsafe._is_execution(name, inert)  # pylint: disable=protected-access
+    assert not is_execution_setting(name, "")
+    if name != "core.fsmonitor":   # a boolean or a program; every other value names a program, also a program `off`
+        assert is_execution_setting(name, "off") and is_execution_setting(name, "false")
 
 
 def test_ordinary_settings_are_not_flagged():

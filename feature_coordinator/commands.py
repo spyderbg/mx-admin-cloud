@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import argparse
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
 from .broker import ROUTES, configured_credential
 from .broker_config import ignored_settings
-from .gitsafe import SAFE_CONFIG_ARGS, hardened_env
+from .gitsafe import run_git
 from .config import ProjectConfig
 from .errors import BrokerUnavailableError, CoordinatorError
 from .gates import GateContext, SandboxedGateRunner, gate_cwd
@@ -39,8 +38,7 @@ def _state(args: argparse.Namespace, config: ProjectConfig) -> Path:
 
 
 def _git(repo: Path, *args: str) -> str:
-    return subprocess.run(["git", "-C", str(repo), *SAFE_CONFIG_ARGS, *args], capture_output=True, text=True,
-                          check=True, env=hardened_env({"PATH": "/usr/bin:/bin"})).stdout.strip()
+    return run_git(repo, *args, env={"PATH": "/usr/bin:/bin"}, check=True).stdout.strip()
 
 
 # -- inspection -----------------------------------------------------------------------

@@ -65,6 +65,7 @@ settings; Codex gets the `fc_worker` permission profile and a private TMPDIR ins
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
@@ -76,11 +77,14 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 from .broker import ROUTES, AuthBroker, configured_credential
-from .gitsafe import SAFE_CONFIG_ARGS, hardened_env
 from .config import ProjectConfig
-from .errors import BrokerError
-from .fsguard import Change, InventoryError, InventoryUnstableError, compare, scan, violations
+from .errors import BrokerError, GitConfigExecutionError, LockBusyError
+from .fsguard import Change, Inventory, InventoryError, InventoryUnstableError, compare, scan, violations
 from .fsguard import summary as sensitive_summary
+from .git_control import NOT_JUDGED, REJECTED, RESIDUE, UNJUDGED, Verdict
+from .git_control import capture as capture_git_control
+from .git_control import verify as verify_git_control
+from .gitsafe import TRANSIENT_ERRNO, displayable, printable, run_git
 from .native_hardening import (
     claude_shell_enabled,
     codex_exec_args,
@@ -505,9 +509,17 @@ LAUNCHERS = {ProviderKind.CLAUDE_CODE: ClaudeCodeLauncher, ProviderKind.CODEX: C
 # The runner
 # ---------------------------------------------------------------------------
 
+def committable(path: str) -> bool:
+    """False for a name that is not UTF-8: it cannot be shown in a pull request, an Issue or a log."""
+    return displayable(path) == path
+
+
 def _fingerprint(path: Path) -> str | None:
     if path.is_symlink():
-        return "symlink:" + os.readlink(path)
+        try:
+            return "symlink:" + os.readlink(path)
+        except FileNotFoundError:   # another role's, gone meanwhile
+            return None
     if not path.exists():
         return None
     if path.is_dir():
@@ -523,26 +535,36 @@ def snapshot(repo_root: Path, paths: Sequence[str]) -> dict[str, str | None]:
 
 def write_violations(run_dir: Path, request: RunRequest, backend: str, breaches: Sequence[Change],  # pylint: disable=too-many-arguments
                      denied: Sequence[str], git_issues: Sequence[str] = (),
-                     tracked: Mapping[str, tuple[str | None, str | None]] | None = None) -> Path:
+                     tracked: Mapping[str, tuple[str | None, str | None]] | None = None, **evidence: Any) -> list[str]:
     """The run's violation evidence (`violations.json` in the run directory): what was left in the checkout,
-    with stamps and reasons — never file content. Both backends write it; the workspace hold points to it."""
-    path = run_dir / "violations.json"
-    path.write_text(json.dumps({
+    with stamps and reasons — never file content. Both backends write it; the workspace hold points to it.
+    Returns what that adds to the residue (_write_evidence)."""
+    return _write_evidence(run_dir / "violations.json", {
         "task": request.task_id, "step": request.step, "role": request.role, "backend": backend,
         "grants": list(request.workspace.grants), "denied": list(denied), "git": list(git_issues),
         "sensitive": [c.to_dict() for c in breaches],
-        "git_status": {p: {"before": b, "after": a} for p, (b, a) in sorted((tracked or {}).items())}},
-        indent=2, sort_keys=True), encoding="utf-8")
-    return path
+        "git_status": {p: {"before": b, "after": a} for p, (b, a) in sorted((tracked or {}).items())}, **evidence})
+
+
+def _write_evidence(path: Path, data: Mapping[str, Any]) -> list[str]:
+    """Write *data* ([]), or say why it could not be written: an agent can make its run directory unwritable, and that
+    never keeps its run from being judged (the residue is in the result and in the hold). Never through a symlink."""
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(data, indent=2, sort_keys=True))
+    except OSError as exc:
+        if exc.errno in TRANSIENT_ERRNO:
+            raise
+        return [f"unverified workspace: the evidence could not be written: {printable(str(exc))[:200]}"]
+    return []
 
 
 def role_dirty_paths(repo_root: Path, roots: Sequence[str]) -> list[str]:
     """Modified, deleted or untracked (not ignored) paths under *roots* — read-only query."""
     if not roots:
         return []
-    out = subprocess.run(["git", "-C", str(repo_root), *SAFE_CONFIG_ARGS, "status", "--porcelain=v1", "-z",
-                          "--untracked-files=all",
-                          "--", *roots], capture_output=True, text=True, env=hardened_env(), check=True).stdout
+    out = run_git(repo_root, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--", *roots, check=True).stdout
     tokens = [t for t in out.split("\0") if t]
     paths: list[str] = []
     i = 0
@@ -551,6 +573,68 @@ def role_dirty_paths(repo_root: Path, roots: Sequence[str]) -> list[str]:
         paths.append(entry[3:])
         i += 2 if entry[:1] in ("R", "C") else 1  # a rename carries its source path as the next token
     return sorted(set(paths))
+
+
+def reject_git_control(name: str, backend: str, request: RunRequest, ctx: RunContext, config: ProjectConfig,  # pylint: disable=too-many-arguments
+                       verdict: Verdict, before: Inventory, *, details: Mapping[str, Any], state: Mapping[str, Any],
+                       judged: RunResult | None = None, within: Sequence[str] | None = None,
+                       tolerated: Callable[[str], bool] = lambda _path: False) -> RunResult:
+    """Security S2: the result of a run after which the checkout's Git control files or settings are not what they were
+    (git_control.verify), or that could not be judged: rejected, with its evidence in violations.json and a residue
+    that puts the checkout on hold. *judged*: what the ordinary judgement found, when Git was still allowed to look;
+    None: Git did not run, so the residue says that other changes were not judged and the evidence holds the *state*
+    before the run. The sensitive entries are compared from the file system either way."""
+    policy = request.workspace.policy
+    why = [*verdict.problems, *([verdict.unjudged] if verdict.unjudged else [])]
+    residue = [*([RESIDUE] if verdict.problems else []), *why]
+    if judged is None:
+        residue.append(NOT_JUDGED)
+        found: list[Change] = []
+        try:
+            found = compare(before, scan(policy.root, config, attempts=VERIFY_ATTEMPTS), within=within)
+        except InventoryError as exc:
+            residue.append(f"unverified workspace: {exc}")
+        sensitive = [c.to_dict() for c in found]
+        breaches = violations(found, policy, request.role, request.workspace.grants, tolerated=tolerated)
+        denied = sorted({c.path for c in breaches})
+        residue += denied
+        with contextlib.suppress(OSError):  # recorded before a later command was refused: kept
+            (ctx.run_dir / "violations.json").rename(ctx.run_dir / "violations-judged.json")
+        residue += write_violations(ctx.run_dir, request, backend, breaches, denied, why, before=dict(state))
+    else:
+        sensitive = judged.details.get("sensitive_changes", [])
+        residue += [item for item in judged.details.get("residue", []) if item not in residue]
+        details = {**judged.details, **details}
+        path = ctx.run_dir / "violations.json"
+        try:
+            recorded = json.loads(path.read_text(encoding="utf-8"))
+            residue += _write_evidence(path, {**recorded, "git": [*why, *recorded["git"]]})
+        except (OSError, ValueError, KeyError, TypeError):  # nothing recorded (or not by us)
+            residue += write_violations(ctx.run_dir, request, backend, [], [], why)
+    return RunResult(name, "rejected",
+                     error=f"{REJECTED if verdict.problems else UNJUDGED}: {'; '.join(why)[:1000]}",
+                     details={**details, "run_dir": str(ctx.run_dir), "git_control": list(verdict.problems),
+                              "sensitive_changes": sensitive, "residue": residue})
+
+
+def unjudgeable(verdict: Verdict, exc: Exception) -> Verdict:
+    """*verdict* after the judgement itself failed: the run is rejected, nothing it left is accepted unseen — a refused
+    command (a setting planted since the check) as a control problem, a checkout or run directory that cannot be read
+    as unverified. Only what no agent causes and what says nothing about the run (a busy lock, no resources) is raised
+    again: the task goes back to ready, as it always did — unless a control change already rejects the run."""
+    text = printable(str(exc))[:500]
+    if isinstance(exc, GitConfigExecutionError):
+        return Verdict([*verdict.problems, f"Git control settings: {text}"], git_safe=False)
+    transient = isinstance(exc, (LockBusyError, MemoryError)) or getattr(exc, "errno", None) in TRANSIENT_ERRNO
+    if transient and not verdict.problems:
+        raise exc
+    return Verdict(verdict.problems, git_safe=False, unjudged=f"unverified workspace: {text}")
+
+
+def set_aside(run_dir: Path) -> None:
+    """Evidence that exists before the judgement was not written by it (the agent knows its run directory)."""
+    with contextlib.suppress(OSError):
+        (run_dir / "violations.json").rename(run_dir / f"violations-found.{os.urandom(3).hex()}.json")
 
 
 BrokerFactory = Callable[[CliRunnerProfile, ProjectConfig, RunContext, Path], AuthBroker]
@@ -650,12 +734,15 @@ class RealCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-pub
             return RunResult(self.name, "unavailable", error=str(exc))
         try:
             return self._run(request, ctx, bwrap, broker)
+        except GitConfigExecutionError as exc:   # S2: before the launch (after it: judged below), no agent started
+            return RunResult(self.name, "rejected", error=str(exc))
         finally:
             broker.stop()
 
     def _run(self, request: RunRequest, ctx: RunContext, bwrap: str,  # pylint: disable=too-many-locals,too-many-statements
              broker: AuthBroker) -> RunResult:
         policy: PathPolicy = request.workspace.policy
+        control = capture_git_control(policy.root)   # S2: before any Git command of this run; run() rejects
         builder = SandboxBuilder(policy.root, self.config, policy, bwrap=bwrap)
         writable = builder.writable_roots(request.role, request.workspace.grants)
         launcher = LAUNCHERS[self.kind](self.profile, self.config, self.probe().resolved)  # bwrap: native=False
@@ -697,8 +784,32 @@ class RealCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-pub
         broker.stop()
         strays, residue_entries = plan.stray_writes()
         plan.discard_shadow()
+        # Security S2: the Git control files first (file system only), before any Git command judges the run.
+        verdict = verify_git_control(policy.root, control)
+        set_aside(ctx.run_dir)
+        judged: RunResult | None = None
+        if verdict.git_safe:    # with problems: as evidence only, the run is rejected whatever it finds
+            try:
+                judged = self._judge(request, ctx, launcher, sup, inventory, before, writable, handshake.error, strays,
+                                     shadow_residue=residue_entries, broker=broker.describe())
+            except Exception as exc:  # pylint: disable=broad-except   # unjudgeable() raises what is none of ours
+                verdict = unjudgeable(verdict, exc)
+        if judged is not None and not verdict.problems:
+            return judged
+        details = {"exit_code": sup.exit_code, "duration_seconds": round(sup.duration_seconds, 1),
+                   "escalated_to_kill": sup.escalated_to_kill, "preexisting": sorted(before), "stray_writes": strays,
+                   "shadow_residue": residue_entries, "broker": broker.describe()}
+        return reject_git_control(self.name, "bwrap", request, ctx, self.config, verdict, inventory, judged=judged,
+                                  state={"dirty": dict(before)}, within=writable, details=details)
+
+    def _judge(self, request: RunRequest, ctx: RunContext, launcher: Any, sup: Any, inventory: Inventory,  # pylint: disable=too-many-arguments,too-many-locals
+               before: Mapping[str, str | None], writable: Sequence[str], handshake_error: str, strays: list[str],
+               **recorded: Any) -> RunResult:
+        """The run's result from what it left in the role's writable roots (Git status and the verified inventory)."""
+        policy: PathPolicy = request.workspace.policy
         after = role_dirty_paths(policy.root, writable)
-        allowed = [p for p in after if policy.check(request.role, p, grants=request.workspace.grants).allowed]
+        allowed = [p for p in after
+                   if committable(p) and policy.check(request.role, p, grants=request.workspace.grants).allowed]
         now = snapshot(policy.root, sorted(set(after) | set(before)))
         touched = sorted(p for p in now if now[p] != before.get(p, "<absent>") or p not in before)
         denied = sorted(p for p in touched if p not in allowed and now[p] is not None)
@@ -715,13 +826,12 @@ class RealCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-pub
         allowed = [p for p in allowed if p not in denied]
         residue = [*denied, *([unverified] if unverified else [])]
         if residue:
-            write_violations(ctx.run_dir, request, "bwrap", breaches, denied,
-                             tracked={p: (before.get(p), now.get(p)) for p in touched if p in denied})
+            residue += write_violations(ctx.run_dir, request, "bwrap", breaches, denied,
+                                        tracked={p: (before.get(p), now.get(p)) for p in touched if p in denied})
         ok, summary, details = launcher.parse(ctx.run_dir / "stdout.jsonl")
         details.update(exit_code=sup.exit_code, duration_seconds=round(sup.duration_seconds, 1),
                        escalated_to_kill=sup.escalated_to_kill, run_dir=str(ctx.run_dir),
-                       changed_during_run=touched, preexisting=sorted(before),
-                       shadow_residue=residue_entries, broker=broker.describe(),
+                       changed_during_run=touched, preexisting=sorted(before), **recorded,
                        sensitive_changes=[c.to_dict() for c in sensitive], residue=residue)
         result = RunResult(self.name, "completed", allowed, transcript=[summary] if summary else [],
                            stray_writes=strays, details=details)
@@ -736,8 +846,8 @@ class RealCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-pub
                                                        f"committed): {denied}{sensitive_note}")
         elif sup.status in ("timeout", "cancelled"):
             result.status, result.error = sup.status, f"runner {sup.status} after {sup.duration_seconds:.0f}s"
-        elif handshake.error:
-            result.status, result.error = "failed", f"sandbox start-up failed: {handshake.error}"
+        elif handshake_error:
+            result.status, result.error = "failed", f"sandbox start-up failed: {handshake_error}"
         elif strays:
             result.status, result.error = "rejected", f"wrote outside its roots (discarded): {strays}"
         elif not sup.ok or not ok:

@@ -216,8 +216,10 @@ class StateStore:
             os.fsync(handle.fileno())
 
     def events(self) -> list[dict[str, Any]]:
-        """All audit events, oldest first."""
+        """All audit events, oldest first (read without the lock: an event that is just being written — a last line
+        without its line break — is not there yet)."""
         path = self.root / "events.jsonl"
         if not path.exists():
             return []
-        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        written = path.read_text(encoding="utf-8").rpartition("\n")[0]
+        return [json.loads(line) for line in written.splitlines() if line.strip()]

@@ -71,13 +71,26 @@ from .config import ProjectConfig
 from .errors import CoordinatorError, GitConfigExecutionError
 from .fsguard import Change, Inventory, InventoryError, InventoryUnstableError, compare, scan, violations
 from .fsguard import summary as sensitive_summary
-from .gitsafe import assert_no_execution_config, git_argv, hardened_env
-from .launchers import LAUNCHERS, VERIFY_ATTEMPTS, RunnerProbe, probe_runner, snapshot, write_violations
+from .git_control import GitControl
+from .git_control import capture as capture_git_control
+from .git_control import verify as verify_git_control
+from .gitsafe import run_git
+from .launchers import (
+    LAUNCHERS,
+    VERIFY_ATTEMPTS,
+    RunnerProbe,
+    committable,
+    probe_runner,
+    reject_git_control,
+    set_aside,
+    snapshot,
+    unjudgeable,
+    write_violations,
+)
 from .locks import ProcessIdentity
 from .native_hardening import (
     claude_init_problems,
     codex_enforcement_error,
-    git_control_digest,
     inert_launcher_anchor,
     preflight,
 )
@@ -190,8 +203,7 @@ def check_subscription(kind: ProviderKind, executable: str, env: Mapping[str, st
 
 def _git(root: Path, *args: str, check: bool = True) -> str:
     # gitsafe: repository-provided fsmonitor/hooks/filters can never run during these queries.
-    return subprocess.run(git_argv(root, *args), capture_output=True, text=True, check=check,
-                          env=hardened_env()).stdout
+    return run_git(root, *args, check=check).stdout
 
 
 @dataclass(frozen=True)
@@ -234,7 +246,7 @@ def git_state(root: Path) -> GitState:
                  if line.split(" ", 1)[0] != branch)
     return GitState(branch, _git(root, "rev-parse", "HEAD").strip(), refs,
                     tuple(_git(root, "diff", "--cached", "--name-only").split()),
-                    hashlib.sha256(_git(root, "stash", "list").encode()).hexdigest())
+                    hashlib.sha256(os.fsencode(_git(root, "stash", "list"))).hexdigest())
 
 
 def git_problems(root: Path, before: GitState, after: GitState) -> list[str]:
@@ -250,8 +262,7 @@ def git_problems(root: Path, before: GitState, after: GitState) -> list[str]:
     if after.stash != before.stash:
         problems.append("the stash changed")
     if after.head != before.head and not problems:
-        if subprocess.run(git_argv(root, "merge-base", "--is-ancestor", before.head, after.head),
-                          capture_output=True, env=hardened_env(), check=False).returncode != 0:
+        if run_git(root, "merge-base", "--is-ancestor", before.head, after.head).returncode != 0:
             problems.append("the branch history was rewritten")
         else:
             for sha in _git(root, "rev-list", f"{before.head}..{after.head}").split():
@@ -372,7 +383,7 @@ class NativeCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-p
         auth = self.subscription()
         return "" if auth.ok else f"subscription authentication: {auth.detail}"
 
-    def run(self, request: RunRequest) -> RunResult:  # pylint: disable=too-many-locals,too-many-return-statements
+    def run(self, request: RunRequest) -> RunResult:  # pylint: disable=too-many-locals,too-many-return-statements,too-many-branches
         """Launch the CLI for one task in the workspace, supervise it and judge what it changed."""
         reason = self._unavailable()
         if reason:
@@ -387,13 +398,13 @@ class NativeCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-p
             interpreter = launcher.interpreter(request.role, root)
         except CoordinatorError as exc:
             return RunResult(self.name, "unavailable", error=str(exc))
-        ongoing = git_operation_in_progress(root)
-        if ongoing:
-            return RunResult(self.name, "failed", error=f"the workspace has an unfinished Git operation {ongoing}")
         try:  # gitsafe: refuse a checkout whose own Git config would run a program (both backends)
-            assert_no_execution_config(root, where="the workspace")
+            control = capture_git_control(root)
+            ongoing = git_operation_in_progress(root)
         except GitConfigExecutionError as exc:
             return RunResult(self.name, "rejected", error=str(exc))
+        if ongoing:
+            return RunResult(self.name, "failed", error=f"the workspace has an unfinished Git operation {ongoing}")
         hardening = self.config.runtime.native_hardening
         if self.hardened:  # fail closed: never a silent fallback to the unhardened command line
             reason = self.hardening_check(self.kind, self.probe().version, hardening, env=self.environment(),
@@ -421,6 +432,8 @@ class NativeCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-p
             status = "unavailable" if isinstance(exc, InventoryUnstableError) else "failed"
             return RunResult(self.name, status, error=f"the workspace inventory before the run failed: {exc}; "
                                                       "the agent was not started")
+        except GitConfigExecutionError as exc:
+            return RunResult(self.name, "rejected", error=str(exc))
         # Hardened: the deny rules were generated from an earlier scan. A secret that appeared since then is in the
         # baseline snapshot above but in no rule — never launch with a stale deny list (fail closed, tried again).
         undenied = sorted(set(before.inventory.secret_files()) - launcher.denied) if self.hardened else []
@@ -428,28 +441,53 @@ class NativeCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-p
             return RunResult(self.name, "unavailable", error=(
                 f"secret files appeared while the run was prepared ({', '.join(undenied[:5])}): the hardened deny "
                 "rules would not cover them (temporarily unavailable); the agent was not started"))
-        control = git_control_digest(root) if self.hardened else ""
-        sup = self._supervise(spec.argv, root, env, spec.stdin_path, ctx, tag, before.inventory)
+        try:
+            sup = self._supervise(spec.argv, root, env, spec.stdin_path, ctx, tag, before.inventory)
+        except BaseException:
+            kill_tagged(RUN_TAG, tag)   # a supervision that failed leaves nothing of the agent running
+            raise
         leftovers = kill_tagged(RUN_TAG, tag)
-        result = self._judge(request, ctx, launcher, model, before, sup, leftovers, writable)
-        return self._judge_hardened(result, root, control, launcher, request.role) if self.hardened else result
+        result = self._judge_safely(request, ctx, launcher, model, before, sup, leftovers, writable, control)
+        return self._judge_hardened(result, launcher, request.role) if self.hardened else result
 
-    def _judge_hardened(self, result: RunResult, root: Path, control: str, launcher: Any,  # pylint: disable=too-many-arguments
-                        role: str) -> RunResult:
-        """Native hardening's own post-run checks: the Git control files are unchanged (an agent
-        could otherwise run code in a later unsandboxed Git command, e.g. `core.fsmonitor`), and
-        Claude Code ran with exactly the hardened tools and no MCP server."""
+    def _judge_safely(self, request: RunRequest, ctx: RunContext, launcher: Any, model: str,  # pylint: disable=too-many-arguments
+                      before: WorkspaceState, sup: Any, leftovers: list[int], writable: list[str],
+                      control: GitControl) -> RunResult:
+        """Security S2: the Git control files and settings are verified BEFORE any Git command judges the run —
+        whether or not native hardening is on. A changed control file rejects it; Git judges the rest only while that
+        is known to be safe. A checkout Git cannot read any more rejects it too (launchers.unjudgeable)."""
+        root = request.workspace.policy.root
+        verdict = verify_git_control(root, control)
+        set_aside(ctx.run_dir)
+        judged: RunResult | None = None
+        if verdict.git_safe:    # with problems: as evidence only, the run is rejected whatever it finds
+            try:
+                judged = self._judge(request, ctx, launcher, model, before, sup, leftovers, writable)
+            except Exception as exc:  # pylint: disable=broad-except   # unjudgeable() raises what is none of ours
+                verdict = unjudgeable(verdict, exc)
+        if judged is not None and not verdict.problems:
+            return judged
+        details = {"backend": BACKEND, "security_sandbox": False, "model_requested": model or "CLI default",
+                   "exit_code": sup.exit_code, "duration_seconds": round(sup.duration_seconds, 1),
+                   "escalated_to_kill": sup.escalated_to_kill, "leftover_processes_killed": len(leftovers)}
+        state = {"branch": before.git.branch, "head": before.git.head, "refs": list(before.git.refs),
+                 "staged": list(before.git.staged), "stash": before.git.stash, "dirty": before.dirty}
+        return reject_git_control(self.name, BACKEND, request, ctx, self.config, verdict, before.inventory,
+                                  judged=judged, state=state, details=details,
+                                  tolerated=lambda path: self.hardened and inert_launcher_anchor(root, path))
+
+    def _judge_hardened(self, result: RunResult, launcher: Any, role: str) -> RunResult:
+        """Native hardening's own post-run check: Claude Code ran with exactly the hardened tools and no MCP
+        server. (The Git control files are checked after every run: _judge_safely.)"""
         result.details["hardening"] = hardening_summary(self.kind, self.config.runtime.native_hardening)
         problems = []
         if self.kind is ProviderKind.CLAUDE_CODE:
-            problems = claude_init_problems(_init_event(Path(result.details["run_dir"]) / "stdout.jsonl"),
-                                            launcher.tools(role))
-        if git_control_digest(root) != control:
-            result.status, result.error = "rejected", ("the run changed Git control files (.git/config, hooks or "
-                                                       "info); left as is for the operator — review before any Git "
-                                                       "command runs in this checkout")
-            result.details.setdefault("residue", []).append("Git control files (.git/config, hooks or info) changed")
-        elif problems and result.status not in ("timeout", "cancelled", "rejected"):
+            try:
+                init = _init_event(Path(result.details["run_dir"]) / "stdout.jsonl")
+            except OSError:     # removed by the agent: the judgement could not read it either (rejected)
+                init = {}
+            problems = claude_init_problems(init, launcher.tools(role))
+        if problems and result.status not in ("timeout", "cancelled", "rejected"):
             result.status, result.error = "failed", "native hardening: " + "; ".join(problems)
         return result
 
@@ -493,7 +531,8 @@ class NativeCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-p
                                       "residue": [f"unverified workspace: {exc}"]})
         touched, sensitive, new_ignored = changed_paths(before, after)
         concurrent = ctx.concurrent_roles() if ctx.concurrent_roles else set()
-        not_ours = {p for p in touched if not policy.check(request.role, p, grants=grants).allowed}
+        not_ours = {p for p in touched
+                    if not committable(p) or not policy.check(request.role, p, grants=grants).allowed}
         theirs = sorted(p for p in not_ours if policy.owner_of(p) in concurrent)  # protected paths have no owner
         # Hardened runs: the trusted CLI materialises inert, read-only agent-config anchors
         # (.claude, .mcp.json, .codex, .agents) in the shared checkout to carry its own permission
@@ -512,11 +551,12 @@ class NativeCliRunner:  # pylint: disable=too-many-instance-attributes,too-few-p
         git_issues = git_problems(root, before.git, after.git)
         residue = [*denied, *(f"Git state: {issue}" for issue in git_issues)]
         if residue:
-            write_violations(ctx.run_dir, request, BACKEND, breaches, denied, git_issues,
-                             {p: (before.dirty.get(p, "<clean>"), after.dirty.get(p, "<clean>")) for p in not_ours})
+            residue += write_violations(
+                ctx.run_dir, request, BACKEND, breaches, denied, git_issues,
+                {p: (before.dirty.get(p, "<clean>"), after.dirty.get(p, "<clean>")) for p in not_ours})
         from .launchers import role_dirty_paths  # pylint: disable=import-outside-toplevel
         allowed = [p for p in role_dirty_paths(root, writable)
-                   if policy.check(request.role, p, grants=grants).allowed]
+                   if committable(p) and policy.check(request.role, p, grants=grants).allowed]
         ok, summary, details = launcher.parse(ctx.run_dir / "stdout.jsonl")
         problems, facts = (claude_session_problems(ctx.run_dir / "stdout.jsonl", model)
                            if self.kind is ProviderKind.CLAUDE_CODE else ([], {}))

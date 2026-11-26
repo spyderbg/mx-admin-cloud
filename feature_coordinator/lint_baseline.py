@@ -24,13 +24,12 @@ from __future__ import annotations
 import io
 import json
 import re
-import subprocess
 import tarfile
 from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-from .gitsafe import SAFE_CONFIG_ARGS, hardened_env
+from .gitsafe import run_git
 from .config import LintGate
 from .model import EXIT_BLOCKED, EXIT_ERROR, GateResult
 from .sandbox import Bind
@@ -63,8 +62,7 @@ def compare(base: Iterable[Mapping[str, Any]], head: Iterable[Mapping[str, Any]]
 
 
 def _git(repo: Path, *args: str) -> str:
-    return subprocess.run(["git", "-C", str(repo), *SAFE_CONFIG_ARGS, *args], capture_output=True, text=True,
-                          check=True, env=hardened_env({"PATH": "/usr/bin:/bin"})).stdout
+    return run_git(repo, *args, env={"PATH": "/usr/bin:/bin"}, check=True).stdout
 
 
 def changed_python_files(repo: Path, base: str, head: str, lint: LintGate) -> list[str]:
@@ -78,9 +76,8 @@ def export_snapshot(repo: Path, ref: str, lint: LintGate, dest: Path) -> Path:
     """Extract `root` and the root-level Pylint config files at *ref* into *dest*."""
     present = set(_git(repo, "ls-tree", "--name-only", ref).split("\n"))
     paths = [lint.root, *(rc for rc in RC_FILES if rc in present)]
-    data = subprocess.run(["git", "-C", str(repo), *SAFE_CONFIG_ARGS, "archive", "--format=tar", ref, "--",
-                           *paths], capture_output=True, env=hardened_env({"PATH": "/usr/bin:/bin"}),
-                          check=True).stdout
+    data = run_git(repo, "archive", "--format=tar", ref, "--", *paths, env={"PATH": "/usr/bin:/bin"}, check=True,
+                   text=False).stdout
     dest.mkdir(parents=True, exist_ok=True)
     with tarfile.open(fileobj=io.BytesIO(data)) as archive:
         archive.extractall(dest, filter="data")

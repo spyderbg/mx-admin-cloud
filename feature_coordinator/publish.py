@@ -65,6 +65,7 @@ from .errors import (
     GitHubNotFoundError,
     GitHubUncertainWriteError,
     GitHubValidationError,
+    GitConfigExecutionError,
     GitOperationError,
     HeadMismatchError,
     LockBusyError,
@@ -343,6 +344,8 @@ class PullRequestPublisher:  # pylint: disable=too-few-public-methods
     def _head_problem(self, feature: Feature, cand: PullRequestCandidate) -> str | None:
         try:
             local = self.git.rev_parse(f"refs/heads/{feature.branch}")
+        except GitConfigExecutionError:   # refused, not missing (S2): the pass is deferred
+            raise
         except GitOperationError:
             return f"the feature branch {feature.branch} does not exist in this checkout"
         if local != cand.head_sha:

@@ -22,13 +22,13 @@ from __future__ import annotations
 
 import dataclasses
 import json
-import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any, Callable
 
 from .config import ProjectConfig
 from .demo import init_demo_repo
+from .gitsafe import run_git
 from .launchers import LAUNCHERS, probe_runner
 from .native_backend import NativeCliRunner, check_subscription
 from .paths import PathPolicy, ScopedWorkspace
@@ -135,8 +135,7 @@ def run_smoke(config_yaml: Path, workdir: Path, echo: Callable[[str], None]) -> 
     report = worker.run(feature.id)
     files = {}
     for role, (path, text) in SMOKE_FILES.items():
-        shown = subprocess.run(["git", "-C", str(repo), "show", f"{feature.branch}:{path}"], capture_output=True,
-                               text=True, check=False)
+        shown = run_git(repo, "show", f"{feature.branch}:{path}")
         files[role] = {"path": path, "on_branch": shown.returncode == 0, "content_ok": shown.stdout.strip() == text}
     runs = {}
     for native in sorted((state / "runs").glob("*/native.json")):

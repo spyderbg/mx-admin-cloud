@@ -32,6 +32,7 @@ from .demo import DEMO_AUTHOR, init_demo_repo
 from .errors import ClaimError, CoordinatorError, EvidenceError, PullRequestPolicyError, RoleBusyError
 from .gates import SandboxedGateRunner
 from .github_api import sanitize
+from .gitsafe import run_git
 from .issue_sync import IssueSync, SimulatedCrash, enqueue_comment
 from .issues import BLOCKED_LABEL, TEST_LABEL, VERIFIED_LABEL, TrackerClient, extract_block
 from .model import Evidence, FeatureState, GateResult, TaskState
@@ -453,13 +454,11 @@ class Lifecycle:  # pylint: disable=too-many-instance-attributes
                                         f"remote PRs for the branch: {len(remote)}")
         self.report["pr_candidate"] = {"head": candidate.head, "base": candidate.base,
                                        "head_sha": candidate.head_sha} if candidate else None
-        commits = subprocess.run(["git", "-C", str(self.repo), "log", "--format=%h %s",
-                                  f"{feature.base_sha}..{branch}"], capture_output=True, text=True,
-                                 check=True).stdout.splitlines()
+        commits = run_git(self.repo, "log", "--format=%h %s", f"{feature.base_sha}..{branch}",
+                          check=True).stdout.splitlines()
         self.report["commits"] = commits
         check("R2 one shared branch, serialized single-role commits",
-              len(commits) == 4 and subprocess.run(["git", "-C", str(self.repo), "branch", "--format=%(refname:short)"],
-                                                   capture_output=True, text=True, check=True).stdout.split()
+              len(commits) == 4 and run_git(self.repo, "branch", "--format=%(refname:short)", check=True).stdout.split()
               == ["dev", branch], commits)
 
     def _restart_and_reconcile(self) -> None:
@@ -500,10 +499,8 @@ class Lifecycle:  # pylint: disable=too-many-instance-attributes
         pulls_after = {(p.number, p.state) for p in client.list_pull_requests()}
         check("Q3 no pull request created or changed", pulls_after == self.pulls_before, len(pulls_after))
         trees = ("test_environment/mxfix", "test_environment/mxissues")
-        tracked = subprocess.run(["git", "-C", str(REPO_ROOT), "ls-files", "--", *trees],
-                                 capture_output=True, text=True, check=False).stdout
-        status = subprocess.run(["git", "-C", str(REPO_ROOT), "status", "--porcelain", "--", *trees],
-                                capture_output=True, text=True, check=False).stdout
+        tracked = run_git(REPO_ROOT, "ls-files", "--", *trees).stdout
+        status = run_git(REPO_ROOT, "status", "--porcelain", "--", *trees).stdout
         # An empty status also means "no such path", so both trees must be tracked to count.
         check("Q4 mxfix/mxissues untouched in the live checkout",
               status == "" and all(f"{tree}/" in tracked for tree in trees),

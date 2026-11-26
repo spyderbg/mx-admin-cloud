@@ -40,7 +40,6 @@ the sandbox policy), and the Git control files (`.git/config`, hooks, info) unch
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
@@ -402,31 +401,6 @@ def codex_enforcement_error(executable: str, profile_args: Sequence[str], workdi
                                        ("outside write reached the host", target.exists()),
                                        ("workspace not writable", result.get("inside") != "ok")) if bad]
     return f"the Codex permission profile is not enforced: {failures}" if failures else ""
-
-
-def git_control_digest(root: Path) -> str:
-    """A digest of the Git control files an agent could use to run code in a later, unsandboxed Git
-    command (config, worktree config, commondir, hooks, info): names and contents."""
-    git = root / ".git"
-    entries: list[str] = []
-    for rel in ("config", "config.worktree", "commondir"):
-        path = git / rel
-        if path.is_file() and not path.is_symlink():
-            data = path.read_bytes()
-            if (rel, data.strip()) not in (("config.worktree", b""), ("commondir", b".")):
-                entries.append(f"{rel}:{hashlib.sha256(data).hexdigest()}")
-        elif os.path.lexists(path):
-            entries.append(f"{rel}:special")
-    for sub in ("hooks", "info"):
-        base = git / sub
-        for path in sorted(base.rglob("*")) if base.is_dir() else ():
-            rel = path.relative_to(git)
-            if path.is_symlink() or not (path.is_file() or path.is_dir()):
-                entries.append(f"{rel}:special")
-            elif path.is_file() and path.name != ".claude-sandbox-noreplace":
-                digest = hashlib.sha256(path.read_bytes()).hexdigest()
-                entries.append(f"{rel}:{oct(path.stat().st_mode & 0o777)}:{digest}")
-    return hashlib.sha256("\n".join(entries).encode()).hexdigest()
 
 
 def claude_init_problems(init: Mapping[str, Any], expected_tools: Sequence[str]) -> list[str]:
