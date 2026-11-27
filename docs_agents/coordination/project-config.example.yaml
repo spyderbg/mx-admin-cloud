@@ -379,4 +379,6 @@ github:
   repair:
     enabled: false
     max_attempts: 2                      # attempts per feature, each counted before its agent starts (1..2)
+    max_launches_per_attempt: 2          # agent launches per attempt (1..2), counted before each starts, never
+    #                                      refunded; a 2nd only after a retryable outcome; not max_launches_per_task
     poll_interval_seconds: 60            # the Worker service's repair step at most this often (10..3600)

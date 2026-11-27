@@ -46,7 +46,9 @@ wrong or rewritten remote, a withdrawn approval before publication, merge eviden
 whose head a person moved is NOT resumed by a reset: `github publish revalidate FEATURE` (revalidate.py)
 validates the new head of the same PR and only then moves the candidate to it.
 Transient failures (network, GitHub 5xx, a busy lock) are retried by the next pass. W4.8.1: while an automatic repair
-attempt of the feature's PR is open (repair.py), the pass only reports it: the attempt owns the branch's head.
+attempt of the feature's PR is open (repair.py), the pass only reports it: the attempt owns the branch's head. Once
+it ended, a branch it moved locally (unpushed) still stops the pass, unless the PR was merged at exactly the validated
+head: that merge is verified and completed as usual (`_merged_past_repair`).
 
 Locks: one pass at a time (github-publish.lock, taken first). GitHub is never called under a coordinator,
 project, role or Git lock; only the push holds project.lock EXCLUSIVE + git.lock (no writer can start).
@@ -81,7 +83,7 @@ from .intake import IntakeRecord, issue_problem, known_problem, load_intake, ver
 from .issue_sync import OutboxEntry, SimulatedCrash
 from .issues import PullRequest, escape_markdown_comment
 from .model import Evidence, Feature, FeatureState, PullRequestCandidate, Task, TaskState, utc_now
-from .repair_record import open_repair
+from .repair_record import load_repair, open_repair
 from .workspace import identity as workspace_identity
 
 PROTECTED_BRANCHES = ("main", "master", "dev")  # never pushed (gitops pushes `feature/…` only, besides)
@@ -312,14 +314,33 @@ class PullRequestPublisher:  # pylint: disable=too-few-public-methods
                                         f"{feature.id} --apply`; a PR head a person changed is validated with "
                                         f"`python -m feature_coordinator github publish revalidate {feature.id}`)",
                        sticky=False)
-        problem = self._repository_problem(feature) or self._head_problem(feature, cand)
-        if problem:
-            self._stop(feature, report, problem, apply=apply)
+        problem = self._repository_problem(feature)
+        moved = None if problem else self._head_problem(feature, cand)
+        if problem or (moved and not self._merged_past_repair(feature, cand)):
+            self._stop(feature, report, problem or str(moved), apply=apply)
         pr = self._find(feature, cand, report, apply)
         if pr is None:
             self._open(feature, record, cand, report, apply)
             return
         self._follow(feature, record, self.store.load_feature(feature.id).pull_request or cand, pr, report, apply)
+
+    def _merged_past_repair(self, feature: Feature, cand: PullRequestCandidate) -> bool:
+        """W4.8.1: an ENDED repair attempt may leave its agent's unpushed commits on the local branch, on top of the
+        validated head. A PR a person merged at exactly that head is still followed and completed (`_complete`
+        verifies the merge as always); otherwise the moved branch stops publication as before."""
+        record = load_repair(self.store, feature.id)
+        if record is None or not record.attempts or not cand.number:
+            return False
+        try:
+            local = self.git.rev_parse(f"refs/heads/{feature.branch}")
+        except GitConfigExecutionError:
+            raise
+        except GitOperationError:  # a missing branch: the stop says so
+            return False
+        if not self.git.is_ancestor(cand.head_sha, local):
+            return False
+        pr = self.client.get_pull_request(cand.number)
+        return pr.merged and pr.head_sha == cand.head_sha
 
     def _repository_problem(self, feature: Feature) -> str | None:
         """Why this checkout's `origin` is not the feature's GitHub repository (None: it is)."""

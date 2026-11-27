@@ -65,7 +65,7 @@ from .config import ProjectConfig
 from .errors import ClaimError, CoordinatorError, GitConfigExecutionError, GitOperationError, LockBusyError
 from .locks import FileLock, ProcessIdentity
 from .model import Feature, FeatureState, Task, TaskState, transition_task, utc_now
-from .repair_record import launch_allowance, repairing_features
+from .repair_record import count_launch, launch_budget, repairing_features
 from .store import atomic_write_json
 from .supervisor import RUN_TAG_ENV, stop_requested, tagged_processes, terminate_pids, wait_for_wake
 from .workspace import workspace_problems
@@ -644,9 +644,10 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
         rec = load_scheduling(self.store, task)
         self._event("worker-task-selected", task=task.id, role=task.role, launches_so_far=rec.launches,
                     attempts=rec.attempts)
-        budget = self.cfg.max_launches_per_task + launch_allowance(self.store, task)  # W4.8.1: +1 per repair attempt
-        if rec.launches >= budget:
-            self._apply(task.id, Outcome(CRITICAL, f"launch budget exhausted ({rec.launches} of {budget})"), None)
+        used, budget, what = launch_budget(self.store, task, rec.launches, self.cfg.max_launches_per_task,
+                                           self.config.github.repair.max_launches_per_attempt)  # W4.8.1
+        if used >= budget:
+            self._apply(task.id, Outcome(CRITICAL, f"launch budget exhausted ({used} of {budget}){what}"), None)
             return
         if self._intake_changed(task):
             return
@@ -664,6 +665,7 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
             rec.in_flight = {"launch": launch, "instance": self.instance, "started_at": utc_now(), "tag": tag,
                              "worker_id": self.record.worker_id if self.record else ""}
             self.store.save_record("scheduling", rec)
+            count_launch(self.store, task)  # W4.8.1: a due repair agent's launch also counts in its attempt
         started = time.time()  # wall time: compared with run directories' modification times
         mark = len(self.store.events())
         profile = self.config.provider_for(task.role)

@@ -15,11 +15,14 @@ every `github.repair.poll_interval_seconds`, never while paused (service.py `_po
      task data, never a permission (repair_record.repair_brief fences them);
   3. the task path. The attempt is COUNTED first (write-ahead, `state/repair/<feature>.json`), then the task is
      re-opened (verified → ready, workflow.reopen_task). The Worker service then runs it like any task of the active
-     feature (repair_record.repairing_features): the ordinary launch — write-ahead launch count (one launch beyond
-     `max_launches_per_task` per attempt), S1 launch gate, scoped workspace, approval re-reads, commit with the task's
-     trailers, its required gates, the watchdog, the post-launch integrity checks, the retry policy — with the
-     attempt's brief appended to the task's own instructions. Failed gates hold the task (validation: NEEDS_ATTENTION;
-     `worker reset-retries` lets the agent try again within the same attempt);
+     feature (repair_record.repairing_features): the ordinary launch — write-ahead launch count, S1 launch gate,
+     scoped workspace, approval re-reads, commit with the task's trailers, its required gates, the watchdog, the
+     post-launch integrity checks, the retry policy — with the attempt's brief appended to the task's own
+     instructions, within the attempt's OWN launch budget (`max_launches_per_attempt` ≤ 2, counted in the attempt
+     before each launch, never refunded). A second launch follows only an outcome the retry policy already retries by
+     itself (transient, subscription, interrupted, cancelled); failed gates or an integrity failure hold the task
+     (NEEDS_ATTENTION; `worker reset-retries` lets the agent try again within the same attempt while its launches
+     last). A PR a person merged or closed meanwhile ends the attempt before its agent (re)starts;
   4. publication's push. Once the task is verified again at a new head that continues the PR's head, that head is
      pushed to the PR's branch (gitops.push_branch: a fast-forward of exactly that commit, never forced, the
      publisher's single-push-URL checks), after the PR (identity, open, head) and the approval were re-read;
@@ -305,8 +308,9 @@ class RepairStep:  # pylint: disable=too-few-public-methods
             attempt = {"id": f"a{used + 1}-{secrets.token_hex(4)}", "number": used + 1, "status": "started",
                        "review": entry["key"], "review_head": cand.head_sha, "pr": cand.number, "task": task.id,
                        "role": task.role, "findings": blocking, "findings_sha256": findings_digest(blocking),
-                       "started_at": utc_now(), "reopened_at": "", "verified_head": "", "verified_at": "",
-                       "pushed": None, "revalidation": None, "finished_at": "", "reason": "", "actor": "worker"}
+                       "started_at": utc_now(), "reopened_at": "", "launches": 0, "verified_head": "",
+                       "verified_at": "", "pushed": None, "revalidation": None, "finished_at": "", "reason": "",
+                       "actor": "worker"}
             record.attempts.append(attempt)
             record.stopped, record.updated_at = None, utc_now()
             self.store.save_record("repair", record)
@@ -348,13 +352,20 @@ class RepairStep:  # pylint: disable=too-few-public-methods
         task = self.store.load_task(attempt["task"])
         if task.state is not TaskState.VERIFIED:
             rec = load_scheduling(self.store, task)
-            status = task_status(task, rec, self.store.load_claim(task.id), self.clock())
+            claim = self.store.load_claim(task.id)
+            if claim is None and not rec.in_flight:  # its agent does not run: a merged or closed PR ends the attempt
+                self._moot(feature, attempt, report)
+            status = task_status(task, rec, claim, self.clock())
             if status == "needs-attention":
                 why = (rec.attention or {}).get("reason") or (task.history[-1].reason if task.history else "")
+                used, budget = int(attempt["launches"]), self.cfg.max_launches_per_attempt
+                again = (f"`python -m feature_coordinator worker reset-retries {task.id} --apply` lets its agent try "
+                         f"again ({used} of {budget} launch(es) used); " if used < budget else
+                         f"its launches are used up ({used} of {budget}; never refunded); ")
                 report.attention.append(
                     f"{label} stopped: {task.id} needs an operator ({sanitize(why, 300)}). The attempt stays open: "
-                    f"`python -m feature_coordinator worker reset-retries {task.id} --apply` lets its agent try again; "
-                    f"`python -m feature_coordinator github repair abandon {feature.id} --reason … --apply` ends it")
+                    f"{again}`python -m feature_coordinator github repair abandon {feature.id} --reason … --apply` "
+                    "ends it")
             else:
                 report.waiting.append(f"{label}: {task.id} is {status} (the Worker runs its agent)")
             return False
@@ -372,6 +383,19 @@ class RepairStep:  # pylint: disable=too-few-public-methods
         self._fault(f"crash-after-verified:{feature.id}")
         report.events.append(f"{label}: {task.id} verified again at {head[:12]} (its required gates passed)")
         return True
+
+    def _moot(self, feature: Feature, attempt: Mapping[str, Any], report: RepairStepReport) -> None:
+        """End the attempt when a person merged or closed its PR (re-read by number) while its agent was not running:
+        nothing is (re)started or pushed; publication then verifies a merge as usual."""
+        try:
+            pr = self.client.get_pull_request(attempt["pr"])
+        except GitHubNotFoundError:
+            self._end(feature, attempt, "failed", f"PR #{attempt['pr']} no longer exists; its agent is not started "
+                                                  "and nothing is pushed", report)
+        if pr.merged or pr.state != "open":
+            self._end(feature, attempt, "failed", f"PR #{attempt['pr']} was {'merged' if pr.merged else pr.state} by "
+                                                  "a person during the repair; its agent is not started again and "
+                                                  "nothing is pushed (publication completes a verified merge)", report)
 
     def _push(self, feature: Feature, attempt: dict[str, Any], report: RepairStepReport) -> None:
         """Push exactly the verified head to the PR's branch (a fast-forward), after fresh reads."""

@@ -23,6 +23,9 @@ Status mapping (`board_status`), from the existing state machines (model.py):
                                         a commit that is on the feature branch; otherwise Review
                                         (W4.3.3: the task of an approved GitHub Issue stays Review
                                         until its feature is done with merge evidence: the merged PR)
+  task re-opened by a W4.8.1 repair   → Done once its feature is done with merge evidence, when the
+  attempt that ended unverified         attempt failed or was abandoned (the merge contains the head
+                                        its last verification and the validated candidate describe)
   feature planned                     → Backlog
   feature active / integration        → In Progress
   feature review (one PR candidate)   → Review
@@ -74,6 +77,7 @@ from .issue_sync import IssueSync, SimulatedCrash
 from .issues import OwnershipMarker, RemoteIssue
 from .locks import ProcessIdentity
 from .model import Feature, FeatureState, Task, TaskState, utc_now
+from .repair_record import reopened_by_repair
 from .store import StateStore
 
 LINK_SCHEMA = 1
@@ -541,7 +545,8 @@ class ProjectSync:  # pylint: disable=too-many-instance-attributes,too-many-publ
         except (KeyError, TypeError, ValueError):
             return False
 
-    def board_status(self, feature: Feature, task: Task | None, notes: list[str] | None = None) -> tuple[str, str]:
+    def board_status(self, feature: Feature, task: Task | None,  # pylint: disable=too-many-return-statements
+                     notes: list[str] | None = None) -> tuple[str, str]:
         """(status key, blocked reason) for a record. See the module docstring."""
         notes = notes if notes is not None else []
         if task is None:
@@ -556,6 +561,8 @@ class ProjectSync:  # pylint: disable=too-many-instance-attributes,too-many-publ
         state = task.state
         if state is TaskState.VERIFIED:
             return self._verified_status(feature, task, notes), ""
+        if feature.state is FeatureState.DONE and feature.merged_sha and reopened_by_repair(self.store, task):
+            return "done", ""  # W4.8.1 (see the module docstring)
         if state is TaskState.IN_PROGRESS:
             return ("review" if self._verifying(task) else "in_progress"), ""
         if state in (TaskState.PROPOSED, TaskState.READY):

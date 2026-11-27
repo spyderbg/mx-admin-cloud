@@ -6,8 +6,10 @@ Draft PR, never rewritten:
 
     started  → the attempt is counted (write-ahead) and the feature's single task re-opened (`reopened_at`); the
                Worker service then runs that task through its ordinary launch path, with this attempt's brief
-               appended to the task's own instructions (`repair_brief`), and grants it ONE launch beyond
-               `worker.max_launches_per_task` (`launch_allowance`)
+               appended to the task's own instructions (`repair_brief`), within the attempt's OWN launch budget
+               (`launch_budget`: `github.repair.max_launches_per_attempt`, ≤ 2, instead of
+               `worker.max_launches_per_task`); each launch is counted in the attempt (`launches`) in the service's
+               write-ahead transaction (`count_launch`), never refunded, not even by `worker reset-retries`
     verified → the task was verified again (its required gates passed) at a new head on the feature branch
     pushed   → that head was pushed to the PR's branch (a fast-forward, never forced)
     completed: the PR's head was revalidated (revalidate.py) and the recorded candidate moved to it
@@ -113,10 +115,35 @@ def repairing_features(store: Any) -> set[str]:
     return {raw["id"] for raw in store.list_records("repair") if _agent_attempt(store, RepairRecord.from_dict(raw))}
 
 
-def launch_allowance(store: Any, task: Task) -> int:
-    """Launches beyond `worker.max_launches_per_task` granted to *task*: one per repair attempt counted for it."""
+def launch_budget(store: Any, task: Task, launches: int, per_task: int, per_attempt: int) -> tuple[int, int, str]:
+    """(launches used, budget, ' for …' or '') for *task*'s next launch: while its repair agent is due, the attempt's
+    own launches against `per_attempt` (github.repair.max_launches_per_attempt); otherwise the task's scheduling
+    *launches* against `per_task` (worker.max_launches_per_task), exactly as before."""
+    attempt = _agent_attempt(store, load_repair(store, task.feature_id))
+    if attempt is None or attempt["task"] != task.id:
+        return launches, per_task, ""
+    return int(attempt["launches"]), per_attempt, f" for repair attempt {attempt['number']}"
+
+
+def count_launch(store: Any, task: Task) -> None:
+    """Count one launch of *task*'s due repair agent in its attempt. Called inside the service's write-ahead
+    transaction, beside the scheduling record's own count, BEFORE the agent can start; never decremented."""
     record = load_repair(store, task.feature_id)
-    return sum(a["task"] == task.id for a in record.attempts) if record else 0
+    attempt = _agent_attempt(store, record)
+    if record is None or attempt is None or attempt["task"] != task.id:
+        return
+    attempt["launches"] = int(attempt["launches"]) + 1
+    record.updated_at = utc_now()
+    store.save_record("repair", record)
+
+
+def reopened_by_repair(store: Any, task: Task) -> bool:
+    """True when a repair attempt re-opened *task* and ended without verifying it again (failed or abandoned), with
+    no attempt open: once its feature is done on verified merge evidence, project_sync shows its card Done."""
+    record = load_repair(store, task.feature_id)
+    if record is None or record.open_attempt() is not None or task.state is TaskState.VERIFIED:
+        return False
+    return any(a["task"] == task.id and a["status"] in ("failed", "abandoned") for a in record.attempts)
 
 
 def repair_brief(store: Any, task: Task) -> str | None:

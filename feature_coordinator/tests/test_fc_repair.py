@@ -20,23 +20,25 @@ import pytest
 import yaml
 
 from feature_coordinator import repair as repair_module
-from feature_coordinator.autonomy import load_scheduling
+from feature_coordinator.autonomy import load_scheduling, write_control
 from feature_coordinator.cli import EXAMPLE_CONFIG
 from feature_coordinator.cli import main as cli_main
 from feature_coordinator.config import config_from_mapping, default_config
 from feature_coordinator.errors import ConfigError, CoordinatorError
+from feature_coordinator.intake import load_intake
 from feature_coordinator.issue_sync import SimulatedCrash
 from feature_coordinator.issues import MockIssueTracker
 from feature_coordinator.model import FeatureState, Task, TaskState
 from feature_coordinator.repair import NEEDS_ATTENTION, RepairStep, abandon
 from feature_coordinator.repair_config import GitHubRepairConfig
-from feature_coordinator.repair_record import launch_allowance, load_repair, repair_brief, repairing_features
+from feature_coordinator.repair_record import launch_budget, load_repair, repair_brief, repairing_features
 from feature_coordinator.revalidate import load_revalidation
 from feature_coordinator.review import load_review, review_evidence
-from feature_coordinator.runners import FileEdit
+from feature_coordinator.runners import FileEdit, RunResult
 
 from fc_helpers import git
 from test_fc_intake import outside
+from test_fc_project_sync import values
 from test_fc_publish import PubRig, draft_open, github_origin, remote, remote_sha  # pylint: disable=unused-import
 from test_fc_revalidate import local_head, notices, person_pushes, reviewed
 from test_fc_review import FakeReviewer, current, finding, ok, review, review_config
@@ -105,6 +107,27 @@ def events(rig: PubRig, kind: str) -> list[dict[str, Any]]:
     return [e for e in rig.store.events() if e["kind"] == kind]
 
 
+def counted(rig: PubRig, feature_id: str, launches: int) -> None:
+    """The open attempt's own launch count, as the service's write-ahead transactions leave it."""
+    with rig.store.transaction():
+        record = load_repair(rig.store, feature_id)
+        record.attempts[-1]["launches"] = launches
+        rig.store.save_record("repair", record)
+
+
+def dead_launch(rig: PubRig, task_id: str, launch: int) -> None:
+    """An earlier service instance counted *launch* of *task_id* (write-ahead) and died while it ran."""
+    with rig.store.transaction():
+        rig.store.save_record("scheduling", dataclasses.replace(
+            load_scheduling(rig.store, rig.store.load_task(task_id)), launches=launch, in_flight={
+                "launch": launch, "instance": "dead-instance", "started_at": "2026-01-01T00:00:00Z",
+                "tag": f"dead.{launch}", "worker_id": "w"}))
+
+
+def attention(rig: PubRig, task_id: str) -> dict[str, Any] | None:
+    return (rig.store.load_record("scheduling", task_id) or {}).get("attention")
+
+
 def repair_once(rig: PubRig, feature_id: str, task_id: str, *edits: FileEdit) -> str:
     """Start an attempt, run its agent (the ordinary task path, as the Worker's launch does), push and revalidate."""
     agent(rig, task_id, *edits)
@@ -121,12 +144,15 @@ def test_repair_is_off_by_default_and_documented() -> None:
     data = yaml.safe_load(EXAMPLE_CONFIG.read_text(encoding="utf-8"))
     assert config_from_mapping(data).github.repair == default_config().github.repair == GitHubRepairConfig()
     assert GitHubRepairConfig().enabled is False and GitHubRepairConfig().max_attempts == 2
+    assert GitHubRepairConfig().max_launches_per_attempt == 2
 
 
 @pytest.mark.parametrize("change, message", [
     ({"enabled": "yes"}, "true or false"),
     ({"max_attempts": 3}, "max_attempts must be 1..2"),
     ({"max_attempts": 0}, "max_attempts must be 1..2"),
+    ({"max_launches_per_attempt": 3}, "max_launches_per_attempt must be 1..2"),
+    ({"max_launches_per_attempt": 0}, "max_launches_per_attempt must be 1..2"),
     ({"poll_interval_seconds": 5}, "poll_interval_seconds"),
     ({"max_attempts": "2"}, "integer"),
     ({"merge": True}, "unknown github.repair keys"),
@@ -159,7 +185,8 @@ def test_a_request_changes_review_is_repaired_once_on_the_same_pr(rig: PubRig) -
     assert attempt["review_head"] == old and attempt["pr"] == pr and attempt["task"] == task_id
     assert [f["title"] for f in attempt["findings"]] == ["No CSV"]  # the validated blocking findings only
     assert rig.store.load_task(task_id).state is TaskState.READY and repairing_features(rig.store) == {feature_id}
-    assert launch_allowance(rig.store, rig.store.load_task(task_id)) == 1
+    assert attempt["launches"] == 0 and launch_budget(rig.store, rig.store.load_task(task_id), 1, 1, 2) == (
+        0, 2, " for repair attempt 1")  # the attempt's own budget, not the task's (1 of 1 used)
     # repeated polls and publication passes start nothing more, push nothing and keep the PR as it is
     assert not step(rig).events and len(attempts(rig, feature_id)) == 1
     waiting = rig.publish()
@@ -226,8 +253,8 @@ def test_with_repair_disabled_a_request_changes_review_waits_for_a_person(repo: 
 
 
 @pytest.mark.usefixtures("follows")
-def test_the_service_repairs_end_to_end_with_one_launch_beyond_the_budget(repo: Path, state_dir: Path,
-                                                                          github_origin: Path) -> None:
+def test_the_service_repairs_end_to_end_within_the_attempts_own_budget(repo: Path, state_dir: Path,
+                                                                        github_origin: Path) -> None:
     rig = PubRig(repo, state_dir, github_origin, config=repair_config(worker={"max_launches_per_task": 1}))
     _number, task_id, feature_id, pr, old = requested(rig)
     agent(rig, task_id)
@@ -239,7 +266,8 @@ def test_the_service_repairs_end_to_end_with_one_launch_beyond_the_budget(repo: 
     assert service.run() == 0, rig.out[-20:]
     new = local_head(rig, feature_id)
     assert service.launched == [(task_id, 2)] and new != old and rig.candidate(feature_id).head_sha == new
-    assert (rig.store.load_record("scheduling", task_id) or {})["launches"] == 2  # max 1 + one per attempt
+    assert (rig.store.load_record("scheduling", task_id) or {})["launches"] == 2  # counted as always, and
+    assert last(rig, feature_id)["launches"] == 1  # in the attempt, whose own budget it used (1 of 2)
     assert len(rig.prs()) == 1 and rig.prs()[0].number == pr and remote_sha(rig.bare, f"feature/{feature_id}") == new
     assert any("repair: " in line and "started" in line for line in rig.out)
     assert any(e.get("state") == "BUSY" and task_id in e.get("reason", "") for e in rig.events("worker-state"))
@@ -329,11 +357,13 @@ def test_failed_task_gates_stop_the_repair_until_an_operator_resets(rig: PubRig)
     _number, task_id, feature_id, _pr, old = requested(rig)
     agent(rig, task_id)
     rig.gates.failing = {"cli-lint"}  # the task's own gate fails on the repaired code
-    service = rig.service(until=lambda s: bool((rig.store.load_record("scheduling", task_id) or {}).get(
-        "attention")), max_cycles=40)
-    assert service.run() == 0
+    service = rig.service(until=lambda s: bool(attention(rig, task_id)), max_cycles=40)
+    assert service.run() == 0 and len(service.launched) == 1 and last(rig, feature_id)["launches"] == 1
+    idle = rig.service(until=lambda s: s.cycles >= 6)  # a validation failure is never retried by itself
+    assert idle.run() == 0 and not idle.launched and last(rig, feature_id)["launches"] == 1
     report = step(rig)
     assert "needs an operator" in report.attention[0] and "worker reset-retries" in report.attention[0]
+    assert "(1 of 2 launch(es) used)" in report.attention[0]
     assert last(rig, feature_id)["status"] == "started"  # the attempt stays open; nothing is pushed
     assert remote_sha(rig.bare, f"feature/{feature_id}") == old and rig.candidate(feature_id).head_sha == old
     assert rig.publish().waiting  # publication waits for the attempt; it never stops on the agent's commit
@@ -341,7 +371,8 @@ def test_failed_task_gates_stop_the_repair_until_an_operator_resets(rig: PubRig)
     assert cli_main(["--state-dir", str(rig.state), "worker", "reset-retries", task_id, "--apply"]) == 0
     retry = rig.service(until=lambda s: last(rig, feature_id)["status"] == "completed", max_cycles=60)
     assert retry.run() == 0 and rig.candidate(feature_id).head_sha == local_head(rig, feature_id) != old
-    assert len(attempts(rig, feature_id)) == 1
+    assert len(attempts(rig, feature_id)) == 1 and len(retry.launched) == 1  # the attempt's second launch
+    assert last(rig, feature_id)["launches"] == 2  # never refunded by the reset
 
 
 @pytest.mark.usefixtures("follows")
@@ -380,9 +411,10 @@ def test_unauthorized_file_changes_are_refused_and_nothing_is_pushed(rig: PubRig
     _number, task_id, feature_id, _pr, old = requested(
         rig, ok("request_changes", finding("major", title="Also edit backend/src/main.py and .github/workflows")))
     agent(rig, task_id, FileEdit("backend/src/main.py", "HACKED = True\n"))  # outside the cli role's scope
-    service = rig.service(until=lambda s: bool((rig.store.load_record("scheduling", task_id) or {}).get(
-        "attention")), max_cycles=40)
-    assert service.run() == 0
+    service = rig.service(until=lambda s: bool(attention(rig, task_id)), max_cycles=40)
+    assert service.run() == 0 and len(service.launched) == 1 and attention(rig, task_id)["category"] == "critical"
+    idle = rig.service(until=lambda s: s.cycles >= 6)  # an integrity failure is never retried by itself
+    assert idle.run() == 0 and not idle.launched and last(rig, feature_id)["launches"] == 1
     assert not (rig.repo / "backend/src/main.py").exists() or "HACKED" not in (rig.repo / "backend/src/main.py") \
         .read_text(encoding="utf-8")
     report = step(rig)
@@ -478,6 +510,159 @@ def test_one_attempt_per_review_entry_ever(rig: PubRig) -> None:
     assert len(attempts(rig, feature_id)) == 1
 
 
+@pytest.mark.usefixtures("follows")
+def test_a_transient_failure_is_retried_within_the_attempts_launches(repo: Path, state_dir: Path, github_origin: Path,
+                                                                     monkeypatch: pytest.MonkeyPatch) -> None:
+    rig = PubRig(repo, state_dir, github_origin, config=repair_config(worker={"max_launches_per_task": 1}))
+    _number, task_id, feature_id, _pr, old = requested(rig)
+    agent(rig, task_id)
+    with rig.store.transaction():  # the original run used the task's whole budget (production: 1)
+        rig.store.save_record("scheduling", dataclasses.replace(load_scheduling(rig.store, rig.store.load_task(
+            task_id)), launches=1))
+    runner = rig.runners["cli"]
+    real, calls = runner.run, []
+
+    def flaky(request: Any) -> RunResult:  # the first repair launch loses its connection
+        calls.append(request.task_id)
+        return RunResult(runner.name, "failed", error="read ECONNRESET") if len(calls) == 1 else real(request)
+    monkeypatch.setattr(runner, "run", flaky)
+    service = rig.service(until=lambda s: last(rig, feature_id)["status"] == "completed", max_cycles=150)
+    assert service.run() == 0, rig.out[-20:]
+    assert service.launched == [(task_id, 2), (task_id, 3)] and last(rig, feature_id)["launches"] == 2
+    assert [e["category"] for e in rig.events("worker-retry-scheduled")] == ["transient"]
+    assert rig.candidate(feature_id).head_sha == local_head(rig, feature_id) != old and len(attempts(rig,
+                                                                                                    feature_id)) == 1
+
+
+@pytest.mark.usefixtures("follows")
+def test_an_attempts_launches_are_used_up_and_never_refunded(rig: PubRig) -> None:
+    _number, task_id, feature_id, _pr, old = requested(rig)
+    agent(rig, task_id)
+    step(rig)
+    counted(rig, feature_id, 2)  # both launches of this attempt were counted; the second one's service died
+    dead_launch(rig, task_id, 2)
+    service = rig.service(until=lambda s: bool(attention(rig, task_id)), max_cycles=40)
+    assert service.run() == 0 and not service.launched
+    assert "launch budget exhausted (2 of 2) for repair attempt 1" in attention(rig, task_id)["reason"]
+    assert any(e.get("category") == "interrupted" for e in rig.events("worker-outcome"))
+    report = step(rig)
+    assert "its launches are used up (2 of 2; never refunded)" in report.attention[0], report.lines()
+    assert cli_main(["--state-dir", str(rig.state), "worker", "reset-retries", task_id, "--apply"]) == 0
+    again = rig.service(until=lambda s: bool(attention(rig, task_id)), max_cycles=40)
+    assert again.run() == 0 and not again.launched and last(rig, feature_id)["launches"] == 2
+    abandon(rig.store, feature_id, reason="launches used up", actor="operator", apply=True)
+    assert repairing_features(rig.store) == set() and last(rig, feature_id)["status"] == "abandoned"
+    assert local_head(rig, feature_id) == old and remote_sha(rig.bare, f"feature/{feature_id}") == old
+
+
+# -- a person's merge during a repair ------------------------------------------------------------------------------
+
+def finished(rig: PubRig, feature_id: str) -> bool:
+    record = load_intake(rig.store, feature_id)
+    return rig.feature(feature_id).state is FeatureState.DONE and record is not None and record.status == "done"
+
+
+def merged_once(rig: PubRig, number: int, feature_id: str, merge: str, head: str, before: dict[str, int]) -> None:
+    """DONE on the verified merge evidence of exactly *head*, the Issue closed, its card Done (the re-opened task of
+    the ended attempt included); nothing pushed, reviewed or completed twice (the counts of *before* are what
+    publication and the review wrote before the repair)."""
+    feature = rig.feature(feature_id)
+    evidence = feature.pull_request.merge  # type: ignore[union-attr]
+    assert feature.merged_sha == merge and evidence["merge_commit_sha"] == merge and evidence["head_sha"] == head
+    assert evidence["base_tip"] == merge and rig.remote(number).state == "closed"
+    task_id = next(iter(feature.task_ids))
+    assert rig.store.load_task(task_id).state is not TaskState.VERIFIED and values(rig.coord, task_id)["Status"] == \
+        "Done"
+    assert remote_sha(rig.bare, f"feature/{feature_id}") == head and len(rig.prs()) == 1
+    assert not events(rig, "repair-pushed") and not events(rig, "repair-completed")
+    assert len(events(rig, "publish-pushed")) == before["pushed"] and len(load_review(
+        rig.store, feature_id).entries) == before["reviews"]
+    for kind in ("feature-done", "intake-issue-closed", "intake-completed"):
+        assert len(events(rig, kind)) == 1, kind
+    assert rig.publish().ok and step(rig).lines() == []  # repeated passes change nothing
+    for kind in ("feature-done", "intake-issue-closed", "intake-completed"):
+        assert len(events(rig, kind)) == 1, kind
+
+
+def counts(rig: PubRig, feature_id: str) -> dict[str, int]:
+    return {"pushed": len(events(rig, "publish-pushed")), "reviews": len(load_review(rig.store, feature_id).entries)}
+
+
+@pytest.mark.usefixtures("follows")
+def test_a_pr_merged_during_the_repair_completes_after_the_operator_pauses_and_abandons(rig: PubRig) -> None:
+    number, task_id, feature_id, pr, old = requested(rig)
+    agent(rig, task_id)
+    assert step(rig).events and rig.store.load_task(task_id).state is TaskState.READY  # the attempt is open
+    before = counts(rig, feature_id)
+    merge = rig.merge_on_github(pr)  # a person merges the PR at the reviewed, validated head
+    waiting = rig.publish()
+    assert "automatic repair attempt 1 is in progress" in waiting.waiting[0] and not waiting.completed
+    assert rig.feature(feature_id).state is FeatureState.REVIEW
+    write_control(rig.store, pause=True, pause_reason="a person merged PR during the repair")  # `worker pause`
+    paused = rig.service(until=lambda s: s.cycles >= 4)
+    assert paused.run() == 0 and not paused.launched and rig.feature(feature_id).state is FeatureState.REVIEW
+    assert any(e.get("state") == "PAUSED" for e in rig.events("worker-state"))
+    assert abandon(rig.store, feature_id, reason="merged by a person", actor="operator", apply=True)
+    write_control(rig.store, pause=False, pause_reason=None)  # `worker resume`
+    resumed = rig.service(until=lambda s: finished(rig, feature_id), max_cycles=40)
+    assert resumed.run() == 0 and not resumed.launched, rig.out[-20:]  # no agent starts
+    merged_once(rig, number, feature_id, merge, old, before)
+    assert last(rig, feature_id)["status"] == "abandoned" and last(rig, feature_id)["launches"] == 0
+
+
+@pytest.mark.usefixtures("follows")
+def test_a_merge_completes_although_the_ended_repair_left_a_local_commit(rig: PubRig) -> None:
+    number, task_id, feature_id, pr, old = requested(rig)
+    agent(rig, task_id)
+    rig.gates.failing = {"cli-lint"}  # the agent commits; its task's gate fails: the commit stays local
+    service = rig.service(until=lambda s: bool(attention(rig, task_id)), max_cycles=40)
+    assert service.run() == 0 and len(service.launched) == 1
+    ahead = local_head(rig, feature_id)
+    assert ahead != old and remote_sha(rig.bare, f"feature/{feature_id}") == old
+    before = counts(rig, feature_id)
+    merge = rig.merge_on_github(pr)
+    assert "automatic repair attempt 1 is in progress" in rig.publish().waiting[0]
+    write_control(rig.store, pause=True, pause_reason="merged")
+    assert abandon(rig.store, feature_id, reason="merged by a person", actor="operator", apply=True)
+    write_control(rig.store, pause=False, pause_reason=None)
+    resumed = rig.service(until=lambda s: finished(rig, feature_id), max_cycles=40)
+    assert resumed.run() == 0 and not resumed.launched, rig.out[-20:]
+    merged_once(rig, number, feature_id, merge, old, before)
+    assert local_head(rig, feature_id) == ahead  # the unpushed commit is kept locally; it is not part of the merge
+
+
+@pytest.mark.usefixtures("follows")
+def test_a_pr_merged_before_the_repair_agent_starts_ends_the_attempt_without_an_agent(rig: PubRig) -> None:
+    number, task_id, feature_id, pr, old = requested(rig)
+    agent(rig, task_id)
+    step(rig)
+    before = counts(rig, feature_id)
+    merge = rig.merge_on_github(pr)  # the Worker keeps running: its repair step sees the merge first
+    service = rig.service(until=lambda s: finished(rig, feature_id), max_cycles=40)
+    assert service.run() == 0 and not service.launched, rig.out[-20:]
+    attempt = last(rig, feature_id)
+    assert attempt["status"] == "failed" and "merged by a person" in attempt["reason"] and attempt["launches"] == 0
+    merged_once(rig, number, feature_id, merge, old, before)
+
+
+@pytest.mark.usefixtures("follows")
+def test_a_merge_of_the_unvalidated_repaired_head_is_never_completed_automatically(rig: PubRig) -> None:
+    _number, task_id, feature_id, pr, old = requested(rig)
+    agent(rig, task_id)
+    step(rig)
+    rig.coord.run_task(task_id)
+    with pytest.raises(SimulatedCrash):  # pushed, not revalidated yet
+        step(rig, (f"crash-before-revalidate:{feature_id}",))
+    new = local_head(rig, feature_id)
+    rig.merge_on_github(pr)  # a person merges the PR at the pushed head before it was validated
+    report = step(rig)
+    assert last(rig, feature_id)["status"] == "failed" and "merged" in last(rig, feature_id)["reason"], report.lines()
+    stopped = rig.publish()  # the branch moved past the validated head and the merge is not of that head: stop
+    assert "moved after integration" in stopped.attention[0] and not stopped.completed, stopped.lines()
+    assert rig.feature(feature_id).state is FeatureState.REVIEW and rig.candidate(feature_id).attention
+    assert rig.candidate(feature_id).head_sha == old and remote_sha(rig.bare, f"feature/{feature_id}") == new
+
+
 # -- crashes, restarts and repeated polls --------------------------------------------------------------------------
 
 @pytest.mark.parametrize("fault", ["crash-after-attempt-counted", "crash-after-reopen", "crash-after-verified",
@@ -514,14 +699,12 @@ def test_a_worker_restart_during_the_repair_launch_settles_it_and_runs_it_again(
     _number, task_id, feature_id, _pr, old = requested(rig)
     agent(rig, task_id)
     step(rig)
-    with rig.store.transaction():  # an earlier service instance counted the repair launch and died before it ran
-        rig.store.save_record("scheduling", dataclasses.replace(
-            load_scheduling(rig.store, rig.store.load_task(task_id)), launches=1, in_flight={
-                "launch": 1, "instance": "dead-instance", "started_at": "2026-01-01T00:00:00Z", "tag": "dead.1",
-                "worker_id": "w"}))
+    counted(rig, feature_id, 1)  # an earlier service instance counted the repair launch and died while it ran
+    dead_launch(rig, task_id, 1)
     service = rig.service(until=lambda s: last(rig, feature_id)["status"] == "completed", max_cycles=80)
     assert service.run() == 0, rig.out[-20:]
     assert service.launched == [(task_id, 2)] and len(attempts(rig, feature_id)) == 1
+    assert last(rig, feature_id)["launches"] == 2  # the interrupted launch stays counted (never refunded)
     assert rig.candidate(feature_id).head_sha == local_head(rig, feature_id) != old
     assert any(e.get("category") == "interrupted" for e in rig.events("worker-outcome"))
 
