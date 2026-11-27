@@ -29,7 +29,9 @@ every `github.repair.poll_interval_seconds`, never while paused (service.py `_po
      no operator — at a new head that continues the PR's head, made only of the task's own plain commits within its
      role's paths (`_foreign`), that head is pushed to the PR's branch (gitops.push_branch: a fast-forward of exactly
      that commit, never forced, the publisher's single-push-URL checks, origin's branch at the reviewed head), after
-     the PR (identity, open, head) and the approval were re-read;
+     the PR (identity, open, head), the approval and the review's binding (the merge base: `_binding_problem`, also
+     before each launch) were re-read. A write-ahead `pushing` marker precedes the network push; a push whose result
+     was not recorded is reconciled with origin and never repeated;
   5. revalidation (revalidate.py, unchanged): the same PR at the pushed head — fast-forward only, plain commits,
      every path writable by the feature's tasks, the original candidate's integration gates, the approved plan's
      integration gates and every task's required gates, re-checked, then the candidate moved and the old review
@@ -76,7 +78,7 @@ from .issue_sync import SimulatedCrash
 from .model import Feature, FeatureState, Task, TaskState, utc_now
 from .publish import PROTECTED_BRANCHES, PullRequestPublisher
 from .repair_record import RepairRecord, agent_attempt, findings_digest, load_repair
-from .review import ReviewRunner, load_review, review_evidence
+from .review import BINDING_KEYS, ReviewRunner, load_review, review_evidence
 from .review_process import attempt_processes
 from .review_result import BLOCKING
 from .revalidate import PullRequestRevalidator, load_revalidation
@@ -317,8 +319,8 @@ class RepairStep:  # pylint: disable=too-few-public-methods
                        "review": entry["key"], "review_head": cand.head_sha, "pr": cand.number, "task": task.id,
                        "role": task.role, "findings": blocking, "findings_sha256": findings_digest(blocking),
                        "started_at": utc_now(), "reopened_at": "", "launches": 0, "verified_head": "",
-                       "verified_at": "", "pushed": None, "revalidation": None, "finished_at": "", "reason": "",
-                       "actor": "worker"}
+                       "verified_at": "", "pushing": None, "pushed": None, "revalidation": None, "finished_at": "",
+                       "reason": "", "actor": "worker"}
             record.attempts.append(attempt)
             record.stopped, record.updated_at = None, utc_now()
             self.store.save_record("repair", record)
@@ -343,12 +345,40 @@ class RepairStep:  # pylint: disable=too-few-public-methods
         if attempt["status"] == "started" and not self._agent_done(feature, attempt, report):
             return
         attempt = self._attempt(feature.id, attempt["id"])
+        if attempt["status"] in ("verified", "pushed") and not self._settled(feature, attempt, report):
+            return
         if attempt["status"] == "verified":
             self._push(feature, attempt, report)
             attempt = self._attempt(feature.id, attempt["id"])
         if attempt["status"] == "pushed":
             self._fault(f"crash-before-revalidate:{feature.id}")
             self._revalidate(feature, attempt, report)
+
+    def _settled(self, feature: Feature, attempt: Mapping[str, Any], report: RepairStepReport) -> bool:
+        """A `verified` or `pushed` attempt advances (push, revalidation) only while its task's launch is settled and
+        needs no operator, and its record is consistent (the task verified at exactly the recorded head); an
+        inconsistent record fails closed (`failed`). False: wait or stop, nothing pushed or revalidated."""
+        label = f"{feature.id}: repair attempt {attempt['number']} of PR #{attempt['pr']} ({attempt['status']})"
+        task = self.store.load_task(attempt["task"])
+        rec = load_scheduling(self.store, task)
+        if self.store.load_claim(task.id) is not None or rec.in_flight:
+            report.waiting.append(f"{label}: a launch of {task.id} is not settled yet; nothing is pushed or "
+                                  "revalidated until the Worker settles it")
+            return False
+        if rec.attention:
+            report.attention.append(
+                f"{label} stopped: {task.id} is held for an operator ({sanitize(rec.attention.get('reason'), 300)}). "
+                f"Nothing is pushed or revalidated; the attempt stays open: after inspecting it, `python -m "
+                f"feature_coordinator worker reset-retries {task.id} --apply` lets it continue; `python -m "
+                f"feature_coordinator github repair abandon {feature.id} --reason … --apply` ends it")
+            return False
+        head, evidence = attempt.get("verified_head") or "", task.evidence.head_sha if task.evidence else ""
+        if task.state is not TaskState.VERIFIED or not head or evidence != head:
+            self._end(feature, attempt, "failed", f"the attempt is recorded {attempt['status']} at {head[:12] or '?'}, "
+                                                  f"but {task.id} is {task.state.value} (evidence at "
+                                                  f"{evidence[:12] or 'none'}): an inconsistent record; nothing is "
+                                                  "pushed or revalidated", report)
+        return True
 
     def _agent_done(self, feature: Feature, attempt: dict[str, Any], report: RepairStepReport) -> bool:
         """True once the task was verified again at a new head continuing the PR's (the attempt is then verified)."""
@@ -444,6 +474,28 @@ class RepairStep:  # pylint: disable=too-few-public-methods
                                                     f"pushed): the findings of {attempt['review_head'][:12]} no "
                                                     "longer apply")) if bad), "")
 
+    def _binding_problem(self, feature: Feature, attempt: Mapping[str, Any]) -> str:
+        """Why the answered review's binding no longer holds for the REVIEWED head ('' : it holds): ReviewRunner's own
+        binding, re-derived now for the PR at the reviewed head — the base branch fetched, the merge base, the approval,
+        the plan — must equal the entry's (the local branch may already be at the repaired head). A failed read
+        raises (the step or the launch waits)."""
+        review, intake = load_review(self.store, feature.id), load_intake(self.store, feature.id)
+        entry = review.entry(attempt["review"]) if review else None
+        if entry is None or intake is None:
+            return f"review {attempt['review']} or the approval record is missing"
+        try:
+            pr = self.client.get_pull_request(attempt["pr"])
+        except GitHubNotFoundError:
+            return f"PR #{attempt['pr']} no longer exists"
+        binding, problems = ReviewRunner(self.coord)._bind(  # pylint: disable=protected-access
+            feature, intake, dataclasses.replace(pr, head_sha=attempt["review_head"]), True)
+        changed = [k for k in BINDING_KEYS if entry["binding"].get(k) != binding.get(k)]
+        why = "; ".join(([f"changed: {', '.join(changed)}"] if changed else []) + problems)
+        return (f"review {attempt['review']} no longer holds for the reviewed head {attempt['review_head'][:12]} "
+                f"({sanitize(why, 400)}): its findings are not acted on; the PR and its commits are kept — an operator "
+                f"decides (e.g. `python -m feature_coordinator github review retry {feature.id} --reason … --apply`)"
+                if why else "")
+
     def _review_gone(self, feature_id: str, attempt: Mapping[str, Any]) -> str:
         """Why the review the attempt answers is no longer the current, complete review ('' : it still is). Only an
         operator's `github review run` / `retry` or a withdrawn approval changes it while an attempt is open."""
@@ -490,7 +542,8 @@ class RepairStep:  # pylint: disable=too-few-public-methods
             (not pr.draft, f"PR #{cand.number} was marked ready for review during the repair"),
             (pr.head_sha not in (old, head), f"PR #{cand.number} is at {pr.head_sha[:12]}, neither the reviewed "
                                              f"{old[:12]} nor the repaired {head[:12]}: someone else pushed"),
-            (True, self.publisher._origin(feature)[1] or "")) if bad and why), "")  # pylint: disable=protected-access
+            (True, self.publisher._origin(feature)[1] or "")) if bad and why), "") \
+            or self._binding_problem(feature, attempt)  # pylint: disable=protected-access
 
     def _push(self, feature: Feature, attempt: dict[str, Any], report: RepairStepReport) -> None:
         """Push exactly the verified head to the PR's branch (a fast-forward), after fresh reads. Publication and the
@@ -499,6 +552,15 @@ class RepairStep:  # pylint: disable=too-few-public-methods
         problem = self._push_problem(feature, attempt)
         if problem:
             self._end(feature, attempt, "failed", f"{problem}; nothing is pushed", report)
+        if attempt.get("pushing"):  # a push began earlier and its result was never recorded (a crash, a lost answer)
+            live = self.git.remote_head(feature.branch, timeout=self.config.github.publish.git_timeout_seconds)
+            if live != head:
+                self._end(feature, attempt, "failed", (
+                    f"a push of {head[:12]} began at {attempt['pushing'].get('at')} but was never confirmed, and "
+                    f"origin has {feature.branch} at {(live or 'nothing')[:12]}: an interrupted push and an "
+                    f"operator's rewind cannot be told apart, so it is not repeated. Push {head[:12]} yourself and run "
+                    f"`python -m feature_coordinator github publish revalidate {feature.id}`, or leave the branch as "
+                    "it is (the PR, the commits and every record are kept)"), report)
         held = []
         try:
             for lock in (self.store.locks.publish(), self.store.locks.review()):  # LockBusyError: deferred
@@ -506,9 +568,11 @@ class RepairStep:  # pylint: disable=too-few-public-methods
             gone = self._review_gone(feature.id, attempt)
             if gone:
                 self._end(feature, attempt, "failed", f"{gone}; nothing is pushed", report)
-            result = self.git.push_branch(feature.branch, head, destination=self.publisher._origin(feature)[0],  # pylint: disable=protected-access
-                                          timeout=self.config.github.publish.git_timeout_seconds, expect=(old, head),
-                                          protected=(*PROTECTED_BRANCHES, feature.base_branch, self.config.base_branch))
+            result = self.git.push_branch(  # the write-ahead marker goes right before the network push itself
+                feature.branch, head, destination=self.publisher._origin(feature)[0],  # pylint: disable=protected-access
+                timeout=self.config.github.publish.git_timeout_seconds, expect=(old, head),
+                protected=(*PROTECTED_BRANCHES, feature.base_branch, self.config.base_branch),
+                on_push=lambda: self._update(feature.id, attempt["id"], pushing={"sha": head, "at": utc_now()}))
         except (RemoteRejectedError, HeadMismatchError, ScopeViolationError) as exc:
             self._end(feature, attempt, "failed", f"push refused: {exc}", report)
         except GitOperationError as exc:  # an unclean checkout, a busy Git lock: retried by the next step
@@ -539,11 +603,7 @@ class RepairStep:  # pylint: disable=too-few-public-methods
             op = next((e["op"] for e in reversed(record.entries if record else []) if e["status"] == "validated"
                        and (e["from_head"], e["to_head"]) == (attempt["review_head"], head)), "")
             if not op:
-                self._end(feature, attempt, "failed", f"the candidate is at {head[:12]}, but no finalized revalidation "
-                                                      f"of {attempt['review_head'][:12]} → {head[:12]} is recorded (an "
-                                                      "interrupted run?); an operator checks it (`python -m "
-                                                      f"feature_coordinator github publish revalidate {feature.id}`)",
-                          report)
+                self._end(feature, attempt, "failed", self._unfinished(feature, attempt), report)
             self._update(feature.id, attempt["id"], event="repair-completed", status="completed",
                          revalidation=op, finished_at=utc_now(),
                          reason=f"PR #{attempt['pr']} revalidated at {head[:12]}")
@@ -567,6 +627,27 @@ class RepairStep:  # pylint: disable=too-few-public-methods
                                               f"{attempt['review_head'][:12]}; publication stays stopped until an "
                                               "operator fixes it and runs `python -m feature_coordinator github "
                                               f"publish revalidate {feature.id}`", report)
+
+    def _unfinished(self, feature: Feature, attempt: Mapping[str, Any]) -> str:
+        """The diagnostic when the candidate is at the pushed head without a finalized revalidation of it."""
+        head, old = attempt["verified_head"], attempt["review_head"]
+        record = load_revalidation(self.store, feature.id)
+        running = [e["op"] for e in (record.entries if record else []) if e["status"] == "running"
+                   and (e["from_head"], e["to_head"]) == (old, head)]
+        evidence = self.store.load_feature(feature.id).integration_evidence
+        gates = bool(evidence and evidence.head_sha == head and evidence.gates
+                     and all(g.passed for g in evidence.gates))
+        cut = f": revalidation {running[0]} was cut short inside its final transaction and stays `running`"
+        return (f"the candidate is at {head[:12]}, but no finalized revalidation of {old[:12]} → {head[:12]} is "
+                f"recorded{cut if running else ''}. `github publish revalidate` cannot finish it: for the current "
+                "candidate it reports `unchanged`. The attempt is not completed. "
+                + (f"The feature's integration evidence shows every gate passed at {head[:12]} (it was saved with the "
+                   "candidate), and the review step reviews it as a new head. An operator checks `python -m "
+                   f"feature_coordinator github publish status {feature.id}` and, satisfied, leaves it (the next "
+                   "revalidation marks the record `interrupted`)" if gates else
+                   f"The feature has no passing gate evidence for {head[:12]}: treat it as unvalidated — no supported "
+                   "command re-validates the current candidate, so an operator runs the feature's gates at it by hand, "
+                   "or closes the PR, before any person merges it"))
 
     # -- endings and reports ------------------------------------------------------------------------------------------
 
@@ -695,7 +776,7 @@ def launch_problem(coord: Any, task: Task) -> str:
     if attempt is None or attempt["task"] != task.id or attempt["status"] != "started":
         return "no repair attempt of it is open"
     feature = coord.store.load_feature(task.feature_id)
-    problem = step._stale(feature, attempt)  # pylint: disable=protected-access
+    problem = step._stale(feature, attempt) or step._binding_problem(feature, attempt)  # pylint: disable=protected-access
     if not problem:
         return ""
     with coord.store.locks.repair().acquire():  # LockBusyError: an operator's command runs; the launch waits

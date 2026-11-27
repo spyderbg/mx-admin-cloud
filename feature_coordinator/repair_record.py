@@ -102,10 +102,11 @@ def _in_flight(store: Any, task_id: str) -> bool:
 
 def agent_attempt(store: Any, record: RepairRecord | None, *, settling: bool = False) -> dict[str, Any] | None:
     """The open attempt whose repair agent is due or running: `started`, its task re-opened and not verified, its
-    feature still in review. *settling*: also once its task is verified while the launch that verified it is still
-    recorded in flight (a Worker that died before settling it): the service settles that launch first."""
+    feature still in review. *settling*: also an open attempt of ANY status whose task has a launch still recorded in
+    flight (a Worker that died before settling it): the service settles that launch first, and nothing advances the
+    attempt meanwhile (repair.py)."""
     attempt = record.open_attempt() if record else None
-    if record is None or attempt is None or attempt["status"] != "started" or not attempt.get("reopened_at"):
+    if record is None or attempt is None:
         return None
     try:
         feature, task = store.load_feature(record.id), store.load_task(attempt["task"])
@@ -113,7 +114,10 @@ def agent_attempt(store: Any, record: RepairRecord | None, *, settling: bool = F
         return None
     if feature.state is not FeatureState.REVIEW:
         return None
-    return attempt if task.state is not TaskState.VERIFIED or (settling and _in_flight(store, task.id)) else None
+    if settling and _in_flight(store, task.id):
+        return attempt
+    due = attempt["status"] == "started" and attempt.get("reopened_at") and task.state is not TaskState.VERIFIED
+    return attempt if due else None
 
 
 def repairing_features(store: Any, config: Any) -> set[str]:
@@ -130,14 +134,21 @@ def repairing_features(store: Any, config: Any) -> set[str]:
 
 
 def count_launch(store: Any, task: Task, per_attempt: int) -> bool:
-    """Inside the service's write-ahead transaction, BEFORE the agent can start: count one launch of *task*'s due
-    repair agent in its attempt (never decremented). False: *task*'s feature is in review but its attempt ended
-    meanwhile (e.g. abandoned) or its launches are used up — nothing may start. True for any other task."""
+    """Inside the service's write-ahead transaction — after the pre-launch checks, BEFORE the agent can start: count
+    one launch of *task*'s due repair agent in its attempt (never decremented). False: *task*'s feature is in review
+    but its attempt ended meanwhile (e.g. abandoned), its launches are used up, or — re-read here, after any lengthy
+    pre-launch check — the review it answers is no longer the current, complete one or the recorded candidate moved
+    (an operator's review run meanwhile): nothing may start. True for any other task."""
     record = load_repair(store, task.feature_id)
     attempt = agent_attempt(store, record)
     if record is None or attempt is None or attempt["task"] != task.id:
         return store.load_feature(task.feature_id).state is not FeatureState.REVIEW
-    if int(attempt["launches"]) >= per_attempt:
+    review = store.load_record("review", task.feature_id) or {}
+    entry = next((e for e in review.get("entries", []) if e.get("key") == attempt["review"]), {})
+    cand = store.load_feature(task.feature_id).pull_request
+    if int(attempt["launches"]) >= per_attempt or review.get("current") != attempt["review"] \
+            or entry.get("status") != "complete" or cand is None \
+            or (cand.number, cand.head_sha) != (attempt["pr"], attempt["review_head"]):
         return False
     attempt["launches"] = int(attempt["launches"]) + 1
     record.updated_at = utc_now()

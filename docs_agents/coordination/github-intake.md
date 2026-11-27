@@ -189,11 +189,17 @@ The Worker service runs one publication pass at most every `poll_interval_second
 
 | Feature state | The pass does | It refuses or waits when |
 | --- | --- | --- |
-| active | runs the existing **integration barrier** (`integrate`) once every task is verified | a task is not verified; a claim exists or a launch is still recorded in flight (waits); a withdrawn approval is known; the last integration failed and no task was verified since (an operator runs `python -m feature_coordinator integrate issue-<N> --apply` after fixing it). A failure publishes nothing |
-| review, no PR yet | re-reads the approved Issue, **pushes** the feature's own branch, records `pending_create`, opens **one Draft PR** to the feature's base branch, records its number, posts one PR link comment on the Issue | the approval no longer holds; the remote or the branch is not what it must be (§10.2); a PR already exists on the branch but does not match (§10.3) |
+| active | runs the existing **integration barrier** (`integrate`) once every task is verified | a task is not verified; a claim exists or a launch is still recorded in flight (waits); **a task the Worker holds for an operator** (an attention record, see below: stops); a withdrawn approval is known; the last integration failed and no task was verified since (an operator runs `python -m feature_coordinator integrate issue-<N> --apply` after fixing it). A failure publishes nothing |
+| review, no PR yet | re-reads the approved Issue, **pushes** the feature's own branch, records `pending_create`, opens **one Draft PR** to the feature's base branch, records its number, posts one PR link comment on the Issue | a claim or a launch in flight, or a task the Worker holds for an operator (stops); the approval no longer holds; the remote or the branch is not what it must be (§10.2); a PR already exists on the branch but does not match (§10.3) |
 | review, PR recorded | reads the PR again by number | a draft or open PR: **waits** for a person; closed without merge: reports it and waits (never completes, never creates another PR; reopening resumes); a changed or mismatched PR: stops |
 | review, PR merged | verifies the merge (§10.4), then `complete()` records the evidence and moves the feature to **done** in one transaction | the evidence does not hold: stops |
 | done | posts one completion comment on the Issue, **closes the Issue** (state reason `completed`), checks that Project #2 shows **Done**, marks the intake record `done` | the Issue is no longer the approved one (it is not closed; reported); GitHub or the board fails (retried) |
+
+**A task the Worker holds for an operator stops publication (W4.8.1 final review, every feature, `github.repair` on or off).** This means the task's scheduling record has an attention record, for example a launch settled CRITICAL because an agent process survived it (`blocking_run_tags`), foreign commits, or an unexplained change.
+
+- Nothing is integrated, pushed or opened while the record exists, even for a verified task. An unreadable scheduling record defers the pass.
+- The record is never cleared because a process ended. An operator inspects it (`worker attention`), then runs `worker reset-retries TASK --apply`.
+- Following an existing PR, and completing a merge that verifies (§10.4), continue meanwhile.
 
 What the Worker never does: merge, mark a PR ready, approve a review, push `dev`, `main` or any protected branch, force a push, open a second PR for a feature, or touch Project #1. The GitHub adapter has no merge request at all.
 
@@ -751,11 +757,12 @@ With the production `worker.max_launches_per_task: 1` and 2 attempts, the repair
 - `github.repair.enabled` must still be true. While it is false, no repair agent starts: an unsettled launch is only settled. `github repair status`, `show` and `abandon` stay available.
 - The attempt's own launch budget must allow it.
 - **The findings must still apply** (`RepairStep._stale`). The recorded candidate is unchanged, and the attempt's review is still the current, complete one. The PR, re-read by number, is still the recorded PR (the publisher's identity checks: branch, repository, base), open, a draft, and at the reviewed head.
+- **The review's binding still holds** (`RepairStep._binding_problem`). ReviewRunner's own binding is re-derived now for the PR at the reviewed head: the base branch fetched, the merge base, the approval, the plan. It must equal the answered entry's. A base branch that took in commits of the feature branch changes the merge base: the attempt ends `failed`, the PR and commits are kept, and the operator re-reviews (`github review retry`) or decides otherwise.
 
   Otherwise the attempt ends (`failed`) and nothing starts. Examples: someone pushed to the PR, a person merged, closed it or marked it ready, or an operator ran `github review retry`.
 
   The repair step makes the same check on every step while the agent does not run, including after a crash right after the attempt was counted. A GitHub read failure delays the launch as a transient failure.
-- In the write-ahead transaction itself, the attempt must still be open and have launches left. An attempt abandoned meanwhile starts nothing; `abandon` repeats its own checks in a transaction too.
+- In the write-ahead transaction itself, after the slow pre-launch checks (the CLI probe, the subscription, the Issue re-read), the attempt must still be open and have launches left. Its review must still be the current, complete one, and the candidate unchanged. An attempt abandoned meanwhile, or a review an operator re-ran meanwhile, starts nothing. `abandon` repeats its own checks in a transaction too. A review run while an already admitted agent works is harmless: the push requires the same review, current and complete, under the review lock.
 
 Everything else is the original task's:
 
@@ -772,7 +779,7 @@ Everything else is the original task's:
 
 ### 14.3 Push and revalidation
 
-Once the task is verified again, the step checks:
+Once the task is verified again, the step checks the following. A `verified` or `pushed` attempt also advances (push, revalidation) only while its task's launch is settled and needs no operator. That holds for records written by any build: an unsettled launch is settled by the Worker first, at its start too. An inconsistent record (the task not verified at exactly the recorded head) ends `failed`. The checks:
 
 - **the Worker's own outcome first.** The launch must be settled: not claimed, not in flight. A Worker that died before settling it settles it on its next start, even while paused. The outcome must need no operator. For example, if processes of the agent survived, the Worker's critical outcome overrides the task's verification: nothing is pushed until an operator accepts it (`worker reset-retries`) or abandons the attempt;
 - the evidence head: a new head that continues the PR's head and is the local branch tip. The reviewed head means the agent changed nothing (`no-changes`); anything else is `failed`;
@@ -782,12 +789,17 @@ Once the task is verified again, the step checks:
 
 - the approval (the Issue);
 - the PR: still the recorded PR (the publisher's identity checks), open, still a draft, and at the reviewed head (or already at the pushed one);
-- the review: the attempt's review is still the current, complete one;
+- the review: the attempt's review is still the current, complete one, and its binding still holds for the reviewed head (the merge base included, as before each launch);
 - `origin`: the publisher's single-push-URL checks.
 
 Someone else's push, a closed or merged PR, or a withdrawn approval ends the attempt as `failed`. Nothing is pushed.
 
-**The push.** `gitops.push_branch` pushes exactly the verified commit: a fast-forward, never forced, from a clean checkout. The step holds `github-publish.lock` and `github-review.lock` from its last review check through the push, so an operator's `github review run` and the push exclude each other (the push is deferred). The range check above is repeated right before it, also for an attempt recorded `verified` earlier. For a repair, `origin`'s branch, read right before the push, must be at the reviewed head (or already at the repaired one). A deleted branch is never created again, and a branch anywhere else is never pushed to: `failed`.
+**The push.** `gitops.push_branch` pushes exactly the verified commit: a fast-forward, never forced, from a clean checkout. The step holds `github-publish.lock` and `github-review.lock` from its last review check through the push, so an operator's `github review run` and the push exclude each other (the push is deferred). The range check above is repeated right before it, also for an attempt recorded `verified` earlier.
+
+**An uncertain push is never repeated.** Right before the network push itself, after every check, the attempt records `pushing` (write-ahead). If the push's result was not recorded (a crash, a lost answer), the next step reads `origin`'s branch:
+
+- at the repaired head: the push happened, and it is recorded;
+- anywhere else, for example back at the reviewed head: an interrupted push and an operator's rewind cannot be told apart, even if GitHub's PR still shows either head. The attempt ends `failed` and nothing is pushed again. The operator pushes the head by hand and revalidates, or leaves the branch. For a repair, `origin`'s branch, read right before the push, must be at the reviewed head (or already at the repaired one). A deleted branch is never created again, and a branch anywhere else is never pushed to: `failed`.
 
 **Revalidation** then runs the unchanged `github publish revalidate` at exactly that head, with actor `worker repair <attempt>`. It applies every rule of §10.12:
 
@@ -856,10 +868,12 @@ Every step reads what is true first. Records are only ever extended.
 | after the re-open, before `reopened_at` was recorded | recorded; the task is not re-opened twice |
 | during the repair launch (service crash, restart, stop) | the service's existing in-flight and claim recovery (worker-autonomy.md §7–§8) settles it. The launch stays counted in the attempt; it launches again only within the attempt's launch budget (§14.2) |
 | after the task was verified, before the push | pushed once |
+| a `verified` or `pushed` attempt whose task's launch is still recorded in flight | nothing advances; the Worker settles the launch first (at its start too), then the attempt continues; abandoned only after the settlement |
+| after `pushing` was recorded, without the push's result | `origin` at the repaired head: recorded as pushed; anywhere else: `failed`, never pushed again |
 | after the push, before it was recorded | `push_branch` finds the remote at the commit: nothing is pushed twice |
 | before or during revalidation | revalidated (a re-run continues from anywhere on the way) |
 | after the candidate moved, before the attempt completed | revalidation reports `unchanged`; the attempt completes, linked to the finalized revalidation that validated exactly that head; one notice |
-| inside revalidation's final transaction (the candidate moved, its record not finalized) | no finalized revalidation of that head is found: the attempt ends `failed` for an operator, never `completed` |
+| inside revalidation's final transaction (the candidate moved, its record not finalized) | no finalized revalidation of that head is found: the attempt ends `failed`, never `completed`. The diagnostic names the record left `running` and says `github publish revalidate` cannot finish it (it reports `unchanged`). The feature's integration evidence, saved with the candidate, shows the gates passed at that head, so the operator checks `github publish status` and leaves it; the next revalidation marks the record `interrupted`. Without that evidence the head counts as unvalidated: the operator runs its gates by hand or closes the PR before anyone merges |
 | the repair child verified the task, then the Worker died before settling the launch | the next start (paused or not) settles it first; only then is the head pushed. A surviving agent process of that launch makes the outcome critical: nothing is pushed until an operator decides |
 | an error after a launch was spawned, in the same Worker | the orphaned launch is settled like an earlier instance's (worker-autonomy.md §8), never launched twice |
 | repeated polls, a second step | `github-repair.lock`; one attempt per review entry; the service's single execution slot |
@@ -892,7 +906,8 @@ python -m feature_coordinator ... github repair abandon FEATURE --reason "…" [
 - **A merge during a repair** is completed only after the attempt ends (§14.5). A merge of a pushed but not yet revalidated head always needs an operator.
 - **A manual `launch TASK --apply` is an operator's action.** Like any manual launch, it is not counted against the Worker's launch budgets, here the attempt's.
 - **`worker pause` during a launch's admission.** A launch whose admission had already begun still starts, as for any task: the pause stops new work. The attempt cannot be abandoned while it runs.
-- **Races between a check and its action.** A merge or another change in the moment between the last re-read and the agent's start still lets that agent run. Nothing it does is pushed, because the push re-reads everything. The same applies to a branch deleted between the push's last `ls-remote` and the push itself: an atomic compare would need `--force-with-lease`, and no push is ever forced.
+- **Races between a check and its action.** A merge or another change on GitHub in the moment between the last re-read and the agent's start still lets that agent run. Nothing it does is pushed, because the push re-reads everything, the binding included.
+- **A crash right after `pushing` was recorded, before the network push**, is indistinguishable from a rewind: the attempt ends `failed` for an operator, although nothing was pushed. The same applies to a branch deleted between the push's last `ls-remote` and the push itself: an atomic compare would need `--force-with-lease`, and no push is ever forced.
 - **Settling while paused.** A paused Worker settles launches only at its start. A launch still running at a paused start is settled once the Worker runs unpaused or starts again; until then `abandon` refuses.
 - **Settlement of an unsettled launch (all tasks).** The launch is classified from the task and its events, plus `_judge`'s surviving-process rule (worker-autonomy.md §8). The process is not stopped there, and a launch process that lives on without a claim is waited for without a deadline of its own.
 - **A verified attempt held for an operator** (a critical Worker outcome) still ends by itself when a person merges or closes the PR; publication then verifies the merge.

@@ -48,7 +48,10 @@ validates the new head of the same PR and only then moves the candidate to it.
 Transient failures (network, GitHub 5xx, a busy lock) are retried by the next pass. W4.8.1: while an automatic repair
 attempt of the feature's PR is open (repair.py), the pass only reports it: the attempt owns the branch's head. Once
 it ended, a branch it moved locally (unpushed) still stops the pass, unless the PR was merged at exactly the validated
-head: that merge is verified and completed as usual (`_merged_past_repair`).
+head: that merge is verified and completed as usual (`_merged_past_repair`). For every feature (repair or not): a task
+the Worker holds for an operator (an attention record, e.g. an agent process that survived its launch) stops
+integration, the push and a new Draft PR until an operator resets it (`_held`); following an existing PR and
+completing a verified merge continue.
 
 Locks: one pass at a time (github-publish.lock, taken first). GitHub is never called under a coordinator,
 project, role or Git lock; only the push holds project.lock EXCLUSIVE + git.lock (no writer can start).
@@ -264,6 +267,9 @@ class PullRequestPublisher:  # pylint: disable=too-few-public-methods
         if busy:
             self._status(report, feature, "waiting", f"claims or launches are still active: {busy}")
             return
+        held = self._held(tasks)
+        if held:
+            self._stop(feature, report, f"not integrated: {held}", sticky=False)
         withdrawn = next((p for p in (known_problem(self.store, t) for t in tasks.values()) if p), None)
         if withdrawn:
             self._stop(feature, report, f"not integrated: {withdrawn}", sticky=False)
@@ -285,6 +291,23 @@ class PullRequestPublisher:  # pylint: disable=too-few-public-methods
             self._stop(feature, report, f"integration refused: {exc}", sticky=False)
         report.integrated.append(feature.id)
         self._review(feature, load_intake(self.store, feature.id) or record, report, apply)
+
+    def _held(self, tasks: Mapping[str, Task]) -> str:
+        """W4.8.1 (every feature, repair or not): why a task's execution is not known to be safe — the Worker holds it
+        for an operator (an attention record: e.g. an agent process that survived its launch, foreign commits, an
+        unexplained change) ('' : none). Such a record is never cleared because a process ended: only an operator's
+        `worker reset-retries TASK --apply` after inspecting it. An unreadable scheduling record raises (deferred)."""
+        held = sorted((t, a) for t in tasks for a in [(self.store.load_record("scheduling", t) or {}).get("attention")]
+                      if a)
+        if not held:
+            return ""
+        task_id, attention = held[0]
+        attention = attention if isinstance(attention, dict) else {"reason": str(attention)}
+        tags = attention.get("blocking_run_tags")
+        return (f"{task_id} is held for an operator by the Worker ({attention.get('category') or 'unknown'}: "
+                f"{sanitize(attention.get('reason'), 200)}{f'; blocking run tags {tags}' if tags else ''}); after "
+                "inspecting it (`python -m feature_coordinator worker attention`): `python -m feature_coordinator "
+                f"worker reset-retries {task_id} --apply`")
 
     @staticmethod
     def _integration_failed_at(feature: Feature, tasks: Mapping[str, Task]) -> str | None:
@@ -320,6 +343,12 @@ class PullRequestPublisher:  # pylint: disable=too-few-public-methods
             self._stop(feature, report, problem or str(moved), apply=apply)
         pr = self._find(feature, cand, report, apply)
         if pr is None:
+            tasks = self.store.load_tasks(feature)
+            busy = sorted(self.store.list_claims()) + sorted(
+                t for t in tasks if (self.store.load_record("scheduling", t) or {}).get("in_flight"))
+            held = (f"claims or launches are still active: {busy}" if busy else "") or self._held(tasks)
+            if held:  # W4.8.1: nothing is pushed and no Draft PR opened while the execution is not known to be safe
+                self._stop(feature, report, f"not pushed, no Draft PR opened: {held}", sticky=False)
             self._open(feature, record, cand, report, apply)
             return
         self._follow(feature, record, self.store.load_feature(feature.id).pull_request or cand, pr, report, apply)
