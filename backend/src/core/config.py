@@ -1,14 +1,79 @@
 """Application configuration via Pydantic Settings; all env vars and defaults live here."""
 
+import os
 import re
+from collections.abc import Mapping
 from pathlib import Path
 from typing import ClassVar, List, Pattern, Protocol
 
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Load .env into os.environ so.env values override Settings defaults
-load_dotenv()
+# Environment variable that names the env file explicitly; a missing file is an error.
+ENV_FILE_VAR = "MX_ADMIN_ENV_FILE"
+# Directory and file name below ${XDG_CONFIG_HOME:-~/.config}.
+APP_CONFIG_DIR_NAME = "mx-admin-cloud"
+APP_ENV_FILE_NAME = "app.env"
+# Repository root (main checkout or feature worktree): backend/src/core/config.py -> parents[3].
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+class MissingEnvFileError(FileNotFoundError):
+    """Raised when MX_ADMIN_ENV_FILE names a file that does not exist."""
+
+
+def _repo_root() -> Path:
+    """Return the repository root that holds the legacy `.env` (patched in tests)."""
+    return REPO_ROOT
+
+
+def _xdg_config_home(environ: Mapping[str, str]) -> Path:
+    """Return ${XDG_CONFIG_HOME:-~/.config}; a relative XDG_CONFIG_HOME is ignored (XDG spec)."""
+    xdg = environ.get("XDG_CONFIG_HOME", "").strip()
+    if xdg and Path(xdg).expanduser().is_absolute():
+        return Path(xdg).expanduser()
+    home = environ.get("HOME", "").strip()
+    return (Path(home) if home else Path.home()) / ".config"
+
+
+def resolve_env_file(environ: Mapping[str, str] | None = None) -> Path | None:
+    """Return the env file to load, or None.
+
+    Order: MX_ADMIN_ENV_FILE (must exist, no fallback), then
+    ${XDG_CONFIG_HOME:-~/.config}/mx-admin-cloud/app.env, then the legacy repository-root
+    `.env`. None of these depend on the current working directory. Only file existence is
+    checked here; contents are never read or reported.
+    """
+    env = os.environ if environ is None else environ
+    explicit = env.get(ENV_FILE_VAR, "").strip()
+    if explicit:
+        # An explicit relative path is the caller's choice; it is made absolute once, here.
+        path = Path(explicit).expanduser().absolute()
+        if not path.is_file():
+            raise MissingEnvFileError(
+                f"{ENV_FILE_VAR} is set to '{path}', but that file does not exist. "
+                f"Create the file or unset {ENV_FILE_VAR} to use the default lookup."
+            )
+        return path
+    app_env = _xdg_config_home(env) / APP_CONFIG_DIR_NAME / APP_ENV_FILE_NAME
+    if app_env.is_file():
+        return app_env
+    legacy = _repo_root() / ".env"
+    if legacy.is_file():
+        return legacy
+    return None
+
+
+def load_environment(environ: Mapping[str, str] | None = None) -> Path | None:
+    """Resolve the env file and load it into os.environ without overriding existing variables."""
+    path = resolve_env_file(environ)
+    if path is not None:
+        load_dotenv(path, override=False)
+    return path
+
+
+# Resolved once at import; both load_dotenv() and Settings.env_file use this path.
+ENV_FILE: Path | None = load_environment()
 
 
 class OutputStemSource(Protocol):  # pylint: disable=too-few-public-methods
@@ -21,7 +86,10 @@ class OutputStemSource(Protocol):  # pylint: disable=too-few-public-methods
 
 
 class Settings(BaseSettings):
-    """Centralized settings loaded from environment variables and the .env file."""
+    """Centralized settings loaded from environment variables and the resolved env file.
+
+    Precedence: process environment, then the env file (`ENV_FILE`), then the defaults below.
+    """
 
     # Absolute path to the backend/ directory — never overridable via env var
     BASE_DIR: ClassVar[Path] = Path(__file__).parent.parent.parent.resolve()
@@ -29,7 +97,7 @@ class Settings(BaseSettings):
 
     # For each field, if an env var with the same name exists, use its value; else use default
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=ENV_FILE,
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore",
