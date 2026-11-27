@@ -972,3 +972,58 @@ def test_a_disabled_repair_starts_no_agent_for_an_open_attempt(rig: PubRig) -> N
     assert last(rig, feature_id)["status"] == "started"  # inspection and abandonment stay available
     abandon(rig.store, feature_id, reason="repair disabled", actor="operator", apply=True)
     assert last(rig, feature_id)["status"] == "abandoned"
+
+
+def test_a_retargeted_pr_starts_no_agent(rig: PubRig) -> None:
+    _number, task_id, feature_id, pr, _old = requested(rig)
+    step(rig)
+    agent(rig, task_id)
+    rig.tracker.update_pull_request(pr, base="main")  # same head, another base: not the recorded PR any more
+    service = rig.service(until=lambda s: s.cycles >= 2)
+    assert service.run() == 0 and not service.launched
+    assert last(rig, feature_id)["status"] == "failed" and "not the recorded PR" in last(rig, feature_id)["reason"]
+
+
+@pytest.mark.parametrize("change", ["ready", "review-retry"])
+@pytest.mark.usefixtures("follows")
+def test_a_pr_marked_ready_or_re_reviewed_during_the_run_is_not_pushed_to(rig: PubRig, change: str,
+                                                                          monkeypatch: pytest.MonkeyPatch) -> None:
+    _number, task_id, feature_id, pr, old = requested(rig)
+    step(rig)
+    agent(rig, task_id)
+    service = rig.service(until=lambda s: bool(s.launched), max_cycles=5)
+    judge = service._judge
+
+    def meanwhile(*args: Any) -> Any:  # while the agent ran: a person marks the PR ready, or an operator re-reviews
+        if change == "ready":
+            rig.tracker.update_pull_request(pr, draft=False)
+        else:
+            review(rig, feature_id, FakeReviewer(ok("pass")), retry={"by": "operator", "reason": "again"})
+        return judge(*args)
+    monkeypatch.setattr(service, "_judge", meanwhile)
+    assert service.run() == 0 and len(service.launched) == 1
+    assert rig.store.load_task(task_id).state is TaskState.VERIFIED
+    report = step(rig)
+    reason = last(rig, feature_id)["reason"]
+    assert last(rig, feature_id)["status"] == "failed" and "nothing is pushed" in reason, report.lines()
+    assert ("marked ready" if change == "ready" else "no longer the current, complete review") in reason
+    assert remote_sha(rig.bare, f"feature/{feature_id}") == old and not events(rig, "repair-pushed")
+
+
+@pytest.mark.usefixtures("follows")
+def test_a_commit_outside_the_role_is_found_even_if_a_later_commit_reverts_it(rig: PubRig) -> None:
+    _number, task_id, feature_id, _pr, old = requested(rig)
+    step(rig)
+    path = rig.repo / "backend" / "during_repair.py"
+    user = ("-c", "user.name=Operator", "-c", "user.email=operator@example.invalid", "-c", "commit.gpgsign=false")
+    path.write_text("VALUE = 1\n", encoding="utf-8")  # added and removed again, both with a copied trailer
+    git(rig.repo, "add", str(path))
+    git(rig.repo, *user, "commit", "-qm", "add a temporary backend file", "-m", f"Feature-Task: {task_id}")
+    git(rig.repo, "rm", "-q", str(path))
+    git(rig.repo, *user, "commit", "-qm", "remove the temporary backend file", "-m", f"Feature-Task: {task_id}")
+    agent(rig, task_id)
+    assert rig.coord.run_task(task_id).state is TaskState.VERIFIED
+    report = step(rig)
+    attempt = last(rig, feature_id)
+    assert attempt["status"] == "failed" and "backend/during_repair.py" in attempt["reason"], report.lines()
+    assert remote_sha(rig.bare, f"feature/{feature_id}") == old

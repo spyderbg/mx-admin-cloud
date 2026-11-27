@@ -750,7 +750,7 @@ With the production `worker.max_launches_per_task: 1` and 2 attempts, the repair
 
 - `github.repair.enabled` must still be true. While it is false, no repair agent starts: an unsettled launch is only settled. `github repair status`, `show` and `abandon` stay available.
 - The attempt's own launch budget must allow it.
-- **The findings must still apply** (`RepairStep._stale`). The recorded candidate is unchanged, and the attempt's review is still the current one. The PR, re-read by number, is open, a draft, and at the reviewed head.
+- **The findings must still apply** (`RepairStep._stale`). The recorded candidate is unchanged, and the attempt's review is still the current, complete one. The PR, re-read by number, is still the recorded PR (the publisher's identity checks: branch, repository, base), open, a draft, and at the reviewed head.
 
   Otherwise the attempt ends (`failed`) and nothing starts. Examples: someone pushed to the PR, a person merged, closed it or marked it ready, or an operator ran `github review retry`.
 
@@ -776,12 +776,13 @@ Once the task is verified again, the step checks:
 
 - **the Worker's own outcome first.** The launch must be settled: not claimed, not in flight. A Worker that died before settling it settles it on its next start, even while paused. The outcome must need no operator. For example, if processes of the agent survived, the Worker's critical outcome overrides the task's verification: nothing is pushed until an operator accepts it (`worker reset-retries`) or abandons the attempt;
 - the evidence head: a new head that continues the PR's head and is the local branch tip. The reviewed head means the agent changed nothing (`no-changes`); anything else is `failed`;
-- **every commit from the reviewed head to the new head, before anything is pushed**: plain commits (no merge), each made by the Git coordinator for this task (its `Feature-Task` trailer), changing only paths the task's role may write. A local commit of anyone else ends the attempt `failed`. Revalidation checks the same again after the push.
+- **every commit from the reviewed head to the new head, before anything is pushed**: plain commits (no merge), each made by the Git coordinator for this task (its `Feature-Task` trailer). Each commit, on its own, changes only paths the task's role may write, so a path added and removed again is still found. A local commit of anyone else ends the attempt `failed`. Revalidation checks the range again after the push.
 
 **Before the push**, the step re-reads:
 
 - the approval (the Issue);
-- the PR: still the recorded PR (the publisher's identity checks), open, and at the reviewed head (or already at the pushed one);
+- the PR: still the recorded PR (the publisher's identity checks), open, still a draft, and at the reviewed head (or already at the pushed one);
+- the review: the attempt's review is still the current, complete one;
 - `origin`: the publisher's single-push-URL checks.
 
 Someone else's push, a closed or merged PR, or a withdrawn approval ends the attempt as `failed`. Nothing is pushed.
@@ -891,6 +892,10 @@ python -m feature_coordinator ... github repair abandon FEATURE --reason "…" [
 - **A merge during a repair** is completed only after the attempt ends (§14.5). A merge of a pushed but not yet revalidated head always needs an operator.
 - **A manual `launch TASK --apply` is an operator's action.** Like any manual launch, it is not counted against the Worker's launch budgets, here the attempt's.
 - **`worker pause` during a launch's admission.** A launch whose admission had already begun still starts, as for any task: the pause stops new work. The attempt cannot be abandoned while it runs.
+- **Races between a check and its action.** A merge or another change in the moment between the last re-read and the agent's start still lets that agent run. Nothing it does is pushed, because the push re-reads everything. The same applies to a branch deleted between the push's last `ls-remote` and the push itself: an atomic compare would need `--force-with-lease`, and no push is ever forced.
+- **Settling while paused.** A paused Worker settles launches only at its start. A launch still running at a paused start is settled once the Worker runs unpaused or starts again; until then `abandon` refuses.
+- **Restart settlement (W4, all tasks).** A launch settled after a Worker restart is classified from the task and its events. The post-launch process checks of a live `_judge` are not repeated; the claim's orphan handling (worker-autonomy.md §8) still applies.
+- **An operator's `github review run` or `retry` during an open attempt.** The attempt's agent has moved the local branch, so the run invalidates the attempt's review and posts that notice on the PR. The attempt then ends `failed` before anything is pushed.
 - **Untrusted findings can still bias the agent.** The findings and the Issue can bias the repair agent (prompt injection). What constrains the result is unchanged: its role scope and grants, the gates, the revalidation rules, and a new independent review. A person still merges.
 - **Shared identity and native hardening.** The limitations of §13.6 apply unchanged. With the default `native-cli` backend, the repair agent runs with the Worker's file-system identity, exactly like the original task's agent. So the coordinator's state directory is not protected from it by an OS boundary, only by the agent CLI's own sandbox. The untrusted findings add prompt-injection exposure to that. A hardened backend is a separate decision.
 - **Not tested live.** No live GitHub or real-agent test has been run for this feature.

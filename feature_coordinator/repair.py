@@ -412,8 +412,8 @@ class RepairStep:  # pylint: disable=too-few-public-methods
         by the Git coordinator for this task, changing only paths its role may write ('' : they are)."""
         commits, merges = self.git.commits_between(old, new), self.git.merge_commits(old, new)
         others = [c[:12] for c in commits if self.git.trailers(c).get("Feature-Task") != [task.id]]
-        outside = [p for p in self.git.touched_paths(old, new)
-                   if not self.coord.policy.check(task.role, p, grants=task.grants).allowed]
+        touched = {p for c in commits if c not in merges for p in self.git.touched_paths(f"{c}^", c)}  # each commit's
+        outside = sorted(p for p in touched if not self.coord.policy.check(task.role, p, grants=task.grants).allowed)
         return "; ".join(why for bad, why in (
             (merges, f"merge commit(s) {[m[:12] for m in merges]}"),
             (others, f"commit(s) {others} not made by the Git coordinator for {task.id}"),
@@ -422,25 +422,36 @@ class RepairStep:  # pylint: disable=too-few-public-methods
     def _stale(self, feature: Feature, attempt: Mapping[str, Any]) -> str:
         """Why the attempt's findings no longer apply ('' : they still do): the recorded candidate, the current review
         and the PR — re-read by number: open, a draft, at the reviewed head."""
-        cand, review = self.store.load_feature(feature.id).pull_request, load_review(self.store, feature.id)
+        cand = self.store.load_feature(feature.id).pull_request
         local = next((why for bad, why in (
             (cand is None or (cand.number, cand.head_sha) != (attempt["pr"], attempt["review_head"]),
              "the recorded PR candidate changed"),
-            (review is None or review.current != attempt["review"],
-             f"review {attempt['review']} is no longer the current review")) if bad), "")
+            (True, self._review_gone(feature.id, attempt))) if bad and why), "")
         if local:
             return local
         try:
             pr = self.client.get_pull_request(attempt["pr"])
         except GitHubNotFoundError:
             return f"PR #{attempt['pr']} no longer exists"
+        identity = self.publisher._pr_problem(feature, dataclasses.replace(cand, head_sha=pr.head_sha), pr)  # pylint: disable=protected-access
         return next((why for bad, why in (
+            (bool(identity), f"PR #{attempt['pr']} is not the recorded PR any more ({identity})"),
             (pr.merged or pr.state != "open", f"PR #{attempt['pr']} was {'merged' if pr.merged else pr.state} by a "
                                               "person (publication completes a verified merge)"),
             (not pr.draft, f"PR #{attempt['pr']} was marked ready for review"),
             (pr.head_sha != attempt["review_head"], f"PR #{attempt['pr']} moved to {pr.head_sha[:12]} (someone "
                                                     f"pushed): the findings of {attempt['review_head'][:12]} no "
                                                     "longer apply")) if bad), "")
+
+    def _review_gone(self, feature_id: str, attempt: Mapping[str, Any]) -> str:
+        """Why the review the attempt answers is no longer the current, complete review ('' : it still is). Only an
+        operator's `github review run` / `retry` or a withdrawn approval changes it while an attempt is open."""
+        review = load_review(self.store, feature_id)
+        entry = review.entry(attempt["review"]) if review else None
+        if review is None or review.current != attempt["review"] or entry is None or entry["status"] != "complete":
+            return (f"review {attempt['review']} is no longer the current, complete review "
+                    f"({(entry or {}).get('status', 'missing')}; an operator's review run?)")
+        return ""
 
     def _moot(self, feature: Feature, attempt: Mapping[str, Any], report: RepairStepReport) -> None:
         """End the attempt while its agent is not running when its findings no longer apply (`_stale`): nothing is
@@ -474,6 +485,10 @@ class RepairStep:  # pylint: disable=too-few-public-methods
             self._end(feature, attempt, "failed", f"PR #{cand.number} is not the recorded open PR "
                                                   f"({problem or ('merged' if pr.merged else pr.state)}); nothing is "
                                                   "pushed", report)
+        gone = "" if pr.draft else f"PR #{cand.number} was marked ready for review during the repair"
+        gone = gone or self._review_gone(feature.id, attempt)
+        if gone:
+            self._end(feature, attempt, "failed", f"{gone}; nothing is pushed", report)
         if pr.head_sha not in (old, head):
             self._end(feature, attempt, "failed", f"PR #{cand.number} is at {pr.head_sha[:12]}, neither the reviewed "
                                                   f"{old[:12]} nor the repaired {head[:12]}: someone else pushed; "
