@@ -1027,3 +1027,74 @@ def test_a_commit_outside_the_role_is_found_even_if_a_later_commit_reverts_it(ri
     attempt = last(rig, feature_id)
     assert attempt["status"] == "failed" and "backend/during_repair.py" in attempt["reason"], report.lines()
     assert remote_sha(rig.bare, f"feature/{feature_id}") == old
+
+
+@pytest.mark.usefixtures("follows")
+def test_an_unsettled_launch_with_a_surviving_agent_is_never_accepted(rig: PubRig,
+                                                                      monkeypatch: pytest.MonkeyPatch) -> None:
+    _number, task_id, feature_id, _pr, old = requested(rig)
+    step(rig)
+    counted(rig, feature_id, 1)
+    dead_launch(rig, task_id, 1)
+    agent(rig, task_id)
+    assert rig.coord.run_task(task_id).state is TaskState.VERIFIED  # the child verified; an agent process lives on
+    service = rig.service(until=lambda s: bool(attention(rig, task_id)), max_cycles=10)
+    monkeypatch.setattr(service, "_run_tags", lambda *_a: {"survivor"})
+    monkeypatch.setattr(service_module, "tagged_processes",
+                        lambda env, tag: [4242] if env == service_module.RUN_TAG_ENV and tag == "survivor" else [])
+    assert service.run() == 0 and not service.launched
+    assert attention(rig, task_id)["category"] == CRITICAL and attention(rig, task_id)["blocking_run_tags"] == [
+        "survivor"]
+    assert "needs an operator" in step(rig).attention[0] and remote_sha(rig.bare, f"feature/{feature_id}") == old
+
+
+@pytest.mark.usefixtures("follows")
+def test_a_recorded_verified_attempt_is_checked_again_before_its_push(rig: PubRig) -> None:
+    _number, task_id, feature_id, _pr, old = requested(rig)
+    step(rig)
+    path = rig.repo / "backend" / "during_repair.py"
+    user = ("-c", "user.name=Operator", "-c", "user.email=operator@example.invalid", "-c", "commit.gpgsign=false")
+    path.write_text("VALUE = 1\n", encoding="utf-8")
+    git(rig.repo, "add", str(path))
+    git(rig.repo, *user, "commit", "-qm", "add", "-m", f"Feature-Task: {task_id}")
+    git(rig.repo, "rm", "-q", str(path))
+    git(rig.repo, *user, "commit", "-qm", "remove", "-m", f"Feature-Task: {task_id}")
+    agent(rig, task_id)
+    assert rig.coord.run_task(task_id).state is TaskState.VERIFIED
+    with rig.store.transaction():  # as an earlier build, which checked only the range's net diff, recorded it
+        record = load_repair(rig.store, feature_id)
+        record.attempts[-1].update(status="verified", verified_head=local_head(rig, feature_id))
+        rig.store.save_record("repair", record)
+    report = step(rig)
+    assert last(rig, feature_id)["status"] == "failed" and "during_repair.py" in last(rig, feature_id)["reason"], \
+        report.lines()
+    assert remote_sha(rig.bare, f"feature/{feature_id}") == old
+
+
+@pytest.mark.usefixtures("follows")
+def test_an_operators_review_run_and_the_push_exclude_each_other(rig: PubRig) -> None:
+    _number, task_id, feature_id, _pr, old = requested(rig)
+    step(rig)
+    agent(rig, task_id)
+    assert rig.coord.run_task(task_id).state is TaskState.VERIFIED
+    with rig.store.locks.review().acquire():  # `github review run` holds it from its checks to its record
+        report = step(rig)
+    assert any("github-review.lock" in d or "LockBusy" in d for d in report.deferred), report.lines()
+    assert last(rig, feature_id)["status"] == "verified" and remote_sha(rig.bare, f"feature/{feature_id}") == old
+    assert last(rig, feature_id)["status"] == "verified" and step(rig).events  # the next step pushes and revalidates
+    assert last(rig, feature_id)["status"] == "completed"
+
+
+@pytest.mark.usefixtures("follows")
+def test_a_merge_ends_a_verified_attempt_that_is_held_for_an_operator(rig: PubRig,
+                                                                     monkeypatch: pytest.MonkeyPatch) -> None:
+    number, task_id, feature_id, pr, old = requested(rig)
+    agent(rig, task_id)
+    service = rig.service(until=lambda s: bool(attention(rig, task_id)), max_cycles=20)
+    monkeypatch.setattr(service, "_judge", lambda *_a: Outcome(CRITICAL, "agent processes survived their launch"))
+    assert service.run() == 0 and rig.store.load_task(task_id).state is TaskState.VERIFIED
+    merge = rig.merge_on_github(pr)  # a person merges the reviewed head meanwhile
+    report = step(rig)
+    assert last(rig, feature_id)["status"] == "failed" and "merged by a person" in report.attention[0]
+    assert rig.publish().completed == {feature_id: merge} and rig.remote(number).state == "closed"
+    assert remote_sha(rig.bare, f"feature/{feature_id}") == old and attention(rig, task_id)["category"] == CRITICAL

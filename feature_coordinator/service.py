@@ -2,31 +2,30 @@
 
 `python -m feature_coordinator worker start` (systemd --user runs exactly this). Each cycle:
 
-  1. heartbeat; operator requests (worker-control: pause, stop); a stop signal; W4.3.3: when `github.publish.enabled`,
-     a publication pass (publish.py: an approved Issue's verified feature is integrated, pushed, opened as ONE Draft
-     PR, and completed once a person merged it); W4.6.1 R2: when `github.review.enabled`, the AI review step
-     (review_worker.py: starts a reviewer process for a verified Draft PR, watches it and collects its result on a
-     later cycle — it never waits for the model); W4.3.1: when `github.intake.enabled`, at most every
-     `poll_interval_seconds` a GitHub intake poll (intake.py): an Issue an operator approved with `/worker approve`
-     is planned and, on a free checkout, activated — the approval is the operator's plan and activation (W4.5: also
-     `worker:*` labels); W4.8.1: when `github.repair.enabled`, after the review step the repair step (repair.py) answers
-     a REQUEST_CHANGES review by re-opening the feature's single task: the feature, still in review, is then driven
-     like the active one below (with one more launch per attempt), and its verified head pushed and revalidated;
+  1. heartbeat; operator requests (worker-control: pause, stop); a stop signal; W4.3.3: when `github.publish.enabled`, a
+     publication pass (publish.py: an approved Issue's verified feature is integrated, pushed, opened as ONE Draft PR,
+     and completed once a person merged it); W4.6.1 R2: when `github.review.enabled`, the AI review step
+     (review_worker.py: starts a reviewer process for a verified Draft PR, watches it and collects its result on a later
+     cycle — it never waits for the model); W4.3.1: when `github.intake.enabled`, at most every `poll_interval_seconds`
+     a GitHub intake poll (intake.py): an Issue an operator approved with `/worker approve` is planned and, on a free
+     checkout, activated — the approval is the operator's plan and activation (W4.5: also `worker:*` labels); W4.8.1:
+     when `github.repair.enabled`, the repair step (repair.py) answers a REQUEST_CHANGES review (its single task
+     re-opened and run as below, the verified head pushed and revalidated);
   2. the active feature — only one an operator planned AND activated; nothing else is started;
   3. the checkout: workspace identity/branch/base (W2), the feature's Worker lock (so `python -m feature_coordinator
      work` cannot drive it at the same time), and claims: a LIVE claim (a manual launch, or a launch of an earlier
-     service instance) means wait — never a second writer; a stale claim is recovered (W3, orphan-aware); an
-     orphaned agent is waited for, and stopped only when its identity is certain and its run deadline has passed;
+     service instance) means wait — never a second writer; a stale claim is recovered (W3, orphan-aware); an orphaned
+     agent is waited for, and stopped only when its identity is certain and its run deadline has passed;
   4. eligible tasks (READY, dependencies verified, role enabled, no attention record, next attempt due) → ONE task:
      pre-launch checks (CLI present, subscription login — never an API key, checkpoint consistency, launch budget;
-     W4.3.1: an approved Issue's task only while the Issue is open and still matches the approved text, re-read now
-     — and re-read while it runs: a withdrawn approval stops the run through the existing cancellation), the launch
-     counted BEFORE it starts (write-ahead), `python -m feature_coordinator launch TASK --apply` as a subprocess
-     (the existing W2/W3 path: claim, agent, acceptance, checkpoints, gates), watched with heartbeats and a watchdog;
-  5. after the launch: the agent has stopped (no process carries its run tags), its claim is
-     released, the branch was not rewritten, no foreign commit or unexplained file change
-     appeared, its checkpoints are consistent — else CRITICAL; then the outcome is classified
-     and the bounded retry policy applied (autonomy.py); only then is the next task considered;
+     W4.3.1: an approved Issue's task only while the Issue is open and still matches the approved text, re-read now —
+     and re-read while it runs: a withdrawn approval stops the run through the existing cancellation), the launch
+     counted BEFORE it starts (write-ahead), `python -m feature_coordinator launch TASK --apply` as a subprocess (the
+     existing W2/W3 path: claim, agent, acceptance, checkpoints, gates), watched with heartbeats and a watchdog;
+  5. after the launch: the agent has stopped (no process carries its run tags), its claim is released, the branch was
+     not rewritten, no foreign commit or unexplained file change appeared, its checkpoints are consistent — else
+     CRITICAL; then the outcome is classified and the bounded retry policy applied (autonomy.py); only then is the next
+     task considered;
   6. nothing eligible → WAITING (until the next retry) / NEEDS_ATTENTION / AVAILABLE, idle.
 
 One agent at a time is ENFORCED, not only scheduled: the service holds the `agent-exclusive` flag, so any claim — the
@@ -296,11 +295,11 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
         self._idle(min(self.cfg.idle_poll_seconds, max(wake - now, 0.01)) if wake else self.cfg.idle_poll_seconds)
 
     def _poll_github(self, now: float) -> bool:
-        """Each step at most every its poll_interval_seconds, in `review_worker.github_steps` order: publication,
-        the AI review, intake (why: see there), W4.7 M6 integration. A failure is recorded once per distinct error;
-        the service goes on. True while an integration stage holds the checkout's execution slot — or it cannot be
-        known whether one does (integration_slot.execution_owner): this cycle starts no agent, and until the slot
-        is free no other step runs either — no publication pass (its integration gates), no intake (a planner), no
+        """Each step at most every its poll_interval_seconds, in `review_worker.github_steps` order: publication, the AI
+        review, the W4.8.1 repair, intake (why: see there), W4.7 M6 integration. A failure is recorded once per distinct
+        error; the service goes on. True while an integration stage holds the checkout's execution slot — or it cannot
+        be known whether one does (integration_slot.execution_owner): this cycle starts no agent, and until the slot is
+        free no other step runs either — no publication pass (its integration gates), no intake (a planner), no
         reviewer."""
         from .intake_poll import planning_hooks  # pylint: disable=import-outside-toplevel
         from .integration_slot import execution_owner  # pylint: disable=import-outside-toplevel
@@ -335,9 +334,9 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
         return bool(kind)
 
     def _intake_changed(self, task: Task) -> bool:
-        """W4.3.1: a task from an approved GitHub Issue starts only while that Issue still matches the
-        approved text (re-read now). Changed → the intake holds the task (needs-human); the Issue
-        could not be read → a transient wait. True = do not launch."""
+        """W4.3.1: a task from an approved GitHub Issue starts only while that Issue still matches the approved text
+        (re-read now). Changed → the intake holds the task (needs-human); the Issue could not be read → a transient
+        wait. True = do not launch."""
         from .intake_poll import IntakePoller  # pylint: disable=import-outside-toplevel
         try:
             reason = IntakePoller(self.coord).verify_task(task)
@@ -353,10 +352,10 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
         return False
 
     def _watch_intake(self, task: Task) -> None:
-        """W4.3.1: while an approved Issue's task runs, re-read the Issue every poll interval (the
-        service holds no coordinator lock). A changed or closed Issue is recorded and the run asked to
-        stop through the existing graceful cancellation; its result is not accepted (workflow.py).
-        A read failure is only logged: the run's own boundaries check again."""
+        """W4.3.1: while an approved Issue's task runs, re-read the Issue every poll interval (the service holds no
+        coordinator lock). A changed or closed Issue is recorded and the run asked to stop through the existing graceful
+        cancellation; its result is not accepted (workflow.py). A read failure is only logged: the run's own boundaries
+        check again."""
         now = self.clock()
         if now - self._intake_watch_at < self.config.github.intake.poll_interval_seconds:
             return
@@ -434,9 +433,9 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
         self._feature_lock, self._feature_id = None, ""
 
     def _claims_clear(self) -> bool:
-        """True when no claim exists on the checkout. A live one: wait (or, for a hung launch of an
-        earlier service instance, continue the watchdog's termination). Stale ones: W3 recovery.
-        An unreadable holder identity: nothing is assumed (fail closed)."""
+        """True when no claim exists on the checkout. A live one: wait (or, for a hung launch of an earlier service
+        instance, continue the watchdog's termination). Stale ones: W3 recovery. An unreadable holder identity: nothing
+        is assumed (fail closed)."""
         claims = self.store.list_claims()
         if not claims:
             return True
@@ -593,14 +592,14 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
         self._event("worker-recovery-done", features=[f.id for f in active])
 
     def _settle_in_flight(self, tasks: dict[str, Task], schedules: dict[str, Any]) -> tuple[bool, list[str]]:
-        """Launches recorded by an EARLIER service instance whose outcome was never recorded (the
-        service died): still running (its launch process carries the recorded tag, claimed or not
-        yet) → wait; else classify it now from the task and its events. The launch stays counted."""
+        """Unrecorded launch outcomes: an EARLIER instance's (it died) or this one's own (an error after the spawn left
+        it orphaned; never launched twice). Running (its tag, claimed or not) → wait; else classified from the task
+        and its events, CRITICAL while an agent process of it survives. The launch stays counted."""
         settled, running = False, []
         for task_id, rec in schedules.items():
             flight = rec.in_flight
-            if not flight:  # this instance's own too: launches run synchronously, so one left here is orphaned (an
-                continue    # error after its spawn); settled like an earlier instance's, never launched twice
+            if not flight:
+                continue
             if self.store.load_claim(task_id) or (flight.get("tag") and tagged_processes(LAUNCH_TAG_ENV,
                                                                                           flight["tag"])):
                 running.append(task_id)
@@ -617,6 +616,9 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
                 # no evidence of what happened: the run was cut short by the service's loss
                 outcome = Outcome(INTERRUPTED, "the launch of an earlier service instance ended while the service "
                                                "was down")
+            alive = sorted(t for t in self._run_tags(task_id, epoch(since) or 0.0) if tagged_processes(RUN_TAG_ENV, t))
+            outcome = Outcome(CRITICAL, f"agent processes of the launch survived it (run tags {alive})", evidence={
+                "blocking_run_tags": alive}) if alive else outcome  # W4.8.1 review: as `_judge` (nothing stopped here)
             self._apply(task_id, outcome, flight.get("launch"))
             settled = True
         return settled, running
@@ -648,8 +650,7 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
         refused = launch_refusal(self.coord, task, rec.launches, self.cfg.max_launches_per_task)  # W4.8.1: repairs
         if refused is not None:  # the launch budget (a repair attempt's own); a repair's PR or review changed
             self._apply(task.id, refused, None)
-            return
-        if self._intake_changed(task):
+        if refused is not None or self._intake_changed(task):
             return
         pre = self._preflight(task)
         if pre is not None:
@@ -719,12 +720,11 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
     def _watch(self, task: Task, handle: Any, launch: int) -> tuple[int | None, set[str], dict[str, Any] | None]:  # pylint: disable=too-many-branches
         """Wait for the launch: heartbeats, the claim's progress, graceful stop, the watchdog.
 
-        The agent's own deadline is enforced by the launch process (the Supervisor: SIGTERM to the
-        agent's process group, grace, SIGKILL, then every process with the run tag). This watchdog
-        covers the launch process itself: no claim heartbeat for longer than any legitimate silence
-        (hung_after_seconds) → the decision is recorded, then the launch (our child: its identity is
-        certain) gets SIGTERM, grace, SIGKILL, and its end is confirmed. A stale heartbeat below that
-        threshold is only reported (a gate or a slow step)."""
+        The agent's own deadline is enforced by the launch process (the Supervisor: SIGTERM to the agent's process
+        group, grace, SIGKILL, then every process with the run tag). This watchdog covers the launch process itself: no
+        claim heartbeat for longer than any legitimate silence (hung_after_seconds) → the decision is recorded, then the
+        launch (our child: its identity is certain) gets SIGTERM, grace, SIGKILL, and its end is confirmed. A stale
+        heartbeat below that threshold is only reported (a gate or a slow step)."""
         runtime = self.config.runtime
         hung_after = hung_after_seconds(runtime)
         tags: set[str] = set()

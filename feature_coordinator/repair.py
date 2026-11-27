@@ -381,6 +381,7 @@ class RepairStep:  # pylint: disable=too-few-public-methods
             report.waiting.append(f"{label}: {task.id} is verified; the Worker settles its launch first")
             return False
         if rec.attention:  # the Worker's own judgement of the launch overrides the task's verification
+            self._moot(feature, attempt, report)  # but a PR merged or closed meanwhile ends the attempt (publication)
             report.attention.append(
                 f"{label} stopped: {task.id} is verified, but the Worker's outcome of its launch needs an operator "
                 f"({sanitize(rec.attention.get('reason'), 300)}). Nothing is pushed; the attempt stays open: after "
@@ -461,44 +462,51 @@ class RepairStep:  # pylint: disable=too-few-public-methods
             self._end(feature, attempt, "failed", f"{problem}; its agent is not started again and nothing is pushed",
                       report)
 
-    def _push(self, feature: Feature, attempt: dict[str, Any], report: RepairStepReport) -> None:
-        """Push exactly the verified head to the PR's branch (a fast-forward), after fresh reads."""
+    def _push_problem(self, feature: Feature, attempt: Mapping[str, Any]) -> str:
+        """Why the verified head may not be pushed now, from fresh reads ('' : it may): the recorded candidate, the
+        approval, the PR (the recorded one, open, a draft, at the reviewed or already the repaired head), and every
+        commit of the range the task's own (also for an attempt recorded `verified` by an earlier build)."""
         head, old = attempt["verified_head"], attempt["review_head"]
         cand = self.store.load_feature(feature.id).pull_request
         if cand is None or (cand.number, cand.head_sha) != (attempt["pr"], old):
-            self._end(feature, attempt, "failed", "the recorded PR candidate changed during the repair; nothing is "
-                                                  "pushed", report)
-        assert cand is not None
+            return "the recorded PR candidate changed during the repair"
+        foreign = self._foreign(self.store.load_task(attempt["task"]), old, head)
+        if foreign:
+            return f"{old[:12]}..{head[:12]} is not only {attempt['task']}'s own work: {foreign}"
         intake = load_intake(self.store, feature.id)
         assert intake is not None
         withdrawn = next((p for p in (known_problem(self.store, self.store.load_task(t)) for t in intake.all_task_ids)
                           if p), None) or issue_problem(self.client, intake)[1]
         if withdrawn:
-            self._end(feature, attempt, "failed", f"the approval no longer holds; nothing is pushed: {withdrawn}",
-                      report)
+            return f"the approval no longer holds: {withdrawn}"
         try:
             pr = self.client.get_pull_request(cand.number)
         except GitHubNotFoundError:
-            self._end(feature, attempt, "failed", f"PR #{cand.number} no longer exists; nothing is pushed", report)
+            return f"PR #{cand.number} no longer exists"
         problem = self.publisher._pr_problem(feature, dataclasses.replace(cand, head_sha=pr.head_sha), pr)  # pylint: disable=protected-access
-        if problem or pr.state != "open" or pr.merged:
-            self._end(feature, attempt, "failed", f"PR #{cand.number} is not the recorded open PR "
-                                                  f"({problem or ('merged' if pr.merged else pr.state)}); nothing is "
-                                                  "pushed", report)
-        gone = "" if pr.draft else f"PR #{cand.number} was marked ready for review during the repair"
-        gone = gone or self._review_gone(feature.id, attempt)
-        if gone:
-            self._end(feature, attempt, "failed", f"{gone}; nothing is pushed", report)
-        if pr.head_sha not in (old, head):
-            self._end(feature, attempt, "failed", f"PR #{cand.number} is at {pr.head_sha[:12]}, neither the reviewed "
-                                                  f"{old[:12]} nor the repaired {head[:12]}: someone else pushed; "
-                                                  "nothing is pushed", report)
-        destination, origin_problem = self.publisher._origin(feature)  # pylint: disable=protected-access
-        if origin_problem:
-            self._end(feature, attempt, "failed", f"push refused: {origin_problem}", report)
-        lock = self.store.locks.publish().acquire()  # no publication pass meanwhile (LockBusyError: deferred)
+        return next((why for bad, why in (
+            (problem or pr.state != "open" or pr.merged, f"PR #{cand.number} is not the recorded open PR "
+                                                         f"({problem or ('merged' if pr.merged else pr.state)})"),
+            (not pr.draft, f"PR #{cand.number} was marked ready for review during the repair"),
+            (pr.head_sha not in (old, head), f"PR #{cand.number} is at {pr.head_sha[:12]}, neither the reviewed "
+                                             f"{old[:12]} nor the repaired {head[:12]}: someone else pushed"),
+            (True, self.publisher._origin(feature)[1] or "")) if bad and why), "")  # pylint: disable=protected-access
+
+    def _push(self, feature: Feature, attempt: dict[str, Any], report: RepairStepReport) -> None:
+        """Push exactly the verified head to the PR's branch (a fast-forward), after fresh reads. Publication and the
+        review are locked out from the review's last check through the push (an operator's review run: deferred)."""
+        head, old = attempt["verified_head"], attempt["review_head"]
+        problem = self._push_problem(feature, attempt)
+        if problem:
+            self._end(feature, attempt, "failed", f"{problem}; nothing is pushed", report)
+        held = []
         try:
-            result = self.git.push_branch(feature.branch, head, destination=destination,
+            for lock in (self.store.locks.publish(), self.store.locks.review()):  # LockBusyError: deferred
+                held.append(lock.acquire())
+            gone = self._review_gone(feature.id, attempt)
+            if gone:
+                self._end(feature, attempt, "failed", f"{gone}; nothing is pushed", report)
+            result = self.git.push_branch(feature.branch, head, destination=self.publisher._origin(feature)[0],  # pylint: disable=protected-access
                                           timeout=self.config.github.publish.git_timeout_seconds, expect=(old, head),
                                           protected=(*PROTECTED_BRANCHES, feature.base_branch, self.config.base_branch))
         except (RemoteRejectedError, HeadMismatchError, ScopeViolationError) as exc:
@@ -510,12 +518,13 @@ class RepairStep:  # pylint: disable=too-few-public-methods
                                    f"{sanitize(exc, 300)}")
             return
         finally:
-            lock.release()
+            for lock in reversed(held):
+                lock.release()
         self._fault(f"crash-after-push:{feature.id}")
         self._update(feature.id, attempt["id"], event="repair-pushed", status="pushed", pushed={
             "sha": result.sha, "before": result.before, "pushed": result.pushed, "at": utc_now()})
         report.events.append(f"{feature.id}: repair attempt {attempt['number']}: pushed {head[:12]} to "
-                             f"{feature.branch} (PR #{cand.number}; a fast-forward of {old[:12]})" if result.pushed
+                             f"{feature.branch} (PR #{attempt['pr']}; a fast-forward of {old[:12]})" if result.pushed
                              else f"{feature.id}: repair attempt {attempt['number']}: origin already has {head[:12]}")
 
     def _revalidate(self, feature: Feature, attempt: dict[str, Any], report: RepairStepReport) -> None:

@@ -257,6 +257,8 @@ Before every launch with the native-cli backend (the default), `check_subscripti
 2. **`in_flight` launches of earlier instances** are settled as in §7.
 
 **During a run (W4.8.1 review fix).** A launch of the running instance itself can be left `in_flight` too: an error after its spawn ends the cycle before `_run_task` settles it. Launches run synchronously, so any such record is orphaned. It is settled exactly like an earlier instance's: wait while its launch process runs, then classify it. It is never launched a second time beside it.
+
+**Surviving agents at settlement (W4.8.1 review fix, all tasks).** Settling any such launch, of this instance or an earlier one, now applies `_judge`'s survivor rule. If a process carrying one of the launch's agent run tags still lives, the outcome is CRITICAL, whatever the task's state, and the run tags are kept as blocking. No agent starts while they live, and nothing is stopped at settlement. A launch process that lives on without a claim is still only waited for; it has no deadline of its own.
 3. **Every unverified multi-step task** gets W3 `inspect`. A conflict, or an unreadable checkpoint record, is CRITICAL for that task alone.
 
 Only the actions W3 already calls safe are taken: adopt a commit, record a commit, release a dead claim.
