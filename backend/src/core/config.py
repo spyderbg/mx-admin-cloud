@@ -27,13 +27,28 @@ def _repo_root() -> Path:
     return REPO_ROOT
 
 
+def _home(environ: Mapping[str, str]) -> Path:
+    """Return the mapping's HOME, or the user's home directory when it has none."""
+    home = environ.get("HOME", "").strip()
+    return Path(home) if home else Path.home()
+
+
+def _expand_user(value: str, environ: Mapping[str, str]) -> Path:
+    """Expand a leading `~` with the mapping's HOME (Path.expanduser reads os.environ only).
+
+    `~user` forms are left to Path.expanduser. With os.environ the result equals Path.expanduser.
+    """
+    if value == "~" or value.startswith(("~/", "~" + os.sep)):
+        return _home(environ) / value[2:]
+    return Path(value).expanduser()
+
+
 def _xdg_config_home(environ: Mapping[str, str]) -> Path:
     """Return ${XDG_CONFIG_HOME:-~/.config}; a relative XDG_CONFIG_HOME is ignored (XDG spec)."""
     xdg = environ.get("XDG_CONFIG_HOME", "").strip()
-    if xdg and Path(xdg).expanduser().is_absolute():
-        return Path(xdg).expanduser()
-    home = environ.get("HOME", "").strip()
-    return (Path(home) if home else Path.home()) / ".config"
+    if xdg and _expand_user(xdg, environ).is_absolute():
+        return _expand_user(xdg, environ)
+    return _home(environ) / ".config"
 
 
 def resolve_env_file(environ: Mapping[str, str] | None = None) -> Path | None:
@@ -42,13 +57,14 @@ def resolve_env_file(environ: Mapping[str, str] | None = None) -> Path | None:
     Order: MX_ADMIN_ENV_FILE (must exist, no fallback), then
     ${XDG_CONFIG_HOME:-~/.config}/mx-admin-cloud/app.env, then the legacy repository-root
     `.env`. None of these depend on the current working directory. Only file existence is
-    checked here; contents are never read or reported.
+    checked here; contents are never read or reported. `environ` supplies every variable the
+    lookup reads, including the HOME used to expand `~`.
     """
     env = os.environ if environ is None else environ
     explicit = env.get(ENV_FILE_VAR, "").strip()
     if explicit:
         # An explicit relative path is the caller's choice; it is made absolute once, here.
-        path = Path(explicit).expanduser().absolute()
+        path = _expand_user(explicit, env).absolute()
         if not path.is_file():
             raise MissingEnvFileError(
                 f"{ENV_FILE_VAR} is set to '{path}', but that file does not exist. "
