@@ -3,9 +3,8 @@
 `default_config()` is the mx-admin-cloud configuration. The documented example docs_agents/coordination/
 project-config.example.yaml must load into exactly the same object (a test enforces that): it can never drift.
 
-Fixed v5 safety ceilings are validated, not configurable: one writer per role, one
-execution host, one shared checkout per feature, one final PR per feature, and a single
-serialized Git mutation coordinator. A configuration that tries to relax them is rejected.
+Fixed v5 safety ceilings are validated, not configurable: one writer per role, one execution host, one shared checkout
+per feature, one final PR per feature, one serialized Git mutation coordinator; a configuration relaxing them fails.
 
 Path patterns are deliberately simple so that disjointness between roles is provable: owned/excluded paths are
 either `<dir>/**` (a subtree) or an exact relative file path. Protected and approval-required lists may
@@ -22,13 +21,13 @@ The Phase 4 extension adds `github.project`: the GitHub Projects (v2) board that
 Issues (owner, number and GraphQL node ID, the projects that must never be written, the Status options and
 the Agent / Feature ID / Blocked Reason fields); off by default, `default_config()` uses the mx-admin-cloud board.
 
-W4.3.1 adds `github.intake` (intake.py): an Issue a command author approves with `/worker approve <role>
-<spec-sha256>` becomes one feature with one task of that role, verified by its `role_gates`. Off by default.
-W4.5 adds `github.planning` (planning_config.py): label-approved, multi-task execution plans (intake_plan.py).
-W4.6.1 adds `github.review` (review_config.py): the advisory, independent AI review of a published Draft PR.
-W4.3.3 adds `github.publish` (publish.py): such a feature is integrated, its own branch pushed, ONE
-Draft PR opened to its base branch, and — after a person merged it — completed, its Issue closed and its
-Project #2 card moved to Done. Off by default; the Worker never merges.
+W4.3.1 adds `github.intake` (intake.py): an Issue a command author approves with `/worker approve <role> <spec-sha256>`
+becomes one feature with one task of that role, verified by its `role_gates`. W4.5 adds `github.planning`
+(planning_config.py): label-approved, multi-task execution plans (intake_plan.py). W4.3.3 adds `github.publish`
+(publish.py): such a feature is integrated, its own branch pushed, ONE Draft PR opened to its base branch, and — after
+a person merged it — completed, its Issue closed and its Project #2 card moved to Done; the Worker never merges. W4.6.1
+adds `github.review` (review_config.py), the advisory AI review of that Draft PR; W4.8.1 `github.repair`
+(repair_config.py), its autonomous repair after REQUEST_CHANGES. Each is off by default.
 
 W2 (functional Worker): a role names its agent (`provider`), may override its model (`model`, validated per agent
 kind; "default" = the CLI's own default) and can be disabled (`enabled: false`). `runtime.execution_backend`:
@@ -50,6 +49,7 @@ from .errors import ConfigError, ProviderError
 from .integration_config import GitHubIntegrationConfig, integration_from_mapping
 from .native_hardening import NativeHardening, hardening_from_mapping, validate_hardening
 from .planning_config import GitHubPlanningConfig, planning_from_mapping, validate_planning
+from .repair_config import GitHubRepairConfig, repair_from_mapping, validate_repair
 from .review_config import GitHubReviewConfig, review_from_mapping, validate_review
 from .providers import (
     CLAUDE_CODE,
@@ -123,9 +123,8 @@ class RuntimeConfig:  # pylint: disable=too-many-instance-attributes
 class WorkerConfig:  # pylint: disable=too-many-instance-attributes
     """W4: the autonomous Worker service and the Worker's scheduling defaults (YAML `worker:`).
 
-    Safe defaults: the service is OFF until `autonomous.enabled` is set; one agent at a time;
-    retries are bounded and category-specific; validation auto-fix is OFF; conflicts always stop
-    the affected task (`recovery.stop_on_conflict` is fixed to true)."""
+    Safe defaults: the service is OFF until `autonomous.enabled` is set; one agent at a time; bounded, category-specific
+    retries; validation auto-fix OFF; a conflict always stops its task (`recovery.stop_on_conflict` is fixed: true)."""
 
     autonomous_enabled: bool = False          # the service refuses to start unless explicitly enabled
     max_parallel: int = 1                     # agents at a time: the service (fixed 1 in W4) and `work`'s default
@@ -205,11 +204,9 @@ _BUILTIN_PROJECT_FIELDS = ("Title", "Assignees", "Labels", "Linked pull requests
 class GitHubProjectConfig:  # pylint: disable=too-many-instance-attributes
     """The GitHub Projects (v2) board that visualizes coordinator Issues (Phase 4 extension).
 
-    The project is identified by owner, number AND node ID; all three must match before
-    anything is written. `protected_numbers` lists projects of the same owner that are never
-    written (for mx-admin-cloud: Project #1, owned by the independent mxissues workflow).
-    The board is a projection of the local state: it never claims, locks or approves anything.
-    """
+    The project is identified by owner, number AND node ID (all three must match before anything is written);
+    `protected_numbers` are projects of the same owner that are never written (mx-admin-cloud: Project #1, the
+    independent mxissues workflow's). The board projects the local state; it never claims, locks or approves."""
 
     enabled: bool = False
     owner: str = ""
@@ -295,6 +292,7 @@ class GitHubConfig:  # pylint: disable=too-many-instance-attributes
     publish: GitHubPublishConfig = field(default_factory=GitHubPublishConfig)
     planning: GitHubPlanningConfig = field(default_factory=GitHubPlanningConfig)
     review: GitHubReviewConfig = field(default_factory=GitHubReviewConfig)
+    repair: GitHubRepairConfig = field(default_factory=GitHubRepairConfig)  # W4.8.1, repair_config.py
     integration: GitHubIntegrationConfig = field(default_factory=GitHubIntegrationConfig)  # W4.7, integration_config.py
 
     @property
@@ -465,6 +463,7 @@ def validate(config: ProjectConfig) -> None:
     _validate_intake(config)
     validate_planning(config)
     validate_review(config)
+    validate_repair(config)
     _validate_worker(config.worker)
     if not config.allowed_state_filesystems or any(fs.startswith("fuse") for fs in config.allowed_state_filesystems):
         raise ConfigError("allowed_state_filesystems must be non-empty and must not include FUSE filesystems")
@@ -914,7 +913,8 @@ def _github_from_mapping(data: Mapping[str, Any]) -> GitHubConfig:
         raise ConfigError(f"unknown github keys: {sorted(unknown)} (tokens and endpoints never belong here)")
     values: dict[str, Any] = {}
     nested = {"project": _project_from_mapping, "intake": _intake_from_mapping, "publish": _publish_from_mapping,
-              "planning": planning_from_mapping, "review": review_from_mapping, "integration": integration_from_mapping}
+              "planning": planning_from_mapping, "review": review_from_mapping, "repair": repair_from_mapping,
+              "integration": integration_from_mapping}
     for key in known & set(data):
         default, raw = getattr(defaults, key), data[key]
         if key in nested:

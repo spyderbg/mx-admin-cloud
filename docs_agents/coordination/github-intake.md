@@ -629,7 +629,7 @@ See [project-config.example.yaml](project-config.example.yaml): `enabled` (false
 
 With `github.review.enabled`, the Worker service runs a **review step** right after its publication step (and before the intake poll), at most every `github.review.poll_interval_seconds`, never while paused. The step holds `github-review.lock` for seconds and **never waits for the model**; the heartbeat, cancellation and the other steps go on while a review runs. `github review run` and `retry` stay as in R1 (the reviewer runs in the foreground).
 
-**Starting.** Only while no reviewer process runs and no agent holds a claim on the checkout, the step takes the first approved Issue's feature in `review` whose recorded PR publication has not stopped (`attention`) and that still needs a review, and does exactly R1's run (§13.1: fresh binding, the publisher's identity checks, preconditions; one review per verified head and generation) — except that the attempt, counted **before** it starts, runs as one separate **reviewer process**: `python -m feature_coordinator github review exec RUN_DIR` (internal). Before counting, the reviewer's availability is checked without a model request (the CLI, its flags, the subscription login); an unavailable reviewer uses no attempt, starts no process, is reported once, and makes the review ERROR after `unavailable_wait_seconds`. A review complete for the publisher's verified head is not looked at again (no GitHub request), ERROR included; nor is one invalidated for that head. A newly verified head or an operator's `retry` starts the next.
+**Starting.** Only while no reviewer process runs and no agent holds a claim on the checkout, the step takes the first approved Issue's feature in `review` whose recorded PR publication has not stopped (`attention`) and that still needs a review, and does exactly R1's run (§13.1: fresh binding, the publisher's identity checks, preconditions; one review per verified head and generation) — except that the attempt, counted **before** it starts, runs as one separate **reviewer process**: `python -m feature_coordinator github review exec RUN_DIR` (internal). Before counting, the reviewer's availability is checked without a model request (the CLI, its flags, the subscription login); an unavailable reviewer uses no attempt, starts no process, is reported once, and makes the review ERROR after `unavailable_wait_seconds`. A review complete for the publisher's verified head is not looked at again (no GitHub request), ERROR included; nor is one invalidated for that head. A newly verified head or an operator's `retry` starts the next. W4.8.1: with `github.repair.enabled`, the repair step answers a REQUEST_CHANGES review by itself (§14); the repaired head is a newly verified head, so the review step reviews it.
 
 **The reviewer process** gets the attempt's request (`request.json` in its own run directory: the prompt, the answer schema, the timeout; mode 0600, never logged) and a random **process tag** (`FC_REVIEW_RUN`). It refuses without that tag or outside `runs/review/`, runs R1's reviewer **unchanged** (Claude Code, subscription, no tools, no MCP, an empty working directory, the existing supervisor and its timeout) with the tag added to the CLI's environment, writes `result.json` once and exits. Its environment is the native allowlist plus the tag: no GitHub token or API key. It never reads GitHub, takes no coordinator lock and writes no record. `worker pause` / `worker stop` cancel it through the control file; SIGTERM cancels it too; a cancelled run is recorded as cancelled.
 
@@ -666,3 +666,178 @@ A process is "ours" only if it carries the attempt's tag; the tag is re-checked 
 
 **Reporting.** `worker status`, `worker health --json` (`reviews`), `worker waiting` and `worker attention` show each review: pending, running (its process, deadline), held, reviewer-unavailable, complete, request-changes, error, invalidated. While no feature is active the service's state combines publication's and the reviews': an **ERROR** review of a feature in review is **NEEDS_ATTENTION** (and `worker health` is not healthy) with the commands to inspect and retry it; a running, pending, held or unavailable review and **REQUEST_CHANGES** are **WAITING**; PASS and PASS_WITH_NOTES add nothing to publication's wait. Log lines and events are written once per transition (a steady wait is not repeated); prompts, credentials and model text are never logged.
 
+
+## 14. Autonomous PR repair (W4.8.1)
+
+> Status: **implemented and tested offline only** (disposable repositories with a bare `origin`, mock GitHub, mock agents, recorded gates, fake reviewers and the real Worker service loop; no model call, no real GitHub). Not activated: `github.repair.enabled` defaults **false**. Code: `feature_coordinator/repair.py` (the Worker's repair step), `repair_record.py` (the record, the service and task hooks, the brief), `repair_config.py`, `repair_commands.py`; small hooks in `service.py`, `workflow.py`, `publish.py` and `review_worker.py`. Tests: `feature_coordinator/tests/test_fc_repair.py`.
+
+With `github.repair.enabled`, the Worker no longer only waits for a person when the AI review (§13) of an approved Issue's Draft PR requests changes. It addresses the review's blocking findings itself:
+
+- on the **same** PR;
+- with the same agent, permissions and gates as the original task;
+- and then the new head is reviewed again.
+
+```text
+Draft PR #N at H0 → AI review REQUEST_CHANGES (current, bound to H0, its comment posted)
+  → repair step: checks → attempt counted (write-ahead) → the single task re-opened
+  → Worker service: the task's ordinary launch, the review's findings appended → commit → task gates → verified at H1
+  → repair step: push H1 to feature/issue-N (a fast-forward) → revalidation at exactly H1 (§10.12)
+  → candidate at H1, the review of H0 invalidated → review step: a NEW independent review of H1
+  → PASS / PASS_WITH_NOTES: waits for a person · REQUEST_CHANGES: the next attempt (at most 2), else NEEDS_ATTENTION
+```
+
+The step runs after the review step and before the intake poll, at most every `github.repair.poll_interval_seconds`, never while the Worker is paused. It adds no feature or task state. It reuses the existing parts:
+
+| Part | Reused from |
+| --- | --- |
+| The review | its evidence and fresh re-check (§13.1, §13.4) |
+| The agent run | the task path and the service's launch: S1 launch gate, scoped workspace, approval re-reads, commit trailers, required gates, watchdog, post-launch integrity checks, retry policy |
+| The push | publication's push (§10.2) |
+| Validation | revalidation (§10.12) |
+| The next review | the review step (§13.7) |
+
+**Never:**
+
+- merge, mark a PR ready, or open a second PR;
+- force a push or rewrite a commit;
+- widen a role scope or a grant;
+- skip a gate or act on a stale review;
+- let an agent write coordinator state.
+
+### 14.1 When an attempt starts
+
+All of these must hold. A check that can resolve by itself is a wait (WAITING). A check that cannot is NEEDS_ATTENTION, recorded once with its event `repair-stopped`.
+
+| Check | Otherwise |
+| --- | --- |
+| The current review entry is complete, REQUEST_CHANGES, and bound to the publisher's verified head and recorded PR | nothing is repaired. An invalidated, ERROR, PASS or PASS_WITH_NOTES review, or one of another head, never starts a repair |
+| Its PR comment is posted, and `review_evidence` holds (the stored binding matches its digest) | waits for the comment; a broken digest: NEEDS_ATTENTION |
+| No attempt has answered this review entry yet, and fewer than `max_attempts` attempts were used for the feature | a failed or empty earlier attempt stays NEEDS_ATTENTION; an exhausted budget: NEEDS_ATTENTION (§14.4) |
+| **v1 ownership rule:** exactly one task (so one role). It is approved, has no steps, is verified, its role is enabled, and it has no attention record | NEEDS_ATTENTION, never a guess. Several tasks or roles raise the question of who owns which finding, and that is an operator's decision |
+| The checkout's execution slot is free: no claim, no launch in flight, no integration stage (W4.7 M6), no reviewer process | waits |
+| Publication is not stopped. The checkout is the feature's repository, on its branch, at the verified head, and clean | waits; publication reports its own stop |
+| **Fresh reads** (`ReviewRunner.recheck`): the PR re-read and still the publisher's verified, open candidate, and the binding unchanged (head, merge base, approval, plan) | NEEDS_ATTENTION ("no longer applies"); nothing starts |
+
+**Starting an attempt.** The step holds `github-publish.lock` and `github-review.lock` while it:
+
+1. **Records the attempt first.** One transaction re-reads the local facts, then writes `state/repair/<feature>.json`:
+   - the review entry and its head;
+   - the PR and the task;
+   - the validated **blocking** findings (blocker, major), with their digest.
+2. **Re-opens the task** (`verified → ready`, `workflow.reopen_task`).
+
+Each review entry gets at most one attempt, ever.
+
+### 14.2 The repair run
+
+While the attempt's task is re-opened and not yet verified, the Worker service treats the feature (still in `review`) like the active feature (`repair_record.repairing_features`). It runs the task through the ordinary launch path (worker-autonomy.md §5), with two differences:
+
+- the attempt's **brief** is appended to the task's own instructions (title, approved acceptance criteria, gates);
+- the attempt grants **one launch** beyond `worker.max_launches_per_task` (`launch_allowance`).
+
+Everything else is the original task's:
+
+- its role scope and grants (`ScopedWorkspace`);
+- the S1 launch gate;
+- the approval re-read before the claim, while running and after the release;
+- a commit with its `Feature-Task` trailers;
+- its required gates on the shared branch;
+- the service's integrity checks and retry policy.
+
+`workflow.run_task` accepts a feature in `review` only for such an open attempt.
+
+**The findings are untrusted task data, never a permission.** The brief says so, and fences them with a random nonce. Control characters are removed and credential-like strings redacted (`review_context.clean`). An agent that follows a finding outside its scope is refused by the scoped workspace exactly as before. The approval is not widened either: the task, its acceptance criteria and its grants are unchanged.
+
+### 14.3 Push and revalidation
+
+Once the task is verified again, the step checks its evidence head:
+
+- it must be a new head that continues the PR's head and is the local branch tip;
+- the reviewed head means the agent changed nothing: `no-changes`;
+- anything else: `failed`.
+
+**Before the push**, the step re-reads:
+
+- the approval (the Issue);
+- the PR: still the recorded PR (the publisher's identity checks), open, and at the reviewed head (or already at the pushed one);
+- `origin`: the publisher's single-push-URL checks.
+
+Someone else's push, a closed or merged PR, or a withdrawn approval ends the attempt as `failed`. Nothing is pushed.
+
+**The push.** `gitops.push_branch` pushes exactly the verified commit, under `github-publish.lock`: a fast-forward, never forced, from a clean checkout.
+
+**Revalidation** then runs the unchanged `github publish revalidate` at exactly that head, with actor `worker repair <attempt>`. It applies every rule of §10.12:
+
+- fast-forward only and plain commits;
+- every path writable by the feature's tasks;
+- the original candidate's integration gates, the approved plan's (or the default) integration gates, and every task's required gates;
+- a re-check after the gates;
+- one transaction that moves the candidate and invalidates the review of the old head;
+- the invalidation notice on the PR.
+
+The attempt is then `completed`. The review step reviews the new head by itself: an invalidated REQUEST_CHANGES never blocks it, and an earlier PASS is never evidence for another head.
+
+GitHub reports a pushed head after a short delay. A revalidation that is `stale` only because the PR does not show the push yet is retried by the next step, for up to 30 minutes after the push.
+
+### 14.4 Budget, failures and the operator
+
+At most `max_attempts` (a ceiling of **2**) attempts per feature. A new attempt starts only:
+
+- when no attempt is open;
+- for a review entry that no attempt has answered yet.
+
+A failed or empty attempt's review is never repaired again. Normally the next attempt answers the review of a head the previous attempt completed. After an operator moved the candidate (a fix by hand + revalidation), a new REQUEST_CHANGES review may start one too, if the budget allows.
+
+| Situation | Result |
+| --- | --- |
+| The review of the repaired head is PASS or PASS_WITH_NOTES | the PR waits for a person, as without repair |
+| The review requests changes again, and attempts are left | the next attempt (§14.1) |
+| **Exhausted**: the review still requests changes after the last attempt | NEEDS_ATTENTION. The PR, its branch, every commit, and all review, revalidation and attempt records are kept. The operator's options: fix it by hand + `github publish revalidate`, `github review retry`, or merge or close the PR |
+| The repair run's gates fail, the agent's changes are refused, or the approval was withdrawn before the run | the task is held exactly as for any task (validation, critical or needs-human attention). The attempt **stays open**, nothing is pushed, and publication waits. `worker reset-retries TASK --apply` lets the agent try again within the same attempt; `github repair abandon` ends it |
+| The agent changed nothing (`no-changes`) | NEEDS_ATTENTION; this review is not repaired again |
+| Push refused, PR changed, approval withdrawn before the push, or revalidation failed or refused (`failed`) | NEEDS_ATTENTION with the reason. After a failed revalidation the PR already shows the pushed head while the candidate stays: publication stops (as for a person's push, §10.5) until an operator fixes it and revalidates |
+
+**While an attempt is open, publication waits for it.** A pass only reports it, because the attempt owns the branch's head. A merge in that window is completed once the attempt ends, or after `github repair abandon` ends it.
+
+### 14.5 Recovery and idempotency
+
+Every step reads what is true first. Records are only ever extended.
+
+| Interrupted | On the next step (any new Worker instance) |
+| --- | --- |
+| after the attempt was counted, before the task was re-opened | the task is re-opened; no second attempt |
+| after the re-open, before `reopened_at` was recorded | recorded; the task is not re-opened twice |
+| during the repair launch (service crash, restart, stop) | the service's existing in-flight and claim recovery (worker-autonomy.md §7–§8) settles it and launches again, within the launch budget |
+| after the task was verified, before the push | pushed once |
+| after the push, before it was recorded | `push_branch` finds the remote at the commit: nothing is pushed twice |
+| before or during revalidation | revalidated (a re-run continues from anywhere on the way) |
+| after the candidate moved, before the attempt completed | revalidation reports `unchanged`; the attempt completes; one notice |
+| repeated polls, a second step | `github-repair.lock`; one attempt per review entry; the service's single execution slot |
+
+Events: `repair-started`, `repair-verified`, `repair-pushed`, `repair-completed`, `repair-ended`, `repair-stopped` and `repair-abandoned`.
+
+### 14.6 Configuration and commands
+
+`github.repair` in [project-config.example.yaml](project-config.example.yaml):
+
+- `enabled` (false);
+- `max_attempts` (2, range 1..2);
+- `poll_interval_seconds` (60, range 10..3600).
+
+Unknown keys are refused. Enabling it needs `github.review.enabled`, which itself needs intake and publication.
+
+```bash
+python -m feature_coordinator ... github repair status [--json]           # every feature's latest attempt (read-only)
+python -m feature_coordinator ... github repair show FEATURE [--json]     # its attempts and findings (read-only)
+python -m feature_coordinator ... github repair abandon FEATURE --reason "…" [--apply]   # end an open attempt
+```
+
+`abandon` is refused while the attempt's agent runs. It changes nothing else: publication then resumes its own checks.
+
+### 14.7 Limitations
+
+- **v1 scope.** Only single-task (single-role), single-step features. Anything else is NEEDS_ATTENTION.
+- **Interrupted launches with a launch budget of 1.** With `worker.max_launches_per_task: 1` (the production setting), an interrupted or cancelled repair launch uses the attempt's extra launch. Like any interrupted launch there, it then needs `worker reset-retries`.
+- **Untrusted findings can still bias the agent.** The findings and the Issue can bias the repair agent (prompt injection). What constrains the result is unchanged: its role scope and grants, the gates, the revalidation rules, and a new independent review. A person still merges.
+- **Shared identity and native hardening.** The limitations of §13.6 apply unchanged: the repair agent has exactly the original task agent's exposure.
+- **Not tested live.** No live GitHub or real-agent test has been run for this feature.

@@ -107,7 +107,7 @@ def test_scheduling_is_off_by_default_and_then_nothing_is_read_or_started(rrig: 
     runner = stages()
     assert not integration_steps(coord_of(rrig), runner)                  # the service never constructs the step
     assert [name for name, _cfg, _make in github_steps(rrig.config, coord_of(rrig), {}, None)] == \
-        ["publish", "review", "intake"]                                    # the existing steps, unchanged
+        ["publish", "review", "repair", "intake"]                          # the GitHub steps (W4.8.1: repair); no M6
     report = IntegrationStep(coord_of(rrig), start=runner).poll()
     assert not report.lines() and report.service_state() is None and not runner.calls
     assert not (rrig.state / RECORD_KIND).exists() and not events_of(rrig, "integration-stage-starting")

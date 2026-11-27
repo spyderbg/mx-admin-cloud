@@ -116,6 +116,7 @@ from .model import (
     validate_dag,
 )
 from .paths import PathPolicy, ScopedWorkspace
+from .repair_record import repair_brief
 from .gates import GateContext, SandboxedGateRunner
 from .launchers import run_context
 from .native_hardening import inert_launcher_anchor
@@ -364,11 +365,13 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
 
         Every exit leaves the task in a defined state: verified, failed or needs-human via
         _finish(), or back to ready (released with yield) when the provider was unavailable,
-        a commit had to be deferred, the branch kept moving, or an unexpected error occurred.
+        a commit had to be deferred, the branch kept moving, or an unexpected error occurred. W4.8.1: a feature in
+        `review` runs a task only for its open repair attempt (repair.py), the attempt's brief appended to its prompt.
         """
         task = self.store.load_task(task_id)
         feature = self.store.load_feature(task.feature_id)
-        if feature.state is not FeatureState.ACTIVE:
+        repair = repair_brief(self.store, task) if feature.state is FeatureState.REVIEW else None  # W4.8.1 repair.py
+        if feature.state is not FeatureState.ACTIVE and repair is None:
             raise ClaimError(f"feature {feature.id!r} is {feature.state.value}, not active")
         if prompt and task.steps:
             raise CoordinatorError(f"task {task_id!r} has steps; its step prompts are built by the coordinator")
@@ -401,7 +404,8 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
                     cancelled=lambda: self._cancel_requested(task_id, claim.token),
                     concurrent_roles=lambda: self._concurrent_roles(mark, task.role, coincident),
                     git_quiet=lambda: self.store.locks.git().acquire(timeout=self.git.lock_timeout))
-                request = RunRequest(task_id, task.role, prompt or self._task_prompt(task), workspace, context=context)
+                request = RunRequest(task_id, task.role, prompt or self._task_prompt(task) + (repair or ""), workspace,
+                                     context=context)
                 run = TaskRun(task_id, TaskState.IN_PROGRESS, self._run_agent(task, request))
                 result = self._after_run(feature, task, head, run, verifying)
         finally:

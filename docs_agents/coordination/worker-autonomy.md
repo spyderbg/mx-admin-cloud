@@ -164,6 +164,14 @@ Eligible tasks are taken in dependency order. Only an **activated** feature is c
 
 **W4.6.1 R2 AI review.** With `github.review.enabled`, a review step follows the publication pass (at most every `github.review.poll_interval_seconds`, never while paused). For a verified Draft PR it starts ONE separate reviewer process (Claude Code, subscription, no tools; `github review exec`), never waits for it, and collects its result on a later cycle: R1's validation, re-check and one advisory PR comment. The service shows **WAITING** while a review runs, waits for the reviewer or requests changes, and **NEEDS_ATTENTION** for an ERROR review; `worker status`, `health`, `waiting` and `attention` list the reviews. Pause cancels a running reviewer (its attempt is given back); a graceful stop asks it to stop and waits for it. The service never merges, approves or marks a PR ready ([github-intake §13.7](github-intake.md#137-automatic-review-by-the-worker-service-r2)).
 
+**W4.8.1 PR repair.** With `github.repair.enabled` (off by default), a repair step follows the review step (at most every `github.repair.poll_interval_seconds`, never while paused). A REQUEST_CHANGES review of the verified head is answered by ONE counted repair attempt, at most 2 per feature, and only for a single-task feature:
+
+1. The attempt re-opens the task. While it is open, the feature (still in `review`) is treated like the active feature, so this section's ordinary launch runs the task with the review's blocking findings appended to its instructions. Same role scope, grants and gates; one launch beyond `max_launches_per_task` per attempt.
+2. The verified head is pushed to the same PR (a fast-forward, never forced) and revalidated (the original gates).
+3. The review step then reviews the new head.
+
+Failed gates hold the task as for any task: `worker reset-retries` lets the agent try again within the same attempt. An exhausted budget, a failed push or revalidation, or an agent that changed nothing is **NEEDS_ATTENTION**, with the PR, branch, commits and records kept. Publication waits while an attempt is open. The service never merges ([github-intake §14](github-intake.md#14-autonomous-pr-repair-w481)).
+
 **Pre-launch checks**, made without a model request:
 - the launch budget (`max_launches_per_task`, default 10, all categories together);
 - the CLI and its required flags (`probe_runner`);

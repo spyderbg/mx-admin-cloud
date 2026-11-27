@@ -312,9 +312,9 @@ def test_the_service_reviews_a_new_draft_pr_and_keeps_its_heartbeat(wrig: PubRig
     assert all(s[2] == "WAITING" and "is running" in s[3] and f"Draft PR #{pr} waits for a person" in s[3]
                for s in while_running), while_running[0]
     assert any("review: " in line and "runs in reviewer process" in line for line in out)
-    # the order of the GitHub steps: publication, then the review, then intake
+    # the order of the GitHub steps: publication, then the review, then (W4.8.1) the repair, then intake
     assert [name for name, _cfg, _make in github_steps(wrig.config, wrig.coord, {}, None)] == \
-        ["publish", "review", "intake"]
+        ["publish", "review", "repair", "intake"]
 
 
 def test_a_graceful_service_stop_cancels_the_reviewer_and_gives_the_attempt_back(  # pylint: disable=too-many-locals

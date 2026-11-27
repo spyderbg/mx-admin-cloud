@@ -45,7 +45,8 @@ match, several PRs, a rejected (non-fast-forward) push, a
 wrong or rewritten remote, a withdrawn approval before publication, merge evidence that does not hold. A PR
 whose head a person moved is NOT resumed by a reset: `github publish revalidate FEATURE` (revalidate.py)
 validates the new head of the same PR and only then moves the candidate to it.
-Transient failures (network, GitHub 5xx, a busy lock) are retried by the next pass.
+Transient failures (network, GitHub 5xx, a busy lock) are retried by the next pass. W4.8.1: while an automatic repair
+attempt of the feature's PR is open (repair.py), the pass only reports it: the attempt owns the branch's head.
 
 Locks: one pass at a time (github-publish.lock, taken first). GitHub is never called under a coordinator,
 project, role or Git lock; only the push holds project.lock EXCLUSIVE + git.lock (no writer can start).
@@ -80,6 +81,7 @@ from .intake import IntakeRecord, issue_problem, known_problem, load_intake, ver
 from .issue_sync import OutboxEntry, SimulatedCrash
 from .issues import PullRequest, escape_markdown_comment
 from .model import Evidence, Feature, FeatureState, PullRequestCandidate, Task, TaskState, utc_now
+from .repair_record import open_repair
 from .workspace import identity as workspace_identity
 
 PROTECTED_BRANCHES = ("main", "master", "dev")  # never pushed (gitops pushes `feature/…` only, besides)
@@ -298,6 +300,12 @@ class PullRequestPublisher:  # pylint: disable=too-few-public-methods
         if cand is None:
             self._stop(feature, report, "the feature is in review without a PR candidate", sticky=False)
         assert cand is not None
+        repair = open_repair(self.store, feature.id)  # W4.8.1: an open repair attempt owns the PR's head (repair.py)
+        if repair is not None:
+            report.waiting.append(f"{feature.id}: Draft PR #{cand.number}: automatic repair attempt {repair['number']} "
+                                  f"is in progress ({repair['status']}); publication waits for it")
+            self._status(report, feature, "repairing", f"repair attempt {repair['number']} ({repair['status']})")
+            return
         if cand.attention:
             self._stop(feature, report, f"{cand.attention.get('reason')} (since {cand.attention.get('since')}; after "
                                         "resolving it: `python -m feature_coordinator github publish reset "

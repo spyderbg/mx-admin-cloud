@@ -9,7 +9,9 @@
      later cycle — it never waits for the model); W4.3.1: when `github.intake.enabled`, at most every
      `poll_interval_seconds` a GitHub intake poll (intake.py): an Issue an operator approved with `/worker approve`
      is planned and, on a free checkout, activated — the approval is the operator's plan and activation (W4.5: also
-     `worker:*` labels);
+     `worker:*` labels); W4.8.1: when `github.repair.enabled`, after the review step the repair step (repair.py) answers
+     a REQUEST_CHANGES review by re-opening the feature's single task: the feature, still in review, is then driven
+     like the active one below (with one more launch per attempt), and its verified head pushed and revalidated;
   2. the active feature — only one an operator planned AND activated; nothing else is started;
   3. the checkout: workspace identity/branch/base (W2), the feature's Worker lock (so `python -m feature_coordinator
      work` cannot drive it at the same time), and claims: a LIVE claim (a manual launch, or a launch of an earlier
@@ -63,6 +65,7 @@ from .config import ProjectConfig
 from .errors import ClaimError, CoordinatorError, GitConfigExecutionError, GitOperationError, LockBusyError
 from .locks import FileLock, ProcessIdentity
 from .model import Feature, FeatureState, Task, TaskState, transition_task, utc_now
+from .repair_record import launch_allowance, repairing_features
 from .store import atomic_write_json
 from .supervisor import RUN_TAG_ENV, stop_requested, tagged_processes, terminate_pids, wait_for_wake
 from .workspace import workspace_problems
@@ -399,7 +402,8 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
         return schedules
 
     def _active_feature(self) -> Feature | None:
-        active = [f for f in self.store.list_features() if f.state is FeatureState.ACTIVE]
+        repairing = repairing_features(self.store)  # W4.8.1: a feature in review whose repair agent is due (repair.py)
+        active = [f for f in self.store.list_features() if f.state is FeatureState.ACTIVE or f.id in repairing]
         if len(active) > 1:
             self._set_state(NEEDS_ATTENTION, f"several active features {[f.id for f in active]} (one per checkout)")
         elif not active:  # W4.3.3: a published feature may wait for its merge (or an operator) meanwhile
@@ -571,7 +575,8 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
     def _recover_at_startup(self) -> None:
         """W3 recovery for the active feature: stale claims, launches of earlier instances,
         checkpoint consistency (conflicts → attention; nothing is repaired that W3 calls unsafe)."""
-        active = [f for f in self.store.list_features() if f.state is FeatureState.ACTIVE]
+        active = [f for f in self.store.list_features() if f.state is FeatureState.ACTIVE
+                  or f.id in repairing_features(self.store)]  # W4.8.1
         self._claims_clear()
         for feature in active[:1]:
             tasks = self.store.load_tasks(feature)
@@ -639,9 +644,9 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
         rec = load_scheduling(self.store, task)
         self._event("worker-task-selected", task=task.id, role=task.role, launches_so_far=rec.launches,
                     attempts=rec.attempts)
-        if rec.launches >= self.cfg.max_launches_per_task:
-            self._apply(task.id, Outcome(CRITICAL, f"launch budget exhausted ({rec.launches} of "
-                                                   f"{self.cfg.max_launches_per_task})"), None)
+        budget = self.cfg.max_launches_per_task + launch_allowance(self.store, task)  # W4.8.1: +1 per repair attempt
+        if rec.launches >= budget:
+            self._apply(task.id, Outcome(CRITICAL, f"launch budget exhausted ({rec.launches} of {budget})"), None)
             return
         if self._intake_changed(task):
             return

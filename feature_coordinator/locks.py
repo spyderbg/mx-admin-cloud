@@ -199,3 +199,8 @@ class LockSet:
         """W4.6.1: one AI review run at a time (review.py). Like publish(), NOT part of the lock order above: it
         is taken first and held while the reviewer runs; no coordinator, project, role or Git lock is held then."""
         return FileLock(self.dir / "github-review.lock")
+
+    def repair(self) -> FileLock:
+        """W4.8.1: one PR repair step at a time (repair.py). Like review(), NOT part of the lock order above: it is
+        taken first; the step takes github-publish.lock / github-review.lock only while nothing else holds them."""
+        return FileLock(self.dir / "github-repair.lock")
