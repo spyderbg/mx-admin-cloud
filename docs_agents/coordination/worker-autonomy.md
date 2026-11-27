@@ -166,11 +166,11 @@ Eligible tasks are taken in dependency order. Only an **activated** feature is c
 
 **W4.8.1 PR repair.** With `github.repair.enabled` (off by default), a repair step follows the review step (at most every `github.repair.poll_interval_seconds`, never while paused). A REQUEST_CHANGES review of the verified head is answered by ONE counted repair attempt, at most 2 per feature, and only for a single-task feature:
 
-1. The attempt re-opens the task. While it is open, the feature (still in `review`) is treated like the active feature, so this section's ordinary launch runs the task with the review's blocking findings appended to its instructions. Same role scope, grants and gates; one launch beyond `max_launches_per_task` per attempt.
+1. The attempt re-opens the task. While it is open, the feature (still in `review`) is treated like the active feature, so this section's ordinary launch runs the task with the review's blocking findings appended to its instructions. Same role scope, grants and gates. The attempt has its own launch budget, `github.repair.max_launches_per_attempt` (2, ceiling 2), instead of `max_launches_per_task`. Each launch is counted in the attempt in the same write-ahead transaction and never refunded, not even by `worker reset-retries`.
 2. The verified head is pushed to the same PR (a fast-forward, never forced) and revalidated (the original gates).
 3. The review step then reviews the new head.
 
-Failed gates hold the task as for any task: `worker reset-retries` lets the agent try again within the same attempt. An exhausted budget, a failed push or revalidation, or an agent that changed nothing is **NEEDS_ATTENTION**, with the PR, branch, commits and records kept. Publication waits while an attempt is open. The service never merges ([github-intake §14](github-intake.md#14-autonomous-pr-repair-w481)).
+A second launch follows only an outcome §7 already retries by itself (transient, subscription, interrupted, cancelled). Failed gates or an integrity failure hold the task as for any task: `worker reset-retries` lets the agent try again within the same attempt while it has launches left. A PR a person merged or closed ends the attempt before its agent starts again; publication then verifies the merge as usual. An exhausted budget, a failed push or revalidation, or an agent that changed nothing is **NEEDS_ATTENTION**, with the PR, branch, commits and records kept. Publication waits while an attempt is open. The service never merges ([github-intake §14](github-intake.md#14-autonomous-pr-repair-w481)).
 
 **Pre-launch checks**, made without a model request:
 - the launch budget (`max_launches_per_task`, default 10, all categories together);
@@ -255,6 +255,8 @@ Before every launch with the native-cli backend (the default), `check_subscripti
 **At startup** (`recovery.auto_recover_safe`, default true):
 1. **Stale claims** go to W3 `claims.recover` (orphan-aware). A live claim means wait.
 2. **`in_flight` launches of earlier instances** are settled as in §7.
+
+**During a run (W4.8.1 review fix).** A launch of the running instance itself can be left `in_flight` too: an error after its spawn ends the cycle before `_run_task` settles it. Launches run synchronously, so any such record is orphaned. It is settled exactly like an earlier instance's: wait while its launch process runs, then classify it. It is never launched a second time beside it.
 3. **Every unverified multi-step task** gets W3 `inspect`. A conflict, or an unreadable checkpoint record, is CRITICAL for that task alone.
 
 Only the actions W3 already calls safe are taken: adopt a commit, record a commit, release a dead claim.

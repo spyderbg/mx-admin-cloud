@@ -65,7 +65,8 @@ from .config import ProjectConfig
 from .errors import ClaimError, CoordinatorError, GitConfigExecutionError, GitOperationError, LockBusyError
 from .locks import FileLock, ProcessIdentity
 from .model import Feature, FeatureState, Task, TaskState, transition_task, utc_now
-from .repair_record import count_launch, launch_budget, repairing_features
+from .repair import launch_refusal
+from .repair_record import count_launch, repairing_features
 from .store import atomic_write_json
 from .supervisor import RUN_TAG_ENV, stop_requested, tagged_processes, terminate_pids, wait_for_wake
 from .workspace import workspace_problems
@@ -402,7 +403,7 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
         return schedules
 
     def _active_feature(self) -> Feature | None:
-        repairing = repairing_features(self.store)  # W4.8.1: a feature in review whose repair agent is due (repair.py)
+        repairing = repairing_features(self.store, self.config)  # W4.8.1: its repair agent is due (repair.py)
         active = [f for f in self.store.list_features() if f.state is FeatureState.ACTIVE or f.id in repairing]
         if len(active) > 1:
             self._set_state(NEEDS_ATTENTION, f"several active features {[f.id for f in active]} (one per checkout)")
@@ -576,7 +577,7 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
         """W3 recovery for the active feature: stale claims, launches of earlier instances,
         checkpoint consistency (conflicts → attention; nothing is repaired that W3 calls unsafe)."""
         active = [f for f in self.store.list_features() if f.state is FeatureState.ACTIVE
-                  or f.id in repairing_features(self.store)]  # W4.8.1
+                  or f.id in repairing_features(self.store, self.config)]  # W4.8.1
         self._claims_clear()
         for feature in active[:1]:
             tasks = self.store.load_tasks(feature)
@@ -598,8 +599,8 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
         settled, running = False, []
         for task_id, rec in schedules.items():
             flight = rec.in_flight
-            if not flight or flight.get("instance") == self.instance:
-                continue
+            if not flight:  # this instance's own too: launches run synchronously, so one left here is orphaned (an
+                continue    # error after its spawn); settled like an earlier instance's, never launched twice
             if self.store.load_claim(task_id) or (flight.get("tag") and tagged_processes(LAUNCH_TAG_ENV,
                                                                                           flight["tag"])):
                 running.append(task_id)
@@ -644,10 +645,9 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
         rec = load_scheduling(self.store, task)
         self._event("worker-task-selected", task=task.id, role=task.role, launches_so_far=rec.launches,
                     attempts=rec.attempts)
-        used, budget, what = launch_budget(self.store, task, rec.launches, self.cfg.max_launches_per_task,
-                                           self.config.github.repair.max_launches_per_attempt)  # W4.8.1
-        if used >= budget:
-            self._apply(task.id, Outcome(CRITICAL, f"launch budget exhausted ({used} of {budget}){what}"), None)
+        refused = launch_refusal(self.coord, task, rec.launches, self.cfg.max_launches_per_task)  # W4.8.1: repairs
+        if refused is not None:  # the launch budget (a repair attempt's own); a repair's PR or review changed
+            self._apply(task.id, refused, None)
             return
         if self._intake_changed(task):
             return
@@ -658,6 +658,8 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
         head = self.coord.git.rev_parse(f"refs/heads/{feature.branch}")  # before the write-ahead: may be refused (S2)
         foreign_before = self._foreign_dirty(task)
         with self.store.transaction():  # write-ahead: counted BEFORE the agent can start
+            if not count_launch(self.store, task, self.config.github.repair.max_launches_per_attempt):
+                return  # W4.8.1: its repair attempt ended (abandoned) or used up its launches meanwhile
             rec = load_scheduling(self.store, task)
             rec.launches += 1
             launch = rec.launches
@@ -665,7 +667,6 @@ class WorkerService:  # pylint: disable=too-many-instance-attributes,too-few-pub
             rec.in_flight = {"launch": launch, "instance": self.instance, "started_at": utc_now(), "tag": tag,
                              "worker_id": self.record.worker_id if self.record else ""}
             self.store.save_record("scheduling", rec)
-            count_launch(self.store, task)  # W4.8.1: a due repair agent's launch also counts in its attempt
         started = time.time()  # wall time: compared with run directories' modification times
         mark = len(self.store.events())
         profile = self.config.provider_for(task.role)

@@ -7,7 +7,7 @@ Draft PR, never rewritten:
     started  → the attempt is counted (write-ahead) and the feature's single task re-opened (`reopened_at`); the
                Worker service then runs that task through its ordinary launch path, with this attempt's brief
                appended to the task's own instructions (`repair_brief`), within the attempt's OWN launch budget
-               (`launch_budget`: `github.repair.max_launches_per_attempt`, ≤ 2, instead of
+               (`launch_refusal`: `github.repair.max_launches_per_attempt`, ≤ 2, instead of
                `worker.max_launches_per_task`); each launch is counted in the attempt (`launches`) in the service's
                write-ahead transaction (`count_launch`), never refunded, not even by `worker reset-retries`
     verified → the task was verified again (its required gates passed) at a new head on the feature branch
@@ -96,9 +96,14 @@ def findings_digest(findings: list[dict[str, Any]]) -> str:
 
 # -- what the service and the task path read ---------------------------------------------------------------------
 
-def _agent_attempt(store: Any, record: RepairRecord | None) -> dict[str, Any] | None:
+def _in_flight(store: Any, task_id: str) -> bool:
+    return bool((store.load_record("scheduling", task_id) or {}).get("in_flight"))
+
+
+def agent_attempt(store: Any, record: RepairRecord | None, *, settling: bool = False) -> dict[str, Any] | None:
     """The open attempt whose repair agent is due or running: `started`, its task re-opened and not verified, its
-    feature still in review."""
+    feature still in review. *settling*: also once its task is verified while the launch that verified it is still
+    recorded in flight (a Worker that died before settling it): the service settles that launch first."""
     attempt = record.open_attempt() if record else None
     if record is None or attempt is None or attempt["status"] != "started" or not attempt.get("reopened_at"):
         return None
@@ -106,35 +111,38 @@ def _agent_attempt(store: Any, record: RepairRecord | None) -> dict[str, Any] | 
         feature, task = store.load_feature(record.id), store.load_task(attempt["task"])
     except (KeyError, CoordinatorError):  # a record without its feature or task drives nothing (repair.py reports it)
         return None
-    return attempt if feature.state is FeatureState.REVIEW and task.state is not TaskState.VERIFIED else None
+    if feature.state is not FeatureState.REVIEW:
+        return None
+    return attempt if task.state is not TaskState.VERIFIED or (settling and _in_flight(store, task.id)) else None
 
 
-def repairing_features(store: Any) -> set[str]:
-    """Features in `review` whose repair agent is due or running: the Worker service drives each like the active
-    feature (one at most: one feature per checkout). An unreadable repair record raises (fail closed)."""
-    return {raw["id"] for raw in store.list_records("repair") if _agent_attempt(store, RepairRecord.from_dict(raw))}
+def repairing_features(store: Any, config: Any) -> set[str]:
+    """Features in `review` whose repair agent is due, running, or its launch not settled yet: the Worker service
+    drives each like the active feature (one at most: one feature per checkout). While github.repair is disabled,
+    only an unsettled launch is settled: no repair agent starts (`github repair abandon` ends the attempt). An
+    unreadable repair record raises (fail closed)."""
+    found = set()
+    for raw in store.list_records("repair"):
+        attempt = agent_attempt(store, RepairRecord.from_dict(raw), settling=True)
+        if attempt is not None and (config.github.repair.enabled or _in_flight(store, attempt["task"])):
+            found.add(raw["id"])
+    return found
 
 
-def launch_budget(store: Any, task: Task, launches: int, per_task: int, per_attempt: int) -> tuple[int, int, str]:
-    """(launches used, budget, ' for …' or '') for *task*'s next launch: while its repair agent is due, the attempt's
-    own launches against `per_attempt` (github.repair.max_launches_per_attempt); otherwise the task's scheduling
-    *launches* against `per_task` (worker.max_launches_per_task), exactly as before."""
-    attempt = _agent_attempt(store, load_repair(store, task.feature_id))
-    if attempt is None or attempt["task"] != task.id:
-        return launches, per_task, ""
-    return int(attempt["launches"]), per_attempt, f" for repair attempt {attempt['number']}"
-
-
-def count_launch(store: Any, task: Task) -> None:
-    """Count one launch of *task*'s due repair agent in its attempt. Called inside the service's write-ahead
-    transaction, beside the scheduling record's own count, BEFORE the agent can start; never decremented."""
+def count_launch(store: Any, task: Task, per_attempt: int) -> bool:
+    """Inside the service's write-ahead transaction, BEFORE the agent can start: count one launch of *task*'s due
+    repair agent in its attempt (never decremented). False: *task*'s feature is in review but its attempt ended
+    meanwhile (e.g. abandoned) or its launches are used up — nothing may start. True for any other task."""
     record = load_repair(store, task.feature_id)
-    attempt = _agent_attempt(store, record)
+    attempt = agent_attempt(store, record)
     if record is None or attempt is None or attempt["task"] != task.id:
-        return
+        return store.load_feature(task.feature_id).state is not FeatureState.REVIEW
+    if int(attempt["launches"]) >= per_attempt:
+        return False
     attempt["launches"] = int(attempt["launches"]) + 1
     record.updated_at = utc_now()
     store.save_record("repair", record)
+    return True
 
 
 def reopened_by_repair(store: Any, task: Task) -> bool:
@@ -146,12 +154,13 @@ def reopened_by_repair(store: Any, task: Task) -> bool:
     return any(a["task"] == task.id and a["status"] in ("failed", "abandoned") for a in record.attempts)
 
 
-def repair_brief(store: Any, task: Task) -> str | None:
-    """The repair section appended to *task*'s prompt while its repair agent is due (None: no repair). The review's
-    findings are untrusted data written by another model: fenced with a random nonce, control characters removed and
-    credential-like strings redacted. They grant nothing: the run keeps the task's role scope and grants."""
-    attempt = _agent_attempt(store, load_repair(store, task.feature_id))
-    if attempt is None or attempt["task"] != task.id:
+def repair_brief(store: Any, task: Task, config: Any) -> str | None:
+    """The repair section appended to *task*'s prompt while its repair agent is due and github.repair is enabled
+    (None: no repair). The review's findings are untrusted data written by another model: fenced with a random nonce,
+    control characters removed and credential-like strings redacted. They grant nothing: the run keeps the task's
+    role scope and grants."""
+    attempt = agent_attempt(store, load_repair(store, task.feature_id))
+    if attempt is None or attempt["task"] != task.id or not config.github.repair.enabled:
         return None
     nonce = secrets.token_hex(6)
     items = []

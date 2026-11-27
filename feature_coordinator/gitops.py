@@ -501,9 +501,10 @@ class GitCoordinator:  # pylint: disable=too-many-public-methods
         return None
 
     def push_branch(self, branch: str, sha: str, *, destination: str, protected: Sequence[str] = (),
-                    remote: str = "origin", timeout: float = 120.0) -> PushResult:
+                    remote: str = "origin", timeout: float = 120.0, expect: Sequence[str] | None = None) -> PushResult:
         """Push exactly *sha* to *remote*'s refs/heads/<branch>, *destination* being the remote's only push URL.
-        See the module docstring."""
+        *expect* (W4.8.1 repair): the remote branch must be at one of these commits right before the push — never
+        absent (no branch is created) and never anywhere else. See the module docstring."""
         if not _FEATURE_REF_RE.fullmatch(branch) or branch in protected or not _SHA_RE.fullmatch(sha):
             raise ScopeViolationError(f"only a feature branch is ever pushed (by its full commit SHA), not {branch!r}")
         project = self._quiescent()
@@ -518,6 +519,9 @@ class GitCoordinator:  # pylint: disable=too-many-public-methods
                     raise GitOperationError(f"the checkout is not clean ({unclean[:10]}); nothing is pushed")
                 self._check_destination(remote, destination)
                 before = self.remote_head(branch, remote=remote, timeout=timeout)
+                if expect is not None and before not in expect:
+                    raise RemoteRejectedError(f"{remote} has {branch} at {(before or 'nothing')[:12]}, not at "
+                                              f"{' or '.join(e[:12] for e in expect)}: nothing is pushed")
                 if before == sha:
                     return PushResult(branch, sha, before, pushed=False)
                 if before is not None and not (self._has_commit(before) and self.is_ancestor(before, sha)):

@@ -370,7 +370,7 @@ class FeatureCoordinator:  # pylint: disable=too-many-instance-attributes
         """
         task = self.store.load_task(task_id)
         feature = self.store.load_feature(task.feature_id)
-        repair = repair_brief(self.store, task) if feature.state is FeatureState.REVIEW else None  # W4.8.1 repair.py
+        repair = repair_brief(self.store, task, self.config) if feature.state is FeatureState.REVIEW else None  # W4.8.1
         if feature.state is not FeatureState.ACTIVE and repair is None:
             raise ClaimError(f"feature {feature.id!r} is {feature.state.value}, not active")
         if prompt and task.steps:

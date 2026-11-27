@@ -22,10 +22,14 @@ every `github.repair.poll_interval_seconds`, never while paused (service.py `_po
      before each launch, never refunded). A second launch follows only an outcome the retry policy already retries by
      itself (transient, subscription, interrupted, cancelled); failed gates or an integrity failure hold the task
      (NEEDS_ATTENTION; `worker reset-retries` lets the agent try again within the same attempt while its launches
-     last). A PR a person merged or closed meanwhile ends the attempt before its agent (re)starts;
-  4. publication's push. Once the task is verified again at a new head that continues the PR's head, that head is
-     pushed to the PR's branch (gitops.push_branch: a fast-forward of exactly that commit, never forced, the
-     publisher's single-push-URL checks), after the PR (identity, open, head) and the approval were re-read;
+     last). Before each launch (`launch_refusal`) and on each step while the agent does not run, the findings must
+     still apply (`_stale`: the candidate, the current review, the PR re-read — open, a draft, at the reviewed
+     head); otherwise the attempt ends before its agent (re)starts;
+  4. publication's push. Once the task is verified again — its launch settled by the Worker, whose own outcome needs
+     no operator — at a new head that continues the PR's head, made only of the task's own plain commits within its
+     role's paths (`_foreign`), that head is pushed to the PR's branch (gitops.push_branch: a fast-forward of exactly
+     that commit, never forced, the publisher's single-push-URL checks, origin's branch at the reviewed head), after
+     the PR (identity, open, head) and the approval were re-read;
   5. revalidation (revalidate.py, unchanged): the same PR at the pushed head — fast-forward only, plain commits,
      every path writable by the feature's tasks, the original candidate's integration gates, the approved plan's
      integration gates and every task's required gates, re-checked, then the candidate moved and the old review
@@ -54,7 +58,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Mapping, NoReturn
 
-from .autonomy import epoch, load_scheduling, task_status
+from .autonomy import CANCELLED, CRITICAL, TRANSIENT, Outcome, epoch, load_scheduling, task_status
 from .errors import (
     CoordinatorError,
     GitConfigExecutionError,
@@ -71,11 +75,11 @@ from .integration_slot import execution_owner
 from .issue_sync import SimulatedCrash
 from .model import Feature, FeatureState, Task, TaskState, utc_now
 from .publish import PROTECTED_BRANCHES, PullRequestPublisher
-from .repair_record import RepairRecord, findings_digest, load_repair
+from .repair_record import RepairRecord, agent_attempt, findings_digest, load_repair
 from .review import ReviewRunner, load_review, review_evidence
 from .review_process import attempt_processes
 from .review_result import BLOCKING
-from .revalidate import PullRequestRevalidator
+from .revalidate import PullRequestRevalidator, load_revalidation
 
 WAITING, NEEDS_ATTENTION = "WAITING", "NEEDS_ATTENTION"  # the Worker's states (autonomy.py)
 STALE_GRACE_SECONDS = 1800.0  # GitHub's PR head follows a push within seconds; still stale after this: an operator
@@ -207,6 +211,9 @@ class RepairStep:  # pylint: disable=too-few-public-methods
             report.attention.append(f"{feature.id}: review {entry['key']} no longer applies to {where}, so it is not "
                                     f"repaired: {sanitize('; '.join(stale), 400)}")
             return
+        if not self.client.get_pull_request(cand.number).draft:  # a person may have marked it ready meanwhile
+            self._stop(feature, entry, report, f"automatic repair of {where} is not possible: PR #{cand.number} is "
+                                               "marked ready for review (v1 repairs a Draft PR); an operator decides")
         self._start(feature, entry, blocking, used, report)
 
     def _ineligible(self, feature: Feature, entry: Mapping[str, Any], blocking: list[dict[str, Any]]) -> str:
@@ -227,7 +234,8 @@ class RepairStep:  # pylint: disable=too-few-public-methods
             return f"the feature has {len(tasks)} tasks ({', '.join(sorted(tasks))}): v1 repairs a single-task feature"
         task = next(iter(tasks.values()))
         intake = load_intake(self.store, feature.id)
-        problems = ((intake is None or task.id not in intake.all_task_ids, f"{task.id} is not an approved task"),
+        problems = ((not cand.draft, f"PR #{cand.number} is marked ready for review: v1 repairs a Draft PR"),
+                    (intake is None or task.id not in intake.all_task_ids, f"{task.id} is not an approved task"),
                     (bool(task.steps), f"{task.id} has steps (W3 checkpoints): v1 repairs a single-step task"),
                     (task.state is not TaskState.VERIFIED, f"{task.id} is {task.state.value}, not verified"),
                     (not self.config.role(task.role).enabled, f"the role {task.role} is disabled"),
@@ -345,16 +353,16 @@ class RepairStep:  # pylint: disable=too-few-public-methods
     def _agent_done(self, feature: Feature, attempt: dict[str, Any], report: RepairStepReport) -> bool:
         """True once the task was verified again at a new head continuing the PR's (the attempt is then verified)."""
         label = f"{feature.id}: repair attempt {attempt['number']} of PR #{attempt['pr']}"
+        task = self.store.load_task(attempt["task"])
+        rec, claim = load_scheduling(self.store, task), self.store.load_claim(task.id)
+        if (not attempt.get("reopened_at") or task.state is not TaskState.VERIFIED) and claim is None \
+                and not rec.in_flight:  # its agent does not run (yet): a changed PR or review ends the attempt
+            self._moot(feature, attempt, report)
         if not attempt.get("reopened_at"):  # interrupted after it was counted
             self._reopen(feature, attempt)
             report.waiting.append(f"{label}: {attempt['task']} re-opened; the Worker runs its agent next")
             return False
-        task = self.store.load_task(attempt["task"])
         if task.state is not TaskState.VERIFIED:
-            rec = load_scheduling(self.store, task)
-            claim = self.store.load_claim(task.id)
-            if claim is None and not rec.in_flight:  # its agent does not run: a merged or closed PR ends the attempt
-                self._moot(feature, attempt, report)
             status = task_status(task, rec, claim, self.clock())
             if status == "needs-attention":
                 why = (rec.attention or {}).get("reason") or (task.history[-1].reason if task.history else "")
@@ -369,6 +377,17 @@ class RepairStep:  # pylint: disable=too-few-public-methods
             else:
                 report.waiting.append(f"{label}: {task.id} is {status} (the Worker runs its agent)")
             return False
+        if claim is not None or rec.in_flight:  # verified, but the Worker has not settled its launch yet
+            report.waiting.append(f"{label}: {task.id} is verified; the Worker settles its launch first")
+            return False
+        if rec.attention:  # the Worker's own judgement of the launch overrides the task's verification
+            report.attention.append(
+                f"{label} stopped: {task.id} is verified, but the Worker's outcome of its launch needs an operator "
+                f"({sanitize(rec.attention.get('reason'), 300)}). Nothing is pushed; the attempt stays open: after "
+                f"inspecting it, `python -m feature_coordinator worker reset-retries {task.id} --apply` accepts the "
+                f"verified result; `python -m feature_coordinator github repair abandon {feature.id} --reason … "
+                "--apply` ends it")
+            return False
         head = task.evidence.head_sha if task.evidence else ""
         local = self.git.rev_parse(f"refs/heads/{feature.branch}")
         if head == attempt["review_head"]:
@@ -378,24 +397,58 @@ class RepairStep:  # pylint: disable=too-few-public-methods
             self._end(feature, attempt, "failed", f"{task.id} was verified at {head[:12]}, not at the feature branch's "
                                                   f"continuation of {attempt['review_head'][:12]} (now {local[:12]})",
                       report)
+        foreign = self._foreign(task, attempt["review_head"], head)
+        if foreign:
+            self._end(feature, attempt, "failed", f"{attempt['review_head'][:12]}..{head[:12]} is not only {task.id}'s "
+                                                  f"own work: {foreign}; nothing is pushed", report)
         self._update(feature.id, attempt["id"], event="repair-verified", status="verified", verified_head=head,
                      verified_at=utc_now())
         self._fault(f"crash-after-verified:{feature.id}")
         report.events.append(f"{label}: {task.id} verified again at {head[:12]} (its required gates passed)")
         return True
 
-    def _moot(self, feature: Feature, attempt: Mapping[str, Any], report: RepairStepReport) -> None:
-        """End the attempt when a person merged or closed its PR (re-read by number) while its agent was not running:
-        nothing is (re)started or pushed; publication then verifies a merge as usual."""
+    def _foreign(self, task: Task, old: str, new: str) -> str:
+        """Why the commits old..new are not all the task's own work, checked BEFORE they are pushed: plain commits made
+        by the Git coordinator for this task, changing only paths its role may write ('' : they are)."""
+        commits, merges = self.git.commits_between(old, new), self.git.merge_commits(old, new)
+        others = [c[:12] for c in commits if self.git.trailers(c).get("Feature-Task") != [task.id]]
+        outside = [p for p in self.git.touched_paths(old, new)
+                   if not self.coord.policy.check(task.role, p, grants=task.grants).allowed]
+        return "; ".join(why for bad, why in (
+            (merges, f"merge commit(s) {[m[:12] for m in merges]}"),
+            (others, f"commit(s) {others} not made by the Git coordinator for {task.id}"),
+            (outside, f"path(s) {task.role} may not write: {[sanitize(p, 120) for p in outside[:10]]}")) if bad)
+
+    def _stale(self, feature: Feature, attempt: Mapping[str, Any]) -> str:
+        """Why the attempt's findings no longer apply ('' : they still do): the recorded candidate, the current review
+        and the PR — re-read by number: open, a draft, at the reviewed head."""
+        cand, review = self.store.load_feature(feature.id).pull_request, load_review(self.store, feature.id)
+        local = next((why for bad, why in (
+            (cand is None or (cand.number, cand.head_sha) != (attempt["pr"], attempt["review_head"]),
+             "the recorded PR candidate changed"),
+            (review is None or review.current != attempt["review"],
+             f"review {attempt['review']} is no longer the current review")) if bad), "")
+        if local:
+            return local
         try:
             pr = self.client.get_pull_request(attempt["pr"])
         except GitHubNotFoundError:
-            self._end(feature, attempt, "failed", f"PR #{attempt['pr']} no longer exists; its agent is not started "
-                                                  "and nothing is pushed", report)
-        if pr.merged or pr.state != "open":
-            self._end(feature, attempt, "failed", f"PR #{attempt['pr']} was {'merged' if pr.merged else pr.state} by "
-                                                  "a person during the repair; its agent is not started again and "
-                                                  "nothing is pushed (publication completes a verified merge)", report)
+            return f"PR #{attempt['pr']} no longer exists"
+        return next((why for bad, why in (
+            (pr.merged or pr.state != "open", f"PR #{attempt['pr']} was {'merged' if pr.merged else pr.state} by a "
+                                              "person (publication completes a verified merge)"),
+            (not pr.draft, f"PR #{attempt['pr']} was marked ready for review"),
+            (pr.head_sha != attempt["review_head"], f"PR #{attempt['pr']} moved to {pr.head_sha[:12]} (someone "
+                                                    f"pushed): the findings of {attempt['review_head'][:12]} no "
+                                                    "longer apply")) if bad), "")
+
+    def _moot(self, feature: Feature, attempt: Mapping[str, Any], report: RepairStepReport) -> None:
+        """End the attempt while its agent is not running when its findings no longer apply (`_stale`): nothing is
+        (re)started or pushed."""
+        problem = self._stale(feature, attempt)
+        if problem:
+            self._end(feature, attempt, "failed", f"{problem}; its agent is not started again and nothing is pushed",
+                      report)
 
     def _push(self, feature: Feature, attempt: dict[str, Any], report: RepairStepReport) -> None:
         """Push exactly the verified head to the PR's branch (a fast-forward), after fresh reads."""
@@ -431,7 +484,7 @@ class RepairStep:  # pylint: disable=too-few-public-methods
         lock = self.store.locks.publish().acquire()  # no publication pass meanwhile (LockBusyError: deferred)
         try:
             result = self.git.push_branch(feature.branch, head, destination=destination,
-                                          timeout=self.config.github.publish.git_timeout_seconds,
+                                          timeout=self.config.github.publish.git_timeout_seconds, expect=(old, head),
                                           protected=(*PROTECTED_BRANCHES, feature.base_branch, self.config.base_branch))
         except (RemoteRejectedError, HeadMismatchError, ScopeViolationError) as exc:
             self._end(feature, attempt, "failed", f"push refused: {exc}", report)
@@ -458,8 +511,17 @@ class RepairStep:  # pylint: disable=too-few-public-methods
         self._fault(f"crash-after-revalidate:{feature.id}")
         cand = self.store.load_feature(feature.id).pull_request
         if result.status == "revalidated" or (result.status == "unchanged" and cand and cand.head_sha == head):
+            record = load_revalidation(self.store, feature.id)  # the finalized operation that validated exactly head
+            op = next((e["op"] for e in reversed(record.entries if record else []) if e["status"] == "validated"
+                       and (e["from_head"], e["to_head"]) == (attempt["review_head"], head)), "")
+            if not op:
+                self._end(feature, attempt, "failed", f"the candidate is at {head[:12]}, but no finalized revalidation "
+                                                      f"of {attempt['review_head'][:12]} → {head[:12]} is recorded (an "
+                                                      "interrupted run?); an operator checks it (`python -m "
+                                                      f"feature_coordinator github publish revalidate {feature.id}`)",
+                          report)
             self._update(feature.id, attempt["id"], event="repair-completed", status="completed",
-                         revalidation=result.entry or "", finished_at=utc_now(),
+                         revalidation=op, finished_at=utc_now(),
                          reason=f"PR #{attempt['pr']} revalidated at {head[:12]}")
             report.events += [*result.lines, f"{feature.id}: repair attempt {attempt['number']} completed: PR "
                                              f"#{attempt['pr']} is at {head[:12]}; a new independent AI review of it "
@@ -553,12 +615,16 @@ def abandon(store: Any, feature_id: str, *, reason: str, actor: str, apply: bool
                  f"task {attempt['task']} {store.load_task(attempt['task']).state.value})"]
         if not apply:
             return [*lines, "dry run — pass --apply to abandon it"]
-        with store.transaction():
+        with store.transaction():  # the same checks again, in the transaction the service's launch write-ahead uses
             record = load_repair(store, feature_id)
             assert record is not None
             current = record.open_attempt()
             if current is None or current["id"] != attempt["id"]:
                 raise CoordinatorError(f"{feature_id}'s open repair attempt changed; run it again")
+            if store.load_claim(attempt["task"]) or (store.load_record("scheduling", attempt["task"]) or {}).get(
+                    "in_flight"):
+                raise CoordinatorError(f"the agent of repair attempt {attempt['number']} was just launched: stop it "
+                                       "first")
             current.update(status="abandoned", finished_at=utc_now(), actor=actor,
                            reason=sanitize(f"abandoned by {actor}: {reason}", 600))
             record.updated_at = utc_now()
@@ -567,6 +633,52 @@ def abandon(store: Any, feature_id: str, *, reason: str, actor: str, apply: bool
                                reason=sanitize(reason, 300))
     return [*lines, f"{feature_id}: repair attempt {attempt['number']} abandoned; automatic repair does not try "
                     f"review {attempt['review']} again"]
+
+
+def launch_refusal(coord: Any, task: Task, launches: int, per_task: int) -> Outcome | None:
+    """Right before the Worker service launches *task*: None, or the autonomy.Outcome that refuses the launch.
+
+    - Not a due repair agent: `worker.max_launches_per_task` against the task's scheduling *launches*, exactly as
+      before.
+    - A due repair agent: github.repair enabled, the attempt's OWN launches against
+      `github.repair.max_launches_per_attempt`, then its PR and review re-read now (`launch_problem`: an attempt
+      whose PR or review changed ends there, and nothing starts)."""
+    attempt = agent_attempt(coord.store, load_repair(coord.store, task.feature_id))
+    if attempt is None or attempt["task"] != task.id:
+        exhausted = launches >= per_task
+        return Outcome(CRITICAL, f"launch budget exhausted ({launches} of {per_task})") if exhausted else None
+    cfg, label = coord.config.github.repair, f"repair attempt {attempt['number']}"
+    if not cfg.enabled:
+        return Outcome(CANCELLED, f"github.repair.enabled is false: {label} starts no agent (`github repair abandon` "
+                                  "ends it)")
+    if int(attempt["launches"]) >= cfg.max_launches_per_attempt:
+        return Outcome(CRITICAL, f"launch budget exhausted ({attempt['launches']} of {cfg.max_launches_per_attempt}) "
+                                 f"for {label}")
+    try:
+        problem = launch_problem(coord, task)
+    except CoordinatorError as exc:
+        return Outcome(TRANSIENT, f"{label}: its PR could not be re-read before the launch: {exc}")
+    return Outcome(CANCELLED, f"{label} ended before its agent started: {problem}") if problem else None
+
+
+def launch_problem(coord: Any, task: Task) -> str:
+    """Right before the Worker launches *task*'s repair agent (repair_record.launch_refusal): why its findings no
+    longer apply (`RepairStep._stale`, the PR re-read now) — the attempt then ends (`failed`, under
+    github-repair.lock) and nothing starts — or '' (it may start). A GitHub failure raises (the launch waits)."""
+    step = RepairStep(coord)
+    record = load_repair(coord.store, task.feature_id)
+    attempt = record.open_attempt() if record else None
+    if attempt is None or attempt["task"] != task.id or attempt["status"] != "started":
+        return "no repair attempt of it is open"
+    feature = coord.store.load_feature(task.feature_id)
+    problem = step._stale(feature, attempt)  # pylint: disable=protected-access
+    if not problem:
+        return ""
+    with coord.store.locks.repair().acquire():  # LockBusyError: an operator's command runs; the launch waits
+        if step._attempt(feature.id, attempt["id"])["status"] == "started":  # pylint: disable=protected-access
+            step._update(feature.id, attempt["id"], event="repair-ended", status="failed",  # pylint: disable=protected-access
+                         finished_at=utc_now(), reason=sanitize(f"{problem}; its agent was not started", 900))
+    return problem
 
 
 def repair_rows(store: Any) -> list[dict[str, Any]]:
