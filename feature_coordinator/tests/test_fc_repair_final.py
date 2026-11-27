@@ -283,3 +283,66 @@ def test_an_unfinished_revalidation_is_diagnosed_without_a_futile_command(rig: P
     # what the diagnostic says: rerunning revalidation does not finish the record
     assert PullRequestRevalidator(rig.make()).run(feature_id, apply=True, expected_head=new).status == "unchanged"
     assert load_revalidation(rig.store, feature_id).entries[0]["status"] == "running"
+
+
+# -- gaps in the corrections themselves (found by the focused review's partial run) --------------------------------
+
+@pytest.mark.usefixtures("follows")
+def test_a_rewind_between_the_reconciling_read_and_the_push_is_never_undone(rig: PubRig,
+                                                                           monkeypatch: pytest.MonkeyPatch) -> None:
+    _number, task_id, feature_id, _pr, old = requested(rig)
+    step(rig)
+    agent(rig, task_id)
+    assert rig.coord.run_task(task_id).state is TaskState.VERIFIED
+    with pytest.raises(SimulatedCrash):
+        step(rig, (f"crash-after-push:{feature_id}",))
+    new, branch = local_head(rig, feature_id), f"feature/{feature_id}"
+    coord = rig.make()
+    remote_head, reads = coord.git.remote_head, []
+
+    def read_then_rewind(name: str, **kwargs: Any) -> Any:  # the operator rewinds right after the first read
+        value = remote_head(name, **kwargs)
+        if name == branch:
+            reads.append(value)
+            if len(reads) == 1:
+                git(rig.bare, "update-ref", f"refs/heads/{branch}", old, new)
+        return value
+    monkeypatch.setattr(coord.git, "remote_head", read_then_rewind)
+    report = step(rig, coord=coord)
+    assert reads[:2] == [new, old] and remote_sha(rig.bare, branch) == old, (reads, report.lines())
+    assert last(rig, feature_id)["status"] == "failed" and not events(rig, "repair-pushed")
+
+
+@pytest.mark.usefixtures("follows")
+def test_a_merge_ends_a_recorded_verified_attempt_that_is_held_for_an_operator(rig: PubRig,
+                                                                              monkeypatch: pytest.MonkeyPatch) -> None:
+    task_id, feature_id, old, _head = verified_attempt(rig)
+    pr = rig.candidate(feature_id).number
+    service = rig.service(until=lambda s: s.cycles >= 2, max_cycles=2)
+    survivor(monkeypatch, service, [True])  # its dead launch is settled CRITICAL: an agent process survived it
+    assert service.run() == 0 and not service.launched
+    assert attention(rig, task_id)["blocking_run_tags"] == ["survivor"]
+    assert last(rig, feature_id)["status"] == "verified"
+    merge = rig.merge_on_github(pr)  # a person merges the reviewed head meanwhile
+    report = step(rig)
+    assert last(rig, feature_id)["status"] == "failed" and "merged by a person" in report.attention[0]
+    assert rig.publish().completed == {feature_id: merge} and remote_sha(rig.bare, f"feature/{feature_id}") == old
+
+
+def test_a_launch_record_nothing_settles_never_blocks_a_feature_in_review(rig: PubRig,
+                                                                          monkeypatch: pytest.MonkeyPatch) -> None:
+    from test_fc_intake import approved  # pylint: disable=import-outside-toplevel
+    service = rig.service(config=off(rig), until=lambda s: s.cycles >= 1, max_cycles=1)
+    _number, task_id = approved(rig)
+
+    def failed_verdict(*_args: Any) -> Outcome:  # the child verified; the Worker failed before judging the launch
+        raise OSError("interrupted after the verified child exited")
+    monkeypatch.setattr(service, "_judge", failed_verdict)
+    assert service.run() == 0 and len(service.launched) == 1
+    feature_id = rig.store.load_task(task_id).feature_id
+    assert load_scheduling(rig.store, rig.store.load_task(task_id)).in_flight
+    stopped = rig.publish()  # an active feature: integration still waits for the launch to be settled
+    assert not stopped.integrated and rig.feature(feature_id).state is FeatureState.ACTIVE
+    assert rig.make(config=off(rig)).integrate(feature_id).state is FeatureState.REVIEW  # an operator, by hand
+    report = rig.publish()  # in review, nothing could settle that record: it does not block the push for ever
+    assert report.created and remote_sha(rig.bare, f"feature/{feature_id}") == rig.candidate(feature_id).head_sha

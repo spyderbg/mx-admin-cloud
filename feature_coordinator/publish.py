@@ -342,12 +342,12 @@ class PullRequestPublisher:  # pylint: disable=too-few-public-methods
         if problem or (moved and not self._merged_past_repair(feature, cand)):
             self._stop(feature, report, problem or str(moved), apply=apply)
         pr = self._find(feature, cand, report, apply)
-        if pr is None:
-            tasks = self.store.load_tasks(feature)
-            busy = sorted(self.store.list_claims()) + sorted(
-                t for t in tasks if (self.store.load_record("scheduling", t) or {}).get("in_flight"))
-            held = (f"claims or launches are still active: {busy}" if busy else "") or self._held(tasks)
-            if held:  # W4.8.1: nothing is pushed and no Draft PR opened while the execution is not known to be safe
+        if pr is None:  # W4.8.1: no push and no Draft PR while an agent holds a claim or a task is held. In review,
+            # launches are repair launches (they make publication wait and the Worker settles them); a launch record
+            # nothing could settle here (e.g. a feature an operator integrated by hand) does not block it for ever
+            claims = sorted(self.store.list_claims())
+            held = (f"claims are active: {claims}" if claims else "") or self._held(self.store.load_tasks(feature))
+            if held:
                 self._stop(feature, report, f"not pushed, no Draft PR opened: {held}", sticky=False)
             self._open(feature, record, cand, report, apply)
             return

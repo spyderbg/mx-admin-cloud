@@ -366,6 +366,8 @@ class RepairStep:  # pylint: disable=too-few-public-methods
                                   "revalidated until the Worker settles it")
             return False
         if rec.attention:
+            if attempt["status"] == "verified":  # nothing pushed yet: a PR merged or closed meanwhile ends it
+                self._moot(feature, attempt, report)
             report.attention.append(
                 f"{label} stopped: {task.id} is held for an operator ({sanitize(rec.attention.get('reason'), 300)}). "
                 f"Nothing is pushed or revalidated; the attempt stays open: after inspecting it, `python -m "
@@ -570,7 +572,8 @@ class RepairStep:  # pylint: disable=too-few-public-methods
                 self._end(feature, attempt, "failed", f"{gone}; nothing is pushed", report)
             result = self.git.push_branch(  # the write-ahead marker goes right before the network push itself
                 feature.branch, head, destination=self.publisher._origin(feature)[0],  # pylint: disable=protected-access
-                timeout=self.config.github.publish.git_timeout_seconds, expect=(old, head),
+                timeout=self.config.github.publish.git_timeout_seconds,
+                expect=(head,) if attempt.get("pushing") else (old, head),  # after a marker: never pushed again
                 protected=(*PROTECTED_BRANCHES, feature.base_branch, self.config.base_branch),
                 on_push=lambda: self._update(feature.id, attempt["id"], pushing={"sha": head, "at": utc_now()}))
         except (RemoteRejectedError, HeadMismatchError, ScopeViolationError) as exc:
