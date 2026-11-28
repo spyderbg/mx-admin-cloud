@@ -164,6 +164,14 @@ Eligible tasks are taken in dependency order. Only an **activated** feature is c
 
 **W4.6.1 R2 AI review.** With `github.review.enabled`, a review step follows the publication pass (at most every `github.review.poll_interval_seconds`, never while paused). For a verified Draft PR it starts ONE separate reviewer process (Claude Code, subscription, no tools; `github review exec`), never waits for it, and collects its result on a later cycle: R1's validation, re-check and one advisory PR comment. The service shows **WAITING** while a review runs, waits for the reviewer or requests changes, and **NEEDS_ATTENTION** for an ERROR review; `worker status`, `health`, `waiting` and `attention` list the reviews. Pause cancels a running reviewer (its attempt is given back); a graceful stop asks it to stop and waits for it. The service never merges, approves or marks a PR ready ([github-intake §13.7](github-intake.md#137-automatic-review-by-the-worker-service-r2)).
 
+**W4.8.1 PR repair.** With `github.repair.enabled` (off by default), a repair step follows the review step (at most every `github.repair.poll_interval_seconds`, never while paused). A REQUEST_CHANGES review of the verified head is answered by ONE counted repair attempt, at most 2 per feature, and only for a single-task feature:
+
+1. The attempt re-opens the task. While it is open, the feature (still in `review`) is treated like the active feature, so this section's ordinary launch runs the task with the review's blocking findings appended to its instructions. Same role scope, grants and gates. The attempt has its own launch budget, `github.repair.max_launches_per_attempt` (2, ceiling 2), instead of `max_launches_per_task`. Each launch is counted in the attempt in the same write-ahead transaction and never refunded, not even by `worker reset-retries`.
+2. The verified head is pushed to the same PR (a fast-forward, never forced) and revalidated (the original gates).
+3. The review step then reviews the new head.
+
+A second launch follows only an outcome §7 already retries by itself (transient, subscription, interrupted, cancelled). Failed gates or an integrity failure hold the task as for any task: `worker reset-retries` lets the agent try again within the same attempt while it has launches left. A PR a person merged or closed ends the attempt before its agent starts again; publication then verifies the merge as usual. An exhausted budget, a failed push or revalidation, or an agent that changed nothing is **NEEDS_ATTENTION**, with the PR, branch, commits and records kept. Publication waits while an attempt is open. The service never merges ([github-intake §14](github-intake.md#14-autonomous-pr-repair-w481)).
+
 **Pre-launch checks**, made without a model request:
 - the launch budget (`max_launches_per_task`, default 10, all categories together);
 - the CLI and its required flags (`probe_runner`);
@@ -247,6 +255,10 @@ Before every launch with the native-cli backend (the default), `check_subscripti
 **At startup** (`recovery.auto_recover_safe`, default true):
 1. **Stale claims** go to W3 `claims.recover` (orphan-aware). A live claim means wait.
 2. **`in_flight` launches of earlier instances** are settled as in §7.
+
+**During a run (W4.8.1 review fix).** A launch of the running instance itself can be left `in_flight` too: an error after its spawn ends the cycle before `_run_task` settles it. Launches run synchronously, so any such record is orphaned. It is settled exactly like an earlier instance's: wait while its launch process runs, then classify it. It is never launched a second time beside it.
+
+**Surviving agents at settlement (W4.8.1 review fix, all tasks).** Settling any such launch, of this instance or an earlier one, now applies `_judge`'s survivor rule. If a process carrying one of the launch's agent run tags still lives, the outcome is CRITICAL, whatever the task's state, and the run tags are kept as blocking. No agent starts while they live, and nothing is stopped at settlement. A launch process that lives on without a claim is still only waited for; it has no deadline of its own. Publication integrates, pushes and opens nothing while any task of the feature has such an attention record, until `worker reset-retries` (github-intake.md §10.1).
 3. **Every unverified multi-step task** gets W3 `inspect`. A conflict, or an unreadable checkpoint record, is CRITICAL for that task alone.
 
 Only the actions W3 already calls safe are taken: adopt a commit, record a commit, release a dead claim.

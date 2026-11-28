@@ -298,12 +298,14 @@ def build_parser() -> argparse.ArgumentParser:
     from .publish_commands import register as register_publish  # pylint: disable=import-outside-toplevel
     from .planning_commands import register as register_planning  # pylint: disable=import-outside-toplevel
     from .review_commands import register as register_review  # pylint: disable=import-outside-toplevel
+    from .repair_commands import register as register_repair  # pylint: disable=import-outside-toplevel
     github = register_github(sub)
     register_project(github)
     register_intake(github)
     register_publish(github)
     register_planning(github)
     register_review(github)
+    register_repair(github)
     sub.add_parser("status", help="show coordinator state (read-only)").set_defaults(func=cmd_status)
     sub.add_parser("demo", help="run the mock end-to-end feature in a temporary repository").set_defaults(func=cmd_demo)
     return parser

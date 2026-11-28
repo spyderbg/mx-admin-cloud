@@ -371,3 +371,14 @@ github:
     max_diff_characters: 150000          # a larger diff is not reviewed (ERROR), never truncated
     max_findings: 30                     # more findings is invalid reviewer output (1..100)
     poll_interval_seconds: 60            # R2: the Worker service's review step at most this often (10..3600)
+  # W4.8.1 autonomous repair of a Draft PR whose AI review requested changes (github-intake.md §14). The Worker
+  # service re-opens the feature's single task, runs its agent with the review's blocking findings (untrusted data;
+  # the task's role scope and grants are unchanged), pushes the verified head to the SAME PR (never forced) and
+  # revalidates it (the original gates); the review step then reviews the new head. Never merges. Needs
+  # github.review (and with it github.intake and github.publish). Off by default.
+  repair:
+    enabled: false
+    max_attempts: 2                      # attempts per feature, each counted before its agent starts (1..2)
+    max_launches_per_attempt: 2          # agent launches per attempt (1..2), counted before each starts, never
+    #                                      refunded; a 2nd only after a retryable outcome; not max_launches_per_task
+    poll_interval_seconds: 60            # the Worker service's repair step at most this often (10..3600)

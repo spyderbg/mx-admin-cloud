@@ -45,7 +45,13 @@ match, several PRs, a rejected (non-fast-forward) push, a
 wrong or rewritten remote, a withdrawn approval before publication, merge evidence that does not hold. A PR
 whose head a person moved is NOT resumed by a reset: `github publish revalidate FEATURE` (revalidate.py)
 validates the new head of the same PR and only then moves the candidate to it.
-Transient failures (network, GitHub 5xx, a busy lock) are retried by the next pass.
+Transient failures (network, GitHub 5xx, a busy lock) are retried by the next pass. W4.8.1: while an automatic repair
+attempt of the feature's PR is open (repair.py), the pass only reports it: the attempt owns the branch's head. Once
+it ended, a branch it moved locally (unpushed) still stops the pass, unless the PR was merged at exactly the validated
+head: that merge is verified and completed as usual (`_merged_past_repair`). For every feature (repair or not): a task
+the Worker holds for an operator (an attention record, e.g. an agent process that survived its launch) stops
+integration, the push and a new Draft PR until an operator resets it (`_held`); following an existing PR and
+completing a verified merge continue.
 
 Locks: one pass at a time (github-publish.lock, taken first). GitHub is never called under a coordinator,
 project, role or Git lock; only the push holds project.lock EXCLUSIVE + git.lock (no writer can start).
@@ -80,6 +86,7 @@ from .intake import IntakeRecord, issue_problem, known_problem, load_intake, ver
 from .issue_sync import OutboxEntry, SimulatedCrash
 from .issues import PullRequest, escape_markdown_comment
 from .model import Evidence, Feature, FeatureState, PullRequestCandidate, Task, TaskState, utc_now
+from .repair_record import load_repair, open_repair
 from .workspace import identity as workspace_identity
 
 PROTECTED_BRANCHES = ("main", "master", "dev")  # never pushed (gitops pushes `feature/…` only, besides)
@@ -260,6 +267,9 @@ class PullRequestPublisher:  # pylint: disable=too-few-public-methods
         if busy:
             self._status(report, feature, "waiting", f"claims or launches are still active: {busy}")
             return
+        held = self._held(tasks)
+        if held:
+            self._stop(feature, report, f"not integrated: {held}", sticky=False)
         withdrawn = next((p for p in (known_problem(self.store, t) for t in tasks.values()) if p), None)
         if withdrawn:
             self._stop(feature, report, f"not integrated: {withdrawn}", sticky=False)
@@ -282,6 +292,23 @@ class PullRequestPublisher:  # pylint: disable=too-few-public-methods
         report.integrated.append(feature.id)
         self._review(feature, load_intake(self.store, feature.id) or record, report, apply)
 
+    def _held(self, tasks: Mapping[str, Task]) -> str:
+        """W4.8.1 (every feature, repair or not): why a task's execution is not known to be safe — the Worker holds it
+        for an operator (an attention record: e.g. an agent process that survived its launch, foreign commits, an
+        unexplained change) ('' : none). Such a record is never cleared because a process ended: only an operator's
+        `worker reset-retries TASK --apply` after inspecting it. An unreadable scheduling record raises (deferred)."""
+        held = sorted((t, a) for t in tasks for a in [(self.store.load_record("scheduling", t) or {}).get("attention")]
+                      if a)
+        if not held:
+            return ""
+        task_id, attention = held[0]
+        attention = attention if isinstance(attention, dict) else {"reason": str(attention)}
+        tags = attention.get("blocking_run_tags")
+        return (f"{task_id} is held for an operator by the Worker ({attention.get('category') or 'unknown'}: "
+                f"{sanitize(attention.get('reason'), 200)}{f'; blocking run tags {tags}' if tags else ''}); after "
+                "inspecting it (`python -m feature_coordinator worker attention`): `python -m feature_coordinator "
+                f"worker reset-retries {task_id} --apply`")
+
     @staticmethod
     def _integration_failed_at(feature: Feature, tasks: Mapping[str, Task]) -> str | None:
         """When the last integration failed, unless a task was verified again since then."""
@@ -298,20 +325,51 @@ class PullRequestPublisher:  # pylint: disable=too-few-public-methods
         if cand is None:
             self._stop(feature, report, "the feature is in review without a PR candidate", sticky=False)
         assert cand is not None
+        repair = open_repair(self.store, feature.id)  # W4.8.1: an open repair attempt owns the PR's head (repair.py)
+        if repair is not None:
+            report.waiting.append(f"{feature.id}: Draft PR #{cand.number}: automatic repair attempt {repair['number']} "
+                                  f"is in progress ({repair['status']}); publication waits for it")
+            self._status(report, feature, "repairing", f"repair attempt {repair['number']} ({repair['status']})")
+            return
         if cand.attention:
             self._stop(feature, report, f"{cand.attention.get('reason')} (since {cand.attention.get('since')}; after "
                                         "resolving it: `python -m feature_coordinator github publish reset "
                                         f"{feature.id} --apply`; a PR head a person changed is validated with "
                                         f"`python -m feature_coordinator github publish revalidate {feature.id}`)",
                        sticky=False)
-        problem = self._repository_problem(feature) or self._head_problem(feature, cand)
-        if problem:
-            self._stop(feature, report, problem, apply=apply)
+        problem = self._repository_problem(feature)
+        moved = None if problem else self._head_problem(feature, cand)
+        if problem or (moved and not self._merged_past_repair(feature, cand)):
+            self._stop(feature, report, problem or str(moved), apply=apply)
         pr = self._find(feature, cand, report, apply)
-        if pr is None:
+        if pr is None:  # W4.8.1: no push and no Draft PR while an agent holds a claim or a task is held. In review,
+            # launches are repair launches (they make publication wait and the Worker settles them); a launch record
+            # nothing could settle here (e.g. a feature an operator integrated by hand) does not block it for ever
+            claims = sorted(self.store.list_claims())
+            held = (f"claims are active: {claims}" if claims else "") or self._held(self.store.load_tasks(feature))
+            if held:
+                self._stop(feature, report, f"not pushed, no Draft PR opened: {held}", sticky=False)
             self._open(feature, record, cand, report, apply)
             return
         self._follow(feature, record, self.store.load_feature(feature.id).pull_request or cand, pr, report, apply)
+
+    def _merged_past_repair(self, feature: Feature, cand: PullRequestCandidate) -> bool:
+        """W4.8.1: an ENDED repair attempt may leave its agent's unpushed commits on the local branch, on top of the
+        validated head. A PR a person merged at exactly that head is still followed and completed (`_complete`
+        verifies the merge as always); otherwise the moved branch stops publication as before."""
+        record = load_repair(self.store, feature.id)
+        if record is None or not record.attempts or not cand.number:
+            return False
+        try:
+            local = self.git.rev_parse(f"refs/heads/{feature.branch}")
+        except GitConfigExecutionError:
+            raise
+        except GitOperationError:  # a missing branch: the stop says so
+            return False
+        if not self.git.is_ancestor(cand.head_sha, local):
+            return False
+        pr = self.client.get_pull_request(cand.number)
+        return pr.merged and pr.head_sha == cand.head_sha
 
     def _repository_problem(self, feature: Feature) -> str | None:
         """Why this checkout's `origin` is not the feature's GitHub repository (None: it is)."""
