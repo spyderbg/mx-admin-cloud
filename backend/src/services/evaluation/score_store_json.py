@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +12,48 @@ from src.core.utils import JsonObjectReadError, read_json_object
 from src.services.text_to_speech import GeneratedAudio
 from src.services.evaluation.models import EvaluationResult, ProviderAggregate, ScoreRecord
 from .score_store import ScoreStore
+
+
+class ScoreStoreCorruptedError(ValueError):
+    """A persisted score-store JSON file is unreadable or has an unexpected root type."""
+
+
+def _load_for_write(path: Path, expected_type: type) -> Any:
+    """Strictly load a store file before writing: a missing file is empty, anything invalid raises.
+
+    Unlike the lenient read path, corruption is never replaced with empty data, so a following
+    write cannot silently discard existing history or aggregates.
+    """
+    if not path.exists():
+        return expected_type()
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except UnicodeDecodeError as exc:
+        raise ScoreStoreCorruptedError(f"Score store file {path} is not valid UTF-8: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise ScoreStoreCorruptedError(f"Score store file {path} contains malformed JSON: {exc}") from exc
+    if not isinstance(payload, expected_type):
+        raise ScoreStoreCorruptedError(
+            f"Score store file {path} has root type {type(payload).__name__}, expected {expected_type.__name__}"
+        )
+    return payload
+
+
+def _write_json_atomic(path: Path, payload: Any) -> None:
+    """Write JSON to a temp file in the same directory, then atomically replace the target."""
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, indent=2, ensure_ascii=False))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_name, path)
+    except BaseException:
+        try:
+            os.unlink(tmp_name)
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def _entry_to_record(entry: dict[str, Any]) -> ScoreRecord:
@@ -37,8 +81,9 @@ class JsonScoreStore(ScoreStore):
         self.aggregate_path = self.storage_dir / "provider_aggregates.json"
 
     async def save(self, generated_audio: GeneratedAudio, evaluation_result: EvaluationResult) -> ProviderAggregate:
-        history = self._load_json(self.history_path, [])
-        aggregates = self._load_json(self.aggregate_path, {})
+        # Validate both files before writing either; ScoreStoreCorruptedError leaves both untouched.
+        history = _load_for_write(self.history_path, list)
+        aggregates = _load_for_write(self.aggregate_path, dict)
 
         history.append(
             {
@@ -71,8 +116,8 @@ class JsonScoreStore(ScoreStore):
         )
         aggregates[generated_audio.provider] = provider_bucket
 
-        self.history_path.write_text(json.dumps(history, indent=2, ensure_ascii=False), encoding="utf-8")
-        self.aggregate_path.write_text(json.dumps(aggregates, indent=2, ensure_ascii=False), encoding="utf-8")
+        _write_json_atomic(self.history_path, history)
+        _write_json_atomic(self.aggregate_path, aggregates)
 
         return ProviderAggregate(
             provider=generated_audio.provider,
