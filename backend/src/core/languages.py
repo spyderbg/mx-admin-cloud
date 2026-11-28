@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 LANG_MAP = {
     "en": "English",
     "de": "German",
@@ -32,15 +34,44 @@ LANG_TO_BCP47: dict[str, str] = {
 
 
 def to_bcp47(code: str) -> str:
-    """Convert a 2-letter language code to a BCP-47 locale tag.
+    """Convert a language code to a canonical BCP-47 locale tag.
 
-    Returns the input unchanged if it already contains a region subtag
-    (e.g. ``en-US``) or has no known mapping.
+    Surrounding whitespace is ignored and both ``-`` and ``_`` are accepted
+    as separators. A bare known two-letter code maps to its default locale
+    from ``LANG_TO_BCP47`` (``"bg"`` -> ``"bg-BG"``). Any other well-formed
+    tag is returned in the canonical letter case of RFC 5646 section 2.1.1
+    with the same subtags in the same order (``"zh_hant_tw"`` ->
+    ``"zh-Hant-TW"``). A malformed value is returned trimmed and otherwise
+    unchanged. Never raises for a ``str`` argument.
     """
-    normalized = code.strip().lower()
-    if "-" in normalized or "_" in normalized:
-        return code
-    return LANG_TO_BCP47.get(normalized, code)
+    stripped = code.strip()
+    subtags = re.split(r"[-_]", stripped)
+    well_formed = (
+        bool(stripped)
+        and all(re.fullmatch(r"[A-Za-z0-9]{1,8}", subtag) for subtag in subtags)
+        and re.fullmatch(r"[A-Za-z]{2,3}", subtags[0]) is not None
+    )
+    if not well_formed:
+        return stripped
+
+    primary = subtags[0].lower()
+    if len(subtags) == 1 and len(primary) == 2 and primary in LANG_TO_BCP47:
+        return LANG_TO_BCP47[primary]
+
+    canonical = [primary]
+    after_singleton = False
+    for subtag in subtags[1:]:
+        if len(subtag) == 1:
+            after_singleton = True
+        if after_singleton:
+            canonical.append(subtag.lower())
+        elif re.fullmatch(r"[A-Za-z]{2}", subtag):
+            canonical.append(subtag.upper())
+        elif re.fullmatch(r"[A-Za-z]{4}", subtag):
+            canonical.append(subtag[0].upper() + subtag[1:].lower())
+        else:
+            canonical.append(subtag.lower())
+    return "-".join(canonical)
 
 
 def normalize_language_code(language: str | None, default: str = "en") -> str:
